@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: d599441f084fc7622ce537085d9d49e9de30ea585b8f428358014526ad239243
+// Runtime-OpenAPI-SHA256: 0be9bd9c48022d53ffa599a63e78408979e8e585f3b701750f04cf4789a03c24
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -268,6 +268,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/depth/{feature}/{frame_index}/pixel" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/download" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/files" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/files/{file_id}/authorize" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/files/{file_id}/download" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/media/{feature}/authorize" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/overview" },

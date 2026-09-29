@@ -36,6 +36,15 @@ class EpisodeFilePage(FrozenModel):
     next_after: str | None
 
 
+class EpisodeFileGrant(FrozenModel):
+    data: DataVersionRef
+    file_id: Digest
+    sha256: Digest
+    size: int
+    url: str
+    expires_seconds: Literal[300] = 300
+
+
 class EpisodeRevisionIdentity(FrozenModel):
     task_id: str
     revision: int

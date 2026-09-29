@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Typography } from "antd";
 import type { Scope } from "../../entities/scope";
 import styles from "./styles.module.css";
@@ -27,6 +27,7 @@ export function DataReviewPanel({
   canRead: boolean;
   canReview: boolean;
 }) {
+  const queryClient = useQueryClient();
   const [before, setBefore] = useState<number | undefined>();
   const [comment, setComment] = useState("");
   const [decision, setDecision] = useState<"APPROVED" | "RETURNED">("RETURNED");
@@ -97,6 +98,9 @@ export function DataReviewPanel({
       setEnd("");
       setBefore(undefined);
       await query.refetch();
+      await queryClient.invalidateQueries({
+        queryKey: ["episode-overview", scope, data],
+      });
     },
   });
   const rangeValid =

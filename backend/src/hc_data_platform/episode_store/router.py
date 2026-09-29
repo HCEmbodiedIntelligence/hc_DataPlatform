@@ -13,7 +13,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .detail import file_page, open_download, read_detail
-from .detail_models import EpisodeDetail, EpisodeFilePage
+from .detail_models import EpisodeDetail, EpisodeFileGrant, EpisodeFilePage
 from .download import complete_archive
 from .models import DataVersionRef
 from .postgres import PackageConflict
@@ -198,6 +198,42 @@ def package_files(
     with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
         return file_page(
             service.files.open(identity, data_version_id), auth, after=after, limit=limit
+        )
+
+
+@router.post(VERSION + "/files/{file_id}/authorize", response_model=EpisodeFileGrant)
+def authorize_file_download(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    file_id: str,
+    auth: VerifiedAuth,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+        service,
+        identity,
+    ):
+        package = service.files.open(identity, data_version_id)
+        entry, stream = open_download(service, package, file_id, auth.subject_id)
+        stream.close()
+        head = package.storage.head(f"{package.receipt.data.package_prefix}/{entry.path}")
+        if head is None or head.size != entry.size:
+            raise PackageConflict("download object is missing or changed")
+        url = package.storage.presign_read(
+            f"{package.receipt.data.package_prefix}/{entry.path}",
+            300,
+            download_name=entry.path.rsplit("/", 1)[-1],
+        )
+        return EpisodeFileGrant(
+            data=package.receipt.data,
+            file_id=file_id,
+            sha256=entry.sha256,
+            size=entry.size,
+            url=url,
         )
 
 

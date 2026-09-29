@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="17" failures="0" errors="0" time="1.832873152">
+    <testsuite name="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" timestamp="2026-09-29T13:10:39.323Z" hostname="40a053f87a95" tests="4" failures="0" errors="0" skipped="0" time="0.626037651">
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="shows human review separately and disables writes without permission" time="0.236373482">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="does not request records without data read capability" time="0.018655213">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="preserves the original command and key after an ambiguous failure" time="0.192852781">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="rejects a frame range outside this data version" time="0.177539862">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" timestamp="2026-09-29T13:10:39.327Z" hostname="40a053f87a95" tests="3" failures="0" errors="0" skipped="0" time="0.605254511">
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="shows distinct statuses and authorizes a file without fetching its bytes" time="0.376643032">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="keeps missing provenance explicit and never loads without read permission" time="0.096710839">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="selects an explicit task without leaving the annotation tab or mixing an old review into the draft" time="0.131187526">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/ViewerShell.test.tsx" timestamp="2026-09-29T13:10:39.328Z" hostname="40a053f87a95" tests="3" failures="0" errors="0" skipped="0" time="0.586333503">
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; uses the annotation layout in read-only mode with camera selection and a single shared timeline" time="0.323558712">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; retains the immutable revision and selected time range when recording an issue" time="0.193316065">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; keeps issue creation gated and returns to the dataset without opening annotation" time="0.068578863">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/episode-detail.test.ts" timestamp="2026-09-29T13:10:39.329Z" hostname="40a053f87a95" tests="7" failures="0" errors="0" skipped="0" time="0.015247487">
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="reads a fixed version and preserves unknown source and track states" time="0.008753027">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched version" time="0.001514393">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched quality" time="0.000402885">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched review" time="0.000365813">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched selection" time="0.000459479">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched scope" time="0.000370969">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects cross-version file pages and signed download identity mismatches" time="0.002496203">
+        </testcase>
+    </testsuite>
+</testsuites>

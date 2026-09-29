@@ -1,0 +1,42 @@
+.stack {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.facts {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr);
+  gap: 8px 16px;
+  margin: 0;
+}
+.facts dt {
+  color: var(--color-text-secondary, #595959);
+}
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.wrap {
+  overflow-wrap: anywhere;
+}
+.technical {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+}
+@media (max-width: 600px) {
+  .facts {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .facts dd {
+    margin-bottom: 8px;
+  }
+}

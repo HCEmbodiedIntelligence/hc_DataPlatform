@@ -32,9 +32,7 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState } from "../../shared/ui";
 import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
-import { DataReviewPanel } from "./DataReviewPanel";
-import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
-import { DepthPixelPanel } from "./DepthPixelPanel";
+import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
 import { reviewDataReference } from "./data-reviews";
 import {
   adaptP06ViewerStreams,
@@ -447,64 +445,45 @@ export function EpisodeViewerShell() {
         }}
       />
       <Drawer
-        title="数据信息"
+        title={reviewTarget.data ? "Episode 详情" : "数据信息"}
+        size="large"
+        styles={{ wrapper: { maxWidth: "100vw" } }}
         open={dataInfoOpen}
         onClose={() => setDataInfoOpen(false)}
       >
-        <Typography.Paragraph>
-          Episode <code>{episodeId}</code>
-        </Typography.Paragraph>
-        <Typography.Paragraph>
-          Revision <code>{revision!.revision_id}</code>
-        </Typography.Paragraph>
+        {!reviewTarget.data && (
+          <>
+            <Typography.Paragraph>
+              Episode <code>{episodeId}</code>
+            </Typography.Paragraph>
+            <Typography.Paragraph>
+              Revision <code>{revision!.revision_id}</code>
+            </Typography.Paragraph>
+          </>
+        )}
         {reviewTarget.error && (
           <Alert type="error" title={reviewTarget.error} />
         )}
         {dataInfoOpen && reviewTarget.data && scope && (
-          <DepthPixelPanel
-            key={`depth:${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
-            scope={scope}
-            data={reviewTarget.data}
-            canRead={capabilities.has("dataset_version.read")}
-            cameras={revision!.streams.flatMap((stream) =>
-              stream.kind.toUpperCase() === "DEPTH" && stream.package_binding
-                ? [
-                    {
-                      feature: stream.package_binding.feature_key,
-                      label: stream.channel_path,
-                      start: stream.package_binding.start_step,
-                      end: stream.package_binding.end_step,
-                    },
-                  ]
-                : [],
-            )}
-          />
-        )}
-        {dataInfoOpen && reviewTarget.data && scope && (
-          <EpisodeQualityPanel
-            key={`qc:${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
-            scope={scope}
-            data={reviewTarget.data}
-            canRead={capabilities.has("dataset_version.read")}
-          />
-        )}
-        {dataInfoOpen && reviewTarget.data && scope && (
-          <DataReviewPanel
+          <EpisodeDetailPanel
             key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
             scope={scope}
             data={reviewTarget.data}
             canRead={capabilities.has("dataset_version.read")}
             canReview={capabilities.has("dataset_version.review")}
+            returnToPlayback={() => setDataInfoOpen(false)}
           />
         )}
-        <div className={styles.streamList}>
-          {streams.map((stream) => (
-            <Card key={stream.id} size="small" className={styles.streamItem}>
-              <strong>{stream.displayName}</strong>
-              <code>{stream.id}</code>
-            </Card>
-          ))}
-        </div>
+        {!reviewTarget.data && (
+          <div className={styles.streamList}>
+            {streams.map((stream) => (
+              <Card key={stream.id} size="small" className={styles.streamItem}>
+                <strong>{stream.displayName}</strong>
+                <code>{stream.id}</code>
+              </Card>
+            ))}
+          </div>
+        )}
       </Drawer>
       <Modal
         open={issueOpen}

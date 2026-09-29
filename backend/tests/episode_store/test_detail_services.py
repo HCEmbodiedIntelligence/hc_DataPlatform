@@ -5,6 +5,7 @@ import shutil
 from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 import pytest
@@ -219,6 +220,28 @@ def test_overview_file_pages_and_download_authorize_exact_version(services, pack
                 assert sha256(response.content).hexdigest() == file["sha256"]
                 assert len(response.content) == file["size"]
             path = base + f"/files/{files[0]['file_id']}/download"
+            authorize_path = base + f"/files/{files[0]['file_id']}/authorize"
+            signed = client.post(authorize_path, headers=headers)
+            assert signed.status_code == 200, signed.text
+            assert signed.headers["cache-control"] == "no-store"
+            grant = signed.json()
+            assert grant["data"] == data.model_dump(mode="json")
+            assert grant["sha256"] == files[0]["sha256"]
+            with httpx.Client(trust_env=False) as downloader:
+                url = urlsplit(grant["url"])
+                artifact = downloader.get(
+                    urlunsplit((url.scheme, "object-store-browser:9000", url.path, url.query, "")),
+                    headers={"Host": url.netloc},
+                )
+            assert artifact.status_code == 200
+            assert artifact.headers["content-disposition"].startswith("attachment;")
+            assert sha256(artifact.content).hexdigest() == grant["sha256"]
+            assert client.post(authorize_path).status_code == 401
+            assert (
+                client.post(
+                    authorize_path, headers={**headers, "X-Organization-Id": "foreign"}
+                ).status_code == 403
+            )
             assert client.get(path).status_code == 401
             assert (
                 client.get(path, headers={**headers, "X-Organization-Id": "foreign"}).status_code
@@ -245,6 +268,7 @@ def test_overview_file_pages_and_download_authorize_exact_version(services, pack
                     (principal,),
                 )
             assert client.get(path, headers=headers).status_code == 403
+            assert client.post(authorize_path, headers=headers).status_code == 403
             view = client.get(base + "/overview", headers=headers).json()
             assert not next(
                 a for a in view["allowed_actions"] if a["action"] == "DOWNLOAD_COMPLETE"
@@ -256,7 +280,7 @@ def test_overview_file_pages_and_download_authorize_exact_version(services, pack
                     "AND action='episode.file.authorized'",
                     (ident.organization_id,),
                 )
-                assert db.fetchone()[0] == len(files)
+                assert db.fetchone()[0] == len(files) + 1
             Path("/app/.g1-artifacts/episode-detail-http.json").write_text(
                 json.dumps(
                     {

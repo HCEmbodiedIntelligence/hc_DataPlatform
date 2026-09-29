@@ -30,6 +30,7 @@ def main():
                     "EpisodeAction",
                     "EpisodeFile",
                     "EpisodeFilePage",
+                    "EpisodeFileGrant",
                     "EpisodeRevisionIdentity",
                     "EpisodeAnnotationState",
                     "EpisodeCameraDetail",
