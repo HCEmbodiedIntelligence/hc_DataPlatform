@@ -44,6 +44,13 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- R1/R2/R4 阶段补充（2026-09-29）：四个机器人仓库已建立独立工作树；manager
+  候选 `1e3f3934`，独立 uploader 1.3.0 已隔离安装。平台/客户端完成 4096 总资产
+  （含完成标记）契约和大包能力预检，保留旧策略额度与小包协议；页面区分切片确认。
+  平台 33 项通过，上传器 65 项通过及一个旧断言修复后单独通过，大清单 v1/v2
+  2 项通过，真实封存逻辑/合成 ROS 输入 4 项通过。
+  详见 [机器人阶段报告](robot-capacity.md)。实际独立客户端到平台服务、深度单位、
+  连续录制新包、整体安装和真机条件未完成，R1–R4/17 项 P0 均不标为完成。
 - W2 阶段补充（2026-09-29）：原生完整单 Episode RGB-D 上传已接到新的标准包
   提交、官方 RealSense 预览和 Tag 标注链路，Lance 写入为零。154 项扩大回归通过；
   成功/证据错误 4 场景通过，追加 3 项失败后原始下载通过，旧 Ingest 重放 1 项通过。
@@ -51,7 +58,7 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   仅隔离数据库新增 0006/0007，140/140 current。
   见 [范围、证据和回退条件](native-package.md)。共享视频/多窗口、其他入口和真实
   数据/浏览器条件仍未完成，17 项 P0 保留 Pending。
-- 范围同步：原始执行方案新增机器人接入 R1–R4，已复制补充文档，尚待实施；
+- 范围同步：原始执行方案新增机器人接入 R1–R4，已复制补充文档，按阶段推进；
   R5 属于 G2 不执行。平台手工上传不能代替机器人上传链路验收。
   2026-09-29 与原工作树逐字节核对的 SHA-256：
   `chayi.md=51cfd06544d55d0c9f0831de80259a42318857e6bc670dbb9ae25e482ee9cead`；

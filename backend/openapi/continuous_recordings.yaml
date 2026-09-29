@@ -347,7 +347,7 @@ components:
         assets:
           type: array
           minItems: 3
-          maxItems: 256
+          maxItems: 4096
           items: {$ref: "#/components/schemas/RecordingAssetManifest"}
     RecordingUpload:
       type: object

@@ -21,6 +21,7 @@ from .models import (
     RobotIngestAttemptList,
     RobotIngestEpisodeResultList,
     RobotIngestStatistics,
+    RobotIngestUploadCapabilities,
     RobotIngestUploadEnvelope,
     RobotIngestUploadManifest,
     UpdateRobotIngestIdentity,
@@ -83,6 +84,28 @@ RegionCode = Annotated[
 
 def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
+
+
+@router.get(
+    "/robot-ingest/uploads:capabilities",
+    response_model=RobotIngestUploadCapabilities,
+    operation_id="getRobotIngestUploadCapabilities",
+)
+def robot_upload_capabilities(
+    response: Response, token: RobotToken, service: Service
+) -> RobotIngestUploadCapabilities:
+    from hc_data_platform.ingest.limits import MAX_RECORDING_ASSETS, MAX_UPLOAD_ASSETS
+
+    auth = service.authenticate(token)
+    _no_store(response)
+    total = min(MAX_UPLOAD_ASSETS, auth.upload_policy.max_assets)
+    return RobotIngestUploadCapabilities(
+        robot_id=auth.authenticated_robot_id,
+        max_total_assets=total,
+        max_recording_assets=(
+            min(MAX_RECORDING_ASSETS, total - 1) if "CAPTURE_BUNDLE" in auth.allowed_formats else 0
+        ),
+    )
 
 
 @router.post(

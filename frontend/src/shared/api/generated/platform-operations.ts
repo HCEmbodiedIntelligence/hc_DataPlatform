@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: b167d926e12d30ba7534d356dfea5883c5da5696620ede52bc97a01a06e0a3f7
+// Runtime-OpenAPI-SHA256: 350ebda5eb1574b358342631dc45a5b53f91ab4ab3de4485b6d8e1fd118a18ee
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -358,6 +358,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}" },
   { method: "POST", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}/publish" },
   { method: "POST", path: "/robot-ingest/uploads" },
+  { method: "GET", path: "/robot-ingest/uploads:capabilities" },
   { method: "GET", path: "/robot-ingest/uploads/{upload_id}" },
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}:cancel" },
   { method: "POST", path: "/robot-ingest/uploads/{upload_id}:commit" },

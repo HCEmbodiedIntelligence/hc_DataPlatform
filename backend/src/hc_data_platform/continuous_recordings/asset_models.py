@@ -163,7 +163,7 @@ class CreateRecordingUploadCommand(BaseModel):
     capture_started_at: AwareDatetime
     capture_ended_at: AwareDatetime
     recording_config: RecordingConfigurationV1
-    assets: tuple[RecordingAssetManifestV1, ...] = Field(min_length=3, max_length=256)
+    assets: tuple[RecordingAssetManifestV1, ...] = Field(min_length=3, max_length=4096)
 
     @model_validator(mode="after")
     def validate_upload(self) -> CreateRecordingUploadCommand:

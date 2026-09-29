@@ -1,213 +1,261 @@
+components:
+  schemas:
+    RetryProcessing:
+      additionalProperties: false
+      properties:
+        request_id:
+          format: uuid
+          type: string
+      required:
+      - request_id
+      type: object
+    RobotIngestUploadCapabilities:
+      additionalProperties: false
+      properties:
+        max_recording_assets:
+          maximum: 4095.0
+          minimum: 0.0
+          title: Max Recording Assets
+          type: integer
+        max_total_assets:
+          maximum: 4096.0
+          minimum: 1.0
+          title: Max Total Assets
+          type: integer
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        schema_version:
+          const: robot-ingest-capabilities/v1
+          default: robot-ingest-capabilities/v1
+          title: Schema Version
+          type: string
+      required:
+      - robot_id
+      - max_total_assets
+      - max_recording_assets
+      title: RobotIngestUploadCapabilities
+      type: object
 paths:
   /api/v1/projects/{project_id}/robot-ingest/attempts:
     get:
       operationId: listRobotIngestAttempts
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities:
     get:
       operationId: listRobotIngestIdentities
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
     post:
       operationId: createRobotIngestIdentity
-      security:
-        - bearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateRobotIngestIdentity'
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:
     get:
       operationId: getRobotIngestIdentity
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
     patch:
       operationId: updateRobotIngestIdentity
-      security:
-        - bearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateRobotIngestIdentity'
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials:
     get:
       operationId: listRobotIngestCredentials
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
     post:
       operationId: issueRobotIngestCredential
-      security:
-        - bearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/IssueCredentialCommand'
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:revoke:
     post:
       operationId: revokeRobotIngestCredential
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable:
     post:
       operationId: disableRobotIngestIdentity
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:enable:
     post:
       operationId: enableRobotIngestIdentity
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:rotate-credential:
     post:
       operationId: rotateRobotIngestCredential
-      security:
-        - bearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/IssueCredentialCommand'
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics:
     get:
       operationId: getRobotIngestStatistics
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/uploads:
     get:
       operationId: listRobotIngestUploadHistory
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes:
     get:
       operationId: listRobotIngestUploadEpisodes
-      security:
-        - bearerAuth: []
       responses: {}
+      security:
+      - bearerAuth: []
   /api/v1/robot-ingest/uploads:
     post:
       operationId: createRobotIngestUpload
-      security:
-        - robotBearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/RobotIngestUploadManifest'
       responses: {}
+      security:
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}:
     get:
       operationId: getRobotIngestUpload
-      security:
-        - robotBearerAuth: []
       responses: {}
+      security:
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts:
     post:
       operationId: authorizeRobotIngestParts
-      security:
-        - robotBearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AuthorizePartsCommand'
       responses: {}
+      security:
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete:
     post:
       operationId: completeRobotIngestAsset
-      security:
-        - robotBearerAuth: []
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CompleteAssetCommand'
       responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}:cancel:
-    post:
-      operationId: cancelRobotIngestUpload
       security:
-        - robotBearerAuth: []
-      responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}:commit:
-    post:
-      operationId: commitRobotIngestUpload
-      security:
-        - robotBearerAuth: []
-      responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}:pause:
-    post:
-      operationId: pauseRobotIngestUpload
-      security:
-        - robotBearerAuth: []
-      responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}:resume:
-    post:
-      operationId: resumeRobotIngestUpload
-      security:
-        - robotBearerAuth: []
-      responses: {}
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}/processing:
     get:
       operationId: getRobotIngestProcessing
-      security:
-        - robotBearerAuth: []
       responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}/recording:
-    get:
-      operationId: getRobotIngestRecording
       security:
-        - robotBearerAuth: []
-      responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}/recording:retry:
-    post:
-      operationId: retryRobotRecordingPreparation
-      security:
-        - robotBearerAuth: []
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RetryProcessing'
-      responses: {}
+      - robotBearerAuth: []
   /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
     get:
       operationId: getRobotIngestProcessingDiagnostics
-      security:
-        - robotBearerAuth: []
       responses: {}
-  /api/v1/robot-ingest/uploads/{upload_id}:retry-processing:
-    post:
-      operationId: retryRobotIngestProcessing
       security:
-        - robotBearerAuth: []
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/recording:
+    get:
+      operationId: getRobotIngestRecording
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}/recording:retry:
+    post:
+      operationId: retryRobotRecordingPreparation
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/RetryProcessing'
       responses: {}
-components:
-  schemas:
-    RetryProcessing:
-      type: object
-      additionalProperties: false
-      required: [request_id]
-      properties:
-        request_id: {type: string, format: uuid}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:cancel:
+    post:
+      operationId: cancelRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:commit:
+    post:
+      operationId: commitRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:pause:
+    post:
+      operationId: pauseRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:resume:
+    post:
+      operationId: resumeRobotIngestUpload
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads/{upload_id}:retry-processing:
+    post:
+      operationId: retryRobotIngestProcessing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryProcessing'
+      responses: {}
+      security:
+      - robotBearerAuth: []
+  /api/v1/robot-ingest/uploads:capabilities:
+    get:
+      operationId: getRobotIngestUploadCapabilities
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadCapabilities'
+          description: Successful Response
+      security:
+      - robotBearerAuth: []
+      summary: Robot Upload Capabilities
+      tags:
+      - robot-ingest

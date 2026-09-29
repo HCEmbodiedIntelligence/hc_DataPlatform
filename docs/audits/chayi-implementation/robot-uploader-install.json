@@ -1,0 +1,8 @@
+{
+  "scope": "isolated G1 install; no production install changed",
+  "version": "1.3.0",
+  "executable": "/home/hc_op/workspace/teleop_ws-chayi-work/install/uploader/bin/humanoid-upload",
+  "wheel_sha256": "2d5947eb7105c86c8257eee20adf5c34262c8664f720ee3bf60cca512b961bdb",
+  "wheel_size": 34034,
+  "runtime_platform_or_ros_dependencies": false
+}

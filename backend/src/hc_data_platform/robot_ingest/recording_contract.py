@@ -9,6 +9,7 @@ from hc_data_platform.continuous_recordings.asset_models import (
     CreateRecordingUploadCommand,
     RecordingAssetManifestV1,
 )
+from hc_data_platform.ingest.limits import MAX_RECORDING_ASSETS
 from hc_data_platform.ingest.models import Identifier, Sha256
 
 from .models import StrictModel
@@ -25,7 +26,9 @@ class OpenArmRawRecordingUpload(StrictModel):
     device_id: Identifier
     capture_started_at: AwareDatetime
     capture_ended_at: AwareDatetime
-    assets: tuple[RecordingAssetManifestV1, ...] = Field(min_length=3, max_length=256)
+    assets: tuple[RecordingAssetManifestV1, ...] = Field(
+        min_length=3, max_length=MAX_RECORDING_ASSETS
+    )
 
     @model_validator(mode="after")
     def raw_inventory(self):
@@ -54,6 +57,8 @@ class OpenArmRecordingComplete(StrictModel):
 
     @model_validator(mode="after")
     def version_matches(self):
+        if len(self.recording_upload.assets) > MAX_RECORDING_ASSETS:
+            raise ValueError("completion marker must fit within the total upload asset limit")
         if (self.schema_version.endswith("/v2")) != isinstance(
             self.recording_upload, OpenArmRawRecordingUpload
         ):

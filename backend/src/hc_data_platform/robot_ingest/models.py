@@ -159,11 +159,18 @@ class AttemptOutcome(str, Enum):
     FAILED = "FAILED"
 
 
+class RobotIngestUploadCapabilities(StrictModel):
+    schema_version: Literal["robot-ingest-capabilities/v1"] = "robot-ingest-capabilities/v1"
+    robot_id: Identifier
+    max_total_assets: int = Field(ge=1, le=4096)
+    max_recording_assets: int = Field(ge=0, le=4095)
+
+
 class RobotIngestUploadPolicy(StrictModel):
     code: str = Field(default="STANDARD", min_length=1, max_length=128)
     max_asset_size_bytes: int = Field(default=5 * 1024**4, gt=0)
     max_batch_size_bytes: int = Field(default=10 * 1024**4, gt=0)
-    max_assets: int = Field(default=256, ge=1, le=4096)
+    max_assets: int = Field(default=4096, ge=1, le=4096)
     part_authorization_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
     session_retention_hours: int = Field(default=168, ge=1, le=24 * 365)
     require_sha256: bool = True

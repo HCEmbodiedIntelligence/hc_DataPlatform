@@ -1,0 +1,38 @@
+{
+  "scope": "G1 isolated robot checkout and software tests; no ROS nodes/motion started",
+  "repositories": {
+    "humanoid_manager": {
+      "worktree": "/home/hc_op/workspace/teleop_ws-chayi-work/src/humanoid_manager",
+      "head": "1e3f3934c1271de9c1aa8fe245f6ec38af480a43",
+      "branch": "feat/chayi-g1",
+      "status": ""
+    },
+    "humanoid_camera": {
+      "worktree": "/home/hc_op/workspace/teleop_ws-chayi-work/src/humanoid_camera",
+      "head": "0c0282a71ea1df314310086ab63b7fc1df436fcb",
+      "branch": "feat/chayi-g1",
+      "status": ""
+    },
+    "humanoid_motion_server": {
+      "worktree": "/home/hc_op/workspace/teleop_ws-chayi-work/src/humanoid_motion_server",
+      "head": "dce1eae09293a368a0e46df341540133bf302e69",
+      "branch": "feat/chayi-g1",
+      "status": ""
+    },
+    "hc_teleop_recv": {
+      "worktree": "/home/hc_op/workspace/teleop_ws-chayi-work/src/hc_teleop_recv",
+      "head": "506212d3430f7d26d877de479161219cae7f6db3",
+      "branch": "feat/chayi-g1",
+      "status": ""
+    }
+  },
+  "ROS_DOMAIN_ID": 221,
+  "ROS_LOCALHOST_ONLY": 1,
+  "state_root": "/home/hc_op/workspace/teleop_ws-chayi-work/state",
+  "recordings_root": "/home/hc_op/workspace/teleop_ws-chayi-work/recordings",
+  "queue_root": "/home/hc_op/workspace/teleop_ws-chayi-work/upload-queue",
+  "manager_build_install": "PENDING",
+  "camera_unit_contract": "PENDING",
+  "real_uploader_to_platform": "PENDING",
+  "source_checkout_modified": false
+}
