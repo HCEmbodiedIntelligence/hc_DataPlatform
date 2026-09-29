@@ -122,6 +122,28 @@ def test_real_http_complete_download_depth_and_capability_revocation(services, t
                 assert abs(float(decoded["values"][1, 1]) - 1.5) < 0.003
             response = client.get(depth, headers=headers, params={"representation": "png"})
             assert response.status_code == 200 and response.content.startswith(b"\x89PNG")
+            pixel_path = depth + "/pixel"
+            pixel_params = {"x": 1, "y": 1, "unit": "m"}
+            response = client.get(pixel_path, headers=headers, params=pixel_params)
+            assert response.status_code == 200, response.text
+            pixel = response.json()
+            assert pixel["data"] == receipt.data.model_dump(mode="json")
+            assert pixel["valid"] and abs(pixel["value"] - 1.5) < 0.003
+            assert pixel["coordinate_space"] == "depth_native" and pixel["unit"] == "m"
+            assert pixel["source"]["target_timestamp_ns"] == "66666666"
+            invalid = client.get(pixel_path, headers=headers, params={"x": 0, "y": 0}).json()
+            assert invalid["value"] is None and not invalid["valid"]
+            for params in ({"x": -1, "y": 0}, {"x": 16, "y": 0}, {"x": 0, "y": 16}):
+                assert client.get(pixel_path, headers=headers, params=params).status_code == 422
+            assert client.get(pixel_path, params=pixel_params).status_code == 401
+            assert (
+                client.get(
+                    pixel_path,
+                    params=pixel_params,
+                    headers={**headers, "X-Organization-Id": "foreign"},
+                ).status_code
+                == 403
+            )
             response = client.get(path + "/download", headers=headers)
             assert response.status_code == 200, response.text
             archive_hash = hashlib.sha256(response.content).hexdigest()
@@ -175,6 +197,13 @@ def test_real_http_complete_download_depth_and_capability_revocation(services, t
             # Warm package/cache grants no permission after revocation.
             assert client.get(path + "/download", headers=headers).status_code == 403
             assert client.get(path, headers=headers).status_code == 200
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    """UPDATE access_control.capability_grants SET active=false
+                    WHERE principal_id=%s AND capability_key='dataset_version.read'""",
+                    (principal,),
+                )
+            assert client.get(pixel_path, headers=headers, params=pixel_params).status_code == 403
             result = {
                 "scope": "synthetic real gateway/API/DB/object-store verification",
                 "data": receipt.data.model_dump(mode="json"),
@@ -183,6 +212,9 @@ def test_real_http_complete_download_depth_and_capability_revocation(services, t
                 "depth_npz_m": True,
                 "masked_invalid_nan": True,
                 "depth_png": True,
+                "depth_pixel_m": pixel,
+                "invalid_pixel_null": True,
+                "revoked_pixel_denied_on_warm_cache": True,
                 "full_archive_sha256": archive_hash,
                 "archive_files": len(manifest.files) + 2,
                 "all_file_hashes_verified": True,

@@ -34,6 +34,7 @@ import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-sc
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
 import { DataReviewPanel } from "./DataReviewPanel";
 import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
+import { DepthPixelPanel } from "./DepthPixelPanel";
 import { reviewDataReference } from "./data-reviews";
 import {
   adaptP06ViewerStreams,
@@ -458,6 +459,26 @@ export function EpisodeViewerShell() {
         </Typography.Paragraph>
         {reviewTarget.error && (
           <Alert type="error" title={reviewTarget.error} />
+        )}
+        {dataInfoOpen && reviewTarget.data && scope && (
+          <DepthPixelPanel
+            key={`depth:${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
+            scope={scope}
+            data={reviewTarget.data}
+            canRead={capabilities.has("dataset_version.read")}
+            cameras={revision!.streams.flatMap((stream) =>
+              stream.kind.toUpperCase() === "DEPTH" && stream.package_binding
+                ? [
+                    {
+                      feature: stream.package_binding.feature_key,
+                      label: stream.channel_path,
+                      start: stream.package_binding.start_step,
+                      end: stream.package_binding.end_step,
+                    },
+                  ]
+                : [],
+            )}
+          />
         )}
         {dataInfoOpen && reviewTarget.data && scope && (
           <EpisodeQualityPanel

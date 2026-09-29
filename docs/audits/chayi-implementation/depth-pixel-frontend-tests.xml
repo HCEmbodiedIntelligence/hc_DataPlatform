@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="13" failures="0" errors="0" time="0.894381685">
+    <testsuite name="src/pages/p06-dataset-detail/DepthPixelPanel.test.tsx" timestamp="2026-09-29T12:23:51.449Z" hostname="97afb7b044c1" tests="2" failures="0" errors="0" skipped="0" time="0.3085586">
+        <testcase classname="src/pages/p06-dataset-detail/DepthPixelPanel.test.tsx" name="loads only the explicitly selected frame and releases its official preview" time="0.287492577">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DepthPixelPanel.test.tsx" name="does not expose a frame or read action without permission" time="0.020409993">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/ViewerShell.test.tsx" timestamp="2026-09-29T12:23:51.450Z" hostname="97afb7b044c1" tests="3" failures="0" errors="0" skipped="0" time="0.575779996">
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; uses the annotation layout in read-only mode with camera selection and a single shared timeline" time="0.317768688">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; retains the immutable revision and selected time range when recording an issue" time="0.194484047">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; keeps issue creation gated and returns to the dataset without opening annotation" time="0.062841049">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/depth-pixels.test.ts" timestamp="2026-09-29T12:23:51.451Z" hostname="97afb7b044c1" tests="8" failures="0" errors="0" skipped="0" time="0.010043089">
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="maps a scaled image to native pixels without accepting its outer boundary" time="0.001464211">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="rejects mismatched frame" time="0.003828374">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="rejects mismatched version" time="0.000337797">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="rejects mismatched mask" time="0.000267531">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="rejects mismatched coordinates" time="0.000236692">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="rejects mismatched unit" time="0.000596458">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="rejects mismatched scope" time="0.000153478">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/depth-pixels.test.ts" name="retains a valid minimum-range measurement and uses the exact frame and scope" time="0.002298951">
+        </testcase>
+    </testsuite>
+</testsuites>

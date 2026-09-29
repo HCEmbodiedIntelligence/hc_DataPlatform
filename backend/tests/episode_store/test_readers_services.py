@@ -55,6 +55,16 @@ def test_fixed_version_rgbd_reads_masked_values_and_denies_foreign_binding(
             assert np.isnan(decoded.values[0, 0])
             assert abs(float(decoded.values[1, 1]) - (500 + index * 500)) <= 3
             assert decoded.source["source_seq"] == index
+            invalid = decoded.pixel(0, 0)
+            assert not invalid.valid and invalid.value is None
+            pixel = decoded.pixel(1, 1)
+            assert pixel.valid and pixel.value == float(decoded.values[1, 1])
+            assert pixel.coordinate_space == "depth_native" and pixel.quantized
+            assert pixel.source["source_seq"] == index
+            assert pixel.frame_index == index and pixel.data == receipt.data
+            for x, y in ((-1, 0), (0, -1), (16, 0), (0, 16)):
+                with pytest.raises(ValueError, match="outside"):
+                    decoded.pixel(x, y)
             with np.load(io.BytesIO(decoded.binary()), allow_pickle=False) as binary:
                 np.testing.assert_equal(binary["values"], decoded.values)
                 np.testing.assert_equal(binary["flags"], decoded.flags)

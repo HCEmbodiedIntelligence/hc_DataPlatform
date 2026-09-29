@@ -16,7 +16,7 @@ from .models import DataVersionRef
 from .postgres import PackageConflict
 from .previews import EpisodePreviewGrant
 from .quality import EpisodeQualityView, read_episode_quality
-from .reader import PackageStepWindow
+from .reader import DepthPixelValue, PackageStepWindow
 from .review_models import (
     EpisodeDataReview,
     EpisodeDataReviewAction,
@@ -280,6 +280,28 @@ def depth(
                 "X-HC-Depth-Unit": unit,
                 "X-HC-Depth-Quantized": "true",
             },
+        )
+
+
+@router.get(VERSION + "/depth/{feature}/{frame_index}/pixel", response_model=DepthPixelValue)
+def depth_pixel(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    feature: str,
+    frame_index: int,
+    auth: VerifiedAuth,
+    response: Response,
+    x: int = Query(ge=0),
+    y: int = Query(ge=0),
+    unit: Literal["m", "mm"] = "m",
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        return service.depth.read(identity, data_version_id, feature, frame_index, unit=unit).pixel(
+            x, y
         )
 
 

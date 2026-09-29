@@ -26,6 +26,7 @@ def main():
                     "DataVersionRef",
                     "EpisodeIdentity",
                     "PackageStepWindow",
+                    "DepthPixelValue",
                     "EpisodePreviewGrant",
                     "DataReviewTagReference",
                     "DataReviewLocation",

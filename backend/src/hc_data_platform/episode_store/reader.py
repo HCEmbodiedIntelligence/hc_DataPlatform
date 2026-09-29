@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 import av
 import numpy as np
@@ -38,6 +38,25 @@ class PackageStepReaderPort(Protocol):
         *,
         columns=None,
     ) -> PackageStepWindow: ...
+
+
+class DepthPixelValue(FrozenModel):
+    data: DataVersionRef
+    feature: str
+    frame_index: int = Field(ge=0)
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    shape: tuple[int, int]
+    value: float | None = Field(allow_inf_nan=False)
+    unit: Literal["m", "mm"]
+    valid: bool
+    saturated_low: bool
+    saturated_high: bool
+    flags: int
+    quantized: Literal[True] = True
+    coordinate_space: Literal["depth_native"] = "depth_native"
+    profile: dict[str, Any]
+    source: dict[str, Any]
 
 
 def window_rows(path, start: int, end: int, columns=None):
@@ -169,6 +188,29 @@ class DepthFrame:
     flags: np.ndarray
     profile: dict
     source: dict
+
+    def pixel(self, x: int, y: int) -> DepthPixelValue:
+        height, width = self.values.shape
+        if not 0 <= x < width or not 0 <= y < height:
+            raise ValueError("pixel lies outside the native depth image")
+        flags = int(self.flags[y, x])
+        valid = bool(flags & 1)
+        return DepthPixelValue(
+            data=self.data,
+            feature=self.feature,
+            frame_index=self.frame_index,
+            x=x,
+            y=y,
+            shape=(height, width),
+            value=float(self.values[y, x]) if valid else None,
+            unit=self.unit,
+            valid=valid,
+            saturated_low=bool(flags & 2),
+            saturated_high=bool(flags & 4),
+            flags=flags,
+            profile=self.profile,
+            source=self.metadata()["source"],
+        )
 
     def metadata(self):
         return {

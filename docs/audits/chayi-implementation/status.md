@@ -44,6 +44,11 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W5 深度取值补充（2026-09-29）：P06 原数据信息加入官方 RealSense 着色帧与原
+  深度坐标取值，返回反量化米值、无效/饱和/缺帧和源映射；固定版本/单位/坐标校验。
+  后端 4 项、前端 13 项通过，含真实 HTTP 和撤权后的缓存拒绝。见
+  [实现、证据和限制](depth-pixels.md)。尚无新增真实采集/浏览器/真人证据；统一详情
+  及其余工作继续，所有 17 项 P0 保持 Pending。
 - W4/W5 自动 QC 补充（2026-09-29）：三条新包入口记录实际逐规则执行证据，保留
   原报告/策略及历史读取；固定版本授权 API 和 P06 卡片区分总判定、pass/warn/fail/
   skip/info。后端 78 项回归 + 8 项入口服务、前端 12 项通过，隔离迁移 146/146。
