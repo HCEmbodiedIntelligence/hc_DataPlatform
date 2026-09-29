@@ -697,18 +697,55 @@ def test_postgres_auto_annotation_quota_reservation_is_atomic() -> None:
     assert sorted(status for status, _ in outcomes) == [202, 429]
     assert any(value == "AUTO_ANNOTATION_CONCURRENCY_LIMIT" for _, value in outcomes)
     job_id = next(value for status, value in outcomes if status == 202)
+    from hc_data_platform.annotation.revision_files import (
+        AnnotationRevisionFileOutboxHandler,
+        AnnotationRevisionFileService,
+        PostgresRevisionFiles,
+    )
+    from hc_data_platform.core.context import (
+        RequestContext,
+        bind_request_context,
+        reset_request_context,
+    )
+    from hc_data_platform.ingest.ports import InMemoryObjectStorage
+
+    file_service = AnnotationRevisionFileService(
+        annotation, PostgresRevisionFiles(connect), InMemoryObjectStorage()
+    )
+    file_handler = AnnotationRevisionFileOutboxHandler(file_service)
+
+    def handle_file(event):
+        token = bind_request_context(
+            RequestContext(
+                organization_id=organization_id,
+                project_id=project_id,
+                region_code=region_code,
+                service_identity=True,
+            )
+        )
+        try:
+            file_handler(event)
+        finally:
+            reset_request_context(token)
+
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connect),
-        {AutoAnnotationOutboxHandler.EVENT_TYPE: AutoAnnotationOutboxHandler(jobs)},
+        {
+            AutoAnnotationOutboxHandler.EVENT_TYPE: AutoAnnotationOutboxHandler(jobs),
+            file_handler.EVENT_TYPE: handle_file,
+        },
         worker_id=f"annotation-auto-quota-{suffix}",
     )
-    assert asyncio.run(
-        dispatcher.dispatch_one(
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
+    # Revision zero now queues its own durable file before the provider request.
+    for _ in range(2):
+        assert asyncio.run(
+            dispatcher.dispatch_one(
+                organization_id=organization_id,
+                project_id=project_id,
+                region_code=region_code,
+            )
         )
-    )
+    assert file_service.repository.get(task_id, 0)["status"] == "READY"
     assert jobs.get(auth=auth, task_id=task_id, job_id=job_id).status == "SUCCEEDED"
     connection = connect()
     try:

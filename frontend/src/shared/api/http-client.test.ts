@@ -464,6 +464,60 @@ describe("scoped HTTP requests", () => {
 });
 
 describe("HTTP response handling", () => {
+  it("preserves downloaded JSON bytes without parsing and reserializing them", async () => {
+    const bytes = ' { "value": 1 }\n';
+    stubResponse(
+      new Response(bytes, { headers: { "Content-Type": "application/json" } }),
+    );
+    const result = await request<Blob>({
+      method: "GET",
+      path: "/annotation-tasks/task-a/annotation-file",
+      scope: activeScope,
+      responseType: "blob",
+    });
+    expect(await result.text()).toBe(bytes);
+  });
+
+  it("rejects a tenant switch while download bytes are being read", async () => {
+    let finish!: (blob: Blob) => void;
+    const response = new Response(null);
+    vi.spyOn(response, "blob").mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    stubResponse(response);
+    const pending = request<Blob>({
+      method: "GET",
+      path: "/annotation-tasks/task-a/annotation-file",
+      scope: activeScope,
+      responseType: "blob",
+    });
+    await vi.waitFor(() => expect(response.blob).toHaveBeenCalled());
+    useShellStore.getState().setScope(otherScope);
+    finish(new Blob(["old-tenant-data"]));
+    expect(await rejectedDomainError(pending)).toMatchObject({
+      code: "PRECONDITION_FAILED", blockedReasons: [{ code: "SCOPE_CHANGED" }],
+    });
+  });
+
+  it("parses download permission failures through the normal error contract", async () => {
+    stubResponse(
+      problemResponse(
+        { code: "CAPABILITY_REQUIRED", detail: "No download permission" },
+        403,
+      ),
+    );
+    const error = await rejectedDomainError(
+      request({
+        method: "GET",
+        path: "/annotation-tasks/task-a/annotation-file",
+        scope: activeScope,
+        responseType: "blob",
+      }),
+    );
+    expect(error.problemCode).toBe("CAPABILITY_REQUIRED");
+  });
   beforeEach(configureTestRuntime);
   afterEach(resetTestRuntime);
 

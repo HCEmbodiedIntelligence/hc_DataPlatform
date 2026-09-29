@@ -200,11 +200,11 @@ from hc_data_platform.registry.service import RegistryService
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
 from hc_data_platform.robot_assets.router import configure_organization_robot_assets
 from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
+from hc_data_platform.robot_ingest.processing_api import configure_processing
+from hc_data_platform.robot_ingest.processing_store import ProcessingStore
 from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
 from hc_data_platform.robot_ingest.router import configure_robot_ingest
 from hc_data_platform.robot_ingest.service import RobotIngestService
-from hc_data_platform.robot_ingest.processing_store import ProcessingStore
-from hc_data_platform.robot_ingest.processing_api import configure_processing
 from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -466,6 +466,19 @@ class _ArrowStepSequence(Sequence[StepRecord]):
         return next(islice(self, normalized, normalized + 1))
 
 
+def _annotation_revision_files(annotation, connection_factory, object_storage):
+    from hc_data_platform.annotation.revision_files import (
+        AnnotationRevisionFileService,
+        PostgresRevisionFiles,
+    )
+
+    return AnnotationRevisionFileService(
+        annotation,
+        PostgresRevisionFiles(connection_factory),
+        object_storage,
+    )
+
+
 class PublicationReconciler:
     def __init__(self, publisher: DatasetPublisher) -> None:
         self._publisher = publisher
@@ -513,6 +526,7 @@ class RuntimeComponents:
     export_audit: PostgresExportAuditRecorder
     activities: ActivityDependencies
     episode_packages: Any = None
+    annotation_revision_files: Any = None
 
 
 @dataclass(frozen=True)
@@ -1026,6 +1040,9 @@ def build_runtime(
         admin_accounts=admin_accounts,
         recovery=recovery,
         episode_packages=episode_packages,
+        annotation_revision_files=_annotation_revision_files(
+            annotation, connection_factory, object_storage
+        ),
         audit_projection=audit_projection,
         audit_governance=audit_governance,
         dashboard=dashboard,
@@ -1087,7 +1104,11 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_manual_issues(runtime.manual_issues)
     configure_cleaning_drafts(runtime.cleaning_drafts)
     configure_cleaning_workbench(runtime.cleaning_workbench)
-    configure_annotation(runtime.annotation, auto_jobs=runtime.auto_annotation_jobs)
+    configure_annotation(
+        runtime.annotation,
+        auto_jobs=runtime.auto_annotation_jobs,
+        revision_files=runtime.annotation_revision_files,
+    )
     configure_verification_repository(runtime.verification_repository)
     configure_quality_repository(runtime.quality_repository)
     from hc_data_platform.alignment.router import configure_alignment_repository
@@ -1341,20 +1362,25 @@ def build_worker_outbox(
         sampling_repository=PostgresAutoAnnotationSamplingRepository(connection_factory),
         require_sampling_manifest=True,
     )
+    from hc_data_platform.annotation.revision_files import AnnotationRevisionFileOutboxHandler
     from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
-    from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
-    from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
     from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
+    from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
+    from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
     from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
 
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
-            RecordingOutboxHandler.EVENT_TYPE:RecordingOutboxHandler(connection_factory,object_storage,
-                temporal_client,robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE))),
+            RecordingOutboxHandler.EVENT_TYPE: RecordingOutboxHandler(
+                connection_factory, object_storage, temporal_client,
+                robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
+            ),
             EVENT_TYPE: RobotProcessingOutboxHandler(
                 temporal_client, ProcessingStore(connection_factory),
-                task_queue=robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
+                task_queue=robot_task_queue(
+                    os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)
+                ),
             ),
             LeRobotImportOutboxHandler.EVENT_TYPE: LeRobotImportOutboxHandler(
                 launcher, PostgresRawSourceRepository(connection_factory)
@@ -1366,6 +1392,9 @@ def build_worker_outbox(
             AuditExportOutboxHandler.EVENT_TYPE: AuditExportOutboxHandler(audit_governance),
             AutoAnnotationOutboxHandler.EVENT_TYPE: AutoAnnotationOutboxHandler(
                 auto_annotation_jobs
+            ),
+            AnnotationRevisionFileOutboxHandler.EVENT_TYPE: AnnotationRevisionFileOutboxHandler(
+                _annotation_revision_files(annotation, connection_factory, object_storage)
             ),
         },
         worker_id=f"hc-outbox-{socket.gethostname()}",

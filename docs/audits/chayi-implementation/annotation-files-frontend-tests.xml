@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="200" failures="0" errors="0" time="11.256581651">
+    <testsuite name="src/pages/p06-dataset-detail/package-media-source.test.ts" timestamp="2026-09-29T04:45:56.112Z" hostname="800256a1ba00" tests="11" failures="0" errors="0" skipped="0" time="0.031014148">
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; lazily obtains and refreshes a scoped official-depth preview grant with the explicit window" time="0.013910621">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;feature&quot;:&quot;other&quot;}" time="0.002502498">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;data&quot;:{&quot;identity&quot;:{&quot;organization_id&quot;:&quot;org-a&quot;,&quot;project_id&quot;:&quot;project-a&quot;,&quot;region_code&quot;:&quot;region-a&quot;,&quot;dataset_id&quot;:&quot;dataset_test&quot;,&quot;episode_id&quot;:&quot;episode_test&quot;,&quot;rollout_id&quot;:&quot;explicit-rollout&quot;},&quot;data_version_id&quot;:&quot;dv_other&quot;,&quot;version&quot;:3,&quot;content_hash&quot;:&quot;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&quot;,&quot;storage_format&quot;:&quot;lerobot_v3&quot;,&quot;schema_snapshot_id&quot;:&quot;schema-test&quot;,&quot;package_prefix&quot;:&quot;test/pinned/&quot;,&quot;frame_count&quot;:30}}" time="0.001322885">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;kind&quot;:&quot;rgb-video&quot;}" time="0.001546049">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;source_reused&quot;:true}" time="0.001173448">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;frame_count&quot;:31}" time="0.001280365">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;colorizer&quot;:null}" time="0.000964192">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;depth_min_m&quot;:11}" time="0.001991547">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;media_url&quot;:&quot;javascript:alert(1)&quot;}" time="0.002924364">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;expires_at&quot;:&quot;2020-01-01T00:00:00Z&quot;}" time="0.001350903">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; routes both RGB and official depth through the actual viewer adapter without Lance IDs" time="0.000732811">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/package-window-source.test.ts" timestamp="2026-09-29T04:45:56.118Z" hostname="800256a1ba00" tests="21" failures="0" errors="0" skipped="0" time="0.213884228">
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; pages a long range within reader limits, preserves ns/joint units and uses declared runtime routes" time="0.17866766">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to organization_id" time="0.002486258">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to project_id" time="0.001350354">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to region_code" time="0.001021884">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to dataset_id" time="0.000883305">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to episode_id" time="0.000863782">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to rollout_id" time="0.000736517">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;data_version_id&quot;:&quot;dv_other&quot;}" time="0.001474155">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;version&quot;:4}" time="0.001131677">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;content_hash&quot;:&quot;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&quot;}" time="0.000859405">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;schema_snapshot_id&quot;:&quot;other-schema&quot;}" time="0.003407203">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;package_prefix&quot;:&quot;other/&quot;}" time="0.000710585">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;frame_count&quot;:5001}" time="0.000486838">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-row" time="0.000713966">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: duplicate-step" time="0.000520748">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: out-of-order-time" time="0.000505472">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: foreign-rollout" time="0.000451912">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-validity" time="0.000524773">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-channel" time="0.000495543">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; skips invalid channel samples without using aggregate row validity" time="0.000584025">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; cancels before another page and refuses bindings outside the selected scope" time="0.014597308">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" timestamp="2026-09-29T04:45:56.122Z" hostname="800256a1ba00" tests="24" failures="0" errors="0" skipped="0" time="1.554752079">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; maps backend DRAFT to the 待标注 queue without merging semantics" time="0.212784932">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; maps backend SUBMITTED to the 待审核 queue without merging semantics" time="0.0508879">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; maps backend NEEDS_REVISION to the 待修改 queue without merging semantics" time="0.046881025">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; maps backend APPROVED to the 标注完成 queue without merging semantics" time="0.062548099">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; does not expose rejected submissions as a task queue" time="0.025048944">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; defaults /annotations/annotate to DRAFT and the historical tag-review route to SUBMITTED" time="0.041229371">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; round-trips only legal stage values through the query codec" time="0.000649459">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; exposes stage deep links and keeps revisions as a separate record entry" time="0.026773951">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; does not expose publishing as an annotation task state" time="0.051523045">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; shows view-only submission by annotator-current without annotation.review" time="0.037152793">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; shows view-only submission by annotator-other without annotation.review" time="0.048812631">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; allows reviewing submissions by annotator-current with annotation.review" time="0.035454933">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; allows reviewing submissions by annotator-other with annotation.review" time="0.044694409">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; derives the DRAFT operation from status, assignment and capabilities" time="0.044984641">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; derives the DRAFT operation from status, assignment and capabilities" time="0.053359828">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; derives the NEEDS_REVISION operation from status, assignment and capabilities" time="0.042877585">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; derives the REJECTED operation from status, assignment and capabilities" time="0.03574087">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; derives the APPROVED operation from status, assignment and capabilities" time="0.03499751">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage status architecture &gt; keeps an empty queue inside the task container with a recovery path" time="0.019472572">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage search and authorization semantics &gt; gives the task search a stable label, name, autocomplete and ellipsis" time="0.015831193">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage search and authorization semantics &gt; keeps the queue unavailable without annotation_task.read" time="0.007724636">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage pagination &gt; pages through all tasks, keeps totals and return links, and omits the schema column" time="0.283028746">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage pagination &gt; searches across pages and resets pagination when the search or stage changes" time="0.199912686">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationQueuePage.test.tsx" name="AnnotationQueuePage pagination &gt; clamps stale page links to the last page and honors the requested page size" time="0.131103598">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" timestamp="2026-09-29T04:45:56.126Z" hostname="800256a1ba00" tests="5" failures="0" errors="0" skipped="0" time="0.257675075">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; shows saved revision separately from a failed file and retries that generation" time="0.143531577">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; requires an explicit unreviewed choice and downloads the selected saved revision" time="0.042710213">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; defaults to the current approved revision" time="0.021799727">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; keeps retry and download disabled without their capabilities" time="0.027012518">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionFilesPanel.test.tsx" name="versioned annotation file actions &gt; cancels an unfinished download when the panel closes" time="0.021580766">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationRevisionPage.test.tsx" timestamp="2026-09-29T04:45:56.128Z" hostname="800256a1ba00" tests="3" failures="0" errors="0" skipped="0" time="0.170436012">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionPage.test.tsx" name="AnnotationRevisionPage &gt; loads the bounded revision index, exposes exact task navigation, and fetches only the next cursor page" time="0.144538594">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionPage.test.tsx" name="AnnotationRevisionPage &gt; refetches from the first page when the server-side status filter changes" time="0.019783705">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationRevisionPage.test.tsx" name="AnnotationRevisionPage &gt; does not issue a request without the annotation read capability" time="0.005233811">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" timestamp="2026-09-29T04:45:56.128Z" hostname="800256a1ba00" tests="5" failures="0" errors="0" skipped="0" time="0.126397579">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit APPROVE with review permission" time="0.081804812">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit NEEDS_REVISION with review permission" time="0.01212767">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit REJECT with review permission" time="0.01396313">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; keeps self review disabled without review permission" time="0.010991897">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; keeps self review disabled without the submitted snapshot" time="0.006466621">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" timestamp="2026-09-29T04:45:56.129Z" hostname="800256a1ba00" tests="44" failures="0" errors="0" skipped="0" time="8.440385792">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; keeps ordinary wheels available for page scrolling in annotation while allowing modified model zoom" time="0.180637182">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; keeps ordinary wheels available for page scrolling in tag-review while allowing modified model zoom" time="0.060421403">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; places work modes above the three-column body and keeps camera tools local" time="0.076618012">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; defaults to view without a draft, locks unavailable modes, and focuses create" time="0.129224894">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; calls the real create callback once and enters annotation after the draft arrives" time="0.21625181">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; keeps view mode hard read-only across controls, drag events, and shortcuts" time="0.046461544">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; supports roving arrow-key mode changes and skips locked modes" time="0.124051247">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; protects dirty mode changes with continue, discard, and save choices" time="0.399798767">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; uses one review submit action and approves when no issue is marked" time="0.12386528">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; returns the task for modification with the selected annotation location" time="0.378408983">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; shows a reasoned empty review state instead of disabled review actions" time="0.039319984">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps the synchronized layout and read-only Tag behavior when annotation falls back to viewing" time="0.11196796">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps the synchronized layout and read-only Tag behavior when tag-review falls back to viewing" time="0.135094051">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; reports a selected annotation range into the unified problem center" time="0.646180864">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps +0 Manifest cameras on one shared timeline" time="0.044547289">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps 1 Manifest cameras on one shared timeline" time="0.042391524">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps 4 Manifest cameras on one shared timeline" time="0.038106803">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps 8 Manifest cameras on one shared timeline" time="0.041362929">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps +0 Manifest cameras on one shared timeline" time="0.040642362">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps 1 Manifest cameras on one shared timeline" time="0.041656963">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps 4 Manifest cameras on one shared timeline" time="0.042158589">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps 8 Manifest cameras on one shared timeline" time="0.040748833">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; reuses camera, pose and curve panels for review without an audit checklist" time="0.2700996">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps a camera media binding stable across unrelated local UI changes" time="0.188471165">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps collection data folded by default and preserves task selection in the drawer" time="0.164122177">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; uses the annotation dock for joint curves instead of Tag summary or automatic annotation" time="0.286410999">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; switches view, annotation, and immutable history inside one workbench" time="0.462889335">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; keeps Tag creation to one compact row without manual hierarchy controls" time="0.041247605">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; starts every synchronized view from the clicked Tag boundary" time="0.187149737">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates an independent Tag at 600–700 after selecting tag1" time="0.216557121">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates an independent Tag at 330–420 after selecting tag1" time="0.236829683">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates an independent Tag at 250–500 after selecting tag1" time="0.211596453">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates hierarchical Tags, edits their names and intervals, and deletes a parent while keeping its children" time="0.944511791">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; cancels edits without mutating Tags and ignores Enter during Chinese composition" time="0.16211174">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; becomes read-only when edit capabilities are revoked" time="0.066198707">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; shows a true 409 conflict and keeps writes disabled" time="0.082486111">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; derives the review result from issue selection without requiring a comment" time="0.133872211">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; requires explicit confirmation before persisting an immutable modification" time="0.180722897">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; restores a selected historical data revision only after explicit confirmation" time="0.306392285">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; blocks navigation until an immutable restore and authoritative refetch finish" time="0.441897313">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; does not run or render the precheck during initialization, editing, or save" time="0.22877686">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; starts once on submit click, shows loading, then continues to confirmation" time="0.225312636">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; blocks submission and exposes failure reasons until the user edits" time="0.160564692">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; fails closed on a precheck exception and allows an explicit retry" time="0.240209981">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/RuntimeAutoAnnotationPanel.test.tsx" timestamp="2026-09-29T04:45:56.136Z" hostname="800256a1ba00" tests="3" failures="0" errors="0" skipped="0" time="0.189307305">
+        <testcase classname="src/pages/p08-data-annotation/RuntimeAutoAnnotationPanel.test.tsx" name="P08 runtime automatic annotation panel &gt; shows a real provider-unavailable state and never creates a fake job" time="0.059481774">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/RuntimeAutoAnnotationPanel.test.tsx" name="P08 runtime automatic annotation panel &gt; starts a durable job, preserves its ID in the URL, and applies a confirmed result" time="0.123770698">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/RuntimeAutoAnnotationPanel.test.tsx" name="P08 runtime automatic annotation panel &gt; rejects a malformed URL job ID without a server job request" time="0.005246784">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/annotation-package.test.ts" timestamp="2026-09-29T04:45:56.137Z" hostname="800256a1ba00" tests="3" failures="0" errors="0" skipped="0" time="0.024417495">
+        <testcase classname="src/pages/p08-data-annotation/annotation-package.test.ts" name="loads fixed package metadata and exposes RGB plus official depth preview without a Lance lookup" time="0.013504682">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-package.test.ts" name="reads joint values from the immutable package and rejects a changed content hash" time="0.008108857">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-package.test.ts" name="rejects cross-scope, mixed baselines and revisions bound to another package" time="0.001779002">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/joint-angle-stream.test.ts" timestamp="2026-09-29T04:45:56.137Z" hostname="800256a1ba00" tests="6" failures="0" errors="0" skipped="0" time="0.014258829">
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; discovers a legacy joint column once and projects it in subsequent chunks" time="0.005613839">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; reads the fixed task window and resolves a real joint vector without synthesizing values" time="0.002958479">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; stays unavailable when the Manifest does not declare a joint Topic" time="0.000208258">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; exposes the nearest named joint frame for URDF playback" time="0.00177237">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; coalesces frame consumers without aborting the shared Lance chunk" time="0.001023473">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; backs off a failed chunk instead of retrying on every clock tick" time="0.001194811">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/revision-files.test.ts" timestamp="2026-09-29T04:45:56.139Z" hostname="800256a1ba00" tests="4" failures="0" errors="0" skipped="0" time="0.016235032">
+        <testcase classname="src/pages/p08-data-annotation/revision-files.test.ts" name="annotation revision file integrity &gt; rejects file status from another saved content hash" time="0.005988113">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/revision-files.test.ts" name="annotation revision file integrity &gt; checks exact downloaded bytes and binds the revision in the request" time="0.007450973">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/revision-files.test.ts" name="annotation revision file integrity &gt; rejects a truncated or corrupted file" time="0.000796366">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/revision-files.test.ts" name="annotation revision file integrity &gt; checks cancellation again after hashing, before saving a browser download" time="0.000765663">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" timestamp="2026-09-29T04:45:56.139Z" hostname="800256a1ba00" tests="17" failures="0" errors="0" skipped="0" time="0.033217428">
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; limits the default cockpit to four cameras and separates Tag levels into colored lanes" time="0.015331185">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; pads one real camera into the first slot of a four-camera annotation grid" time="0.002336255">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; accepts the real SessionBootstrap scope when organization is absent" time="0.000182806">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; loads one strict, scope-bound revision page through the generated operation" time="0.004175824">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; fails closed when a revision page crosses the selected scope" time="0.001024118">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; loads task, draft, history, fixed Schema and Manifest without Browser Mock fallback" time="0.001247218">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; creates an annotation draft through the real task-claim operation" time="0.00045837">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; only resolves the exact active submitted snapshot, never Schema publication alone" time="0.000212385">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; keeps a real Manifest network failure local and exposes its request ID" time="0.000554576">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; sends the generated SaveDraftRequest fields with If-Match" time="0.000735658">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; blocks annotation mutations before transport when the task is read-only" time="0.000573066">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; restores a historical revision through the formal append-only endpoint" time="0.000398834">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; loads a strict provider capability and creates a source-revision-bound durable job" time="0.000523557">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; fails closed on contradictory provider capability and applies results with task CAS" time="0.000391444">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; authorizes canonical media once through the stateless operation" time="0.00247402">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; constructs and authorizes all four Manifest cameras for a continuous Episode" time="0.000944633">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/runtime-annotation-adapter.test.ts" name="P08 formal runtime annotation adapter &gt; resolves a relative signed media capability on the configured API origin" time="0.000549696">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/tag-draft-recovery.test.ts" timestamp="2026-09-29T04:45:56.140Z" hostname="800256a1ba00" tests="2" failures="0" errors="0" skipped="0" time="0.01030005">
+        <testcase classname="src/pages/p08-data-annotation/tag-draft-recovery.test.ts" name="P08 session-only Tag draft recovery &gt; restores only the exact principal, task ETag and revision before TTL" time="0.006477632">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-draft-recovery.test.ts" name="P08 session-only Tag draft recovery &gt; expires and explicitly clears a recovery draft" time="0.000626057">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/tag-editing.test.ts" timestamp="2026-09-29T04:45:56.141Z" hostname="800256a1ba00" tests="7" failures="0" errors="0" skipped="0" time="0.023054471">
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; keeps identities and metadata when renaming a schema Tag and repairs descendant paths" time="0.016863648">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; promotes the longer interval when resizing it past its former parent" time="0.000917971">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; automatically parents partial overlaps by duration, regardless of creation order" time="0.001228787">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; keeps disjoint and touching intervals at the root and removes stale parent links" time="0.000697444">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; keeps equal-length overlapping intervals as peers without cycles" time="0.000291675">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; deletes only the selected parent, preserving children and their time ranges" time="0.001287206">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-editing.test.ts" name="Tag edits &gt; promotes a deleted middle node&apos;s child to its grandparent" time="0.000346242">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/tag-validation.test.ts" timestamp="2026-09-29T04:45:56.141Z" hostname="800256a1ba00" tests="7" failures="0" errors="0" skipped="0" time="0.020833069">
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; passes the six review dimensions for a valid generated-contract Tag" time="0.011028796">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; blocks missing-required with an explainable REQUIRED_ATTRIBUTES result" time="0.001104366">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; blocks mutual-exclusion with an explainable MUTUAL_EXCLUSION result" time="0.000517723">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; blocks boundary with an explainable BOUNDARY result" time="0.000381781">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; detects a schema cycle without imposing a product depth cap" time="0.004392361">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; treats adjacent half-open mutually exclusive intervals as non-overlapping" time="0.000431881">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-validation.test.ts" name="P08 Tag hierarchy and review checks &gt; allows a manual child interval to extend beyond and cross its semantic parent" time="0.00032553">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/shared/api/http-client.test.ts" timestamp="2026-09-29T04:45:56.141Z" hostname="800256a1ba00" tests="38" failures="0" errors="0" skipped="0" time="0.130413059">
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; accepts only bounded visible-ASCII bearer tokens" time="0.011929359">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; uses the bound scope for all scope headers" time="0.023436877">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; sends a scoped binary upload body without JSON encoding" time="0.00177668">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects mixed JSON and binary request bodies before fetch" time="0.001157663">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects a stale bound scope before issuing a request" time="0.004080426">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects a response when the active scope changes in flight" time="0.001042771">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; blocks writes while a scope transition is in progress" time="0.000283085">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; keeps session-scoped account requests independent from project changes" time="0.000728806">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; uses an explicit session bearer instead of shell state without tenant headers" time="0.000513827">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects explicit bearers outside session mode or with unsafe characters" time="0.000570394">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; honors caller aborts for explicit-token session bootstrap reads" time="0.000683024">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; omits bearer and tenant scope headers for public discovery" time="0.000466319">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; sends a bounded public challenge response without bearer or tenant headers" time="0.000659071">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; cancels only active-scope requests during a project scope change" time="0.001628076">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; preserves downloaded JSON bytes without parsing and reserializing them" time="0.001019471">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; rejects a tenant switch while download bytes are being read" time="0.052398117">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses download permission failures through the normal error contract" time="0.000909198">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed before fetch for an operation absent from the runtime OpenAPI" time="0.001050686">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; allows runtime routes with a parameter followed by an action suffix" time="0.000653659">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses RFC 9457 403 responses without replacing the frontend classification" time="0.000972869">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses RFC 9457 401 responses and preserves the stable problem code" time="0.000732357">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; does not invalidate the active shell session for a rejected explicit bearer" time="0.000492714">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses and clamps only decimal Retry-After delay-seconds" time="0.008051879">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; projects allowlisted field errors from RFC 9457 422 details" time="0.000675167">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; marks RFC 9457 429 responses retryable only when the value is exactly true" time="0.001709819">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; uses only the sanitized 500 detail and ignores unapproved nested fields" time="0.001391777">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; uses the real HTTP status when the Problem Details status disagrees" time="0.000693407">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for an empty body without reporting a network error" time="0.001806693">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for an HTML body without reporting a network error" time="0.001749394">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for JSON null without reporting a network error" time="0.00071521">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for a JSON array without reporting a network error" time="0.000605468">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for malformed JSON fields without reporting a network error" time="0.000587399">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; keeps fetch failures as retryable GET network errors" time="0.000563361">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; rethrows an existing DomainError without wrapping it" time="0.000488147">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; does not mark non-GET network failures as retryable" time="0.00053459">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; keeps aborted requests as non-retryable network errors" time="0.001216836">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; returns successful 200 JSON data unchanged" time="0.000675729">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; normalizes omitted problem codes and recognizes created DomainErrors" time="0.000172599">
+        </testcase>
+    </testsuite>
+</testsuites>

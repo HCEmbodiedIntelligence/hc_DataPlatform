@@ -21,7 +21,7 @@ from tests.episode_store.test_commit_services import scoped
 from tests.episode_store.test_writer import build_rgbd_package, identity
 
 
-def register_and_grant(client, repository, ident):
+def register_and_grant(client, repository, ident, *, capabilities=None):
     command = {"username": "g1-reader-" + uuid4().hex, "password": secrets.token_urlsafe(32)}
     response = client.post("/api/v1/auth/registrations", json=command)
     assert response.status_code == 201, response.text
@@ -31,7 +31,8 @@ def register_and_grant(client, repository, ident):
     with repository.transaction() as cursor:
         cursor.execute(
             """INSERT INTO registry.organization_projects
-            (organization_id, project_id, display_name) VALUES (%s,%s,'G1 HTTP fixture')""",
+            (organization_id, project_id, display_name) VALUES (%s,%s,'G1 HTTP fixture')
+            ON CONFLICT (organization_id,project_id) DO NOTHING""",
             (ident.organization_id, ident.project_id),
         )
         cursor.execute(
@@ -52,7 +53,7 @@ def register_and_grant(client, repository, ident):
             VALUES (%s,%s,%s,%s,'g1-http-bootstrap')""",
             (principal, ident.organization_id, ident.project_id, request),
         )
-        capabilities = ["dataset_version.read", "export.download"]
+        capabilities = capabilities or ["dataset_version.read", "export.download"]
         request = uuid4()
         cursor.execute(
             """INSERT INTO access_control.capability_requests

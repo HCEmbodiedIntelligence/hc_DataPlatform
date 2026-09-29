@@ -135,3 +135,5 @@ episode_store/0004_dataset_schemas.sql
 episode_store/0005_media_previews.sql
 annotation/0013_episode_data_bindings.sql
 annotation/0014_binding_scope_and_identity.sql
+annotation/0015_revision_snapshot_files.sql
+annotation/0016_revision_file_content_guards.sql

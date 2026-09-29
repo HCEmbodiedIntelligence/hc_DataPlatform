@@ -19,6 +19,7 @@ import type {
   DataIssueReportInput,
 } from "./AnnotationWorkbenchView";
 import { RuntimeAutoAnnotationPanel } from "./RuntimeAutoAnnotationPanel";
+import { AnnotationRevisionFilesPanel } from "./AnnotationRevisionFilesPanel";
 import {
   createRuntimeAnnotationCommands,
   createClientMutationId,
@@ -559,6 +560,15 @@ function RuntimeAnnotationTaskPage({
     <AnnotationWorkbenchView
       key={bundle.task.task_id}
       bundle={bundle}
+      revisionFilesPanel={
+        <AnnotationRevisionFilesPanel
+          scope={scope}
+          history={bundle.history}
+          dirty={dirty}
+          canRetry={capabilities.has("annotation.save")}
+          canDownload={capabilities.has("export.download")}
+        />
+      }
       autoAnnotationPanel={
         mode === "annotation" ? (
           <RuntimeAutoAnnotationPanel

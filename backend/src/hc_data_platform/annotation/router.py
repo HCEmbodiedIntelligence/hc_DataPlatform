@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.context import select_request_scope
-from hc_data_platform.core.errors import problem
+from hc_data_platform.core.errors import ProblemDetails, problem
 from hc_data_platform.ingest.models import ManifestDiscoveryV1
 from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
@@ -41,6 +41,7 @@ from .models import (
     TagSchemaVersion,
 )
 from .ports import AutoAnnotationProvider
+from .revision_files import AnnotationRevisionFile, AnnotationRevisionFileService
 from .service import AnnotationService, DisabledAutoAnnotationProvider, InMemoryAnnotationService
 
 router = APIRouter(prefix="/api/v1", tags=["annotation"])
@@ -48,6 +49,7 @@ router = APIRouter(prefix="/api/v1", tags=["annotation"])
 _service: AnnotationService = InMemoryAnnotationService()
 _auto_provider: AutoAnnotationProvider = DisabledAutoAnnotationProvider()
 _auto_jobs: AutoAnnotationJobService | None = None
+_revision_files: AnnotationRevisionFileService | None = None
 
 
 def configure_annotation(
@@ -55,17 +57,30 @@ def configure_annotation(
     *,
     auto_provider: AutoAnnotationProvider | None = None,
     auto_jobs: AutoAnnotationJobService | None = None,
+    revision_files: AnnotationRevisionFileService | None = None,
 ) -> None:
     """Application composition hook for PostgreSQL, BE-02 auth, and feature providers."""
 
-    global _auto_jobs, _auto_provider, _service
+    global _auto_jobs, _auto_provider, _service, _revision_files
     _service = service
     _auto_provider = auto_provider or DisabledAutoAnnotationProvider()
     _auto_jobs = auto_jobs
+    _revision_files = revision_files
 
 
 def get_annotation_service() -> AnnotationService:
     return _service
+
+
+def get_revision_file_service() -> AnnotationRevisionFileService:
+    if _revision_files is None:
+        raise problem(
+            status=503,
+            code="ANNOTATION_FILES_UNAVAILABLE",
+            title="Annotation files unavailable",
+            detail="The revision file service is not configured.",
+        )
+    return _revision_files
 
 
 def get_auto_annotation_job_service() -> AutoAnnotationJobService:
@@ -146,6 +161,103 @@ StatusQuery = Annotated[AnnotationStatus | None, Query()]
 RevisionQuery = Annotated[int | None, Query(ge=0)]
 RevisionThreadAfter = Annotated[str | None, Query(max_length=16_384)]
 RevisionThreadLimit = Annotated[int, Query(ge=1, le=100)]
+RevisionFileDependency = Annotated[
+    AnnotationRevisionFileService, Depends(get_revision_file_service)
+]
+_FILE_ERRORS = {
+    code: {"model": ProblemDetails, "description": description}
+    for code, description in {
+        401: "Verified authentication required",
+        403: "Organization/project/region or action capability denied",
+        404: "Task or immutable revision unavailable in the selected scope",
+        409: (
+            "File not ready, integrity mismatch, generation conflict "
+            "or explicit review selection required"
+        ),
+        503: "File service or object store unavailable",
+    }.items()
+}
+
+
+class RequestRevisionFile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_generation: int = Field(ge=0)
+
+
+@router.get(
+    "/annotation-tasks/{task_id}/revisions/{revision}/file",
+    response_model=AnnotationRevisionFile,
+    responses=_FILE_ERRORS,
+)
+def revision_file_status(
+    task_id: str,
+    revision: int,
+    service: RevisionFileDependency,
+    auth: AuthDependency,
+    response: Response,
+):
+    """Read generation state for one saved revision without creating a job or file."""
+    response.headers["Cache-Control"] = "no-store"
+    return service.status(task_id, revision, auth)
+
+
+@router.post(
+    "/annotation-tasks/{task_id}/revisions/{revision}/file",
+    response_model=AnnotationRevisionFile,
+    responses=_FILE_ERRORS,
+)
+def request_revision_file(
+    task_id: str,
+    revision: int,
+    body: RequestRevisionFile,
+    service: RevisionFileDependency,
+    auth: AuthDependency,
+    response: Response,
+):
+    """Request generation/retry using the observed generation; never create a new revision."""
+    response.headers["Cache-Control"] = "no-store"
+    return service.request(task_id, revision, body.expected_generation, auth)
+
+
+@router.get(
+    "/annotation-tasks/{task_id}/annotation-file",
+    response_class=Response,
+    responses={
+        **_FILE_ERRORS,
+        200: {"content": {"application/json": {"schema": {"type": "object"}}}},
+    },
+)
+def download_revision_file(
+    task_id: str,
+    service: RevisionFileDependency,
+    auth: AuthDependency,
+    revision: RevisionQuery = None,
+    allow_unreviewed: bool = False,
+):
+    """Download exact hc-annotation/1 bytes. Defaults to the current approved revision.
+
+    Unreviewed downloads require both an explicit revision and allow_unreviewed=true.
+    The immutable file contains data_binding, revision (all Tags/attributes/objects/relations),
+    complete tag_schema, half-open step conventions, cumulative operations and source facts.
+    Later review records never rewrite these bytes. Response headers identify revision,
+    current approval/submission (when applicable), and the verified content SHA-256.
+    """
+    download = service.download(task_id, auth, revision=revision, allow_unreviewed=allow_unreviewed)
+    label = "approved" if download.approved else "unreviewed"
+    headers = {
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": (
+            f'attachment; filename="annotation-r{download.file.revision}-{label}.json"'
+        ),
+        "X-Annotation-Revision": str(download.file.revision),
+        "X-Annotation-Review-Status": label,
+        "X-Content-SHA256": download.file.content_sha256,
+    }
+    if download.review_id:
+        headers["X-Annotation-Review-ID"] = download.review_id
+        headers["X-Annotation-Submission-ID"] = download.submission_id
+    return Response(download.content, media_type="application/json", headers=headers)
 
 
 class SaveDraftRequest(BaseModel):

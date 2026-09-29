@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.pagination import PageInfo
 from hc_data_platform.episode_store.models import DataVersionRef
 
@@ -383,9 +385,13 @@ class AnnotationActor(BaseModel):
 
     @classmethod
     def from_auth(cls, auth: AuthContext, project_id: str | None = None) -> AnnotationActor:
+        organization_id = None
+        if auth.organization_scope_triples:
+            with suppress(RuntimeError):
+                organization_id = current_request_context().organization_id
         return cls(
             actor_id=auth.subject_id,
-            capabilities=auth.effective_capabilities(project_id),
+            capabilities=auth.effective_capabilities(project_id, organization_id),
             project_ids=auth.project_ids,
         )
 

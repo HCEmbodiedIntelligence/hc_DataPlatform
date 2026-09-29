@@ -1,0 +1,57 @@
+{
+  "scope": "isolated real gateway/session/API/outbox-worker/PostgreSQL/MinIO; synthetic RGB-D",
+  "data_ref": {
+    "identity": {
+      "organization_id": "bundle-f2ced8ce7d2445e9a5f7bde18d7f283a",
+      "project_id": "writer-project",
+      "region_code": "writer-region",
+      "dataset_id": "writer-dataset",
+      "episode_id": "writer-episode",
+      "rollout_id": "explicit:writer-rollout"
+    },
+    "data_version_id": "dv_1b2c4830818a101aeadd91c77e4bcae8d6615e0f542fe81076d1c390069291d7",
+    "version": 1,
+    "content_hash": "49e2e42b90d550e418b7067eb6c21dc54f826030ea1fd4ad8d8a5f5ff69e5eca",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-bundle-f2ced8ce7d2445e9a5f7bde18d7f283a/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_1b2c4830818a101aeadd91c77e4bcae8d6615e0f542fe81076d1c390069291d7",
+    "frame_count": 4
+  },
+  "task_id": "6f549bcf-17e0-5cef-8011-c97bc16b0cf8",
+  "revision": 1,
+  "generations": [
+    {
+      "task_id": "6f549bcf-17e0-5cef-8011-c97bc16b0cf8",
+      "revision": 1,
+      "revision_content_hash": "d0d5a98b1fba4c98a9df5e7753a7cb9db517caf4e701c85dbe3378e6c0633b32",
+      "format_version": "hc-annotation/1",
+      "status": "READY",
+      "generation": 1,
+      "attempts": 1,
+      "content_sha256": "606b9ad15ba99e39e25832c891e2c77f6d7ed6925596cd9f1f3ef8f00b038b91",
+      "size_bytes": 3803,
+      "error_code": null,
+      "updated_at": "2026-09-29T04:48:25.434020Z"
+    },
+    {
+      "task_id": "6f549bcf-17e0-5cef-8011-c97bc16b0cf8",
+      "revision": 1,
+      "revision_content_hash": "d0d5a98b1fba4c98a9df5e7753a7cb9db517caf4e701c85dbe3378e6c0633b32",
+      "format_version": "hc-annotation/1",
+      "status": "READY",
+      "generation": 2,
+      "attempts": 2,
+      "content_sha256": "606b9ad15ba99e39e25832c891e2c77f6d7ed6925596cd9f1f3ef8f00b038b91",
+      "size_bytes": 3803,
+      "error_code": null,
+      "updated_at": "2026-09-29T04:48:26.311531Z"
+    }
+  ],
+  "published_events": 3,
+  "default_unapproved_download_denied": true,
+  "explicit_unreviewed_download": true,
+  "same_revision_bytes_after_regeneration": true,
+  "foreign_org_denied": true,
+  "revoked_download_and_retry_denied": true,
+  "human_acceptance": false
+}

@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 8101d14f3ff69cbc2045837b64e5b133673277e96ad6ba657b55261255504d78
+// Runtime-OpenAPI-SHA256: b167d926e12d30ba7534d356dfea5883c5da5696620ede52bc97a01a06e0a3f7
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -16,6 +16,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/account/recovery-email:confirm" },
   { method: "POST", path: "/aligned-media/authorize" },
   { method: "GET", path: "/annotation-tasks/{task_id}" },
+  { method: "GET", path: "/annotation-tasks/{task_id}/annotation-file" },
   { method: "POST", path: "/annotation-tasks/{task_id}/auto-annotation" },
   { method: "GET", path: "/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}" },
   { method: "POST", path: "/annotation-tasks/{task_id}/auto-annotation-jobs/{job_id}:apply" },
@@ -32,6 +33,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/annotation-tasks/{task_id}/revisions" },
   { method: "POST", path: "/annotation-tasks/{task_id}/revisions:restore" },
   { method: "GET", path: "/annotation-tasks/{task_id}/revisions/{revision}" },
+  { method: "GET", path: "/annotation-tasks/{task_id}/revisions/{revision}/file" },
+  { method: "POST", path: "/annotation-tasks/{task_id}/revisions/{revision}/file" },
   { method: "GET", path: "/annotation-tasks/{task_id}/submissions" },
   { method: "GET", path: "/annotation-tasks/{task_id}/submissions/{submission_id}" },
   { method: "POST", path: "/annotation-tasks/{task_id}/submit" },

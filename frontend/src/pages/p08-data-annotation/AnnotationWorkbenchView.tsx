@@ -118,6 +118,7 @@ export interface AnnotationWorkbenchViewProps {
   readonly robotSceneUnavailableReason?: string;
   readonly jointAngleStream?: StreamDescriptor;
   readonly autoAnnotationPanel?: ReactNode;
+  readonly revisionFilesPanel?: ReactNode;
   readonly externalError?: unknown;
   readonly canReportDataIssue?: boolean;
   readonly reportDataIssueUnavailableReason?: string;
@@ -1807,6 +1808,7 @@ export function AnnotationWorkbenchView(
   const [localError, setLocalError] = useState<unknown>(null);
   const [dialogDecision, setDialogDecision] = useState<DialogDecision>(null);
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
+  const [revisionFilesOpen, setRevisionFilesOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportStreamRef, setReportStreamRef] = useState("");
   const [reportIssueType, setReportIssueType] =
@@ -1818,6 +1820,7 @@ export function AnnotationWorkbenchView(
   const [reportError, setReportError] = useState<unknown>(null);
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
   const dataInfoTriggerRef = useRef<HTMLButtonElement>(null);
+  const revisionFilesTriggerRef = useRef<HTMLButtonElement>(null);
   const createButtonRef = useRef<HTMLSpanElement>(null);
   const [workspaceMode, setWorkspaceMode] = useState<AnnotationWorkspaceMode>(
     () =>
@@ -2401,6 +2404,18 @@ export function AnnotationWorkbenchView(
         数据信息
         <em aria-hidden="true">{adapter.collectionItems.length}</em>
       </button>
+      {props.revisionFilesPanel ? (
+        <button
+          type="button"
+          ref={revisionFilesTriggerRef}
+          className={styles.dataInfoTrigger}
+          aria-expanded={revisionFilesOpen}
+          aria-haspopup="dialog"
+          onClick={() => setRevisionFilesOpen(true)}
+        >
+          标注 JSON
+        </button>
+      ) : null}
     </CameraViewToolbar>
   );
 
@@ -2638,6 +2653,15 @@ export function AnnotationWorkbenchView(
           ...(props.renderPanel ? { renderPanel: props.renderPanel } : {}),
         }}
       />
+      <EntityDrawer
+        open={revisionFilesOpen}
+        returnFocusRef={revisionFilesTriggerRef}
+        title="版本化标注 JSON"
+        width={400}
+        onClose={() => setRevisionFilesOpen(false)}
+      >
+        {revisionFilesOpen ? props.revisionFilesPanel : null}
+      </EntityDrawer>
       <EntityDrawer
         open={dataInfoOpen}
         returnFocusRef={dataInfoTriggerRef}

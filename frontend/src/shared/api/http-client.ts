@@ -71,6 +71,8 @@ export type RequestOptions = {
    * Callers handling STS/presign/renewal payloads set this to 'no-store'.
    */
   cache?: RequestCache;
+  /** Preserve exact artifact bytes; errors still use the normal problem parser. */
+  responseType?: "json" | "blob";
 };
 
 export function isSafeBearerToken(value: string): boolean {
@@ -458,7 +460,20 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
     ) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属组织已失效");
     }
-    const raw = await readJson(response);
+    const raw =
+      response.ok && opts.responseType === "blob"
+        ? await response.blob()
+        : await readJson(response);
+    // A large download can finish after the user changes the selected tenant.
+    if (activeScoped && getShellState().scopeKey !== requestScopeKey) {
+      throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
+    }
+    if (
+      organizationScoped &&
+      !hasOrganizationAccess(getShellState(), requestScope?.organizationId)
+    ) {
+      throw scopeTransitionError("SCOPE_CHANGED", "请求所属组织已失效");
+    }
     if (!response.ok) {
       const error = domainErrorFromResponse(
         response.status,

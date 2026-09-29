@@ -5,6 +5,24 @@
   font-size: 14px;
 }
 
+.revisionFilesPanel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+
+.revisionFilesPanel label {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.revisionFilesPanel select {
+  max-width: 100%;
+}
+
 .page,
 .page * {
   box-sizing: border-box;

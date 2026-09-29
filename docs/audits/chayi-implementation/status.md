@@ -43,6 +43,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W3 阶段补充（2026-09-29）：版本化 JSON 的事务 outbox、worker、重试/下载授权、
+  P08 文件状态与下载、正式契约已接通。后端 144、前端 200、独立运行服务链路 1 项通过。
+  迁移 0015/0016 仅在隔离数据库应用，138/138 current。
+  见 [详细报告和 G2 回退条件](annotation-files.md)。仍为合成 RGB-D 软件证据，
+  不代表 ANN-02 的实际样本/真人验收或整个 G1 完成；17 项 P0 均仍 Pending。
+
 - W0: independent worktree and eight isolated services verified running (gateway 48088).
   Temporal namespace `chayi-g1` registered; original 8088 services remain running.
   Real sample inventory remains pending.

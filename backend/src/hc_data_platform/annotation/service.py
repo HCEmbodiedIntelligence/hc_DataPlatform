@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from datetime import datetime
 from uuid import uuid4
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.episode_store.models import DataVersionRef
@@ -1070,6 +1072,11 @@ class AnnotationService:
             reviews=aggregate.reviews,
         )
 
+    def get_bound_tag_schema(self, task_id: str, actor: ActorContext) -> TagSchemaVersion:
+        """Read the pinned interpretation of a permitted task, without project-wide access."""
+        task = self.read_task(task_id, actor)
+        return self._schema_for_task(task)
+
     def get_submission(
         self, task_id: str, submission_id: str, actor: ActorContext
     ) -> AnnotationSubmission:
@@ -1398,8 +1405,14 @@ class AnnotationService:
     ) -> None:
         if isinstance(actor, AuthContext):
             try:
-                ScopeGuard.require(actor, project_id, region_code)
-                actor.require_capability(capability, project_id)
+                organization_id = None
+                if actor.organization_scope_triples:
+                    with suppress(RuntimeError):
+                        organization_id = current_request_context().organization_id
+                    if organization_id is None:
+                        raise AnnotationPermissionError("an organization scope must be selected")
+                ScopeGuard.require(actor, project_id, region_code, organization_id)
+                actor.require_capability(capability, project_id, organization_id)
             except ProblemException as exc:
                 raise AnnotationPermissionError(exc.problem.detail) from exc
             return
