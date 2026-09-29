@@ -32,6 +32,13 @@ services:
   worker:
     image: openarm-e-backend:integration
     pull_policy: never
+    deploy:
+      replicas: 4
+    environment:
+      HC_WORKER_MAX_CONCURRENT_ACTIVITIES: "1"
+      HC_MEDIA_MAX_CONCURRENT_GENERATIONS: "1"
+      HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS: "4"
+      HC_INGEST_MAX_ACTIVE_PER_DATASET: "8"
   frontend:
     build: !reset null
     image: hc-offline/frontend:71eaa560

@@ -192,6 +192,7 @@ class PostgresIngestWorkflowInputResolver:
             default_tolerance_ns=max(1, 1_000_000_000 // frequency_hz),
         )
         return IngestRolloutWorkflowInput(
+            parallel_preparation=True,
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,

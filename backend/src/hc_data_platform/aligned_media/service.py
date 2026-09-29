@@ -4,7 +4,8 @@ import hashlib
 import json
 import socket
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
 from uuid import UUID, uuid4
@@ -257,6 +258,7 @@ class AlignedMediaGenerationService:
         request: AlignedMediaGenerationRequestV1,
         *,
         cancelled: Callable[[], bool] | None = None,
+        prepared: EncodedAlignedMediaV1 | None = None,
     ) -> AlignedMediaArtifactV1:
         if scope.project_id != request.project_id:
             raise ValueError("aligned media request does not match its worker scope")
@@ -297,11 +299,12 @@ class AlignedMediaGenerationService:
         publication: PublishedAlignedMediaV1 | None = None
         receipt_recorded = False
         try:
-            slot_id = self._acquire_capacity(
-                owner_id=owner_id,
-                attempt_token=attempt_token,
-                cancelled=cancelled,
-            )
+            if prepared is None:
+                slot_id = self._acquire_capacity(
+                    owner_id=owner_id,
+                    attempt_token=attempt_token,
+                    cancelled=cancelled,
+                )
             heartbeat = Thread(
                 target=self._heartbeat,
                 kwargs={
@@ -336,7 +339,11 @@ class AlignedMediaGenerationService:
                     encoded = None
             if publication is None:
                 original = request.alignment.original_videos.get(request.camera_id)
-                if request.profile_id == "original-video-reference-v1":
+                if prepared is not None:
+                    if prepared.frame_count != request.alignment.row_count:
+                        raise ValueError("prepared media does not match its alignment")
+                    encoded = prepared
+                elif request.profile_id == "original-video-reference-v1":
                     if original is None:
                         raise ValueError("original video profile requires a source reference")
                     encoded = EncodedAlignedMediaV1(
@@ -422,7 +429,85 @@ class AlignedMediaGenerationService:
                     owner_id=owner_id,
                     attempt_token=attempt_token,
                 )
-            if encoded is not None and encoded.original_source is None:
+            if prepared is None and encoded is not None and encoded.original_source is None:
+                self._encoder.cleanup(encoded)
+
+    @contextmanager
+    def prepare(
+        self,
+        scope: AlignedMediaScopeV1,
+        request: AlignedMediaGenerationRequestV1,
+        *,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> Iterator[EncodedAlignedMediaV1]:
+        """Encode without a Dataset version reservation or public media receipt.
+
+        The caller stores the result in short-lived staging before this context
+        cleans up the local file. Final publication uses generate(prepared=...).
+        """
+        if scope.project_id != request.project_id:
+            raise ValueError("prepared media does not match its worker scope")
+        self._profiles.get(request.profile_id)
+        original = request.alignment.original_videos.get(request.camera_id)
+        if request.profile_id == "original-video-reference-v1":
+            if original is None:
+                raise ValueError("original video profile requires a source reference")
+            yield EncodedAlignedMediaV1(
+                file_uri="source://original",
+                frame_count=request.alignment.row_count,
+                duration_seconds=request.alignment.row_count / 30,
+                width=original.width,
+                height=original.height,
+                placeholder_count=0,
+                first_timestamp_ns=0,
+                original_source=original,
+            )
+            return
+        owner = f"prepare:{socket.gethostname()}:{uuid4()}"
+        token = str(uuid4())
+        slot = self._acquire_capacity(owner_id=owner, attempt_token=token, cancelled=cancelled)
+        stop, failed = Event(), Event()
+
+        def renew() -> None:
+            while not stop.wait(self._heartbeat_interval.total_seconds()):
+                now = self._now()
+                try:
+                    alive = self._capacity.renew(
+                        slot_id=slot,
+                        owner_id=owner,
+                        attempt_token=token,
+                        lease_expires_at=now + self._lease_duration,
+                        now=now,
+                    )
+                except Exception:
+                    alive = False
+                if not alive:
+                    failed.set()
+                    return
+
+        heartbeat = Thread(target=renew, daemon=True)
+        heartbeat.start()
+        encoded = None
+        try:
+            # A unique local attempt directory prevents one worker's cancellation
+            # cleanup from deleting a concurrent retry's output.
+            key = hashlib.sha256((aligned_media_artifact_key(request) + token).encode()).hexdigest()
+            encoded = self._encoder.encode(
+                artifact_key=key,
+                request=request,
+                frames=self._reader.read_camera_frames(request),
+                cancelled=lambda: self._cancelled(cancelled, failed),
+            )
+            if self._cancelled(cancelled, failed):
+                raise AlignedMediaGenerationCancelled(
+                    "media preparation lost its lease or was cancelled"
+                )
+            yield encoded
+        finally:
+            stop.set()
+            heartbeat.join(timeout=max(1.0, self._heartbeat_interval.total_seconds() * 2))
+            self._capacity.release(slot_id=slot, owner_id=owner, attempt_token=token)
+            if encoded is not None:
                 self._encoder.cleanup(encoded)
 
     def _acquire_capacity(
@@ -456,7 +541,7 @@ class AlignedMediaGenerationService:
         job_id: str,
         owner_id: str,
         attempt_token: str,
-        slot_id: int,
+        slot_id: int | None,
         stop: Event,
         failed: Event,
     ) -> None:
@@ -472,7 +557,7 @@ class AlignedMediaGenerationService:
                     lease_expires_at=lease_expires_at,
                     now=now,
                 )
-                slot_ok = self._capacity.renew(
+                slot_ok = slot_id is None or self._capacity.renew(
                     slot_id=slot_id,
                     owner_id=owner_id,
                     attempt_token=attempt_token,

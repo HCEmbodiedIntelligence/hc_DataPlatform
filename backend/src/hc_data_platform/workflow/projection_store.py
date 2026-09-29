@@ -44,7 +44,9 @@ class S3ProjectionArtifactStore:
                     Bucket=self._bucket,
                     Key=key,
                     Body=body,
-                    ContentType="application/vnd.apache.arrow.file",
+                    ContentType="video/mp4"
+                    if key.endswith(".mp4")
+                    else "application/vnd.apache.arrow.file",
                     Metadata={"sha256": sha256},
                     IfNoneMatch="*",
                 )
@@ -222,7 +224,7 @@ class LocalProjectionArtifactStore:
 class S3ProjectionStagingSweeper:
     """Delete expired projection/alignment Arrow keys by exact object key."""
 
-    _PREFIXES = ("staging/projections/", "staging/alignment/")
+    _PREFIXES = ("staging/projections/", "staging/alignment/", "staging/prepared-media/")
 
     def __init__(
         self,
@@ -269,7 +271,10 @@ class S3ProjectionStagingSweeper:
                 if (
                     not isinstance(key, str)
                     or not key.startswith(prefix)
-                    or not key.endswith(".arrow")
+                    or not (
+                        key.endswith(".arrow")
+                        or (prefix == "staging/prepared-media/" and key.endswith(".mp4"))
+                    )
                     or not isinstance(modified, datetime)
                 ):
                     continue

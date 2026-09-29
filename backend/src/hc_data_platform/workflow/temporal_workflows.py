@@ -77,6 +77,8 @@ with workflow.unsafe.imports_passed_through():
         JobRecord,
         JobStatus,
         ManifestActivityOutput,
+        PreparedAlignedMediaV1,
+        PreparedBundleCommitActivityInput,
         ProjectionCleanupActivityInput,
         ProjectionCleanupActivityOutput,
         ProjectionMaterializationActivityInput,
@@ -99,6 +101,7 @@ with workflow.unsafe.imports_passed_through():
         COMMIT_ALIGNED_BUNDLE_ACTIVITY,
         COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
         COMMIT_FRAGMENT_ACTIVITY,
+        COMMIT_PREPARED_BUNDLE_ACTIVITY,
         CONTINUOUS_EPISODE_WORKFLOW,
         CREATE_ALIGNED_MEDIA_ACTIVITY,
         CREATE_ANNOTATION_TASK_ACTIVITY,
@@ -110,6 +113,7 @@ with workflow.unsafe.imports_passed_through():
         PARSE_MANIFEST_ACTIVITY,
         PERSIST_WORKFLOW_JOB_ACTIVITY,
         PREFLIGHT_EXPORT_ACTIVITY,
+        PREPARE_ALIGNED_MEDIA_ACTIVITY,
         PROCESS_INGEST_SOURCE_ACTIVITY,
         PUBLISH_DATASET_ACTIVITY,
         PUBLISH_DATASET_WORKFLOW,
@@ -117,6 +121,7 @@ with workflow.unsafe.imports_passed_through():
         QC_CONTINUOUS_EPISODE_ACTIVITY,
         RECONCILE_CATALOG_ACTIVITY,
         RECONCILE_PUBLICATION_ACTIVITY,
+        RESERVE_INGEST_ACTIVITY,
         UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY,
         VERIFY_EXPORT_ARTIFACT_ACTIVITY,
     )
@@ -328,7 +333,18 @@ class IngestRolloutWorkflow(_JobLifecycle):
             WorkflowJobPersistenceActivityInput(
                 organization_id=request.organization_id,
                 region_code=request.region_code,
-                job=self._record(),
+                job=(
+                    self._record().model_copy(
+                        update={
+                            "result": {
+                                **(self._record().result or {}),
+                                "parallel_preparation": True,
+                            }
+                        }
+                    )
+                    if request.parallel_preparation
+                    else self._record()
+                ),
             ),
             result_type=JobRecord,
             start_to_close_timeout=COMMIT_ACTIVITY.start_to_close,
@@ -396,8 +412,20 @@ class IngestRolloutWorkflow(_JobLifecycle):
         alignment_staging: AlignmentStagingArtifactV1 | None = None
         frame_selection: FrameSelectionManifestRefV1 | None = None
         media_artifacts: list[AlignedMediaArtifactV1] = []
+        prepared_media: list[PreparedAlignedMediaV1] = []
         bundle_committed = False
         try:
+            if request.parallel_preparation:
+                while True:
+                    try:
+                        await _execute_activity(
+                            RESERVE_INGEST_ACTIVITY, request, type(None), STANDARD_ACTIVITY
+                        )
+                        break
+                    except ActivityError as exc:
+                        if _error_code(exc) != "INGEST_DATASET_BUSY":
+                            raise
+                        await workflow.sleep(timedelta(seconds=2))
             self._stage("manifest")
             await self._persist_job(request)
             parsed = await _execute_activity(
@@ -529,72 +557,128 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 )
                 for camera in manifest.cameras
             )
-            for offset in range(0, len(media_inputs), 2):
-                batch = media_inputs[offset : offset + 2]
-                results = await asyncio.gather(
-                    *(
-                        _execute_activity(
-                            CREATE_ALIGNED_MEDIA_ACTIVITY,
-                            item,
-                            AlignedMediaActivityOutput,
+            if request.parallel_preparation:
+                for offset in range(0, len(media_inputs), 2):
+                    results = await asyncio.gather(
+                        *(
+                            _execute_activity(
+                                PREPARE_ALIGNED_MEDIA_ACTIVITY,
+                                item,
+                                PreparedAlignedMediaV1,
+                                LONG_ACTIVITY,
+                                task_queue=request.media_task_queue,
+                                cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+                            )
+                            for item in media_inputs[offset : offset + 2]
+                        ),
+                        return_exceptions=True,
+                    )
+                    prepared_media.extend(
+                        item for item in results if isinstance(item, PreparedAlignedMediaV1)
+                    )
+                    failure = next(
+                        (item for item in results if isinstance(item, BaseException)), None
+                    )
+                    if failure is not None:
+                        raise failure
+                self._stage("lance_commit")
+                await self._persist_job(request)
+                version_conflicts = 0
+                while True:
+                    try:
+                        committed = await _execute_activity(
+                            COMMIT_PREPARED_BUNDLE_ACTIVITY,
+                            PreparedBundleCommitActivityInput(
+                                alignment=alignment_request,
+                                staged_manifest=aligned.staged_manifest,
+                                alignment_staging=alignment_staging,
+                                expected_camera_ids=tuple(
+                                    camera.topic for camera in manifest.cameras
+                                ),
+                                prepared_media=tuple(prepared_media),
+                            ),
+                            AlignedBundleCommitActivityOutput,
                             LONG_ACTIVITY,
-                            task_queue=request.media_task_queue,
+                            cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                         )
-                        for item in batch
+                        break
+                    except ActivityError as exc:
+                        code = _error_code(exc)
+                        if code == "ALIGNED_MEDIA_VERSION_CONFLICT" and version_conflicts < 3:
+                            # An older external writer may still commit independently.
+                            # Rebind the staged video; never decode or encode it again.
+                            version_conflicts += 1
+                        elif code != "INGEST_COMMIT_PENDING":
+                            raise
+                        await workflow.sleep(timedelta(seconds=2))
+            else:
+                for offset in range(0, len(media_inputs), 2):
+                    batch = media_inputs[offset : offset + 2]
+                    results = await asyncio.gather(
+                        *(
+                            _execute_activity(
+                                CREATE_ALIGNED_MEDIA_ACTIVITY,
+                                item,
+                                AlignedMediaActivityOutput,
+                                LONG_ACTIVITY,
+                                task_queue=request.media_task_queue,
+                            )
+                            for item in batch
+                        ),
+                        return_exceptions=True,
+                    )
+                    media_artifacts.extend(
+                        item.artifact
+                        for item in results
+                        if isinstance(item, AlignedMediaActivityOutput)
+                    )
+                    batch_failure = next(
+                        (item for item in results if isinstance(item, BaseException)),
+                        None,
+                    )
+                    if batch_failure is not None:
+                        raise batch_failure
+                expected_camera_ids = tuple(camera.topic for camera in manifest.cameras)
+                if (
+                    len(expected_camera_ids) != len(set(expected_camera_ids))
+                    or {artifact.camera_id for artifact in media_artifacts}
+                    != set(expected_camera_ids)
+                    or len(media_artifacts) != len(expected_camera_ids)
+                    or any(
+                        artifact.status.value != "READY"
+                        or artifact.frame_count != aligned.staged_manifest.row_count
+                        or artifact.fps != 30
+                        or artifact.timeline is None
+                        or artifact.timeline.frame_count != aligned.staged_manifest.row_count
+                        or artifact.timeline.first_step != 0
+                        or artifact.timeline.pts_time_base_numerator != 1
+                        or artifact.timeline.pts_time_base_denominator != 30
+                        or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
+                        > 1 / 30
+                        for artifact in media_artifacts
+                    )
+                ):
+                    raise ApplicationError(
+                        "all camera MP4 receipts must be READY and timeline-identical",
+                        type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
+                        non_retryable=True,
+                    )
+                self._stage("lance_commit")
+                await self._persist_job(request)
+                committed = await _execute_activity(
+                    COMMIT_ALIGNED_BUNDLE_ACTIVITY,
+                    AlignedBundleCommitActivityInput(
+                        alignment=alignment_request,
+                        staged_manifest=aligned.staged_manifest,
+                        alignment_staging=aligned.alignment_staging,
+                        expected_dataset_version=aligned.expected_dataset_version,
+                        expected_camera_ids=expected_camera_ids,
+                        media_artifacts=tuple(media_artifacts),
                     ),
-                    return_exceptions=True,
+                    AlignedBundleCommitActivityOutput,
+                    LONG_ACTIVITY,
+                    cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
                 )
-                media_artifacts.extend(
-                    item.artifact
-                    for item in results
-                    if isinstance(item, AlignedMediaActivityOutput)
-                )
-                batch_failure = next(
-                    (item for item in results if isinstance(item, BaseException)),
-                    None,
-                )
-                if batch_failure is not None:
-                    raise batch_failure
-            expected_camera_ids = tuple(camera.topic for camera in manifest.cameras)
-            if (
-                len(expected_camera_ids) != len(set(expected_camera_ids))
-                or {artifact.camera_id for artifact in media_artifacts} != set(expected_camera_ids)
-                or len(media_artifacts) != len(expected_camera_ids)
-                or any(
-                    artifact.status.value != "READY"
-                    or artifact.frame_count != aligned.staged_manifest.row_count
-                    or artifact.fps != 30
-                    or artifact.timeline is None
-                    or artifact.timeline.frame_count != aligned.staged_manifest.row_count
-                    or artifact.timeline.first_step != 0
-                    or artifact.timeline.pts_time_base_numerator != 1
-                    or artifact.timeline.pts_time_base_denominator != 30
-                    or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
-                    > 1 / 30
-                    for artifact in media_artifacts
-                )
-            ):
-                raise ApplicationError(
-                    "all camera MP4 receipts must be READY and timeline-identical",
-                    type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
-                    non_retryable=True,
-                )
-            self._stage("lance_commit")
-            await self._persist_job(request)
-            committed = await _execute_activity(
-                COMMIT_ALIGNED_BUNDLE_ACTIVITY,
-                AlignedBundleCommitActivityInput(
-                    alignment=alignment_request,
-                    staged_manifest=aligned.staged_manifest,
-                    alignment_staging=aligned.alignment_staging,
-                    expected_dataset_version=aligned.expected_dataset_version,
-                    expected_camera_ids=expected_camera_ids,
-                    media_artifacts=tuple(media_artifacts),
-                ),
-                AlignedBundleCommitActivityOutput,
-                LONG_ACTIVITY,
-                cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
-            )
             bundle_committed = True
             derived = committed.derived_ready
             writer_result = {
@@ -685,7 +769,9 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "dataset_version": writer_result.get("dataset_version"),
                     "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
-                    "aligned_media_count": len(media_artifacts),
+                    "aligned_media_count": len(prepared_media)
+                    if request.parallel_preparation
+                    else len(media_artifacts),
                     "training_eligible": True,
                 },
             )
@@ -734,6 +820,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                                 project_id=request.project_id,
                                 region_code=request.region_code,
                                 staging=alignment_staging,
+                                prepared_media=tuple(prepared_media),
                             ),
                             AlignmentStagingCleanupActivityOutput,
                             STANDARD_ACTIVITY,

@@ -1,55 +1,76 @@
-# Raw ingest scheduling and recovery
+# Parallel ingest and recovery
 
-Raw uploads remain in the durable outbox until their Dataset is available. The
-dispatcher reserves a PENDING job before starting Temporal, so a process crash
-between the reservation and the start RPC can reconnect to the same workflow ID.
-The guard also waits for preceding Lance commits to have product projections;
-it permits the owner of an incomplete commit to recover that commit.
+MCAP and native LeRobot use the same `IngestRolloutWorkflow`. New inputs from
+both adapters enable `parallel_preparation`; old persisted inputs default to
+false and retain their version-bound execution for history replay.
 
-## Version consistency
+## Preparation and publication
 
-Aligned videos reserve a Dataset version before encoding. `commit_fragment` now
-accepts `expected_version` and validates it while holding the Dataset writer lock,
-after reconciling storage receipts and before staging/appending data. Competing
-writers cannot both pass a check outside the lock and silently receive different
-versions. Raw ingest and continuous Episode commits both pass this reservation.
+Raw verification, QC, alignment and video encoding can overlap between files or
+episodes in the same Dataset. Encoded videos are uploaded to private,
+SHA-256-verified `staging/prepared-media/` objects. No public media artifact or
+Dataset version is reserved during encoding. LeRobot original-video references
+use the same preparation receipt without copying or re-encoding the original.
 
-Idempotent recovery checks the original receipt's version, even if later versions
-exist. Raw processing reuses the first version containing its rollout, preserving
-the original media identity after a crash between storage commit and publication.
-A reservation mismatch fails without writing another immutable storage receipt.
+Only final publication is serialized per organization/project/Dataset. A
+PostgreSQL advisory transaction lock covers allocation of the final version,
+publication of already-encoded media under that version, the Lance commit and
+the product projection. Busy commits wait on durable Temporal timers, releasing
+activity slots. They reuse their prepared videos when the Dataset advances.
 
-## Bounded automatic recovery
+The catalog additionally validates `expected_version` inside its own writer
+lock, after receipt reconciliation and before appending. This protects against
+other writers using the older commit API. Idempotent recovery uses the original
+rollout receipt, even when newer versions exist. An incomplete product projection
+blocks later commits until its owner repairs it.
 
-New raw-ingest workflows retain their Dataset reservation through cleanup. A
-terminal status is persisted only after cleanup finishes. Selected transient
-failures (media generation cancellation, version conflicts, activity/connection
-timeouts and catalog reconciliation/indexing failures) automatically continue as
-a new execution with the same validated input and workflow ID. There are at most
-three processing attempts, separated by durable 30- and 60-second timers.
+## Bounded scheduling
 
-During these timers the job remains PENDING at `retry_wait`, keeping other writers
-out of the Dataset. The package API reports `RETRY_PENDING` and the UI displays
-“等待重试”. Exhausted or non-transient failures remain `TECHNICAL_FAILED` with the
-original error code. Quality risk/rejection is never retried into a pass.
+`HC_INGEST_MAX_ACTIVE_PER_DATASET` defaults to 8. A shared PostgreSQL dispatch
+guard reserves a PENDING job before launch and caps active preparation across
+all workers. The workflow also reserves at entry, so native LeRobot children and
+robot-upload processing use the same limit. Waiting uploads remain in the
+durable outbox; native children waiting for admission release activity slots.
+Active legacy workflows exclude new parallel preparation until they finish.
 
-Cancellation is identified from exception types and causes, not the word “cancel”
-in an error message. An explicit workflow cancellation remains cancelled and is
-not automatically restarted. Its package is displayed as “已取消”. A cancelled
-synchronous activity keeps heartbeating until its worker thread actually exits;
-it cannot acknowledge cancellation after ten seconds while a commit is still running.
+Both LeRobot parent workflows process at most `max_concurrent_episodes` (default
+4) simultaneously. Each drains its in-flight episodes before continuing as new
+after 20 episodes. Failures and retries remain per episode. The reconstructible
+LeRobot cache uses separate pinned entries per source/episode, so concurrent
+episodes cannot delete each other's local chunks. Cache capacity and eviction
+still apply; immutable Raw objects are never evicted.
 
-The `ingest-durable-recovery-v1` Temporal patch preserves replay of existing
-histories. Executions already closed under the previous implementation require
-an explicit recovery operation. Such recovery must use a fresh execution and the
-Dataset guard: resetting to a first workflow task can replay a cancellation that
-arrived before that task completed. Existing raw objects and published versions
-are retained throughout recovery.
+The original local 8088 deployment runs four worker processes, each with one main
+activity slot and one media slot. This allows Python parsing to use multiple CPU
+cores. Media encoding has a shared four-slot limit and two FFmpeg threads per
+encoder. Publishing prepared media does not consume an encoder slot. Other
+deployments can choose worker replicas and these limits independently.
+
+## Cancellation and recovery
+
+Terminal job state is persisted after cleanup. Cancellation of a synchronous
+activity waits for its thread and encoder to exit before acknowledging; final
+commit also waits for cancellation completion. Prepared objects are deleted by
+normal cleanup, with a TTL sweeper for interrupted preparations. Original-video
+references are never included in derivative cleanup.
+
+Selected transient workflow failures have at most three attempts, separated by
+durable 30- and 60-second timers. Quality risk/rejection and explicit user
+cancellation are not retried into success. Waiting recovery is displayed as
+“等待重试”; explicit cancellations appear as “已取消”.
+
+Closed historical workflows need an explicit recovery operation. Start a fresh
+execution with the validated original input, `parallel_preparation=true`, and
+the same dispatch guard. Do not reset histories whose first workflow task already
+contained cancellation. Preserve raw objects, successful versions and audit
+history. During deployment, drain/restart all workers before enabling additional
+replicas; the legacy-input guard protects work resumed from old histories.
 
 ## Validation
 
-Regression coverage includes competing real Lance writers, historical-version
-idempotency, incomplete-publication dispatch blocking, bounded Temporal retries,
-cleanup-before-retry ordering, real cancellation, cancellation drain heartbeats,
-and distinct cancelled/retrying package states. Successful, cancelled and failed
-pre-change production histories were also replayed against the updated workflow.
+Tests cover concurrent preparation, actual FFmpeg output, immutable media binding
+to different final versions, recovery after a catalog commit without duplicate
+encoding, LeRobot original-video references, admission limits, legacy exclusion,
+bounded episode fan-out, independent cache pins, cancellation, and history replay.
+The real LeRobot upload-to-QC/media/Lance/review/export suite also runs against
+isolated PostgreSQL databases and a test object-store bucket.

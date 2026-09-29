@@ -27,6 +27,7 @@ from hc_data_platform.aligned_media.models import (
     AlignedMediaScopeV1,
     AlignmentCameraStagingArtifactV1,
     AlignmentStagingArtifactV1,
+    EncodedAlignedMediaV1,
 )
 from hc_data_platform.aligned_media.ports import (
     AlignedMediaArtifactStorePort,
@@ -104,6 +105,13 @@ from hc_data_platform.verification.ports import (
 )
 from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePort
 
+from .ingest_guard import (
+    IngestCommitPending,
+    IngestDatasetBusy,
+    PostgresIngestCommitGuard,
+    PostgresIngestDispatchGuard,
+)
+from .media_preparation import media_scope, prepare_media, publish_prepared_media
 from .models import (
     AlignedBundleCommitActivityInput,
     AlignedBundleCommitActivityOutput,
@@ -136,11 +144,14 @@ from .models import (
     ExportPreflightActivityOutput,
     FrameSelectionManifestRefV1,
     IngestProjectionSourceV1,
+    IngestRolloutWorkflowInput,
     IngestSourceProcessingActivityInput,
     IngestSourceProcessingActivityOutput,
     JobRecord,
     ManifestActivityInput,
     ManifestActivityOutput,
+    PreparedAlignedMediaV1,
+    PreparedBundleCommitActivityInput,
     ProjectionCleanupActivityInput,
     ProjectionCleanupActivityOutput,
     ProjectionMaterializationActivityInput,
@@ -164,6 +175,7 @@ from .names import (
     COMMIT_ALIGNED_BUNDLE_ACTIVITY,
     COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
     COMMIT_FRAGMENT_ACTIVITY,
+    COMMIT_PREPARED_BUNDLE_ACTIVITY,
     CREATE_ALIGNED_MEDIA_ACTIVITY,
     CREATE_ANNOTATION_TASK_ACTIVITY,
     EVALUATE_QUALITY_ACTIVITY,
@@ -172,11 +184,13 @@ from .names import (
     PARSE_MANIFEST_ACTIVITY,
     PERSIST_WORKFLOW_JOB_ACTIVITY,
     PREFLIGHT_EXPORT_ACTIVITY,
+    PREPARE_ALIGNED_MEDIA_ACTIVITY,
     PROCESS_INGEST_SOURCE_ACTIVITY,
     PUBLISH_DATASET_ACTIVITY,
     QC_CONTINUOUS_EPISODE_ACTIVITY,
     RECONCILE_CATALOG_ACTIVITY,
     RECONCILE_PUBLICATION_ACTIVITY,
+    RESERVE_INGEST_ACTIVITY,
     UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY,
     VERIFY_EXPORT_ARTIFACT_ACTIVITY,
     VERIFY_RAW_ACTIVITY,
@@ -267,12 +281,21 @@ class CatalogFragmentAdapterPort(Protocol):
 
 
 class AlignedMediaGenerationPort(Protocol):
+    def prepare(
+        self,
+        scope: AlignedMediaScopeV1,
+        request: AlignedMediaGenerationRequestV1,
+        *,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> AbstractContextManager[EncodedAlignedMediaV1]: ...
+
     def generate(
         self,
         scope: AlignedMediaScopeV1,
         request: AlignedMediaGenerationRequestV1,
         *,
         cancelled: Callable[[], bool] | None = None,
+        prepared: EncodedAlignedMediaV1 | None = None,
     ) -> AlignedMediaArtifactV1: ...
 
 
@@ -381,6 +404,8 @@ class ActivityDependencies:
     fragment_writers: FragmentWriterFactoryPort | None = None
     alignment_staging: ProjectionArtifactStorePort | None = None
     alignment_staging_ttl: timedelta = timedelta(hours=24)
+    ingest_dispatch_guard: PostgresIngestDispatchGuard | None = None
+    ingest_commit_guard: PostgresIngestCommitGuard | None = None
     catalog_fragments: CatalogFragmentAdapterPort | None = None
     catalog: LanceCatalogPort | None = None
     aligned_media: AlignedMediaGenerationPort | None = None
@@ -1410,126 +1435,6 @@ def _file_sha256(path: Path) -> str:
 async def commit_aligned_bundle(
     request: AlignedBundleCommitActivityInput,
 ) -> AlignedBundleCommitActivityOutput:
-    def commit() -> AlignedBundleCommitActivityOutput:
-        alignment_request = request.alignment
-        source = _require(alignment_request.source, "workflow.IngestProjectionSourceV1")
-        if any(
-            artifact.status.value != "READY"
-            or artifact.dataset_id != alignment_request.dataset_id
-            or artifact.rollout_id != source.rollout_id
-            or artifact.dataset_version != request.expected_dataset_version
-            or artifact.frame_count != request.staged_manifest.row_count
-            or artifact.alignment_version != request.alignment_staging.alignment_version
-            for artifact in request.media_artifacts
-        ):
-            raise ValueError("aligned media bundle is incomplete or has mismatched lineage")
-        camera_ids = [artifact.camera_id for artifact in request.media_artifacts]
-        if len(camera_ids) != len(set(camera_ids)):
-            raise ValueError("aligned media bundle contains duplicate cameras")
-        if request.expected_camera_ids and (
-            len(request.expected_camera_ids) != len(set(request.expected_camera_ids))
-            or set(camera_ids) != set(request.expected_camera_ids)
-        ):
-            raise ValueError("aligned media bundle does not cover the manifest cameras")
-        catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
-        current = catalog.current_version(
-            alignment_request.dataset_id,
-            project_id=alignment_request.project_id,
-        )
-        actual_next = 1 if current is None else current.version + 1
-        recovering_same_rollout = (
-            current is not None
-            and current.version >= request.expected_dataset_version
-            and source.rollout_id in current.committed_rollouts
-        )
-        if actual_next != request.expected_dataset_version and not recovering_same_rollout:
-            raise ApplicationError(
-                "reserved Dataset version changed before aligned media commit",
-                type="ALIGNED_MEDIA_VERSION_CONFLICT",
-                non_retryable=True,
-            )
-        scope = AlignedMediaScopeV1(
-            organization_id=_require(
-                source.organization_id,
-                "workflow.IngestProjectionSourceV1.organization_id",
-            ),
-            project_id=alignment_request.project_id,
-            region_code=_require(alignment_request.region_code, "alignment.region_code"),
-        )
-        artifact_ids = tuple(artifact.artifact_id for artifact in request.media_artifacts)
-        repository = _require(
-            _dependencies.aligned_media_repository,
-            "aligned_media.AlignedMediaRepositoryPort",
-        )
-        now = datetime.now(timezone.utc)
-        repository.begin_dataset_commit(
-            scope=scope,
-            artifact_ids=artifact_ids,
-            lease_expires_at=now + timedelta(hours=6),
-            now=now,
-        )
-        store = _require(
-            _dependencies.alignment_staging,
-            "workflow.ProjectionArtifactStorePort",
-        )
-        adapter = _require(
-            _dependencies.catalog_fragments,
-            "workflow.CatalogFragmentAdapterPort",
-        )
-        with store.local_file(
-            request.alignment_staging.object_key,
-            expected_sha256=request.alignment_staging.content_sha256,
-            expected_size=request.alignment_staging.size_bytes,
-        ) as path:
-            local_manifest = request.staged_manifest.model_copy(
-                update={"staging_uri": path.resolve().as_uri()}
-            )
-            catalog_manifest, steps = adapter.prepare_streaming(
-                alignment_request,
-                local_manifest,
-                request.media_artifacts,
-            )
-            version, ready = catalog.commit_fragment(
-                catalog_manifest, steps, expected_version=request.expected_dataset_version
-            )
-        if version.version != request.expected_dataset_version:
-            raise RuntimeError("Lance committed a Dataset version different from its media key")
-        repository.mark_dataset_committed(
-            scope=scope,
-            artifact_ids=artifact_ids,
-            now=datetime.now(timezone.utc),
-        )
-        projection = _require(
-            _dependencies.ingest_projection,
-            "workflow.IngestProjectionPort",
-        )
-        alignment = (
-            _require(_dependencies.lerobot_pipeline, "lerobot_pipeline").alignment_metadata(
-                source,
-                dataset_id=ready.dataset_id,
-                dataset_version=ready.dataset_version,
-            )
-            if source.lerobot is not None
-            else projection.project_alignment_metadata(source)
-        )
-        viewer_target = _require(
-            _dependencies.dataset_ingest_projection,
-            "workflow.DatasetIngestProjectionPort",
-        ).project(
-            source=source,
-            alignment=alignment,
-            schema_snapshot_id=alignment_request.schema_snapshot_id,
-            frequency_hz=alignment_request.profile.frequency_hz,
-            version=version,
-            ready=ready,
-            media_artifacts=request.media_artifacts,
-        )
-        LANCE_COMMITS.labels(outcome="success").inc()
-        return AlignedBundleCommitActivityOutput(
-            version=version,
-            derived_ready=ready,
-            viewer_target=viewer_target,
-        )
 
     source = _require(request.alignment.source, "workflow.IngestProjectionSourceV1")
     with _worker_scope(
@@ -1538,7 +1443,131 @@ async def commit_aligned_bundle(
         source.rollout_id,
         organization_id=source.organization_id,
     ):
-        return await _invoke("aligned_bundle_commit", commit)
+        return await _invoke("aligned_bundle_commit", lambda: _commit_aligned_bundle(request))
+
+
+def _commit_aligned_bundle(
+    request: AlignedBundleCommitActivityInput,
+) -> AlignedBundleCommitActivityOutput:
+    alignment_request = request.alignment
+    source = _require(alignment_request.source, "workflow.IngestProjectionSourceV1")
+    if any(
+        artifact.status.value != "READY"
+        or artifact.dataset_id != alignment_request.dataset_id
+        or artifact.rollout_id != source.rollout_id
+        or artifact.dataset_version != request.expected_dataset_version
+        or artifact.frame_count != request.staged_manifest.row_count
+        or artifact.alignment_version != request.alignment_staging.alignment_version
+        for artifact in request.media_artifacts
+    ):
+        raise ValueError("aligned media bundle is incomplete or has mismatched lineage")
+    camera_ids = [artifact.camera_id for artifact in request.media_artifacts]
+    if len(camera_ids) != len(set(camera_ids)):
+        raise ValueError("aligned media bundle contains duplicate cameras")
+    if request.expected_camera_ids and (
+        len(request.expected_camera_ids) != len(set(request.expected_camera_ids))
+        or set(camera_ids) != set(request.expected_camera_ids)
+    ):
+        raise ValueError("aligned media bundle does not cover the manifest cameras")
+    catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
+    current = catalog.current_version(
+        alignment_request.dataset_id,
+        project_id=alignment_request.project_id,
+    )
+    actual_next = 1 if current is None else current.version + 1
+    recovering_same_rollout = (
+        current is not None
+        and current.version >= request.expected_dataset_version
+        and source.rollout_id in current.committed_rollouts
+    )
+    if actual_next != request.expected_dataset_version and not recovering_same_rollout:
+        raise ApplicationError(
+            "reserved Dataset version changed before aligned media commit",
+            type="ALIGNED_MEDIA_VERSION_CONFLICT",
+            non_retryable=True,
+        )
+    scope = AlignedMediaScopeV1(
+        organization_id=_require(
+            source.organization_id,
+            "workflow.IngestProjectionSourceV1.organization_id",
+        ),
+        project_id=alignment_request.project_id,
+        region_code=_require(alignment_request.region_code, "alignment.region_code"),
+    )
+    artifact_ids = tuple(artifact.artifact_id for artifact in request.media_artifacts)
+    repository = _require(
+        _dependencies.aligned_media_repository,
+        "aligned_media.AlignedMediaRepositoryPort",
+    )
+    now = datetime.now(timezone.utc)
+    repository.begin_dataset_commit(
+        scope=scope,
+        artifact_ids=artifact_ids,
+        lease_expires_at=now + timedelta(hours=6),
+        now=now,
+    )
+    store = _require(
+        _dependencies.alignment_staging,
+        "workflow.ProjectionArtifactStorePort",
+    )
+    adapter = _require(
+        _dependencies.catalog_fragments,
+        "workflow.CatalogFragmentAdapterPort",
+    )
+    with store.local_file(
+        request.alignment_staging.object_key,
+        expected_sha256=request.alignment_staging.content_sha256,
+        expected_size=request.alignment_staging.size_bytes,
+    ) as path:
+        local_manifest = request.staged_manifest.model_copy(
+            update={"staging_uri": path.resolve().as_uri()}
+        )
+        catalog_manifest, steps = adapter.prepare_streaming(
+            alignment_request,
+            local_manifest,
+            request.media_artifacts,
+        )
+        version, ready = catalog.commit_fragment(
+            catalog_manifest, steps, expected_version=request.expected_dataset_version
+        )
+    if version.version != request.expected_dataset_version:
+        raise RuntimeError("Lance committed a Dataset version different from its media key")
+    repository.mark_dataset_committed(
+        scope=scope,
+        artifact_ids=artifact_ids,
+        now=datetime.now(timezone.utc),
+    )
+    projection = _require(
+        _dependencies.ingest_projection,
+        "workflow.IngestProjectionPort",
+    )
+    alignment = (
+        _require(_dependencies.lerobot_pipeline, "lerobot_pipeline").alignment_metadata(
+            source,
+            dataset_id=ready.dataset_id,
+            dataset_version=ready.dataset_version,
+        )
+        if source.lerobot is not None
+        else projection.project_alignment_metadata(source)
+    )
+    viewer_target = _require(
+        _dependencies.dataset_ingest_projection,
+        "workflow.DatasetIngestProjectionPort",
+    ).project(
+        source=source,
+        alignment=alignment,
+        schema_snapshot_id=alignment_request.schema_snapshot_id,
+        frequency_hz=alignment_request.profile.frequency_hz,
+        version=version,
+        ready=ready,
+        media_artifacts=request.media_artifacts,
+    )
+    LANCE_COMMITS.labels(outcome="success").inc()
+    return AlignedBundleCommitActivityOutput(
+        version=version,
+        derived_ready=ready,
+        viewer_target=viewer_target,
+    )
 
 
 @activity.defn(name=COMMIT_FRAGMENT_ACTIVITY)
@@ -1643,6 +1672,120 @@ async def create_aligned_media(
     return AlignedMediaActivityOutput(artifact=artifact)
 
 
+@activity.defn(name=RESERVE_INGEST_ACTIVITY)
+async def reserve_ingest(request: IngestRolloutWorkflowInput) -> None:
+    with _worker_scope(
+        request.project_id,
+        request.region_code,
+        request.rollout_id,
+        organization_id=request.organization_id,
+    ):
+        try:
+            await _invoke(
+                "ingest_reservation",
+                lambda: _require(
+                    _dependencies.ingest_dispatch_guard, "ingest_dispatch_guard"
+                ).reserve(request, activity.info().workflow_id),
+            )
+        except IngestDatasetBusy as exc:
+            raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
+
+
+@activity.defn(name=PREPARE_ALIGNED_MEDIA_ACTIVITY)
+async def prepare_aligned_media(request: AlignedMediaActivityInput) -> PreparedAlignedMediaV1:
+    with _worker_scope(
+        request.request.project_id,
+        request.region_code,
+        request.request.rollout_id,
+        organization_id=request.organization_id,
+    ):
+        cancel = Event()
+        with _media_attempt_scope(
+            f"prepare/{request.request.rollout_id}/{request.request.camera_id}"
+        ):
+            return await _invoke(
+                "media_preparation",
+                lambda: prepare_media(
+                    request,
+                    _require(_dependencies.aligned_media, "aligned_media"),
+                    _require(_dependencies.alignment_staging, "alignment_staging"),
+                    cancelled=cancel.is_set,
+                ),
+                on_cancel=cancel.set,
+            )
+
+
+@activity.defn(name=COMMIT_PREPARED_BUNDLE_ACTIVITY)
+async def commit_prepared_bundle(
+    request: PreparedBundleCommitActivityInput,
+) -> AlignedBundleCommitActivityOutput:
+    source = _require(request.alignment.source, "alignment.source")
+    scope = AlignedMediaScopeV1(
+        organization_id=_require(source.organization_id, "source.organization_id"),
+        project_id=request.alignment.project_id,
+        region_code=_require(request.alignment.region_code, "alignment.region_code"),
+    )
+
+    def commit() -> AlignedBundleCommitActivityOutput:
+        cameras = [item.input.request.camera_id for item in request.prepared_media]
+        if len(cameras) != len(set(cameras)) or set(cameras) != set(request.expected_camera_ids):
+            raise ValueError("prepared bundle must cover every camera exactly once")
+        for item in request.prepared_media:
+            media = item.input.request
+            if (
+                media_scope(item.input) != scope
+                or media.dataset_id != request.alignment.dataset_id
+                or media.rollout_id != source.rollout_id
+                or media.source_sha256 != source.source_sha256
+                or media.alignment != request.alignment_staging
+                or item.encoded.frame_count != request.staged_manifest.row_count
+                or abs(item.encoded.duration_seconds - request.staged_manifest.row_count / 30)
+                > 1 / 30
+                or item.encoded.original_source
+                != media.alignment.original_videos.get(media.camera_id)
+            ):
+                raise ValueError("prepared media lineage does not match its commit")
+        guard = _require(_dependencies.ingest_commit_guard, "ingest_commit_guard")
+        with guard.acquire(scope, request.alignment.dataset_id, source.rollout_id):
+            version = _ingest_dataset_version(
+                _require(_dependencies.catalog, "catalog"),
+                request.alignment.dataset_id,
+                scope.project_id,
+                source.rollout_id,
+            )
+            artifacts = tuple(
+                publish_prepared_media(
+                    item,
+                    version,
+                    _require(_dependencies.aligned_media, "aligned_media"),
+                    _require(_dependencies.alignment_staging, "alignment_staging"),
+                )
+                for item in request.prepared_media
+            )
+            return _commit_aligned_bundle(
+                AlignedBundleCommitActivityInput(
+                    alignment=request.alignment,
+                    staged_manifest=request.staged_manifest,
+                    alignment_staging=request.alignment_staging,
+                    expected_dataset_version=version,
+                    expected_camera_ids=request.expected_camera_ids,
+                    media_artifacts=artifacts,
+                )
+            )
+
+    with _worker_scope(
+        scope.project_id,
+        scope.region_code,
+        source.rollout_id,
+        organization_id=scope.organization_id,
+    ):
+        try:
+            return await _invoke("prepared_bundle_commit", commit)
+        except IngestCommitPending as exc:
+            # Durable workflow timers wait without occupying an activity slot.
+            raise ApplicationError(str(exc), type=exc.code, non_retryable=True) from exc
+
+
 @activity.defn(name=CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY)
 async def cleanup_uncommitted_aligned_media(
     request: AlignedMediaCleanupActivityInput,
@@ -1719,6 +1862,15 @@ async def cleanup_alignment_staging(
             _dependencies.alignment_staging,
             "workflow.ProjectionArtifactStorePort",
         )
+        for prepared in request.prepared_media:
+            if prepared.object_key is not None:
+                if (
+                    prepared.input.organization_id,
+                    prepared.input.request.project_id,
+                    prepared.input.region_code,
+                ) != (request.organization_id, request.project_id, request.region_code):
+                    raise ValueError("prepared media cleanup scope mismatch")
+                store.delete(prepared.object_key)
         for shard in request.staging.camera_shards.values():
             store.delete(shard.object_key)
         store.delete(request.staging.object_key)
@@ -1854,6 +2006,9 @@ async def reconcile_publication(
 
 ALL_ACTIVITIES = (
     persist_workflow_job,
+    reserve_ingest,
+    prepare_aligned_media,
+    commit_prepared_bundle,
     update_continuous_episode_state,
     qc_continuous_episode,
     align_continuous_episode,

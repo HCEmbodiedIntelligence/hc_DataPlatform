@@ -1,10 +1,11 @@
-"""Keep one raw-ingest writer active per Dataset while its media version is reserved."""
+"""Bound shared MCAP/LeRobot preparation and serialize final Dataset publication."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -22,13 +23,15 @@ class IngestDatasetBusy(RuntimeError):
 class PostgresIngestDispatchGuard:
     """Reserve a durable PENDING job before launch; outbox retries resume that same ID.
 
-    Media artifacts include the next Dataset version, so two ingest workflows
-    cannot reserve that version concurrently. Waiting uploads stay in the outbox
-    instead of occupying activity slots or consuming activity queue timeouts.
+    New workflows prepare independently up to a bounded capacity. Legacy inputs
+    still reserve the whole Dataset until their version-bound work completes.
     """
 
-    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+    def __init__(self, connection_factory: Callable[[], Any], *, max_active: int = 8) -> None:
+        if max_active < 1:
+            raise ValueError("ingest capacity must be positive")
         self._connections = connection_factory
+        self._max_active = max_active
 
     def reserve(
         self,
@@ -68,9 +71,16 @@ class PostgresIngestDispatchGuard:
                     # A dispatch retry must reconnect to its existing execution,
                     # including a reservation persisted before a launcher crash.
                     return
+                parallel = getattr(request, "parallel_preparation", False)
+                selection = (
+                    "SELECT count(*), "
+                    "bool_or(COALESCE(job.result->>'parallel_preparation', 'false') <> 'true')"
+                    if parallel
+                    else "SELECT 1"
+                )
                 cursor.execute(
-                    """
-                    SELECT 1
+                    f"""
+                    {selection}
                       FROM workflow.jobs job
                       JOIN ingest.rollouts rollout
                         ON rollout.organization_id=job.organization_id
@@ -98,8 +108,11 @@ class PostgresIngestDispatchGuard:
                         INGEST_ROLLOUT_WORKFLOW,
                     ),
                 )
-                if cursor.fetchone() is not None:
-                    raise IngestDatasetBusy("a raw ingest is still writing this Dataset")
+                active = cursor.fetchone()
+                if (parallel and active and (active[0] >= self._max_active or active[1])) or (
+                    not parallel and active is not None
+                ):
+                    raise IngestDatasetBusy("Dataset preparation capacity is occupied")
                 cursor.execute(
                     """
                     SELECT 1 FROM lance_dataset_versions version
@@ -135,11 +148,72 @@ class PostgresIngestDispatchGuard:
                             project_id=request.project_id,
                             resource_id=request.rollout_id,
                             stage="dispatch_pending",
+                            result={"parallel_preparation": True} if parallel else None,
                             created_at=now,
                             updated_at=now,
                         ),
                     )
                 )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+
+class IngestCommitPending(RuntimeError):
+    code = "INGEST_COMMIT_PENDING"
+
+
+class PostgresIngestCommitGuard:
+    """Hold only the final publication, including media binding and projection.
+
+    This lock is separate from the catalog's writer lock, which remains the
+    final authority for atomic version allocation and immutable storage receipts.
+    """
+
+    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+        self._connections = connection_factory
+
+    @contextmanager
+    def acquire(self, scope: Any, dataset_id: str, rollout_id: str) -> Iterator[None]:
+        context = current_request_context()
+        if not context.service_identity or (
+            context.organization_id,
+            context.project_id,
+            context.region_code,
+        ) != (scope.organization_id, scope.project_id, scope.region_code):
+            raise ValueError("Dataset commit lock scope does not match worker context")
+        key = json.dumps(
+            ["ingest-publication-v1", scope.organization_id, scope.project_id, dataset_id]
+        )
+        connection = self._connections()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_try_advisory_xact_lock(hashtextextended(%s, 0))", (key,))
+                if not cursor.fetchone()[0]:
+                    raise IngestCommitPending("another Dataset publication is in progress")
+                cursor.execute(
+                    """SELECT 1 FROM lance_dataset_versions v
+                       WHERE v.project_id=%s AND v.dataset_id=%s AND v.rollout_id<>%s
+                       AND NOT EXISTS (
+                         SELECT 1 FROM dataset_registry.dataset_version_content_projections p
+                         WHERE p.organization_id=%s AND p.project_id=v.project_id
+                         AND p.region_code=%s AND p.dataset_id=v.dataset_id
+                         AND p.version_id='version_lance_' || v.version::text
+                       ) LIMIT 1""",
+                    (
+                        scope.project_id,
+                        dataset_id,
+                        rollout_id,
+                        scope.organization_id,
+                        scope.region_code,
+                    ),
+                )
+                if cursor.fetchone() is not None:
+                    raise IngestCommitPending("the preceding Dataset publication needs recovery")
+                yield
             connection.commit()
         except BaseException:
             connection.rollback()

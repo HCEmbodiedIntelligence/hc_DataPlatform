@@ -92,3 +92,41 @@ def test_dataset_reservation_survives_launch_retries_and_excludes_other_writers(
         assert params[2] == "workflow"
         assert params[8:10] == ("PENDING", "dispatch_pending")
         assert pending.closed
+
+
+@pytest.mark.parametrize(
+    ("active", "busy"),
+    [((0, None), False), ((3, False), False), ((4, False), True), ((1, True), True)],
+)
+def test_parallel_reservations_are_bounded_and_wait_for_legacy_writers(active, busy):
+    control = Connection([(True,), None, active, None])
+    pending = Connection([])
+    connections = iter([control, pending])
+    guard = PostgresIngestDispatchGuard(lambda: next(connections), max_active=4)
+    request = SimpleNamespace(
+        organization_id="org",
+        project_id="p",
+        region_code="r",
+        dataset_id="d",
+        rollout_id="episode",
+        parallel_preparation=True,
+    )
+    token = bind_request_context(
+        RequestContext(
+            organization_id="org",
+            project_id="p",
+            region_code="r",
+            service_identity=True,
+        )
+    )
+    try:
+        if busy:
+            with pytest.raises(IngestDatasetBusy):
+                guard.reserve(request, "workflow")
+        else:
+            guard.reserve(request, "workflow")
+    finally:
+        reset_request_context(token)
+    assert pending.committed is not busy
+    assert "count(*)" in control.queries[2][0]
+    assert "parallel_preparation" in control.queries[2][0]

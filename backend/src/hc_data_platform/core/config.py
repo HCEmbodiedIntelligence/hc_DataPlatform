@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     worker_graceful_shutdown_seconds: int = Field(default=60, ge=1, le=600)
     worker_max_concurrent_workflow_tasks: int = Field(default=4, ge=1, le=1_000)
     worker_max_concurrent_activities: int = Field(default=2, ge=1, le=128)
+    ingest_max_active_per_dataset: int = Field(default=8, ge=1, le=128)
     worker_max_cached_workflows: int = Field(default=16, ge=1, le=10_000)
     outbox_scopes: tuple[str, ...] = ()
     local_scope_discovery: bool = False

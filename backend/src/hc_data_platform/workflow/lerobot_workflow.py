@@ -1,4 +1,4 @@
-"""Durable native LeRobot dispatch; process episodes sequentially per import."""
+"""Durable native LeRobot dispatch with bounded parallel episode preparation."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class LeRobotImportWorkflowInput(BaseModel):
     task: LeRobotEpisodeTaskV1
     episode_count: int = Field(ge=1, le=10_000)
     next_episode: int = Field(default=0, ge=0)
+    max_concurrent_episodes: int = Field(default=4, ge=1, le=32)
     succeeded: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)
     last_error_code: str | None = None
@@ -135,74 +136,101 @@ class LeRobotImportWorkflow(_JobLifecycle):
                 if request.only_episode is not None
                 else range(request.next_episode, request.episode_count)
             )
-            for index in indexes:
-                episode_task = task.model_copy(
-                    update={
-                        "task_id": f"lerobot:{task.source.raw_upload_id}:episode:{index}",
-                        "source": task.source.model_copy(update={"episode_index": index}),
-                    }
-                )
-                self._stage(f"episode_{index + 1}_of_{request.episode_count}")
-                await self._persist(task)
-                try:
-                    prepared = await self._call(
-                        PREPARE_NATIVE_EPISODE, episode_task, PreparedNativeEpisode
-                    )
-                    if prepared.already_ready:
-                        succeeded += 1
-                    else:
-                        episode_input = prepared.request
-                        assert episode_input is not None
-                        job = await workflow.execute_child_workflow(
-                            INGEST_ROLLOUT_WORKFLOW,
-                            episode_input,
-                            id=workflow_id(
-                                "ingest-rollout",
-                                task.project_id,
-                                f"{task.region_code}/{episode_input.rollout_id}/{workflow.info().workflow_id}",
-                            ),
-                            result_type=JobRecord,
-                        )
-                        if job.status is JobStatus.SUCCEEDED:
-                            succeeded += 1
-                        else:
-                            failed += 1
-                            last_error = job.error_code or job.status.value
-                        await self._call(
-                            UPDATE_NATIVE_STATE,
-                            NativeStateUpdate(
-                                task=episode_task,
-                                status="EPISODE_DONE",
-                                episode_job=job,
-                                error_code=last_error,
-                            ),
-                        )
-                except (ActivityError, ChildWorkflowError) as exc:
-                    from .temporal_workflows import _error_code
-
-                    failed += 1
-                    last_error = _error_code(exc)
-                    await self._call(
-                        UPDATE_NATIVE_STATE,
-                        NativeStateUpdate(
-                            task=episode_task, status="EPISODE_FAILED", error_code=last_error
-                        ),
-                    )
-                if (
-                    request.only_episode is None
-                    and (index + 1) % 20 == 0
-                    and index + 1 < request.episode_count
-                ):
+            if workflow.patched("lerobot-parallel-episodes-v1"):
+                indexes = list(indexes)
+                # Finish every in-flight child before continuing as new; receipt
+                # recovery and per-episode errors remain independent.
+                window = indexes[:20]
+                for offset in range(0, len(window), request.max_concurrent_episodes):
+                    batch = window[offset : offset + request.max_concurrent_episodes]
+                    self._stage(f"episodes_{batch[0] + 1}_to_{batch[-1] + 1}")
+                    await self._persist(task)
+                    results = await asyncio.gather(*(self._episode(task, index) for index in batch))
+                    for ready, error in results:
+                        succeeded += int(ready)
+                        failed += int(not ready)
+                        if error is not None:
+                            last_error = error
+                if len(indexes) > len(window):
                     workflow.continue_as_new(
                         request.model_copy(
                             update={
-                                "next_episode": index + 1,
+                                "next_episode": window[-1] + 1,
                                 "succeeded": succeeded,
                                 "failed": failed,
                                 "last_error_code": last_error,
                             }
                         )
                     )
+            else:
+                for index in indexes:
+                    episode_task = task.model_copy(
+                        update={
+                            "task_id": f"lerobot:{task.source.raw_upload_id}:episode:{index}",
+                            "source": task.source.model_copy(update={"episode_index": index}),
+                        }
+                    )
+                    self._stage(f"episode_{index + 1}_of_{request.episode_count}")
+                    await self._persist(task)
+                    try:
+                        prepared = await self._call(
+                            PREPARE_NATIVE_EPISODE, episode_task, PreparedNativeEpisode
+                        )
+                        if prepared.already_ready:
+                            succeeded += 1
+                        else:
+                            episode_input = prepared.request
+                            assert episode_input is not None
+                            job = await workflow.execute_child_workflow(
+                                INGEST_ROLLOUT_WORKFLOW,
+                                episode_input,
+                                id=workflow_id(
+                                    "ingest-rollout",
+                                    task.project_id,
+                                    f"{task.region_code}/{episode_input.rollout_id}/{workflow.info().workflow_id}",
+                                ),
+                                result_type=JobRecord,
+                            )
+                            if job.status is JobStatus.SUCCEEDED:
+                                succeeded += 1
+                            else:
+                                failed += 1
+                                last_error = job.error_code or job.status.value
+                            await self._call(
+                                UPDATE_NATIVE_STATE,
+                                NativeStateUpdate(
+                                    task=episode_task,
+                                    status="EPISODE_DONE",
+                                    episode_job=job,
+                                    error_code=last_error,
+                                ),
+                            )
+                    except (ActivityError, ChildWorkflowError) as exc:
+                        from .temporal_workflows import _error_code
+
+                        failed += 1
+                        last_error = _error_code(exc)
+                        await self._call(
+                            UPDATE_NATIVE_STATE,
+                            NativeStateUpdate(
+                                task=episode_task, status="EPISODE_FAILED", error_code=last_error
+                            ),
+                        )
+                    if (
+                        request.only_episode is None
+                        and (index + 1) % 20 == 0
+                        and index + 1 < request.episode_count
+                    ):
+                        workflow.continue_as_new(
+                            request.model_copy(
+                                update={
+                                    "next_episode": index + 1,
+                                    "succeeded": succeeded,
+                                    "failed": failed,
+                                    "last_error_code": last_error,
+                                }
+                            )
+                        )
             status = "SUCCEEDED" if failed == 0 else "PARTIALLY_FAILED" if succeeded else "FAILED"
             await self._call(
                 UPDATE_NATIVE_STATE,
@@ -228,3 +256,52 @@ class LeRobotImportWorkflow(_JobLifecycle):
             await self._persist(task)
             await self._call(UPDATE_NATIVE_STATE, NativeStateUpdate(task=task, status="CANCELLED"))
             raise
+
+    async def _episode(self, task: LeRobotEpisodeTaskV1, index: int) -> tuple[bool, str | None]:
+        episode = task.model_copy(
+            update={
+                "task_id": f"lerobot:{task.source.raw_upload_id}:episode:{index}",
+                "source": task.source.model_copy(update={"episode_index": index}),
+            }
+        )
+        try:
+            prepared = await self._call(PREPARE_NATIVE_EPISODE, episode, PreparedNativeEpisode)
+            if prepared.already_ready:
+                return True, None
+            assert prepared.request is not None
+            job = await workflow.execute_child_workflow(
+                INGEST_ROLLOUT_WORKFLOW,
+                prepared.request,
+                id=workflow_id(
+                    "ingest-rollout",
+                    task.project_id,
+                    f"{task.region_code}/{prepared.request.rollout_id}/{workflow.info().workflow_id}",
+                ),
+                result_type=JobRecord,
+            )
+            error = (
+                None if job.status is JobStatus.SUCCEEDED else job.error_code or job.status.value
+            )
+            await self._call(
+                UPDATE_NATIVE_STATE,
+                NativeStateUpdate(
+                    task=episode,
+                    status="EPISODE_DONE",
+                    episode_job=job,
+                    error_code=error,
+                ),
+            )
+            return job.status is JobStatus.SUCCEEDED, error
+        except (ActivityError, ChildWorkflowError) as exc:
+            from .temporal_workflows import _error_code
+
+            error = _error_code(exc)
+            await self._call(
+                UPDATE_NATIVE_STATE,
+                NativeStateUpdate(
+                    task=episode,
+                    status="EPISODE_FAILED",
+                    error_code=error,
+                ),
+            )
+            return False, error

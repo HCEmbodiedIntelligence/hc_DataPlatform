@@ -200,11 +200,11 @@ from hc_data_platform.registry.service import RegistryService
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
 from hc_data_platform.robot_assets.router import configure_organization_robot_assets
 from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
+from hc_data_platform.robot_ingest.processing_api import configure_processing
+from hc_data_platform.robot_ingest.processing_store import ProcessingStore
 from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
 from hc_data_platform.robot_ingest.router import configure_robot_ingest
 from hc_data_platform.robot_ingest.service import RobotIngestService
-from hc_data_platform.robot_ingest.processing_store import ProcessingStore
-from hc_data_platform.robot_ingest.processing_api import configure_processing
 from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -866,6 +866,8 @@ def build_runtime(
         PostgresAdvisoryDatasetLock(connection_factory),
     )
 
+    from .workflow.ingest_guard import PostgresIngestCommitGuard, PostgresIngestDispatchGuard
+
     aligned_media_repository = PostgresAlignedMediaRepository(connection_factory)
     aligned_media_store = S3AlignedMediaArtifactStore(
         s3_client,
@@ -883,25 +885,21 @@ def build_runtime(
         resolved.object_store_bucket,
         Path(resolved.alignment_staging_root) / "shared",
     )
-    aligned_media_generation = (
-        AlignedMediaGenerationService(
-            frame_reader=ArrowAlignedFrameReader(shared_staging_store),
-            encoder=FFmpegMp4Encoder(
-                Path(resolved.aligned_media_staging_root),
-                profiles=aligned_media_profiles,
-                ffmpeg_threads=resolved.media_ffmpeg_threads,
-                raw_storage=object_storage,
-            ),
-            repository=aligned_media_repository,
-            store=aligned_media_store,
+    aligned_media_generation = AlignedMediaGenerationService(
+        frame_reader=ArrowAlignedFrameReader(shared_staging_store),
+        encoder=FFmpegMp4Encoder(
+            Path(resolved.aligned_media_staging_root),
             profiles=aligned_media_profiles,
-            capacity_gate=PostgresMediaCapacityGate(
-                connection_factory,
-                limit=resolved.media_global_max_concurrent_generations,
-            ),
-        )
-        if include_media
-        else None
+            ffmpeg_threads=resolved.media_ffmpeg_threads,
+            raw_storage=object_storage,
+        ),
+        repository=aligned_media_repository,
+        store=aligned_media_store,
+        profiles=aligned_media_profiles,
+        capacity_gate=PostgresMediaCapacityGate(
+            connection_factory,
+            limit=resolved.media_global_max_concurrent_generations,
+        ),
     )
     aligned_media_audit = PostgresAlignedMediaAuditRecorder(connection_factory)
     catalog_audit = PostgresLanceCatalogAuditRecorder(connection_factory)
@@ -986,6 +984,10 @@ def build_runtime(
         catalog_fragments=ArrowCatalogFragmentAdapter(catalog_repository),
         catalog=catalog,
         aligned_media=aligned_media_generation,
+        ingest_dispatch_guard=PostgresIngestDispatchGuard(
+            connection_factory, max_active=resolved.ingest_max_active_per_dataset
+        ),
+        ingest_commit_guard=PostgresIngestCommitGuard(connection_factory),
         aligned_media_repository=aligned_media_repository,
         aligned_media_store=aligned_media_store,
         publisher=publisher,
@@ -1237,7 +1239,9 @@ def build_worker_outbox(
     )
     from .workflow.ingest_guard import PostgresIngestDispatchGuard
 
-    handler = IngestOutboxHandler(launcher, resolver, PostgresIngestDispatchGuard(connection_factory))
+    handler = IngestOutboxHandler(launcher, resolver, PostgresIngestDispatchGuard(
+        connection_factory, max_active=resolved.ingest_max_active_per_dataset
+    ))
     continuous_episode_resolver = PostgresContinuousEpisodeWorkflowInputResolver(
         connection_factory,
         catalog,
@@ -1305,19 +1309,23 @@ def build_worker_outbox(
         require_sampling_manifest=True,
     )
     from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
-    from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
-    from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
     from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
+    from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
+    from hc_data_platform.robot_ingest.processing_worker import RobotProcessingOutboxHandler
     from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
 
     dispatcher = OutboxDispatcher(
         PostgresOutboxDeliveryRepository(connection_factory),
         {
-            RecordingOutboxHandler.EVENT_TYPE:RecordingOutboxHandler(connection_factory,object_storage,
-                temporal_client,robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE))),
+            RecordingOutboxHandler.EVENT_TYPE: RecordingOutboxHandler(
+                connection_factory, object_storage, temporal_client,
+                robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
+            ),
             EVENT_TYPE: RobotProcessingOutboxHandler(
                 temporal_client, ProcessingStore(connection_factory),
-                task_queue=robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
+                task_queue=robot_task_queue(
+                    os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)
+                ),
             ),
             LeRobotImportOutboxHandler.EVENT_TYPE: LeRobotImportOutboxHandler(
                 launcher, PostgresRawSourceRepository(connection_factory)

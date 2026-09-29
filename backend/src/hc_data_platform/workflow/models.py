@@ -12,6 +12,7 @@ from hc_data_platform.aligned_media.models import (
     AlignedMediaArtifactV1,
     AlignedMediaGenerationRequestV1,
     AlignmentStagingArtifactV1,
+    EncodedAlignedMediaV1,
 )
 from hc_data_platform.alignment.models import (
     AlignedFragmentManifestV1 as StagedFragmentManifestV1,
@@ -625,6 +626,34 @@ class AlignedMediaActivityOutput(BaseModel):
     artifact: AlignedMediaArtifactV1
 
 
+class PreparedAlignedMediaV1(BaseModel):
+    """Private, version-independent media receipt shared across worker processes."""
+
+    model_config = ConfigDict(frozen=True)
+    input: AlignedMediaActivityInput
+    encoded: EncodedAlignedMediaV1
+    object_key: str | None = None
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_receipt(self) -> PreparedAlignedMediaV1:
+        if self.encoded.original_source is None and (
+            not self.object_key or not self.content_sha256 or self.size_bytes < 1
+        ):
+            raise ValueError("prepared media requires a complete staging receipt")
+        return self
+
+
+class PreparedBundleCommitActivityInput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    alignment: AlignmentActivityInput
+    staged_manifest: StagedFragmentManifestV1
+    alignment_staging: AlignmentStagingArtifactV1
+    expected_camera_ids: tuple[str, ...]
+    prepared_media: tuple[PreparedAlignedMediaV1, ...]
+
+
 class AlignedMediaCleanupActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -647,6 +676,7 @@ class AlignmentStagingCleanupActivityInput(BaseModel):
     project_id: str = Field(min_length=1)
     region_code: str = Field(min_length=1)
     staging: AlignmentStagingArtifactV1
+    prepared_media: tuple[PreparedAlignedMediaV1, ...] = ()
 
 
 class AlignmentStagingCleanupActivityOutput(BaseModel):
@@ -745,6 +775,8 @@ class IngestRolloutWorkflowInput(BaseModel):
     rollout_id: str = Field(min_length=1)
     automatic_qc_run_id: str = Field(default="initial", min_length=1, max_length=128)
     processing_attempt: int = Field(default=1, ge=1, le=3)
+    # False preserves old persisted inputs; new format adapters explicitly opt in.
+    parallel_preparation: bool = False
     media_task_queue: str = Field(min_length=1, max_length=255)
     manifest: ManifestActivityInput
     verification: VerificationActivityInput
