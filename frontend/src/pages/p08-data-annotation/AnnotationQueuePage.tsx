@@ -1,3 +1,4 @@
+import { annotationDataLabel } from "./annotation-package";
 import { useDeferredValue, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -225,8 +226,8 @@ function QueueRow(props: {
           {props.task.dataset_id}
         </span>
         <small>
-          Dataset v{props.task.dataset_version} · Lance v
-          {props.task.base_lance_version}
+          Dataset v{props.task.dataset_version} ·{" "}
+          {annotationDataLabel(props.task)}
         </small>
       </td>
       <td>

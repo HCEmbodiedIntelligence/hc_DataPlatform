@@ -1447,10 +1447,16 @@ components:
           title: Approved At
           type: string
         base_lance_version:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
           default: 1
-          minimum: 1.0
           title: Base Lance Version
-          type: integer
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
         dataset_id:
           title: Dataset Id
           type: string
@@ -1587,9 +1593,11 @@ components:
           title: Author Id
           type: string
         base_lance_version:
-          minimum: 1.0
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
           title: Base Lance Version
-          type: integer
         base_step_count:
           anyOf:
           - exclusiveMinimum: 0.0
@@ -1599,6 +1607,10 @@ components:
         client_mutation_id:
           title: Client Mutation Id
           type: string
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
         effective_exclusions:
           items:
             $ref: '#/components/schemas/ExclusionRange'
@@ -1641,11 +1653,11 @@ components:
           title: Updated At
           type: string
       required:
+      - base_lance_version
       - task_id
       - revision
       - author_id
       - client_mutation_id
-      - base_lance_version
       - tag_schema_id
       - tag_schema_version
       - tags
@@ -1759,6 +1771,10 @@ components:
           format: date-time
           title: Created At
           type: string
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
         decision:
           $ref: '#/components/schemas/ReviewDecision'
         review_id:
@@ -1821,10 +1837,12 @@ components:
           title: Author Id
           type: string
         base_lance_version:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
           default: 1
-          minimum: 1.0
           title: Base Lance Version
-          type: integer
         client_mutation_id:
           minLength: 1
           title: Client Mutation Id
@@ -1838,6 +1856,10 @@ components:
           format: date-time
           title: Created At
           type: string
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
         operations:
           items:
             $ref: '#/components/schemas/AnnotationOperation'
@@ -2042,9 +2064,11 @@ components:
         autosaves or from the underlying Lance revision.'
       properties:
         base_lance_version:
-          minimum: 1.0
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
           title: Base Lance Version
-          type: integer
         checks:
           items:
             $ref: '#/components/schemas/AnnotationReviewCheck'
@@ -2054,6 +2078,10 @@ components:
           format: date-time
           title: Created At
           type: string
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
         episode_version:
           default: 1
           minimum: 1.0
@@ -2092,11 +2120,11 @@ components:
           title: Task Id
           type: string
       required:
+      - base_lance_version
       - submission_id
       - task_id
       - revision
       - submitted_by
-      - base_lance_version
       - tag_schema_id
       - tag_schema_version
       - tag_schema_hash
@@ -2208,10 +2236,12 @@ components:
           - type: 'null'
           title: Assignee Id
         base_lance_version:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
           default: 1
-          minimum: 1.0
           title: Base Lance Version
-          type: integer
         base_step_count:
           anyOf:
           - exclusiveMinimum: 0.0
@@ -2234,6 +2264,10 @@ components:
           - type: string
           - type: 'null'
           title: Current Submission Id
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
         dataset_id:
           minLength: 1
           title: Dataset Id
@@ -2323,7 +2357,9 @@ components:
       type: object
     AnnotationTaskCreationSource:
       enum:
+      - LEGACY
       - SYSTEM_LANCE
+      - SYSTEM_EPISODE
       title: AnnotationTaskCreationSource
       type: string
     AnnotationTaskKind:

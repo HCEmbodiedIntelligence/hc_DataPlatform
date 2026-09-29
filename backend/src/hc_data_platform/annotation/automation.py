@@ -1,4 +1,4 @@
-"""System-only annotation task creation after an immutable Lance commit."""
+"""System-only annotation task creation after an immutable data commit."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from threading import RLock
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.security.audit import canonical_hash
 
 from .models import (
@@ -38,12 +39,13 @@ class AutomaticAnnotationRequest:
     rollout_id: str
     dataset_id: str
     dataset_version: int
-    lance_version: int
+    lance_version: int | None
     dataset_schema_snapshot_id: str
     base_step_count: int
     source_workflow_id: str
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
+    data_ref: DataVersionRef | None = None
 
     def __post_init__(self) -> None:
         string_values = (
@@ -56,11 +58,35 @@ class AutomaticAnnotationRequest:
         )
         if any(not value for value in string_values):
             raise ValueError("automatic annotation lineage values must not be empty")
-        if min(self.dataset_version, self.lance_version, self.base_step_count) < 1:
+        if min(self.dataset_version, self.base_step_count) < 1:
             raise ValueError("automatic annotation versions and step count must be positive")
+        if (self.lance_version is None) == (self.data_ref is None):
+            raise ValueError("automatic annotation requires exactly one data binding")
+        if self.lance_version is not None and self.lance_version < 1:
+            raise ValueError("legacy Lance version must be positive")
+        if self.data_ref is not None:
+            identity = self.data_ref.identity
+            if (self.project_id, self.region_code, self.dataset_id, self.rollout_id) != (
+                identity.project_id,
+                identity.region_code,
+                identity.dataset_id,
+                identity.rollout_id,
+            ) or (self.dataset_schema_snapshot_id, self.base_step_count) != (
+                self.data_ref.schema_snapshot_id,
+                self.data_ref.frame_count,
+            ):
+                raise ValueError("automatic annotation target differs from its Episode reference")
 
     @property
     def identity(self) -> str:
+        if self.data_ref is not None:
+            return "episode:" + canonical_hash(
+                {
+                    "data_ref": self.data_ref.model_dump(mode="json"),
+                    "dataset_version": self.dataset_version,
+                    "task_kind": self.task_kind.value,
+                }
+            )
         return ":".join(
             (
                 self.project_id,
@@ -123,11 +149,12 @@ class AutomaticAnnotationTaskService:
         if schema is None:
             self._repository.record_automatic_blocked(request)
             raise AutomaticAnnotationBlocked(
-                "no explicitly compatible published Tag Schema is bound to this Lance target"
+                "no explicitly compatible published Tag Schema is bound to this data target"
             )
         now = self._clock()
         content_hash = revision_content_hash(
             base_lance_version=request.lance_version,
+            data_ref=request.data_ref,
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
             tags=(),
@@ -140,6 +167,7 @@ class AutomaticAnnotationTaskService:
             author_id="system",
             client_mutation_id="initial",
             base_lance_version=request.lance_version,
+            data_ref=request.data_ref,
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
             tags=(),
@@ -154,12 +182,17 @@ class AutomaticAnnotationTaskService:
             dataset_id=request.dataset_id,
             dataset_version=request.dataset_version,
             base_lance_version=request.lance_version,
+            data_ref=request.data_ref,
             base_step_count=request.base_step_count,
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
             rollout_id=request.rollout_id,
             task_kind=request.task_kind,
-            creation_source=AnnotationTaskCreationSource.SYSTEM_LANCE,
+            creation_source=(
+                AnnotationTaskCreationSource.SYSTEM_EPISODE
+                if request.data_ref is not None
+                else AnnotationTaskCreationSource.SYSTEM_LANCE
+            ),
             source_workflow_id=request.source_workflow_id,
             current_revision=0,
             state_version=0,
@@ -179,6 +212,7 @@ class AutomaticAnnotationTaskService:
             task.dataset_id,
             task.dataset_version,
             task.base_lance_version,
+            task.data_ref,
             task.base_step_count,
             task.tag_schema_id,
             task.tag_schema_version,
@@ -193,6 +227,7 @@ class AutomaticAnnotationTaskService:
             persisted.dataset_id,
             persisted.dataset_version,
             persisted.base_lance_version,
+            persisted.data_ref,
             persisted.base_step_count,
             persisted.tag_schema_id,
             persisted.tag_schema_version,
@@ -288,7 +323,7 @@ class PostgresAutomaticAnnotationRepository:
         return self._schemas.resolve_published_schema(**kwargs)
 
     def record_automatic_blocked(self, request: AutomaticAnnotationRequest) -> None:
-        from .postgres import require_repository_scope
+        from .postgres import data_ref_json, require_repository_scope
 
         now = datetime.now(timezone.utc)
         connection = self._connection_factory()
@@ -298,6 +333,9 @@ class PostgresAutomaticAnnotationRepository:
                     cursor,
                     project_id=request.project_id,
                     region_code=request.region_code,
+                    organization_id=request.data_ref.identity.organization_id
+                    if request.data_ref
+                    else None,
                 )
                 cursor.execute(
                     """
@@ -305,15 +343,12 @@ class PostgresAutomaticAnnotationRepository:
                         trigger_id, project_id, region_code, rollout_id, dataset_id,
                         dataset_version, lance_version, dataset_schema_snapshot_id,
                         task_kind, source_workflow_id, status, error_code,
-                        attempts, created_at, updated_at
+                        attempts, created_at, updated_at, data_ref
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        'BLOCKED_RETRYABLE', %s, 1, %s, %s
+                        'BLOCKED_RETRYABLE', %s, 1, %s, %s, %s::jsonb
                     )
-                    ON CONFLICT (
-                        project_id, region_code, rollout_id, dataset_id,
-                        dataset_version, lance_version, task_kind
-                    ) DO UPDATE SET
+                    ON CONFLICT (trigger_id) DO UPDATE SET
                         status = 'BLOCKED_RETRYABLE', task_id = NULL,
                         error_code = EXCLUDED.error_code,
                         attempts = annotation.annotation_task_triggers.attempts + 1,
@@ -334,6 +369,7 @@ class PostgresAutomaticAnnotationRepository:
                         AutomaticAnnotationBlocked.code,
                         now,
                         now,
+                        data_ref_json(request.data_ref),
                     ),
                 )
                 attempt = int(cursor.fetchone()[0])
@@ -358,7 +394,7 @@ class PostgresAutomaticAnnotationRepository:
         request: AutomaticAnnotationRequest,
         aggregate: AnnotationAggregate,
     ) -> AnnotationTask:
-        from .postgres import PostgresAnnotationRepository, require_repository_scope
+        from .postgres import PostgresAnnotationRepository, data_ref_json, require_repository_scope
 
         task = aggregate.task
         revision = aggregate.revisions[0]
@@ -370,6 +406,9 @@ class PostgresAutomaticAnnotationRepository:
                     cursor,
                     project_id=request.project_id,
                     region_code=request.region_code,
+                    organization_id=request.data_ref.identity.organization_id
+                    if request.data_ref
+                    else None,
                 )
                 cursor.execute(
                     """
@@ -379,11 +418,12 @@ class PostgresAutomaticAnnotationRepository:
                         tag_schema_id, tag_schema_version, task_kind, creation_source,
                         source_workflow_id, current_revision, state_version, status,
                         submitted_revision, submitted_by, current_submission_id,
-                        approved_revision, approved_review_id, etag, created_at, updated_at
+                        approved_revision, approved_review_id, etag,
+                        created_at, updated_at, data_ref
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, NULL, %s, %s, %s,
                         %s, %s, %s, %s, 0, 0, 'DRAFT', NULL, NULL, NULL,
-                        NULL, NULL, %s, %s, %s
+                        NULL, NULL, %s, %s, %s, %s::jsonb
                     ) ON CONFLICT DO NOTHING
                     RETURNING task_id
                     """,
@@ -404,6 +444,7 @@ class PostgresAutomaticAnnotationRepository:
                         task.etag,
                         task.created_at,
                         task.updated_at,
+                        data_ref_json(task.data_ref),
                     ),
                 )
                 if cursor.fetchone() is not None:
@@ -416,8 +457,10 @@ class PostgresAutomaticAnnotationRepository:
                            creation_source, source_workflow_id
                     FROM annotation.annotation_tasks
                     WHERE project_id = %s AND region_code = %s AND rollout_id = %s
+                      AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
                       AND dataset_id = %s AND dataset_version = %s
-                      AND base_lance_version = %s AND task_kind = %s
+                      AND base_lance_version IS NOT DISTINCT FROM %s AND task_kind = %s
+                      AND data_ref IS NOT DISTINCT FROM %s::jsonb
                     """,
                     (
                         request.project_id,
@@ -427,6 +470,7 @@ class PostgresAutomaticAnnotationRepository:
                         request.dataset_version,
                         request.lance_version,
                         request.task_kind.value,
+                        data_ref_json(request.data_ref),
                     ),
                 )
                 raw = cursor.fetchone()
@@ -500,15 +544,12 @@ class PostgresAutomaticAnnotationRepository:
                         trigger_id, project_id, region_code, rollout_id, dataset_id,
                         dataset_version, lance_version, dataset_schema_snapshot_id,
                         task_kind, source_workflow_id, task_id, status, error_code,
-                        attempts, created_at, updated_at
+                        attempts, created_at, updated_at, data_ref
                     ) VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, 'CREATED', NULL, 1, %s, %s
+                        %s, 'CREATED', NULL, 1, %s, %s, %s::jsonb
                     )
-                    ON CONFLICT (
-                        project_id, region_code, rollout_id, dataset_id,
-                        dataset_version, lance_version, task_kind
-                    ) DO UPDATE SET
+                    ON CONFLICT (trigger_id) DO UPDATE SET
                         task_id = EXCLUDED.task_id, status = 'CREATED', error_code = NULL,
                         attempts = annotation.annotation_task_triggers.attempts + 1,
                         updated_at = EXCLUDED.updated_at
@@ -530,6 +571,7 @@ class PostgresAutomaticAnnotationRepository:
                         task.task_id,
                         now,
                         now,
+                        data_ref_json(request.data_ref),
                     ),
                 )
                 attempt_row = cursor.fetchone()
@@ -572,6 +614,9 @@ class PostgresAutomaticAnnotationRepository:
             "dataset_id": request.dataset_id,
             "dataset_version": request.dataset_version,
             "lance_version": request.lance_version,
+            "data_ref": None
+            if request.data_ref is None
+            else request.data_ref.model_dump(mode="json"),
             "task_kind": request.task_kind.value,
             "attempt": attempt,
         }

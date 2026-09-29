@@ -1598,6 +1598,7 @@ async def create_annotation_task(
                 dataset_id=request.dataset_id,
                 dataset_version=request.dataset_version,
                 lance_version=request.lance_version,
+                data_ref=request.data_ref,
                 dataset_schema_snapshot_id=request.dataset_schema_snapshot_id,
                 base_step_count=request.base_step_count,
                 source_workflow_id=request.source_workflow_id,

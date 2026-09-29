@@ -38,6 +38,7 @@ from hc_data_platform.episode_store.catalog_models import (
     EpisodeDerivedReady,
     validate_commit_pair,
 )
+from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -641,12 +642,38 @@ class AutomaticAnnotationActivityInput(BaseModel):
     rollout_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     dataset_version: int = Field(ge=1)
-    lance_version: int = Field(ge=1)
+    lance_version: int | None = Field(ge=1)
+    data_ref: DataVersionRef | None = None
     dataset_schema_snapshot_id: str = Field(min_length=1)
     base_step_count: int = Field(gt=0)
     source_workflow_id: str = Field(min_length=1)
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
+
+    @model_validator(mode="after")
+    def annotation_binding_matches(self) -> AutomaticAnnotationActivityInput:
+        if (self.lance_version is None) == (self.data_ref is None):
+            raise ValueError("automatic annotation requires exactly one data binding")
+        if self.data_ref is not None:
+            identity = self.data_ref.identity
+            if (
+                self.organization_id,
+                self.project_id,
+                self.region_code,
+                self.dataset_id,
+                self.rollout_id,
+            ) != (
+                identity.organization_id,
+                identity.project_id,
+                identity.region_code,
+                identity.dataset_id,
+                identity.rollout_id,
+            ) or (self.dataset_schema_snapshot_id, self.base_step_count) != (
+                self.data_ref.schema_snapshot_id,
+                self.data_ref.frame_count,
+            ):
+                raise ValueError("automatic annotation activity differs from its Episode binding")
+        return self
 
 
 class AutomaticAnnotationActivityOutput(BaseModel):
@@ -865,8 +892,10 @@ class DatasetWriterWorkflowInput(BaseModel):
     @classmethod
     def unambiguous_commit_shape(cls, value):
         commit = value.get("commit") if isinstance(value, dict) else None
-        if isinstance(commit, dict) and "fragment" in commit and (
-            "alignment" in commit or "package_plan" in commit
+        if (
+            isinstance(commit, dict)
+            and "fragment" in commit
+            and ("alignment" in commit or "package_plan" in commit)
         ):
             raise ValueError("writer input cannot mix historical and Episode package commits")
         return value
@@ -930,8 +959,11 @@ class AnnotationReviewPreparationWorkflowInput(BaseModel):
             raise ValueError("Tag Schema project_id must match workflow project_id")
         if self.tag_schema.status != TagSchemaStatus.PUBLISHED:
             raise ValueError("review preparation requires a published Tag Schema")
-        if self.revision.base_lance_version < 1:
-            raise ValueError("revision must pin a positive Lance version")
+        if (
+            self.revision.data_ref is not None
+            and self.revision.data_ref.identity.project_id != self.project_id
+        ):
+            raise ValueError("revision Episode binding must match workflow project_id")
         if (
             self.revision.tag_schema_id,
             self.revision.tag_schema_version,

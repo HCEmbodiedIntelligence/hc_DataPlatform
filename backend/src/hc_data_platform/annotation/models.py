@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hc_data_platform.core.pagination import PageInfo
+from hc_data_platform.episode_store.models import DataVersionRef
 
 if TYPE_CHECKING:
     from hc_data_platform.security import AuthContext
@@ -46,7 +47,9 @@ class AnnotationTaskKind(str, Enum):
 
 
 class AnnotationTaskCreationSource(str, Enum):
+    LEGACY = "LEGACY"
     SYSTEM_LANCE = "SYSTEM_LANCE"
+    SYSTEM_EPISODE = "SYSTEM_EPISODE"
 
 
 class TagAttributeType(str, Enum):
@@ -317,7 +320,22 @@ class AnnotationReviewCheck(BaseModel):
     evidence: str = Field(min_length=1, max_length=2000)
 
 
-class AnnotationSubmission(BaseModel):
+class AnnotationDataBinding(BaseModel):
+    """Exactly one physical baseline; legacy defaults preserve old wire inputs."""
+
+    model_config = ConfigDict(frozen=True)
+
+    base_lance_version: int | None = Field(default=1, ge=1)
+    data_ref: DataVersionRef | None = None
+
+    @model_validator(mode="after")
+    def validate_data_binding(self) -> AnnotationDataBinding:
+        if (self.base_lance_version is None) == (self.data_ref is None):
+            raise ValueError("annotation requires exactly one Lance or Episode data binding")
+        return self
+
+
+class AnnotationSubmission(AnnotationDataBinding):
     """Immutable Episode business version produced by submit-for-review.
 
     Draft saves append editor revisions.  ``episode_version`` advances only at
@@ -332,7 +350,7 @@ class AnnotationSubmission(BaseModel):
     episode_version: int = Field(default=1, ge=1)
     revision: int = Field(ge=0)
     submitted_by: str = Field(min_length=1)
-    base_lance_version: int = Field(ge=1)
+    base_lance_version: int | None = Field(ge=1)
     tag_schema_id: str = Field(min_length=1)
     tag_schema_version: int = Field(ge=1)
     tag_schema_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -408,7 +426,7 @@ class AnnotationOperation(BaseModel):
         return self
 
 
-class AnnotationRevision(BaseModel):
+class AnnotationRevision(AnnotationDataBinding):
     """An immutable revision containing the operations added by one draft save."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -419,7 +437,7 @@ class AnnotationRevision(BaseModel):
     parent_revision: int | None
     author_id: str = Field(min_length=1)
     client_mutation_id: str = Field(min_length=1)
-    base_lance_version: int = Field(default=1, ge=1)
+    base_lance_version: int | None = Field(default=1, ge=1)
     tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
     tags: tuple[AnnotationTag, ...] = ()
@@ -444,6 +462,7 @@ class AnnotationReview(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["1"] = "1"
+    data_ref: DataVersionRef | None = None
     review_id: str = Field(min_length=1)
     submission_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
@@ -484,7 +503,7 @@ class AutoAnnotationSamplingReference(BaseModel):
         return self
 
 
-class AnnotationTask(BaseModel):
+class AnnotationTask(AnnotationDataBinding):
     """Task identity plus its current workflow pointers.
 
     ``state_version`` changes for claim, save, submit, and review. ``current_revision``
@@ -499,7 +518,7 @@ class AnnotationTask(BaseModel):
     region_code: str | None = Field(default=None, min_length=1)
     dataset_id: str = Field(min_length=1)
     dataset_version: int = Field(ge=1)
-    base_lance_version: int = Field(default=1, ge=1)
+    base_lance_version: int | None = Field(default=1, ge=1)
     base_step_count: int | None = Field(default=None, gt=0)
     tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
@@ -522,6 +541,19 @@ class AnnotationTask(BaseModel):
 
     @model_validator(mode="after")
     def validate_state_pointers(self) -> AnnotationTask:
+        if self.data_ref is not None:
+            identity = self.data_ref.identity
+            if (self.project_id, self.region_code, self.dataset_id, self.rollout_id) != (
+                identity.project_id,
+                identity.region_code,
+                identity.dataset_id,
+                identity.rollout_id,
+            ) or self.base_step_count != self.data_ref.frame_count:
+                raise ValueError("annotation target must match the full Episode data binding")
+            if self.creation_source is not AnnotationTaskCreationSource.SYSTEM_EPISODE:
+                raise ValueError("Episode annotation requires SYSTEM_EPISODE lineage")
+        elif self.creation_source is AnnotationTaskCreationSource.SYSTEM_EPISODE:
+            raise ValueError("SYSTEM_EPISODE requires an Episode data binding")
         if self.submitted_revision is not None and self.submitted_revision > self.current_revision:
             raise ValueError("submitted_revision cannot be newer than current_revision")
         if self.approved_revision is not None and self.approved_revision > self.current_revision:
@@ -585,7 +617,7 @@ class AnnotationRevisionThreadPage(BaseModel):
     snapshot_at: datetime
 
 
-class AnnotationDraft(BaseModel):
+class AnnotationDraft(AnnotationDataBinding):
     """Current editable read model backed by an immutable revision."""
 
     model_config = ConfigDict(frozen=True)
@@ -595,7 +627,7 @@ class AnnotationDraft(BaseModel):
     revision: int = Field(ge=0)
     author_id: str
     client_mutation_id: str
-    base_lance_version: int = Field(ge=1)
+    base_lance_version: int | None = Field(ge=1)
     base_step_count: int | None = Field(default=None, gt=0)
     tag_schema_id: str
     tag_schema_version: int = Field(ge=1)
@@ -625,7 +657,7 @@ class AnnotationCurrent(BaseModel):
     updated_at: datetime
 
 
-class AnnotationApprovedV1(BaseModel):
+class AnnotationApprovedV1(AnnotationDataBinding):
     """Immutable publishing snapshot of one approved revision."""
 
     model_config = ConfigDict(frozen=True)
@@ -638,7 +670,7 @@ class AnnotationApprovedV1(BaseModel):
     task_id: str
     annotation_revision: int = Field(ge=0)
     submission_id: str = Field(min_length=1)
-    base_lance_version: int = Field(default=1, ge=1)
+    base_lance_version: int | None = Field(default=1, ge=1)
     tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
     revision_content_hash: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")

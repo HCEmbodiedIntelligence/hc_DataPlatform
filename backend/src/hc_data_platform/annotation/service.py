@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
+from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.security import AuthContext, ScopeGuard
 
 from .models import (
@@ -401,14 +402,23 @@ class AnnotationService:
         creation_source: AnnotationTaskCreationSource = AnnotationTaskCreationSource.SYSTEM_LANCE,
         source_workflow_id: str | None = None,
         base_lance_version: int | None = None,
+        data_ref: DataVersionRef | None = None,
         base_step_count: int | None = None,
         tag_schema_id: str = "default-flat",
         tag_schema_version: int = 1,
     ) -> AnnotationTask:
         now = self._clock()
+        if data_ref is not None and base_lance_version is not None:
+            raise ValueError("Episode annotation cannot borrow a Lance version")
         resolved_lance_version = (
-            dataset_version if base_lance_version is None else base_lance_version
+            None
+            if data_ref is not None
+            else dataset_version
+            if base_lance_version is None
+            else base_lance_version
         )
+        if data_ref is not None:
+            creation_source = AnnotationTaskCreationSource.SYSTEM_EPISODE
         schema = self._schema_for(project_id, tag_schema_id, tag_schema_version)
         if schema.status is not TagSchemaStatus.PUBLISHED:
             raise InvalidAnnotationStateError(
@@ -416,6 +426,7 @@ class AnnotationService:
             )
         initial_hash = revision_content_hash(
             base_lance_version=resolved_lance_version,
+            data_ref=data_ref,
             tag_schema_id=tag_schema_id,
             tag_schema_version=tag_schema_version,
             tags=(),
@@ -428,6 +439,7 @@ class AnnotationService:
             author_id="system",
             client_mutation_id="initial",
             base_lance_version=resolved_lance_version,
+            data_ref=data_ref,
             tag_schema_id=tag_schema_id,
             tag_schema_version=tag_schema_version,
             tags=(),
@@ -442,6 +454,7 @@ class AnnotationService:
             dataset_id=dataset_id,
             dataset_version=dataset_version,
             base_lance_version=resolved_lance_version,
+            data_ref=data_ref,
             base_step_count=base_step_count,
             tag_schema_id=tag_schema_id,
             tag_schema_version=tag_schema_version,
@@ -467,6 +480,7 @@ class AnnotationService:
             persisted_task.dataset_id,
             persisted_task.dataset_version,
             persisted_task.base_lance_version,
+            persisted_task.data_ref,
             persisted_task.base_step_count,
             persisted_task.tag_schema_id,
             persisted_task.tag_schema_version,
@@ -481,6 +495,7 @@ class AnnotationService:
             dataset_id,
             dataset_version,
             resolved_lance_version,
+            data_ref,
             base_step_count,
             tag_schema_id,
             tag_schema_version,
@@ -590,6 +605,7 @@ class AnnotationService:
                 author_id=identity.actor_id,
                 client_mutation_id=client_mutation_id,
                 base_lance_version=aggregate.task.base_lance_version,
+                data_ref=aggregate.task.data_ref,
                 tag_schema_id=aggregate.task.tag_schema_id,
                 tag_schema_version=aggregate.task.tag_schema_version,
                 tags=resolved_tags,
@@ -597,6 +613,7 @@ class AnnotationService:
                 origin=origin,
                 content_hash=revision_content_hash(
                     base_lance_version=aggregate.task.base_lance_version,
+                    data_ref=aggregate.task.data_ref,
                     tag_schema_id=aggregate.task.tag_schema_id,
                     tag_schema_version=aggregate.task.tag_schema_version,
                     tags=resolved_tags,
@@ -816,6 +833,7 @@ class AnnotationService:
                 revision=revision.revision,
                 submitted_by=identity.actor_id,
                 base_lance_version=aggregate.task.base_lance_version,
+                data_ref=aggregate.task.data_ref,
                 tag_schema_id=aggregate.task.tag_schema_id,
                 tag_schema_version=aggregate.task.tag_schema_version,
                 tag_schema_hash=self._schema_for_task(aggregate.task).content_hash,
@@ -900,12 +918,13 @@ class AnnotationService:
             if (
                 submission.revision != revision
                 or submission.base_lance_version != task.base_lance_version
+                or submission.data_ref != task.data_ref
                 or submission.tag_schema_id != task.tag_schema_id
                 or submission.tag_schema_version != task.tag_schema_version
                 or submission.revision_content_hash != aggregate.revisions[revision].content_hash
             ):
                 raise AnnotationConflictError(
-                    "review input no longer matches its fixed Lance/Schema revision"
+                    "review input no longer matches its fixed data/Schema revision"
                 )
             if identity.actor_id == task.submitted_by:
                 if self._self_review_policy is SelfReviewPolicy.UNCONFIRMED:
@@ -924,6 +943,7 @@ class AnnotationService:
                 task_id=task_id,
                 revision=revision,
                 reviewer_id=identity.actor_id,
+                data_ref=task.data_ref,
                 decision=decision,
                 checked_kinds=tuple(check.kind for check in submission.checks),
                 comment=comment,
@@ -1001,6 +1021,7 @@ class AnnotationService:
             author_id=revision.author_id,
             client_mutation_id=revision.client_mutation_id,
             base_lance_version=aggregate.task.base_lance_version,
+            data_ref=aggregate.task.data_ref,
             base_step_count=aggregate.task.base_step_count,
             tag_schema_id=aggregate.task.tag_schema_id,
             tag_schema_version=aggregate.task.tag_schema_version,
@@ -1267,6 +1288,7 @@ class AnnotationService:
             annotation_revision=review.revision,
             submission_id=review.submission_id,
             base_lance_version=task.base_lance_version,
+            data_ref=task.data_ref,
             tag_schema_id=task.tag_schema_id,
             tag_schema_version=task.tag_schema_version,
             revision_content_hash=aggregate.revisions[review.revision].content_hash,
@@ -1322,6 +1344,7 @@ class AnnotationService:
         )
         expected_hash = revision_content_hash(
             base_lance_version=aggregate.task.base_lance_version,
+            data_ref=aggregate.task.data_ref,
             tag_schema_id=aggregate.task.tag_schema_id,
             tag_schema_version=aggregate.task.tag_schema_version,
             tags=revision.tags,

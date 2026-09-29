@@ -45,6 +45,27 @@ def validate_aggregate(aggregate: AnnotationAggregate) -> None:
     if any(mutation.task_id != task.task_id for mutation in aggregate.submission_mutations):
         raise AnnotationRepositoryInvariantError("submission mutation belongs to another task")
 
+    for item in (*aggregate.revisions, *aggregate.submissions):
+        if (
+            item.base_lance_version,
+            item.data_ref,
+            item.tag_schema_id,
+            item.tag_schema_version,
+        ) != (task.base_lance_version, task.data_ref, task.tag_schema_id, task.tag_schema_version):
+            raise AnnotationRepositoryInvariantError(
+                "annotation data/Schema binding differs from task"
+            )
+    for review in aggregate.reviews:
+        submission = next(
+            (s for s in aggregate.submissions if s.submission_id == review.submission_id), None
+        )
+        if (
+            review.data_ref != task.data_ref
+            or submission is None
+            or submission.revision != review.revision
+        ):
+            raise AnnotationRepositoryInvariantError("review differs from its fixed submission")
+
     operation_ids = [
         operation.operation_id
         for revision in aggregate.revisions
@@ -82,7 +103,7 @@ class InMemoryAnnotationRepository:
     def __init__(self) -> None:
         self._lock = RLock()
         self._aggregates: dict[str, AnnotationAggregate] = {}
-        self._targets: dict[tuple[str, str | None, str, int, int, str, str], str] = {}
+        self._targets: dict[tuple[object, ...], str] = {}
         self._schemas: dict[tuple[str, int], TagSchemaVersion] = {}
         self._schema_bindings: dict[tuple[str, str, str, str, str], tuple[str, int]] = {}
         self.revision_thread_list_audits: list[dict[str, object]] = []
@@ -96,6 +117,7 @@ class InMemoryAnnotationRepository:
             task.dataset_id,
             task.dataset_version,
             task.base_lance_version,
+            task.data_ref.model_dump_json() if task.data_ref is not None else None,
             task.rollout_id,
             task.task_kind.value,
         )
@@ -333,6 +355,7 @@ class InMemoryAnnotationRepository:
             old_task.dataset_id,
             old_task.dataset_version,
             old_task.base_lance_version,
+            old_task.data_ref,
             old_task.base_step_count,
             old_task.tag_schema_id,
             old_task.tag_schema_version,
@@ -349,6 +372,7 @@ class InMemoryAnnotationRepository:
             new_task.dataset_id,
             new_task.dataset_version,
             new_task.base_lance_version,
+            new_task.data_ref,
             new_task.base_step_count,
             new_task.tag_schema_id,
             new_task.tag_schema_version,

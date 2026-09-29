@@ -5,7 +5,6 @@ import importlib
 import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
@@ -38,8 +37,10 @@ from hc_data_platform.annotation.automation import (
     AutomaticAnnotationTaskService,
     PostgresAutomaticAnnotationRepository,
 )
+from hc_data_platform.annotation.models import AnnotationTaskCreationSource
 from hc_data_platform.annotation.postgres import DbApiConnection
 from hc_data_platform.core.errors import ProblemException
+from hc_data_platform.core.migrations import apply_migrations
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.outbox import OutboxDispatcher, PostgresOutboxDeliveryRepository
 
@@ -60,19 +61,12 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
     concurrent_task_id = f"task-concurrent-{suffix}"
     restore_task_id = f"task-restore-{suffix}"
 
-    migrations = (
-        Path(__file__).parents[2] / "migrations" / "annotation" / "0003_automatic_tasks.sql",
-        Path(__file__).parents[2]
-        / "migrations"
-        / "annotation"
-        / "0007_annotation_restore_origin.sql",
-    )
+    asyncio.run(apply_migrations(dsn))
     with cast(Any, psycopg).connect(dsn, autocommit=True) as migration_connection:
-        for migration in migrations:
-            migration_connection.execute(migration.read_text(encoding="utf-8"))
         migration_connection.execute(
-            "INSERT INTO registry.organization_projects (organization_id, project_id) "
-            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            "INSERT INTO registry.organization_projects "
+            "(organization_id, project_id, display_name) "
+            "VALUES (%s, %s, 'Annotation integration fixture') ON CONFLICT DO NOTHING",
             (organization_id, project_id),
         )
 
@@ -117,6 +111,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         project_ids=frozenset({project_id}),
     )
     service.create_task(
+        creation_source=AnnotationTaskCreationSource.LEGACY,
         task_id=first_task_id,
         project_id=project_id,
         region_code=region_code,
@@ -171,6 +166,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
     assert len(service.list_reviews(first_task_id)) == 1
 
     service.create_task(
+        source_workflow_id=f"annotation-integration/{uuid4()}",
         task_id=restore_task_id,
         project_id=project_id,
         region_code=region_code,
@@ -272,6 +268,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         ).fetchone() == ("ANNOTATION_RESTORE",)
 
     service.create_task(
+        source_workflow_id=f"annotation-integration/{uuid4()}",
         task_id=concurrent_task_id,
         project_id=project_id,
         region_code=region_code,
@@ -365,6 +362,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
 
     audit_failure_task_id = f"task-audit-failure-{suffix}"
     service.create_task(
+        source_workflow_id=f"annotation-integration/{uuid4()}",
         task_id=audit_failure_task_id,
         project_id=project_id,
         region_code=region_code,
@@ -495,8 +493,9 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
 
     with cast(Any, psycopg).connect(dsn, autocommit=True) as registry_connection:
         registry_connection.execute(
-            "INSERT INTO registry.organization_projects (organization_id, project_id) "
-            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            "INSERT INTO registry.organization_projects "
+            "(organization_id, project_id, display_name) "
+            "VALUES (%s, %s, 'Annotation integration fixture') ON CONFLICT DO NOTHING",
             (organization_id, project_id),
         )
 
@@ -520,6 +519,7 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
     )
     for task_id in (f"thread-a-{suffix}", f"thread-b-{suffix}"):
         service.create_task(
+            source_workflow_id=f"annotation-integration/{uuid4()}",
             task_id=task_id,
             project_id=project_id,
             region_code=region_code,
@@ -533,6 +533,7 @@ def test_postgres_revision_thread_index_is_bounded_scoped_and_audited() -> None:
         cursor_secret="annotation-postgres-thread-cursor-secret",
     )
     other_region_service.create_task(
+        source_workflow_id=f"annotation-integration/{uuid4()}",
         task_id=f"thread-outside-{suffix}",
         project_id=project_id,
         region_code="us-test",
@@ -610,14 +611,12 @@ def test_postgres_auto_annotation_quota_reservation_is_atomic() -> None:
     task_id = f"auto-quota-task-{suffix}"
     now = datetime(2026, 8, 24, tzinfo=timezone.utc)
 
-    migration = (
-        Path(__file__).parents[2] / "migrations" / "annotation" / "0006_auto_annotation_jobs.sql"
-    )
+    asyncio.run(apply_migrations(dsn))
     with cast(Any, psycopg).connect(dsn, autocommit=True) as migration_connection:
-        migration_connection.execute(migration.read_text(encoding="utf-8"))
         migration_connection.execute(
-            "INSERT INTO registry.organization_projects (organization_id, project_id) "
-            "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            "INSERT INTO registry.organization_projects "
+            "(organization_id, project_id, display_name) "
+            "VALUES (%s, %s, 'Annotation integration fixture') ON CONFLICT DO NOTHING",
             (organization_id, project_id),
         )
 
@@ -653,6 +652,7 @@ def test_postgres_auto_annotation_quota_reservation_is_atomic() -> None:
     )
     annotation = AnnotationService(PostgresAnnotationRepository(connect), clock=lambda: now)
     annotation.create_task(
+        source_workflow_id=f"annotation-integration/{uuid4()}",
         task_id=task_id,
         project_id=project_id,
         region_code=region_code,

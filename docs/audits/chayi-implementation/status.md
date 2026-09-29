@@ -387,3 +387,33 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   Next required integration remains source-plan generation/parent dispatch,
   storage-neutral automatic annotation and continuous READY, source HC/window
   handling, and W3–W8. All 17 P0 rows remain pending for their complete scope.
+
+## Immutable annotation data binding milestone (partial W1/W3/W5)
+
+- New Episode tasks, drafts, revisions, submissions, reviews and approval snapshots
+  now carry the full immutable data reference; new records keep Lance columns
+  NULL. Legacy revision hashes retain the original document shape and LEGACY
+  task lineage is readable. Automatic task/provider/review preparation contracts
+  accept the new reference without inventing a physical version.
+- Applied additive annotation migrations 0013/0014 only in G1. Database guards
+  require an exact committed receipt in the selected collection, preserve task
+  identity, and match child revision/submission/review bindings. Real tests found
+  and fixed an organization omission in automatic Schema lookup; the compatibility
+  binding key and explicit reads now include the organization, keeping existing RLS.
+- P08 uses fixed package metadata, joint values and P06's existing RGB/official
+  RealSense preview authorization. It checks all revision/review bindings and
+  preserves Tag edit, submit and review commands. Legacy export cannot consume
+  a package approval just because version numbers coincide.
+- **139 passed** in expanded backend regression; **76 passed** after the final
+  legacy-lineage addition; **153 passed** in P08/package frontend regression.
+  TypeScript, Ruff and contract/client generation checks pass. Four pre-existing
+  Workbench test failures were reproduced with prior source and repaired by
+  correcting fixture topics and stale panel-title assertions.
+- Evidence, exact commands, artifact hashes and deployment/rollback conditions:
+  [annotation-bindings.md](annotation-bindings.md). API/worker restarted in G1
+  and recovered healthy. Synthetic RGB-D and frontend request doubles prove
+  software contracts only, not real uploads, browser flows or human acceptance.
+- Parent workflows still need new source plans/dispatch and continuous READY
+  integration. Revision JSON outbox/files/retry, subtask materialization, independent
+  reviews, unified detail, annotated/batch delivery and migration/rehearsal remain.
+  All 17 P0 rows stay Pending against their complete requirements. No G2/G3 action.

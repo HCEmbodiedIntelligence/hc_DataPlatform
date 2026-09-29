@@ -1,3 +1,4 @@
+import { annotationDataLabel } from "./annotation-package";
 import {
   useCallback,
   useEffect,
@@ -977,8 +978,8 @@ function DataViewInspector(props: {
               </dd>
             </div>
             <div>
-              <dt>Lance 基线</dt>
-              <dd>v{props.bundle.task.base_lance_version}</dd>
+              <dt>数据基线</dt>
+              <dd>{annotationDataLabel(props.bundle.task)}</dd>
             </div>
             <div>
               <dt>步数</dt>

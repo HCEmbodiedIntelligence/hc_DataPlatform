@@ -1100,7 +1100,8 @@ class DatasetWriterWorkflow(_JobLifecycle):
                     "derived_ready": committed.derived_ready.model_dump(mode="json"),
                     **(
                         {"viewer_target": committed.viewer_target.model_dump(mode="json")}
-                        if package_commit else {}
+                        if package_commit
+                        else {}
                     ),
                 },
             )
@@ -1316,6 +1317,7 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
             ) from exc
         expected_hash = revision_content_hash(
             base_lance_version=revision.base_lance_version,
+            data_ref=revision.data_ref,
             tag_schema_id=revision.tag_schema_id,
             tag_schema_version=revision.tag_schema_version,
             tags=revision.tags,
@@ -1336,6 +1338,11 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
                 "revision": revision.revision,
                 "submitted_by": request.submitted_by,
                 "base_lance_version": revision.base_lance_version,
+                **(
+                    {"data_ref": revision.data_ref.model_dump(mode="json")}
+                    if revision.data_ref is not None
+                    else {}
+                ),
                 "tag_schema_id": request.tag_schema.schema_id,
                 "tag_schema_version": request.tag_schema.version,
                 "tag_schema_hash": request.tag_schema.content_hash,
@@ -1346,7 +1353,11 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
         )
         return self._finish(
             JobStatus.SUCCEEDED,
-            result={"submission": submission.model_dump(mode="json")},
+            result={
+                "submission": submission.model_dump(
+                    mode="json", exclude={"data_ref"} if revision.data_ref is None else set()
+                )
+            },
         )
 
     @workflow.query(name="job")

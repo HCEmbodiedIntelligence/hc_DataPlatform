@@ -156,10 +156,26 @@ function renderWorkbench(input: {
   readonly permissions?: Partial<AnnotationWorkbenchPermissions>;
 }) {
   const mode = input.mode ?? "annotation";
-  const fixture = createVisualAnnotationBundle({
+  const baseFixture = createVisualAnnotationBundle({
     mode,
     cameraCount: input.cameraCount,
   });
+  // These layout tests expect a joint panel. Declare its source topic explicitly;
+  // the shared no-joint fixture continues testing real missing-data behavior.
+  const fixture = {
+    ...baseFixture,
+    manifest: {
+      ...baseFixture.manifest!,
+      topics: [
+        ...baseFixture.manifest!.topics,
+        {
+          name: "/robot/joint_states",
+          required: true,
+          schema_name: "sensor_msgs/msg/JointState",
+        },
+      ],
+    },
+  };
   const bundle = input.noDraft ? bundleWithoutDraft(fixture) : fixture;
   const tags =
     mode === "annotation"
@@ -622,7 +638,7 @@ describe("P08 viewer-slot composition", () => {
         "data-workspace-layout",
         "synchronized",
       );
-      expect(screen.getByRole("article", { name: "关节角变化" })).toBeVisible();
+      expect(screen.getByRole("article", { name: "关节位置变化" })).toBeVisible();
       const cameras = screen.getByLabelText("数据清单相机视图");
       expect(cameras.querySelectorAll(".viewer-panel")).toHaveLength(4);
       expect(cameras.querySelector(".viewer-robot-panel")).toBeNull();
@@ -784,7 +800,7 @@ describe("P08 viewer-slot composition", () => {
     expect(selector.querySelectorAll("option")).toHaveLength(10);
     expect(screen.getAllByRole("slider")).toHaveLength(1);
     expect(
-      screen.getByRole("article", { name: "关节角变化" }),
+      screen.getByRole("article", { name: "关节位置变化" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("机器人姿态同步视图")).toBeInTheDocument();
     expect(screen.queryByText("六项审核清单")).not.toBeInTheDocument();
@@ -884,7 +900,7 @@ describe("P08 viewer-slot composition", () => {
     expect(within(drawer).getAllByText("待标注").length).toBeGreaterThan(0);
     expect(within(drawer).getByText("任务 ID")).toBeVisible();
     expect(within(drawer).getByText("数据结构")).toBeVisible();
-    expect(within(drawer).getByText("Lance")).toBeVisible();
+    expect(within(drawer).getByText("数据基线")).toBeVisible();
     expect(within(drawer).getByText("区间")).toBeVisible();
     expect(within(drawer).getByText("26,787 步")).toBeVisible();
 
@@ -915,16 +931,16 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
       autoAnnotationPanel: <section aria-label="自动标注测试面板" />,
     });
 
-    expect(screen.getByRole("article", { name: "关节角变化" })).toBeVisible();
+    expect(screen.getByRole("article", { name: "关节位置变化" })).toBeVisible();
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("当前 Tag 概要")).not.toBeInTheDocument();
     await user.click(workspaceTab("查看"));
-    expect(screen.getByRole("article", { name: "关节角变化" })).toBeVisible();
+    expect(screen.getByRole("article", { name: "关节位置变化" })).toBeVisible();
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
     await user.click(workspaceTab("数据修订"));
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
     await user.click(workspaceTab("标注"));
-    expect(screen.getByRole("article", { name: "关节角变化" })).toBeVisible();
+    expect(screen.getByRole("article", { name: "关节位置变化" })).toBeVisible();
     expect(screen.queryByLabelText("自动标注测试面板")).not.toBeInTheDocument();
   });
 

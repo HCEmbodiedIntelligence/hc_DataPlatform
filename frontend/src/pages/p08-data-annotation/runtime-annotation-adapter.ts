@@ -1,3 +1,12 @@
+import { createDatasetPackageMediaSource } from "../p06-dataset-detail/package-media-source";
+import {
+  annotationDataLabel,
+  checkedAnnotationRef,
+  loadAnnotationPackage,
+  sameAnnotationBinding,
+  sameAnnotationDataRef,
+  type AnnotationPackageView,
+} from "./annotation-package";
 import type { Scope } from "../../entities/scope";
 import { z } from "zod";
 import { authorizeAlignedMedia } from "../../features/aligned-media/authorize-aligned-media";
@@ -40,7 +49,9 @@ export type RuntimeAutoAnnotationJob =
 export type RuntimeTagSchemaVersion = components["schemas"]["TagSchemaVersion"];
 export type RuntimeManifestDiscovery =
   components["schemas"]["ManifestDiscoveryV1"];
-export type RuntimeDatasetVersion = components["schemas"]["DatasetVersionRef"];
+export type RuntimeDatasetVersion =
+  | components["schemas"]["DatasetVersionRef"]
+  | AnnotationPackageView;
 export type RuntimeReviewDecision = components["schemas"]["ReviewDecision"];
 export type RuntimeReviewCheckKind = components["schemas"]["ReviewCheckKind"];
 
@@ -461,6 +472,10 @@ async function getRuntimeDatasetVersion(
   task: RuntimeAnnotationTask,
   signal?: AbortSignal,
 ): Promise<RuntimeDatasetVersion> {
+  if (checkedAnnotationRef(scope, task))
+    return loadAnnotationPackage(scope, task, signal);
+  if (task.base_lance_version == null)
+    contractMismatch("缺少固定 Lance 数据版本。");
   return request<RuntimeDatasetVersion>({
     method: "GET",
     path: `/projects/${encoded(scope.projectId)}/datasets/${encoded(task.dataset_id)}/lance-versions/${encoded(task.base_lance_version)}`,
@@ -479,7 +494,10 @@ export async function loadRuntimeAnnotationBundle(
     getRuntimeAnnotationTask(scope, taskId, signal),
     listRuntimeAnnotationTasks(scope, signal),
   ]);
-  const manifestPromise = loadManifestForTask(scope, task, signal)
+  const ref = checkedAnnotationRef(scope, task);
+  const manifestPromise = (
+    ref ? Promise.resolve(null) : loadManifestForTask(scope, task, signal)
+  )
     .then((manifest) => ({
       manifest,
       manifestIssue: null as DomainError | null,
@@ -503,11 +521,24 @@ export async function loadRuntimeAnnotationBundle(
     schema.project_id !== task.project_id ||
     schema.schema_id !== task.tag_schema_id ||
     schema.version !== task.tag_schema_version ||
-    datasetVersion.project_id !== task.project_id ||
-    datasetVersion.dataset_id !== task.dataset_id ||
-    datasetVersion.version !== task.base_lance_version ||
+    ("data" in datasetVersion
+      ? !sameAnnotationDataRef(datasetVersion.data, task.data_ref)
+      : datasetVersion.project_id !== task.project_id ||
+        datasetVersion.dataset_id !== task.dataset_id ||
+        datasetVersion.version !== task.base_lance_version) ||
+    !sameAnnotationBinding(task, history.task) ||
+    history.revisions.some(
+      (revision) => !sameAnnotationBinding(task, revision),
+    ) ||
+    history.submissions.some(
+      (submission) => !sameAnnotationBinding(task, submission),
+    ) ||
+    history.reviews.some(
+      (review) => !sameAnnotationDataRef(task.data_ref, review.data_ref),
+    ) ||
     (draft !== null &&
-      (draft.task_id !== task.task_id ||
+      (!sameAnnotationBinding(task, draft) ||
+        draft.task_id !== task.task_id ||
         draft.tag_schema_id !== task.tag_schema_id ||
         draft.tag_schema_version !== task.tag_schema_version))
   ) {
@@ -519,8 +550,12 @@ export async function loadRuntimeAnnotationBundle(
     draft,
     history,
     schema,
-    manifest: manifestResult.manifest,
-    manifestIssue: manifestResult.manifestIssue,
+    manifest:
+      "data" in datasetVersion
+        ? datasetVersion.manifest
+        : manifestResult.manifest,
+    manifestIssue:
+      "data" in datasetVersion ? null : manifestResult.manifestIssue,
     tasks,
   };
 }
@@ -933,7 +968,8 @@ function streamForCamera(
     modality,
     schema: {
       id: "manifest-camera",
-      version: String(task.base_lance_version),
+      version:
+        task.data_ref?.data_version_id ?? String(task.base_lance_version),
       ...(camera.encoding ? { encoding: camera.encoding } : {}),
     },
     rateHz: frequencyHz,
@@ -943,8 +979,26 @@ function streamForCamera(
       ? { frame: { id: camera.frame_id, name: camera.frame_id } }
       : {}),
     availability: "ready",
-    accessibleSummary: `${camera.camera_id}，来自数据清单的只读相机流，与其他模态共享 ${frequencyHz} Hz 时间光标。`,
-    mediaSource: createAlignedMediaSource(scope, task, camera.topic),
+    accessibleSummary:
+      task.data_ref && modality === "depth"
+        ? `${camera.camera_id}，RealSense 官方动态着色预览；颜色随帧内分布变化，不代表固定距离。无效深度显示为黑色。`
+        : `${camera.camera_id}，来自数据清单的只读相机流，与其他模态共享 ${frequencyHz} Hz 时间光标。`,
+    mediaSource: task.data_ref
+      ? createDatasetPackageMediaSource({
+          scope,
+          datasetId: task.dataset_id,
+          modality,
+          binding: {
+            data: checkedAnnotationRef(scope, task)!,
+            rollout_id: task.rollout_id,
+            feature_key: camera.camera_id,
+            modality_key: camera.topic,
+            value_kind: null,
+            start_step: 0,
+            end_step: endStep,
+          },
+        })
+      : createAlignedMediaSource(scope, task, camera.topic),
   };
 }
 
@@ -963,7 +1017,8 @@ function placeholderCameraStream(
     semanticRole: "camera-slot-placeholder",
     schema: {
       id: "camera-slot-placeholder",
-      version: String(task.base_lance_version),
+      version:
+        task.data_ref?.data_version_id ?? String(task.base_lance_version),
     },
     rateHz: frequencyHz,
     startNs: "0",
@@ -1117,7 +1172,7 @@ function collectionItems(
   return bundle.tasks.map((task) => ({
     id: task.task_id,
     label: task.rollout_id,
-    description: `${task.dataset_id} · Lance v${task.base_lance_version}`,
+    description: `${task.dataset_id} · ${annotationDataLabel(task)}`,
     status: annotationTaskStatusLabel(task.status),
     statusTone:
       task.status === "APPROVED"
@@ -1135,7 +1190,7 @@ function collectionItems(
               label: "数据结构",
               value: `${task.tag_schema_id} v${task.tag_schema_version}`,
             },
-            { label: "Lance", value: `v${task.base_lance_version}` },
+            { label: "数据基线", value: annotationDataLabel(task) },
             {
               label: "区间",
               value:
@@ -1171,7 +1226,7 @@ export function buildRuntimeWorkbenchAdapter(input: {
     mode,
     id: `p08-${mode}-${bundle.task.task_id}`,
     title: mode === "tag-review" ? "Tag 审核" : "数据标注",
-    description: `固定 Lance v${bundle.task.base_lance_version} · ${bundle.task.rollout_id}`,
+    description: `固定 ${annotationDataLabel(bundle.task)} · ${bundle.task.rollout_id}`,
     readOnly: input.readOnly,
     clock: input.clock,
     cameraStreams: paddedCameraStreams,

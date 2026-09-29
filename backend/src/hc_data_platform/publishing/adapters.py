@@ -244,6 +244,13 @@ class ApprovedAnnotationSnapshotAdapter:
         )
         if approval is None:
             return None
+        if approval.data_ref is not None:
+            raise problem(
+                status=409,
+                code="ANNOTATION_DATA_BINDING_MISMATCH",
+                title="Annotation data binding mismatch",
+                detail="An Episode package approval cannot authorize a historical Lance export.",
+            )
         if (
             approval.project_id != project_id
             or approval.dataset_id != dataset_id

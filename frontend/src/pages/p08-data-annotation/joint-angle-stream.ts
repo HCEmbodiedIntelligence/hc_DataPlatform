@@ -1,3 +1,10 @@
+import {
+  annotationDataLabel,
+  checkedAnnotationRef,
+  annotationPackageEndpoint,
+  sameAnnotationDataRef,
+} from "./annotation-package";
+import { episodeDataReferenceWireSchema } from "../../features/datasets/api/episode-package-wire";
 import { z } from "zod";
 import { bufferJointWindows } from "../../features/viewer/buffered-joint-window-source";
 import type {
@@ -51,6 +58,15 @@ const annotationJointWindowWireSchema = z
     start_step: safeStepWireSchema,
     end_step: safeStepWireSchema,
     steps: z.array(annotationJointStepWireSchema),
+  })
+  .strict();
+
+const packageJointWindowSchema = z
+  .object({
+    data: episodeDataReferenceWireSchema,
+    start_step: safeStepWireSchema,
+    end_step: safeStepWireSchema,
+    steps: z.array(annotationJointStepWireSchema).max(4096),
   })
   .strict();
 
@@ -190,6 +206,7 @@ function createAnnotationJointWindowSource(input: {
   readonly stepCount: number;
   readonly frequencyHz: number;
 }): ViewerWindowSource {
+  const ref = checkedAnnotationRef(input.scope, input.task);
   let columns: readonly string[] = [
     ...new Set(modalityCandidates(input.topicName)),
   ];
@@ -203,7 +220,9 @@ function createAnnotationJointWindowSource(input: {
         input.stepCount,
         input.frequencyHz,
       );
-      const endpoint = `/projects/${encodeURIComponent(input.task.project_id)}/datasets/${encodeURIComponent(input.task.dataset_id)}/rollouts/${encodeURIComponent(input.task.rollout_id)}/steps`;
+      const endpoint = ref
+        ? `${annotationPackageEndpoint(ref)}/steps`
+        : `/projects/${encodeURIComponent(input.task.project_id)}/datasets/${encodeURIComponent(input.task.dataset_id)}/rollouts/${encodeURIComponent(input.task.rollout_id)}/steps`;
       const read = (selectedColumns?: readonly string[]) =>
         request<unknown>({
           method: "GET",
@@ -218,12 +237,24 @@ function createAnnotationJointWindowSource(input: {
           query: {
             startStep,
             endStep,
-            version: input.task.base_lance_version,
+            ...(ref
+              ? {}
+              : { version: input.task.base_lance_version ?? undefined }),
             ...(selectedColumns ? { columns: [...selectedColumns] } : {}),
           },
         });
-      const parse = (raw: unknown) =>
-        parseWire(annotationJointWindowWireSchema, raw, { endpoint });
+      const parse = (raw: unknown) => {
+        if (ref) {
+          const page = parseWire(packageJointWindowSchema, raw, { endpoint });
+          if (!sameAnnotationDataRef(ref, page.data))
+            throw jointDataError(
+              "P08_JOINT_WINDOW_IDENTITY_MISMATCH",
+              "关节窗口与固定 Episode 数据版本不一致。",
+            );
+          return page;
+        }
+        return parseWire(annotationJointWindowWireSchema, raw, { endpoint });
+      };
       let window = parse(await read(columns));
       // Legacy datasets can use a different joint column name. Discover it once
       // without making every playback window read camera/action modalities.
@@ -233,10 +264,11 @@ function createAnnotationJointWindowSource(input: {
       )
         window = parse(await read());
       if (
-        window.project_id !== input.task.project_id ||
-        window.dataset_id !== input.task.dataset_id ||
-        window.dataset_version !== input.task.base_lance_version ||
-        window.rollout_id !== input.task.rollout_id ||
+        (!("data" in window) &&
+          (window.project_id !== input.task.project_id ||
+            window.dataset_id !== input.task.dataset_id ||
+            window.dataset_version !== input.task.base_lance_version ||
+            window.rollout_id !== input.task.rollout_id)) ||
         window.start_step !== startStep ||
         window.end_step !== endStep
       )
@@ -346,7 +378,9 @@ export function buildRuntimeJointAngleStream(input: {
     modality: "joint_state",
     schema: {
       id: topic.schema_name ?? "manifest-joint-state",
-      version: String(input.bundle.task.base_lance_version),
+      version:
+        input.bundle.task.data_ref?.data_version_id ??
+        String(input.bundle.task.base_lance_version),
       unit: "rad",
     },
     rateHz: frequencyHz,
@@ -355,7 +389,7 @@ export function buildRuntimeJointAngleStream(input: {
     availability: stepCount > 0 ? "ready" : "missing",
     accessibleSummary:
       stepCount > 0
-        ? `${topic.name} 的真实关节角向量，按固定 Lance v${input.bundle.task.base_lance_version} 读取并与共享光标同步。`
+        ? `${topic.name} 的真实关节角向量，按固定 ${annotationDataLabel(input.bundle.task)} 读取并与共享光标同步。`
         : `${topic.name} 已发现，但任务未返回可读取的步骤范围。`,
     ...(stepCount > 0
       ? {

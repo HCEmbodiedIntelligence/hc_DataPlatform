@@ -13,6 +13,8 @@ from datetime import datetime
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from hc_data_platform.episode_store.models import DataVersionRef
+
 from .models import (
     AnnotationMutationRecord,
     AnnotationOperation,
@@ -72,7 +74,7 @@ base_lance_version, base_step_count, tag_schema_id, tag_schema_version,
 task_kind, creation_source, source_workflow_id,
 current_revision, state_version, status, submitted_revision, submitted_by,
 current_submission_id,
-approved_revision, approved_review_id, etag, created_at, updated_at
+approved_revision, approved_review_id, etag, created_at, updated_at, data_ref
 """.strip()
 
 
@@ -100,11 +102,21 @@ def _as_json(value: object) -> Any:
     return value
 
 
+def data_ref_json(ref: DataVersionRef | None) -> str | None:
+    return None if ref is None else ref.model_dump_json()
+
+
+def _data_ref(row: Mapping[str, object]) -> DataVersionRef | None:
+    value = row.get("data_ref")
+    return None if value is None else DataVersionRef.model_validate(_as_json(value))
+
+
 def require_repository_scope(
     cursor: DbApiCursor,
     *,
     project_id: str,
     region_code: str | None,
+    organization_id: str | None = None,
 ) -> None:
     """Reject writes when the selected DB scope is not the target scope.
 
@@ -119,9 +131,12 @@ def require_repository_scope(
            AND (
                %s::text IS NULL
                OR NULLIF(current_setting('app.region_code', true), '') = %s::text
+           ) AND (
+               %s::text IS NULL
+               OR NULLIF(current_setting('app.organization_id', true), '') = %s::text
            )
         """,
-        (project_id, region_code, region_code),
+        (project_id, region_code, region_code, organization_id, organization_id),
     )
     raw = cursor.fetchone()
     if isinstance(raw, Mapping):
@@ -150,6 +165,7 @@ class PostgresAnnotationRepository:
                 cursor,
                 project_id=task.project_id,
                 region_code=task.region_code,
+                organization_id=task.data_ref.identity.organization_id if task.data_ref else None,
             )
             cursor.execute(
                 """
@@ -160,11 +176,11 @@ class PostgresAnnotationRepository:
                     task_kind, creation_source, source_workflow_id,
                     current_revision, state_version, status,
                     submitted_revision, submitted_by, current_submission_id, approved_revision,
-                    approved_review_id, etag, created_at, updated_at
+                    approved_review_id, etag, created_at, updated_at, data_ref
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s::jsonb
                 )
                 ON CONFLICT DO NOTHING
                 RETURNING task_id
@@ -195,6 +211,7 @@ class PostgresAnnotationRepository:
                     task.etag,
                     task.created_at,
                     task.updated_at,
+                    data_ref_json(task.data_ref),
                 ),
             )
             inserted = cursor.fetchone() is not None
@@ -222,6 +239,9 @@ class PostgresAnnotationRepository:
             FROM annotation.annotation_tasks
             WHERE task_id = %s
               AND project_id = NULLIF(current_setting('app.project_id', true), '')
+              AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
               AND region_code = NULLIF(current_setting('app.region_code', true), '')
             """,
             (task_id,),
@@ -234,6 +254,9 @@ class PostgresAnnotationRepository:
             FROM annotation.annotation_tasks
             WHERE project_id = %s AND rollout_id = %s
               AND project_id = NULLIF(current_setting('app.project_id', true), '')
+              AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
               AND region_code = NULLIF(current_setting('app.region_code', true), '')
             """,
             (project_id, rollout_id),
@@ -249,6 +272,9 @@ class PostgresAnnotationRepository:
                 FROM annotation.annotation_tasks
                 WHERE project_id = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                   AND region_code = NULLIF(current_setting('app.region_code', true), '')
                 ORDER BY updated_at DESC, task_id DESC
                 """,
@@ -313,6 +339,9 @@ class PostgresAnnotationRepository:
                 WHERE task.project_id = %s
                   AND task.region_code = %s
                   AND task.project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND task.organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                   AND task.region_code = NULLIF(current_setting('app.region_code', true), '')
                   AND task.updated_at <= %s
                   AND (%s::text IS NULL OR task.status = %s)
@@ -456,6 +485,9 @@ class PostgresAnnotationRepository:
                 FROM annotation.tag_schema_versions
                 WHERE schema_id = %s AND version = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                 """,
                 (schema_id, version),
             )
@@ -479,6 +511,9 @@ class PostgresAnnotationRepository:
                 FROM annotation.tag_schema_versions
                 WHERE project_id = %s AND schema_id = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                 ORDER BY version
                 """,
                 (project_id, schema_id),
@@ -502,6 +537,9 @@ class PostgresAnnotationRepository:
                 WHERE schema_id = %s AND version = %s AND status = 'DRAFT'
                   AND content_hash = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                 RETURNING schema_id
                 """,
                 (
@@ -540,6 +578,9 @@ class PostgresAnnotationRepository:
                         SELECT schema_id, schema_version
                         FROM annotation.tag_schema_bindings
                         WHERE project_id = %s AND region_code = %s
+                          AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                           AND dataset_id = %s AND dataset_schema_snapshot_id = %s
                           AND task_kind = %s
                         """,
@@ -595,10 +636,14 @@ class PostgresAnnotationRepository:
                   ON schema.schema_id = binding.schema_id
                  AND schema.version = binding.schema_version
                  AND schema.project_id = binding.project_id
+                 AND schema.organization_id = binding.organization_id
                 WHERE binding.project_id = %s AND binding.region_code = %s
                   AND binding.dataset_id = %s
                   AND binding.dataset_schema_snapshot_id = %s
                   AND binding.task_kind = %s AND schema.status = 'PUBLISHED'
+                  AND binding.organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                   AND binding.project_id = NULLIF(
                       current_setting('app.project_id', true), ''
                   )
@@ -643,6 +688,9 @@ class PostgresAnnotationRepository:
                 FROM annotation.annotation_tasks
                 WHERE task_id = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                   AND region_code = NULLIF(current_setting('app.region_code', true), '')
                 FOR UPDATE
                 """,
@@ -678,6 +726,9 @@ class PostgresAnnotationRepository:
                     updated_at = %s
                 WHERE task_id = %s AND state_version = %s
                   AND project_id = NULLIF(current_setting('app.project_id', true), '')
+                  AND organization_id = NULLIF(
+                      current_setting('app.organization_id', true), ''
+                  )
                   AND region_code = NULLIF(current_setting('app.region_code', true), '')
                 RETURNING task_id
                 """,
@@ -742,7 +793,7 @@ class PostgresAnnotationRepository:
                 SELECT task_id, revision, parent_revision, author_id,
                        client_mutation_id, base_lance_version, tag_schema_id,
                        tag_schema_version, tags, origin,
-                       content_hash, created_at
+                       content_hash, created_at, data_ref
                 FROM annotation.annotation_revisions
                 WHERE task_id = %s
                 ORDER BY revision
@@ -764,7 +815,7 @@ class PostgresAnnotationRepository:
             cursor.execute(
                 """
                 SELECT review_id, submission_id, task_id, revision, reviewer_id,
-                       decision, checked_kinds, comment, created_at
+                       decision, checked_kinds, comment, created_at, data_ref
                 FROM annotation.annotation_reviews
                 WHERE task_id = %s
                 ORDER BY created_at, review_id
@@ -787,7 +838,7 @@ class PostgresAnnotationRepository:
                 """
                 SELECT submission_id, task_id, episode_version, revision, submitted_by,
                        base_lance_version, tag_schema_id, tag_schema_version,
-                       tag_schema_hash, revision_content_hash, checks, created_at
+                       tag_schema_hash, revision_content_hash, checks, created_at, data_ref
                 FROM annotation.annotation_submissions
                 WHERE task_id = %s
                 ORDER BY created_at, submission_id
@@ -832,7 +883,12 @@ class PostgresAnnotationRepository:
                 ),
                 author_id=str(row["author_id"]),
                 client_mutation_id=str(row["client_mutation_id"]),
-                base_lance_version=_as_int(row["base_lance_version"]),
+                base_lance_version=(
+                    None
+                    if row["base_lance_version"] is None
+                    else _as_int(row["base_lance_version"])
+                ),
+                data_ref=_data_ref(row),
                 tag_schema_id=str(row["tag_schema_id"]),
                 tag_schema_version=_as_int(row["tag_schema_version"]),
                 tags=tuple(AnnotationTag.model_validate(item) for item in _as_json(row["tags"])),
@@ -846,6 +902,7 @@ class PostgresAnnotationRepository:
         reviews = tuple(
             AnnotationReview(
                 review_id=str(row["review_id"]),
+                data_ref=_data_ref(row),
                 submission_id=row["submission_id"],
                 task_id=str(row["task_id"]),
                 revision=_as_int(row["revision"]),
@@ -880,7 +937,12 @@ class PostgresAnnotationRepository:
                 episode_version=_as_int(row["episode_version"]),
                 revision=_as_int(row["revision"]),
                 submitted_by=str(row["submitted_by"]),
-                base_lance_version=_as_int(row["base_lance_version"]),
+                base_lance_version=(
+                    None
+                    if row["base_lance_version"] is None
+                    else _as_int(row["base_lance_version"])
+                ),
+                data_ref=_data_ref(row),
                 tag_schema_id=str(row["tag_schema_id"]),
                 tag_schema_version=_as_int(row["tag_schema_version"]),
                 tag_schema_hash=str(row["tag_schema_hash"]),
@@ -923,7 +985,10 @@ class PostgresAnnotationRepository:
             region_code=(None if row["region_code"] is None else str(row["region_code"])),
             dataset_id=str(row["dataset_id"]),
             dataset_version=_as_int(row["dataset_version"]),
-            base_lance_version=_as_int(row["base_lance_version"]),
+            base_lance_version=(
+                None if row["base_lance_version"] is None else _as_int(row["base_lance_version"])
+            ),
+            data_ref=_data_ref(row),
             base_step_count=(
                 None if row["base_step_count"] is None else _as_int(row["base_step_count"])
             ),
@@ -1001,10 +1066,10 @@ class PostgresAnnotationRepository:
             INSERT INTO annotation.annotation_revisions (
                 task_id, revision, parent_revision, author_id,
                 client_mutation_id, base_lance_version, tag_schema_id,
-                tag_schema_version, tags, origin, content_hash, created_at
+                tag_schema_version, tags, origin, content_hash, created_at, data_ref
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
-                %s, %s, %s
+                %s, %s, %s, %s::jsonb
             )
             """,
             (
@@ -1020,6 +1085,7 @@ class PostgresAnnotationRepository:
                 revision.origin.value,
                 revision.content_hash,
                 revision.created_at,
+                data_ref_json(revision.data_ref),
             ),
         )
         for sequence, operation in enumerate(revision.operations):
@@ -1153,8 +1219,8 @@ class PostgresAnnotationRepository:
                 """
                 INSERT INTO annotation.annotation_reviews (
                     review_id, submission_id, task_id, revision, reviewer_id,
-                    decision, checked_kinds, comment, created_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+                    decision, checked_kinds, comment, created_at, data_ref
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s::jsonb)
                 ON CONFLICT (review_id) DO NOTHING
                 """,
                 (
@@ -1167,6 +1233,7 @@ class PostgresAnnotationRepository:
                     json.dumps([kind.value for kind in review.checked_kinds]),
                     review.comment,
                     review.created_at,
+                    data_ref_json(review.data_ref),
                 ),
             )
 
@@ -1180,9 +1247,9 @@ class PostgresAnnotationRepository:
                 INSERT INTO annotation.annotation_submissions (
                     submission_id, task_id, episode_version, revision, submitted_by,
                     base_lance_version, tag_schema_id, tag_schema_version,
-                    tag_schema_hash, revision_content_hash, checks, created_at
+                    tag_schema_hash, revision_content_hash, checks, created_at, data_ref
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb
                 )
                 ON CONFLICT (submission_id) DO NOTHING
                 """,
@@ -1199,6 +1266,7 @@ class PostgresAnnotationRepository:
                     submission.revision_content_hash,
                     json.dumps([check.model_dump(mode="json") for check in submission.checks]),
                     submission.created_at,
+                    data_ref_json(submission.data_ref),
                 ),
             )
 

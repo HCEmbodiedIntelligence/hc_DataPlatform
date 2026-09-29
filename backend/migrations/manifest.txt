@@ -133,3 +133,5 @@ episode_store/0002_commit_pointer_guard.sql
 episode_store/0003_collection_publication.sql
 episode_store/0004_dataset_schemas.sql
 episode_store/0005_media_previews.sql
+annotation/0013_episode_data_bindings.sql
+annotation/0014_binding_scope_and_identity.sql

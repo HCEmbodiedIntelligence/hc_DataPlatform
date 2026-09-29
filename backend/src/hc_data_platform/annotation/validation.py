@@ -8,6 +8,8 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+from hc_data_platform.episode_store.models import DataVersionRef
+
 from .models import (
     AnnotationOperation,
     AnnotationReviewCheck,
@@ -42,15 +44,24 @@ def schema_content_hash(document: TagSchemaDocument) -> str:
 
 def revision_content_hash(
     *,
-    base_lance_version: int,
+    base_lance_version: int | None,
+    data_ref: DataVersionRef | None = None,
     tag_schema_id: str,
     tag_schema_version: int,
     tags: Sequence[AnnotationTag],
     operations: Sequence[AnnotationOperation],
 ) -> str:
+    if (base_lance_version is None) == (data_ref is None):
+        raise ValueError("revision hash requires exactly one data binding")
+    # Preserve the exact old hash document; adding even a null key breaks history.
+    binding = (
+        {"base_lance_version": base_lance_version}
+        if data_ref is None
+        else {"data_ref": data_ref.model_dump(mode="json")}
+    )
     return stable_hash(
         {
-            "base_lance_version": base_lance_version,
+            **binding,
             "tag_schema_id": tag_schema_id,
             "tag_schema_version": tag_schema_version,
             "tags": [tag.model_dump(mode="json") for tag in tags],

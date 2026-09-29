@@ -21,6 +21,7 @@ from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.auth import AuthContext
 
 from .models import (
+    AnnotationDataBinding,
     AnnotationOperation,
     AnnotationRevision,
     AnnotationTag,
@@ -60,7 +61,7 @@ class AutoAnnotationUsage(BaseModel):
     cost_micros: int = Field(ge=0)
 
 
-class AutoAnnotationProviderRequest(BaseModel):
+class AutoAnnotationProviderRequest(AnnotationDataBinding):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     job_id: str = Field(min_length=1)
@@ -71,7 +72,7 @@ class AutoAnnotationProviderRequest(BaseModel):
     dataset_version: int = Field(ge=1)
     rollout_id: str = Field(min_length=1)
     source_revision: int = Field(ge=0)
-    base_lance_version: int = Field(ge=1)
+    base_lance_version: int | None = Field(ge=1)
     base_step_count: int = Field(ge=1)
     tag_schema_id: str = Field(min_length=1)
     tag_schema_version: int = Field(ge=1)
@@ -685,6 +686,7 @@ class AutoAnnotationJobService:
                     rollout_id=task.rollout_id,
                     source_revision=job.source_revision,
                     base_lance_version=task.base_lance_version,
+                    data_ref=task.data_ref,
                     base_step_count=base_step_count,
                     tag_schema_id=task.tag_schema_id,
                     tag_schema_version=task.tag_schema_version,
