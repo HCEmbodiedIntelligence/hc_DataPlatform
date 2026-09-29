@@ -1,0 +1,46 @@
+{
+  "synthetic_input": true,
+  "rgbd_content_hash": "d39895de42e8e62a1b751fc74aabf65f539f3b37d47624d9a65c5422273d719b",
+  "rgb_content_hash": "559679469466efbe810ea0a36c3aabd0ba9bdd3ea1342600c39641b354fd7860",
+  "frozen_data": [
+    {
+      "identity": {
+        "organization_id": "bundle-525b06206dfe43f5a4efc1105609b159",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "writer-dataset",
+        "episode_id": "second",
+        "rollout_id": "second-rollout"
+      },
+      "data_version_id": "dv_7bc36777795e755d29b1e0b5bf17798ddf5dd7b7115fb7f9b9a387c501c0832e",
+      "version": 1,
+      "content_hash": "a0842ed489681f3a5ec918b55247fa641249e22ca5cfddefe9b7cde64f9ed8e3",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-525b06206dfe43f5a4efc1105609b159/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-second/id-dv_7bc36777795e755d29b1e0b5bf17798ddf5dd7b7115fb7f9b9a387c501c0832e",
+      "frame_count": 4
+    },
+    {
+      "identity": {
+        "organization_id": "bundle-525b06206dfe43f5a4efc1105609b159",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "writer-dataset",
+        "episode_id": "writer-episode",
+        "rollout_id": "explicit:writer-rollout"
+      },
+      "data_version_id": "dv_e396f901bba634669d4814bed31cef15df73935b5c9102f8b9f7e6dd08a08608",
+      "version": 1,
+      "content_hash": "df206e6a72926063099a021fb482b591fc640e54356f6313bb7b8040fd67bbda",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-525b06206dfe43f5a4efc1105609b159/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_e396f901bba634669d4814bed31cef15df73935b5c9102f8b9f7e6dd08a08608",
+      "frame_count": 4
+    }
+  ],
+  "distinct_videos": true,
+  "primary_files_unchanged": true,
+  "transcoded": false,
+  "requantized": false,
+  "queue_api_browser_verified": false
+}

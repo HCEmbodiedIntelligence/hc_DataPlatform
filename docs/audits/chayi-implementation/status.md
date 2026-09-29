@@ -44,6 +44,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W6 集合生成补充（2026-09-29）：重组 RGB/RGB-D 集合，全局索引/任务/统计/
+  相机/视频偏移重建，视频与 HC 深度证据逐字节复用，选定标注与全局分段编号
+  保留。12 项测试与 5 项字段拒绝复查通过；4 份双 Episode 集合断网通过官方
+  reader、跨 Episode DataLoader 与独立 HC 掩码。见
+  [生成层证据和限制](collection-export.md)。均为合成夹具；集合任务 API/P21、
+  实际样本/浏览器、来源、Tag 新 Episode 及 W7/W8 继续，17 项 P0 仍整体 Pending。
 - W5/W6 完整包交付补充（2026-09-29）：P06 接通固定版本的持久打包、进度、取消/
   重试、校验缓存与授权下载；后端支持完整单包和 1–100 条独立包批量 ZIP，逐字节
   保留全部 RGB-D 与 HC 文件。后端 13 项、迁移 25 项、前端 18 项通过；普通 HTTP/

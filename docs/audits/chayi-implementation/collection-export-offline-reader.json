@@ -1,0 +1,100 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "official_reader_and_cross_episode_dataloader": true,
+  "collections": [
+    {
+      "root": "/app/.g1-artifacts/collection-export/dv_e396f901bba634669d4814bed31cef15df73935b5c9102f8b9f7e6dd08a08608/rgbd",
+      "manifest_sha256": "d39895de42e8e62a1b751fc74aabf65f539f3b37d47624d9a65c5422273d719b",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 8,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false
+    },
+    {
+      "root": "/app/.g1-artifacts/collection-export/dv_e396f901bba634669d4814bed31cef15df73935b5c9102f8b9f7e6dd08a08608/rgb",
+      "manifest_sha256": "559679469466efbe810ea0a36c3aabd0ba9bdd3ea1342600c39641b354fd7860",
+      "modalities": "rgb",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 0,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": false,
+      "official_rounding_max_error_mm": 0.0,
+      "depth_streams": 0,
+      "transcoded": false,
+      "requantized": false
+    },
+    {
+      "root": "/app/.g1-artifacts/collection-annotated/dv_7c278677db62b2da79b72e9229020229fd35665e7704162363dcbb77606cac7d",
+      "manifest_sha256": "c9c927498154303293a673d21483c6a0f9af0bd0d78f56876acb7edbbeacc884",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 2,
+      "invalid_pixels_masked": 8,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false
+    },
+    {
+      "root": "/app/.g1-artifacts/collection-two-revisions/dv_9471bd167841a08f289050c3ed3ffa0ff3df68ea9514658580fe429daa6e33ec",
+      "manifest_sha256": "4828827e11713b7f9735cf5e244b318e90519883e9f9f749040508e28a063055",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 3,
+      "invalid_pixels_masked": 8,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false
+    }
+  ],
+  "synthetic_input": true,
+  "real_sensor_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

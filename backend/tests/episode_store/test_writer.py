@@ -83,7 +83,15 @@ def test_streaming_numeric_precision_and_row_group_boundary(tmp_path):
 
 
 def build_rgbd_package(
-    tmp_path, ident=None, *, mcap_topics=False, rgb_codec="libx265", source_profile=None
+    tmp_path,
+    ident=None,
+    *,
+    mcap_topics=False,
+    rgb_codec="libx265",
+    source_profile=None,
+    intensity_offset=0,
+    depth_offset=0,
+    task="synthetic RGB-D codec acceptance",
 ):
     ident = ident or identity()
     rgb, depth = "observation.images.head_rgb", "observation.images.head_depth"
@@ -111,7 +119,7 @@ def build_rgbd_package(
         )
         for index in range(4):
             frame = av.VideoFrame.from_ndarray(
-                np.full((16, 16, 3), index * 50, dtype=np.uint8), format="rgb24"
+                np.full((16, 16, 3), intensity_offset + index * 50, dtype=np.uint8), format="rgb24"
             )
             frame.pts, frame.time_base = index, Fraction(1, 30)
             for packet in stream.encode(frame):
@@ -122,7 +130,7 @@ def build_rgbd_package(
         depth_path, evidence, 30, (16, 16), require_source_profile=source_profile is not None
     )
     for index in range(4):
-        pixels = np.full((16, 16), 500 + index * 500, dtype=np.uint16)
+        pixels = np.full((16, 16), depth_offset + 500 + index * 500, dtype=np.uint16)
         pixels[0, 0] = 0
         writer.write(
             pixels,
@@ -211,7 +219,7 @@ def build_rgbd_package(
             rows,
             assets,
             fps=30,
-            metadata={"task": "synthetic RGB-D codec acceptance"},
+            metadata={"task": task},
         )
     finally:
         reset_request_context(token)
