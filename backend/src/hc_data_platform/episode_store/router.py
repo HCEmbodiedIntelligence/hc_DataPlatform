@@ -3,7 +3,7 @@
 from contextlib import contextmanager
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Header, Query
 from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 
@@ -16,6 +16,12 @@ from .models import DataVersionRef
 from .postgres import PackageConflict
 from .previews import EpisodePreviewGrant
 from .reader import PackageStepWindow
+from .review_models import (
+    EpisodeDataReview,
+    EpisodeDataReviewAction,
+    EpisodeDataReviewPage,
+    SubmitEpisodeDataReview,
+)
 from .service import EpisodePackageService
 
 BASE = (
@@ -146,6 +152,71 @@ def steps(
     with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
         return service.steps.read_steps(
             identity, data_version_id, start_step, end_step, columns=columns
+        )
+
+
+@router.get(VERSION + "/data-reviews", response_model=EpisodeDataReviewPage)
+def data_review_history(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    auth: VerifiedAuth,
+    response: Response,
+    before: int | None = Query(None, ge=1),
+    limit: int = Query(25, ge=1, le=100),
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        page = service.data_reviews.list(identity, data_version_id, before=before, limit=limit)
+        actions = []
+        for action, capabilities in (
+            ("SUBMIT_DATA_REVIEW", ("dataset_version.review",)),
+            ("LINK_ANNOTATION_TAG", ("dataset_version.review", "annotation_task.read")),
+        ):
+            allowed = all(
+                auth.has_capability(capability, project_id, identity.organization_id)
+                for capability in capabilities
+            )
+            actions.append(
+                EpisodeDataReviewAction(
+                    action=action,
+                    allowed=allowed,
+                    required_capabilities=capabilities,
+                    denied_reason=None if allowed else "MISSING_CAPABILITY",
+                )
+            )
+        return page.model_copy(update={"allowed_actions": tuple(actions)})
+
+
+@router.post(VERSION + "/data-reviews", response_model=EpisodeDataReview, status_code=201)
+def submit_data_review(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    command: SubmitEpisodeDataReview,
+    auth: VerifiedAuth,
+    response: Response,
+    idempotency_key: Annotated[str, Header(min_length=1, max_length=256)],
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        authorize_scope(
+            auth, project_id, "dataset_version.review", region_code, identity.organization_id
+        )
+        if any(location.tag is not None for location in command.locations):
+            authorize_scope(
+                auth, project_id, "annotation_task.read", region_code, identity.organization_id
+            )
+        return service.data_reviews.submit(
+            identity,
+            data_version_id,
+            command,
+            actor_id=auth.subject_id,
+            idempotency_key=idempotency_key,
         )
 
 

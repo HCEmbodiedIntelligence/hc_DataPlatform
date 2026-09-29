@@ -1,5 +1,62 @@
 components:
   schemas:
+    DataReviewLocation:
+      additionalProperties: false
+      description: Zero-based half-open Episode frames, never parent recording frame numbers.
+      properties:
+        comment:
+          maxLength: 2000
+          minLength: 1
+          title: Comment
+          type: string
+        end_step:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: End Step
+        start_step:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Start Step
+        tag:
+          anyOf:
+          - $ref: '#/components/schemas/DataReviewTagReference'
+          - type: 'null'
+      required:
+      - comment
+      title: DataReviewLocation
+      type: object
+    DataReviewTagReference:
+      additionalProperties: false
+      properties:
+        annotation_id:
+          maxLength: 256
+          minLength: 1
+          title: Annotation Id
+          type: string
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        revision_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Revision Content Hash
+          type: string
+        task_id:
+          maxLength: 256
+          minLength: 1
+          title: Task Id
+          type: string
+      required:
+      - task_id
+      - revision
+      - revision_content_hash
+      - annotation_id
+      title: DataReviewTagReference
+      type: object
     DataVersionRef:
       additionalProperties: false
       properties:
@@ -44,6 +101,145 @@ components:
       - package_prefix
       - frame_count
       title: DataVersionRef
+      type: object
+    EpisodeDataReview:
+      additionalProperties: false
+      properties:
+        actor_id:
+          maxLength: 256
+          minLength: 1
+          title: Actor Id
+          type: string
+        comment:
+          title: Comment
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+        decision:
+          enum:
+          - APPROVED
+          - RETURNED
+          title: Decision
+          type: string
+        format:
+          const: hc-episode-data-review/1
+          default: hc-episode-data-review/1
+          title: Format
+          type: string
+        locations:
+          items:
+            $ref: '#/components/schemas/DataReviewLocation'
+          title: Locations
+          type: array
+        previous_review_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Previous Review Id
+        review_id:
+          maxLength: 256
+          minLength: 1
+          title: Review Id
+          type: string
+        sequence:
+          minimum: 1.0
+          title: Sequence
+          type: integer
+      required:
+      - review_id
+      - data
+      - sequence
+      - previous_review_id
+      - decision
+      - actor_id
+      - created_at
+      - comment
+      - locations
+      title: EpisodeDataReview
+      type: object
+    EpisodeDataReviewAction:
+      additionalProperties: false
+      properties:
+        action:
+          enum:
+          - SUBMIT_DATA_REVIEW
+          - LINK_ANNOTATION_TAG
+          title: Action
+          type: string
+        allowed:
+          title: Allowed
+          type: boolean
+        denied_reason:
+          anyOf:
+          - const: MISSING_CAPABILITY
+            type: string
+          - type: 'null'
+          title: Denied Reason
+        required_capabilities:
+          items:
+            enum:
+            - dataset_version.review
+            - annotation_task.read
+            type: string
+          title: Required Capabilities
+          type: array
+      required:
+      - action
+      - allowed
+      - required_capabilities
+      - denied_reason
+      title: EpisodeDataReviewAction
+      type: object
+    EpisodeDataReviewPage:
+      additionalProperties: false
+      properties:
+        allowed_actions:
+          default: []
+          items:
+            $ref: '#/components/schemas/EpisodeDataReviewAction'
+          title: Allowed Actions
+          type: array
+        current_sequence:
+          minimum: 0.0
+          title: Current Sequence
+          type: integer
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+        items:
+          items:
+            $ref: '#/components/schemas/EpisodeDataReview'
+          title: Items
+          type: array
+        latest:
+          anyOf:
+          - $ref: '#/components/schemas/EpisodeDataReview'
+          - type: 'null'
+        next_before:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Before
+        status:
+          enum:
+          - NOT_REVIEWED
+          - APPROVED
+          - RETURNED
+          title: Status
+          type: string
+      required:
+      - data
+      - status
+      - current_sequence
+      - latest
+      - items
+      - next_before
+      title: EpisodeDataReviewPage
       type: object
     EpisodeIdentity:
       additionalProperties: false
@@ -195,6 +391,42 @@ components:
       - steps
       title: PackageStepWindow
       type: object
+    SubmitEpisodeDataReview:
+      additionalProperties: false
+      properties:
+        comment:
+          maxLength: 4000
+          minLength: 1
+          title: Comment
+          type: string
+        decision:
+          enum:
+          - APPROVED
+          - RETURNED
+          title: Decision
+          type: string
+        expected_content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Expected Content Hash
+          type: string
+        expected_sequence:
+          minimum: 0.0
+          title: Expected Sequence
+          type: integer
+        locations:
+          default: []
+          items:
+            $ref: '#/components/schemas/DataReviewLocation'
+          maxItems: 100
+          title: Locations
+          type: array
+      required:
+      - expected_content_hash
+      - expected_sequence
+      - decision
+      - comment
+      title: SubmitEpisodeDataReview
+      type: object
 info:
   title: HC Episode package contract
   version: '2026-09-29'
@@ -317,6 +549,141 @@ paths:
       security:
       - bearerAuth: []
       summary: Detail
+      tags:
+      - episode_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/data-reviews
+  : get:
+      operationId: dataReviewHistory
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: path
+        name: data_version_id
+        required: true
+        schema:
+          title: Data Version Id
+          type: string
+      - in: query
+        name: before
+        required: false
+        schema:
+          anyOf:
+          - minimum: 1
+            type: integer
+          - type: 'null'
+          title: Before
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeDataReviewPage'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Data Review History
+      tags:
+      - episode_data
+    post:
+      operationId: submitDataReview
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: path
+        name: data_version_id
+        required: true
+        schema:
+          title: Data Version Id
+          type: string
+      - in: header
+        name: idempotency-key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitEpisodeDataReview'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeDataReview'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Submit Data Review
       tags:
       - episode_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/depth/{feature}/{frame_index}

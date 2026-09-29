@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="16" failures="0" errors="0" time="1.135005381">
+    <testsuite name="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" timestamp="2026-09-29T11:40:47.723Z" hostname="4faf0e0c795e" tests="4" failures="0" errors="0" skipped="0" time="0.574720631">
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="shows human review separately and disables writes without permission" time="0.199183688">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="does not request records without data read capability" time="0.020706056">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="preserves the original command and key after an ambiguous failure" time="0.197775561">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/DataReviewPanel.test.tsx" name="rejects a frame range outside this data version" time="0.156466265">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/ViewerShell.test.tsx" timestamp="2026-09-29T11:40:47.725Z" hostname="4faf0e0c795e" tests="3" failures="0" errors="0" skipped="0" time="0.547613297">
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; uses the annotation layout in read-only mode with camera selection and a single shared timeline" time="0.297989825">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; retains the immutable revision and selected time range when recording an issue" time="0.187162585">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; keeps issue creation gated and returns to the dataset without opening annotation" time="0.06173731">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/data-reviews.test.ts" timestamp="2026-09-29T11:40:47.727Z" hostname="4faf0e0c795e" tests="9" failures="0" errors="0" skipped="0" time="0.012671453">
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects inconsistent data" time="0.005954386">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects inconsistent status" time="0.000578694">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects inconsistent head" time="0.000312306">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects inconsistent range" time="0.000715151">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects inconsistent cursor" time="0.000324322">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects inconsistent scope" time="0.000446829">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="keeps the fixed version and pagination on the request" time="0.002398581">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="rejects mixed stream versions and does not invent a version for legacy streams" time="0.000493835">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/data-reviews.test.ts" name="checks the recorded decision against the submitted command" time="0.000508651">
+        </testcase>
+    </testsuite>
+</testsuites>

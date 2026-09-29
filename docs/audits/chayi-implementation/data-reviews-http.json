@@ -1,0 +1,33 @@
+{
+  "scope": "synthetic actual gateway/API/PostgreSQL software verification",
+  "data": {
+    "identity": {
+      "organization_id": "g1-ed13f73e548847829f2ec76854efe225",
+      "project_id": "p",
+      "region_code": "r",
+      "dataset_id": "d",
+      "episode_id": "episode-1",
+      "rollout_id": "explicit:rollout:identity"
+    },
+    "data_version_id": "dv_1f0f7343ea830f14032eb7d2b493e0cab4deddb34249976c6bec4b39ead69ff9",
+    "version": 1,
+    "content_hash": "4fb52c003f949b92573bb2925fc8e3af44d6551cae778c22bd087fc1b8fab4f1",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-g1-ed13f73e548847829f2ec76854efe225/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_1f0f7343ea830f14032eb7d2b493e0cab4deddb34249976c6bec4b39ead69ff9",
+    "frame_count": 3
+  },
+  "second_version": "dv_0dbf5b9f922d2daf5c6d990a1d193896e64cdf44532db2dca1e014da5d9f0abe",
+  "first_review": "er_e88eef2efbf548dfabf6d4eef675d293",
+  "second_review": "er_5cb0a07b252e4263a91bb9379a632768",
+  "normal_session_authorization": true,
+  "concurrent_retry_same_record": true,
+  "stale_sequence_and_changed_key_conflicts": true,
+  "history_pagination": true,
+  "different_version_not_reviewed": true,
+  "foreign_scope_denied": true,
+  "tag_links_require_annotation_read": true,
+  "revoked_retry_denied": true,
+  "real_recording": false,
+  "human_acceptance": false
+}

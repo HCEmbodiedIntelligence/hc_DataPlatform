@@ -27,6 +27,12 @@ def main():
                     "EpisodeIdentity",
                     "PackageStepWindow",
                     "EpisodePreviewGrant",
+                    "DataReviewTagReference",
+                    "DataReviewLocation",
+                    "SubmitEpisodeDataReview",
+                    "EpisodeDataReview",
+                    "EpisodeDataReviewPage",
+                    "EpisodeDataReviewAction",
                 )
             }
         },

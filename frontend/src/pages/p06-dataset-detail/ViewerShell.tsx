@@ -32,6 +32,8 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState } from "../../shared/ui";
 import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
+import { DataReviewPanel } from "./DataReviewPanel";
+import { reviewDataReference } from "./data-reviews";
 import {
   adaptP06ViewerStreams,
   selectEpisodeJointStream,
@@ -112,6 +114,23 @@ export function EpisodeViewerShell() {
   const [createdIssueId, setCreatedIssueId] = useState<string | null>(null);
 
   const revision = query.data?.revision;
+  const reviewTarget = useMemo(() => {
+    try {
+      return {
+        data: reviewDataReference(
+          revision?.streams.flatMap((stream) =>
+            stream.package_binding ? [stream.package_binding.data] : [],
+          ) ?? [],
+        ),
+        error: null,
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : "数据版本绑定异常。",
+      };
+    }
+  }, [revision]);
   const startNs = revision?.started_at_ns ?? "0";
   const endNs = revision
     ? (BigInt(revision.started_at_ns) + BigInt(revision.duration_ns)).toString()
@@ -436,6 +455,18 @@ export function EpisodeViewerShell() {
         <Typography.Paragraph>
           Revision <code>{revision!.revision_id}</code>
         </Typography.Paragraph>
+        {reviewTarget.error && (
+          <Alert type="error" title={reviewTarget.error} />
+        )}
+        {dataInfoOpen && reviewTarget.data && scope && (
+          <DataReviewPanel
+            key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
+            scope={scope}
+            data={reviewTarget.data}
+            canRead={capabilities.has("dataset_version.read")}
+            canReview={capabilities.has("dataset_version.review")}
+          />
+        )}
         <div className={styles.streamList}>
           {streams.map((stream) => (
             <Card key={stream.id} size="small" className={styles.streamItem}>

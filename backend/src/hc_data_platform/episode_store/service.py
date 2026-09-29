@@ -12,6 +12,7 @@ from .files import PackageFiles, VerifiedFileCache
 from .postgres import PackageConflict, PostgresEpisodeStore, assert_scope
 from .previews import EpisodePreviews
 from .reader import ParquetStepReader, PhysicalDepthReader
+from .reviews import EpisodeDataReviews
 from .schemas import EpisodeSchemas
 from .writer import write_episode
 
@@ -30,6 +31,7 @@ class EpisodePackageService:
         preview_signer=None,
     ):
         self.repository = PostgresEpisodeStore(connections)
+        self.data_reviews = EpisodeDataReviews(self.repository)
         self.directory = directory
         self.cache = VerifiedFileCache(
             directory / "files", capacity_bytes=cache_bytes, max_object_bytes=max_object_bytes
