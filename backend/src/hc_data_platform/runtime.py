@@ -1235,7 +1235,9 @@ def build_worker_outbox(
         ChunkedObjectStorageReader(object_storage),
         catalog,
     )
-    handler = IngestOutboxHandler(launcher, resolver)
+    from .workflow.ingest_guard import PostgresIngestDispatchGuard
+
+    handler = IngestOutboxHandler(launcher, resolver, PostgresIngestDispatchGuard(connection_factory))
     continuous_episode_resolver = PostgresContinuousEpisodeWorkflowInputResolver(
         connection_factory,
         catalog,

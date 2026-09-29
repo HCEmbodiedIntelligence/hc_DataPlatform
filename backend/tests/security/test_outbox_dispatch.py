@@ -232,3 +232,50 @@ def test_expired_claim_is_recoverable_after_dispatcher_kill() -> None:
     assert recovered is not None
     assert recovered.attempt == 2
     assert recovered.event.event_id == first.event.event_id
+
+
+@pytest.mark.asyncio
+async def test_blocked_dataset_stays_retryable_without_launching_workflow():
+    from hc_data_platform.workflow.ingest_guard import IngestDatasetBusy
+
+    class BusyGuard:
+        def reserve(self, request, workflow_id):
+            raise IngestDatasetBusy("previous rollout still owns the media version")
+
+    event = _event()
+    launcher = AlreadyStartedLauncher()
+    handler = IngestOutboxHandler(launcher, PersistedPlanResolver(), BusyGuard())
+    repository = InMemoryOutboxDeliveryRepository((event,))
+    dispatcher = OutboxDispatcher(
+        repository, {event.event_type: handler}, worker_id="worker", clock=lambda: NOW
+    )
+    await dispatcher.dispatch_one(
+        organization_id="organization-a", project_id="project-a", region_code="cn-hz"
+    )
+    assert launcher.calls == 0
+    assert repository.state(event.event_id)["published_at"] is None
+    assert repository.state(event.event_id)["error_code"] == "INGEST_DATASET_BUSY"
+
+
+@pytest.mark.asyncio
+async def test_slow_ingest_resolver_does_not_block_activity_heartbeat_loop():
+    import asyncio
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class SlowResolver(PersistedPlanResolver):
+        def resolve(self, **values):
+            started.set()
+            assert release.wait(timeout=2), "resolver blocked the event loop"
+            return super().resolve(**values)
+
+    handler = IngestOutboxHandler(AlreadyStartedLauncher(), SlowResolver())
+
+    async def heartbeat():
+        while not started.is_set():
+            await asyncio.sleep(0.01)
+        release.set()
+
+    await asyncio.gather(handler(_event()), heartbeat())
