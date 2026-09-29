@@ -82,7 +82,7 @@ def test_streaming_numeric_precision_and_row_group_boundary(tmp_path):
     assert table["hc.timestamp_ns"][2050].as_py() == 1_790_000_000_000_000_001 + 2050 * 33_333_333
 
 
-def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False):
+def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False, rgb_codec="libx265"):
     ident = ident or identity()
     rgb, depth = "observation.images.head_rgb", "observation.images.head_depth"
     source = PackageInput(
@@ -99,10 +99,14 @@ def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False):
     rgb_path = input_root / "rgb-h265.mp4"
     depth_path, evidence = input_root / "depth.mp4", input_root / "depth"
     with av.open(str(rgb_path), "w") as container:
-        stream = container.add_stream("libx265", rate=30)
+        stream = container.add_stream(rgb_codec, rate=30)
         stream.width = stream.height = 16
         stream.pix_fmt = "yuv420p"
-        stream.options = {"x265-params": "bframes=0:pools=none:frame-threads=1:log-level=error"}
+        stream.options = (
+            {"x265-params": "bframes=0:pools=none:frame-threads=1:log-level=error"}
+            if rgb_codec == "libx265"
+            else {"bf": "0", "threads": "1"}
+        )
         for index in range(4):
             frame = av.VideoFrame.from_ndarray(
                 np.full((16, 16, 3), index * 50, dtype=np.uint8), format="rgb24"

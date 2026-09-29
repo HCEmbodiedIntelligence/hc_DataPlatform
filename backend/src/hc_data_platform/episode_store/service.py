@@ -10,6 +10,7 @@ from .collections import EpisodeCollections
 from .commit import EpisodePackageCommitter
 from .files import PackageFiles, VerifiedFileCache
 from .postgres import PostgresEpisodeStore, assert_scope
+from .previews import EpisodePreviews
 from .reader import ParquetStepReader, PhysicalDepthReader
 from .schemas import EpisodeSchemas
 from .writer import write_episode
@@ -26,6 +27,7 @@ class EpisodePackageService:
         max_object_bytes=32 * 1024**3,
         legacy_catalog=None,
         media_repository=None,
+        preview_signer=None,
     ):
         self.repository = PostgresEpisodeStore(connections)
         self.directory = directory
@@ -36,6 +38,9 @@ class EpisodePackageService:
         self.committer = EpisodePackageCommitter(self.repository, storage)
         self.steps = ParquetStepReader(self.files)
         self.depth = PhysicalDepthReader(self.files)
+        self.previews = EpisodePreviews(
+            self.files, self.committer, directory / "previews", signer=preview_signer
+        )
         self.schemas = EpisodeSchemas(self.repository)
         self.bundle_assets = (
             BundleAssetsLoader(
@@ -93,6 +98,9 @@ class EpisodePackageService:
             root = Path(temporary) / "episode"
             write_episode(root, source, steps, assets, fps=schema.frequency_hz, metadata=metadata)
             receipt = self.committer.commit(root, source)
+        # Browser derivatives are separate objects. Primary RGB-D bytes and the
+        # complete package manifest remain unchanged, including on preview retry.
+        self.previews.prepare_all(receipt.data)
         collection = self.collections.publish(receipt.data, schema)
         ready = EpisodeDerivedReady(
             data=receipt.data,

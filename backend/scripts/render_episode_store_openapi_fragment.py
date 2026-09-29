@@ -22,7 +22,12 @@ def main():
             # StepRecord and the shared errors remain owned by existing fragments.
             "schemas": {
                 name: runtime["components"]["schemas"][name]
-                for name in ("DataVersionRef", "EpisodeIdentity", "PackageStepWindow")
+                for name in (
+                    "DataVersionRef",
+                    "EpisodeIdentity",
+                    "PackageStepWindow",
+                    "EpisodePreviewGrant",
+                )
             }
         },
     }

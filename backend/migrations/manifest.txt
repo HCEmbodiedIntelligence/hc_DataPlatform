@@ -132,3 +132,4 @@ episode_store/0001_episode_packages.sql
 episode_store/0002_commit_pointer_guard.sql
 episode_store/0003_collection_publication.sql
 episode_store/0004_dataset_schemas.sql
+episode_store/0005_media_previews.sql

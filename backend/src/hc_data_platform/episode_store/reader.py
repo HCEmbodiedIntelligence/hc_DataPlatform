@@ -18,6 +18,7 @@ from hc_data_platform.publishing.holobrain_depth import DepthProfile, dequantize
 from hc_data_platform.publishing.lerobot_export import DATA_PATH, VIDEO_PATH
 
 from .models import DataVersionRef, EpisodeIdentity, FrozenModel
+from .realsense_colorizer import RealSenseColorizer, display_profile
 
 
 class PackageStepWindow(FrozenModel):
@@ -185,6 +186,7 @@ class DepthFrame:
             "invalid": "NaN",
             "flags": {"valid": 1, "saturated_low": 2, "saturated_high": 4},
             "quantized": True,
+            "preview": display_profile(self.profile["depth_max"]),
             "model_depth_training_support": "not_evaluated",
         }
 
@@ -196,18 +198,10 @@ class DepthFrame:
 
     def preview_png(self) -> bytes:
         """Display derivative only; measurements always use values + flags."""
-        minimum, maximum = self.profile["depth_min"], self.profile["depth_max"]
         physical_m = self.values / 1000 if self.unit == "mm" else self.values
-        valid = self.flags & 1 != 0
-        normalized = np.zeros_like(physical_m)
-        normalized[valid] = np.clip((physical_m[valid] - minimum) / (maximum - minimum), 0, 1)
-        # Fixed blue/cyan/yellow/red range, shared across frames in this profile.
-        rgb = np.stack(
-            [np.clip(1.5 - np.abs(4 * normalized - shift), 0, 1) for shift in (3, 2, 1)], axis=-1
-        )
-        rgb[~valid] = 0
         output = io.BytesIO()
-        Image.fromarray(np.rint(rgb * 255).astype(np.uint8)).save(output, format="PNG")
+        with RealSenseColorizer(physical_m.shape, depth_max=self.profile["depth_max"]) as colorizer:
+            Image.fromarray(colorizer.colorize(physical_m, self.flags)).save(output, format="PNG")
         return output.getvalue()
 
 

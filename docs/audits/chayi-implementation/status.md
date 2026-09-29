@@ -324,3 +324,30 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   automatic annotation and continuous READY state (currently require Lance);
   native HC sidecars/window materialization, unified detail/download UI, and the
   remaining W3–W8 work. No P0 acceptance row is newly marked complete.
+
+## Official RealSense media preview milestone (partial W2/W4/W5)
+
+- User requires official RealSense depth display. PNG and new video previews now
+  call the pinned `pyrealsense2.colorizer` directly: Dynamic/Jet/histogram defaults.
+  Removed the handwritten palette. HC invalid pixels become SDK zero input; a
+  temporary in-memory Z16 frame is display-only. No new 16-bit primary copy.
+- Processing owns immutable preview publication; GET/authorization never starts
+  encoding. Full scoped version/hash checks precede grants, which are audited.
+  READY retries reuse completed outputs. H.265 RGB and grayscale HEVC depth stay
+  byte-identical in the primary package; H.264 RGB is reused where compatible.
+- P06 lazily authorizes package RGB/depth videos and refreshes through the same
+  capability check. Dynamic colors are explicitly not a fixed distance scale.
+  Backend grants record the display profile; complete downloads remain primary RGB-D.
+- Isolated migration `0005_media_previews` and official SDK dependency layer were
+  applied only to G1. API/Worker recovered healthy after correcting the derived
+  image runtime user to the original 65532; production 8088 was not changed.
+- Backend package/service tests: **28 passed**; additional depth/auth/endpoint
+  regression: **41 passed**. Frontend source/runtime/Workbench: **58 passed**.
+  TypeScript, generated API gate and changed-code static checks pass. Tests include
+  pixel equality against actual SDK defaults, real PG/MinIO/gateway/video Range,
+  masked physical reads, interruption/concurrency/retry and cross-scope denial.
+- Detailed evidence, source links, commands, deployment conditions and limits:
+  [realsense-preview.md](realsense-preview.md). Inputs remain synthetic; no browser,
+  sensor recording, complete ingestion or human acceptance is claimed. The actual
+  three-ingress dispatch still needs new-format integration. All 17 P0 rows remain
+  pending for their required full coverage.

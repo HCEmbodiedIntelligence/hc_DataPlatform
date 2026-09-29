@@ -6,6 +6,7 @@ import type {
 import type { EpisodeRevisionWire } from "../../features/datasets/api/wire-schemas";
 import { createDatasetLanceWindowSource } from "./lance-window-source";
 import { createDatasetPackageWindowSource } from "./package-window-source";
+import { createDatasetPackageMediaSource } from "./package-media-source";
 import { createDatasetAlignedMediaSource } from "./aligned-media-source";
 
 function modality(kind: string): ViewerStreamModality {
@@ -47,8 +48,7 @@ export function adaptP06ViewerStreams(
         : null;
     const mediaReady =
       mediaModality !== null &&
-      mediaBinding !== null &&
-      mediaBinding !== undefined;
+      (mediaBinding != null || packageBinding?.value_kind === null);
     const dataReady =
       mediaModality === null &&
       streamModality !== "other" &&
@@ -94,7 +94,11 @@ export function adaptP06ViewerStreams(
       endNs: stream.t_end_ns,
       availability: mediaReady || dataReady ? "ready" : "missing",
       accessibleSummary: mediaReady
-        ? `${stream.channel_path} 是该 Dataset 版本的就绪视频；面板可见时只签发短期读取权限。`
+        ? packageBinding
+          ? streamModality === "depth"
+            ? `${stream.channel_path} 使用 RealSense 官方动态着色，黑色表示无效像素；颜色不是固定距离刻度，测量请读取物理值。完整下载包含原深度视频和有效掩码。`
+            : `${stream.channel_path} 来自固定数据版本；预览按需授权，完整下载保留原 RGB 视频。`
+          : `${stream.channel_path} 是该 Dataset 版本的就绪视频；面板可见时只签发短期读取权限。`
         : dataReady
           ? packageBinding
             ? `${stream.channel_path} 来自固定的 Episode 数据版本；可视化数据会在面板可见时按需读取。`
@@ -104,16 +108,29 @@ export function adaptP06ViewerStreams(
             : `${stream.channel_path} 尚未提供与固定数据版本对应的可视化绑定。`,
       ...(mediaReady
         ? {
-            mediaSource: createDatasetAlignedMediaSource({
-              scope: {
-                organizationId: revision.scope.organization_id,
-                projectId: revision.scope.project_id,
-                regionCode: revision.scope.region_code,
-              },
-              datasetId,
-              binding: mediaBinding,
-              modality: mediaModality,
-            }),
+            mediaSource: packageBinding
+              ? createDatasetPackageMediaSource({
+                  scope: {
+                    organizationId: revision.scope.organization_id,
+                    projectId: revision.scope.project_id,
+                    regionCode: revision.scope.region_code,
+                  },
+                  datasetId,
+                  binding: packageBinding,
+                  modality: mediaModality,
+                })
+              : mediaBinding
+                ? createDatasetAlignedMediaSource({
+                    scope: {
+                      organizationId: revision.scope.organization_id,
+                      projectId: revision.scope.project_id,
+                      regionCode: revision.scope.region_code,
+                    },
+                    datasetId,
+                    binding: mediaBinding,
+                    modality: mediaModality,
+                  })
+                : undefined,
           }
         : {}),
       ...(windowSource

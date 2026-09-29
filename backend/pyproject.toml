@@ -44,6 +44,7 @@ data = [
   "pylance>=0.22",
   "numpy>=2",
   "Pillow>=10",
+  "pyrealsense2==2.58.4.10922; sys_platform == 'linux' or sys_platform == 'win32'",
 ]
 dev = [
   "mypy>=1.13,<2",

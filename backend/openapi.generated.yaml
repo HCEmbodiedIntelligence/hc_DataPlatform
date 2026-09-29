@@ -14284,6 +14284,89 @@ components:
       - rollout_id
       title: EpisodeIdentity
       type: object
+    EpisodePreviewGrant:
+      additionalProperties: false
+      properties:
+        colorizer:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Colorizer
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
+        depth_max_m:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Depth Max M
+        depth_min_m:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Depth Min M
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        feature:
+          title: Feature
+          type: string
+        fps:
+          exclusiveMinimum: 0.0
+          title: Fps
+          type: number
+        frame_count:
+          exclusiveMinimum: 0.0
+          title: Frame Count
+          type: integer
+        height:
+          exclusiveMinimum: 0.0
+          title: Height
+          type: integer
+        kind:
+          enum:
+          - rgb-video
+          - depth-preview
+          title: Kind
+          type: string
+        media_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Media Sha256
+          type: string
+        media_url:
+          title: Media Url
+          type: string
+        profile_id:
+          title: Profile Id
+          type: string
+        source_reused:
+          title: Source Reused
+          type: boolean
+        source_video_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Source Video Sha256
+          type: string
+        width:
+          exclusiveMinimum: 0.0
+          title: Width
+          type: integer
+      required:
+      - data
+      - feature
+      - profile_id
+      - kind
+      - source_reused
+      - source_video_sha256
+      - media_sha256
+      - frame_count
+      - fps
+      - width
+      - height
+      - media_url
+      - expires_at
+      title: EpisodePreviewGrant
+      type: object
     EpisodeProcessing:
       additionalProperties: false
       properties:
@@ -41921,6 +42004,64 @@ paths:
       security:
       - bearerAuth: []
       summary: Download
+      tags:
+      - episode_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/media/{feature}/authorize
+  : post:
+      operationId: authorizePreview
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: path
+        name: data_version_id
+        required: true
+        schema:
+          title: Data Version Id
+          type: string
+      - in: path
+        name: feature
+        required: true
+        schema:
+          title: Feature
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodePreviewGrant'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Authorize Preview
       tags:
       - episode_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/steps

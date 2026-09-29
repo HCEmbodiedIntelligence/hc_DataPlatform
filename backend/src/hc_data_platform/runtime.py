@@ -868,13 +868,18 @@ def build_runtime(
     )
 
     aligned_media_repository = PostgresAlignedMediaRepository(connection_factory)
-    episode_packages = _episode_packages(
-        connection_factory, object_storage, resolved, catalog, aligned_media_repository
-    )
     aligned_media_store = S3AlignedMediaArtifactStore(
         s3_client,
         resolved.object_store_bucket,
         presign_client=s3_presign_client,
+    )
+    episode_packages = _episode_packages(
+        connection_factory,
+        object_storage,
+        resolved,
+        catalog,
+        aligned_media_repository,
+        preview_signer=aligned_media_store.authorize_object,
     )
     aligned_media_profiles = AlignedMediaProfileCatalog(resolved.aligned_media_allowed_profiles)
     aligned_media = AlignedMediaAuthorizationService(
@@ -1094,7 +1099,10 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_export_audit_recorder(runtime.export_audit)
 
 
-def _episode_packages(connection_factory, object_storage, settings, legacy_catalog, media_repository):
+def _episode_packages(
+    connection_factory, object_storage, settings, legacy_catalog, media_repository,
+    *, preview_signer=None,
+):
     from hc_data_platform.episode_store.service import EpisodePackageService
 
     return EpisodePackageService(
@@ -1104,6 +1112,7 @@ def _episode_packages(connection_factory, object_storage, settings, legacy_catal
         max_object_bytes=settings.episode_package_max_object_bytes,
         legacy_catalog=legacy_catalog,
         media_repository=media_repository,
+        preview_signer=preview_signer,
     )
 
 

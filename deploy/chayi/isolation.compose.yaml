@@ -3,10 +3,12 @@ services:
     environment:
       MINIO_API_CORS_ALLOW_ORIGIN: http://127.0.0.1:48088,http://localhost:48088
   api:
+    image: hc-chayi-backend:realsense-2.58.4
     environment:
       HC_TEMPORAL_NAMESPACE: chayi-g1
       HC_TEMPORAL_TASK_QUEUE: chayi-g1-data
   worker:
+    image: hc-chayi-backend:realsense-2.58.4
     environment:
       HC_TEMPORAL_NAMESPACE: chayi-g1
   frontend:
@@ -19,7 +21,10 @@ services:
   # mounts, host network, device access, or production credentials are inherited.
   test:
     profiles: [test]
-    image: openarm-e-backend:integration
+    image: hc-chayi-backend:realsense-2.58.4
+    build:
+      context: ./backend
+      dockerfile: ../deploy/chayi/backend-preview.Dockerfile
     pull_policy: never
     user: "1000:1000"
     working_dir: /app

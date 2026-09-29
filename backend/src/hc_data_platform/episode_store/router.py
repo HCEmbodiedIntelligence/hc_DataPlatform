@@ -14,6 +14,7 @@ from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 from .download import complete_archive
 from .models import DataVersionRef
 from .postgres import PackageConflict
+from .previews import EpisodePreviewGrant
 from .reader import PackageStepWindow
 from .service import EpisodePackageService
 
@@ -145,6 +146,24 @@ def steps(
     with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
         return service.steps.read_steps(
             identity, data_version_id, start_step, end_step, columns=columns
+        )
+
+
+@router.post(VERSION + "/media/{feature}/authorize", response_model=EpisodePreviewGrant)
+def authorize_preview(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    feature: str,
+    auth: VerifiedAuth,
+    response: Response,
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        return service.previews.authorize(
+            identity, data_version_id, feature, actor_id=auth.subject_id
         )
 
 

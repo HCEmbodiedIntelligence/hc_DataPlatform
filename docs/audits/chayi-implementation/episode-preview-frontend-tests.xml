@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="58" failures="0" errors="0" time="0.768919707">
+    <testsuite name="src/features/viewer/EpisodeWorkbenchCore.test.tsx" timestamp="2026-09-29T02:48:56.794Z" hostname="db7cb275d266" tests="17" failures="0" errors="0" skipped="0" time="0.635493043">
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="formats all viewer time readouts as seconds with two decimals" time="0.000737723">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; distinguishes a new drag from resizing an existing selection" time="0.085932998">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; creates a precise range by dragging across the filmstrip" time="0.014821584">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; supports keyboard trimming, zooming, and nested track labels" time="0.039089834">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; starts the shared playback clock at an interactive segment boundary" time="0.110183034">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; scrubs while moving a Tag, commits on release, and suppresses the drag&apos;s click" time="0.014446787">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; drags the start edge directly and follows that boundary" time="0.013975778">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; drags the end edge directly and follows that boundary" time="0.012257965">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; keeps the interval length inside the timeline bounds" time="0.017974842">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; cancels without writing on Escape" time="0.018733753">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; cancels without writing on pointercancel" time="0.015788634">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; selects a right-clicked Tag and offers deletion at the pointer" time="0.014312728">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; does not expose direct editing or deletion when read-only" time="0.008391403">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="EpisodeWorkbenchCore immutable window data &gt; loads a bound non-camera stream only when visible and exposes a real-data summary" time="0.015694665">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; keeps a slow window request alive and updates the cursor and values when time changes" time="0.212142132">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; renders all 29 G1 joints including the right wrist" time="0.0235657">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; keeps the last successful chart visible when a window refresh is transiently rejected" time="0.014640937">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/package-media-source.test.ts" timestamp="2026-09-29T02:48:56.796Z" hostname="db7cb275d266" tests="11" failures="0" errors="0" skipped="0" time="0.023387518">
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; lazily obtains and refreshes a scoped official-depth preview grant with the explicit window" time="0.010693786">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;feature&quot;:&quot;other&quot;}" time="0.002117903">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;data&quot;:{&quot;identity&quot;:{&quot;organization_id&quot;:&quot;org-a&quot;,&quot;project_id&quot;:&quot;project-a&quot;,&quot;region_code&quot;:&quot;region-a&quot;,&quot;dataset_id&quot;:&quot;dataset_test&quot;,&quot;episode_id&quot;:&quot;episode_test&quot;,&quot;rollout_id&quot;:&quot;explicit-rollout&quot;},&quot;data_version_id&quot;:&quot;dv_other&quot;,&quot;version&quot;:3,&quot;content_hash&quot;:&quot;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&quot;,&quot;storage_format&quot;:&quot;lerobot_v3&quot;,&quot;schema_snapshot_id&quot;:&quot;schema-test&quot;,&quot;package_prefix&quot;:&quot;test/pinned/&quot;,&quot;frame_count&quot;:30}}" time="0.001079555">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;kind&quot;:&quot;rgb-video&quot;}" time="0.000913006">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;source_reused&quot;:true}" time="0.000837242">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;frame_count&quot;:31}" time="0.000803098">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;colorizer&quot;:null}" time="0.000799054">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;depth_min_m&quot;:11}" time="0.001217713">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;media_url&quot;:&quot;javascript:alert(1)&quot;}" time="0.000922545">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;expires_at&quot;:&quot;2020-01-01T00:00:00Z&quot;}" time="0.000680733">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; routes both RGB and official depth through the actual viewer adapter without Lance IDs" time="0.000536273">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/package-window-source.test.ts" timestamp="2026-09-29T02:48:56.798Z" hostname="db7cb275d266" tests="21" failures="0" errors="0" skipped="0" time="0.094289759">
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; pages a long range within reader limits, preserves ns/joint units and uses declared runtime routes" time="0.068899256">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to organization_id" time="0.001914745">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to project_id" time="0.000707923">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to region_code" time="0.00067169">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to dataset_id" time="0.000607732">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to episode_id" time="0.000598387">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to rollout_id" time="0.00053547">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;data_version_id&quot;:&quot;dv_other&quot;}" time="0.001181685">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;version&quot;:4}" time="0.000774622">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;content_hash&quot;:&quot;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&quot;}" time="0.000608969">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;schema_snapshot_id&quot;:&quot;other-schema&quot;}" time="0.000600168">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;package_prefix&quot;:&quot;other/&quot;}" time="0.000458118">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;frame_count&quot;:5001}" time="0.000457489">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-row" time="0.000577404">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: duplicate-step" time="0.000391811">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: out-of-order-time" time="0.00037034">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: foreign-rollout" time="0.000376671">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-validity" time="0.000384767">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-channel" time="0.00037349">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; skips invalid channel samples without using aggregate row validity" time="0.000498622">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; cancels before another page and refuses bindings outside the selected scope" time="0.012207831">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" timestamp="2026-09-29T02:48:56.801Z" hostname="db7cb275d266" tests="8" failures="0" errors="0" skipped="0" time="0.006170673">
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; routes a pinned package numeric stream without a Lance version" time="0.002353022">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; selects the named joint topic instead of humanoid observations or raw device state" time="0.000303922">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; uses only a server-projected camera binding to expose a lazy authorized MP4 source" time="0.000576727">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; does not invent a rollout or a browser video when a camera has no immutable binding" time="0.000199764">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; marks an unbound non-camera modality as missing rather than claiming its format is unsupported" time="0.000104361">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; uses only a server-projected non-camera binding to expose a lazy real Lance window source" time="0.000231897">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; fails closed on a malformed non-camera media binding before it can reach the viewer" time="0.000926239">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; fails closed on a camera data binding or an incompatible declared pointcloud decoder" time="0.00044933">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/runtime/authorized-media.test.ts" timestamp="2026-09-29T02:48:56.806Z" hostname="db7cb275d266" tests="1" failures="0" errors="0" skipped="0" time="0.009578714">
+        <testcase classname="src/features/viewer/runtime/authorized-media.test.ts" name="attachAuthorizedMedia &gt; attaches MP4 directly and detaches its failure listener on disposal" time="0.008735052">
+        </testcase>
+    </testsuite>
+</testsuites>
