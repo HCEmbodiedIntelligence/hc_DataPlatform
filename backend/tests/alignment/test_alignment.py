@@ -75,10 +75,40 @@ def test_sixty_seconds_at_30hz_has_exactly_1800_contiguous_steps() -> None:
     ]
     assert {
         right.timestamp_ns - left.timestamp_ns for left, right in zip(rows, rows[1:], strict=False)
-    } == {
-        33_333_333,
-        33_333_334,
-    }
+    } == {33_333_333, 33_333_334}
+    assert rows[-1].timestamp_ns < data.end_ns
+
+
+@pytest.mark.parametrize("fps", [25, 30, 60, 128])
+def test_native_v2_exact_source_grid_and_legacy_floor_are_versioned(fps):
+    from fractions import Fraction
+
+    from hc_data_platform.alignment.engine import NATIVE_EPISODE_CONVERTER
+
+    stamps = [round(Fraction(i * 1_000_000_000, fps)) for i in range(fps)]
+    data = _input(
+        end_ns=1_000_000_000,
+        streams={
+            "depth": _stream(ModalityKind.IMAGE, [(t, {"frame": i}) for i, t in enumerate(stamps)])
+        },
+    )
+    profile = _profile(
+        {"depth"},
+        frequency_hz=fps,
+        converter_version=NATIVE_EPISODE_CONVERTER,
+        default_tolerance_ns=0,
+    )
+    manifest, rows = AlignmentEngine().align_in_memory(data, profile)
+    assert [row.timestamp_ns for row in rows] == stamps
+    assert all(
+        row.modalities["depth"].valid and row.modalities["depth"].time_error_ns == 0 for row in rows
+    )
+    legacy = profile.model_copy(update={"converter_version": "native-episode-package/1"})
+    assert list(AlignmentEngine.iter_timestamps(data, legacy)) == [
+        i * 1_000_000_000 // fps for i in range(fps)
+    ]
+    old_manifest, _ = AlignmentEngine().align_in_memory(data, legacy)
+    assert manifest.converter_version != old_manifest.converter_version
     assert rows[-1].timestamp_ns < data.end_ns
 
 

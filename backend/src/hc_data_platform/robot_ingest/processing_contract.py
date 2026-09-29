@@ -10,6 +10,7 @@ from typing import Literal, Protocol
 
 from pydantic import Field, model_validator
 
+from hc_data_platform.episode_store.models import CommitReceipt
 from hc_data_platform.ingest.ports import ObjectStoragePort
 
 from .models import QualityStatus, RobotIngestUpload, StrictModel
@@ -33,7 +34,8 @@ class EpisodeReceipt(StrictModel):
     """B returns only after durable data/media/QC publication (idempotent by episode_id).
 
     RISK/REJECT are completed quality decisions, not transient technical errors.
-    Dataset/Lance versions are required for PASS; rejected data may lack versions.
+    PASS requires a published collection and an exact package or legacy Lance
+    receipt. Data readability makes no claim about a model's training support.
     """
 
     quality_status: Literal["PASS", "RISK", "REJECT"]
@@ -41,15 +43,27 @@ class EpisodeReceipt(StrictModel):
     sample_count: int = Field(ge=0)
     dataset_version: int | None = Field(default=None, gt=0)
     lance_version: int | None = Field(default=None, gt=0)
+    package_receipt: CommitReceipt | None = None
     qc_report_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
 
     @model_validator(mode="after")
     def published_pass(self) -> EpisodeReceipt:
-        if self.quality_status == "PASS" and (
-            self.dataset_version is None or self.lance_version is None
+        if self.package_receipt is not None and (
+            self.lance_version is not None
+            or self.dataset_version is None
+            or self.package_receipt.data.frame_count != self.sample_count
         ):
-            raise ValueError("PASS requires durable dataset and Lance versions")
+            raise ValueError("package receipt must match committed collection and sample count")
+        if self.quality_status == "PASS" and (
+            self.dataset_version is None
+            or (self.lance_version is None) == (self.package_receipt is None)
+        ):
+            raise ValueError("PASS requires a durable collection and one real storage receipt")
         return self
+
+    @property
+    def data_ref(self):
+        return self.package_receipt.data if self.package_receipt is not None else None
 
 
 @dataclass(frozen=True)
@@ -118,6 +132,20 @@ class EpisodeProgress(SourceEpisode):
     error_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]{1,128}$")
     retryable: bool = False
     receipt: EpisodeReceipt | None = None
+
+    @model_validator(mode="after")
+    def ready_receipt(self):
+        if self.status == "READY" and (
+            self.receipt is None or self.quality_status.value != self.receipt.quality_status
+        ):
+            raise ValueError("READY requires its completed quality/publication receipt")
+        if (
+            self.receipt is not None
+            and self.receipt.data_ref is not None
+            and (self.receipt.data_ref.identity.rollout_id != self.episode_id)
+        ):
+            raise ValueError("processing receipt belongs to another Episode")
+        return self
 
 
 class ProcessingDocument(StrictModel):

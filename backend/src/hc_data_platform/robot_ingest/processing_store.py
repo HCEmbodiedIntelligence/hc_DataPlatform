@@ -244,13 +244,14 @@ class ProcessingStore:
                 """INSERT INTO ingest.raw_source_episodes
                 (organization_id,project_id,region_code,raw_source_id,episode_id,source_episode_index,
                  status,frame_count,sample_count,dataset_version,lance_version,quality_status,
-                 qc_report_id,created_at,updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 qc_report_id,created_at,updated_at,data_ref)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
                 ON CONFLICT (organization_id,project_id,region_code,raw_source_id,episode_id)
                 DO UPDATE SET status=EXCLUDED.status,frame_count=EXCLUDED.frame_count,
                  sample_count=EXCLUDED.sample_count,dataset_version=EXCLUDED.dataset_version,
                  lance_version=EXCLUDED.lance_version,quality_status=EXCLUDED.quality_status,
-                 qc_report_id=EXCLUDED.qc_report_id,updated_at=EXCLUDED.updated_at""",
+                 qc_report_id=EXCLUDED.qc_report_id,updated_at=EXCLUDED.updated_at,
+                 data_ref=EXCLUDED.data_ref""",
                 (
                     *task.scope,
                     ep.episode_id,
@@ -264,6 +265,7 @@ class ProcessingStore:
                     r.qc_report_id if r else None,
                     now,
                     now,
+                    r.data_ref.model_dump_json() if r and r.data_ref is not None else None,
                 ),
             )
 

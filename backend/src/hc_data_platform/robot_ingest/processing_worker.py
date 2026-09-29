@@ -69,8 +69,12 @@ class RobotProcessingActivities:
         from hc_data_platform.workflow.activities import _worker_scope
 
         task = ProcessingTask.model_validate(request["task"])
-        with _worker_scope(task.project_id, task.region_code, task.raw_source_id,
-                           organization_id=task.organization_id):
+        with _worker_scope(
+            task.project_id,
+            task.region_code,
+            task.raw_source_id,
+            organization_id=task.organization_id,
+        ):
             try:
                 yield task
             except ProcessingFailure as exc:
@@ -177,6 +181,12 @@ class RobotProcessingActivities:
                     attempt_id=str(uuid5(NAMESPACE_URL, f"{task.workflow_id}:{index}")),
                 )
             )
+            if receipt.data_ref is not None and (
+                receipt.data_ref.identity.scope != task.scope[:3]
+                or receipt.data_ref.identity.dataset_id != upload.target.dataset_id
+                or receipt.data_ref.identity.rollout_id != ep.episode_id
+            ):
+                raise ProcessingFailure("ROBOT_PUBLICATION_RECEIPT_SCOPE_MISMATCH")
 
             def save(d: ProcessingDocument) -> ProcessingDocument:
                 return d.model_copy(

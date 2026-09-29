@@ -16,6 +16,8 @@ from pydantic import (
     model_validator,
 )
 
+from hc_data_platform.episode_store.models import DataVersionRef
+
 Identifier = Annotated[
     str,
     StringConstraints(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$"),
@@ -562,6 +564,7 @@ class RobotIngestEpisodeResult(StrictModel):
     sample_count: int | None = Field(default=None, ge=0)
     dataset_version: int | None = Field(default=None, gt=0)
     lance_version: int | None = Field(default=None, gt=0)
+    data_ref: DataVersionRef | None = None
     quality_status: QualityStatus = QualityStatus.PENDING
     qc_report_id: Identifier | None = None
     created_at: datetime
@@ -569,12 +572,22 @@ class RobotIngestEpisodeResult(StrictModel):
 
     @model_validator(mode="after")
     def validate_ready_versions(self) -> RobotIngestEpisodeResult:
+        if self.data_ref is not None and (
+            self.lance_version is not None
+            or self.dataset_version is None
+            or self.data_ref.identity.rollout_id != self.episode_id
+            or self.data_ref.frame_count != self.sample_count
+        ):
+            raise ValueError("Episode package reference differs from published result")
         if (
             self.status == "READY"
             and self.quality_status not in {QualityStatus.RISK, QualityStatus.REJECT}
-            and (self.dataset_version is None or self.lance_version is None)
+            and (
+                self.dataset_version is None
+                or (self.lance_version is None) == (self.data_ref is None)
+            )
         ):
-            raise ValueError("READY Episodes require Dataset and Lance versions")
+            raise ValueError("READY Episodes require a collection and one storage reference")
         return self
 
 

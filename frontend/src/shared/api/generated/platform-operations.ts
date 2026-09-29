@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 350ebda5eb1574b358342631dc45a5b53f91ab4ab3de4485b6d8e1fd118a18ee
+// Runtime-OpenAPI-SHA256: fc38b1e0b2497b6f805b9a066411c5eaa40f25dbb428e218dccb1ee52a878eab
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },

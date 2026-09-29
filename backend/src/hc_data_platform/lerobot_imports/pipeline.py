@@ -532,7 +532,7 @@ class LeRobotPipeline:
                 profile=AlignmentProfileV1(
                     profile_id=schema_id,
                     converter_version=(
-                        "native-episode-package/1"
+                        "native-episode-package/2"
                         if task.storage_format == "lerobot_v3"
                         else "native-lerobot-v3/1"
                     ),

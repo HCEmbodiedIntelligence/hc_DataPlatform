@@ -1,0 +1,160 @@
+{
+  "synthetic": true,
+  "episodes": [
+    {
+      "raw_source_id": "raw-5efb0c3ae0de5f6182c383db10f97362",
+      "episode_id": "rie-1d84a1ca4e555ec4a6302c715e0114cc",
+      "status": "READY",
+      "quality_status": "PASS",
+      "frame_count": 6,
+      "sample_count": 6,
+      "lance_version": null,
+      "data_ref": {
+        "version": 1,
+        "identity": {
+          "dataset_id": "dataset_task_4c0ca209045cc73e9b115362d63f7ddb",
+          "episode_id": "episode_af23d001ba603e2119b0ed9605d56717",
+          "project_id": "r3-project-4bf9c8df2264",
+          "rollout_id": "rie-1d84a1ca4e555ec4a6302c715e0114cc",
+          "region_code": "chayi-cn",
+          "organization_id": "r3-org-4bf9c8df2264"
+        },
+        "frame_count": 6,
+        "content_hash": "60a78a49c7464bdf7315ae3ea1cacbcfa08598c248676eb3a53f553fb65d080c",
+        "package_prefix": "episodes/id-r3-org-4bf9c8df2264/id-r3-project-4bf9c8df2264/id-chayi-cn/id-unknown/id-r3-synthetic-4bf9c8df2264/id-r3-task-4bf9c8df2264/id-episode_af23d001ba603e2119b0ed9605d56717/id-dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f",
+        "storage_format": "lerobot_v3",
+        "data_version_id": "dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f",
+        "schema_snapshot_id": "native-v1"
+      }
+    }
+  ],
+  "jobs": [
+    {
+      "workflow_id": "robot-native-rie-1d84a1ca4e555ec4a6302c715e0114cc-3a6f1229-3f0d-5ef1-a659-8036e7cdb1ba",
+      "status": "TECHNICAL_FAILED",
+      "error_code": "VALIDATION_FAILED",
+      "error_message": "Activity task failed",
+      "activity_failure_messages": [
+        "depth source mapping targets a different Episode time grid",
+        "depth source mapping targets a different Episode time grid"
+      ]
+    },
+    {
+      "workflow_id": "robot-native-rie-1d84a1ca4e555ec4a6302c715e0114cc-c939da36-5098-5ddd-a2c4-86055d44fd51",
+      "status": "SUCCEEDED",
+      "error_code": null,
+      "error_message": null,
+      "activity_failure_messages": []
+    }
+  ],
+  "committed_raw_readable": true,
+  "data": {
+    "identity": {
+      "organization_id": "r3-org-4bf9c8df2264",
+      "project_id": "r3-project-4bf9c8df2264",
+      "region_code": "chayi-cn",
+      "dataset_id": "dataset_task_4c0ca209045cc73e9b115362d63f7ddb",
+      "episode_id": "episode_af23d001ba603e2119b0ed9605d56717",
+      "rollout_id": "rie-1d84a1ca4e555ec4a6302c715e0114cc"
+    },
+    "data_version_id": "dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f",
+    "version": 1,
+    "content_hash": "60a78a49c7464bdf7315ae3ea1cacbcfa08598c248676eb3a53f553fb65d080c",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "native-v1",
+    "package_prefix": "episodes/id-r3-org-4bf9c8df2264/id-r3-project-4bf9c8df2264/id-chayi-cn/id-unknown/id-r3-synthetic-4bf9c8df2264/id-r3-task-4bf9c8df2264/id-episode_af23d001ba603e2119b0ed9605d56717/id-dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f",
+    "frame_count": 6
+  },
+  "upload_id": "riu-f0e417718e5a52198b9c732d0987ee44",
+  "offline_package": "/app/.g1-artifacts/robot-native/r3-native-20260929d/offline/dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f/episode",
+  "rgb_key": "observation.images.head",
+  "fps": 30,
+  "public_processing": {
+    "schema_version": "openarm-processing-result/v1",
+    "upload_id": "riu-f0e417718e5a52198b9c732d0987ee44",
+    "raw_source_id": "raw-5efb0c3ae0de5f6182c383db10f97362",
+    "processing_status": "READY",
+    "quality_status": "PASS",
+    "terminal": true,
+    "poll_after_seconds": 0,
+    "episodes": [
+      {
+        "source_episode_id": "synthetic-r3-source",
+        "source_episode_index": 0,
+        "episode_id": "rie-1d84a1ca4e555ec4a6302c715e0114cc",
+        "dataset_id": "dataset_task_4c0ca209045cc73e9b115362d63f7ddb",
+        "status": "READY",
+        "quality_status": "PASS",
+        "error_code": null,
+        "retryable": false,
+        "next_action": "open_episode"
+      }
+    ]
+  },
+  "lance_lineage_count": 0,
+  "raw_assets_unchanged": 15,
+  "video_sha256": {
+    "head": "4b9ee52fbfe6eaec92d90c57956a5a04f01c3b9a5fff5cff87dbb1512fd16cca",
+    "head_depth": "c3201921534b1a12e403b0ad617ee3c3cd8e532978de9a81bd83db9e51297aa6"
+  },
+  "parquet_numeric_values_exact": true,
+  "depth_evidence_unchanged": true,
+  "depth_encoding": {
+    "codec_profile": "Rext",
+    "codes_sha256": "928f013f5bcd85198419f60707ab50cee742c2c66b70819341d8f566341ab155",
+    "encoder_options": {
+      "preset": "ultrafast",
+      "x265-params": "lossless=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+    },
+    "ffmpeg_libraries": {
+      "libavcodec": [
+        61,
+        19,
+        101
+      ],
+      "libavdevice": [
+        61,
+        3,
+        100
+      ],
+      "libavfilter": [
+        10,
+        4,
+        100
+      ],
+      "libavformat": [
+        61,
+        7,
+        100
+      ],
+      "libavutil": [
+        59,
+        39,
+        100
+      ],
+      "libswresample": [
+        5,
+        3,
+        100
+      ],
+      "libswscale": [
+        8,
+        3,
+        100
+      ]
+    },
+    "lossless_codes": true,
+    "pyav_version": "15.1.0",
+    "video_sha256": "c3201921534b1a12e403b0ad617ee3c3cd8e532978de9a81bd83db9e51297aa6"
+  },
+  "depth_quantization": {
+    "float32_tolerance_m": 2e-05,
+    "half_cell_bound_passed": true,
+    "mm_reader_additional_rounding_bound_m": 0.0005,
+    "per_frame_percentiles": "frames.parquet",
+    "saturated_pixels_reported_separately": true,
+    "unclipped_max_error_m": 0.0006649017333985041
+  },
+  "download_via": "authorized package service ZIP; human HTTP download not exercised",
+  "model_depth_training_support": "NOT_VALIDATED"
+}

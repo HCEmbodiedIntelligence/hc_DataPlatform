@@ -90,6 +90,14 @@ def test_quality_decisions_are_terminal_but_not_technical_failures(quality, acti
                 episode_id=f"ep-{i}",
                 status="READY",
                 quality_status=quality,
+                receipt=EpisodeReceipt(
+                    quality_status=quality,
+                    frame_count=1,
+                    sample_count=1,
+                    dataset_version=1 if quality == "PASS" else None,
+                    lance_version=1 if quality == "PASS" else None,
+                    qc_report_id="qc",
+                ),
             )
             for i in range(2)
         ),
@@ -108,6 +116,14 @@ def test_partial_failure_is_not_ready_and_active_batch_is_not_terminal():
             episode_id="ep-0",
             status="READY",
             quality_status="PASS",
+            receipt=EpisodeReceipt(
+                quality_status="PASS",
+                frame_count=1,
+                sample_count=1,
+                dataset_version=1,
+                lance_version=1,
+                qc_report_id="qc",
+            ),
         ),
         EpisodeProgress(
             source_episode_id="source-1",
@@ -139,6 +155,110 @@ def test_pass_requires_actual_publication_receipt_but_reject_does_not():
     with pytest.raises(ValidationError):
         EpisodeReceipt(quality_status="PASS", frame_count=1, sample_count=1, qc_report_id="qc")
     EpisodeReceipt(quality_status="REJECT", frame_count=1, sample_count=1, qc_report_id="qc")
+
+
+def package_receipt():
+    from hc_data_platform.episode_store.models import CommitReceipt, DataVersionRef, EpisodeIdentity
+
+    return CommitReceipt(
+        data=DataVersionRef(
+            identity=EpisodeIdentity(
+                organization_id="org",
+                project_id="project",
+                region_code="region",
+                dataset_id="dataset",
+                episode_id="episode_product",
+                rollout_id="ep-0",
+            ),
+            data_version_id="dv_test",
+            version=1,
+            content_hash="1" * 64,
+            schema_snapshot_id="schema",
+            package_prefix="episodes/test",
+            frame_count=2,
+        ),
+        idempotency_key="2" * 64,
+        manifest_sha256="3" * 64,
+    )
+
+
+def test_new_receipt_uses_exact_package_and_keeps_old_public_processing_shape():
+    receipt = EpisodeReceipt(
+        quality_status="PASS",
+        frame_count=3,
+        sample_count=2,
+        dataset_version=1,
+        package_receipt=package_receipt(),
+        qc_report_id="qc",
+    )
+    assert receipt.lance_version is None and receipt.data_ref.storage_format == "lerobot_v3"
+    doc = ProcessingDocument(
+        phase="DONE",
+        episodes=(
+            EpisodeProgress(
+                source_episode_id="src",
+                source_episode_index=0,
+                episode_id="ep-0",
+                status="READY",
+                quality_status="PASS",
+                receipt=receipt,
+            ),
+        ),
+    )
+    result = processing_result(upload().model_copy(update={"declared_episode_count": 1}), doc)
+    assert result.quality_status == "PASS"
+    assert set(result.episodes[0].model_dump()) == {
+        "source_episode_id",
+        "source_episode_index",
+        "episode_id",
+        "dataset_id",
+        "status",
+        "quality_status",
+        "error_code",
+        "retryable",
+        "next_action",
+    }
+    assert "data_ref" not in result.model_dump_json() and "lance" not in result.model_dump_json()
+    assert "training" not in receipt.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "change", [{"lance_version": 1}, {"dataset_version": None}, {"sample_count": 3}]
+)
+def test_package_receipt_rejects_mixed_storage_and_wrong_grid(change):
+    values = dict(
+        quality_status="PASS",
+        frame_count=3,
+        sample_count=2,
+        dataset_version=1,
+        package_receipt=package_receipt(),
+        qc_report_id="qc",
+    )
+    with pytest.raises(ValidationError):
+        EpisodeReceipt(**{**values, **change})
+
+
+def test_ready_processing_document_requires_matching_receipt():
+    values = dict(
+        source_episode_id="src",
+        source_episode_index=0,
+        episode_id="ep-0",
+        status="READY",
+        quality_status="PASS",
+    )
+    with pytest.raises(ValidationError):
+        EpisodeProgress(**values)
+    receipt = EpisodeReceipt(
+        quality_status="PASS",
+        frame_count=2,
+        sample_count=2,
+        dataset_version=1,
+        package_receipt=package_receipt(),
+        qc_report_id="qc",
+    )
+    for change in ({"episode_id": "another"}, {"quality_status": "REJECT"}):
+        with pytest.raises(ValidationError):
+            EpisodeProgress(**{**values, "receipt": receipt, **change})
 
 
 def test_unexpected_worker_exception_does_not_leak_signed_urls():

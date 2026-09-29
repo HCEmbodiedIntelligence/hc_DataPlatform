@@ -1,0 +1,33 @@
+{
+  "scope": "synthetic native upload, real services, complete downloaded package",
+  "lerobot_version": "0.6.1",
+  "network": "disabled by container",
+  "data_version_id": "dv_511feca78413fae01bf9f75fbff83b31d32218e69cc75c631fb0c220416c921f",
+  "frames": 6,
+  "official_reader_and_dataloader": true,
+  "independent_hc_mask_applied": true,
+  "depth_output_unit": "mm",
+  "source_depth_scale_m_per_unit": 0.00025,
+  "source_mapping_checked": true,
+  "parquet_numeric_values_exact": true,
+  "official_numeric_tensor_dtypes": {
+    "observation.state": "float32",
+    "action": "float32",
+    "observation.extra.matrix": "float32"
+  },
+  "official_numeric_cast_max_abs_error": {
+    "observation.state": 0.0,
+    "action": 0.0,
+    "observation.extra.matrix": 1.1920928966180355e-08
+  },
+  "max_error_mm_by_frame": [
+    1.0,
+    0.5,
+    0.0,
+    0.5,
+    0.0,
+    0.5
+  ],
+  "model_depth_training_support": "NOT_VALIDATED",
+  "platform_imported": false
+}

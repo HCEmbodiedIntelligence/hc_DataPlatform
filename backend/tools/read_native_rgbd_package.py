@@ -4,6 +4,7 @@ No platform imports or network. The input recording is explicitly synthetic;
 this verifies the input contract, not sensor accuracy or model training support.
 """
 
+import argparse
 import io
 import json
 import sys
@@ -18,7 +19,13 @@ from torch.utils.data import DataLoader
 
 assert version("lerobot") == "0.6.1"
 assert not any(name.startswith("hc_data_platform") for name in sys.modules)
-reference = json.loads(Path("/app/.g1-artifacts/native-package-roundtrip.json").read_text())
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--reference", default="/app/.g1-artifacts/native-package-roundtrip.json", type=Path
+)
+parser.add_argument("--output", default="/evidence/native-package-offline-reader.json", type=Path)
+args = parser.parse_args()
+reference = json.loads(args.reference.read_text())
 root = Path(reference["offline_package"])
 dataset = LeRobotDataset("local/chayi-native-package-contract", root=root, video_backend="pyav")
 key = "observation.images.head_depth"
@@ -30,12 +37,16 @@ source_rows = pq.read_table(root / "data").to_pylist()
 seen, errors, numeric_errors, numeric_dtypes = 0, [], {}, {}
 for batch in DataLoader(dataset, batch_size=4, num_workers=0):
     assert batch[key].shape[1:] == (1, 16, 16)
-    assert batch["observation.images.head_rgb"].shape[1:] == (3, 16, 16)
+    assert batch[reference.get("rgb_key", "observation.images.head_rgb")].shape[1:] == (3, 16, 16)
     for offset in range(len(batch[key])):
         index = seen + offset
         frame = frames[index]
         assert frame["frame_index"] == frame["source_seq"] == index
-        assert frame["source_timestamp_ns"] == frame["target_timestamp_ns"] == index * 40_000_000
+        assert (
+            frame["source_timestamp_ns"]
+            == frame["target_timestamp_ns"]
+            == round(index * 1e9 / reference.get("fps", 25))
+        )
         assert frame["depth_scale_m_per_unit"] == 0.00025
         with Image.open(io.BytesIO(masks[index]["flags_png"])) as image:
             valid = np.asarray(image) & 1 != 0
@@ -76,5 +87,5 @@ result = {
     "model_depth_training_support": "NOT_VALIDATED",
     "platform_imported": any(name.startswith("hc_data_platform") for name in sys.modules),
 }
-Path("/evidence/native-package-offline-reader.json").write_text(json.dumps(result, indent=2) + "\n")
+args.output.write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result))

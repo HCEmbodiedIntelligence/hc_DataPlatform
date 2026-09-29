@@ -4,6 +4,8 @@ Only identities/order are specified here. Values retain their actual robot units
 no HC-TJ calibration, gripper normalization or fabricated observation is applied.
 """
 
+import math
+
 SCHEMA = "holobrain-recording-fields/v1"
 STATE_TOPIC = "io_teleop/joint_states"
 ACTION_TOPIC = "io_teleop/joint_cmd"
@@ -59,6 +61,25 @@ def source_timestamp(row, cfg):
     return int(row["target_time_ns"])
 
 
+def _depth_scale(source):
+    from .publishing.depth_source import validate_profile
+
+    if source.get("depth_source") is not None:
+        try:
+            return validate_profile(source["depth_source"])["scale_m_per_unit"]
+        except (ValueError, TypeError, KeyError):
+            return None
+    value = source.get("depth_scale")
+    if (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+        and value > 0
+    ):
+        return value
+    return None
+
+
 def description(cfg):
     profile = cfg.get("capture", {}).get("profile") if cfg.get("capture") else None
     cameras = [ident for ident, source in cfg["sources"].items() if source["kind"] == "rgbd"]
@@ -75,7 +96,7 @@ def description(cfg):
                 "depth": image_key(ident, True),
                 "rgb_topic": camera_topic(ident),
                 "depth_topic": camera_topic(ident, True),
-                "depth_scale_m_per_unit": source.get("depth_scale", 0.001),
+                "depth_scale_m_per_unit": _depth_scale(source),
             }
             for ident, source in cfg["sources"].items()
             if source["kind"] == "rgbd"

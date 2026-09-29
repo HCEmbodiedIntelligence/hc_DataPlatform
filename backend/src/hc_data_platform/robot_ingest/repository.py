@@ -1329,9 +1329,9 @@ class PostgresRobotIngestRepository:
                            organization_id, project_id, region_code, raw_source_id,
                            episode_id, source_episode_index, status, frame_count,
                            dataset_version, lance_version, sample_count, quality_status,
-                           qc_report_id, created_at, updated_at
+                           qc_report_id, created_at, updated_at, data_ref
                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                                 %s, %s, %s)
+                                 %s, %s, %s, %s::jsonb)
                        ON CONFLICT (
                            organization_id, project_id, region_code, raw_source_id, episode_id
                        ) DO UPDATE SET
@@ -1342,7 +1342,8 @@ class PostgresRobotIngestRepository:
                            sample_count = EXCLUDED.sample_count,
                            quality_status = EXCLUDED.quality_status,
                            qc_report_id = EXCLUDED.qc_report_id,
-                           updated_at = EXCLUDED.updated_at""",
+                           updated_at = EXCLUDED.updated_at,
+                           data_ref = EXCLUDED.data_ref""",
                     (
                         upload.target.organization_id,
                         upload.target.project_id,
@@ -1359,6 +1360,7 @@ class PostgresRobotIngestRepository:
                         item.qc_report_id,
                         item.created_at,
                         item.updated_at,
+                        item.data_ref.model_dump_json() if item.data_ref is not None else None,
                     ),
                 )
             connection.commit()
@@ -1385,7 +1387,7 @@ class PostgresRobotIngestRepository:
                 """SELECT episode_id, source_episode_index, episode.status,
                           frame_count, sample_count, dataset_version, lance_version,
                           quality_status, qc_report_id,
-                          episode.created_at, episode.updated_at
+                          episode.created_at, episode.updated_at, episode.data_ref
                      FROM ingest.robot_ingest_uploads upload
                      JOIN ingest.raw_source_episodes episode
                        ON episode.organization_id = upload.organization_id
@@ -1643,8 +1645,9 @@ class PostgresRobotIngestRepository:
             if eligible(committed):
                 enqueue(cursor, committed)
             from . import recording_bridge
+
             if recording_bridge.eligible(committed):
-                recording_bridge.enqueue(cursor,committed)
+                recording_bridge.enqueue(cursor, committed)
             connection.commit()
             return committed
         except Exception:

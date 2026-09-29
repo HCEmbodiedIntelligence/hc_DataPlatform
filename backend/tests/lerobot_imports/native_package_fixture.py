@@ -12,10 +12,10 @@ from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo
 from hc_data_platform.publishing.holobrain_depth import DEFAULT_PROFILE
 
 
-def make_native_rgbd(root):
+def make_native_rgbd(root, *, depth_source_profile=None, fps=25):
     for directory in ("meta/episodes/chunk-000", "data/chunk-000"):
         (root / directory).mkdir(parents=True)
-    count, fps = 6, 25
+    count = 6
     features = {
         "observation.state": {"dtype": "float64", "shape": [2], "names": ["x", "y"]},
         "action": {"dtype": "float64", "shape": [2], "names": ["x", "y"]},
@@ -48,7 +48,13 @@ def make_native_rgbd(root):
         ):
             episode[f"videos/{key}/{suffix}"] = value
         if is_depth:
-            writer = DepthEvidenceVideo(path, root / "hc/depth/head", fps, (16, 16))
+            writer = DepthEvidenceVideo(
+                path,
+                root / "hc/depth/head",
+                fps,
+                (16, 16),
+                require_source_profile=depth_source_profile is not None,
+            )
             for index in range(count):
                 pixels = np.full((16, 16), 3000 + index * 10, dtype=np.uint16)
                 pixels[0, 0] = 0
@@ -57,8 +63,12 @@ def make_native_rgbd(root):
                     0.00025,
                     source_id="synthetic-head",
                     source_seq=index,
-                    source_timestamp_ns=index * 40_000_000,
-                    target_timestamp_ns=index * 40_000_000,
+                    source_timestamp_ns=round(index * 1_000_000_000 / fps),
+                    target_timestamp_ns=round(index * 1_000_000_000 / fps),
+                    source_profile=depth_source_profile,
+                    invalid_values=depth_source_profile["invalid_values"]
+                    if depth_source_profile
+                    else (),
                 )
             writer.close()
         else:

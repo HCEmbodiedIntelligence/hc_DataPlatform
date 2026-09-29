@@ -135,6 +135,7 @@ episode_store/0004_dataset_schemas.sql
 episode_store/0005_media_previews.sql
 episode_store/0006_native_ready_binding.sql
 episode_store/0007_native_ready_guard.sql
+episode_store/0008_robot_package_samples.sql
 annotation/0013_episode_data_bindings.sql
 annotation/0014_binding_scope_and_identity.sql
 annotation/0015_revision_snapshot_files.sql

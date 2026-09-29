@@ -400,6 +400,7 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
         for update in (
             "data_ref=jsonb_set(data_ref,'{content_hash}','\"0000000000000000000000000000000000000000000000000000000000000000\"')",
             "dataset_version=dataset_version+1",
+            "sample_count=frame_count+1",
             "data_ref=NULL,lance_version=NULL,quality_status=NULL",
         ):
             with pytest.raises(psycopg.Error), connect() as connection:
@@ -410,6 +411,14 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                     + " WHERE organization_id=%s AND raw_source_id=%s",
                     (org, import_id),
                 )
+        with connect() as connection, connection.transaction(force_rollback=True):
+            # Robot frame_count may describe a larger source window; the exact
+            # committed output binding is sample_count. No facts persist here.
+            connection.execute(
+                "UPDATE ingest.raw_source_episodes SET sample_count=frame_count,"
+                "frame_count=frame_count+1 WHERE organization_id=%s AND raw_source_id=%s",
+                (org, import_id),
+            )
         package = runtime.episode_packages.files.open(data.identity, data.data_version_id)
         from hc_data_platform.episode_store.download import complete_archive
         from hc_data_platform.episode_store.validation import validate_package

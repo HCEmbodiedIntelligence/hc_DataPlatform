@@ -36,6 +36,9 @@ _DEFAULT_STRATEGIES: dict[ModalityKind, AlignmentStrategy] = {
 }
 
 _NANOSECONDS_PER_SECOND = 1_000_000_000
+# Versioned native conversion follows the source reader's nearest-nanosecond
+# frame clock. Older converters retain floor rounding for replay/hash stability.
+NATIVE_EPISODE_CONVERTER = "native-episode-package/2"
 
 
 class AlignmentEngine:
@@ -314,9 +317,16 @@ class AlignmentEngine:
             duration_ns * profile.frequency_hz + _NANOSECONDS_PER_SECOND - 1
         ) // _NANOSECONDS_PER_SECOND
         for step_index in range(row_count):
-            timestamp_ns = (
-                data.start_ns + step_index * _NANOSECONDS_PER_SECOND // profile.frequency_hz
-            )
+            offset, remainder = divmod(step_index * _NANOSECONDS_PER_SECOND, profile.frequency_hz)
+            if profile.converter_version == NATIVE_EPISODE_CONVERTER:
+                # Integer ties-to-even, identical to round(frame * 1e9 / fps)
+                # without losing precision for long recordings.
+                offset += int(
+                    2 * remainder > profile.frequency_hz
+                    or 2 * remainder == profile.frequency_hz
+                    and offset % 2 == 1
+                )
+            timestamp_ns = data.start_ns + offset
             if timestamp_ns < data.end_ns:
                 yield timestamp_ns
 

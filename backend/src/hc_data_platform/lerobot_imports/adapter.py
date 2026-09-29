@@ -295,7 +295,11 @@ class EpisodeStream:
             for key in self.profile.extra_features:
                 yield native_feature_topic(key), timestamp, episode.extra_values[key][index]
             if episode.source_timestamp_ns:
-                yield "source.timestamp_ns", timestamp, episode.source_timestamp_ns[index]
+                yield (
+                    self.profile.source_timestamp_topic,
+                    timestamp,
+                    episode.source_timestamp_ns[index],
+                )
             yield (
                 self.profile.joint_topic,
                 timestamp,

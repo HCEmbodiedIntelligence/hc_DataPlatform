@@ -37,6 +37,7 @@ class NativeProfile:
     action_topic: str
     legacy_g1: bool = False
     extra_features: tuple[str, ...] = ()
+    source_timestamp_topic: str = "source.timestamp_ns"
 
 
 def profile_for_info(info: dict[str, Any], *, preserve_features=False) -> NativeProfile:
@@ -108,7 +109,7 @@ def profile_for_info(info: dict[str, Any], *, preserve_features=False) -> Native
                 key,
                 key.removeprefix("observation.images."),
                 key
-                if public_fields
+                if public_fields and not preserve_features
                 else "/camera/" + key.removeprefix("observation.images.") + "/image",
             )
         )
@@ -138,12 +139,15 @@ def profile_for_info(info: dict[str, Any], *, preserve_features=False) -> Native
         if preserve_features
         else ()
     )
+    source_timestamp_topic = (
+        native_feature_topic("source.timestamp_ns") if preserve_features else "source.timestamp_ns"
+    )
     topics = (
         "/humanoid/observation/state",
         "/humanoid/action",
         SOURCE_TOPIC,
         *(c.topic for c in cameras),
-        *(("source.timestamp_ns",) if "source.timestamp_ns" in features else ()),
+        *((source_timestamp_topic,) if "source.timestamp_ns" in features else ()),
         *(native_feature_topic(key) for key in extra),
     )
     return NativeProfile(
@@ -155,6 +159,7 @@ def profile_for_info(info: dict[str, Any], *, preserve_features=False) -> Native
         "/humanoid/observation/state",
         "/humanoid/action",
         extra_features=extra,
+        source_timestamp_topic=source_timestamp_topic,
     )
 
 

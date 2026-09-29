@@ -44,6 +44,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- R3/W2 阶段补充（2026-09-29）：独立 uploader 1.3.0 已通过真实隔离 API 上传
+  合成 RGB-D，处理失败后用同一 Raw 重试至 READY；视频/HC 字节复用、零 Lance、
+  完整包禁网官方 reader/DataLoader 与独立掩码均核验。94 项回归、4 项实际包服务、
+  6 项 manager 单位检查通过；0008 仅隔离应用，141/141 current。见
+  [链路、限制与 G2 条件](r3-native-client.md)。旧永久失败的受控恢复、多窗口/其他
+  入口、真实样本/浏览器等仍未验收，R3/17 项 P0 不标记为完成。
 - R1/R2/R4 阶段补充（2026-09-29）：四个机器人仓库已建立独立工作树；manager
   候选 `1e3f3934`，独立 uploader 1.3.0 已隔离安装。平台/客户端完成 4096 总资产
   （含完成标记）契约和大包能力预检，保留旧策略额度与小包协议；页面区分切片确认。
