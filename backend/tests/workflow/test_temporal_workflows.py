@@ -1499,3 +1499,22 @@ async def test_legacy_signal_sampling_is_repaired_without_second_dataset_commit(
         ).replay_workflow(history)
     finally:
         await environment.shutdown()
+
+
+@pytest.mark.parametrize(
+    ("failure_type", "expected"),
+    [
+        ("IngestWorkflowPlanBlocked", "INGEST_WORKFLOW_PLAN_BLOCKED"),
+        ("QUALITY_REJECTED", "QUALITY_REJECTED"),
+        ("av.error.InvalidDataError", "AV_ERROR_INVALID_DATA_ERROR"),
+    ],
+)
+def test_failure_codes_can_be_persisted_in_raw_ingest_jobs(failure_type, expected):
+    from temporalio.exceptions import ApplicationError
+
+    from hc_data_platform.workflow.temporal_workflows import _error_code
+
+    error = RuntimeError("activity wrapper")
+    error.__cause__ = ApplicationError("original failure", type=failure_type)
+    assert _error_code(error) == expected
+    assert _error_code(ValueError("invalid input")) == "VALUE_ERROR"

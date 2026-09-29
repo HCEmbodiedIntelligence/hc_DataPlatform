@@ -147,6 +147,22 @@ def test_h265_projection_sorts_delayed_frames_with_other_topics(tmp_path) -> Non
     assert len(rows) == 16
     assert [row.timestamp_ns for row in rows] == list(range(1000, 1016))
     assert not any(row.corrupt for row in rows)
+    # Exercise the SQLite -> Arrow boundary used to recover legacy selections.
+    from dataclasses import asdict
+
+    import pyarrow.ipc as ipc
+
+    from hc_data_platform.workflow.ingest_plan import _ArrowProjectionWriter
+
+    arrow_path = tmp_path / "projection.arrow"
+    writer = _ArrowProjectionWriter(arrow_path, source_sha256="a" * 64)
+    for row in rows:
+        writer.append(**asdict(row), alignment_accepted=True)
+    writer.close()
+    table = ipc.open_file(arrow_path).read_all()
+    assert table.num_rows == 16
+    assert table["is_camera"].to_pylist().count(True) == 8
+    assert table["corrupt"].to_pylist() == [False] * 16
 
 
 def test_broken_cdr_image_is_visible_as_corrupt() -> None:

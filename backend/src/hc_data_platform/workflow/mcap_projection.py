@@ -119,4 +119,6 @@ def read_projection(path: Path, *, include_images: bool = True) -> Iterator[Proj
             "perceptual_hash,corrupt "
             "FROM samples ORDER BY stamp,ordinal"
         ):
-            yield ProjectionRow(*row)
+            # SQLite stores booleans as integers; Arrow's bool columns require
+            # actual bool values when this projection is materialized for recovery.
+            yield ProjectionRow(*row[:2], bool(row[2]), *row[3:8], bool(row[8]))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -191,12 +192,17 @@ async def _execute_activity(
 
 def _error_code(error: BaseException) -> str:
     current: BaseException | None = error
+    code = type(error).__name__
     while current is not None:
         if isinstance(current, ApplicationError) and current.type:
-            return current.type
+            code = current.type
+            break
         cause = current.__cause__
         current = cause if isinstance(cause, BaseException) else None
-    return type(error).__name__
+    # The raw-ingest job mirror accepts only uppercase machine codes. Python
+    # exception names must not make persistence of the original failure fail too.
+    code = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", code)
+    return re.sub(r"[^A-Z0-9_]+", "_", code.upper()).strip("_") or "WORKFLOW_FAILED"
 
 
 def _datetime_ns(value: datetime) -> int:
