@@ -30,6 +30,8 @@ class PreparedAssets:
     identity: EpisodeIdentity
     attempt_id: str
     videos: dict[str, PreparedVideo]
+    auxiliary_root: Path | None = None
+    auxiliary_files: tuple[FileEntry, ...] = ()
 
     def video(self, identity: EpisodeIdentity, feature: str) -> PreparedVideo:
         assert_scope(identity)

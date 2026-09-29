@@ -40,6 +40,7 @@ from hc_data_platform.episode_store.catalog_models import (
 )
 from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.episode_store.native_plan import NativeEpisodePlan
+from hc_data_platform.episode_store.recording_plan import RecordingEpisodePlan
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -155,6 +156,20 @@ def workflow_id(
             _workflow_part(resource_id),
         )
     )
+
+
+def continuous_episode_workflow_id(
+    organization_id: str, project_id: str, region_code: str, recording_id: str, episode_id: str
+) -> str:
+    """New tasks bind the full tenant scope; old persisted workflow IDs stay valid."""
+    import hashlib
+    import json
+
+    parts = (organization_id, project_id, region_code, recording_id, episode_id)
+    for part in parts:
+        _workflow_part(part)
+    resource = hashlib.sha256(json.dumps(parts, separators=(",", ":")).encode()).hexdigest()
+    return workflow_id(WorkflowKind.CONTINUOUS_EPISODE, project_id, resource, version="v2")
 
 
 def parse_workflow_id(value: str) -> tuple[str, str, str, str]:
@@ -473,6 +488,7 @@ class ContinuousEpisodeAssetV1(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     asset_id: str = Field(min_length=1)
+    relative_path: str | None = None
     role: RecordingAssetRole
     camera_id: str | None = Field(default=None, min_length=1)
     modality_key: str | None = Field(default=None, min_length=1, max_length=512)
@@ -512,17 +528,25 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=1)
     schema_snapshot_id: str = Field(min_length=1)
     recording_config: RecordingConfigurationV1
-    assets: tuple[ContinuousEpisodeAssetV1, ...] = Field(min_length=3, max_length=256)
+    assets: tuple[ContinuousEpisodeAssetV1, ...] = Field(min_length=3, max_length=4096)
     quality_profile: QualityProfileV1
     alignment_profile: AlignmentProfileV1
     start_offset_ns: int = Field(ge=0)
     end_offset_ns: int = Field(gt=0)
-    expected_dataset_version: int = Field(ge=1)
+    expected_dataset_version: int | None = Field(default=None, ge=1)
+    storage_format: Literal["lance", "lerobot_v3"] = "lance"
     media_task_queue: str = Field(default="hc-media-pipeline", min_length=1, max_length=255)
 
     @model_validator(mode="after")
     def validate_lineage(self) -> ContinuousEpisodeWorkflowInput:
         projection = self.projection
+        if (self.storage_format == "lance") != (self.expected_dataset_version is not None):
+            raise ValueError("only historical continuous workflows reserve a Lance version")
+        if self.storage_format == "lerobot_v3" and (
+            any(item.relative_path is None for item in self.assets)
+            or len({item.relative_path for item in self.assets}) != len(self.assets)
+        ):
+            raise ValueError("recording package requires the complete named asset inventory")
         if self.end_offset_ns <= self.start_offset_ns:
             raise ValueError("continuous Episode requires a non-empty source window")
         camera_assets = [item for item in self.assets if item.role is RecordingAssetRole.RAW_VIDEO]
@@ -600,7 +624,8 @@ class ContinuousEpisodeAlignmentActivityOutput(BaseModel):
     alignment: AlignmentActivityInput
     staged_manifest: StagedFragmentManifestV1
     alignment_staging: AlignmentStagingArtifactV1
-    expected_dataset_version: int = Field(ge=1)
+    expected_dataset_version: int | None = Field(default=None, ge=1)
+    package_plan: RecordingEpisodePlan | None = None
 
 
 class ContinuousEpisodeBundleCommitActivityInput(BaseModel):
@@ -610,9 +635,25 @@ class ContinuousEpisodeBundleCommitActivityInput(BaseModel):
     alignment: AlignmentActivityInput
     staged_manifest: StagedFragmentManifestV1
     alignment_staging: AlignmentStagingArtifactV1
-    expected_dataset_version: int = Field(ge=1)
+    expected_dataset_version: int | None = Field(default=None, ge=1)
+    package_plan: RecordingEpisodePlan | None = None
     expected_camera_ids: tuple[str, ...] = Field(min_length=1, max_length=128)
-    media_artifacts: tuple[AlignedMediaArtifactV1, ...] = Field(min_length=1, max_length=128)
+    media_artifacts: tuple[AlignedMediaArtifactV1, ...] = Field(default=(), max_length=128)
+
+    @model_validator(mode="after")
+    def continuous_storage_commit(self):
+        if self.package_plan is None:
+            if self.expected_dataset_version is None or not self.media_artifacts:
+                raise ValueError("historical continuous commit requires version and media receipts")
+        else:
+            if self.expected_dataset_version is not None or self.media_artifacts:
+                raise ValueError("recording package cannot use legacy version/media reservations")
+            if set(self.expected_camera_ids) != set(self.package_plan.feature_mapping):
+                raise ValueError("recording package must cover every configured camera")
+            self.package_plan.validate_recording_bundle(
+                self.workflow_input, self.alignment, self.staged_manifest, self.alignment_staging
+            )
+        return self
 
 
 class CatalogCommitActivityInput(BaseModel):

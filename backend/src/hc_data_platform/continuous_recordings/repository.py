@@ -9,7 +9,7 @@ from uuid import NAMESPACE_URL, uuid5
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
-from hc_data_platform.workflow.models import WorkflowKind, workflow_id
+from hc_data_platform.workflow.models import continuous_episode_workflow_id
 
 from .asset_models import EpisodeProcessing, EpisodeProcessingStatus
 from .models import (
@@ -728,10 +728,12 @@ def _episode_dispatch_event(
     occurred_at: object,
 ) -> DomainEventEnvelope:
     resource_id = f"{episode.recording_id}/{episode.episode_id}"
-    stable_workflow_id = workflow_id(
-        WorkflowKind.CONTINUOUS_EPISODE,
+    stable_workflow_id = continuous_episode_workflow_id(
+        episode.scope.organization_id,
         episode.scope.project_id,
-        f"{episode.scope.region_code}/{resource_id}",
+        episode.scope.region_code,
+        episode.recording_id,
+        episode.episode_id,
     )
     event_id = uuid5(
         NAMESPACE_URL,

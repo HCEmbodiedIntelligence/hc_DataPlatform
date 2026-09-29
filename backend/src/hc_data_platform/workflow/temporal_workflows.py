@@ -36,6 +36,7 @@ with workflow.unsafe.imports_passed_through():
         EpisodeProcessingStatus,
         RecordingAssetRole,
     )
+    from hc_data_platform.episode_store.models import DataVersionRef
     from hc_data_platform.quality.models import QualityStatus
     from hc_data_platform.verification.models import VerificationStatus
 
@@ -698,6 +699,8 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
         dataset_episode_id: str | None = None,
         dataset_version: int | None = None,
         lance_version: int | None = None,
+        data_ref: DataVersionRef | None = None,
+        collection_version_id: str | None = None,
         annotation_task_id: str | None = None,
         aligned_media_camera_count: int | None = None,
         failure_code: str | None = None,
@@ -720,6 +723,8 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 dataset_episode_id=dataset_episode_id,
                 dataset_version=dataset_version,
                 lance_version=lance_version,
+                data_ref=data_ref,
+                collection_version_id=collection_version_id,
                 annotation_task_id=annotation_task_id,
                 aligned_media_camera_count=aligned_media_camera_count,
                 failure_code=failure_code,
@@ -811,132 +816,147 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                     non_retryable=True,
                 )
 
-            self._stage("aligned_media")
-            await self._persist_job(request)
-            video_assets = {
-                asset.camera_id: asset
-                for asset in request.assets
-                if asset.role is RecordingAssetRole.RAW_VIDEO
-            }
-            raw_capture_start_ns = _datetime_ns(source.started_at) - request.start_offset_ns
-            media_inputs: list[AlignedMediaActivityInput] = []
-            for camera in request.recording_config.cameras:
-                asset = video_assets.get(camera.camera_id)
-                source_start_ns = request.start_offset_ns - camera.capture_start_offset_ns
-                source_end_ns = request.end_offset_ns - camera.capture_start_offset_ns
-                if asset is None or source_start_ns < 0 or source_end_ns <= source_start_ns:
+            if request.storage_format == "lerobot_v3":
+                if aligned.package_plan is None:
                     raise ApplicationError(
-                        "camera MP4 does not cover the finalized Episode window",
-                        type="VIDEO_EPISODE_WINDOW_MISSING",
+                        "continuous Episode has no frozen package plan",
+                        type="VALIDATION_FAILED",
                         non_retryable=True,
                     )
-                media_staging = aligned.alignment_staging
-                media_profile = "canonical-h264-crf20-v1"
-                if (
-                    camera.modality_key.startswith("observation.images.")
-                    and camera.modality_key.endswith("_depth")
-                    and camera.codec == "hevc"
-                ):
-                    # Preserve the original depth codes; the RGB preview encoder is lossy.
-                    media_profile = "original-video-reference-v1"
-                    original = OriginalVideoReferenceV1(
-                        object_key=asset.object_key,
-                        size_bytes=asset.size_bytes,
-                        content_sha256=asset.content_sha256,
-                        start_seconds=source_start_ns / 1e9,
-                        end_seconds=source_end_ns / 1e9,
-                        width=camera.width,
-                        height=camera.height,
-                        codec=camera.codec,
-                        fps=camera.fps,
-                    )
-                    media_staging = media_staging.model_copy(
-                        update={
-                            "original_videos": {
-                                **media_staging.original_videos,
-                                camera.modality_key: original,
-                            }
-                        }
-                    )
-                media_inputs.append(
-                    AlignedMediaActivityInput(
-                        organization_id=source.organization_id,
-                        region_code=source.region_code,
-                        request=AlignedMediaGenerationRequestV1(
-                            project_id=source.project_id,
-                            dataset_id=request.dataset_id,
-                            rollout_id=source.rollout_id,
-                            expected_dataset_version=aligned.expected_dataset_version,
-                            camera_id=camera.modality_key,
-                            source_sha256=source.source_sha256,
-                            alignment=media_staging,
-                            profile_id=media_profile,
-                            mp4_source=AlignedMediaMp4SourceV1(
-                                object_key=asset.object_key,
-                                size_bytes=asset.size_bytes,
-                                content_sha256=asset.content_sha256,
-                                start_offset_ns=source_start_ns,
-                                end_offset_ns=source_end_ns,
-                                capture_start_timestamp_ns=(
-                                    raw_capture_start_ns + camera.capture_start_offset_ns
-                                ),
-                                configured_fps=camera.fps,
-                                configured_codec=camera.codec,
-                                configured_time_base_numerator=camera.time_base_numerator,
-                                configured_time_base_denominator=camera.time_base_denominator,
-                            ),
-                        ),
-                    )
+                expected_camera_ids = tuple(
+                    camera.modality_key for camera in request.recording_config.cameras
                 )
-            for offset in range(0, len(media_inputs), 2):
-                results = await asyncio.gather(
-                    *(
-                        _execute_activity(
-                            CREATE_ALIGNED_MEDIA_ACTIVITY,
-                            item,
-                            AlignedMediaActivityOutput,
-                            LONG_ACTIVITY,
-                            task_queue=request.media_task_queue,
+            else:
+                self._stage("aligned_media")
+                await self._persist_job(request)
+                video_assets = {
+                    asset.camera_id: asset
+                    for asset in request.assets
+                    if asset.role is RecordingAssetRole.RAW_VIDEO
+                }
+                raw_capture_start_ns = _datetime_ns(source.started_at) - request.start_offset_ns
+                media_inputs: list[AlignedMediaActivityInput] = []
+                for camera in request.recording_config.cameras:
+                    asset = video_assets.get(camera.camera_id)
+                    source_start_ns = request.start_offset_ns - camera.capture_start_offset_ns
+                    source_end_ns = request.end_offset_ns - camera.capture_start_offset_ns
+                    if asset is None or source_start_ns < 0 or source_end_ns <= source_start_ns:
+                        raise ApplicationError(
+                            "camera MP4 does not cover the finalized Episode window",
+                            type="VIDEO_EPISODE_WINDOW_MISSING",
+                            non_retryable=True,
                         )
-                        for item in media_inputs[offset : offset + 2]
-                    ),
-                    return_exceptions=True,
+                    media_staging = aligned.alignment_staging
+                    media_profile = "canonical-h264-crf20-v1"
+                    if (
+                        camera.modality_key.startswith("observation.images.")
+                        and camera.modality_key.endswith("_depth")
+                        and camera.codec == "hevc"
+                    ):
+                        # Preserve the original depth codes; the RGB preview encoder is lossy.
+                        media_profile = "original-video-reference-v1"
+                        original = OriginalVideoReferenceV1(
+                            object_key=asset.object_key,
+                            size_bytes=asset.size_bytes,
+                            content_sha256=asset.content_sha256,
+                            start_seconds=source_start_ns / 1e9,
+                            end_seconds=source_end_ns / 1e9,
+                            width=camera.width,
+                            height=camera.height,
+                            codec=camera.codec,
+                            fps=camera.fps,
+                        )
+                        media_staging = media_staging.model_copy(
+                            update={
+                                "original_videos": {
+                                    **media_staging.original_videos,
+                                    camera.modality_key: original,
+                                }
+                            }
+                        )
+                    media_inputs.append(
+                        AlignedMediaActivityInput(
+                            organization_id=source.organization_id,
+                            region_code=source.region_code,
+                            request=AlignedMediaGenerationRequestV1(
+                                project_id=source.project_id,
+                                dataset_id=request.dataset_id,
+                                rollout_id=source.rollout_id,
+                                expected_dataset_version=aligned.expected_dataset_version,
+                                camera_id=camera.modality_key,
+                                source_sha256=source.source_sha256,
+                                alignment=media_staging,
+                                profile_id=media_profile,
+                                mp4_source=AlignedMediaMp4SourceV1(
+                                    object_key=asset.object_key,
+                                    size_bytes=asset.size_bytes,
+                                    content_sha256=asset.content_sha256,
+                                    start_offset_ns=source_start_ns,
+                                    end_offset_ns=source_end_ns,
+                                    capture_start_timestamp_ns=(
+                                        raw_capture_start_ns + camera.capture_start_offset_ns
+                                    ),
+                                    configured_fps=camera.fps,
+                                    configured_codec=camera.codec,
+                                    configured_time_base_numerator=camera.time_base_numerator,
+                                    configured_time_base_denominator=camera.time_base_denominator,
+                                ),
+                            ),
+                        )
+                    )
+                for offset in range(0, len(media_inputs), 2):
+                    results = await asyncio.gather(
+                        *(
+                            _execute_activity(
+                                CREATE_ALIGNED_MEDIA_ACTIVITY,
+                                item,
+                                AlignedMediaActivityOutput,
+                                LONG_ACTIVITY,
+                                task_queue=request.media_task_queue,
+                            )
+                            for item in media_inputs[offset : offset + 2]
+                        ),
+                        return_exceptions=True,
+                    )
+                    media_artifacts.extend(
+                        item.artifact
+                        for item in results
+                        if isinstance(item, AlignedMediaActivityOutput)
+                    )
+                    failure = next(
+                        (item for item in results if isinstance(item, BaseException)), None
+                    )
+                    if failure is not None:
+                        raise failure
+                expected_camera_ids = tuple(
+                    camera.modality_key for camera in request.recording_config.cameras
                 )
-                media_artifacts.extend(
-                    item.artifact
-                    for item in results
-                    if isinstance(item, AlignedMediaActivityOutput)
-                )
-                failure = next((item for item in results if isinstance(item, BaseException)), None)
-                if failure is not None:
-                    raise failure
-            expected_camera_ids = tuple(
-                camera.modality_key for camera in request.recording_config.cameras
-            )
-            if (
-                {artifact.camera_id for artifact in media_artifacts} != set(expected_camera_ids)
-                or len(media_artifacts) != len(expected_camera_ids)
-                or any(
-                    artifact.status.value != "READY"
-                    or artifact.frame_count != aligned.staged_manifest.row_count
-                    or artifact.fps != 30
-                    or artifact.timeline is None
-                    or artifact.timeline.frame_count != aligned.staged_manifest.row_count
-                    or artifact.timeline.first_step != 0
-                    or artifact.timeline.pts_time_base_numerator != 1
-                    or artifact.timeline.pts_time_base_denominator != 30
-                    or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
-                    > 1 / 30
-                    for artifact in media_artifacts
-                )
-            ):
-                raise ApplicationError(
-                    "all camera MP4 receipts must be READY and timeline-identical",
-                    type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
-                    non_retryable=True,
-                )
+                if (
+                    {artifact.camera_id for artifact in media_artifacts} != set(expected_camera_ids)
+                    or len(media_artifacts) != len(expected_camera_ids)
+                    or any(
+                        artifact.status.value != "READY"
+                        or artifact.frame_count != aligned.staged_manifest.row_count
+                        or artifact.fps != 30
+                        or artifact.timeline is None
+                        or artifact.timeline.frame_count != aligned.staged_manifest.row_count
+                        or artifact.timeline.first_step != 0
+                        or artifact.timeline.pts_time_base_numerator != 1
+                        or artifact.timeline.pts_time_base_denominator != 30
+                        or abs(artifact.duration_seconds - aligned.staged_manifest.row_count / 30)
+                        > 1 / 30
+                        for artifact in media_artifacts
+                    )
+                ):
+                    raise ApplicationError(
+                        "all camera MP4 receipts must be READY and timeline-identical",
+                        type="ALIGNED_MEDIA_BUNDLE_INCOMPLETE",
+                        non_retryable=True,
+                    )
 
-            self._stage("lance_commit")
+            self._stage(
+                "episode_commit" if request.storage_format == "lerobot_v3" else "lance_commit"
+            )
             await self._persist_job(request)
             committed = await _execute_activity(
                 COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
@@ -948,6 +968,7 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                     expected_dataset_version=aligned.expected_dataset_version,
                     expected_camera_ids=expected_camera_ids,
                     media_artifacts=tuple(media_artifacts),
+                    package_plan=aligned.package_plan,
                 ),
                 AlignedBundleCommitActivityOutput,
                 LONG_ACTIVITY,
@@ -977,7 +998,10 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                     rollout_id=source.rollout_id,
                     dataset_id=request.dataset_id,
                     dataset_version=derived.dataset_version,
-                    lance_version=derived.lance_version,
+                    lance_version=None
+                    if request.storage_format == "lerobot_v3"
+                    else derived.lance_version,
+                    data_ref=derived.data if request.storage_format == "lerobot_v3" else None,
                     dataset_schema_snapshot_id=request.schema_snapshot_id,
                     base_step_count=derived.step_count,
                     source_workflow_id=workflow.info().workflow_id,
@@ -994,9 +1018,17 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 if workflow.patched("continuous-recording-viewer-identity-v2")
                 else None,
                 dataset_version=derived.dataset_version,
-                lance_version=derived.lance_version,
+                lance_version=None
+                if request.storage_format == "lerobot_v3"
+                else derived.lance_version,
+                data_ref=derived.data if request.storage_format == "lerobot_v3" else None,
+                collection_version_id=(
+                    derived.collection_version_id
+                    if request.storage_format == "lerobot_v3"
+                    else None
+                ),
                 annotation_task_id=annotation.task_id,
-                aligned_media_camera_count=len(media_artifacts),
+                aligned_media_camera_count=len(request.recording_config.cameras),
             )
             ledger_status = EpisodeProcessingStatus.READY
             result = self._finish(
@@ -1007,8 +1039,13 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                     "derived_ready": derived.model_dump(mode="json"),
                     "viewer_target": committed.viewer_target.model_dump(mode="json"),
                     "annotation_task_id": annotation.task_id,
-                    "aligned_media_count": len(media_artifacts),
-                    "training_eligible": True,
+                    "aligned_media_count": len(request.recording_config.cameras),
+                    "training_eligible": None if request.storage_format == "lerobot_v3" else True,
+                    **(
+                        {"model_depth_training": "NOT_VALIDATED"}
+                        if request.storage_format == "lerobot_v3"
+                        else {}
+                    ),
                 },
             )
             await self._persist_job(request)
@@ -1038,6 +1075,7 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 "qc": "QC_PROCESSING_FAILED",
                 "alignment": "ALIGNMENT_FAILED",
                 "aligned_media": "ALIGNED_MEDIA_FAILED",
+                "episode_commit": "EPISODE_PACKAGE_COMMIT_FAILED",
                 "lance_commit": "LANCE_COMMIT_FAILED",
                 "annotation_task": "ANNOTATION_TASK_FAILED",
             }.get(failure_stage, "CONTINUOUS_EPISODE_FAILED")

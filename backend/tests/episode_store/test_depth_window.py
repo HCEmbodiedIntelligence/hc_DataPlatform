@@ -119,6 +119,11 @@ def test_identical_stream_reuses_every_byte_and_no_encoder(tmp_path, monkeypatch
         (25, DepthWindow(1, 8, 7, 30, START + 40_000_000), [1, 2, 3, 3, 4, 5, 6]),
         (30, DepthWindow(1, 9, 4, 15, START + 33_333_333), [1, 3, 5, 7]),
         (25, DepthWindow(3, 6, 3, 25, START + 120_000_000), [3, 4, 5]),
+        (
+            25,
+            DepthWindow(2, 8, 6, 30, START + 60_000_000, source_start_offset_ns=60_000_000),
+            [2, 2, 3, 4, 5, 6],
+        ),
     ],
 )
 def test_selection_preserves_codes_masks_source_units_and_measured_errors(
@@ -154,7 +159,7 @@ def test_selection_preserves_codes_masks_source_units_and_measured_errors(
             assert rows[index][key] == original_rows[selected_index][key]
         assert masks[index]["flags_png"] == original_masks[selected_index]["flags_png"]
     assert rows[0]["repeated"] is False
-    if fps == 25 and window.frequency_hz == 30:
+    if fps == 25 and window.frequency_hz == 30 and window.frame_count == 7:
         assert [row["missing"] for row in rows] == [False, True, False, False, False, False, False]
         assert [row["repeated"] for row in rows] == [False, False, False, True, True, False, False]
         assert rows[4]["time_threshold_exceeded"] is True
@@ -175,6 +180,15 @@ def test_selection_preserves_codes_masks_source_units_and_measured_errors(
         )
     assert result.feature["info"]["video.fps"] == window.frequency_hz
     assert before == inventory(tmp_path / "input")
+
+
+def test_explicit_fractional_origin_does_not_round_before_selecting_each_frame():
+    # Old integer-origin windows retain their previous tie behavior. Arbitrary
+    # source cuts apply nearest/ties-even once to the absolute rational position.
+    original = DepthWindow(1, 5, 3, 30, START)
+    offset = DepthWindow(1, 5, 3, 30, START, source_start_offset_ns=66_666_667)
+    assert [original.source_frame(i, Fraction(15)) for i in range(3)] == [1, 1, 2]
+    assert [offset.source_frame(i, Fraction(15)) for i in range(3)] == [1, 2, 2]
 
 
 def test_time_grid_change_copies_full_video_without_encoder(tmp_path, monkeypatch):

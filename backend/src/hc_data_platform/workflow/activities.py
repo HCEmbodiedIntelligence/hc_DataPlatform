@@ -718,6 +718,7 @@ async def commit_continuous_episode_bundle(
                 expected_dataset_version=request.expected_dataset_version,
                 expected_camera_ids=request.expected_camera_ids,
                 media_artifacts=request.media_artifacts,
+                package_plan=request.package_plan,
             ),
         )
 

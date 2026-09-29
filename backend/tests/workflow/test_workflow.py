@@ -6,6 +6,7 @@ from hc_data_platform.workflow import router as workflow_router
 from hc_data_platform.workflow.models import (
     JobStatus,
     QualityOutcome,
+    continuous_episode_workflow_id,
     parse_workflow_id,
     workflow_id,
 )
@@ -18,6 +19,16 @@ from hc_data_platform.workflow.temporal_workflows import (
 )
 from hc_data_platform.workflow.worker import discover_temporal_registrations
 from hc_data_platform.workflow.workflows import DatasetWriterWorkflow, IngestRolloutWorkflow
+
+
+def test_continuous_episode_identity_includes_tenant_and_unambiguous_components():
+    def identity(org, region="region", recording="recording"):
+        return continuous_episode_workflow_id(org, "project", region, recording, "episode")
+
+    assert identity("org-a") == identity("org-a")
+    assert identity("org-a") != identity("org-b")
+    assert identity("org/a", "b") != identity("org", "a/b")
+    assert parse_workflow_id(identity("org-a"))[:3] == ("continuous-episode", "v2", "project")
 
 
 class Verifier:

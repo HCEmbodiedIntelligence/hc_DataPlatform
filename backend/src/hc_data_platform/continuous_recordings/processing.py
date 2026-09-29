@@ -9,7 +9,7 @@ import math
 import subprocess
 import tempfile
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager, nullcontext, suppress
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 from pathlib import Path
@@ -192,10 +192,61 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         catalog: LanceCatalogPort,
         *,
         media_task_queue: str = "hc-media-pipeline",
+        package_schemas: Any = None,
     ) -> None:
         self._connection_factory = connection_factory
         self._catalog = catalog
         self._media_task_queue = media_task_queue
+        self._package_schemas = package_schemas
+
+    def terminal_result(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        recording_id: str,
+        episode_id: str,
+        finalized_revision: int,
+        expected_workflow_id: str,
+    ) -> Any:
+        """Acknowledge a redelivered event only against its exact durable terminal ledger."""
+        from .asset_models import EpisodeProcessing
+
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT episode_document FROM ingest.recording_episode_processing
+                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                      AND recording_id=%s AND episode_id=%s""",
+                    (organization_id, project_id, region_code, recording_id, episode_id),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    return None
+                value = EpisodeProcessing.model_validate(row[0])
+                if (
+                    value.workflow_id != expected_workflow_id
+                    or value.finalized_revision != finalized_revision
+                    or value.scope
+                    != RecordingScope(
+                        organization_id=organization_id,
+                        project_id=project_id,
+                        region_code=region_code,
+                    )
+                    or value.recording_id != recording_id
+                    or value.episode_id != episode_id
+                ):
+                    raise _blocked("redelivered recording event differs from its scoped ledger")
+                if value.status not in {
+                    EpisodeProcessingStatus.READY,
+                    EpisodeProcessingStatus.QC_FAILED,
+                }:
+                    return None
+                return value.model_dump(mode="json")
+        finally:
+            connection.close()
 
     def resolve(
         self,
@@ -206,6 +257,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         recording_id: str,
         episode_id: str,
         finalized_revision: int,
+        expected_workflow_id: str | None = None,
     ) -> ContinuousEpisodeWorkflowInput:
         connection = self._connection_factory()
         try:
@@ -237,6 +289,11 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 from .asset_models import EpisodeProcessing
 
                 processing = EpisodeProcessing.model_validate(row[0])
+                if (
+                    expected_workflow_id is not None
+                    and processing.workflow_id != expected_workflow_id
+                ):
+                    raise _blocked("the continuous Episode workflow differs from its scoped ledger")
                 recording = ContinuousRecording.model_validate(row[1])
                 upload = RecordingUpload.model_validate(row[2])
                 if processing.finalized_revision != finalized_revision:
@@ -284,6 +341,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 quality_profile = self._quality_profile(cursor, project_id, modality_keys)
                 schema_ids = self._schema_targets(
                     cursor,
+                    organization_id=organization_id,
                     project_id=project_id,
                     region_code=region_code,
                     dataset_id=dataset_id,
@@ -299,7 +357,9 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         )
         source_sha256 = canonical_hash(
             {
-                "pipeline": "continuous-recording-episode/v1",
+                "pipeline": "continuous-episode-package/1"
+                if self._package_schemas is not None
+                else "continuous-recording-episode/v1",
                 "recording_id": recording_id,
                 "episode_id": episode_id,
                 "start_offset_ns": processing.start_offset_ns,
@@ -320,6 +380,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         assets = tuple(
             ContinuousEpisodeAssetV1(
                 asset_id=str(asset.asset_id),
+                relative_path=asset.manifest.path,
                 role=asset.manifest.role,
                 camera_id=asset.manifest.camera_id,
                 modality_key=(
@@ -334,14 +395,18 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             )
             for asset in raw_assets
         )
-        expected_version = self._reserve_dataset_version(
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            recording_id=recording_id,
-            episode_id=episode_id,
-            workflow_id=processing.workflow_id or "",
-            dataset_id=dataset_id,
+        expected_version = (
+            None
+            if self._package_schemas is not None
+            else self._reserve_dataset_version(
+                organization_id=organization_id,
+                project_id=project_id,
+                region_code=region_code,
+                recording_id=recording_id,
+                episode_id=episode_id,
+                workflow_id=processing.workflow_id or "",
+                dataset_id=dataset_id,
+            )
         )
         projection = ContinuousEpisodeProjectionSourceV1(
             organization_id=organization_id,
@@ -370,7 +435,9 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             quality_profile=quality_profile,
             alignment_profile=AlignmentProfileV1(
                 profile_id=f"continuous:{snapshot.schema_snapshot_id}",
-                converter_version="continuous-mp4-sensor/1",
+                converter_version="continuous-episode-package/1"
+                if self._package_schemas is not None
+                else "continuous-mp4-sensor/1",
                 frequency_hz=30,
                 required_modalities=modality_keys,
                 stream_strategies={key: _strategy_for(key, configuration) for key in modality_keys},
@@ -379,6 +446,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             start_offset_ns=processing.start_offset_ns,
             end_offset_ns=processing.end_offset_ns,
             expected_dataset_version=expected_version,
+            storage_format="lerobot_v3" if self._package_schemas is not None else "lance",
             media_task_queue=self._media_task_queue,
         )
 
@@ -542,15 +610,16 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
 
     @staticmethod
     def _schema_targets(
-        cursor: Any, *, project_id: str, region_code: str, dataset_id: str
+        cursor: Any, *, organization_id: str, project_id: str, region_code: str, dataset_id: str
     ) -> tuple[str, ...]:
         cursor.execute(
             """
             SELECT dataset_schema_snapshot_id FROM annotation.tag_schema_bindings
-             WHERE project_id = %s AND region_code = %s AND task_kind = 'TAGGING'
+             WHERE organization_id=%s AND project_id = %s AND region_code = %s
+               AND task_kind = 'TAGGING'
                AND dataset_id = %s ORDER BY dataset_schema_snapshot_id
             """,
-            (project_id, region_code, dataset_id),
+            (organization_id, project_id, region_code, dataset_id),
         )
         return tuple(str(row[0]) for row in cursor.fetchall())
 
@@ -572,12 +641,13 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             )
             for schema_id in schema_ids
         ]
-        existing = self._catalog.schema_for(project_id, dataset_id)
+        schemas = self._package_schemas or self._catalog
+        existing = schemas.schema_for(project_id, dataset_id)
         compatible = [item for item in candidates if existing is None or existing == item]
         if len(compatible) != 1:
             raise _blocked("the task Dataset must have one compatible TAGGING Schema binding")
         try:
-            self._catalog.register_schema(compatible[0])
+            schemas.register_schema(compatible[0])
         except Exception as exc:
             raise _blocked("the continuous Episode Dataset Schema is incompatible") from exc
         return compatible[0]
@@ -603,6 +673,7 @@ class ContinuousEpisodeProcessingService:
         ffmpeg_binary: str = "ffmpeg",
         ffprobe_binary: str = "ffprobe",
         process_timeout_seconds: float = 3_600,
+        episode_packages: Any = None,
     ) -> None:
         self._connection_factory = connection_factory
         self._repository = repository
@@ -620,6 +691,7 @@ class ContinuousEpisodeProcessingService:
         self._ffmpeg = ffmpeg_binary
         self._ffprobe = ffprobe_binary
         self._timeout = process_timeout_seconds
+        self._episode_packages = episode_packages
 
     def update_state(
         self, request: ContinuousEpisodeStateActivityInput
@@ -781,8 +853,24 @@ class ContinuousEpisodeProcessingService:
     def align(
         self, request: ContinuousEpisodeWorkflowInput
     ) -> ContinuousEpisodeAlignmentActivityOutput:
+        if request.storage_format == "lerobot_v3":
+            from .package import recording_files
+
+            with recording_files(request, self._connection_factory, self._storage) as source:
+                return self._align(request, package_source=source)
+        return self._align(request)
+
+    def _align(self, request, *, package_source=None):
         start_ns = _datetime_ns(request.projection.started_at)
         end_ns = _datetime_ns(request.projection.ended_at)
+        if package_source is not None:
+            from .package import source_context, timeline
+
+            upload, paths = package_source
+            origin, _, _ = source_context(request, upload, paths)
+            start_ns, duration_ns = timeline(request, origin)
+            end_ns = start_ns + duration_ns
+        shift_ns = start_ns - _datetime_ns(request.projection.started_at)
         if request.recording_config.recorder_version == "openarm-session/v2":
             from .openarm_grid import frame_at, frame_time
 
@@ -818,15 +906,21 @@ class ContinuousEpisodeProcessingService:
             schema_snapshot_id=request.schema_snapshot_id,
             data=data,
             profile=request.alignment_profile,
+            storage_format=request.storage_format,
         )
         sensor_assets = _assets_for_role(request.assets, RecordingAssetRole.SENSOR_DATA)
-        with self._localized_assets(request, roles={RecordingAssetRole.SENSOR_DATA}) as localized:
+        sensor_files = (
+            nullcontext({item.asset_id: paths[item.relative_path] for item in sensor_assets})
+            if package_source is not None
+            else self._localized_assets(request, roles={RecordingAssetRole.SENSOR_DATA})
+        )
+        with sensor_files as localized:
             iterators: list[Iterator[tuple[int, str, TimedSampleV1]]] = [
-                self._sensor_alignment_samples(localized[item.asset_id], request)
+                self._sensor_alignment_samples(localized[item.asset_id], request, shift_ns=shift_ns)
                 for item in sensor_assets
             ]
             iterators.extend(
-                self._camera_alignment_samples(request, camera)
+                self._camera_alignment_samples(request, camera, shift_ns=shift_ns)
                 for camera in request.recording_config.cameras
             )
             merged = heapq.merge(*iterators, key=lambda item: (item[0], item[1]))
@@ -843,6 +937,49 @@ class ContinuousEpisodeProcessingService:
                 writer=writer,
             )
         staging = self._publish_staging(request, manifest)
+        if package_source is not None:
+            from .package import freeze_plan
+
+            connection = self._connection_factory()
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """SELECT q.report_document,q.report_sha256
+                        FROM ingest.recording_episode_qc_reports q
+                        JOIN ingest.recording_episode_processing p USING
+                            (organization_id,project_id,region_code,recording_id,episode_id)
+                        WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
+                          AND p.recording_id=%s AND p.episode_id=%s AND p.qc_report_id=q.report_id
+                          AND q.status='PASS'""",
+                        (
+                            request.projection.organization_id,
+                            request.projection.project_id,
+                            request.projection.region_code,
+                            request.projection.recording_id,
+                            request.projection.episode_id,
+                        ),
+                    )
+                    row = cursor.fetchone()
+                    if (
+                        row is None
+                        or canonical_hash(row[0]) != row[1]
+                        or row[0]["source_sha256"] != request.projection.source_sha256
+                    ):
+                        raise ContinuousEpisodeProcessingError(
+                            "recording package lacks exact QC evidence"
+                        )
+                    quality = row[0]
+            finally:
+                connection.close()
+            plan = freeze_plan(
+                request, alignment_request, manifest, staging, upload, paths, quality
+            )
+            return ContinuousEpisodeAlignmentActivityOutput(
+                alignment=alignment_request,
+                staged_manifest=manifest,
+                alignment_staging=staging,
+                package_plan=plan,
+            )
         current = self._catalog.current_version(
             request.dataset_id, project_id=request.projection.project_id
         )
@@ -865,10 +1002,24 @@ class ContinuousEpisodeProcessingService:
         alignment: AlignmentActivityInput,
         staged_manifest: Any,
         alignment_staging: AlignmentStagingArtifactV1,
-        expected_dataset_version: int,
+        expected_dataset_version: int | None,
         expected_camera_ids: Sequence[str],
         media_artifacts: Sequence[AlignedMediaArtifactV1],
+        package_plan: Any = None,
     ) -> AlignedBundleCommitActivityOutput:
+        if workflow_input.storage_format == "lerobot_v3":
+            if (
+                package_plan is None
+                or expected_dataset_version is not None
+                or media_artifacts
+                or set(expected_camera_ids) != set(package_plan.feature_mapping)
+            ):
+                raise ContinuousEpisodeProcessingError(
+                    "recording package commit requires its frozen plan"
+                )
+            return self._commit_package(
+                workflow_input, alignment, staged_manifest, alignment_staging, package_plan
+            )
         source = workflow_input.projection
         if (
             expected_dataset_version != workflow_input.expected_dataset_version
@@ -996,6 +1147,48 @@ class ContinuousEpisodeProcessingService:
             media_artifacts=media_artifacts,
         )
         self._mark_version_reservation_committed(workflow_input, dataset_version=version.version)
+        return AlignedBundleCommitActivityOutput(
+            version=version, derived_ready=ready, viewer_target=viewer
+        )
+
+    def _commit_package(self, request, alignment, manifest, staging, plan):
+        from .package import prepared_recording_assets, recording_files, recording_steps
+
+        if self._episode_packages is None:
+            raise ContinuousEpisodeProcessingError("recording Episode store is not configured")
+        plan.validate_recording_bundle(request, alignment, manifest, staging)
+        published = self._episode_packages.recover_bundle(plan)
+        if published is None:
+            with (
+                recording_files(request, self._connection_factory, self._storage) as (_, paths),
+                prepared_recording_assets(request, plan, paths, manifest.attempt_id) as assets,
+                self._staging.local_file(
+                    staging.object_key,
+                    expected_sha256=staging.content_sha256,
+                    expected_size=staging.size_bytes,
+                ) as arrow,
+            ):
+                local_manifest = manifest.model_copy(
+                    update={"staging_uri": arrow.resolve().as_uri()}
+                )
+                steps = self._catalog_fragments.read_steps(local_manifest, ())
+                published = self._episode_packages.write_and_publish(
+                    plan.input,
+                    recording_steps(steps, plan, assets),
+                    assets,
+                    schema=plan.schema_snapshot,
+                    metadata=plan.metadata,
+                )
+        version, ready = published
+        viewer = self._dataset_projection.project_continuous_episode(
+            source=request.projection,
+            alignment=alignment.data,
+            schema_snapshot_id=request.schema_snapshot_id,
+            frequency_hz=30,
+            version=version,
+            ready=ready,
+            media_artifacts=(),
+        )
         return AlignedBundleCommitActivityOutput(
             version=version, derived_ready=ready, viewer_target=viewer
         )
@@ -1455,7 +1648,7 @@ class ContinuousEpisodeProcessingService:
         )
 
     def _sensor_alignment_samples(
-        self, path: Path, request: ContinuousEpisodeWorkflowInput
+        self, path: Path, request: ContinuousEpisodeWorkflowInput, *, shift_ns: int = 0
     ) -> Iterator[tuple[int, str, TimedSampleV1]]:
         configured = {sensor.topic: sensor for sensor in request.recording_config.sensors}
         previous = -1
@@ -1499,12 +1692,13 @@ class ContinuousEpisodeProcessingService:
                     message_data=message.data,
                 )
             )
+            timestamp += shift_ns
             sample = TimedSampleV1(timestamp_ns=timestamp, value=value)
             yield timestamp, topic, sample
 
     @staticmethod
     def _camera_alignment_samples(
-        request: ContinuousEpisodeWorkflowInput, camera: Any
+        request: ContinuousEpisodeWorkflowInput, camera: Any, *, shift_ns: int = 0
     ) -> Iterator[tuple[int, str, TimedSampleV1]]:
         start_ns = _datetime_ns(request.projection.started_at)
         end_ns = _datetime_ns(request.projection.ended_at)
@@ -1520,16 +1714,22 @@ class ContinuousEpisodeProcessingService:
             if timestamp >= end_ns:
                 break
             source_offset_ns = source_start_ns + index * 1_000_000_000 // 30
-            sample = TimedSampleV1(
-                timestamp_ns=timestamp,
-                value={
-                    "camera_id": camera.camera_id,
-                    "source_frame_index": max(
-                        0, round(source_offset_ns * camera.fps / 1_000_000_000)
-                    ),
-                    "source_pts_ns": source_offset_ns,
-                },
-            )
+            value = {
+                "camera_id": camera.camera_id,
+                "source_frame_index": max(0, round(source_offset_ns * camera.fps / 1_000_000_000)),
+                "source_pts_ns": source_offset_ns,
+            }
+            if request.storage_format == "lerobot_v3":
+                fps = Fraction(str(camera.fps))
+                selected = round(
+                    (Fraction(source_start_ns, 1_000_000_000) + Fraction(index, 30)) * fps
+                )
+                value.update(
+                    source_frame_index=selected,
+                    source_pts_ns=int(Fraction(selected * 1_000_000_000) / fps),
+                )
+            timestamp += shift_ns
+            sample = TimedSampleV1(timestamp_ns=timestamp, value=value)
             yield timestamp, camera.modality_key, sample
 
     def _publish_staging(self, request: ContinuousEpisodeWorkflowInput, manifest: Any) -> Any:

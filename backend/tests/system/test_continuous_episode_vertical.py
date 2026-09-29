@@ -275,8 +275,13 @@ class StaticResolver:
         self.request = request
         self.calls = 0
 
+    def terminal_result(self, **kwargs: object) -> None:
+        return None
+
     def resolve(self, **kwargs: object) -> ContinuousEpisodeWorkflowInput:
         self.calls += 1
+        from hc_data_platform.workflow.models import continuous_episode_workflow_id
+
         assert kwargs == {
             "organization_id": ORGANIZATION_ID,
             "project_id": PROJECT_ID,
@@ -284,6 +289,9 @@ class StaticResolver:
             "recording_id": RECORDING_ID,
             "episode_id": EPISODE_ID,
             "finalized_revision": 2,
+            "expected_workflow_id": continuous_episode_workflow_id(
+                ORGANIZATION_ID, PROJECT_ID, REGION_CODE, RECORDING_ID, EPISODE_ID
+            ),
         }
         return self.request
 
@@ -1001,7 +1009,22 @@ async def test_continuous_v2_four_camera_real_media_temporal_vertical(
     assert len(processor.qc_reports) == 1
     assert next(iter(processor.qc_reports.values()))["status"] == "PASS"
     assert viewer_projection.calls == 2
-    assert catalog.commit_attempts == 3
+    # The third activity attempt recovers the durable commit instead of writing
+    # it again after the injected downstream projection failure.
+    assert catalog.commit_attempts == 2
+    commit_events = {
+        event.event_id
+        for event in history.events
+        if event.HasField("activity_task_scheduled_event_attributes")
+        and event.activity_task_scheduled_event_attributes.activity_type.name
+        == "workflow.commit_continuous_episode_bundle"
+    }
+    assert [
+        event.activity_task_started_event_attributes.attempt
+        for event in history.events
+        if event.HasField("activity_task_started_event_attributes")
+        and event.activity_task_started_event_attributes.scheduled_event_id in commit_events
+    ] == [3]
     assert len(annotation_repository.automatic_triggers) == 1
 
     media_scope = AlignedMediaScopeV1(

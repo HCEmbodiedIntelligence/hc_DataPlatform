@@ -6,12 +6,19 @@ from typing import Protocol
 
 from hc_data_platform.core.events import DomainEventEnvelope
 
-from .models import ContinuousEpisodeWorkflowInput, WorkflowKind, workflow_id
+from .models import (
+    ContinuousEpisodeWorkflowInput,
+    WorkflowKind,
+    continuous_episode_workflow_id,
+    workflow_id,
+)
 from .names import CONTINUOUS_EPISODE_WORKFLOW
 from .service import TemporalWorkflowLauncher
 
 
 class ContinuousEpisodeWorkflowInputResolver(Protocol):
+    def terminal_result(self, **scope: object) -> object | None: ...
+
     def resolve(
         self,
         *,
@@ -21,6 +28,7 @@ class ContinuousEpisodeWorkflowInputResolver(Protocol):
         recording_id: str,
         episode_id: str,
         finalized_revision: int,
+        expected_workflow_id: str | None = None,
     ) -> ContinuousEpisodeWorkflowInput: ...
 
 
@@ -48,21 +56,32 @@ class ContinuousEpisodeOutboxHandler:
         if not isinstance(finalized_revision, int) or finalized_revision < 1:
             raise ValueError("continuous Episode event has no finalized revision")
         resource_id = f"{recording_id}/{episode_id}"
-        expected_workflow_id = workflow_id(
+        legacy_workflow_id = workflow_id(
             WorkflowKind.CONTINUOUS_EPISODE,
             event.project_id,
             f"{event.region_code}/{resource_id}",
         )
-        if persisted_workflow_id != expected_workflow_id or event.aggregate_id != resource_id:
+        expected_workflow_id = continuous_episode_workflow_id(
+            event.organization_id, event.project_id, event.region_code, recording_id, episode_id
+        )
+        if (
+            persisted_workflow_id not in {expected_workflow_id, legacy_workflow_id}
+            or event.aggregate_id != resource_id
+        ):
             raise ValueError("continuous Episode workflow locator disagrees with event lineage")
-        request = self._resolver.resolve(
+        scope = dict(
             organization_id=event.organization_id,
             project_id=event.project_id,
             region_code=event.region_code,
             recording_id=recording_id,
             episode_id=episode_id,
             finalized_revision=finalized_revision,
+            expected_workflow_id=persisted_workflow_id,
         )
+        terminal = self._resolver.terminal_result(**scope)
+        if terminal is not None:
+            return terminal
+        request = self._resolver.resolve(**scope)
         source = request.projection
         if (
             source.organization_id != event.organization_id

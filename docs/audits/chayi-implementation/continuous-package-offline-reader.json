@@ -1,0 +1,45 @@
+{
+  "source": "/app/.g1-artifacts/continuous-package/raw-pin-a838e66279254a00bc3be7eb55026442",
+  "synthetic_input": true,
+  "temporal_service": true,
+  "data_version_id": "dv_b50c547e2dec35a4b2fec66c9856cc99115b8b0263d1de725bb52ba86ee5a664",
+  "frames": 6,
+  "rgb_streams": 3,
+  "depth_streams": 3,
+  "network": "disabled by reader container",
+  "lerobot_version": "0.6.1",
+  "official_reader_and_dataloader": true,
+  "independent_hc_masks_applied": true,
+  "physical_depth_unit": "mm",
+  "platform_imported": false,
+  "depths": {
+    "observation.images.camera_left_depth": {
+      "max_reader_rounding_mm": 0.4877768296641989,
+      "invalid_pixels": 0,
+      "missing_frames": 0,
+      "codec_profile": "Rext",
+      "quantization_max_error_m": 0.000524478912353521,
+      "encoding_lossless_codes": true,
+      "requantized": false
+    },
+    "observation.images.camera_right_depth": {
+      "max_reader_rounding_mm": 0.4877768296641989,
+      "invalid_pixels": 0,
+      "missing_frames": 0,
+      "codec_profile": "Rext",
+      "quantization_max_error_m": 0.000524478912353521,
+      "encoding_lossless_codes": true,
+      "requantized": false
+    },
+    "observation.images.head_depth": {
+      "max_reader_rounding_mm": 0.4877768296641989,
+      "invalid_pixels": 0,
+      "missing_frames": 0,
+      "codec_profile": "Rext",
+      "quantization_max_error_m": 0.000524478912353521,
+      "encoding_lossless_codes": true,
+      "requantized": false
+    }
+  },
+  "model_depth_training_support": "NOT_VALIDATED"
+}

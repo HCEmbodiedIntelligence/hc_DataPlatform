@@ -321,4 +321,21 @@ def write_episode(
         },
     }.items():
         write_json(root, relative, value)
+    for entry in assets.auxiliary_files:
+        # Selected recording provenance is an HC extension. It cannot replace
+        # numeric/video/official metadata or the writer's own evidence files.
+        from .validation import package_file
+
+        if assets.auxiliary_root is None or not entry.path.startswith("hc/recording/"):
+            raise ValueError("prepared auxiliary files require their recording evidence root")
+        origin = package_file(assets.auxiliary_root, entry.path)
+        from hc_data_platform.publishing.depth_evidence import file_hash
+
+        if origin.stat().st_size != entry.size or file_hash(origin) != entry.sha256:
+            raise ValueError("prepared recording evidence differs from its frozen receipt")
+        target = root / entry.path
+        if target.exists():
+            raise ValueError("recording evidence cannot overwrite an Episode file")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(origin, target)
     return validate_package(root, source)

@@ -44,6 +44,13 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W2 连续录制补充（2026-09-29）：新派发已接入独立 RGB-D 包，经真实上传服务、
+  Raw 登记、切片/QC/对齐、Temporal 提交/重试、官方 RealSense 预览、Tag/READY
+  和断网官方 reader 验证。2 项服务、追加 1 项派发、56 项回归、7 项工作流、2 项
+  历史连续录制测试通过；审计 30 包文件/14 原件/6 预览，零新 Lance。
+  修复新工作流身份遗漏组织与终态重复派发问题。见 [本阶段证据及 G2 条件](continuous-package.md)。
+  明确合成输入；真实录制、HTTP/客户端、长录制、浏览器和其余入口/功能仍未验收，
+  17 项 P0 保持 Pending。以下“尚未接通”文字是对应早期阶段的历史状态。
 - W2/W5 状态补充（2026-09-29）：连续录制账本支持完整标准包引用和集合 ID，
   数据库核验 QC／Tag 任务／详情／全部相机预览后才 READY，无 Lance reservation。
   实际服务同步并发与拒绝测试、32 项回归、7 项 Temporal、13 项前端通过；迁移

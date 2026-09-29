@@ -992,6 +992,7 @@ def build_runtime(
         catalog=catalog,
         media_repository=aligned_media_repository,
         dataset_projection=dataset_ingest_projection,
+        episode_packages=episode_packages,
     )
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
@@ -1297,10 +1298,14 @@ def build_worker_outbox(
         catalog,
     )
     handler = IngestOutboxHandler(launcher, resolver)
+    from hc_data_platform.episode_store.postgres import PostgresEpisodeStore
+    from hc_data_platform.episode_store.schemas import EpisodeSchemas
+
     continuous_episode_resolver = PostgresContinuousEpisodeWorkflowInputResolver(
         connection_factory,
         catalog,
         media_task_queue=os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline"),
+        package_schemas=EpisodeSchemas(PostgresEpisodeStore(connection_factory)),
     )
     continuous_episode_handler = ContinuousEpisodeOutboxHandler(
         launcher,

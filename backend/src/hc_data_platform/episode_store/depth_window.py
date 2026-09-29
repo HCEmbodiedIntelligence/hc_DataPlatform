@@ -8,10 +8,9 @@ and record the parent video/evidence hashes. This module does not colorize depth
 
 import hashlib
 import shutil
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from fractions import Fraction
 from pathlib import Path
-from typing import Literal
 
 import av
 import pyarrow as pa
@@ -20,48 +19,13 @@ import pyarrow.parquet as pq
 from hc_data_platform.publishing.depth_evidence import file_hash, write_json
 from hc_data_platform.publishing.holobrain_depth import DepthProfile, DepthVideo
 
+from .frame_window import DepthWindow
 from .models import FileEntry, digest
 from .prepared_assets import PreparedVideo
 from .validation import document, package_file, parquet_rows, validate_depth
 
-VERSION = "hc-depth-window/1"
+VERSION = "hc-depth-window/2"
 REQUIRED = {"profile.json", "frames.parquet", "report.json", "validity/flags.parquet"}
-
-
-@dataclass(frozen=True)
-class DepthWindow:
-    first_source_frame: int
-    stop_source_frame: int
-    frame_count: int
-    frequency_hz: int
-    target_start_ns: int
-    rounding: Literal["floor", "nearest"] = "floor"
-
-    def __post_init__(self):
-        values = (
-            self.first_source_frame,
-            self.stop_source_frame,
-            self.frame_count,
-            self.frequency_hz,
-            self.target_start_ns,
-        )
-        if (
-            any(type(v) is not int for v in values)
-            or self.first_source_frame < 0
-            or self.stop_source_frame <= self.first_source_frame
-            or self.frame_count < 1
-            or not 1 <= self.frequency_hz <= 1000
-            or self.target_start_ns < 0
-            or self.rounding not in {"floor", "nearest"}
-        ):
-            raise ValueError("invalid depth frame window")
-
-    def source_frame(self, index: int, source_fps: Fraction) -> int:
-        return self.first_source_frame + round(Fraction(index) * source_fps / self.frequency_hz)
-
-    def target_time(self, index: int) -> int:
-        offset = Fraction(index * 1_000_000_000, self.frequency_hz)
-        return self.target_start_ns + (round(offset) if self.rounding == "nearest" else int(offset))
 
 
 def _verify_source(media):
@@ -104,6 +68,7 @@ def prepare_depth_window(
     source_count = original_report["frames"]
     if (
         window.stop_source_frame > source_count
+        or window.source_frame(0, source_fps) != window.first_source_frame
         or window.source_frame(window.frame_count - 1, source_fps) >= window.stop_source_frame
     ):
         raise ValueError("depth output requests a frame outside the frozen source window")
@@ -112,6 +77,7 @@ def prepare_depth_window(
         and window.stop_source_frame == source_count
         and window.frame_count == source_count
         and window.frequency_hz == source_fps
+        and window.source_start_offset_ns in (None, 0)
     )
     if whole and all(
         row["target_timestamp_ns"] == window.target_time(index)
