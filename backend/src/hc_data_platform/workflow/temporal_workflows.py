@@ -76,6 +76,10 @@ with workflow.unsafe.imports_passed_through():
         JobRecord,
         JobStatus,
         ManifestActivityOutput,
+        ProjectionCleanupActivityInput,
+        ProjectionCleanupActivityOutput,
+        ProjectionMaterializationActivityInput,
+        ProjectionMaterializationActivityOutput,
         PublishActivityInput,
         PublishActivityOutput,
         PublishDatasetWorkflowInput,
@@ -89,6 +93,7 @@ with workflow.unsafe.imports_passed_through():
         ANNOTATION_REVIEW_PREPARATION_WORKFLOW,
         CATALOG_RECONCILIATION_WORKFLOW,
         CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
+        CLEANUP_INGEST_PROJECTION_ACTIVITY,
         CLEANUP_UNCOMMITTED_ALIGNED_MEDIA_ACTIVITY,
         COMMIT_ALIGNED_BUNDLE_ACTIVITY,
         COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
@@ -100,6 +105,7 @@ with workflow.unsafe.imports_passed_through():
         EXPORT_DATASET_ACTIVITY,
         EXPORT_WORKFLOW,
         INGEST_ROLLOUT_WORKFLOW,
+        MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
         PARSE_MANIFEST_ACTIVITY,
         PERSIST_WORKFLOW_JOB_ACTIVITY,
         PREFLIGHT_EXPORT_ACTIVITY,
@@ -539,6 +545,41 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 )
             self._stage("annotation_task")
             await self._persist_job(request)
+            if (
+                frame_selection is not None
+                and frame_selection.selected_group_count > frame_selection.source_frame_count
+            ):
+                # Older histories may contain signal timestamps as image groups.
+                # Repair only their derived selection; the committed dataset and
+                # camera media must not be generated/committed a second time.
+                source = request.quality.source
+                if source is None or source.lerobot is not None:
+                    raise ApplicationError(
+                        "invalid legacy sampling reference has no MCAP repair source",
+                        type="VALIDATION_FAILED",
+                        non_retryable=True,
+                    )
+                repaired = await _execute_activity(
+                    MATERIALIZE_INGEST_PROJECTION_ACTIVITY,
+                    ProjectionMaterializationActivityInput(
+                        source=source.model_copy(update={"materialization": None})
+                    ),
+                    ProjectionMaterializationActivityOutput,
+                    LONG_ACTIVITY,
+                )
+                if repaired.source.materialization is None:
+                    raise ApplicationError(
+                        "sampling repair produced no materialization",
+                        type="VALIDATION_FAILED",
+                        non_retryable=True,
+                    )
+                frame_selection = repaired.source.materialization.frame_selection
+                await _execute_activity(
+                    CLEANUP_INGEST_PROJECTION_ACTIVITY,
+                    ProjectionCleanupActivityInput(source=repaired.source),
+                    ProjectionCleanupActivityOutput,
+                    STANDARD_ACTIVITY,
+                )
             annotation_input = AutomaticAnnotationActivityInput(
                 organization_id=request.organization_id,
                 project_id=request.project_id,

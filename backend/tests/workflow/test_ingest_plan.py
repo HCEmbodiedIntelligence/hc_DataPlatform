@@ -426,3 +426,27 @@ def test_invalid_json_jpeg_camera_envelope_is_reported_as_corrupt() -> None:
     assert observation.timestamp_ns == 456
     assert observation.corrupt is True
     assert observation.fingerprint is None
+
+
+def test_high_rate_cdr_joint_signals_select_only_observed_camera_frames():
+    from hc_data_platform.workflow.ingest_plan import _FrameSelectionSampler
+
+    sampler = _FrameSelectionSampler()
+    camera_stamps = set()
+    for index in range(1000):
+        timestamp = index * 1000000
+        sampler.observe_signal(
+            "io_teleop/joint_states",
+            timestamp,
+            {"header": {"stamp": timestamp}, "position": [index / 1000]},
+        )
+        if index % 33 == 0:
+            sampler.observe_camera(
+                "/camera/color", timestamp, luma_mean=100, perceptual_hash="0" * 16, corrupt=False
+            )
+            camera_stamps.add(timestamp)
+    selection = sampler.manifest(source_sha256="a" * 64, camera_topics=("/camera/color",))
+    groups = selection["groups"]
+    assert len(groups) <= sampler.source_frame_count == len(camera_stamps)
+    assert {group["timestamp_ns"] for group in groups} <= camera_stamps
+    assert selection["sampling_version"] == "adaptive-2fps-v2"

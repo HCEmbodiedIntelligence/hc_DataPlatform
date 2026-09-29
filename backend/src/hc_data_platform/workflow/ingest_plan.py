@@ -687,7 +687,7 @@ class PostgresIngestWorkflowInputResolver:
             )
             selection_key = (
                 f"derived/frame-selections/{project_component}/{source.source_sha256}/"
-                "adaptive-2fps-v1.json"
+                "adaptive-2fps-v2.json"
             )
             selection_sha256, selection_size = self._projection_store.publish_json(
                 selection_key, selection
@@ -705,6 +705,7 @@ class PostgresIngestWorkflowInputResolver:
                 created_at=now,
                 expires_at=now + self._projection_ttl,
                 frame_selection=FrameSelectionManifestRefV1(
+                    sampling_version="adaptive-2fps-v2",
                     object_key=selection_key,
                     content_sha256=selection_sha256,
                     size_bytes=selection_size,
@@ -898,7 +899,7 @@ class _LocalProjectionSession:
         project_component = hashlib.sha256(self.source.project_id.encode()).hexdigest()[:24]
         selection_key = (
             f"derived/frame-selections/{project_component}/{self.source.source_sha256}/"
-            "adaptive-2fps-v1.json"
+            "adaptive-2fps-v2.json"
         )
         selection_sha256, selection_size = self._artifact_store.publish_json(
             selection_key, selection
@@ -909,6 +910,7 @@ class _LocalProjectionSession:
             0 if source_frames == 0 else selected_groups / source_frames
         )
         return FrameSelectionManifestRefV1(
+            sampling_version="adaptive-2fps-v2",
             object_key=selection_key,
             content_sha256=selection_sha256,
             size_bytes=selection_size,
@@ -1178,10 +1180,12 @@ class _FrameSelectionSampler:
             or not any(marker in lowered for marker in ("action", "joint", "command", "event"))
         ):
             return
-        self._select(timestamp_ns, "robot-state-change")
+        # Signals trigger denser sampling of real camera timestamps. Selecting
+        # signal timestamps themselves invents image groups when joints run faster
+        # than cameras, and can violate selected_group_count <= source_frame_count.
         for recent in self._recent_camera.values():
             for camera_timestamp in recent:
-                self._select(camera_timestamp, "event-refinement")
+                self._select(camera_timestamp, "robot-state-change")
         self._refine_until = max(self._refine_until, timestamp_ns + self._REFINEMENT_NS)
 
     def manifest(self, *, source_sha256: str, camera_topics: tuple[str, ...]) -> dict[str, object]:
@@ -1195,7 +1199,7 @@ class _FrameSelectionSampler:
         ]
         return {
             "schema_version": 1,
-            "sampling_version": "adaptive-2fps-v1",
+            "sampling_version": "adaptive-2fps-v2",
             "source_sha256": source_sha256,
             "camera_set": list(camera_topics),
             "source_frame_count": self.source_frame_count,

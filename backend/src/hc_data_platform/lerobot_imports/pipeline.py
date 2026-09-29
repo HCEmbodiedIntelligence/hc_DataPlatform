@@ -652,10 +652,11 @@ class NativeEpisodeSession:
         project = hashlib.sha256(self.source.project_id.encode()).hexdigest()[:24]
         key = (
             f"derived/frame-selections/{project}/{self.source.source_sha256}/"
-            f"{self.source.rollout_id}/adaptive-2fps-v1.json"
+            f"{self.source.rollout_id}/adaptive-2fps-v2.json"
         )
         digest, size = self.staging.publish_json(key, selection)
         self._selection = FrameSelectionManifestRefV1(
+            sampling_version="adaptive-2fps-v2",
             object_key=key,
             content_sha256=digest,
             size_bytes=size,

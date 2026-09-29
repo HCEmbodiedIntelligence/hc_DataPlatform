@@ -1440,3 +1440,62 @@ async def test_one_failed_camera_keeps_lance_and_annotation_closed_and_cleans_si
         assert aligned_media.failure_calls > 0
     finally:
         await environment.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_legacy_signal_sampling_is_repaired_without_second_dataset_commit():
+    from dataclasses import replace
+
+    class LegacyProjection(StaticProjection):
+        repairs = 0
+        cleanups = 0
+
+        class Session(StaticProjection.Session):
+            def frame_selection(self):
+                return super().frame_selection().model_copy(update={"selected_group_count": 2})
+
+        def materialize(self, source):
+            self.repairs += 1
+            return super().materialize(source)
+
+        def cleanup(self, source):
+            assert source.materialization is not None
+            self.cleanups += 1
+
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        dependencies, writers = _dependencies(
+            verifier=StaticVerifier(), quality=StaticQuality(QualityStatus.PASS), catalog=catalog
+        )
+        projection = LegacyProjection()
+        configure_activity_dependencies(replace(dependencies, ingest_projection=projection))
+        async with Worker(
+            environment.client,
+            task_queue="sampling-repair-tests",
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            request = _ingest_input().model_copy(
+                update={"media_task_queue": "sampling-repair-tests"}
+            )
+            handle = await environment.client.start_workflow(
+                IngestRolloutWorkflow.run,
+                request,
+                id=workflow_id("ingest-rollout", "p1", "sampling-repair"),
+                task_queue="sampling-repair-tests",
+            )
+            result = await handle.result()
+            assert result.status is JobStatus.SUCCEEDED
+            assert projection.repairs == projection.cleanups == 1
+            assert writers.calls == 1
+            assert len(catalog.list_versions("d1", project_id="p1")) == 1
+            history = await handle.fetch_history()
+        await Replayer(
+            workflows=list(ALL_WORKFLOWS), data_converter=pydantic_data_converter
+        ).replay_workflow(history)
+    finally:
+        await environment.shutdown()
