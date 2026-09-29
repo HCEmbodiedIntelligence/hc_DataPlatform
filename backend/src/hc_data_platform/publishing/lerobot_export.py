@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import tempfile
 import zipfile
 from collections.abc import Sequence
@@ -17,6 +16,8 @@ from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
 
 from .export_assets import ExportAssetsPort, export_error
 from .export_video import inspect_depth_video, inspect_video, materialize_video
+from .feature_names import camera_feature as _camera
+from .feature_names import feature_names as _feature_names
 from .models import ExportStepV1, PublishedDatasetManifestV1
 from .service import canonical_json_bytes
 
@@ -24,47 +25,6 @@ EXPORT_REVISION = "lerobot-materialized-v4-holobrain"
 VIDEO_PATH = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
 DATA_PATH = "data/chunk-000/file-000.parquet"
 EPISODES_PATH = "meta/episodes/chunk-000/file-000.parquet"
-
-
-def _camera(name: str) -> bool:
-    return name.startswith(("/camera/", "camera.", "observation.images."))
-
-
-def _feature_names(names: Sequence[str]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for name in names:
-        if name in {"/humanoid/action", "/action"}:
-            target = "action"
-        elif name in {"/humanoid/observation/state", "/observation/state"} or (
-            name in {"/robot/joint_states", "/joint_states"}
-            and "/humanoid/observation/state" not in names
-        ):
-            target = "observation.state"
-        elif _camera(name):
-            camera = (
-                name.removeprefix("/camera/")
-                .removesuffix("/image_raw")
-                .removesuffix("/image")
-                .removeprefix("camera.")
-                .removeprefix("observation.images.")
-            )
-            target = "observation.images." + re.sub(r"[^A-Za-z0-9_.-]", "_", camera)
-        elif (
-            name == "source.timestamp_ns"
-            or name.startswith(("observation.", "action"))
-            and "/" not in name
-        ):
-            target = name
-        else:
-            target = "hc.source." + re.sub(
-                r"[^A-Za-z0-9_.-]", "_", name.strip("/").replace("/", ".")
-            )
-        if target in result.values():
-            raise export_error(
-                "LEROBOT_MODALITY_SCHEMA_MISMATCH", "Two source modalities map to the same feature."
-            )
-        result[name] = target
-    return result
 
 
 def _numeric_stats(values: Sequence[Any]) -> dict[str, Any]:

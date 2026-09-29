@@ -264,6 +264,12 @@ class CatalogFragmentAdapterPort(Protocol):
         media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
     ) -> tuple[CatalogFragmentManifestV1, Sequence[StepRecord]]: ...
 
+    def read_steps(
+        self,
+        manifest: AlignedFragmentManifestV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
+    ) -> Sequence[StepRecord]: ...
+
 
 class AlignedMediaGenerationPort(Protocol):
     def generate(
@@ -1392,7 +1398,10 @@ async def commit_aligned_bundle(
             artifact.status.value != "READY"
             or artifact.dataset_id != alignment_request.dataset_id
             or artifact.rollout_id != source.rollout_id
-            or artifact.dataset_version != request.expected_dataset_version
+            or (
+                request.expected_dataset_version is not None
+                and artifact.dataset_version != request.expected_dataset_version
+            )
             or artifact.frame_count != request.staged_manifest.row_count
             or artifact.alignment_version != request.alignment_staging.alignment_version
             for artifact in request.media_artifacts
@@ -1406,72 +1415,105 @@ async def commit_aligned_bundle(
             or set(camera_ids) != set(request.expected_camera_ids)
         ):
             raise ValueError("aligned media bundle does not cover the manifest cameras")
-        catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
-        current = catalog.current_version(
-            alignment_request.dataset_id,
-            project_id=alignment_request.project_id,
-        )
-        actual_next = 1 if current is None else current.version + 1
-        recovering_same_rollout = (
-            current is not None
-            and current.version == request.expected_dataset_version
-            and source.rollout_id in current.committed_rollouts
-        )
-        if actual_next != request.expected_dataset_version and not recovering_same_rollout:
-            raise ApplicationError(
-                "reserved Dataset version changed before aligned media commit",
-                type="ALIGNED_MEDIA_VERSION_CONFLICT",
-                non_retryable=True,
-            )
-        scope = AlignedMediaScopeV1(
-            organization_id=_require(
-                source.organization_id,
-                "workflow.IngestProjectionSourceV1.organization_id",
-            ),
-            project_id=alignment_request.project_id,
-            region_code=_require(alignment_request.region_code, "alignment.region_code"),
-        )
-        artifact_ids = tuple(artifact.artifact_id for artifact in request.media_artifacts)
-        repository = _require(
-            _dependencies.aligned_media_repository,
-            "aligned_media.AlignedMediaRepositoryPort",
-        )
-        now = datetime.now(timezone.utc)
-        repository.begin_dataset_commit(
-            scope=scope,
-            artifact_ids=artifact_ids,
-            lease_expires_at=now + timedelta(hours=6),
-            now=now,
-        )
-        store = _require(
-            _dependencies.alignment_staging,
-            "workflow.ProjectionArtifactStorePort",
-        )
-        adapter = _require(
-            _dependencies.catalog_fragments,
-            "workflow.CatalogFragmentAdapterPort",
-        )
-        with store.local_file(
-            request.alignment_staging.object_key,
-            expected_sha256=request.alignment_staging.content_sha256,
-            expected_size=request.alignment_staging.size_bytes,
-        ) as path:
-            local_manifest = request.staged_manifest.model_copy(
-                update={"staging_uri": path.resolve().as_uri()}
-            )
-            catalog_manifest, steps = adapter.prepare_streaming(
+        plan = request.package_plan
+        catalog = None
+        if plan is not None:
+            plan.validate_bundle(
                 alignment_request,
-                local_manifest,
+                request.staged_manifest,
+                request.alignment_staging,
                 request.media_artifacts,
             )
-            version, ready = catalog.commit_fragment(catalog_manifest, steps)
-        if version.version != request.expected_dataset_version:
-            raise RuntimeError("Lance committed a Dataset version different from its media key")
-        repository.mark_dataset_committed(
-            scope=scope,
-            artifact_ids=artifact_ids,
-            now=datetime.now(timezone.utc),
+        else:
+            catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
+            current = catalog.current_version(
+                alignment_request.dataset_id,
+                project_id=alignment_request.project_id,
+            )
+            actual_next = 1 if current is None else current.version + 1
+            recovering_same_rollout = (
+                current is not None
+                and current.version == request.expected_dataset_version
+                and source.rollout_id in current.committed_rollouts
+            )
+            if actual_next != request.expected_dataset_version and not recovering_same_rollout:
+                raise ApplicationError(
+                    "reserved Dataset version changed before aligned media commit",
+                    type="ALIGNED_MEDIA_VERSION_CONFLICT",
+                    non_retryable=True,
+                )
+        packages = (
+            _require(_dependencies.episode_packages, "episode_store.service") if plan else None
         )
+        recovered = packages.recover_bundle(plan) if plan else None
+        if recovered is not None:
+            version, ready = recovered
+        else:
+            scope = AlignedMediaScopeV1(
+                organization_id=_require(
+                    source.organization_id,
+                    "workflow.IngestProjectionSourceV1.organization_id",
+                ),
+                project_id=alignment_request.project_id,
+                region_code=_require(alignment_request.region_code, "alignment.region_code"),
+            )
+            artifact_ids = tuple(artifact.artifact_id for artifact in request.media_artifacts)
+            repository = _require(
+                _dependencies.aligned_media_repository,
+                "aligned_media.AlignedMediaRepositoryPort",
+            )
+            now = datetime.now(timezone.utc)
+            if artifact_ids:
+                repository.begin_dataset_commit(
+                    scope=scope,
+                    artifact_ids=artifact_ids,
+                    lease_expires_at=now + timedelta(hours=6),
+                    now=now,
+                )
+            store = _require(
+                _dependencies.alignment_staging,
+                "workflow.ProjectionArtifactStorePort",
+            )
+            adapter = _require(
+                _dependencies.catalog_fragments,
+                "workflow.CatalogFragmentAdapterPort",
+            )
+            with store.local_file(
+                request.alignment_staging.object_key,
+                expected_sha256=request.alignment_staging.content_sha256,
+                expected_size=request.alignment_staging.size_bytes,
+            ) as path:
+                local_manifest = request.staged_manifest.model_copy(
+                    update={"staging_uri": path.resolve().as_uri()}
+                )
+                if plan is not None:
+                    steps = adapter.read_steps(local_manifest, request.media_artifacts)
+                    version, ready = packages.write_from_aligned_bundle(
+                        plan.input,
+                        steps,
+                        schema=plan.schema_snapshot,
+                        metadata=plan.metadata,
+                        **plan.asset_arguments(local_manifest.attempt_id, request.media_artifacts),
+                    )
+                else:
+                    assert catalog is not None
+                    catalog_manifest, steps = adapter.prepare_streaming(
+                        alignment_request,
+                        local_manifest,
+                        request.media_artifacts,
+                    )
+                    version, ready = catalog.commit_fragment(catalog_manifest, steps)
+            if plan is None and version.version != request.expected_dataset_version:
+                raise RuntimeError("Lance committed a Dataset version different from its media key")
+            # Package media authorization uses the committed package reference.
+            # A staging receipt's numeric selector is NOT a published collection
+            # membership and must never authorize the historical media endpoint.
+            if plan is None and artifact_ids:
+                repository.mark_dataset_committed(
+                    scope=scope,
+                    artifact_ids=artifact_ids,
+                    now=datetime.now(timezone.utc),
+                )
         projection = _require(
             _dependencies.ingest_projection,
             "workflow.IngestProjectionPort",
@@ -1497,7 +1539,8 @@ async def commit_aligned_bundle(
             ready=ready,
             media_artifacts=request.media_artifacts,
         )
-        LANCE_COMMITS.labels(outcome="success").inc()
+        if plan is None:
+            LANCE_COMMITS.labels(outcome="success").inc()
         return AlignedBundleCommitActivityOutput(
             version=version,
             derived_ready=ready,

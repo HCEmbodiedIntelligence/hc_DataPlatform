@@ -1,0 +1,13 @@
+{
+  "prior_workflow_commit": "400ed913",
+  "prior_workflow_source_sha256": "50a611d9c123f51074f9291a7646341ec1ae038607a5d106773fe149fff977bd",
+  "history_sha256": "5bcf58bb5189dd3cb1284905e592db6ba3cb52a40a3175c7070d459c7b6b1514",
+  "namespace": "chayi-g1",
+  "workflow_id": "chayi-g1-legacy-writer-d2cd09834c5c4669b3a5a220b46f4862",
+  "scheduled_activities": [
+    "workflow.commit_fragment"
+  ],
+  "new_writer_replay": "passed",
+  "catalog": "in_memory_legacy_fixture_no_physical_lance_writes",
+  "full_ingestion_acceptance": false
+}

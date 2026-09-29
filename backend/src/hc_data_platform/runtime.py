@@ -323,11 +323,7 @@ class ArrowCatalogFragmentAdapter:
         snapshot = self._catalog_repository.schema_for(request.project_id, request.dataset_id)
         if snapshot is None or snapshot.schema_snapshot_id != request.schema_snapshot_id:
             raise KeyError((request.project_id, request.dataset_id, request.schema_snapshot_id))
-        steps: Sequence[StepRecord] = _ArrowStepSequence(
-            manifest.staging_uri,
-            manifest.row_count,
-            media_artifacts=media_artifacts,
-        )
+        steps = self.read_steps(manifest, media_artifacts)
         catalog_manifest = CatalogFragmentManifestV1(
             project_id=request.project_id,
             dataset_id=request.dataset_id,
@@ -343,6 +339,16 @@ class ArrowCatalogFragmentAdapter:
             content_hash=compute_fragment_hash(steps),
         )
         return catalog_manifest, steps
+
+    @staticmethod
+    def read_steps(
+        manifest: AlignedFragmentManifestV1,
+        media_artifacts: Sequence[AlignedMediaArtifactV1] = (),
+    ) -> Sequence[StepRecord]:
+        """Decode logical alignment rows without reading or preparing Lance state."""
+        return _ArrowStepSequence(
+            manifest.staging_uri, manifest.row_count, media_artifacts=media_artifacts
+        )
 
 
 class _ArrowStepSequence(Sequence[StepRecord]):

@@ -351,3 +351,39 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   sensor recording, complete ingestion or human acceptance is claimed. The actual
   three-ingress dispatch still needs new-format integration. All 17 P0 rows remain
   pending for their required full coverage.
+
+## Frozen package commit workflow milestone (partial W2)
+
+- The real `commit_aligned_bundle` activity accepts a frozen Episode bundle plan
+  with input/configuration, schema, alignment bytes/profile, media receipts and
+  depth evidence. It writes through the package service and product projector,
+  without reserving a Lance number or calling a Lance writer. A pure Arrow step
+  path avoids the old adapter's mutable schema lookup. Historical collection
+  snapshots remain readable when constructing mixed collections.
+- `DatasetWriterWorkflow` selects the new branch from its input shape. Old inputs
+  preserve their previous command sequence; mixed inputs are rejected. Verified
+  a real new-package execution on isolated Temporal with attempt 1/2 after an
+  injected lost successful response, plus sandbox replay. Independently generated
+  history with the previous commit's workflow source and replayed it with the new
+  writer. This covers this writer, not all parent-ingestion histories.
+- Review found that a package commit must NOT mark a staging selector as a legacy
+  dataset commit. The package branch now leaves old media authorization at 425.
+  Its complete package and preview grants use their own immutable data reference.
+- Recovery verifies the complete committed package before resuming publication,
+  so loss of temporary Arrow/prepared media does not block a committed retry.
+  The test removes only its newly created temporary Arrow, disables input staging
+  access/main-package writes, and successfully retries four concurrent requests.
+- Reproduced a PostgreSQL media-lease deadlock during concurrency tests; begin and
+  mark now lock camera rows in UUID order. Four synchronized first attempts with
+  opposite receipt orders produce one version and one display encode per camera.
+  Model imports no longer eagerly load the NumPy alignment engine in the sandbox.
+- **85 passed** across package, alignment, media, materialized export and workflow
+  regression, including **4 new integration tests**. New tests also pass with
+  UserWarning treated as an error. Static checks pass; isolated services healthy.
+  Evidence and commands: [workflow-commit.md](workflow-commit.md), XML and actual
+  Temporal histories alongside it.
+- These service tests start with synthetic prepared inputs and seeded source
+  facts; they do not exercise upload, MCAP decoding or the complete three entrances.
+  Next required integration remains source-plan generation/parent dispatch,
+  storage-neutral automatic annotation and continuous READY, source HC/window
+  handling, and W3–W8. All 17 P0 rows remain pending for their complete scope.

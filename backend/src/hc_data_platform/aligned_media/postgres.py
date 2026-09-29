@@ -509,6 +509,7 @@ class PostgresAlignedMediaRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            self._lock_commit_bundle(cursor, scope, ids)
             cursor.execute(
                 """
                 UPDATE aligned_media.artifacts
@@ -546,6 +547,7 @@ class PostgresAlignedMediaRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            self._lock_commit_bundle(cursor, scope, ids)
             cursor.execute(
                 """
                 UPDATE aligned_media.artifacts
@@ -570,6 +572,21 @@ class PostgresAlignedMediaRepository:
         finally:
             cursor.close()
             connection.close()
+
+    @staticmethod
+    def _lock_commit_bundle(cursor, scope, ids):
+        # UPDATE ... ANY(array) does not promise row-lock order. Concurrent
+        # begin/mark calls can otherwise deadlock across two camera artifacts,
+        # including already-committed retries. Lock the same UUID order first.
+        cursor.execute(
+            """SELECT artifact_id FROM aligned_media.artifacts
+               WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                 AND artifact_id=ANY(%s::uuid[]) AND status='READY'
+               ORDER BY artifact_id FOR UPDATE""",
+            (*_scope_values(scope), list(ids)),
+        )
+        if len(cursor.fetchall()) != len(ids):
+            raise RuntimeError("aligned media commit lock rejected an incomplete bundle")
 
     def begin_abandon_uncommitted(
         self,

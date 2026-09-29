@@ -1071,19 +1071,37 @@ class DatasetWriterWorkflow(_JobLifecycle):
             resource_id=request.resource_id,
         )
         try:
-            self._stage("lance_commit")
-            committed = await _execute_activity(
-                COMMIT_FRAGMENT_ACTIVITY,
-                request.commit,
-                CatalogCommitActivityOutput,
-                COMMIT_ACTIVITY,
-            )
+            # Historical inputs keep their original command sequence. The new
+            # shape selects a package commit deterministically from history;
+            # no wall clock, environment flag or fabricated Lance ordinal.
+            package_commit = isinstance(request.commit, AlignedBundleCommitActivityInput)
+            if package_commit:
+                self._stage("episode_commit")
+                committed = await _execute_activity(
+                    COMMIT_ALIGNED_BUNDLE_ACTIVITY,
+                    request.commit,
+                    AlignedBundleCommitActivityOutput,
+                    LONG_ACTIVITY,
+                    cancellation_type=ActivityCancellationType.WAIT_CANCELLATION_COMPLETED,
+                )
+            else:
+                self._stage("lance_commit")
+                committed = await _execute_activity(
+                    COMMIT_FRAGMENT_ACTIVITY,
+                    request.commit,
+                    CatalogCommitActivityOutput,
+                    COMMIT_ACTIVITY,
+                )
             return self._finish(
                 JobStatus.SUCCEEDED,
                 result={
                     "dataset_id": request.dataset_id,
                     "dataset_version": committed.version.model_dump(mode="json"),
                     "derived_ready": committed.derived_ready.model_dump(mode="json"),
+                    **(
+                        {"viewer_target": committed.viewer_target.model_dump(mode="json")}
+                        if package_commit else {}
+                    ),
                 },
             )
         except (asyncio.CancelledError, CancelledError):

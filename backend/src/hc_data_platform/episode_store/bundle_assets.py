@@ -7,7 +7,6 @@ is checked again here; published-package/export authorization is never relaxed.
 
 import hashlib
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -17,29 +16,11 @@ from hc_data_platform.aligned_media.models import (
     AlignedMediaSelectorV1,
 )
 
-from .models import EpisodeIdentity, FileEntry
+from .bundle_models import DepthAssetContract as DepthAssetContract
+from .bundle_models import FrozenObject
+from .bundle_models import SourceInventory as SourceInventory
 from .postgres import assert_scope
 from .prepared_assets import PreparedAssets, PreparedVideo
-
-
-@dataclass(frozen=True)
-class FrozenObject:
-    key: str
-    size: int
-    sha256: str
-
-
-@dataclass(frozen=True)
-class SourceInventory:
-    identity: EpisodeIdentity
-    source_sha256: str
-    objects: tuple[FrozenObject, ...]
-
-
-@dataclass(frozen=True)
-class DepthAssetContract:
-    feature: dict
-    evidence: tuple[tuple[FileEntry, FrozenObject], ...]
 
 
 class BundleAssetsLoader:

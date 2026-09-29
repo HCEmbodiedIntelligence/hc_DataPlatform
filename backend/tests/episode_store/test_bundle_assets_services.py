@@ -41,10 +41,21 @@ def forbidden(*args, **kwargs):
 
 
 @pytest.fixture
-def prepared_bundle(services, tmp_path):
+def prepared_bundle(services, tmp_path, request):
     repository, storage = services
-    ident = identity().model_copy(update={"organization_id": "bundle-" + uuid4().hex})
-    _, source, _, assets = build_rgbd_package(tmp_path, ident)
+    options = getattr(request, "param", {})
+    ident = identity().model_copy(
+        update={"organization_id": "bundle-" + uuid4().hex, **options.get("identity", {})}
+    )
+    _, source, _, assets = build_rgbd_package(
+        tmp_path, ident, mcap_topics=options.get("mcap_topics", False)
+    )
+    camera_topics = {
+        feature: "/camera/" + feature.removeprefix("observation.images.") + "/image"
+        if options.get("mcap_topics", False)
+        else feature
+        for feature in assets.videos
+    }
     media_repository = PostgresAlignedMediaRepository(repository.connections)
     media_store = S3AlignedMediaArtifactStore(storage._client, storage._bucket)
 
@@ -94,7 +105,7 @@ def prepared_bundle(services, tmp_path):
             )
         for feature, media in assets.videos.items():
             obj = upload(media.path, f"{feature}.mp4")
-            originals[feature] = OriginalVideoReferenceV1(
+            originals[camera_topics[feature]] = OriginalVideoReferenceV1(
                 object_key=obj.key,
                 content_sha256=obj.sha256,
                 size_bytes=obj.size,
@@ -146,7 +157,7 @@ def prepared_bundle(services, tmp_path):
     bundle = dict(
         attempt_id="fixture-alignment-attempt",
         artifacts=artifacts,
-        feature_mapping={feature: feature for feature in originals},
+        feature_mapping={topic: feature for feature, topic in camera_topics.items()},
         alignment_version=staging.alignment_version,
         frame_count=4,
         depth_contracts=contracts,

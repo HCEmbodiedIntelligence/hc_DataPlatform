@@ -1,7 +1,8 @@
 """Deterministic fixed-frequency multimodal alignment (BE-07)."""
 
+from typing import TYPE_CHECKING
+
 from .arrow_writer import ArrowFragmentWriter
-from .engine import AlignmentEngine
 from .models import (
     AlignedFragmentManifestV1,
     AlignedFragmentReadyV1,
@@ -15,6 +16,9 @@ from .models import (
     TimedSampleV1,
 )
 from .ports import AlignmentPort, FakeFragmentWriter, FragmentWriterPort
+
+if TYPE_CHECKING:
+    from .engine import AlignmentEngine
 
 __all__ = [
     "AlignedFragmentManifestV1",
@@ -33,3 +37,13 @@ __all__ = [
     "ModalityStreamV1",
     "TimedSampleV1",
 ]
+
+
+def __getattr__(name: str) -> object:
+    # Workflow payloads import models, not numerical execution. Loading the
+    # engine here made every sandbox reload NumPy before imports_passed_through.
+    if name == "AlignmentEngine":
+        from .engine import AlignmentEngine
+
+        return AlignmentEngine
+    raise AttributeError(name)

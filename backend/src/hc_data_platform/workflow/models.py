@@ -32,6 +32,7 @@ from hc_data_platform.continuous_recordings.asset_models import (
     RecordingConfigurationV1,
 )
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
+from hc_data_platform.episode_store.bundle_plan import EpisodeBundlePlan
 from hc_data_platform.episode_store.catalog_models import (
     CollectionVersion,
     EpisodeDerivedReady,
@@ -422,9 +423,25 @@ class AlignedBundleCommitActivityInput(BaseModel):
     alignment: AlignmentActivityInput
     staged_manifest: StagedFragmentManifestV1
     alignment_staging: AlignmentStagingArtifactV1
-    expected_dataset_version: int = Field(ge=1)
+    # Absent for package commits: collection version is assigned transactionally
+    # after this independent Episode package, never borrowed from a Lance head.
+    expected_dataset_version: int | None = Field(default=None, ge=1)
+    package_plan: EpisodeBundlePlan | None = None
     expected_camera_ids: tuple[str, ...]
     media_artifacts: tuple[AlignedMediaArtifactV1, ...]
+
+    @model_validator(mode="after")
+    def storage_commit_contract(self):
+        if self.package_plan is None:
+            if self.expected_dataset_version is None:
+                raise ValueError("historical bundle commit requires its reserved Dataset version")
+        else:
+            if self.expected_dataset_version is not None:
+                raise ValueError("Episode package commit cannot reserve a Lance Dataset version")
+            self.package_plan.validate_bundle(
+                self.alignment, self.staged_manifest, self.alignment_staging, self.media_artifacts
+            )
+        return self
 
 
 class AlignedBundleCommitActivityOutput(BaseModel):
@@ -842,7 +859,29 @@ class DatasetWriterWorkflowInput(BaseModel):
     project_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     resource_id: str = Field(min_length=1)
-    commit: CatalogCommitActivityInput
+    commit: CatalogCommitActivityInput | AlignedBundleCommitActivityInput
+
+    @model_validator(mode="before")
+    @classmethod
+    def unambiguous_commit_shape(cls, value):
+        commit = value.get("commit") if isinstance(value, dict) else None
+        if isinstance(commit, dict) and "fragment" in commit and (
+            "alignment" in commit or "package_plan" in commit
+        ):
+            raise ValueError("writer input cannot mix historical and Episode package commits")
+        return value
+
+    @model_validator(mode="after")
+    def package_target(self):
+        if isinstance(self.commit, AlignedBundleCommitActivityInput):
+            plan = self.commit.package_plan
+            if plan is None or (
+                plan.input.identity.project_id != self.project_id
+                or plan.input.identity.dataset_id != self.dataset_id
+                or plan.input.identity.rollout_id != self.resource_id
+            ):
+                raise ValueError("package writer workflow differs from its frozen commit target")
+        return self
 
 
 class PublishDatasetWorkflowInput(BaseModel):

@@ -9,7 +9,7 @@ from .catalog_models import EpisodeDerivedReady
 from .collections import EpisodeCollections
 from .commit import EpisodePackageCommitter
 from .files import PackageFiles, VerifiedFileCache
-from .postgres import PostgresEpisodeStore, assert_scope
+from .postgres import PackageConflict, PostgresEpisodeStore, assert_scope
 from .previews import EpisodePreviews
 from .reader import ParquetStepReader, PhysicalDepthReader
 from .schemas import EpisodeSchemas
@@ -98,6 +98,35 @@ class EpisodePackageService:
             root = Path(temporary) / "episode"
             write_episode(root, source, steps, assets, fps=schema.frequency_hz, metadata=metadata)
             receipt = self.committer.commit(root, source)
+        return self._publish_committed(receipt, source, schema)
+
+    def recover_bundle(self, plan):
+        """Resume a frozen workflow plan without retaining temporary Arrow/media.
+
+        Unlike a general write retry, this is only valid for a plan whose package
+        key binds the exact alignment bytes, media/evidence receipts and config.
+        A caller proposing changed rows under an arbitrary PackageInput still
+        goes through the normal writer and content-conflict verification.
+        """
+        type(plan).model_validate(plan.model_dump(mode="json"))
+        source = plan.input
+        assert_scope(source.identity)
+        try:
+            self.repository.get(source.identity, source.data_version_id)
+        except KeyError:
+            return None
+        package = self.files.open(source.identity, source.data_version_id)
+        if package.manifest.input != source:
+            raise PackageConflict("committed Episode differs from the frozen processing plan")
+        # Complete integrity is required before recovering collection visibility,
+        # not just the files that happen to be read by a preview or first row.
+        for entry in package.manifest.files:
+            with package.file(entry.path):
+                pass
+        self.schemas.register_schema(plan.schema_snapshot)
+        return self._publish_committed(package.receipt, source, plan.schema_snapshot)
+
+    def _publish_committed(self, receipt, source, schema):
         # Browser derivatives are separate objects. Primary RGB-D bytes and the
         # complete package manifest remain unchanged, including on preview retry.
         self.previews.prepare_all(receipt.data)
