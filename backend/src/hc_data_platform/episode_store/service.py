@@ -3,6 +3,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from .bundle_assets import BundleAssetsLoader
 from .catalog import EpisodeCatalogReader, PostgresLegacyEntries
 from .catalog_models import EpisodeDerivedReady
 from .collections import EpisodeCollections
@@ -10,6 +11,7 @@ from .commit import EpisodePackageCommitter
 from .files import PackageFiles, VerifiedFileCache
 from .postgres import PostgresEpisodeStore, assert_scope
 from .reader import ParquetStepReader, PhysicalDepthReader
+from .schemas import EpisodeSchemas
 from .writer import write_episode
 
 
@@ -23,6 +25,7 @@ class EpisodePackageService:
         cache_bytes=2 * 1024**3,
         max_object_bytes=32 * 1024**3,
         legacy_catalog=None,
+        media_repository=None,
     ):
         self.repository = PostgresEpisodeStore(connections)
         self.directory = directory
@@ -33,6 +36,17 @@ class EpisodePackageService:
         self.committer = EpisodePackageCommitter(self.repository, storage)
         self.steps = ParquetStepReader(self.files)
         self.depth = PhysicalDepthReader(self.files)
+        self.schemas = EpisodeSchemas(self.repository)
+        self.bundle_assets = (
+            BundleAssetsLoader(
+                storage,
+                media_repository,
+                directory / "prepared-media",
+                max_object_bytes=max_object_bytes,
+            )
+            if media_repository is not None
+            else None
+        )
         self.collections = EpisodeCollections(
             self.repository,
             storage,
@@ -42,13 +56,22 @@ class EpisodePackageService:
             else None,
         )
         self.catalog = (
-            EpisodeCatalogReader(legacy_catalog, self.collections, self.files, self.steps)
+            EpisodeCatalogReader(
+                legacy_catalog, self.collections, self.files, self.steps, schemas=self.schemas
+            )
             if legacy_catalog is not None
             else None
         )
 
     def close(self):
         self.cache.close()
+
+    def write_from_aligned_bundle(self, source, steps, *, schema, metadata, **bundle):
+        """Internal processing path; media may precede the visible Episode READY state."""
+        if self.bundle_assets is None:
+            raise RuntimeError("prepared media repository is not configured")
+        with self.bundle_assets.load(source, **bundle) as assets:
+            return self.write_and_publish(source, steps, assets, schema=schema, metadata=metadata)
 
     def write_and_publish(self, source, steps, assets, *, schema, metadata):
         """Processing hand-off; returns a real package and collection data reference.
@@ -63,6 +86,7 @@ class EpisodePackageService:
             or schema.schema_snapshot_id != source.schema_snapshot_id
         ):
             raise ValueError("processing schema differs from frozen Episode input")
+        self.schemas.register_schema(schema)
         staging = self.directory / "preparing"
         staging.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(prefix="attempt-", dir=staging) as temporary:

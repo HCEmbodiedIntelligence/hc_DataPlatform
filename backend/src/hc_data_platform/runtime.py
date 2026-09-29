@@ -963,7 +963,9 @@ def build_runtime(
         media_repository=aligned_media_repository,
         dataset_projection=dataset_ingest_projection,
     )
-    episode_packages = _episode_packages(connection_factory, object_storage, resolved, catalog)
+    episode_packages = _episode_packages(
+        connection_factory, object_storage, resolved, catalog, aligned_media_repository
+    )
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
         verifier=McapVerifier(
@@ -1091,7 +1093,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_export_audit_recorder(runtime.export_audit)
 
 
-def _episode_packages(connection_factory, object_storage, settings, legacy_catalog):
+def _episode_packages(connection_factory, object_storage, settings, legacy_catalog, media_repository):
     from hc_data_platform.episode_store.service import EpisodePackageService
 
     return EpisodePackageService(
@@ -1100,6 +1102,7 @@ def _episode_packages(connection_factory, object_storage, settings, legacy_catal
         cache_bytes=settings.episode_package_cache_bytes,
         max_object_bytes=settings.episode_package_max_object_bytes,
         legacy_catalog=legacy_catalog,
+        media_repository=media_repository,
     )
 
 

@@ -113,6 +113,8 @@ class EpisodeCollections:
 
     def publish(self, data: DataVersionRef, schema):
         """Append or replace one Episode; identical retries return the original snapshot."""
+        from .schemas import EpisodeSchemas
+
         identity = data.identity
         assert_scope(identity)
         scope = collection_scope(identity.dataset_id, identity.project_id)
@@ -126,6 +128,7 @@ class EpisodeCollections:
             or schema.schema_snapshot_id != data.schema_snapshot_id
         ):
             raise PackageConflict("Episode does not match the frozen dataset schema")
+        EpisodeSchemas(self.packages).register_schema(schema)
         with self.writer_lock(scope):
             previous_publication = self.publication(data)
             if previous_publication is not None:

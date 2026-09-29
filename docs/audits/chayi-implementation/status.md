@@ -204,3 +204,43 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   two pre-existing long-line findings in robot-processing composition.
 - Main processing dispatch, storage-neutral schema registration, product
   projection and event consumption remain pending; no P0 row is marked complete.
+
+## Prepared-media and schema milestone (partial W1/W2)
+
+- Additive `episode_store/0004_dataset_schemas.sql` applied only to the isolated
+  database. New logical schemas are immutable and keyed by organization/project/
+  region/dataset. Concurrent identical registration is idempotent, changed
+  definitions/fingerprints fail, and identical display IDs in another tenant or
+  region can register independently without any Lance schema/table writes.
+- Internal `BundleAssetsLoader` resolves each frozen media selector against the
+  actual scoped media repository, checks attempt lineage and immutable receipt
+  fields, and streams objects into private temporary files with size/SHA-256
+  verification. Original H.265/gray12le streams are copied without encoding.
+- Depth requires its declared feature contract plus profile/mask/mapping evidence
+  whose object hashes are in the authorized frozen source inventory. Missing
+  contracts, foreign inventories, changed media receipts, same-size byte corruption
+  and foreign request scopes fail before any Episode is made visible. Temporary
+  files are removed after both success and failure.
+- This uses the internal processing port, not `PostgresExportAssets`. A real
+  PostgreSQL media publication can be READY while its Dataset commit is absent;
+  the package builder can read that frozen publication, while the unchanged public
+  aligned-media authorization still returns 425. No READY guard was weakened.
+- `EpisodePackageService.write_from_aligned_bundle` composes this port with package
+  and collection commits; runtime injects the real media repository. The fixture
+  exercises the actual original-video generation service, PostgreSQL and MinIO,
+  forbids calls to the encoder/Lance writer, checks byte identity and numerical/
+  source-mapping reads. The Arrow locator is an unused synthetic fixture locator;
+  this is NOT an upload/alignment/Temporal end-to-end or real recording test.
+- Combined regression: `tests/episode_store tests/lance_catalog/test_adapters.py
+  tests/lance_catalog/test_lance_integration.py tests/workflow/test_workflow.py
+  tests/security/test_runtime_router_auth.py tests/core/test_object_store_endpoint_config.py
+  --fail-on-skipped --fail-on-xfailed -q`: **67 passed**, one existing Starlette/httpx
+  deprecation warning. Evidence: `episode-prepared-tests.xml`. Changed package
+  modules/tests pass Ruff and `git diff --check`.
+- Remaining integration: freeze new-format plans in new workflow inputs while
+  preserving old histories; branch actual commit activities and both resolver
+  composition roots; carry native/continuous HC sidecars; project collection-based
+  product versions and annotation bindings. Original subwindows currently fail
+  explicitly in this port until exact window materialization is implemented;
+  they are never silently treated as a full aligned Episode. All 17 P0 rows remain
+  pending for the broader required coverage.

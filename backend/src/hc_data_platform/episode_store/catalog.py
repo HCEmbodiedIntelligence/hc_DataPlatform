@@ -89,11 +89,21 @@ class PostgresLegacyEntries:
 class EpisodeCatalogReader:
     """Shares the established logical read methods; exposes no new Lance writer."""
 
-    def __init__(self, legacy, collections, files, steps):
+    def __init__(self, legacy, collections, files, steps, *, schemas=None):
         self.legacy, self.collections, self.files, self.steps = legacy, collections, files, steps
+        self.schemas = schemas
+
+    def register_schema(self, snapshot):
+        if self.schemas is None:
+            raise RuntimeError("storage-independent schema registry is not configured")
+        self.schemas.register_schema(snapshot)
 
     def schema_for(self, project_id, dataset_id):
         collection_scope(dataset_id, project_id)
+        if self.schemas is not None:
+            schema = self.schemas.schema_for(project_id, dataset_id)
+            if schema is not None:
+                return schema
         return self.legacy.schema_for(project_id, dataset_id)
 
     def current_version(self, dataset_id, *, project_id=None):
