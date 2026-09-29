@@ -471,6 +471,8 @@ export function EpisodeViewerShell() {
             data={reviewTarget.data}
             canRead={capabilities.has("dataset_version.read")}
             canReview={capabilities.has("dataset_version.review")}
+            canDownload={capabilities.has("export.download")}
+            canCreate={capabilities.has("export.create")}
             returnToPlayback={() => setDataInfoOpen(false)}
           />
         )}

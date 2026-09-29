@@ -4,15 +4,12 @@ import hashlib
 import json
 from uuid import uuid4
 
+from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost
 from hc_data_platform.core.events import DomainEventEnvelope
 
 from .delivery_models import AnnotationDeliveryJob
 from .postgres import _row
 from .revision_files import _SCOPE, PostgresRevisionFiles, SnapshotBusy, _failure
-
-
-class DeliveryLeaseLost(RuntimeError):
-    pass
 
 
 def public_job(row):

@@ -8,6 +8,8 @@ from .catalog import EpisodeCatalogReader, PostgresLegacyEntries
 from .catalog_models import EpisodeDerivedReady
 from .collections import EpisodeCollections
 from .commit import EpisodePackageCommitter
+from .delivery import EpisodeDeliveryService
+from .delivery_repository import PostgresEpisodeDeliveries
 from .files import PackageFiles, VerifiedFileCache
 from .postgres import PackageConflict, PostgresEpisodeStore, assert_scope
 from .previews import EpisodePreviews
@@ -39,6 +41,7 @@ class EpisodePackageService:
             directory / "files", capacity_bytes=cache_bytes, max_object_bytes=max_object_bytes
         )
         self.files = PackageFiles(self.repository, storage, self.cache)
+        self.deliveries = EpisodeDeliveryService(self, PostgresEpisodeDeliveries(connections))
         self.committer = EpisodePackageCommitter(self.repository, storage)
         self.steps = ParquetStepReader(self.files)
         self.depth = PhysicalDepthReader(self.files)

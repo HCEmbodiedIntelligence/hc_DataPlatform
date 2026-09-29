@@ -1,0 +1,58 @@
+{
+  "job": {
+    "job_id": "ed_db4b20c31f947324e17625927fecb22488c417c0cc38608e5e1fd0d793ff5653",
+    "plan": {
+      "format": "hc-episode-delivery-plan/1",
+      "members": [
+        {
+          "data": {
+            "identity": {
+              "organization_id": "bundle-22d8c4f5c6924750b6d877324630d431",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "writer-dataset",
+              "episode_id": "writer-episode",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_ef5ba486f3620649917f6a9ab56f24a2378932c57915ed3149048ac31a1b00ff",
+            "version": 1,
+            "content_hash": "a76611f93f642c3181c454c0fd0d12d7001418bc4a84c910b4f4caaef0a0af3e",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-22d8c4f5c6924750b6d877324630d431/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-writer-episode/id-dv_ef5ba486f3620649917f6a9ab56f24a2378932c57915ed3149048ac31a1b00ff",
+            "frame_count": 4
+          },
+          "manifest_sha256": "a76611f93f642c3181c454c0fd0d12d7001418bc4a84c910b4f4caaef0a0af3e",
+          "root": "episode",
+          "file_count": 19,
+          "byte_count": 111162
+        }
+      ],
+      "archive_format": "independent_episode_zip/1",
+      "modalities": "all_collected",
+      "annotation_selection": "package_contents_only",
+      "processor_version": "hc-episode-archive/1",
+      "reader_version": "lerobot/0.6.1"
+    },
+    "status": "READY",
+    "phase": "completed",
+    "generation": 1,
+    "attempts": 1,
+    "processed_files": 20,
+    "processed_bytes": 112481,
+    "total_files": 20,
+    "total_bytes": 112481,
+    "uploaded_bytes": 115941,
+    "artifact_sha256": "db891f561f2eb7050e0faae358f671b012c52b2d82c3579f8c2fd4710326afd5",
+    "size_bytes": 115941,
+    "error_code": null,
+    "created_at": "2026-09-29T13:28:26.353742Z",
+    "updated_at": "2026-09-29T13:28:30.796828Z"
+  },
+  "ordinary_session": true,
+  "persistent_worker": true,
+  "archive_hash_verified": true,
+  "revoked_cached_download_denied": true,
+  "real_recording": false,
+  "human_acceptance": false
+}

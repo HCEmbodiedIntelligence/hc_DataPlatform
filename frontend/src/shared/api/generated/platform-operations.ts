@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 0be9bd9c48022d53ffa599a63e78408979e8e585f3b701750f04cf4789a03c24
+// Runtime-OpenAPI-SHA256: 2ad89bc178e6e0891dd39e2f590f6fadd3872f3bd5d0d96f38bfc1106da7bd14
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -275,6 +275,12 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/quality" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/steps" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/device-capture-facts" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/cancel" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/download" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/retry" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },

@@ -7,6 +7,7 @@ import { annotationRoutes } from "../p08-data-annotation/routes";
 import { DataReviewPanel } from "./DataReviewPanel";
 import { DepthPixelPanel } from "./DepthPixelPanel";
 import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
+import { CompleteDeliveryPanel } from "./CompleteDeliveryPanel";
 import type { ReviewDataRef } from "./data-reviews";
 import {
   authorizeEpisodeFile,
@@ -311,12 +312,16 @@ export function EpisodeDetailPanel({
   data,
   canRead,
   canReview,
+  canDownload = false,
+  canCreate = false,
   returnToPlayback,
 }: {
   scope: Scope;
   data: ReviewDataRef;
   canRead: boolean;
   canReview: boolean;
+  canDownload?: boolean;
+  canCreate?: boolean;
   returnToPlayback: () => void;
 }) {
   const [selection, setSelection] = useState<DetailSelection>({});
@@ -387,6 +392,12 @@ export function EpisodeDetailPanel({
               {value.subtasks.track ? ` · ${value.subtasks.track.label}` : ""}
             </dd>
           </dl>
+          <CompleteDeliveryPanel
+            scope={scope}
+            data={data}
+            canDownload={canDownload}
+            canCreate={canCreate}
+          />
           <Tabs
             activeKey={activeTab}
             onChange={setActiveTab}

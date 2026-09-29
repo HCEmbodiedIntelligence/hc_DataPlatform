@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="18" failures="0" errors="0" time="1.534984544">
+    <testsuite name="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" timestamp="2026-09-29T13:41:35.220Z" hostname="1e7d8433301c" tests="3" failures="0" errors="0" skipped="0" time="0.313140902">
+        <testcase classname="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" name="reuses one command key after an interrupted response" time="0.243412971">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" name="can download an existing archive without granting create permission" time="0.058306428">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/CompleteDeliveryPanel.test.tsx" name="does not query download jobs without permission" time="0.010691715">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" timestamp="2026-09-29T13:41:35.221Z" hostname="1e7d8433301c" tests="3" failures="0" errors="0" skipped="0" time="0.611362118">
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="shows distinct statuses and authorizes a file without fetching its bytes" time="0.382270436">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="keeps missing provenance explicit and never loads without read permission" time="0.095499283">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="selects an explicit task without leaving the annotation tab or mixing an old review into the draft" time="0.132816161">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/ViewerShell.test.tsx" timestamp="2026-09-29T13:41:35.221Z" hostname="1e7d8433301c" tests="3" failures="0" errors="0" skipped="0" time="0.593909994">
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; uses the annotation layout in read-only mode with camera selection and a single shared timeline" time="0.328212028">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; retains the immutable revision and selected time range when recording an issue" time="0.202766059">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/ViewerShell.test.tsx" name="dataset Episode shared workbench &gt; keeps issue creation gated and returns to the dataset without opening annotation" time="0.062273678">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/complete-deliveries.test.ts" timestamp="2026-09-29T13:41:35.223Z" hostname="1e7d8433301c" tests="9" failures="0" errors="0" skipped="0" time="0.01657153">
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="requests a full fixed package without dropping depth and uses the supplied retry key" time="0.008563556">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent scope" time="0.001394959">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent data" time="0.000737657">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent progress" time="0.000486304">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent depth" time="0.000839055">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="rejects an inconsistent layout" time="0.0005846">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="pins retry generation and refuses mismatched download hashes" time="0.001683245">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="refuses a retry response with a stale generation" time="0.00063423">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/complete-deliveries.test.ts" name="refuses a retry response with a stale status" time="0.00061342">
+        </testcase>
+    </testsuite>
+</testsuites>

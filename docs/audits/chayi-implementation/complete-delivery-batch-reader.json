@@ -1,0 +1,55 @@
+{
+  "input_archive": "/app/.g1-artifacts/complete-deliveries/ed_9e0afdbb8bc4c0ef3374b0eabeed3590a520f88bb92253e1616a59b6c353e095/delivery.zip",
+  "archive_sha256": "9b5867a6ec9cb028d3d2459bccdaeadb4577c55e66cb420b4817728d446edb38",
+  "archive_format": "independent_episode_batch_zip/1",
+  "members": [
+    {
+      "data_version_id": "dv_91ce849223ebdd24278da35b9bb4441c7aaa230368d2c0c7b103a177b4989d9b",
+      "frames": 4,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 4,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true
+    },
+    {
+      "data_version_id": "dv_b3c03a66735e62950e4b2615d320d8cc80767ea544e24214360b4df3ab7e384d",
+      "frames": 4,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 4,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true
+    }
+  ],
+  "official_reader_and_dataloader": true,
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "synthetic_input": true,
+  "human_acceptance": false,
+  "reassembled_collection_verified": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

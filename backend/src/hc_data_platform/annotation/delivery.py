@@ -5,13 +5,12 @@ import hashlib
 import io
 import json
 import logging
-import threading
 import zipfile
-from contextlib import contextmanager, suppress
-from contextvars import copy_context
+from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from hc_data_platform.core.artifact_tasks import renewing_lease
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.episode_store.annotated_delivery import (
@@ -35,31 +34,6 @@ from .revision_files import (
 from .subtasks import SubtaskProjection, SubtaskProjectionError
 
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def renewing_lease(repository, row):
-    stopped, lost = threading.Event(), threading.Event()
-
-    def renew():
-        while not stopped.wait(15):
-            try:
-                repository.heartbeat(row)
-            except Exception:
-                lost.set()
-                return
-
-    def checkpoint():
-        if lost.is_set():
-            raise DeliveryLeaseLost("delivery lease renewal stopped")
-
-    thread = threading.Thread(target=copy_context().run, args=(renew,), daemon=True)
-    thread.start()
-    try:
-        yield checkpoint
-    finally:
-        stopped.set()
-        thread.join(timeout=1)
 
 
 def archive_delivery(root, manifest, destination, checkpoint):

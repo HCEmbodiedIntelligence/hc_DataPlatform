@@ -1396,6 +1396,7 @@ def build_worker_outbox(
     )
     from hc_data_platform.annotation.delivery import AnnotationDeliveryOutboxHandler
     from hc_data_platform.annotation.revision_files import AnnotationRevisionFileOutboxHandler
+    from hc_data_platform.episode_store.delivery import EpisodeDeliveryOutboxHandler
     from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
     from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
     from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
@@ -1439,6 +1440,11 @@ def build_worker_outbox(
                     object_storage,
                     _episode_packages(connection_factory, object_storage, resolved, catalog, None),
                 )
+            ),
+            EpisodeDeliveryOutboxHandler.EVENT_TYPE: EpisodeDeliveryOutboxHandler(
+                _episode_packages(
+                    connection_factory, object_storage, resolved, catalog, None
+                ).deliveries
             ),
         },
         worker_id=f"hc-outbox-{socket.gethostname()}",

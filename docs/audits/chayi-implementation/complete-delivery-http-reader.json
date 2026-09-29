@@ -1,0 +1,35 @@
+{
+  "input_archive": "/app/.g1-artifacts/complete-delivery-http/delivery.zip",
+  "archive_sha256": "db891f561f2eb7050e0faae358f671b012c52b2d82c3579f8c2fd4710326afd5",
+  "archive_format": "independent_episode_zip/1",
+  "members": [
+    {
+      "data_version_id": "dv_ef5ba486f3620649917f6a9ab56f24a2378932c57915ed3149048ac31a1b00ff",
+      "frames": 4,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 4,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true
+    }
+  ],
+  "official_reader_and_dataloader": true,
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "synthetic_input": true,
+  "human_acceptance": false,
+  "reassembled_collection_verified": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}
