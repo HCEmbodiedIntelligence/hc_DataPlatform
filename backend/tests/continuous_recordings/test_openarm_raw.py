@@ -1,9 +1,15 @@
+import hashlib
 import json
 import shutil
+import struct
 from pathlib import Path
 
+import av
+import numpy as np
+import pyarrow.parquet as pq
 import pytest
 from mcap.reader import make_reader
+from mcap.writer import Writer
 
 from hc_data_platform.continuous_recordings.openarm_raw.prepare import load_index, prepare, rows
 from hc_data_platform.robot_ingest.recording_contract import OpenArmRecordingComplete
@@ -11,9 +17,115 @@ from hc_data_platform.robot_ingest.recording_contract import OpenArmRecordingCom
 FIXTURE = Path(__file__).parents[1] / "fixtures/openarm-raw-v1"
 
 
-def test_original_capture_is_indexed_and_aligned_only_on_platform(tmp_path):
-    root = tmp_path / "original"
+def declared_synthetic_fixture(root, *, floating=False):
+    """Make NEW test input with explicit oracle units, never upgrade real legacy data.
+
+    The historical synthetic input provides numeric/time oracles. Rebuild its
+    depth stream at half resolution with declared fixture-only unit evidence.
+    This is a software fixture, not a driver, device or end-to-end acceptance.
+    """
+    from hc_data_platform.ingest.ports import crc64_ecma
+    from hc_data_platform.publishing.depth_source import profile_hash
+
+    assert json.loads((FIXTURE / "recording-complete.json").read_text())["synthetic"] is True
     shutil.copytree(FIXTURE, root)
+    profile = {
+        "schema_version": "hc-depth-source/1",
+        "encoding": "32FC1" if floating else "16UC1",
+        "unit": "m" if floating else "mm",
+        "scale_m_per_unit": 1.0 if floating else 0.001,
+        "invalid_values": [0],
+        "invalid_nonfinite": True,
+        "registered_to_rgb": False,
+        "registration_evidence": "synthetic independent half-resolution depth grid",
+        "evidence": {
+            "kind": "synthetic_fixture",
+            "reference": __name__ + ".declared_synthetic_fixture",
+            "version": "1",
+        },
+    }
+    with (FIXTURE / "raw.mcap").open("rb") as original, (root / "raw.mcap").open("wb") as output:
+        writer = Writer(output)
+        writer.start(profile="synthetic-r2-depth-source/1")
+        schemas, channels = {}, {}
+        for schema, channel, message in make_reader(original, validate_crcs=True).iter_messages():
+            if schema and schema.id not in schemas:
+                schemas[schema.id] = writer.register_schema(
+                    schema.name, schema.encoding, schema.data
+                )
+            if channel.id not in channels:
+                channels[channel.id] = writer.register_channel(
+                    channel.topic,
+                    channel.message_encoding,
+                    schemas.get(channel.schema_id, 0),
+                    channel.metadata,
+                )
+            payload = message.data
+            if channel.message_encoding == "humanoid-depth":
+                size = struct.unpack("<I", payload[:4])[0]
+                data = json.loads(payload[4 : 4 + size])
+                depth = data["depth"]
+                pixels = np.frombuffer(payload[4 + size :], dtype=depth["dtype"]).reshape(
+                    depth["shape"]
+                )[::2, ::2]
+                if floating:
+                    pixels = pixels.astype("<f4") * 0.001
+            elif channel.message_encoding == "json":
+                data = json.loads(payload)
+                pixels = None
+            else:
+                data, pixels = {}, None
+            if "depth" in data:
+                depth = data["depth"]
+                depth.update(
+                    source_profile=profile,
+                    source_profile_sha256=profile_hash(profile),
+                    depth_scale=profile["scale_m_per_unit"],
+                    encoding=profile["encoding"],
+                    invalid_value=0,
+                )
+                depth["shape"] = (
+                    list(pixels.shape) if pixels is not None else [v // 2 for v in depth["shape"]]
+                )
+                depth["dtype"] = "<f4" if floating else "<u2"
+                encoded = json.dumps(data).encode()
+                payload = (
+                    struct.pack("<I", len(encoded)) + encoded + pixels.tobytes()
+                    if pixels is not None
+                    else encoded
+                )
+            writer.add_message(
+                channels[channel.id],
+                message.log_time,
+                payload,
+                publish_time=message.publish_time,
+                sequence=message.sequence,
+            )
+        writer.finish()
+    seal = json.loads((root / "recording-complete.json").read_text())
+    for asset in seal["recording_upload"]["assets"]:
+        body = (root / asset["path"]).read_bytes()
+        asset.update(
+            size=len(body), sha256=hashlib.sha256(body).hexdigest(), crc64=crc64_ecma(body)
+        )
+    seal["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            seal["recording_upload"]["assets"], sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    (root / "recording-complete.json").write_text(json.dumps(seal))
+    return profile
+
+
+@pytest.mark.parametrize("floating", [False, True])
+def test_original_capture_is_indexed_and_aligned_only_on_platform(tmp_path, floating):
+    root = tmp_path / "original"
+    source_profile = declared_synthetic_fixture(root, floating=floating)
+    original_hashes = {
+        p.relative_to(root): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in root.rglob("*")
+        if p.is_file()
+    }
     marker = OpenArmRecordingComplete.model_validate_json(
         (root / "recording-complete.json").read_bytes()
     )
@@ -38,6 +150,54 @@ def test_original_capture_is_indexed_and_aligned_only_on_platform(tmp_path):
         assert state["units"] == ["rad"] * 7 + ["m"] + ["rad"] * 7 + ["m"]
         assert state["values"][0] == pytest.approx(0.8 + k / 30 * 0.1, abs=1e-6)
         assert action["values"][0] == pytest.approx(0.85 + (k * 100 // 30) * 0.001, abs=1e-6)
+    for file, digest in original_hashes.items():
+        assert hashlib.sha256((root / file).read_bytes()).hexdigest() == digest
+    for camera in config["cameras"]:
+        with av.open(
+            str(tmp_path / "derived" / roles_to_video(roles, camera["camera_id"]))
+        ) as container:
+            stream = container.streams.video[0]
+            assert (stream.width, stream.height) == (camera["width"], camera["height"])
+        if camera["codec"] == "hevc":
+            rgb = next(
+                c
+                for c in config["cameras"]
+                if c["camera_id"] == camera["camera_id"].removesuffix("_depth")
+            )
+            assert (camera["width"] * 2, camera["height"] * 2) == (rgb["width"], rgb["height"])
+    for report_path in (tmp_path / "derived/hc/depth").glob("*/report.json"):
+        report = json.loads(report_path.read_text())
+        assert report["source_contract_required"] is True
+        assert list(report["source_profiles"].values()) == [source_profile]
+        assert report["video_encoding"]["lossless_codes"] is True
+        frame_rows = pq.read_table(report_path.parent / "frames.parquet").to_pylist()
+        assert all(
+            r["depth_scale_m_per_unit"] == source_profile["scale_m_per_unit"]
+            for r in frame_rows
+            if not r["missing"]
+        )
+        assert all(
+            r["source_profile_sha256"] in report["source_profiles"]
+            for r in frame_rows
+            if not r["missing"]
+        )
+
+
+def roles_to_video(roles, camera_id):
+    return next(
+        path for path, role in roles.items() if role[0] == "RAW_VIDEO" and role[1] == camera_id
+    )
+
+
+def test_legacy_unknown_source_is_preserved_but_not_standardized(tmp_path):
+    root = tmp_path / "original"
+    shutil.copytree(FIXTURE, root)
+    marker = OpenArmRecordingComplete.model_validate_json(
+        (root / "recording-complete.json").read_bytes()
+    )
+    with pytest.raises(ValueError, match="DEPTH_SOURCE_CONTRACT_REQUIRED"):
+        prepare(root, tmp_path / "derived", marker.recording_upload)
+    assert not list((tmp_path / "derived").rglob("*.mp4"))
     for file in FIXTURE.rglob("*"):
         if file.is_file():
             assert (root / file.relative_to(FIXTURE)).read_bytes() == file.read_bytes()

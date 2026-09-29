@@ -16,6 +16,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
+from .depth_source import profile_hash, require_depth_source
 from .holobrain_depth import DEFAULT_PROFILE, DepthVideo, quantize
 
 
@@ -32,7 +33,16 @@ def write_json(path, value):
 
 
 class DepthEvidenceVideo:
-    def __init__(self, path, evidence_dir, fps, shape, profile=DEFAULT_PROFILE):
+    def __init__(
+        self,
+        path,
+        evidence_dir,
+        fps,
+        shape,
+        profile=DEFAULT_PROFILE,
+        *,
+        require_source_profile=False,
+    ):
         self.path, self.root = Path(path), Path(evidence_dir)
         self.root.mkdir(parents=True, exist_ok=False)
         (self.root / "validity").mkdir()
@@ -61,6 +71,8 @@ class DepthEvidenceVideo:
             0,
         )
         self.max_error_m = 0.0
+        self.require_source_profile = require_source_profile
+        self.source_profiles = {}
 
     def write(
         self,
@@ -75,11 +87,13 @@ class DepthEvidenceVideo:
         valid_mask=None,
         invalid_values=(),
         max_time_error_ns=None,
+        source_profile=None,
     ):
         if self.closed:
             raise ValueError("depth evidence writer is closed")
+        source_profile_sha256 = None
         if missing:
-            if any(v is not None for v in (source_seq, source_timestamp_ns, scale)):
+            if any(v is not None for v in (source_seq, source_timestamp_ns, scale, source_profile)):
                 raise ValueError("missing depth cannot claim a source frame or scale")
             array = np.zeros(self.shape, dtype=np.uint16)
             result = quantize(array, 1, self.profile)
@@ -87,6 +101,27 @@ class DepthEvidenceVideo:
         else:
             if source_seq is None or source_timestamp_ns is None:
                 raise ValueError("present depth requires source frame identity and time")
+            if source_profile is not None or self.require_source_profile:
+                pixels = np.asarray(array)
+                require_depth_source(
+                    {
+                        "source_profile": source_profile,
+                        "encoding": source_profile.get("encoding")
+                        if isinstance(source_profile, dict)
+                        else None,
+                        "depth_scale": scale,
+                        "shape": list(pixels.shape),
+                        "dtype": pixels.dtype.str,
+                        "invalid_value": invalid_values[0] if len(invalid_values) else None,
+                    },
+                    pixels,
+                )
+                if list(invalid_values) != source_profile["invalid_values"]:
+                    raise ValueError("depth invalid values differ from declared source profile")
+                source_profile_sha256 = profile_hash(source_profile)
+                self.source_profiles[source_profile_sha256] = json.loads(json.dumps(source_profile))
+                if len(self.source_profiles) > 64:
+                    raise ValueError("too many depth source profile versions")
             result = quantize(
                 array, scale, self.profile, valid_mask=valid_mask, invalid_values=invalid_values
             )
@@ -123,6 +158,7 @@ class DepthEvidenceVideo:
             "repeated": repeated,
             "source_dtype": source_dtype,
             "depth_scale_m_per_unit": scale,
+            "source_profile_sha256": source_profile_sha256,
             "profile_sha256": self.profile.sha256,
             "mask_path": mask_path,
             "mask_sha256": hashlib.sha256(mask_bytes).hexdigest(),
@@ -246,6 +282,8 @@ class DepthEvidenceVideo:
                 "profile_sha256": self.profile.sha256,
                 "frames": self.frames,
                 "shape": list(self.shape),
+                "source_contract_required": self.require_source_profile,
+                "source_profiles": self.source_profiles,
                 "totals": self.totals,
                 "quantization": {
                     "unclipped_max_error_m": self.max_error_m

@@ -19,6 +19,7 @@ from mcap.writer import CompressionType, Writer
 
 from hc_data_platform import recording_fields as public
 from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo
+from hc_data_platform.publishing.depth_source import profile_hash, require_depth_source
 
 from .alignment import Aligner, target_count, target_time
 from .buffers import TimeCache
@@ -26,7 +27,7 @@ from .config import config_hash, validate
 from .models import Sample
 from .video import FrameReader, TrainingVideo
 
-VERSION = "openarm-raw-platform/2"
+VERSION = "openarm-raw-platform/3"
 
 
 def canonical(value):
@@ -35,7 +36,8 @@ def canonical(value):
     ).encode()
 
 
-def load_index(root, database):
+def load_index(root, database, *, require_depth_sources=False):
+    depth_streams = {}
     database.executescript("""
         CREATE TABLE raw_samples(source TEXT,seq INTEGER,capture_ns INTEGER,body TEXT);
         CREATE INDEX raw_time ON raw_samples(source,capture_ns,seq);
@@ -57,6 +59,25 @@ def load_index(root, database):
                 data = json.loads(message.data[4 : 4 + length])
                 table = "depths" if kind == "depth" else "pointclouds"
                 if table == "depths":
+                    if require_depth_sources:
+                        meta = data["depth"]
+                        pixels = np.frombuffer(
+                            message.data[4 + length :], dtype=meta["dtype"]
+                        ).reshape(meta["shape"])
+                        profile = require_depth_source(meta, pixels)
+                        if (
+                            profile["registered_to_rgb"] is True
+                            and meta["shape"] != data["rgb"]["shape"][:2]
+                        ):
+                            raise ValueError("depth registered grid differs from RGB")
+                        stream = depth_streams.setdefault(
+                            data["source_id"], {"shape": list(pixels.shape), "profiles": {}}
+                        )
+                        if stream["shape"] != list(pixels.shape):
+                            raise ValueError("depth source grid changed within recording")
+                        stream["profiles"][profile_hash(profile)] = profile
+                        if len(stream["profiles"]) > 64:
+                            raise ValueError("too many depth source profile versions in recording")
                     database.execute(
                         "INSERT INTO depths VALUES(?,?,?)",
                         (data["source_id"], data["source_seq"], message.log_time),
@@ -91,6 +112,7 @@ def load_index(root, database):
                 else:
                     database.execute("INSERT INTO events VALUES(?,?)", (kind, body))
     database.commit()
+    return depth_streams
 
 
 def rows(database, cfg, start, end):
@@ -242,7 +264,11 @@ def prepare(root, destination, command, progress=lambda: None):
     invalid = 0
     try:
         with closing(sqlite3.connect(root.parent / "worker-index.sqlite3")) as db:
-            load_index(root, db)
+            depth_streams = load_index(root, db, require_depth_sources=True)
+            if any(camera["id"] not in depth_streams for camera in profile["cameras"]):
+                raise ValueError(
+                    "DEPTH_SOURCE_CONTRACT_REQUIRED: no observed depth grid for camera"
+                )
             ranges = invalid_ranges(db, end)
             with (
                 (destination / "sensors/robot.mcap").open("wb") as stream,
@@ -329,7 +355,8 @@ def prepare(root, destination, command, progress=lambda: None):
                                 destination / f"videos/{depth_id}.mp4",
                                 destination / f"hc/depth/{ident}",
                                 fps,
-                                (camera["height"], camera["width"]),
+                                depth_streams[ident]["shape"],
+                                require_source_profile=True,
                             )
                         depth_array, scale, metadata = None, None, None
                         if depth:
@@ -346,7 +373,10 @@ def prepare(root, destination, command, progress=lambda: None):
                             source_timestamp_ns=depth_meta.get("capture_time_ns"),
                             target_timestamp_ns=row["target_time_ns"],
                             missing=not bool(depth),
-                            invalid_values=(depth_meta.get("invalid_value", 0),),
+                            invalid_values=depth_meta.get("source_profile", {}).get(
+                                "invalid_values", ()
+                            ),
+                            source_profile=depth_meta.get("source_profile"),
                             max_time_error_ns=round(cfg["alignment"]["camera_max_error_ms"] * 1e6),
                         )
                     for ident, cloud in row["pointclouds"].items():
@@ -424,8 +454,8 @@ def prepare(root, destination, command, progress=lambda: None):
                         "camera_id": camera_id,
                         "topic": public.image_key(ident, depth),
                         "fps": fps,
-                        "width": camera["width"],
-                        "height": camera["height"],
+                        "width": depth_streams[ident]["shape"][1] if depth else camera["width"],
+                        "height": depth_streams[ident]["shape"][0] if depth else camera["height"],
                         "codec": "hevc" if depth else "h264",
                         "clock_domain": "recording_grid",
                         "time_base_numerator": base.numerator,
@@ -454,6 +484,7 @@ def prepare(root, destination, command, progress=lambda: None):
             canonical(
                 {
                     "processor_version": VERSION,
+                    "depth_sources": depth_streams,
                     "capture_context": context,
                     "session_id": snapshot["session_id"],
                     "source_t0_ns": start,

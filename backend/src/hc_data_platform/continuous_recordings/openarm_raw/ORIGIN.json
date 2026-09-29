@@ -11,10 +11,20 @@
     "profile.py": "58a8538f1cee2b25705fc51a73305c776e3c5fba687579ae11c20e1a246067b0"
   },
   "hash_scope": "SHA256 of original robot source files at the named commit, before platform adaptation.",
+  "depth_source_contract": {
+    "schema": "hc-depth-source/1",
+    "source_repository": "humanoid_manager",
+    "source_commit": "2f93e232fd55dd74f7342d10c7f3b720bdf8a4f3",
+    "source_path": "python/humanoid_manager/recording/depth_source.py",
+    "platform_path": "publishing/depth_source.py",
+    "source_and_platform_sha256": "72e4c4dce3fa9d47cc0ed40b78c09eece37647474b0ad5f94fea5a60129eeab2",
+    "camera_producer_commit": "517332a57c2df5dfd8736bfd31015ed7f0128397"
+  },
   "adaptations": [
     "platform Pydantic profile validation",
     "Worker-local temporary index and source queries",
     "public field order and RGB/depth preview output",
-    "formatting without changing association semantics"
+    "formatting without changing association semantics",
+    "openarm-raw-platform/3 requires versioned depth source units before encoding and preserves independent observed depth grids"
   ]
 }

@@ -6,8 +6,11 @@ source "$script_dir/robot-env.sh"
 unset PYTHONPATH AMENT_PREFIX_PATH COLCON_PREFIX_PATH CMAKE_PREFIX_PATH
 set +u
 source /opt/ros/humble/setup.bash
+if [[ -f "$CHAYI_ROBOT_WORKSPACE/install/ros/local_setup.bash" ]]; then
+  source "$CHAYI_ROBOT_WORKSPACE/install/ros/local_setup.bash"
+fi
 set -u
-export PYTHONPATH="$CHAYI_ROBOT_WORKSPACE/src/humanoid_manager/python:${PYTHONPATH:-}"
+export PYTHONPATH="$CHAYI_ROBOT_WORKSPACE/src/humanoid_manager/python:$CHAYI_ROBOT_WORKSPACE/src/humanoid_camera/python:${PYTHONPATH:-}"
 export PYTHONDONTWRITEBYTECODE=1
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 export HUMANOID_UPLOAD_TEST_CLI="$CHAYI_UPLOADER"

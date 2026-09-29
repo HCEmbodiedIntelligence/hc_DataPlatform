@@ -3,13 +3,13 @@
   "repositories": {
     "humanoid_manager": {
       "worktree": "/home/hc_op/workspace/teleop_ws-chayi-work/src/humanoid_manager",
-      "head": "1e3f3934c1271de9c1aa8fe245f6ec38af480a43",
+      "head": "2f93e232fd55dd74f7342d10c7f3b720bdf8a4f3",
       "branch": "feat/chayi-g1",
       "status": ""
     },
     "humanoid_camera": {
       "worktree": "/home/hc_op/workspace/teleop_ws-chayi-work/src/humanoid_camera",
-      "head": "0c0282a71ea1df314310086ab63b7fc1df436fcb",
+      "head": "517332a57c2df5dfd8736bfd31015ed7f0128397",
       "branch": "feat/chayi-g1",
       "status": ""
     },
@@ -32,7 +32,8 @@
   "recordings_root": "/home/hc_op/workspace/teleop_ws-chayi-work/recordings",
   "queue_root": "/home/hc_op/workspace/teleop_ws-chayi-work/upload-queue",
   "manager_build_install": "PENDING",
-  "camera_unit_contract": "PENDING",
+  "camera_unit_contract": "software contract tested; real hardware acceptance PENDING",
+  "camera_build_install": "/home/hc_op/workspace/teleop_ws-chayi-work/install/ros/humanoid_camera",
   "real_uploader_to_platform": "PENDING",
   "source_checkout_modified": false
 }

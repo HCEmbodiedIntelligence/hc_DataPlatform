@@ -15,6 +15,7 @@ import pyarrow.parquet as pq
 from PIL import Image
 
 from hc_data_platform.publishing.depth_evidence import file_hash
+from hc_data_platform.publishing.depth_source import ENCODINGS, profile_hash
 from hc_data_platform.publishing.holobrain_depth import DepthProfile
 from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
@@ -84,6 +85,16 @@ def validate_depth(
     ):
         raise ValueError("official depth metadata does not match frozen profile")
     report = document(root, f"{evidence_path}/report.json")
+    source_profiles = report.get("source_profiles", {})
+    if (
+        not isinstance(source_profiles, dict)
+        or len(source_profiles) > 64
+        or type(report.get("source_contract_required", False)) is not bool
+    ):
+        raise ValueError("invalid depth source profile inventory")
+    for digest, source_profile in source_profiles.items():
+        if digest != profile_hash(source_profile):
+            raise ValueError("depth source profile hash mismatch")
     if (
         report["profile_sha256"] != profile.sha256
         or report["frames"] != frame_count
@@ -145,6 +156,7 @@ def validate_depth(
                 if (
                     flags.any()
                     or pixels.any()
+                    or row.get("source_profile_sha256") is not None
                     or any(
                         row[k] is not None
                         for k in ("source_seq", "source_timestamp_ns", "depth_scale_m_per_unit")
@@ -162,6 +174,17 @@ def validate_depth(
                 ):
                     raise ValueError("depth source unit/identity missing")
                 with_source = True
+                source_digest = row.get("source_profile_sha256")
+                if source_digest is not None or report.get("source_contract_required"):
+                    source_profile = source_profiles.get(source_digest)
+                    if source_profile is None:
+                        raise ValueError("depth frame source profile missing")
+                    dtype = np.dtype(row["source_dtype"])
+                    if (
+                        source_profile["scale_m_per_unit"] != scale
+                        or (dtype.kind, dtype.itemsize) != ENCODINGS[source_profile["encoding"]]
+                    ):
+                        raise ValueError("depth frame units/dtype differ from source profile")
             if frame.pts is None or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6:
                 raise ValueError("depth PTS mismatch")
             observed.update(pixels.astype("<u2").tobytes())

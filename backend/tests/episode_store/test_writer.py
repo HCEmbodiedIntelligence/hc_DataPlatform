@@ -82,7 +82,9 @@ def test_streaming_numeric_precision_and_row_group_boundary(tmp_path):
     assert table["hc.timestamp_ns"][2050].as_py() == 1_790_000_000_000_000_001 + 2050 * 33_333_333
 
 
-def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False, rgb_codec="libx265"):
+def build_rgbd_package(
+    tmp_path, ident=None, *, mcap_topics=False, rgb_codec="libx265", source_profile=None
+):
     ident = ident or identity()
     rgb, depth = "observation.images.head_rgb", "observation.images.head_depth"
     source = PackageInput(
@@ -116,7 +118,9 @@ def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False, rgb_codec="li
                 container.mux(packet)
         for packet in stream.encode(None):
             container.mux(packet)
-    writer = DepthEvidenceVideo(depth_path, evidence, 30, (16, 16))
+    writer = DepthEvidenceVideo(
+        depth_path, evidence, 30, (16, 16), require_source_profile=source_profile is not None
+    )
     for index in range(4):
         pixels = np.full((16, 16), 500 + index * 500, dtype=np.uint16)
         pixels[0, 0] = 0
@@ -127,6 +131,8 @@ def build_rgbd_package(tmp_path, ident=None, *, mcap_topics=False, rgb_codec="li
             source_seq=index,
             source_timestamp_ns=index * 33_333_333,
             target_timestamp_ns=index * 33_333_333,
+            source_profile=source_profile,
+            invalid_values=source_profile["invalid_values"] if source_profile else (),
         )
     writer.close()
     evidence_files = tuple(
