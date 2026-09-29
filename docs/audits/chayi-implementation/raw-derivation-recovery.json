@@ -1,0 +1,17 @@
+{
+  "scope": "synthetic raw input, real PostgreSQL/MinIO/service registration; no hardware or historical binary claim",
+  "upload_id": "riu-92dc2b516bb8520ea573a1595203f6ff",
+  "raw_source_id": "raw-2134b12b92ba510c9b167571cb4fcd8e",
+  "recording_upload_id": "051d9bfe-10b0-51b2-b800-3b49cb188122",
+  "original_seal_sha256": "4674ce1d35b5f656bc30780eeeeecbb8c0e44eb4dd9561cfaaf5bf03a014282a",
+  "pinned_recipe": "openarm-raw-platform/3",
+  "running_recipe": "openarm-raw-platform/4",
+  "asset_count": 36,
+  "concurrent_retries": 3,
+  "pinned_object_keys_and_bytes_preserved": true,
+  "encoder_called_on_retry": false,
+  "missing_pinned_receipt_refused_regeneration": true,
+  "foreign_scope_and_corrupt_receipts_rejected": true,
+  "status": "AWAITING_SLICE",
+  "independent_episode_package": "NOT_YET_GENERATED"
+}

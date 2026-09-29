@@ -259,8 +259,45 @@ class RecordingOutboxHandler:
             if raw:
                 from .raw_recording import materialize
 
+                # Replaying an already registered recording must preserve its
+                # committed derivation even when the running encoder has changed.
+                cursor.execute(
+                    """SELECT upload_document FROM ingest.recording_uploads
+                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                      AND upload_id=%s""",
+                    (*scope, recording_upload_id(upload.upload_id)),
+                )
+                prior_upload = cursor.fetchone()
+                pinned = RecordingUpload.model_validate(prior_upload[0]) if prior_upload else None
+                if pinned and (
+                    pinned.status.value != "COMMITTED"
+                    or (
+                        pinned.scope.organization_id,
+                        pinned.scope.project_id,
+                        pinned.scope.region_code,
+                    )
+                    != scope
+                    or pinned.upload_id != recording_upload_id(upload.upload_id)
+                ):
+                    raise RecordingBridgeError("existing recording receipt differs from its scope")
+                pinned_objects = None
+                if pinned:
+                    cursor.execute(
+                        """SELECT asset_path,object_key FROM ingest.recording_upload_assets
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND upload_id=%s""",
+                        (*scope, pinned.upload_id),
+                    )
+                    pinned_objects = dict(cursor.fetchall())
                 command, assets = materialize(
-                    self.storage, upload, marker, command, assets, progress
+                    self.storage,
+                    upload,
+                    marker,
+                    command,
+                    assets,
+                    progress,
+                    expected_command=pinned.command if pinned else None,
+                    expected_objects=pinned_objects,
                 )
             # The authenticated ingest service owns the collection job. Keep the
             # original client marker immutable and project the authoritative job.
@@ -479,7 +516,8 @@ def retry(connections, upload, request_id):
             inserted = db.execute(
                 """INSERT INTO core.outbox_events
                 (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)
-                VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,%s) ON CONFLICT DO NOTHING RETURNING event_id""",
+                VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s,%s)
+                ON CONFLICT DO NOTHING RETURNING event_id""",
                 (
                     event.event_id,
                     *scope,
@@ -492,7 +530,8 @@ def retry(connections, upload, request_id):
             if inserted:
                 db.execute(
                     """UPDATE ingest.raw_ingest_jobs SET status='PENDING',last_error_code=NULL,
-                    updated_at=clock_timestamp() WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                    updated_at=clock_timestamp()
+                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
                     AND raw_source_id=%s""",
                     (*scope, upload.raw_source_id),
                 )

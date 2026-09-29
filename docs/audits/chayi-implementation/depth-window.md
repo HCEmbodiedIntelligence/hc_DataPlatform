@@ -104,10 +104,11 @@ bash deploy/chayi/compose.sh run --rm reader /app/tools/read_depth_window_packag
 共享视频／多 Episode HC 来源限制。下一步仍需替换连续录制的 Lance 版本依赖，
 将精确窗口和物理来源映射绑定到提交、授权及 READY 回执。
 
-新 raw 派生采用 `/4`；旧 `/3` 已提交录制及中断后的 outbox 重试必须先完成
-“固定原派生版本并恢复”的隔离验证。当前桥接会按运行时代码版本查派生前缀，
-跨版本重跑可能生成新的派生后遇到不可变 recording identity 冲突。**不能把本阶段
-提交直接当作跨版本部署已验收**，也不能删除旧 receipt 或改 READY 条件绕过冲突。
+新 raw 派生采用 `/4`；后续阶段已修复跨版本重跑可能生成新派生并遇到不可变
+recording identity 冲突的问题。桥接固定已登记版本及对象位置，实际服务并发／
+缺失 receipt 拒绝测试见 [Raw 派生恢复](raw-derivation-recovery.md)。测试未运行
+历史 `/3` 二进制，**仍不能当作真实旧资料跨版本部署已验收**；不能删除旧 receipt
+或改 READY 条件绕过冲突。
 
 G2 前还需真实分辨率／时长的存储与吞吐测量、三入口、浏览器 1440／1024、三类
 独立审核、批量交付、迁移及回退演练等剩余 G1 项。回退保留原始录制、旧派生和
