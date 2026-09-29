@@ -228,6 +228,7 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
         "project-a",
         "region-a",
         "dataset_ab",
+        "organization-a",
     )
 
 
@@ -279,11 +280,17 @@ def test_resolver_uses_latest_profile_version_without_losing_immutable_history()
     old = _profile(manifest).model_copy(update={"engine_version": "be06-qc/1"})
     current = _profile(manifest).model_copy(update={"profile_version": 2})
     cursor = _Cursor([[(current.model_dump(mode="json"),), (old.model_dump(mode="json"),)]])
-    selected = PostgresIngestWorkflowInputResolver._quality_profile(
-        cursor,
-        "project-a",
-        preflight_manifest(manifest),
+    token = bind_request_context(
+        RequestContext(
+            organization_id="organization-a", project_id="project-a", service_identity=True
+        )
     )
+    try:
+        selected = PostgresIngestWorkflowInputResolver._quality_profile(
+            cursor, "project-a", preflight_manifest(manifest)
+        )
+    finally:
+        reset_request_context(token)
     assert selected == current
 
 
@@ -351,6 +358,7 @@ def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> 
         "project-a",
         "region-a",
         "dataset_mcap",
+        "organization-a",
     )
 
 

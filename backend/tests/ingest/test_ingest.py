@@ -158,6 +158,31 @@ def test_upload_session_listing_uses_scope_bound_cursor_pagination() -> None:
     assert_problem(wrong_filter, "INVALID_CURSOR")
 
 
+def test_upload_acknowledgement_retry_preserves_a_persisted_legacy_workflow(monkeypatch):
+    from hc_data_platform.ingest import service as module
+    from hc_data_platform.workflow.models import ingest_rollout_workflow_id
+
+    body = b"legacy-upload-retry"
+    manifest = manifest_for(body)
+    storage = InMemoryObjectStorage()
+    service = UploadSessionService(storage, InMemoryIngestPersistence())
+    session, parts = upload_parts(service, storage, manifest, body)
+    service.complete_upload(session.session_id, parts)
+    legacy = "ingest-rollout:v1:p1:cn-hz%2Fr1"
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "ingest_rollout_workflow_id", lambda *_: legacy)
+        original = service.commit_manifest(
+            organization_id="org-a", session_id=session.session_id, manifest=manifest
+        )
+    retried = service.commit_manifest(
+        organization_id="org-a", session_id=session.session_id, manifest=manifest
+    )
+    assert retried.workflow == original.workflow and retried.workflow.workflow_id == legacy
+    assert ingest_rollout_workflow_id("org-a", "p1", "cn-hz", "r1") != ingest_rollout_workflow_id(
+        "org-b", "p1", "cn-hz", "r1"
+    )
+
+
 def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     body = b"valid-mcap-placeholder"
     manifest = manifest_for(body)
@@ -178,7 +203,9 @@ def test_manifest_is_last_commit_marker_and_replay_is_idempotent() -> None:
     assert event == replay
     assert event.workflow is not None
     assert event.workflow.status is IngestTriggerStatus.PENDING
-    assert event.workflow.workflow_id == "ingest-rollout:v1:p1:cn-hz%2Fr1"
+    from hc_data_platform.workflow.models import ingest_rollout_workflow_id
+
+    assert event.workflow.workflow_id == ingest_rollout_workflow_id("org-a", "p1", "cn-hz", "r1")
     assert service.get_session(session.session_id).workflow == event.workflow
     assert service.get_session(session.session_id).status is UploadStatus.RAW_COMMITTED
     upload_object = persistence.get_upload_object(session.session_id)

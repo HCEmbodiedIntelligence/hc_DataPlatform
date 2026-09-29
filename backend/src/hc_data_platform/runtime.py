@@ -1010,6 +1010,7 @@ def build_runtime(
             projection_store=shared_staging_store,
             projection_staging_root=(Path(resolved.alignment_staging_root) / "raw-localization"),
             projection_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
+            package_schemas=episode_packages.schemas,
         ),
         dataset_ingest_projection=dataset_ingest_projection,
         fragment_writers=ArrowFragmentWriterFactory(Path(resolved.alignment_staging_root)),
@@ -1292,14 +1293,16 @@ def build_worker_outbox(
         task_queue=os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE),
         client=temporal_client,
     )
+    from hc_data_platform.episode_store.postgres import PostgresEpisodeStore
+    from hc_data_platform.episode_store.schemas import EpisodeSchemas
+
     resolver = PostgresIngestWorkflowInputResolver(
         connection_factory,
         ChunkedObjectStorageReader(object_storage),
         catalog,
+        package_schemas=EpisodeSchemas(PostgresEpisodeStore(connection_factory)),
     )
     handler = IngestOutboxHandler(launcher, resolver)
-    from hc_data_platform.episode_store.postgres import PostgresEpisodeStore
-    from hc_data_platform.episode_store.schemas import EpisodeSchemas
 
     continuous_episode_resolver = PostgresContinuousEpisodeWorkflowInputResolver(
         connection_factory,

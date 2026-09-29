@@ -1,0 +1,72 @@
+{
+  "source": "/app/.g1-artifacts/mcap-package-live/mcap-8d5675bc73764b4f8e74488cadad8335",
+  "synthetic_input": true,
+  "frames": 30,
+  "rgb_streams": 1,
+  "depth_streams": 2,
+  "verified_package_files": 22,
+  "data_version_id": "dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+  "official_reader_and_dataloader": true,
+  "lerobot_version": "0.6.1",
+  "network": "disabled by reader container",
+  "platform_imported": false,
+  "independent_hc_masks_applied": true,
+  "physical_depth_unit": "mm",
+  "depths": {
+    "observation.images.head_depth": {
+      "max_reader_rounding_mm": 0.4877768296641989,
+      "invalid_pixels": 60,
+      "max_unclipped_source_error_m": 0.0007377768296641385,
+      "codec_profile": "Rext",
+      "source_units": [
+        {
+          "encoding": "16UC1",
+          "evidence": {
+            "kind": "synthetic_fixture",
+            "reference": "tests.episode_store.test_mcap_images",
+            "version": "1"
+          },
+          "invalid_nonfinite": true,
+          "invalid_values": [
+            0,
+            65535
+          ],
+          "registered_to_rgb": false,
+          "registration_evidence": "independent synthetic depth sensor grid",
+          "scale_m_per_unit": 0.00025,
+          "schema_version": "hc-depth-source/1",
+          "unit": "source_unit"
+        }
+      ],
+      "encoding_lossless_codes": true
+    },
+    "observation.images.wrist_depth": {
+      "max_reader_rounding_mm": 0.4877768296641989,
+      "invalid_pixels": 90,
+      "max_unclipped_source_error_m": 0.0007377768296641385,
+      "codec_profile": "Rext",
+      "source_units": [
+        {
+          "encoding": "32FC1",
+          "evidence": {
+            "kind": "synthetic_fixture",
+            "reference": "tests.episode_store.test_mcap_images",
+            "version": "1"
+          },
+          "invalid_nonfinite": true,
+          "invalid_values": [
+            0
+          ],
+          "registered_to_rgb": false,
+          "registration_evidence": "independent synthetic depth sensor grid",
+          "scale_m_per_unit": 0.00025,
+          "schema_version": "hc-depth-source/1",
+          "unit": "source_unit"
+        }
+      ],
+      "encoding_lossless_codes": true
+    }
+  },
+  "model_depth_training_support": "NOT_VALIDATED",
+  "real_sensor_and_calibration_acceptance": false
+}

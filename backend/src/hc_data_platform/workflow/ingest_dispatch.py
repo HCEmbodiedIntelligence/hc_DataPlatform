@@ -6,7 +6,12 @@ from typing import Protocol
 
 from hc_data_platform.core.events import DomainEventEnvelope
 
-from .models import IngestRolloutWorkflowInput, WorkflowKind, workflow_id
+from .models import (
+    IngestRolloutWorkflowInput,
+    WorkflowKind,
+    ingest_rollout_workflow_id,
+    workflow_id,
+)
 from .names import INGEST_ROLLOUT_WORKFLOW
 from .service import TemporalWorkflowLauncher
 
@@ -17,6 +22,8 @@ class IngestWorkflowPlanBlocked(RuntimeError):
 
 class IngestWorkflowInputResolver(Protocol):
     """Resolve immutable, persisted processing inputs; never infer them from UI fixtures."""
+
+    def terminal_result(self, event: DomainEventEnvelope) -> object | None: ...
 
     def resolve(
         self,
@@ -31,6 +38,9 @@ class IngestWorkflowInputResolver(Protocol):
 
 class BlockingIngestWorkflowInputResolver:
     """Fail visibly until deployment injects a persisted ingest-plan resolver."""
+
+    def terminal_result(self, event: DomainEventEnvelope) -> object | None:
+        raise IngestWorkflowPlanBlocked("no persisted ingest-plan resolver is configured")
 
     def resolve(
         self,
@@ -67,15 +77,21 @@ class IngestOutboxHandler:
         rollout_id = _required(payload, "rollout_id")
         data_package_id = _required(payload, "data_package_id")
         persisted_workflow_id = _required(payload, "workflow_id")
-        if region_code is None:
-            raise ValueError("ingest workflow events require an exact region")
-        expected_workflow_id = workflow_id(
+        if region_code is None or event.organization_id is None:
+            raise ValueError("ingest workflow events require an exact tenant and region")
+        legacy_workflow_id = workflow_id(
             WorkflowKind.INGEST_ROLLOUT,
             event.project_id,
             f"{region_code}/{rollout_id}",
         )
-        if persisted_workflow_id != expected_workflow_id:
+        expected_workflow_id = ingest_rollout_workflow_id(
+            event.organization_id, event.project_id, region_code, rollout_id
+        )
+        if persisted_workflow_id not in {expected_workflow_id, legacy_workflow_id}:
             raise ValueError("ingest workflow locator does not match event lineage")
+        terminal = self._resolver.terminal_result(event)
+        if terminal is not None:
+            return terminal
         request = self._resolver.resolve(
             project_id=event.project_id,
             region_code=region_code,
@@ -84,7 +100,8 @@ class IngestOutboxHandler:
             data_package_id=data_package_id,
         )
         if (
-            request.project_id != event.project_id
+            request.organization_id != event.organization_id
+            or request.project_id != event.project_id
             or request.region_code != region_code
             or request.rollout_id != rollout_id
         ):

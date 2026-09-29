@@ -14,7 +14,11 @@ def camera_feature(name: str) -> bool:
     return name.startswith(("/camera/", "camera.", "observation.images."))
 
 
-def feature_names(names: Sequence[str]) -> dict[str, str]:
+def feature_names(
+    names: Sequence[str], *, camera_topics: Sequence[str] | None = None
+) -> dict[str, str]:
+    if camera_topics is not None and not set(camera_topics).issubset(names):
+        raise ValueError("declared cameras must belong to the logical feature inventory")
     result: dict[str, str] = {}
     for name in names:
         if name.startswith(NATIVE_FEATURE_PREFIX):
@@ -29,13 +33,16 @@ def feature_names(names: Sequence[str]) -> dict[str, str]:
             and "/humanoid/observation/state" not in names
         ):
             target = "observation.state"
-        elif camera_feature(name):
+        elif (camera_topics is None and camera_feature(name)) or (
+            camera_topics is not None and name in camera_topics
+        ):
             camera = (
                 name.removeprefix("/camera/")
                 .removesuffix("/image_raw")
                 .removesuffix("/image")
                 .removeprefix("camera.")
                 .removeprefix("observation.images.")
+                .strip("/")
             )
             target = "observation.images." + re.sub(r"[^A-Za-z0-9_.-]", "_", camera)
         elif (

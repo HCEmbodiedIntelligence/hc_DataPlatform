@@ -815,6 +815,8 @@ async def process_ingest_source(
                 session = native_session
             else:
                 session = sessions.enter_context(projection.open_local_session(source))
+                if request.alignment.storage_format == "lerobot_v3":
+                    session.enable_package_images()
                 verification_report = verifier.verify_stream(
                     rollout_id=request.verification.rollout_id,
                     object_key=request.verification.object_key,
@@ -921,7 +923,11 @@ async def process_ingest_source(
                 camera_ids=tuple(
                     name
                     for name, stream in alignment_data.streams.items()
-                    if stream.kind is ModalityKind.IMAGE and name not in original_videos
+                    if stream.kind is ModalityKind.IMAGE
+                    and name not in original_videos
+                    and not (
+                        request.alignment.storage_format == "lerobot_v3" and source.lerobot is None
+                    )
                 ),
             )
             if original_videos:
@@ -929,12 +935,17 @@ async def process_ingest_source(
             native_plan, expected_version = None, None
             if request.alignment.storage_format == "lerobot_v3":
                 if source.lerobot is None:
-                    raise ValueError("MCAP package processing plan is not yet configured")
-                from hc_data_platform.lerobot_imports.package import freeze_native_plan
+                    from hc_data_platform.episode_store.mcap_package import freeze_mcap_plan
 
-                native_plan = freeze_native_plan(
-                    session, request.alignment, staged_manifest, staging, quality_report
-                )
+                    native_plan = freeze_mcap_plan(
+                        session, request.alignment, staged_manifest, staging, quality_report
+                    )
+                else:
+                    from hc_data_platform.lerobot_imports.package import freeze_native_plan
+
+                    native_plan = freeze_native_plan(
+                        session, request.alignment, staged_manifest, staging, quality_report
+                    )
             else:
                 catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
                 current = catalog.current_version(
@@ -1422,14 +1433,18 @@ async def commit_aligned_bundle(
         camera_ids = [artifact.camera_id for artifact in request.media_artifacts]
         if len(camera_ids) != len(set(camera_ids)):
             raise ValueError("aligned media bundle contains duplicate cameras")
+        from hc_data_platform.episode_store.mcap_plan import McapEpisodePlan
         from hc_data_platform.episode_store.native_plan import NativeEpisodePlan
 
         native = isinstance(request.package_plan, NativeEpisodePlan)
-        if native and set(request.expected_camera_ids) != set(request.package_plan.feature_mapping):
+        mcap = isinstance(request.package_plan, McapEpisodePlan)
+        if (native or mcap) and set(request.expected_camera_ids) != set(
+            request.package_plan.feature_mapping
+        ):
             raise ValueError("native package does not cover the declared manifest cameras")
         if (
             request.expected_camera_ids
-            and not native
+            and not (native or mcap)
             and (
                 len(request.expected_camera_ids) != len(set(request.expected_camera_ids))
                 or set(camera_ids) != set(request.expected_camera_ids)
@@ -1517,6 +1532,24 @@ async def commit_aligned_bundle(
                             version, ready = packages.write_and_publish(
                                 plan.input,
                                 steps,
+                                assets,
+                                schema=plan.schema_snapshot,
+                                metadata=plan.metadata,
+                            )
+                    elif mcap:
+                        from hc_data_platform.episode_store.mcap_package import (
+                            mcap_steps,
+                            prepared_mcap_assets,
+                        )
+
+                        projection = _require(
+                            _dependencies.ingest_projection, "workflow.IngestProjectionPort"
+                        )
+                        projection.validate_package_source(source, plan)
+                        with prepared_mcap_assets(plan, steps, local_manifest.attempt_id) as assets:
+                            version, ready = packages.write_and_publish(
+                                plan.input,
+                                mcap_steps(plan, steps),
                                 assets,
                                 schema=plan.schema_snapshot,
                                 metadata=plan.metadata,

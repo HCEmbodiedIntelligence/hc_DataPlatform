@@ -603,7 +603,9 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
                     "aligned_media_count": (
-                        len(aligned.native_package_plan.videos) if native else len(media_artifacts)
+                        len(aligned.native_package_plan.feature_mapping)
+                        if native
+                        else len(media_artifacts)
                     ),
                     "training_eligible": not native,
                     **(

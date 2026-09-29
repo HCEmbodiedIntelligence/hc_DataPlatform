@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
@@ -499,6 +500,7 @@ class PostgresIngestPersistence:
             event_type="ingest.workflow.requested.v1",
             aggregate_type="upload_session",
             aggregate_id=session.session_id,
+            organization_id=current_request_context().organization_id,
             project_id=session.project_id,
             region_code=session.region_code,
             trace_id=request_id,

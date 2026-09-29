@@ -1,0 +1,293 @@
+{
+  "synthetic_input": true,
+  "data": {
+    "identity": {
+      "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335",
+      "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+      "region_code": "cn-test",
+      "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+      "episode_id": "episode_da670d2261e711515dbc9489bebb5755",
+      "rollout_id": "rollout-8d5675bc73764b4f8e74488cadad8335"
+    },
+    "data_version_id": "dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+    "version": 1,
+    "content_hash": "315a5a604f1b023c4a3040e39f2029b3067c9bdbcf4e66373f52b3d0f8b47eab",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "mcap-v1",
+    "package_prefix": "episodes/id-mcap-8d5675bc73764b4f8e74488cadad8335/id-mcap-project-8d5675bc73764b4f8e74488cadad8335/id-cn-test/id-2023-11-14/id-synthetic-robot/id-mcap-task-8d5675bc73764b4f8e74488cadad8335/id-episode_da670d2261e711515dbc9489bebb5755/id-dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+    "frame_count": 30
+  },
+  "package_files_verified": 22,
+  "original_raw_verified_unchanged": true,
+  "raw_sha256": "5b5506841d92597c30c3861a8905415e10a6ac798e40e12e65a0f6e7f163faf1",
+  "raw_bytes": 92038,
+  "source": {
+    "alignment_clock": "mcap_log_time",
+    "depth_source_seq": "per-topic message ordinal in MCAP log-time order",
+    "end_ns": 1700000001000000000,
+    "format": "mcap",
+    "identity": {
+      "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+      "episode_id": "episode_da670d2261e711515dbc9489bebb5755",
+      "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335",
+      "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+      "region_code": "cn-test",
+      "rollout_id": "rollout-8d5675bc73764b4f8e74488cadad8335"
+    },
+    "manifest_fingerprint": "fe075965954709408a44b97c134a646ddee3476f07a55c99ce4f7b50f06ee589",
+    "original_manifest": {
+      "actual_topics": [
+        "/head/color",
+        "/head/depth",
+        "/wrist/depth",
+        "/joint_states",
+        "/action"
+      ],
+      "cameras": [
+        {
+          "camera_id": "head_color",
+          "encoding": "jpeg",
+          "frame_id": null,
+          "topic": "/head/color"
+        },
+        {
+          "camera_id": "head_depth",
+          "encoding": "16UC1",
+          "frame_id": null,
+          "topic": "/head/depth"
+        },
+        {
+          "camera_id": "wrist_depth",
+          "encoding": "32FC1",
+          "frame_id": null,
+          "topic": "/wrist/depth"
+        }
+      ],
+      "collection_job_id": "job-8d5675bc73764b4f8e74488cadad8335",
+      "collection_session_id": "capture-8d5675bc73764b4f8e74488cadad8335",
+      "compression": "none",
+      "crc64": "4628631359063625312",
+      "data_package_id": "package-8d5675bc73764b4f8e74488cadad8335",
+      "end_time": "2023-11-14T22:13:21Z",
+      "expected_topics": [
+        "/head/color",
+        "/head/depth",
+        "/wrist/depth",
+        "/joint_states",
+        "/action"
+      ],
+      "file_size": 92038,
+      "files": [
+        {
+          "crc64": "4628631359063625312",
+          "media_type": "application/octet-stream",
+          "path": "recording.mcap",
+          "role": "RAW_MCAP",
+          "sha256": "5b5506841d92597c30c3861a8905415e10a6ac798e40e12e65a0f6e7f163faf1",
+          "size": 92038
+        }
+      ],
+      "pico_instance_id": null,
+      "processing_mode": "DIRECT_EPISODE",
+      "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+      "recorder_version": "hc-g1-synthetic-mcap/1",
+      "recording_request_id": "request-8d5675bc73764b4f8e74488cadad8335",
+      "robot_id": "synthetic-robot",
+      "rollout_id": "rollout-8d5675bc73764b4f8e74488cadad8335",
+      "schema_version": 1,
+      "sequence_no": 1,
+      "sha256": "5b5506841d92597c30c3861a8905415e10a6ac798e40e12e65a0f6e7f163faf1",
+      "source_recording": null,
+      "start_time": "2023-11-14T22:13:20Z",
+      "task_id": "mcap-task-8d5675bc73764b4f8e74488cadad8335",
+      "topics": [
+        {
+          "message_encoding": "json",
+          "name": "/head/color",
+          "required": true,
+          "schema_name": "sensor_msgs/Image"
+        },
+        {
+          "message_encoding": "cdr",
+          "name": "/head/depth",
+          "required": true,
+          "schema_name": "sensor_msgs/msg/Image"
+        },
+        {
+          "message_encoding": "cdr",
+          "name": "/wrist/depth",
+          "required": true,
+          "schema_name": "sensor_msgs/msg/Image"
+        },
+        {
+          "message_encoding": "json",
+          "name": "/joint_states",
+          "required": true,
+          "schema_name": "hc/Numeric"
+        },
+        {
+          "message_encoding": "json",
+          "name": "/action",
+          "required": true,
+          "schema_name": "hc/Numeric"
+        }
+      ]
+    },
+    "original_sequence": "preserved separately in each hc.source_ref",
+    "sensor_header_clock": "UNKNOWN",
+    "session_id": "66f2bf4e-e73c-4f38-b8ed-fbf28878e83e",
+    "source_sha256": "5b5506841d92597c30c3861a8905415e10a6ac798e40e12e65a0f6e7f163faf1",
+    "start_ns": 1700000000000000000
+  },
+  "calibration": {
+    "reason": "no validated calibration binding",
+    "status": "UNKNOWN"
+  },
+  "outbox": {
+    "published_at": "2026-09-29T10:21:26.117760+00:00",
+    "attempts": 1
+  },
+  "workflow": {
+    "status": "SUCCEEDED",
+    "run_id": "8ea2b75f-74a5-4991-a822-fe7969c1e86a"
+  },
+  "lance_versions": 0,
+  "previews_verified": [
+    {
+      "fps": 30.0,
+      "data": {
+        "version": 1,
+        "identity": {
+          "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+          "episode_id": "episode_da670d2261e711515dbc9489bebb5755",
+          "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+          "rollout_id": "rollout-8d5675bc73764b4f8e74488cadad8335",
+          "region_code": "cn-test",
+          "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335"
+        },
+        "frame_count": 30,
+        "content_hash": "315a5a604f1b023c4a3040e39f2029b3067c9bdbcf4e66373f52b3d0f8b47eab",
+        "package_prefix": "episodes/id-mcap-8d5675bc73764b4f8e74488cadad8335/id-mcap-project-8d5675bc73764b4f8e74488cadad8335/id-cn-test/id-2023-11-14/id-synthetic-robot/id-mcap-task-8d5675bc73764b4f8e74488cadad8335/id-episode_da670d2261e711515dbc9489bebb5755/id-dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+        "storage_format": "lerobot_v3",
+        "data_version_id": "dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+        "schema_snapshot_id": "mcap-v1"
+      },
+      "file": {
+        "path": "videos/observation.images.head_color/chunk-000/file-000.mp4",
+        "size": 2564,
+        "sha256": "1381716fc086e5a04dd0827908aca5a6731a83c0e3b9c9b7df6336dd85ecdced",
+        "media_type": "video/mp4"
+      },
+      "kind": "rgb-video",
+      "width": 32,
+      "height": 24,
+      "feature": "observation.images.head_color",
+      "colorizer": null,
+      "object_key": "episodes/id-mcap-8d5675bc73764b4f8e74488cadad8335/id-mcap-project-8d5675bc73764b4f8e74488cadad8335/id-cn-test/id-2023-11-14/id-synthetic-robot/id-mcap-task-8d5675bc73764b4f8e74488cadad8335/id-episode_da670d2261e711515dbc9489bebb5755/id-dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56/videos/observation.images.head_color/chunk-000/file-000.mp4",
+      "profile_id": "rs-2.58.4-dynamic-jet-h264-v1",
+      "depth_max_m": null,
+      "depth_min_m": null,
+      "source_hash": "7cb9dc2168b3f76220d19786bdddc23ead13e690deeaa16ce355f3841877da33",
+      "source_reused": true,
+      "source_video_sha256": "1381716fc086e5a04dd0827908aca5a6731a83c0e3b9c9b7df6336dd85ecdced"
+    },
+    {
+      "fps": 30.0,
+      "data": {
+        "version": 1,
+        "identity": {
+          "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+          "episode_id": "episode_da670d2261e711515dbc9489bebb5755",
+          "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+          "rollout_id": "rollout-8d5675bc73764b4f8e74488cadad8335",
+          "region_code": "cn-test",
+          "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335"
+        },
+        "frame_count": 30,
+        "content_hash": "315a5a604f1b023c4a3040e39f2029b3067c9bdbcf4e66373f52b3d0f8b47eab",
+        "package_prefix": "episodes/id-mcap-8d5675bc73764b4f8e74488cadad8335/id-mcap-project-8d5675bc73764b4f8e74488cadad8335/id-cn-test/id-2023-11-14/id-synthetic-robot/id-mcap-task-8d5675bc73764b4f8e74488cadad8335/id-episode_da670d2261e711515dbc9489bebb5755/id-dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+        "storage_format": "lerobot_v3",
+        "data_version_id": "dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+        "schema_snapshot_id": "mcap-v1"
+      },
+      "file": {
+        "path": "348738541e569628754f4b4ac364b41947ad1e87c748950ad35b7ce033ff258a.mp4",
+        "size": 1935,
+        "sha256": "348738541e569628754f4b4ac364b41947ad1e87c748950ad35b7ce033ff258a",
+        "media_type": "video/mp4"
+      },
+      "kind": "depth-preview",
+      "width": 16,
+      "height": 16,
+      "feature": "observation.images.head_depth",
+      "colorizer": {
+        "sdk_version": "2.58.4.10922",
+        "color_scheme": "Jet",
+        "display_input": "reconstructed_z16_in_memory_only",
+        "invalid_depth": 0,
+        "visual_preset": "Dynamic",
+        "implementation": "pyrealsense2.colorizer",
+        "distance_color_scale": "per_frame_histogram",
+        "display_depth_units_m": 0.00015259021896696422,
+        "histogram_equalization_enabled": true
+      },
+      "object_key": "episode-previews/04687b5a30e5a5fe902e7eae72693cc91d04987cbda250845a3610dbe55e8cb4/dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56/rs-2.58.4-dynamic-jet-h264-v1/ee5de467f6e49955fd8f58911bd817714c5a9374f993c9c139746b4d90c6a007/348738541e569628754f4b4ac364b41947ad1e87c748950ad35b7ce033ff258a.mp4",
+      "profile_id": "rs-2.58.4-dynamic-jet-h264-v1",
+      "depth_max_m": 10.0,
+      "depth_min_m": 0.01,
+      "source_hash": "0728a62a31c67135152a5a9ab31c197a0cae7230b97281470af328b0d24aa58c",
+      "source_reused": false,
+      "source_video_sha256": "5cd7a9c4bbaaf9c28efb9e568872e09d62ed8778056d3c323d0c4fd38c434d6e"
+    },
+    {
+      "fps": 30.0,
+      "data": {
+        "version": 1,
+        "identity": {
+          "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+          "episode_id": "episode_da670d2261e711515dbc9489bebb5755",
+          "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+          "rollout_id": "rollout-8d5675bc73764b4f8e74488cadad8335",
+          "region_code": "cn-test",
+          "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335"
+        },
+        "frame_count": 30,
+        "content_hash": "315a5a604f1b023c4a3040e39f2029b3067c9bdbcf4e66373f52b3d0f8b47eab",
+        "package_prefix": "episodes/id-mcap-8d5675bc73764b4f8e74488cadad8335/id-mcap-project-8d5675bc73764b4f8e74488cadad8335/id-cn-test/id-2023-11-14/id-synthetic-robot/id-mcap-task-8d5675bc73764b4f8e74488cadad8335/id-episode_da670d2261e711515dbc9489bebb5755/id-dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+        "storage_format": "lerobot_v3",
+        "data_version_id": "dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56",
+        "schema_snapshot_id": "mcap-v1"
+      },
+      "file": {
+        "path": "7ae2db764c67e0c46b53899638c09786f8fbccfd481c5789a3e3e8b02b3e77ba.mp4",
+        "size": 1939,
+        "sha256": "7ae2db764c67e0c46b53899638c09786f8fbccfd481c5789a3e3e8b02b3e77ba",
+        "media_type": "video/mp4"
+      },
+      "kind": "depth-preview",
+      "width": 16,
+      "height": 16,
+      "feature": "observation.images.wrist_depth",
+      "colorizer": {
+        "sdk_version": "2.58.4.10922",
+        "color_scheme": "Jet",
+        "display_input": "reconstructed_z16_in_memory_only",
+        "invalid_depth": 0,
+        "visual_preset": "Dynamic",
+        "implementation": "pyrealsense2.colorizer",
+        "distance_color_scale": "per_frame_histogram",
+        "display_depth_units_m": 0.00015259021896696422,
+        "histogram_equalization_enabled": true
+      },
+      "object_key": "episode-previews/04687b5a30e5a5fe902e7eae72693cc91d04987cbda250845a3610dbe55e8cb4/dv_85c1cdc0a11de33edad5582e0a796b5e2c72e8379bcf670928e5ef4e66b84f56/rs-2.58.4-dynamic-jet-h264-v1/2ca9272823f548fa25cec7ee096f6c82a0797b6cd441c88efd0f388ac3202ec8/7ae2db764c67e0c46b53899638c09786f8fbccfd481c5789a3e3e8b02b3e77ba.mp4",
+      "profile_id": "rs-2.58.4-dynamic-jet-h264-v1",
+      "depth_max_m": 10.0,
+      "depth_min_m": 0.01,
+      "source_hash": "993c2540e8112afeb97915a6e65f3f1918f1b4d73c2002d60bcd4d86b6780fec",
+      "source_reused": false,
+      "source_video_sha256": "4aac7e0d9b64d29eb9f0b8fee18f35e4143e4a5a1688930a8e9a7a7e9e10b521"
+    }
+  ],
+  "temporal_history_sha256": "12d66ea0be103203dc862e5b03e05f830d897c5c953013156d61f592a3bdc143",
+  "model_depth_training_support": "NOT_VALIDATED"
+}

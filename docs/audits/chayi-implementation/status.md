@@ -44,6 +44,13 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W2 MCAP 补充（2026-09-29）：新派发接通独立 RGB-D 包，使用明确源单位、实际
+  ROS2 CDR/JSON 解码、源帧/时钟、掩码和独立误差报告。真实服务测试 2、回归 56、
+  工作流/提交 17、原生入口回归 1 项通过；常驻隔离 worker 另完成实际 MCAP 工作流。
+  两个输出均断网通过官方 reader/DataLoader 及独立 HC 掩码核对；零新 Lance，深度
+  预览仍为官方 RealSense SDK。修复组织身份和终态重投递，保留旧 trigger ID 重试。
+  见 [本阶段证据、限制和 G2 条件](mcap-package.md)。仍属合成输入的软件证据；
+  三入口真实样本/浏览器和 W3–W8 剩余工作继续，17 项 P0 保持 Pending。
 - W2 连续录制补充（2026-09-29）：新派发已接入独立 RGB-D 包，经真实上传服务、
   Raw 登记、切片/QC/对齐、Temporal 提交/重试、官方 RealSense 预览、Tag/READY
   和断网官方 reader 验证。2 项服务、追加 1 项派发、56 项回归、7 项工作流、2 项

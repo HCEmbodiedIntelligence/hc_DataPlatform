@@ -77,7 +77,7 @@ def write_episode(
     first = next(iterator, None)
     if first is None:
         raise ValueError("cannot write an empty Episode")
-    mapping = _feature_names(sorted(first.modalities))
+    mapping = _feature_names(sorted(first.modalities), camera_topics=metadata.get("camera_topics"))
     cameras = set(assets.videos)
     if not cameras.issubset(mapping.values()):
         raise ValueError("prepared camera lacks an aligned modality")

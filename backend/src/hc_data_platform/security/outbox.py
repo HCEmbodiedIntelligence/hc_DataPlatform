@@ -295,6 +295,11 @@ class PostgresOutboxDeliveryRepository:
                     raise RuntimeError("outbox envelope identity mismatch")
                 if event.organization_id not in {None, organization_id}:
                     raise RuntimeError("outbox envelope organization mismatch")
+                if event.organization_id is None:
+                    # Historical JSON omitted this field. The selected SQL row
+                    # already belongs to this exact tenant; bind that persisted
+                    # scope before invoking handlers, never infer it from payload.
+                    event = event.model_copy(update={"organization_id": organization_id})
                 claim_token = str(uuid4())
                 cursor.execute(
                     """

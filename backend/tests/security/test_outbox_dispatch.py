@@ -54,8 +54,12 @@ def _project_event() -> DomainEventEnvelope:
 
 
 class PersistedPlanResolver:
+    def terminal_result(self, event):
+        return None
+
     def resolve(self, **values: str) -> object:
         return SimpleNamespace(
+            organization_id="organization-a",
             project_id=values["project_id"],
             region_code=values["region_code"],
             rollout_id=values["rollout_id"],

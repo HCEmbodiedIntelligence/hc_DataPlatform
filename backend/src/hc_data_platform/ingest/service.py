@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.pagination import CursorCodec
 from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdempotencyStore
-from hc_data_platform.workflow.models import WorkflowKind, workflow_id
+from hc_data_platform.workflow.models import WorkflowKind, ingest_rollout_workflow_id, workflow_id
 
 from .manifest import ObjectStorageManifestParser, preflight_manifest
 from .models import (
@@ -693,6 +693,7 @@ class UploadSessionService:
                 )
                 return event
             workflow = self._stage_workflow_trigger(
+                organization_id=organization_id,
                 session=session,
                 event=existing,
                 actor_id=actor_id,
@@ -804,6 +805,7 @@ class UploadSessionService:
             )
             return event
         workflow = self._stage_workflow_trigger(
+            organization_id=organization_id,
             session=session,
             event=event,
             actor_id=actor_id,
@@ -898,21 +900,35 @@ class UploadSessionService:
     def _stage_workflow_trigger(
         self,
         *,
+        organization_id: str,
         session: UploadSession,
         event: RawObjectCommittedV1,
         actor_id: str,
         request_id: str,
     ) -> IngestWorkflowLocator:
-        locator = workflow_id(
-            WorkflowKind.INGEST_ROLLOUT,
+        locator = ingest_rollout_workflow_id(
+            organization_id,
             session.project_id,
-            f"{session.region_code}/{session.rollout_id}",
+            session.region_code,
+            session.rollout_id,
         )
         trigger = IngestWorkflowLocator(
             event_id=str(uuid5(NAMESPACE_URL, f"hc-data-platform:{locator}")),
             workflow_id=locator,
             status=IngestTriggerStatus.PENDING,
         )
+        existing = self.persistence.get_workflow_trigger(session.session_id)
+        if existing is not None:
+            legacy = workflow_id(
+                WorkflowKind.INGEST_ROLLOUT,
+                session.project_id,
+                f"{session.region_code}/{session.rollout_id}",
+            )
+            if existing.workflow_id not in {locator, legacy}:
+                raise _rollout_content_conflict()
+            # A upload acknowledgement may be retried across a deployment. Keep
+            # its persisted identity so an old trigger is not replaced by v2.
+            trigger = existing
         return self.persistence.commit_raw_and_stage_workflow(
             session=session,
             event=event,

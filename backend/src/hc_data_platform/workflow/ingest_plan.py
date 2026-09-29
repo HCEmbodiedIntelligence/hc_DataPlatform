@@ -84,6 +84,7 @@ class PostgresIngestWorkflowInputResolver:
         projection_store: ProjectionArtifactStorePort | None = None,
         projection_staging_root: Path = Path("/tmp/hc-data/projection-staging"),
         projection_ttl: timedelta = timedelta(hours=24),
+        package_schemas: Any = None,
     ) -> None:
         if maximum_messages < 1:
             raise ValueError("maximum_messages must be positive")
@@ -95,6 +96,60 @@ class PostgresIngestWorkflowInputResolver:
         self._projection_store = projection_store
         self._projection_staging_root = projection_staging_root.resolve()
         self._projection_ttl = projection_ttl
+        self._package_schemas = package_schemas
+
+    def terminal_result(self, event):
+        """Validate the durable trigger before launch or terminal redelivery."""
+        context = current_request_context()
+        if not context.service_identity or (
+            context.organization_id,
+            context.project_id,
+            context.region_code,
+        ) != (event.organization_id, event.project_id, event.region_code):
+            raise _blocked("ingest event differs from its Worker scope")
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """SELECT trigger.workflow_id, trigger.event_id, job.status, job.result
+                    FROM ingest.upload_sessions session
+                    JOIN ingest.workflow_triggers trigger
+                      ON trigger.organization_id=session.organization_id
+                     AND trigger.session_id=session.session_id
+                     AND trigger.project_id=session.project_id
+                     AND trigger.region_code=session.region_code
+                    LEFT JOIN workflow.jobs job
+                      ON job.organization_id=session.organization_id
+                     AND job.project_id=session.project_id
+                     AND job.resource_id=session.rollout_id
+                     AND job.workflow_id=trigger.workflow_id
+                    WHERE session.organization_id=%s AND session.project_id=%s
+                      AND session.region_code=%s AND session.session_id=%s
+                      AND session.rollout_id=%s AND session.data_package_id=%s
+                      AND session.status='RAW_COMMITTED'""",
+                    (
+                        event.organization_id,
+                        event.project_id,
+                        event.region_code,
+                        event.payload["session_id"],
+                        event.payload["rollout_id"],
+                        event.payload["data_package_id"],
+                    ),
+                )
+                row = cursor.fetchone()
+                if (
+                    row is None
+                    or str(row[0]) != event.payload["workflow_id"]
+                    or str(row[1]) != str(event.event_id)
+                ):
+                    raise _blocked("ingest event differs from its persisted scoped trigger")
+                from .models import TERMINAL_JOB_STATUSES, JobStatus
+
+                if row[2] is not None and JobStatus(row[2]) in TERMINAL_JOB_STATUSES:
+                    return {"workflow_id": str(row[0]), "status": str(row[2]), "result": row[3]}
+                return None
+        finally:
+            connection.close()
 
     def resolve(
         self,
@@ -117,19 +172,29 @@ class PostgresIngestWorkflowInputResolver:
                            discovery.manifest_fingerprint, discovery.preflight_json
                     FROM ingest.upload_sessions session
                     JOIN ingest.rollout_objects object
-                      ON object.project_id = session.project_id
+                      ON object.organization_id = session.organization_id
+                     AND object.project_id = session.project_id
                      AND object.region_code = session.region_code
                      AND object.rollout_id = session.rollout_id
                     JOIN ingest.manifest_discoveries discovery
-                      ON discovery.session_id = session.session_id
+                      ON discovery.organization_id = session.organization_id
+                     AND discovery.session_id = session.session_id
                      AND discovery.project_id = session.project_id
                      AND discovery.region_code = session.region_code
                     WHERE session.session_id = %s AND session.project_id = %s
                       AND session.region_code = %s AND session.rollout_id = %s
                       AND session.data_package_id = %s
+                      AND session.organization_id = %s
                       AND session.status = 'RAW_COMMITTED'
                     """,
-                    (session_id, project_id, region_code, rollout_id, data_package_id),
+                    (
+                        session_id,
+                        project_id,
+                        region_code,
+                        rollout_id,
+                        data_package_id,
+                        organization_id,
+                    ),
                 )
                 raw = cursor.fetchone()
                 if raw is None:
@@ -185,7 +250,9 @@ class PostgresIngestWorkflowInputResolver:
         frequency_hz = int(snapshot.frequency_hz)
         alignment_profile = AlignmentProfileV1(
             profile_id=f"dataset-schema:{snapshot.schema_snapshot_id}",
-            converter_version="mcap-source-reference/1",
+            converter_version="mcap-episode-package/1"
+            if self._package_schemas is not None
+            else "mcap-source-reference/1",
             frequency_hz=frequency_hz,
             required_modalities=frozenset(snapshot.fields),
             default_tolerance_ns=max(1, 1_000_000_000 // frequency_hz),
@@ -233,6 +300,7 @@ class PostgresIngestWorkflowInputResolver:
                 schema_snapshot_id=schema_snapshot_id,
                 source=source,
                 profile=alignment_profile,
+                storage_format="lerobot_v3" if self._package_schemas is not None else "lance",
             ),
         )
 
@@ -258,6 +326,19 @@ class PostgresIngestWorkflowInputResolver:
 
     def project_alignment_metadata(self, source: IngestProjectionSourceV1) -> AlignmentInputV1:
         return _alignment_metadata(source, self._reload_projection_source(source))
+
+    def validate_package_source(self, source: IngestProjectionSourceV1, plan: Any) -> None:
+        from hc_data_platform.episode_store.models import digest
+
+        preflight = self._reload_projection_source(source)
+        if (
+            not current_request_context().service_identity
+            or digest(source.model_dump(mode="json")) != plan.source_locator_sha256
+            or preflight.manifest.file_size != plan.source.size
+            or preflight.manifest.sha256 != plan.source.sha256
+            or set(plan.feature_mapping) != {camera.topic for camera in preflight.manifest.cameras}
+        ):
+            raise _blocked("MCAP package source differs from its committed upload contract")
 
     def project_quality_stream(
         self, source: IngestProjectionSourceV1
@@ -392,16 +473,19 @@ class PostgresIngestWorkflowInputResolver:
                            discovery.manifest_fingerprint, discovery.preflight_json
                     FROM ingest.upload_sessions session
                     JOIN ingest.rollout_objects object
-                      ON object.project_id = session.project_id
+                      ON object.organization_id = session.organization_id
+                     AND object.project_id = session.project_id
                      AND object.region_code = session.region_code
                      AND object.rollout_id = session.rollout_id
                     JOIN ingest.manifest_discoveries discovery
-                      ON discovery.session_id = session.session_id
+                      ON discovery.organization_id = session.organization_id
+                     AND discovery.session_id = session.session_id
                      AND discovery.project_id = session.project_id
                      AND discovery.region_code = session.region_code
                     WHERE session.session_id = %s AND session.project_id = %s
                       AND session.region_code = %s AND session.rollout_id = %s
                       AND session.data_package_id = %s
+                      AND session.organization_id = %s
                       AND session.status = 'RAW_COMMITTED'
                     """,
                     (
@@ -410,6 +494,7 @@ class PostgresIngestWorkflowInputResolver:
                         source.region_code,
                         source.rollout_id,
                         source.data_package_id,
+                        source.organization_id,
                     ),
                 )
                 raw = cursor.fetchone()
@@ -471,10 +556,10 @@ class PostgresIngestWorkflowInputResolver:
         cursor.execute(
             """
             SELECT profile_json FROM quality_profiles
-            WHERE project_id = %s
+            WHERE project_id = %s AND organization_id = %s
             ORDER BY profile_id, profile_version
             """,
-            (project_id,),
+            (project_id, current_request_context().organization_id),
         )
         expected = frozenset(preflight.manifest.expected_topics)
         latest: dict[str, QualityProfileV1] = {}
@@ -530,10 +615,15 @@ class PostgresIngestWorkflowInputResolver:
             SELECT dataset_schema_snapshot_id
             FROM annotation.tag_schema_bindings
             WHERE project_id = %s AND region_code = %s AND task_kind = 'TAGGING'
-              AND dataset_id = %s
+              AND dataset_id = %s AND organization_id = %s
             ORDER BY dataset_schema_snapshot_id
             """,
-            (project_id, storage_region_code, dataset_id),
+            (
+                project_id,
+                storage_region_code,
+                dataset_id,
+                current_request_context().organization_id,
+            ),
         )
         return tuple(str(row[0]) for row in cursor.fetchall())
 
@@ -555,7 +645,8 @@ class PostgresIngestWorkflowInputResolver:
                 preflight=preflight,
                 profile=profile,
             )
-            existing = self._catalog.schema_for(project_id, dataset_id)
+            schemas = self._package_schemas or self._catalog
+            existing = schemas.schema_for(project_id, dataset_id)
             if existing is None or existing == candidate:
                 compatible.append((schema_snapshot_id, candidate))
         if len(compatible) != 1:
@@ -565,7 +656,7 @@ class PostgresIngestWorkflowInputResolver:
             )
         schema_snapshot_id, candidate = compatible[0]
         try:
-            self._catalog.register_schema(candidate)
+            schemas.register_schema(candidate)
         except Exception as exc:
             raise _blocked("the compatible dataset schema could not be registered") from exc
         return dataset_id, schema_snapshot_id, candidate
@@ -792,6 +883,38 @@ class _LocalProjectionSession:
         self._artifact_store = artifact_store
         self._path: Path | None = None
         self._frame_selection: FrameSelectionManifestRefV1 | None = None
+        self.package_images = False
+        self.camera_contracts: dict[str, dict[str, Any]] = {}
+
+    def enable_package_images(self) -> None:
+        """Opt in only for a newly frozen package workflow, never for legacy replay."""
+        self._require_path()
+        self.package_images = True
+
+    def _package_camera(self, schema: Any, channel: Any, message: Any, index: int) -> Any:
+        from hc_data_platform.episode_store.mcap_images import decode_camera
+        from hc_data_platform.publishing.depth_source import profile_hash
+
+        frame = decode_camera(schema, channel, message, self._decoder)
+        # MCAP message.sequence may be unset (all zero). A stable per-topic
+        # ordinal identifies the selected image; the actual sequence is also
+        # retained, so repeated-frame detection does not treat every zero as one.
+        frame.source["source_frame_index"] = index
+        camera = self.camera_contracts.setdefault(
+            channel.topic,
+            {
+                "kind": frame.kind,
+                "shape": list(frame.pixels.shape),
+                "source_profiles": {},
+            },
+        )
+        if camera["kind"] != frame.kind or camera["shape"] != list(frame.pixels.shape):
+            raise ValueError("MCAP camera shape/modality changes within a single Episode")
+        if frame.profile is not None:
+            camera["source_profiles"][profile_hash(frame.profile)] = frame.profile
+            if len(camera["source_profiles"]) > 64:
+                raise ValueError("MCAP camera exceeds 64 source profile versions")
+        return frame
 
     def __enter__(self) -> _LocalProjectionSession:
         self._staging_root.mkdir(parents=True, exist_ok=True)
@@ -841,12 +964,31 @@ class _LocalProjectionSession:
         seen_topics: set[str] = set()
         topic_counts: dict[str, int] = defaultdict(int)
         for schema, channel, message in self._messages():
-            del schema
             topic = str(channel.topic)
             timestamp_ns = int(message.log_time)
             seen_topics.add(topic)
             topic_counts[topic] += 1
             if topic in camera_topics:
+                if self.package_images:
+                    frame = self._package_camera(schema, channel, message, topic_counts[topic] - 1)
+                    yield QualityStreamObservationV1(
+                        topic=topic,
+                        timestamp_ns=timestamp_ns,
+                        is_camera=True,
+                        corrupt=False,
+                        # RGB appearance tests have no physical meaning for raw
+                        # depth counts. Source contract/decode errors fail above;
+                        # pixel validity/saturation are measured before quantizing.
+                        luma_mean=float(
+                            ImageStat.Stat(Image.fromarray(frame.pixels).convert("L")).mean[0]
+                        )
+                        if frame.kind == "rgb"
+                        else None,
+                        fingerprint=hashlib.sha256(frame.pixels.tobytes()).hexdigest()
+                        if frame.kind == "rgb"
+                        else None,
+                    )
+                    continue
                 if channel.message_encoding != "json":
                     raise _blocked(
                         f"camera topic {topic!r} must use the supported JSON/JPEG message encoding"
@@ -886,6 +1028,19 @@ class _LocalProjectionSession:
             if accepted:
                 last_alignment_timestamp[topic] = timestamp_ns
             if topic in camera_topics:
+                if self.package_images:
+                    frame = self._package_camera(schema, channel, message, topic_counts[topic] - 1)
+                    sampler.observe_camera(
+                        topic, timestamp_ns, luma_mean=None, perceptual_hash=None, corrupt=False
+                    )
+                    if accepted:
+                        yield (
+                            topic,
+                            TimedSampleV1(
+                                timestamp_ns=timestamp_ns, value=frame.projection_value()
+                            ),
+                        )
+                    continue
                 if channel.message_encoding != "json":
                     raise _blocked(
                         f"camera topic {topic!r} must use the supported JSON/JPEG message encoding"

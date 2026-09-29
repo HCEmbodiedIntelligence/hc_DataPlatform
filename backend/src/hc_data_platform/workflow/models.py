@@ -38,6 +38,7 @@ from hc_data_platform.episode_store.catalog_models import (
     EpisodeDerivedReady,
     validate_commit_pair,
 )
+from hc_data_platform.episode_store.mcap_plan import McapEpisodePlan
 from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.episode_store.native_plan import NativeEpisodePlan
 from hc_data_platform.episode_store.recording_plan import RecordingEpisodePlan
@@ -170,6 +171,20 @@ def continuous_episode_workflow_id(
         _workflow_part(part)
     resource = hashlib.sha256(json.dumps(parts, separators=(",", ":")).encode()).hexdigest()
     return workflow_id(WorkflowKind.CONTINUOUS_EPISODE, project_id, resource, version="v2")
+
+
+def ingest_rollout_workflow_id(
+    organization_id: str, project_id: str, region_code: str, rollout_id: str
+) -> str:
+    """MCAP dispatch identity includes the tenant, like continuous Episodes."""
+    import hashlib
+    import json
+
+    parts = (organization_id, project_id, region_code, rollout_id)
+    for part in parts:
+        _workflow_part(part)
+    resource = hashlib.sha256(json.dumps(parts, separators=(",", ":")).encode()).hexdigest()
+    return workflow_id(WorkflowKind.INGEST_ROLLOUT, project_id, resource, version="v2")
 
 
 def parse_workflow_id(value: str) -> tuple[str, str, str, str]:
@@ -369,7 +384,7 @@ class AlignmentActivityOutput(BaseModel):
     viewer_target: DatasetIngestViewerTarget | None = None
     alignment_staging: AlignmentStagingArtifactV1 | None = None
     expected_dataset_version: int | None = Field(default=None, ge=1)
-    native_package_plan: NativeEpisodePlan | None = None
+    native_package_plan: NativeEpisodePlan | McapEpisodePlan | None = None
 
     @model_validator(mode="after")
     def complete_inline_commit(self) -> AlignmentActivityOutput:
@@ -445,7 +460,7 @@ class AlignedBundleCommitActivityInput(BaseModel):
     # Absent for package commits: collection version is assigned transactionally
     # after this independent Episode package, never borrowed from a Lance head.
     expected_dataset_version: int | None = Field(default=None, ge=1)
-    package_plan: EpisodeBundlePlan | NativeEpisodePlan | None = None
+    package_plan: EpisodeBundlePlan | NativeEpisodePlan | McapEpisodePlan | None = None
     expected_camera_ids: tuple[str, ...]
     media_artifacts: tuple[AlignedMediaArtifactV1, ...]
 
