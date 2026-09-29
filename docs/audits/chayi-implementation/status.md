@@ -31,7 +31,7 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | DATA-05 | W1/W2 | Pending | Interrupted, failed, retried and concurrent commits |
 | DATA-06 | W1/W2 | Pending | Units, numeric semantics, depth profile/mask/error/time |
 | SEG-01 | W2 | Pending | Whole recording and long recording windows |
-| SEG-02 | W3/W5 | Partial generator verified; command/UI/real/human pending | [Tag creates distinct RGB-D data with parent trace](tag-derivation.md); end-to-end command remains |
+| SEG-02 | W3/W5 | Partial generator/product verified; command/UI/real/human pending | [Tag RGB-D generation](tag-derivation.md), [product publication](tag-projection.md); end-to-end command remains |
 | ANN-01 | W1/W3/W7 | Pending | Complete tags and immutable review bindings |
 | ANN-02 | W3/W5 | Pending | Versioned JSON outbox, failure/retry/download |
 | ANN-03 | W3/W6 | Pending | Explicit subtask track, gaps/overlap/cross-track tests |
@@ -43,6 +43,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W3 Tag 产品登记补充：固定父集合与数据版本，登记独立子条目、真实 RGB-D stream
+  与新标注任务；父快照和原始容量不变。4 项新测试、4 项现有/历史存储回归通过，
+  包含事务回滚/三路并发、跨作用域拒绝与纳秒反算多一帧边界。见
+  [登记证据](tag-projection.md)。持久任务/API/P08 与独立 QC 仍待接通；本阶段仍为
+  软件夹具，未新增真实采集/真人/浏览器验收，G1、W7/W8 继续。
 
 - W3 Tag 派生生成层补充：固定父数据/标注修订与单个区间，创建独立 RGB-D 包，
   不改父包与原冻结切片；深度不重新量化、整段视频复用、精确纳秒映射。40 项测试、

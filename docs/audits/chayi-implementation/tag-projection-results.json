@@ -1,0 +1,203 @@
+[
+  {
+    "parent": {
+      "identity": {
+        "organization_id": "bundle-aebcd55e6c4f4f30a147bf3098f48869",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_projection",
+        "episode_id": "episode_tag_parent",
+        "rollout_id": "explicit:writer-rollout"
+      },
+      "data_version_id": "dv_6b3a28b02a700cacb567be14c411ac322f15f006b1041b013261a46c97411552",
+      "version": 1,
+      "content_hash": "368dff9e4c05d82f67128e7061655ef30017aa0857817be2fbca7493345bd53c",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-aebcd55e6c4f4f30a147bf3098f48869/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_parent/id-dv_6b3a28b02a700cacb567be14c411ac322f15f006b1041b013261a46c97411552",
+      "frame_count": 4
+    },
+    "child": {
+      "identity": {
+        "organization_id": "bundle-aebcd55e6c4f4f30a147bf3098f48869",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_projection",
+        "episode_id": "episode_derived_911adfb20a7029663b145b0d6176865d",
+        "rollout_id": "derived:911adfb20a7029663b145b0d6176865dcfab20e564c1b775e817a809a9699b7d"
+      },
+      "data_version_id": "dv_1cf9caddc233cc7d33273d46ae8f555e30510543601b14a48b9775c27d44a842",
+      "version": 1,
+      "content_hash": "a4b4dc82346696b4eb3a404a5f5e90d8a8dacb6c2c573f0e8cf20fe353fe9a99",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-aebcd55e6c4f4f30a147bf3098f48869/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_911adfb20a7029663b145b0d6176865d/id-dv_1cf9caddc233cc7d33273d46ae8f555e30510543601b14a48b9775c27d44a842",
+      "frame_count": 2
+    },
+    "target": {
+      "schema_version": "dataset-ingest-viewer-target/v1",
+      "dataset_id": "dataset_tag_projection",
+      "version_id": "version_cv_d370d56deff072420968ac13f98ffcf4abac7ba11602d5d0d90e81610fdc4997",
+      "episode_id": "episode_derived_911adfb20a7029663b145b0d6176865d",
+      "revision_id": "revision_326fb8ada9a14773ffd924da53b02821"
+    },
+    "tag": "child",
+    "annotation_revision": 2,
+    "frames": [
+      2,
+      4
+    ],
+    "window_ns": [
+      66666666,
+      133333333
+    ],
+    "rounded_duration_frame_count": 3,
+    "transaction_rollback_and_concurrent_retry": true,
+    "parent_product_and_annotation_unchanged": true,
+    "child_annotation_task": "e2833e7f-5639-5961-a715-6ec6c03c5215",
+    "child_annotation_revision": 0,
+    "inherited_approvals": false,
+    "raw_bytes_before_and_after": [
+      1000,
+      1000
+    ],
+    "child_quality": "UNKNOWN",
+    "synthetic_input": true,
+    "http_queue_ui_verified": false,
+    "human_acceptance": false
+  },
+  {
+    "parent": {
+      "identity": {
+        "organization_id": "bundle-3a7df43925e941d296243268afc4ecfc",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_projection",
+        "episode_id": "episode_tag_parent",
+        "rollout_id": "explicit:writer-rollout"
+      },
+      "data_version_id": "dv_ec531519e846893bc38c30947b3d6e8d4b6b1c90ebd6abdc75b1efd60dc6885f",
+      "version": 1,
+      "content_hash": "3f2f5beca4e7abc3420abaa0a5792e3e2d9f797b64d598d247ffe72b131367eb",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-3a7df43925e941d296243268afc4ecfc/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_parent/id-dv_ec531519e846893bc38c30947b3d6e8d4b6b1c90ebd6abdc75b1efd60dc6885f",
+      "frame_count": 4
+    },
+    "child": {
+      "identity": {
+        "organization_id": "bundle-3a7df43925e941d296243268afc4ecfc",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_projection",
+        "episode_id": "episode_derived_aa67b2e048ae96883fdbf346b17ce6be",
+        "rollout_id": "derived:aa67b2e048ae96883fdbf346b17ce6be74147ea7eed33009a0ac452de8f0d536"
+      },
+      "data_version_id": "dv_2fdbbebce61fe17772fe6c68fb57e3272e0896b2e1bc6d11f63090cc1c3e2ecc",
+      "version": 1,
+      "content_hash": "b660e9fe22d1c0bbed5bb34bdb5cc68b7b3c5c2104784ef68e7e46b331f3f59a",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-3a7df43925e941d296243268afc4ecfc/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_aa67b2e048ae96883fdbf346b17ce6be/id-dv_2fdbbebce61fe17772fe6c68fb57e3272e0896b2e1bc6d11f63090cc1c3e2ecc",
+      "frame_count": 2
+    },
+    "target": {
+      "schema_version": "dataset-ingest-viewer-target/v1",
+      "dataset_id": "dataset_tag_projection",
+      "version_id": "version_cv_96ed355fdce7d045cf96569bf7aff53dbd882ff6ca790ed76007aa3407923555",
+      "episode_id": "episode_derived_aa67b2e048ae96883fdbf346b17ce6be",
+      "revision_id": "revision_46f6cc6b3079cb764065e3f084115991"
+    },
+    "tag": "parent",
+    "annotation_revision": 1,
+    "frames": [
+      0,
+      2
+    ],
+    "window_ns": [
+      0,
+      66666666
+    ],
+    "rounded_duration_frame_count": 2,
+    "transaction_rollback_and_concurrent_retry": true,
+    "parent_product_and_annotation_unchanged": true,
+    "child_annotation_task": "4afc0d77-6ae4-5dfd-bc90-0f3ac737a7e4",
+    "child_annotation_revision": 0,
+    "inherited_approvals": false,
+    "raw_bytes_before_and_after": [
+      1000,
+      1000
+    ],
+    "child_quality": "UNKNOWN",
+    "synthetic_input": true,
+    "http_queue_ui_verified": false,
+    "human_acceptance": false
+  },
+  {
+    "parent": {
+      "identity": {
+        "organization_id": "bundle-e74d7a6da522406696bc8bd772d83a8f",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_projection",
+        "episode_id": "episode_tag_parent",
+        "rollout_id": "explicit:writer-rollout"
+      },
+      "data_version_id": "dv_c6ad7181fe217f8d92193a574dffb479291a7bc693fef7de464d8dac63ddb446",
+      "version": 1,
+      "content_hash": "c31f0375a1e276e8ed0bc913007f849cfe2ad68e5bd4fdaa8f84b598951094ca",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-e74d7a6da522406696bc8bd772d83a8f/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_parent/id-dv_c6ad7181fe217f8d92193a574dffb479291a7bc693fef7de464d8dac63ddb446",
+      "frame_count": 4
+    },
+    "child": {
+      "identity": {
+        "organization_id": "bundle-e74d7a6da522406696bc8bd772d83a8f",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_projection",
+        "episode_id": "episode_derived_8eb4bd9169ec2fcbe77fedaf623210cd",
+        "rollout_id": "derived:8eb4bd9169ec2fcbe77fedaf623210cda7ee90e5085f3f73920810de29d00e9b"
+      },
+      "data_version_id": "dv_61d1f45446f0fcfd54bbb17994167e3144381c6d2da01894c1f57b665316fd3d",
+      "version": 1,
+      "content_hash": "c2ea4f4594197d30aa1f368ec1f8e635916a79a0f3333ea686d60a9d1f84a30f",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-e74d7a6da522406696bc8bd772d83a8f/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_8eb4bd9169ec2fcbe77fedaf623210cd/id-dv_61d1f45446f0fcfd54bbb17994167e3144381c6d2da01894c1f57b665316fd3d",
+      "frame_count": 3
+    },
+    "target": {
+      "schema_version": "dataset-ingest-viewer-target/v1",
+      "dataset_id": "dataset_tag_projection",
+      "version_id": "version_cv_d1cbfdf11b79f868bbd26456986c7b4d2b4c07382398cfae20c6b896f9bcbfd8",
+      "episode_id": "episode_derived_8eb4bd9169ec2fcbe77fedaf623210cd",
+      "revision_id": "revision_a53b44e3d4082df053acdaf532676a3b"
+    },
+    "tag": "child",
+    "annotation_revision": 1,
+    "frames": [
+      1,
+      4
+    ],
+    "window_ns": [
+      33333333,
+      133333333
+    ],
+    "rounded_duration_frame_count": 3,
+    "transaction_rollback_and_concurrent_retry": true,
+    "parent_product_and_annotation_unchanged": true,
+    "child_annotation_task": "959fd862-d717-5d29-9572-5e0377a3f3b8",
+    "child_annotation_revision": 0,
+    "inherited_approvals": false,
+    "raw_bytes_before_and_after": [
+      1000,
+      1000
+    ],
+    "child_quality": "UNKNOWN",
+    "synthetic_input": true,
+    "http_queue_ui_verified": false,
+    "human_acceptance": false
+  }
+]

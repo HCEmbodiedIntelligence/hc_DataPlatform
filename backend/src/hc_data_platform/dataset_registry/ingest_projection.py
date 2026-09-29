@@ -195,10 +195,23 @@ def _row_document(raw: object) -> object:
 class _ProjectionFacts:
     collection_task_id: str
     robot_id: str
-    started_at: datetime
+    started_at: datetime | None
     camera_topics: frozenset[str]
     source_size_bytes: int
     upload_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class TagEpisodeProjectionSource:
+    """A derived identity referring to an existing Raw source, not another ingest."""
+
+    organization_id: str
+    project_id: str
+    region_code: str
+    rollout_id: str
+    source_sha256: str
+    data_package_id: str
+    manifest_fingerprint: str
 
 
 class PostgresDatasetIngestProjector:
@@ -479,11 +492,24 @@ class PostgresDatasetIngestProjector:
         finally:
             connection.close()
 
+    def project_tag_episode(self, *, plan, parent_collection_version_id, version, ready):
+        from .tag_projection import project_tag_episode
+
+        return project_tag_episode(
+            self,
+            plan=plan,
+            parent_collection_version_id=parent_collection_version_id,
+            version=version,
+            ready=ready,
+        )
+
     @staticmethod
     def _existing_target(
         cursor: Any,
         *,
-        source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
+        source: IngestProjectionSourceV1
+        | ContinuousEpisodeProjectionSourceV1
+        | TagEpisodeProjectionSource,
         version: DatasetVersionRef | CollectionVersion,
         target: DatasetIngestViewerTarget,
     ) -> DatasetIngestViewerTarget | None:
@@ -663,7 +689,9 @@ class PostgresDatasetIngestProjector:
     def _assert_task_dataset(
         cursor: Any,
         *,
-        source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
+        source: IngestProjectionSourceV1
+        | ContinuousEpisodeProjectionSourceV1
+        | TagEpisodeProjectionSource,
         collection_task_id: str,
         dataset_id: str,
     ) -> None:
@@ -686,7 +714,11 @@ class PostgresDatasetIngestProjector:
         self,
         cursor: Any,
         *,
-        source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
+        source: (
+            IngestProjectionSourceV1
+            | ContinuousEpisodeProjectionSourceV1
+            | TagEpisodeProjectionSource
+        ),
         alignment: AlignmentInputV1,
         schema_snapshot_id: str,
         frequency_hz: float,
@@ -695,6 +727,9 @@ class PostgresDatasetIngestProjector:
         target: DatasetIngestViewerTarget,
         facts: _ProjectionFacts,
         media_artifacts: Sequence[AlignedMediaArtifactV1],
+        derived_streams: tuple[DatasetPageEpisodeStream, ...] | None = None,
+        source_provenance: DatasetPageSourceProvenance | None = None,
+        entry_size_bytes: int | None = None,
     ) -> None:
         scope = DatasetPageScope(
             organization_id=source.organization_id,
@@ -712,12 +747,16 @@ class PostgresDatasetIngestProjector:
         stream_builder = (
             self._package_streams if isinstance(version, CollectionVersion) else self._streams
         )
-        streams = stream_builder(
-            alignment=alignment,
-            camera_topics=facts.camera_topics,
-            ready=ready,
-            frequency_hz=frequency_hz,
-            media_artifacts=media_artifacts,
+        streams = (
+            derived_streams
+            if derived_streams is not None
+            else stream_builder(
+                alignment=alignment,
+                camera_topics=facts.camera_topics,
+                ready=ready,
+                frequency_hz=frequency_hz,
+                media_artifacts=media_artifacts,
+            )
         )
         previous_index = next(
             (
@@ -750,7 +789,7 @@ class PostgresDatasetIngestProjector:
             started_at=facts.started_at,
             started_at_ns=str(alignment.start_ns),
             has_finding=False,
-            change_type="INGESTED",
+            change_type="DERIVED" if isinstance(source, TagEpisodeProjectionSource) else "INGESTED",
         )
         current_revision = DatasetPageEpisodeRevision(
             scope=scope,
@@ -831,7 +870,9 @@ class PostgresDatasetIngestProjector:
                 episode_id=current_revision.episode_id,
                 revision_id=current_revision.revision_id,
                 role="REVISION",
-                size_bytes=str(facts.source_size_bytes),
+                size_bytes=str(
+                    facts.source_size_bytes if entry_size_bytes is None else entry_size_bytes
+                ),
                 sha256=current_revision.content_sha256,
                 safe_locator=f"episode:{current_revision.episode_id}",
             ),
@@ -920,7 +961,7 @@ class PostgresDatasetIngestProjector:
             ),
         )
         self._put_schema(cursor, schema_summary, schema_detail)
-        provenance = DatasetPageSourceProvenance(
+        provenance = source_provenance or DatasetPageSourceProvenance(
             scope=scope,
             dataset_id=target.dataset_id,
             version_id=target.version_id,
@@ -1002,7 +1043,9 @@ class PostgresDatasetIngestProjector:
                 project_id=scope.project_id,
                 region_code=scope.region_code,
                 actor_id="hc-data-worker",
-                action="dataset.ingest_version.projected",
+                action="dataset.tag_episode.projected"
+                if isinstance(source, TagEpisodeProjectionSource)
+                else "dataset.ingest_version.projected",
                 resource_id=target.version_id,
                 request_id=current_request_context().request_id,
                 outcome="SUCCEEDED",
