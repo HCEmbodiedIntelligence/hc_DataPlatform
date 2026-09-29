@@ -613,6 +613,31 @@ class PostgresCollectionTaskRepository:
                            AND job.task_id = %s
                            AND job.region_code = %s
                            AND rollout.region_code = %s
+                    ), publications AS MATERIALIZED (
+                        SELECT DISTINCT ON (binding.rollout_id)
+                               binding.rollout_id, revision.dataset_id, revision.version_id,
+                               revision.episode_id, revision.revision_id,
+                               version.created_at AS updated_at
+                          FROM dataset_registry.dataset_version_episode_revisions revision
+                          JOIN dataset_registry.dataset_versions version
+                            ON version.organization_id = revision.organization_id
+                           AND version.project_id = revision.project_id
+                           AND version.region_code = revision.region_code
+                           AND version.dataset_id = revision.dataset_id
+                           AND version.version_id = revision.version_id
+                          CROSS JOIN LATERAL jsonb_array_elements(
+                              COALESCE(revision.revision_document -> 'streams', '[]'::jsonb)
+                          ) stream
+                          CROSS JOIN LATERAL (VALUES
+                              (stream -> 'aligned_media_binding' ->> 'rollout_id'),
+                              (stream -> 'data_binding' ->> 'rollout_id')
+                          ) binding(rollout_id)
+                          JOIN received ON received.rollout_id = binding.rollout_id
+                         WHERE revision.organization_id = %s
+                           AND revision.project_id = %s
+                           AND revision.region_code = %s
+                         ORDER BY binding.rollout_id, version.created_at DESC,
+                                  revision.ordinal DESC
                     )
                     SELECT received.data_package_id, received.rollout_id,
                            received.robot_id, summary.status,
@@ -641,36 +666,8 @@ class PostgresCollectionTaskRepository:
                            ORDER BY job.updated_at DESC, job.job_id DESC
                            LIMIT 1
                       ) workflow ON true
-                      LEFT JOIN LATERAL (
-                          SELECT revision.dataset_id, revision.version_id,
-                                 revision.episode_id, revision.revision_id,
-                                 version.created_at AS updated_at
-                            FROM dataset_registry.dataset_version_episode_revisions revision
-                            JOIN dataset_registry.dataset_versions version
-                              ON version.organization_id = revision.organization_id
-                             AND version.project_id = revision.project_id
-                             AND version.region_code = revision.region_code
-                             AND version.dataset_id = revision.dataset_id
-                             AND version.version_id = revision.version_id
-                           WHERE revision.organization_id = %s
-                             AND revision.project_id = %s
-                             AND revision.region_code = %s
-                             AND EXISTS (
-                                 SELECT 1
-                                   FROM jsonb_array_elements(
-                                       COALESCE(
-                                           revision.revision_document -> 'streams',
-                                           '[]'::jsonb
-                                       )
-                                   ) stream
-                                  WHERE stream -> 'aligned_media_binding' ->> 'rollout_id'
-                                            = received.rollout_id
-                                     OR stream -> 'data_binding' ->> 'rollout_id'
-                                            = received.rollout_id
-                             )
-                           ORDER BY version.created_at DESC, revision.ordinal DESC
-                           LIMIT 1
-                      ) publication ON true
+                      LEFT JOIN publications publication
+                        ON publication.rollout_id = received.rollout_id
                      ORDER BY received.received_at, received.data_package_id
                     """,
                     (
@@ -684,9 +681,9 @@ class PostgresCollectionTaskRepository:
                         region_code,
                         organization_id,
                         project_id,
+                        region_code,
                         organization_id,
                         project_id,
-                        region_code,
                     ),
                 )
                 rows = tuple(cursor.fetchall())
