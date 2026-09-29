@@ -1,11 +1,16 @@
 """Production composition shared by HTTP and processing consumers."""
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from .catalog import EpisodeCatalogReader, PostgresLegacyEntries
+from .catalog_models import EpisodeDerivedReady
+from .collections import EpisodeCollections
 from .commit import EpisodePackageCommitter
 from .files import PackageFiles, VerifiedFileCache
-from .postgres import PostgresEpisodeStore
+from .postgres import PostgresEpisodeStore, assert_scope
 from .reader import ParquetStepReader, PhysicalDepthReader
+from .writer import write_episode
 
 
 class EpisodePackageService:
@@ -17,6 +22,7 @@ class EpisodePackageService:
         *,
         cache_bytes=2 * 1024**3,
         max_object_bytes=32 * 1024**3,
+        legacy_catalog=None,
     ):
         self.repository = PostgresEpisodeStore(connections)
         self.directory = directory
@@ -27,6 +33,53 @@ class EpisodePackageService:
         self.committer = EpisodePackageCommitter(self.repository, storage)
         self.steps = ParquetStepReader(self.files)
         self.depth = PhysicalDepthReader(self.files)
+        self.collections = EpisodeCollections(
+            self.repository,
+            storage,
+            legacy=legacy_catalog,
+            legacy_entries=PostgresLegacyEntries(self.repository, legacy_catalog)
+            if legacy_catalog is not None
+            else None,
+        )
+        self.catalog = (
+            EpisodeCatalogReader(legacy_catalog, self.collections, self.files, self.steps)
+            if legacy_catalog is not None
+            else None
+        )
 
     def close(self):
         self.cache.close()
+
+    def write_and_publish(self, source, steps, assets, *, schema, metadata):
+        """Processing hand-off; returns a real package and collection data reference.
+
+        A failed collection publication leaves a recoverable complete package,
+        but does not advance the dataset head or claim a product projection.
+        """
+        assert_scope(source.identity)
+        if (
+            schema.project_id != source.identity.project_id
+            or schema.dataset_id != source.identity.dataset_id
+            or schema.schema_snapshot_id != source.schema_snapshot_id
+        ):
+            raise ValueError("processing schema differs from frozen Episode input")
+        staging = self.directory / "preparing"
+        staging.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix="attempt-", dir=staging) as temporary:
+            root = Path(temporary) / "episode"
+            write_episode(root, source, steps, assets, fps=schema.frequency_hz, metadata=metadata)
+            receipt = self.committer.commit(root, source)
+        collection = self.collections.publish(receipt.data, schema)
+        ready = EpisodeDerivedReady(
+            data=receipt.data,
+            collection_version_id=collection.collection_version_id,
+            project_id=source.identity.project_id,
+            dataset_id=source.identity.dataset_id,
+            rollout_id=source.identity.rollout_id,
+            source_sha256=source.source_sha256,
+            converter_version=source.processor_version,
+            dataset_version=collection.version,
+            step_count=receipt.data.frame_count,
+            content_hash=collection.content_hash,
+        )
+        return collection, ready

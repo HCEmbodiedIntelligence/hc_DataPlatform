@@ -987,6 +987,7 @@ class PostgresCatalogAdapter:
                 """
                 SELECT schema_snapshot_id, frequency_hz, fingerprint, dataset_uri
                 FROM lance_datasets WHERE project_id = %s AND dataset_id = %s
+                  AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 """,
                 (snapshot.project_id, snapshot.dataset_id),
             )
@@ -1010,9 +1011,11 @@ class PostgresCatalogAdapter:
                 FROM lance_datasets d
                 JOIN lance_schema_snapshots s
                   ON s.project_id = d.project_id
+                 AND s.organization_id = d.organization_id
                  AND s.dataset_id = d.dataset_id
                  AND s.schema_snapshot_id = d.schema_snapshot_id
                 WHERE d.project_id = %s AND d.dataset_id = %s
+                  AND d.organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 """,
                 (project_id, dataset_id),
             )
@@ -1032,6 +1035,7 @@ class PostgresCatalogAdapter:
                 WHERE project_id = %s AND dataset_id = %s
                   AND rollout_id = %s AND source_sha256 = %s
                   AND converter_version = %s
+                  AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 """,
                 (project_id, dataset_id, *idempotency_key),
             )
@@ -1041,7 +1045,8 @@ class PostgresCatalogAdapter:
     def has_storage_commit(self, storage_commit_id: str) -> bool:
         with self._transaction() as cursor:
             cursor.execute(
-                "SELECT 1 FROM lance_dataset_versions WHERE storage_commit_id = %s",
+                """SELECT 1 FROM lance_dataset_versions WHERE storage_commit_id = %s
+                AND organization_id = NULLIF(current_setting('app.organization_id', true), '')""",
                 (storage_commit_id,),
             )
             return cursor.fetchone() is not None
@@ -1054,6 +1059,7 @@ class PostgresCatalogAdapter:
                 """
                 SELECT current_version FROM lance_datasets
                 WHERE project_id = %s AND dataset_id = %s
+                  AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 FOR UPDATE
                 """,
                 (manifest.project_id, manifest.dataset_id),
@@ -1063,7 +1069,8 @@ class PostgresCatalogAdapter:
                 raise KeyError((manifest.project_id, manifest.dataset_id))
             current = int(row[0])
             cursor.execute(
-                "SELECT receipt_json FROM lance_dataset_versions WHERE storage_commit_id = %s",
+                """SELECT receipt_json FROM lance_dataset_versions WHERE storage_commit_id = %s
+                AND organization_id = NULLIF(current_setting('app.organization_id', true), '')""",
                 (receipt.storage_commit_id,),
             )
             existing = cursor.fetchone()
@@ -1134,6 +1141,7 @@ class PostgresCatalogAdapter:
                 """
                 UPDATE lance_datasets SET current_version = %s, updated_at = now()
                 WHERE project_id = %s AND dataset_id = %s
+                  AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 """,
                 (version.version, manifest.project_id, manifest.dataset_id),
             )
@@ -1171,7 +1179,9 @@ class PostgresCatalogAdapter:
             cursor.execute(
                 """
                 SELECT receipt_json FROM lance_dataset_versions
-                WHERE project_id = %s AND dataset_id = %s ORDER BY version
+                WHERE project_id = %s AND dataset_id = %s
+                  AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
+                ORDER BY version
                 """,
                 (project_id, dataset_id),
             )
@@ -1186,6 +1196,7 @@ class PostgresCatalogAdapter:
                 """
                 SELECT receipt_json FROM lance_dataset_versions
                 WHERE project_id = %s AND dataset_id = %s AND version = %s
+                  AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 """,
                 (project_id, dataset_id, version),
             )
@@ -1196,8 +1207,10 @@ class PostgresCatalogAdapter:
                 FROM lance_rollout_lineage l
                 JOIN lance_dataset_versions v
                   ON v.storage_commit_id = l.storage_commit_id
+                 AND v.organization_id = l.organization_id
                 WHERE l.project_id = %s AND l.dataset_id = %s
                   AND l.rollout_id = %s AND l.version_added <= %s
+                  AND l.organization_id = NULLIF(current_setting('app.organization_id', true), '')
                 ORDER BY l.version_added DESC LIMIT 1
                 """,
                 (project_id, dataset_id, rollout_id, version),

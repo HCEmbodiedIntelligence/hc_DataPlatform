@@ -963,6 +963,7 @@ def build_runtime(
         media_repository=aligned_media_repository,
         dataset_projection=dataset_ingest_projection,
     )
+    episode_packages = _episode_packages(connection_factory, object_storage, resolved, catalog)
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
         verifier=McapVerifier(
@@ -1004,12 +1005,13 @@ def build_runtime(
         workflow_jobs=PostgresWorkflowJobRepository(connection_factory),
         continuous_episode_processing=continuous_episode_processing,
         lerobot_pipeline=lerobot_pipeline,
+        episode_packages=episode_packages,
     )
     return RuntimeComponents(
         access=access,
         admin_accounts=admin_accounts,
         recovery=recovery,
-        episode_packages=_episode_packages(connection_factory, object_storage, resolved),
+        episode_packages=episode_packages,
         audit_projection=audit_projection,
         audit_governance=audit_governance,
         dashboard=dashboard,
@@ -1089,7 +1091,7 @@ def configure_api(runtime: RuntimeComponents) -> None:
     configure_export_audit_recorder(runtime.export_audit)
 
 
-def _episode_packages(connection_factory, object_storage, settings):
+def _episode_packages(connection_factory, object_storage, settings, legacy_catalog):
     from hc_data_platform.episode_store.service import EpisodePackageService
 
     return EpisodePackageService(
@@ -1097,6 +1099,7 @@ def _episode_packages(connection_factory, object_storage, settings):
         Path(settings.alignment_staging_root) / "episode-packages",
         cache_bytes=settings.episode_package_cache_bytes,
         max_object_bytes=settings.episode_package_max_object_bytes,
+        legacy_catalog=legacy_catalog,
     )
 
 

@@ -143,6 +143,23 @@ class CommitReceipt(FrozenModel):
     manifest_sha256: Digest
 
 
+class LegacyEpisodeRef(FrozenModel):
+    """Exact historical storage reference; never assigned to a new package."""
+
+    identity: EpisodeIdentity
+    storage_format: Literal["lance"] = "lance"
+    data_version_id: Identifier
+    content_hash: Digest
+    schema_snapshot_id: Identifier
+    frame_count: int = Field(ge=1)
+    dataset_version: int = Field(ge=1)
+    dataset_uri: str
+    lance_version: int = Field(ge=1)
+
+
+EpisodeDataRef = Annotated[DataVersionRef | LegacyEpisodeRef, Field(discriminator="storage_format")]
+
+
 class CollectionSnapshot(FrozenModel):
     """Collection identity is separate from each immutable Episode version."""
 
@@ -151,7 +168,12 @@ class CollectionSnapshot(FrozenModel):
     region_code: Identifier
     dataset_id: Identifier
     collection_version_id: Identifier
-    episodes: tuple[DataVersionRef, ...]
+    version: int = Field(ge=1)
+    schema_snapshot_id: Identifier
+    schema_fingerprint: Digest
+    frequency_hz: float = Field(gt=0, allow_inf_nan=False)
+    previous_collection_version_id: Identifier | None = None
+    episodes: tuple[EpisodeDataRef, ...] = Field(min_length=1, max_length=10000)
 
     @model_validator(mode="after")
     def same_scope(self) -> CollectionSnapshot:
@@ -161,4 +183,25 @@ class CollectionSnapshot(FrozenModel):
             raise ValueError("collection cannot contain data from another tenant/dataset")
         if len({i.episode_id for i in identities}) != len(identities):
             raise ValueError("collection contains multiple versions of one Episode")
+        if len({i.rollout_id for i in identities}) != len(identities):
+            raise ValueError("collection contains multiple Episodes for one rollout")
+        if any(item.schema_snapshot_id != self.schema_snapshot_id for item in self.episodes):
+            raise ValueError("collection schemas differ")
         return self
+
+    @property
+    def content_hash(self):
+        return digest(self.model_dump(mode="json"))
+
+    @property
+    def manifest_key(self):
+        parts = (
+            self.organization_id,
+            self.project_id,
+            self.region_code,
+            self.dataset_id,
+            self.collection_version_id,
+        )
+        return (
+            "collections/" + "/".join("id-" + quote(p, safe="-_") for p in parts) + "/manifest.json"
+        )

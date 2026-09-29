@@ -397,6 +397,7 @@ class ActivityDependencies:
     workflow_jobs: WorkflowJobPersistencePort | None = None
     continuous_episode_processing: ContinuousEpisodeProcessingPort | None = None
     lerobot_pipeline: Any | None = None
+    episode_packages: Any | None = None
 
 
 class WorkflowPortNotConfigured(RuntimeError):

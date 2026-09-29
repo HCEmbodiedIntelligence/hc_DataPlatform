@@ -173,3 +173,34 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 - These are synthetic software/service-chain checks. They do not satisfy real
   recording, three-ingress, UI/browser or human acceptance. New writer dispatch,
   worker outbox wiring and all other pending items above still require work.
+
+## Collection publication milestone (partial W1/W2)
+
+- Dataset collection snapshots now pin complete scoped Episode references. A new
+  Episode data version replaces only that Episode in a new immutable collection;
+  collection ordinal is independent of Episode count. New references do not have
+  a fabricated `lance_version`.
+- Additive migration `episode_store/0003_collection_publication.sql` was applied
+  only to the isolated database. An advisory lock serializes publication; object
+  verification precedes the collection head/publication/event transaction. Lost
+  responses return the original publication on retry, even after newer versions.
+- The common logical reader routes new package references to Parquet and frozen
+  historical references to actual Lance versions. Historical Episode/rollout
+  bindings come from persisted regional revisions, not identifier parsing.
+  Current/list/detail/step reads reject versions outside the selected region;
+  legacy PostgreSQL queries also explicitly constrain organization, including
+  when the service database role can bypass RLS.
+- `EpisodePackageService.write_and_publish` composes the writer, package commit
+  and collection publication and is available to activity dependencies. The
+  existing ingestion activities have NOT yet switched to this hand-off.
+- Isolated service tests (PostgreSQL, MinIO, real historical Lance fixture):
+  `tests/episode_store/test_collections_services.py tests/lance_catalog/test_adapters.py
+  tests/lance_catalog/test_lance_integration.py --fail-on-skipped --fail-on-xfailed`:
+  **12 passed**, including two publication interruption points, four concurrent
+  Episodes, reprocessing/history, mixed physical readers and scope boundaries.
+  Evidence: `episode-collection-tests.xml`. Fixture data are synthetic.
+- Ruff passes the new collection modules/tests and changed legacy adapter/activity
+  code. Full `runtime.py` checking still reports two pre-existing import-order and
+  two pre-existing long-line findings in robot-processing composition.
+- Main processing dispatch, storage-neutral schema registration, product
+  projection and event consumption remain pending; no P0 row is marked complete.
