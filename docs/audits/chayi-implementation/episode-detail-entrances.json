@@ -1,0 +1,1385 @@
+{
+  "scope": "normal isolated HTTP sessions over synthetic ingress outputs",
+  "real_recording": false,
+  "human_acceptance": false,
+  "entrances": [
+    {
+      "ingress": "mcap",
+      "data": {
+        "identity": {
+          "organization_id": "mcap-52f2f39373994911b5b0ca0448ccac15",
+          "project_id": "mcap-project-52f2f39373994911b5b0ca0448ccac15",
+          "region_code": "cn-test",
+          "dataset_id": "dataset_52f2f39373994911b5b0ca0448ccac15",
+          "episode_id": "episode_ecd264ec78624716c3897eb852b8b7cf",
+          "rollout_id": "rollout-52f2f39373994911b5b0ca0448ccac15"
+        },
+        "data_version_id": "dv_d0b9f02fa4fb9b3b8af8d75fbe70d189b9f7e04244ea7cd259e9565dc55b5116",
+        "version": 1,
+        "content_hash": "afc6785c86518a79ed9875bba87c9219bff9a6b70595fb1bd85b0a780751a926",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "mcap-v1",
+        "package_prefix": "episodes/id-mcap-52f2f39373994911b5b0ca0448ccac15/id-mcap-project-52f2f39373994911b5b0ca0448ccac15/id-cn-test/id-2023-11-14/id-synthetic-robot/id-mcap-task-52f2f39373994911b5b0ca0448ccac15/id-episode_ecd264ec78624716c3897eb852b8b7cf/id-dv_d0b9f02fa4fb9b3b8af8d75fbe70d189b9f7e04244ea7cd259e9565dc55b5116",
+        "frame_count": 30
+      },
+      "source": {
+        "parent_recording_id": null,
+        "parent_duration_ns": null,
+        "parent_duration_reason": "NOT_RECORDED",
+        "window": {
+          "start_ns": "1700000000000000000",
+          "end_ns": "1700000001000000000"
+        },
+        "window_clock": "mcap_log_time",
+        "frame_mapping_files": [
+          "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "639406f5f3e21f538abe235b6eb79d5a33083ee9768d0b1288b84d5742111b59",
+          "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b"
+        ]
+      },
+      "duration_seconds": 1.0,
+      "camera_stream_count": 3,
+      "depth_cameras": [
+        {
+          "feature": "observation.images.head_depth",
+          "kind": "DEPTH",
+          "shape": [
+            16,
+            16,
+            1
+          ],
+          "video_file_id": "415be734f81106384b92930b1ffefd5c7105a4446becb95629602034976913ec",
+          "preview_status": "READY",
+          "preview_reason": null,
+          "depth": {
+            "profile": {
+              "bits": 12,
+              "codec": "hevc",
+              "container": "mp4",
+              "depth_max": 10.0,
+              "depth_min": 0.01,
+              "feature_info": {
+                "depth_unit": "mm",
+                "has_audio": false,
+                "is_depth_map": true,
+                "video.channels": 1,
+                "video.codec": "hevc",
+                "video.depth_max": 10.0,
+                "video.depth_min": 0.01,
+                "video.fps": 30,
+                "video.pix_fmt": "gray12le",
+                "video.shift": 3.5,
+                "video.use_log": true,
+                "video.video_backend": "pyav"
+              },
+              "input_unit": "mm",
+              "invalid_fill_code": 0,
+              "invalid_requires_hc_mask": true,
+              "official_reader_version": "0.6.1",
+              "parameter_unit": "m",
+              "pixel_format": "gray12le",
+              "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+              "qmax": 4095,
+              "shift": 3.5,
+              "source_scale_unit": "m/source_unit",
+              "use_log": true,
+              "version": "hc-depth/1",
+              "x265_lossless": 1
+            },
+            "output_unit": "m",
+            "source_dtypes": [
+              "<u2"
+            ],
+            "source_scales_m_per_unit": [
+              0.00025
+            ],
+            "source_profiles": {
+              "6525784fb183d4072588837180b228fb1afea2a6480124e842bf4a42bbf851c3": {
+                "encoding": "16UC1",
+                "evidence": {
+                  "kind": "synthetic_fixture",
+                  "reference": "tests.episode_store.test_mcap_images",
+                  "version": "1"
+                },
+                "invalid_nonfinite": true,
+                "invalid_values": [
+                  0,
+                  65535
+                ],
+                "registered_to_rgb": false,
+                "registration_evidence": "independent synthetic depth sensor grid",
+                "scale_m_per_unit": 0.00025,
+                "schema_version": "hc-depth-source/1",
+                "unit": "source_unit"
+              }
+            },
+            "source_frame_count": null,
+            "target_frame_count": 30,
+            "source_frame_count_reason": "NOT_RECORDED",
+            "shape": [
+              16,
+              16
+            ],
+            "totals": {
+              "invalid_pixels": 60,
+              "missing_frames": 0,
+              "pixels": 7680,
+              "repeated_frames": 0,
+              "saturated_high_pixels": 30,
+              "saturated_low_pixels": 30,
+              "unclipped_pixels": 7560,
+              "valid_pixels": 7620
+            },
+            "matched_frame_ratio": 1.0,
+            "missing_frame_ratio": 0.0,
+            "invalid_pixel_ratio": 0.0078125,
+            "saturated_pixel_ratio": 0.0078125,
+            "maximum_time_error_ns": "0",
+            "quantization": {
+              "float32_tolerance_m": 2e-05,
+              "half_cell_bound_passed": true,
+              "mm_reader_additional_rounding_bound_m": 0.0005,
+              "per_frame_percentiles": "frames.parquet",
+              "saturated_pixels_reported_separately": true,
+              "unclipped_max_error_m": 0.0007375450134277095
+            },
+            "video_encoding": {
+              "codec_profile": "Rext",
+              "codes_sha256": "88369dc85e2391f87038897c63de807a1d20729741a00f2d850123c0d3d83bdd",
+              "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+              "encoder_options": {
+                "preset": "ultrafast",
+                "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+              },
+              "encoder_profile": "hc-hevc-gray12-lossless/2",
+              "ffmpeg_libraries": {
+                "libavcodec": [
+                  61,
+                  19,
+                  101
+                ],
+                "libavdevice": [
+                  61,
+                  3,
+                  100
+                ],
+                "libavfilter": [
+                  10,
+                  4,
+                  100
+                ],
+                "libavformat": [
+                  61,
+                  7,
+                  100
+                ],
+                "libavutil": [
+                  59,
+                  39,
+                  100
+                ],
+                "libswresample": [
+                  5,
+                  3,
+                  100
+                ],
+                "libswscale": [
+                  8,
+                  3,
+                  100
+                ]
+              },
+              "lossless_codes": true,
+              "pyav_version": "15.1.0",
+              "video_sha256": "5cd7a9c4bbaaf9c28efb9e568872e09d62ed8778056d3c323d0c4fd38c434d6e"
+            },
+            "frame_mapping_file_id": "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+            "mask_file_id": "02e929dbc14606f3db1847086bcf2519e2e6a7d9d8830ad9c90874678f1d7d43",
+            "calibration": {
+              "reason": "no validated calibration binding",
+              "status": "UNKNOWN"
+            },
+            "model_depth_training_support": "NOT_VALIDATED"
+          }
+        },
+        {
+          "feature": "observation.images.wrist_depth",
+          "kind": "DEPTH",
+          "shape": [
+            16,
+            16,
+            1
+          ],
+          "video_file_id": "5df8f29e0f94b02dcdf5805bf30d2897efbc5ace6807ad676fc7a082bc467840",
+          "preview_status": "READY",
+          "preview_reason": null,
+          "depth": {
+            "profile": {
+              "bits": 12,
+              "codec": "hevc",
+              "container": "mp4",
+              "depth_max": 10.0,
+              "depth_min": 0.01,
+              "feature_info": {
+                "depth_unit": "mm",
+                "has_audio": false,
+                "is_depth_map": true,
+                "video.channels": 1,
+                "video.codec": "hevc",
+                "video.depth_max": 10.0,
+                "video.depth_min": 0.01,
+                "video.fps": 30,
+                "video.pix_fmt": "gray12le",
+                "video.shift": 3.5,
+                "video.use_log": true,
+                "video.video_backend": "pyav"
+              },
+              "input_unit": "mm",
+              "invalid_fill_code": 0,
+              "invalid_requires_hc_mask": true,
+              "official_reader_version": "0.6.1",
+              "parameter_unit": "m",
+              "pixel_format": "gray12le",
+              "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+              "qmax": 4095,
+              "shift": 3.5,
+              "source_scale_unit": "m/source_unit",
+              "use_log": true,
+              "version": "hc-depth/1",
+              "x265_lossless": 1
+            },
+            "output_unit": "m",
+            "source_dtypes": [
+              "<f4"
+            ],
+            "source_scales_m_per_unit": [
+              0.00025
+            ],
+            "source_profiles": {
+              "f1d2c6456cd0b976a5c1ff937507773b78420e1bd841ec5516e12938f1bd2075": {
+                "encoding": "32FC1",
+                "evidence": {
+                  "kind": "synthetic_fixture",
+                  "reference": "tests.episode_store.test_mcap_images",
+                  "version": "1"
+                },
+                "invalid_nonfinite": true,
+                "invalid_values": [
+                  0
+                ],
+                "registered_to_rgb": false,
+                "registration_evidence": "independent synthetic depth sensor grid",
+                "scale_m_per_unit": 0.00025,
+                "schema_version": "hc-depth-source/1",
+                "unit": "source_unit"
+              }
+            },
+            "source_frame_count": null,
+            "target_frame_count": 30,
+            "source_frame_count_reason": "NOT_RECORDED",
+            "shape": [
+              16,
+              16
+            ],
+            "totals": {
+              "invalid_pixels": 90,
+              "missing_frames": 0,
+              "pixels": 7680,
+              "repeated_frames": 0,
+              "saturated_high_pixels": 30,
+              "saturated_low_pixels": 30,
+              "unclipped_pixels": 7530,
+              "valid_pixels": 7590
+            },
+            "matched_frame_ratio": 1.0,
+            "missing_frame_ratio": 0.0,
+            "invalid_pixel_ratio": 0.01171875,
+            "saturated_pixel_ratio": 0.0078125,
+            "maximum_time_error_ns": "0",
+            "quantization": {
+              "float32_tolerance_m": 2e-05,
+              "half_cell_bound_passed": true,
+              "mm_reader_additional_rounding_bound_m": 0.0005,
+              "per_frame_percentiles": "frames.parquet",
+              "saturated_pixels_reported_separately": true,
+              "unclipped_max_error_m": 0.0007375450134277095
+            },
+            "video_encoding": {
+              "codec_profile": "Rext",
+              "codes_sha256": "8ea549ec18ddc17543649cb816aa891f6c5e8a83a5ba0ae165b282a080781831",
+              "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+              "encoder_options": {
+                "preset": "ultrafast",
+                "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+              },
+              "encoder_profile": "hc-hevc-gray12-lossless/2",
+              "ffmpeg_libraries": {
+                "libavcodec": [
+                  61,
+                  19,
+                  101
+                ],
+                "libavdevice": [
+                  61,
+                  3,
+                  100
+                ],
+                "libavfilter": [
+                  10,
+                  4,
+                  100
+                ],
+                "libavformat": [
+                  61,
+                  7,
+                  100
+                ],
+                "libavutil": [
+                  59,
+                  39,
+                  100
+                ],
+                "libswresample": [
+                  5,
+                  3,
+                  100
+                ],
+                "libswscale": [
+                  8,
+                  3,
+                  100
+                ]
+              },
+              "lossless_codes": true,
+              "pyav_version": "15.1.0",
+              "video_sha256": "4aac7e0d9b64d29eb9f0b8fee18f35e4143e4a5a1688930a8e9a7a7e9e10b521"
+            },
+            "frame_mapping_file_id": "639406f5f3e21f538abe235b6eb79d5a33083ee9768d0b1288b84d5742111b59",
+            "mask_file_id": "17749958503e1d5408cdfc0d6a097e5151c809cead94876c6c270f51e354183b",
+            "calibration": {
+              "reason": "no validated calibration binding",
+              "status": "UNKNOWN"
+            },
+            "model_depth_training_support": "NOT_VALIDATED"
+          }
+        }
+      ],
+      "quality": "PASS",
+      "annotation": {
+        "availability": "AVAILABLE",
+        "task_options": [],
+        "task_options_has_more": false,
+        "task_id": "17b91696-65cf-59e7-99a9-3a76725e6454",
+        "status": "DRAFT",
+        "state_version": 0,
+        "current_revision": {
+          "task_id": "17b91696-65cf-59e7-99a9-3a76725e6454",
+          "revision": 0,
+          "content_hash": "5d63f0e92ad873966879e4fca433be653a7942e6597a9008162fea7503dc49d6",
+          "author_id": "system",
+          "created_at": "2026-09-29T12:13:22.787953Z"
+        },
+        "latest_submission": null,
+        "latest_approval": null,
+        "latest_review": null,
+        "current_submission_id": null,
+        "current_approved_review_id": null,
+        "has_unsubmitted_changes": true,
+        "revision_files": [
+          {
+            "status": "READY",
+            "task_id": "17b91696-65cf-59e7-99a9-3a76725e6454",
+            "revision": 0,
+            "error_code": null,
+            "generation": 1,
+            "size_bytes": 3426,
+            "content_sha256": "d41e7a13d4bd9fd4e09fd53df00a061e5c3d9398a96c4b712d30fb81f8ea8a50",
+            "revision_content_hash": "5d63f0e92ad873966879e4fca433be653a7942e6597a9008162fea7503dc49d6",
+            "download": {
+              "action": "DOWNLOAD_ANNOTATION_FILE",
+              "allowed": false,
+              "required_capabilities": [
+                "annotation_task.read",
+                "export.download"
+              ],
+              "denied_reason": "MISSING_CAPABILITY"
+            }
+          }
+        ]
+      },
+      "data_review_status": "NOT_REVIEWED",
+      "subtasks": {
+        "status": "NOT_SPECIFIED",
+        "delivery_id": null,
+        "revision": null,
+        "track": null,
+        "segment_count": null
+      },
+      "file_count": 23,
+      "task": {
+        "task_id": "mcap-task-52f2f39373994911b5b0ca0448ccac15",
+        "instructions": [
+          "mcap-task-52f2f39373994911b5b0ca0448ccac15"
+        ],
+        "requirements": null,
+        "requirements_status": "NOT_RECORDED"
+      }
+    },
+    {
+      "ingress": "continuous_recording",
+      "data": {
+        "identity": {
+          "organization_id": "raw-pin-258ace9d80a34b33aa84f771d47167dd",
+          "project_id": "raw-pin-project",
+          "region_code": "raw-pin-region",
+          "dataset_id": "dataset_raw_pinning",
+          "episode_id": "episode_347231ca3c255d393cb27627e8883027",
+          "rollout_id": "recording-38ef8385fdf45646a131dd38fe04a9a2:episode_cut"
+        },
+        "data_version_id": "dv_5edb9fecbfaf043250d1de60ddc7954e322c6b05b92165f05e36bf8791dffd43",
+        "version": 1,
+        "content_hash": "b6e3de4100e9530fc6b35c0a952161516ef82779154899a210fc4527d266a6fc",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "recording-rgbd-schema",
+        "package_prefix": "episodes/id-raw-pin-258ace9d80a34b33aa84f771d47167dd/id-raw-pin-project/id-raw-pin-region/id-2026-09-23/id-synthetic-platform-robot/id-synthetic-raw-pin-d13f1f7b376249f6929b27cc232c4a51/id-episode_347231ca3c255d393cb27627e8883027/id-dv_5edb9fecbfaf043250d1de60ddc7954e322c6b05b92165f05e36bf8791dffd43",
+        "frame_count": 6
+      },
+      "source": {
+        "parent_recording_id": "recording-38ef8385fdf45646a131dd38fe04a9a2",
+        "parent_duration_ns": null,
+        "parent_duration_reason": "NOT_RECORDED",
+        "window": {
+          "start_offset_ns": "33333333",
+          "end_offset_ns": "233333333"
+        },
+        "window_clock": "recording_relative",
+        "frame_mapping_files": [
+          "5d83248a251b448fa9172449d99c0d26e8992cdb2f34c3cf4fefc01ba00e4533",
+          "75a8f69bbc4e9a38a5fa49b8b038971a3e78a5884703ec7ee0bde7b55b873d1e",
+          "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "9aaa44cb6bcb1238a574353e8f96215ac975eb5e29bc5c4b45d32037cee70205",
+          "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b"
+        ]
+      },
+      "duration_seconds": 0.2,
+      "camera_stream_count": 6,
+      "depth_cameras": [
+        {
+          "feature": "observation.images.camera_left_depth",
+          "kind": "DEPTH",
+          "shape": [
+            240,
+            320,
+            1
+          ],
+          "video_file_id": "35c61c34ed4298364f5be797bbe33c57a27946dff49ae2bc0c0a57bd3c1900b8",
+          "preview_status": "READY",
+          "preview_reason": null,
+          "depth": {
+            "profile": {
+              "bits": 12,
+              "codec": "hevc",
+              "container": "mp4",
+              "depth_max": 10.0,
+              "depth_min": 0.01,
+              "feature_info": {
+                "depth_unit": "mm",
+                "has_audio": false,
+                "is_depth_map": true,
+                "video.channels": 1,
+                "video.codec": "hevc",
+                "video.depth_max": 10.0,
+                "video.depth_min": 0.01,
+                "video.fps": 30,
+                "video.pix_fmt": "gray12le",
+                "video.shift": 3.5,
+                "video.use_log": true,
+                "video.video_backend": "pyav"
+              },
+              "input_unit": "mm",
+              "invalid_fill_code": 0,
+              "invalid_requires_hc_mask": true,
+              "official_reader_version": "0.6.1",
+              "parameter_unit": "m",
+              "pixel_format": "gray12le",
+              "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+              "qmax": 4095,
+              "shift": 3.5,
+              "source_scale_unit": "m/source_unit",
+              "use_log": true,
+              "version": "hc-depth/1",
+              "x265_lossless": 1
+            },
+            "output_unit": "m",
+            "source_dtypes": [
+              "<u2"
+            ],
+            "source_scales_m_per_unit": [
+              0.001
+            ],
+            "source_profiles": {
+              "2350d0b46aeb2442cf3c158813e5a06351df5900ecd6aad2e90b5f62927d1360": {
+                "encoding": "16UC1",
+                "evidence": {
+                  "kind": "synthetic_fixture",
+                  "reference": "tests.continuous_recordings.test_openarm_raw.declared_synthetic_fixture",
+                  "version": "1"
+                },
+                "invalid_nonfinite": true,
+                "invalid_values": [
+                  0
+                ],
+                "registered_to_rgb": false,
+                "registration_evidence": "synthetic independent half-resolution depth grid",
+                "scale_m_per_unit": 0.001,
+                "schema_version": "hc-depth-source/1",
+                "unit": "mm"
+              }
+            },
+            "source_frame_count": 21,
+            "target_frame_count": 6,
+            "source_frame_count_reason": null,
+            "shape": [
+              240,
+              320
+            ],
+            "totals": {
+              "invalid_pixels": 0,
+              "missing_frames": 0,
+              "pixels": 460800,
+              "repeated_frames": 0,
+              "saturated_high_pixels": 0,
+              "saturated_low_pixels": 0,
+              "unclipped_pixels": 460800,
+              "valid_pixels": 460800
+            },
+            "matched_frame_ratio": 1.0,
+            "missing_frame_ratio": 0.0,
+            "invalid_pixel_ratio": 0.0,
+            "saturated_pixel_ratio": 0.0,
+            "maximum_time_error_ns": "1",
+            "quantization": {
+              "float32_tolerance_m": 2e-05,
+              "half_cell_bound_passed": true,
+              "mm_reader_additional_rounding_bound_m": 0.0005,
+              "per_frame_percentiles": "frames.parquet",
+              "saturated_pixels_reported_separately": true,
+              "source_error_carried_forward": true,
+              "unclipped_max_error_m": 0.000524478912353521
+            },
+            "video_encoding": {
+              "codec_profile": "Rext",
+              "codes_sha256": "2ec9266c1a03499e11151956ff5ce9f2dff43265f204a149b36ba336e17a8f0e",
+              "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+              "encoder_options": {
+                "preset": "ultrafast",
+                "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+              },
+              "encoder_profile": "hc-hevc-gray12-lossless/2",
+              "ffmpeg_libraries": {
+                "libavcodec": [
+                  61,
+                  19,
+                  101
+                ],
+                "libavdevice": [
+                  61,
+                  3,
+                  100
+                ],
+                "libavfilter": [
+                  10,
+                  4,
+                  100
+                ],
+                "libavformat": [
+                  61,
+                  7,
+                  100
+                ],
+                "libavutil": [
+                  59,
+                  39,
+                  100
+                ],
+                "libswresample": [
+                  5,
+                  3,
+                  100
+                ],
+                "libswscale": [
+                  8,
+                  3,
+                  100
+                ]
+              },
+              "lossless_codes": true,
+              "pyav_version": "15.1.0",
+              "video_sha256": "daee0c26cec36e37a714c8e65cb598e5bc9ec77061ad698ffe38393a2de6c533"
+            },
+            "frame_mapping_file_id": "5d83248a251b448fa9172449d99c0d26e8992cdb2f34c3cf4fefc01ba00e4533",
+            "mask_file_id": "dae02346adf3d5ebb1f31c079db17b68affc717e76e60560401a1c20d95f3310",
+            "calibration": {
+              "reason": "no validated calibration declared",
+              "status": "UNKNOWN"
+            },
+            "model_depth_training_support": "NOT_VALIDATED"
+          }
+        },
+        {
+          "feature": "observation.images.camera_right_depth",
+          "kind": "DEPTH",
+          "shape": [
+            240,
+            320,
+            1
+          ],
+          "video_file_id": "1e0dbfb40d73429e0c87ee11bf611a5ea6971680a358e8fa4ff395941852e359",
+          "preview_status": "READY",
+          "preview_reason": null,
+          "depth": {
+            "profile": {
+              "bits": 12,
+              "codec": "hevc",
+              "container": "mp4",
+              "depth_max": 10.0,
+              "depth_min": 0.01,
+              "feature_info": {
+                "depth_unit": "mm",
+                "has_audio": false,
+                "is_depth_map": true,
+                "video.channels": 1,
+                "video.codec": "hevc",
+                "video.depth_max": 10.0,
+                "video.depth_min": 0.01,
+                "video.fps": 30,
+                "video.pix_fmt": "gray12le",
+                "video.shift": 3.5,
+                "video.use_log": true,
+                "video.video_backend": "pyav"
+              },
+              "input_unit": "mm",
+              "invalid_fill_code": 0,
+              "invalid_requires_hc_mask": true,
+              "official_reader_version": "0.6.1",
+              "parameter_unit": "m",
+              "pixel_format": "gray12le",
+              "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+              "qmax": 4095,
+              "shift": 3.5,
+              "source_scale_unit": "m/source_unit",
+              "use_log": true,
+              "version": "hc-depth/1",
+              "x265_lossless": 1
+            },
+            "output_unit": "m",
+            "source_dtypes": [
+              "<u2"
+            ],
+            "source_scales_m_per_unit": [
+              0.001
+            ],
+            "source_profiles": {
+              "2350d0b46aeb2442cf3c158813e5a06351df5900ecd6aad2e90b5f62927d1360": {
+                "encoding": "16UC1",
+                "evidence": {
+                  "kind": "synthetic_fixture",
+                  "reference": "tests.continuous_recordings.test_openarm_raw.declared_synthetic_fixture",
+                  "version": "1"
+                },
+                "invalid_nonfinite": true,
+                "invalid_values": [
+                  0
+                ],
+                "registered_to_rgb": false,
+                "registration_evidence": "synthetic independent half-resolution depth grid",
+                "scale_m_per_unit": 0.001,
+                "schema_version": "hc-depth-source/1",
+                "unit": "mm"
+              }
+            },
+            "source_frame_count": 21,
+            "target_frame_count": 6,
+            "source_frame_count_reason": null,
+            "shape": [
+              240,
+              320
+            ],
+            "totals": {
+              "invalid_pixels": 0,
+              "missing_frames": 0,
+              "pixels": 460800,
+              "repeated_frames": 0,
+              "saturated_high_pixels": 0,
+              "saturated_low_pixels": 0,
+              "unclipped_pixels": 460800,
+              "valid_pixels": 460800
+            },
+            "matched_frame_ratio": 1.0,
+            "missing_frame_ratio": 0.0,
+            "invalid_pixel_ratio": 0.0,
+            "saturated_pixel_ratio": 0.0,
+            "maximum_time_error_ns": "1",
+            "quantization": {
+              "float32_tolerance_m": 2e-05,
+              "half_cell_bound_passed": true,
+              "mm_reader_additional_rounding_bound_m": 0.0005,
+              "per_frame_percentiles": "frames.parquet",
+              "saturated_pixels_reported_separately": true,
+              "source_error_carried_forward": true,
+              "unclipped_max_error_m": 0.000524478912353521
+            },
+            "video_encoding": {
+              "codec_profile": "Rext",
+              "codes_sha256": "2ec9266c1a03499e11151956ff5ce9f2dff43265f204a149b36ba336e17a8f0e",
+              "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+              "encoder_options": {
+                "preset": "ultrafast",
+                "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+              },
+              "encoder_profile": "hc-hevc-gray12-lossless/2",
+              "ffmpeg_libraries": {
+                "libavcodec": [
+                  61,
+                  19,
+                  101
+                ],
+                "libavdevice": [
+                  61,
+                  3,
+                  100
+                ],
+                "libavfilter": [
+                  10,
+                  4,
+                  100
+                ],
+                "libavformat": [
+                  61,
+                  7,
+                  100
+                ],
+                "libavutil": [
+                  59,
+                  39,
+                  100
+                ],
+                "libswresample": [
+                  5,
+                  3,
+                  100
+                ],
+                "libswscale": [
+                  8,
+                  3,
+                  100
+                ]
+              },
+              "lossless_codes": true,
+              "pyav_version": "15.1.0",
+              "video_sha256": "daee0c26cec36e37a714c8e65cb598e5bc9ec77061ad698ffe38393a2de6c533"
+            },
+            "frame_mapping_file_id": "75a8f69bbc4e9a38a5fa49b8b038971a3e78a5884703ec7ee0bde7b55b873d1e",
+            "mask_file_id": "358e1c7dc70d8b81a566761052617d2a6f5911b273fa505e947f2dfcddd18932",
+            "calibration": {
+              "reason": "no validated calibration declared",
+              "status": "UNKNOWN"
+            },
+            "model_depth_training_support": "NOT_VALIDATED"
+          }
+        },
+        {
+          "feature": "observation.images.head_depth",
+          "kind": "DEPTH",
+          "shape": [
+            240,
+            320,
+            1
+          ],
+          "video_file_id": "415be734f81106384b92930b1ffefd5c7105a4446becb95629602034976913ec",
+          "preview_status": "READY",
+          "preview_reason": null,
+          "depth": {
+            "profile": {
+              "bits": 12,
+              "codec": "hevc",
+              "container": "mp4",
+              "depth_max": 10.0,
+              "depth_min": 0.01,
+              "feature_info": {
+                "depth_unit": "mm",
+                "has_audio": false,
+                "is_depth_map": true,
+                "video.channels": 1,
+                "video.codec": "hevc",
+                "video.depth_max": 10.0,
+                "video.depth_min": 0.01,
+                "video.fps": 30,
+                "video.pix_fmt": "gray12le",
+                "video.shift": 3.5,
+                "video.use_log": true,
+                "video.video_backend": "pyav"
+              },
+              "input_unit": "mm",
+              "invalid_fill_code": 0,
+              "invalid_requires_hc_mask": true,
+              "official_reader_version": "0.6.1",
+              "parameter_unit": "m",
+              "pixel_format": "gray12le",
+              "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+              "qmax": 4095,
+              "shift": 3.5,
+              "source_scale_unit": "m/source_unit",
+              "use_log": true,
+              "version": "hc-depth/1",
+              "x265_lossless": 1
+            },
+            "output_unit": "m",
+            "source_dtypes": [
+              "<u2"
+            ],
+            "source_scales_m_per_unit": [
+              0.001
+            ],
+            "source_profiles": {
+              "2350d0b46aeb2442cf3c158813e5a06351df5900ecd6aad2e90b5f62927d1360": {
+                "encoding": "16UC1",
+                "evidence": {
+                  "kind": "synthetic_fixture",
+                  "reference": "tests.continuous_recordings.test_openarm_raw.declared_synthetic_fixture",
+                  "version": "1"
+                },
+                "invalid_nonfinite": true,
+                "invalid_values": [
+                  0
+                ],
+                "registered_to_rgb": false,
+                "registration_evidence": "synthetic independent half-resolution depth grid",
+                "scale_m_per_unit": 0.001,
+                "schema_version": "hc-depth-source/1",
+                "unit": "mm"
+              }
+            },
+            "source_frame_count": 21,
+            "target_frame_count": 6,
+            "source_frame_count_reason": null,
+            "shape": [
+              240,
+              320
+            ],
+            "totals": {
+              "invalid_pixels": 0,
+              "missing_frames": 0,
+              "pixels": 460800,
+              "repeated_frames": 0,
+              "saturated_high_pixels": 0,
+              "saturated_low_pixels": 0,
+              "unclipped_pixels": 460800,
+              "valid_pixels": 460800
+            },
+            "matched_frame_ratio": 1.0,
+            "missing_frame_ratio": 0.0,
+            "invalid_pixel_ratio": 0.0,
+            "saturated_pixel_ratio": 0.0,
+            "maximum_time_error_ns": "1",
+            "quantization": {
+              "float32_tolerance_m": 2e-05,
+              "half_cell_bound_passed": true,
+              "mm_reader_additional_rounding_bound_m": 0.0005,
+              "per_frame_percentiles": "frames.parquet",
+              "saturated_pixels_reported_separately": true,
+              "source_error_carried_forward": true,
+              "unclipped_max_error_m": 0.000524478912353521
+            },
+            "video_encoding": {
+              "codec_profile": "Rext",
+              "codes_sha256": "2ec9266c1a03499e11151956ff5ce9f2dff43265f204a149b36ba336e17a8f0e",
+              "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+              "encoder_options": {
+                "preset": "ultrafast",
+                "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+              },
+              "encoder_profile": "hc-hevc-gray12-lossless/2",
+              "ffmpeg_libraries": {
+                "libavcodec": [
+                  61,
+                  19,
+                  101
+                ],
+                "libavdevice": [
+                  61,
+                  3,
+                  100
+                ],
+                "libavfilter": [
+                  10,
+                  4,
+                  100
+                ],
+                "libavformat": [
+                  61,
+                  7,
+                  100
+                ],
+                "libavutil": [
+                  59,
+                  39,
+                  100
+                ],
+                "libswresample": [
+                  5,
+                  3,
+                  100
+                ],
+                "libswscale": [
+                  8,
+                  3,
+                  100
+                ]
+              },
+              "lossless_codes": true,
+              "pyav_version": "15.1.0",
+              "video_sha256": "daee0c26cec36e37a714c8e65cb598e5bc9ec77061ad698ffe38393a2de6c533"
+            },
+            "frame_mapping_file_id": "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+            "mask_file_id": "02e929dbc14606f3db1847086bcf2519e2e6a7d9d8830ad9c90874678f1d7d43",
+            "calibration": {
+              "reason": "no validated calibration declared",
+              "status": "UNKNOWN"
+            },
+            "model_depth_training_support": "NOT_VALIDATED"
+          }
+        }
+      ],
+      "quality": "PASS",
+      "annotation": {
+        "availability": "AVAILABLE",
+        "task_options": [],
+        "task_options_has_more": false,
+        "task_id": "c99450e7-b59f-54b7-a6ef-372d8748ae89",
+        "status": "DRAFT",
+        "state_version": 0,
+        "current_revision": {
+          "task_id": "c99450e7-b59f-54b7-a6ef-372d8748ae89",
+          "revision": 0,
+          "content_hash": "0e341de4b7b43575c57e198ee7cfa4a62f242e97a4711a2bf8fff795ddf50037",
+          "author_id": "system",
+          "created_at": "2026-09-29T12:11:59.583005Z"
+        },
+        "latest_submission": null,
+        "latest_approval": null,
+        "latest_review": null,
+        "current_submission_id": null,
+        "current_approved_review_id": null,
+        "has_unsubmitted_changes": true,
+        "revision_files": [
+          {
+            "status": "READY",
+            "task_id": "c99450e7-b59f-54b7-a6ef-372d8748ae89",
+            "revision": 0,
+            "error_code": null,
+            "generation": 1,
+            "size_bytes": 3338,
+            "content_sha256": "d3fca86eb0754d2a069699f7120e92ddaca86a949d85c52f0a77bc332927b662",
+            "revision_content_hash": "0e341de4b7b43575c57e198ee7cfa4a62f242e97a4711a2bf8fff795ddf50037",
+            "download": {
+              "action": "DOWNLOAD_ANNOTATION_FILE",
+              "allowed": false,
+              "required_capabilities": [
+                "annotation_task.read",
+                "export.download"
+              ],
+              "denied_reason": "MISSING_CAPABILITY"
+            }
+          }
+        ]
+      },
+      "data_review_status": "NOT_REVIEWED",
+      "subtasks": {
+        "status": "NOT_SPECIFIED",
+        "delivery_id": null,
+        "revision": null,
+        "track": null,
+        "segment_count": null
+      },
+      "file_count": 31,
+      "task": {
+        "task_id": "synthetic-raw-pin-d13f1f7b376249f6929b27cc232c4a51",
+        "instructions": [
+          "synthetic-raw-pin-d13f1f7b376249f6929b27cc232c4a51"
+        ],
+        "requirements": null,
+        "requirements_status": "NOT_RECORDED"
+      }
+    },
+    {
+      "ingress": "native_lerobot",
+      "data": {
+        "identity": {
+          "organization_id": "b-roundtrip-07084134921d",
+          "project_id": "b-project-07084134921d",
+          "region_code": "cn-test",
+          "dataset_id": "dataset_task_317035f5c6f98cdbab2edd342296c43c",
+          "episode_id": "episode_5f745ad3f594999395983cbe890f8dee",
+          "rollout_id": "lerobot-bc55d6d0d8f4ef6a-ep-000000"
+        },
+        "data_version_id": "dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+        "version": 1,
+        "content_hash": "72579debb9f187e872b3fe066a9189c994aeabb225f7c3700e79130876686d42",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "native-v1",
+        "package_prefix": "episodes/id-b-roundtrip-07084134921d/id-b-project-07084134921d/id-cn-test/id-unknown/id-fixture-robot/id-native-task-07084134921d/id-episode_5f745ad3f594999395983cbe890f8dee/id-dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+        "frame_count": 6
+      },
+      "source": {
+        "parent_recording_id": null,
+        "parent_duration_ns": null,
+        "parent_duration_reason": "NOT_RECORDED",
+        "window": {},
+        "window_clock": "NOT_RECORDED",
+        "frame_mapping_files": [
+          "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b"
+        ]
+      },
+      "duration_seconds": 0.24,
+      "camera_stream_count": 2,
+      "depth_cameras": [
+        {
+          "feature": "observation.images.head_depth",
+          "kind": "DEPTH",
+          "shape": [
+            16,
+            16,
+            1
+          ],
+          "video_file_id": "415be734f81106384b92930b1ffefd5c7105a4446becb95629602034976913ec",
+          "preview_status": "READY",
+          "preview_reason": null,
+          "depth": {
+            "profile": {
+              "bits": 12,
+              "codec": "hevc",
+              "container": "mp4",
+              "depth_max": 10.0,
+              "depth_min": 0.01,
+              "feature_info": {
+                "depth_unit": "mm",
+                "has_audio": false,
+                "is_depth_map": true,
+                "video.channels": 1,
+                "video.codec": "hevc",
+                "video.depth_max": 10.0,
+                "video.depth_min": 0.01,
+                "video.fps": 25,
+                "video.pix_fmt": "gray12le",
+                "video.shift": 3.5,
+                "video.use_log": true,
+                "video.video_backend": "pyav"
+              },
+              "input_unit": "mm",
+              "invalid_fill_code": 0,
+              "invalid_requires_hc_mask": true,
+              "official_reader_version": "0.6.1",
+              "parameter_unit": "m",
+              "pixel_format": "gray12le",
+              "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+              "qmax": 4095,
+              "shift": 3.5,
+              "source_scale_unit": "m/source_unit",
+              "use_log": true,
+              "version": "hc-depth/1",
+              "x265_lossless": 1
+            },
+            "output_unit": "m",
+            "source_dtypes": [
+              "<u2"
+            ],
+            "source_scales_m_per_unit": [
+              0.00025
+            ],
+            "source_profiles": {},
+            "source_frame_count": null,
+            "target_frame_count": 6,
+            "source_frame_count_reason": "NOT_RECORDED",
+            "shape": [
+              16,
+              16
+            ],
+            "totals": {
+              "invalid_pixels": 6,
+              "missing_frames": 0,
+              "pixels": 1536,
+              "repeated_frames": 0,
+              "saturated_high_pixels": 0,
+              "saturated_low_pixels": 0,
+              "unclipped_pixels": 1530,
+              "valid_pixels": 1530
+            },
+            "matched_frame_ratio": 1.0,
+            "missing_frame_ratio": 0.0,
+            "invalid_pixel_ratio": 0.00390625,
+            "saturated_pixel_ratio": 0.0,
+            "maximum_time_error_ns": "0",
+            "quantization": {
+              "float32_tolerance_m": 2e-05,
+              "half_cell_bound_passed": true,
+              "mm_reader_additional_rounding_bound_m": 0.0005,
+              "per_frame_percentiles": "frames.parquet",
+              "saturated_pixels_reported_separately": true,
+              "unclipped_max_error_m": 0.0006649017333985041
+            },
+            "video_encoding": {
+              "codec_profile": "Rext",
+              "codes_sha256": "928f013f5bcd85198419f60707ab50cee742c2c66b70819341d8f566341ab155",
+              "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+              "encoder_options": {
+                "preset": "ultrafast",
+                "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+              },
+              "encoder_profile": "hc-hevc-gray12-lossless/2",
+              "ffmpeg_libraries": {
+                "libavcodec": [
+                  61,
+                  19,
+                  101
+                ],
+                "libavdevice": [
+                  61,
+                  3,
+                  100
+                ],
+                "libavfilter": [
+                  10,
+                  4,
+                  100
+                ],
+                "libavformat": [
+                  61,
+                  7,
+                  100
+                ],
+                "libavutil": [
+                  59,
+                  39,
+                  100
+                ],
+                "libswresample": [
+                  5,
+                  3,
+                  100
+                ],
+                "libswscale": [
+                  8,
+                  3,
+                  100
+                ]
+              },
+              "lossless_codes": true,
+              "pyav_version": "15.1.0",
+              "video_sha256": "aebf86eafdc82778180c89bedea42f1104678907ef6bad1cec9264ebaaf673a2"
+            },
+            "frame_mapping_file_id": "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+            "mask_file_id": "02e929dbc14606f3db1847086bcf2519e2e6a7d9d8830ad9c90874678f1d7d43",
+            "calibration": {
+              "reason": "synthetic",
+              "status": "unknown"
+            },
+            "model_depth_training_support": "NOT_VALIDATED"
+          }
+        }
+      ],
+      "quality": "PASS",
+      "annotation": {
+        "availability": "AVAILABLE",
+        "task_options": [],
+        "task_options_has_more": false,
+        "task_id": "ea0ed3bb-f24e-5cf0-8ceb-e440676407f2",
+        "status": "APPROVED",
+        "state_version": 4,
+        "current_revision": {
+          "task_id": "ea0ed3bb-f24e-5cf0-8ceb-e440676407f2",
+          "revision": 1,
+          "content_hash": "5aebcca8216218e058c698fcef16705adbfb53c09d78229124cac4c39d310ef0",
+          "author_id": "b-operator",
+          "created_at": "2026-09-29T12:12:36.807777Z"
+        },
+        "latest_submission": {
+          "checks": [
+            {
+              "kind": "HIERARCHY",
+              "status": "PASS",
+              "evidence": "1 Tag paths are valid; 0 manually named intervals use independent time ranges"
+            },
+            {
+              "kind": "BOUNDARY",
+              "status": "PASS",
+              "evidence": "all intervals are valid inside 6 steps"
+            },
+            {
+              "kind": "REQUIRED_ATTRIBUTES",
+              "status": "PASS",
+              "evidence": "required and typed attributes are satisfied"
+            },
+            {
+              "kind": "MUTUAL_EXCLUSION",
+              "status": "PASS",
+              "evidence": "no mutually exclusive Tags overlap"
+            },
+            {
+              "kind": "OBJECT_RELATIONS",
+              "status": "PASS",
+              "evidence": "object relation constraints are satisfied"
+            },
+            {
+              "kind": "SCHEMA_VERSION",
+              "status": "PASS",
+              "evidence": "b-labels-07084134921d@1 is published as 6e2d9df6d6a82e1a1022d0040e89aa611e9bf43d9602e22b3e42555e5fde1874"
+            }
+          ],
+          "task_id": "ea0ed3bb-f24e-5cf0-8ceb-e440676407f2",
+          "data_ref": {
+            "version": 1,
+            "identity": {
+              "dataset_id": "dataset_task_317035f5c6f98cdbab2edd342296c43c",
+              "episode_id": "episode_5f745ad3f594999395983cbe890f8dee",
+              "project_id": "b-project-07084134921d",
+              "rollout_id": "lerobot-bc55d6d0d8f4ef6a-ep-000000",
+              "region_code": "cn-test",
+              "organization_id": "b-roundtrip-07084134921d"
+            },
+            "frame_count": 6,
+            "content_hash": "72579debb9f187e872b3fe066a9189c994aeabb225f7c3700e79130876686d42",
+            "package_prefix": "episodes/id-b-roundtrip-07084134921d/id-b-project-07084134921d/id-cn-test/id-unknown/id-fixture-robot/id-native-task-07084134921d/id-episode_5f745ad3f594999395983cbe890f8dee/id-dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+            "storage_format": "lerobot_v3",
+            "data_version_id": "dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+            "schema_snapshot_id": "native-v1"
+          },
+          "revision": 1,
+          "created_at": "2026-09-29T12:12:36.871467+00:00",
+          "submitted_by": "b-operator",
+          "submission_id": "24f95b0e-acd8-473b-a9bc-a8707ad01f4f",
+          "tag_schema_id": "b-labels-07084134921d",
+          "episode_version": 1,
+          "tag_schema_hash": "6e2d9df6d6a82e1a1022d0040e89aa611e9bf43d9602e22b3e42555e5fde1874",
+          "base_lance_version": null,
+          "tag_schema_version": 1,
+          "revision_content_hash": "5aebcca8216218e058c698fcef16705adbfb53c09d78229124cac4c39d310ef0"
+        },
+        "latest_approval": {
+          "comment": "",
+          "task_id": "ea0ed3bb-f24e-5cf0-8ceb-e440676407f2",
+          "data_ref": {
+            "version": 1,
+            "identity": {
+              "dataset_id": "dataset_task_317035f5c6f98cdbab2edd342296c43c",
+              "episode_id": "episode_5f745ad3f594999395983cbe890f8dee",
+              "project_id": "b-project-07084134921d",
+              "rollout_id": "lerobot-bc55d6d0d8f4ef6a-ep-000000",
+              "region_code": "cn-test",
+              "organization_id": "b-roundtrip-07084134921d"
+            },
+            "frame_count": 6,
+            "content_hash": "72579debb9f187e872b3fe066a9189c994aeabb225f7c3700e79130876686d42",
+            "package_prefix": "episodes/id-b-roundtrip-07084134921d/id-b-project-07084134921d/id-cn-test/id-unknown/id-fixture-robot/id-native-task-07084134921d/id-episode_5f745ad3f594999395983cbe890f8dee/id-dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+            "storage_format": "lerobot_v3",
+            "data_version_id": "dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+            "schema_snapshot_id": "native-v1"
+          },
+          "decision": "APPROVE",
+          "revision": 1,
+          "review_id": "f23cab1b-24a1-422c-a5da-7479cf6c24e7",
+          "created_at": "2026-09-29T12:12:36.916331+00:00",
+          "reviewer_id": "native-reviewer",
+          "checked_kinds": [
+            "HIERARCHY",
+            "BOUNDARY",
+            "REQUIRED_ATTRIBUTES",
+            "MUTUAL_EXCLUSION",
+            "OBJECT_RELATIONS",
+            "SCHEMA_VERSION"
+          ],
+          "submission_id": "24f95b0e-acd8-473b-a9bc-a8707ad01f4f",
+          "revision_content_hash": "5aebcca8216218e058c698fcef16705adbfb53c09d78229124cac4c39d310ef0"
+        },
+        "latest_review": {
+          "comment": "",
+          "task_id": "ea0ed3bb-f24e-5cf0-8ceb-e440676407f2",
+          "data_ref": {
+            "version": 1,
+            "identity": {
+              "dataset_id": "dataset_task_317035f5c6f98cdbab2edd342296c43c",
+              "episode_id": "episode_5f745ad3f594999395983cbe890f8dee",
+              "project_id": "b-project-07084134921d",
+              "rollout_id": "lerobot-bc55d6d0d8f4ef6a-ep-000000",
+              "region_code": "cn-test",
+              "organization_id": "b-roundtrip-07084134921d"
+            },
+            "frame_count": 6,
+            "content_hash": "72579debb9f187e872b3fe066a9189c994aeabb225f7c3700e79130876686d42",
+            "package_prefix": "episodes/id-b-roundtrip-07084134921d/id-b-project-07084134921d/id-cn-test/id-unknown/id-fixture-robot/id-native-task-07084134921d/id-episode_5f745ad3f594999395983cbe890f8dee/id-dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+            "storage_format": "lerobot_v3",
+            "data_version_id": "dv_2e52328efe15b8cdca1aae381e85b04e8e08cc0189af00c179efa2a35c2c5b42",
+            "schema_snapshot_id": "native-v1"
+          },
+          "decision": "APPROVE",
+          "revision": 1,
+          "review_id": "f23cab1b-24a1-422c-a5da-7479cf6c24e7",
+          "created_at": "2026-09-29T12:12:36.916331+00:00",
+          "reviewer_id": "native-reviewer",
+          "checked_kinds": [
+            "HIERARCHY",
+            "BOUNDARY",
+            "REQUIRED_ATTRIBUTES",
+            "MUTUAL_EXCLUSION",
+            "OBJECT_RELATIONS",
+            "SCHEMA_VERSION"
+          ],
+          "submission_id": "24f95b0e-acd8-473b-a9bc-a8707ad01f4f",
+          "revision_content_hash": "5aebcca8216218e058c698fcef16705adbfb53c09d78229124cac4c39d310ef0"
+        },
+        "current_submission_id": "24f95b0e-acd8-473b-a9bc-a8707ad01f4f",
+        "current_approved_review_id": "f23cab1b-24a1-422c-a5da-7479cf6c24e7",
+        "has_unsubmitted_changes": false,
+        "revision_files": [
+          {
+            "status": "READY",
+            "task_id": "ea0ed3bb-f24e-5cf0-8ceb-e440676407f2",
+            "revision": 1,
+            "error_code": null,
+            "generation": 1,
+            "size_bytes": 3537,
+            "content_sha256": "299226b9b4aaeff5d77613c9ea253a9e025e92108ad259bfad990886aa9061e8",
+            "revision_content_hash": "5aebcca8216218e058c698fcef16705adbfb53c09d78229124cac4c39d310ef0",
+            "download": {
+              "action": "DOWNLOAD_ANNOTATION_FILE",
+              "allowed": false,
+              "required_capabilities": [
+                "annotation_task.read",
+                "export.download"
+              ],
+              "denied_reason": "MISSING_CAPABILITY"
+            }
+          }
+        ]
+      },
+      "data_review_status": "NOT_REVIEWED",
+      "subtasks": {
+        "status": "NOT_SPECIFIED",
+        "delivery_id": null,
+        "revision": null,
+        "track": null,
+        "segment_count": null
+      },
+      "file_count": 18,
+      "task": {
+        "task_id": "native-task-07084134921d",
+        "instructions": [
+          "synthetic package check"
+        ],
+        "requirements": null,
+        "requirements_status": "NOT_RECORDED"
+      }
+    }
+  ]
+}

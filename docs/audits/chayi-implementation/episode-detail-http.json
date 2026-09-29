@@ -1,0 +1,637 @@
+{
+  "data": {
+    "identity": {
+      "organization_id": "g1-1c4cb0bf733c408f81dc6b40d229ca2f",
+      "project_id": "p",
+      "region_code": "r",
+      "dataset_id": "d",
+      "episode_id": "episode-1",
+      "rollout_id": "explicit:rollout:identity"
+    },
+    "data_version_id": "dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+    "version": 1,
+    "content_hash": "4e5220b549a3b87660206ebf9693a0b77c11eaff6f95587df3a108d8b7264349",
+    "storage_format": "lerobot_v3",
+    "schema_snapshot_id": "schema-1",
+    "package_prefix": "episodes/id-g1-1c4cb0bf733c408f81dc6b40d229ca2f/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+    "frame_count": 3
+  },
+  "files_verified": 10,
+  "real_recording": false,
+  "human_acceptance": false,
+  "ordinary_session": true,
+  "revoked_cached_file_denied": true,
+  "overview": {
+    "data": {
+      "identity": {
+        "organization_id": "g1-1c4cb0bf733c408f81dc6b40d229ca2f",
+        "project_id": "p",
+        "region_code": "r",
+        "dataset_id": "d",
+        "episode_id": "episode-1",
+        "rollout_id": "explicit:rollout:identity"
+      },
+      "data_version_id": "dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+      "version": 1,
+      "content_hash": "4e5220b549a3b87660206ebf9693a0b77c11eaff6f95587df3a108d8b7264349",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-g1-1c4cb0bf733c408f81dc6b40d229ca2f/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+      "frame_count": 3
+    },
+    "display_name": "episode-1",
+    "display_name_origin": "EPISODE_ID_FALLBACK",
+    "task": {
+      "task_id": "unknown",
+      "instructions": [
+        "fault probe"
+      ],
+      "requirements": null,
+      "requirements_status": "NOT_RECORDED"
+    },
+    "robot_id": "unknown",
+    "recording_date": "unknown",
+    "duration_seconds": 0.1,
+    "frequency_hz": 30.0,
+    "camera_stream_count": 0,
+    "physical_camera_count": null,
+    "physical_camera_count_reason": "PHYSICAL_CAMERA_PAIRING_NOT_RECORDED",
+    "source": {
+      "document": {
+        "identity": {
+          "dataset_id": "d",
+          "episode_id": "episode-1",
+          "organization_id": "g1-1c4cb0bf733c408f81dc6b40d229ca2f",
+          "project_id": "p",
+          "region_code": "r",
+          "rollout_id": "explicit:rollout:identity"
+        },
+        "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "parent_recording_id": null,
+      "parent_duration_ns": null,
+      "parent_duration_reason": "NOT_RECORDED",
+      "window": {},
+      "window_clock": "NOT_RECORDED",
+      "frame_mapping_files": []
+    },
+    "quality": {
+      "data": {
+        "identity": {
+          "organization_id": "g1-1c4cb0bf733c408f81dc6b40d229ca2f",
+          "project_id": "p",
+          "region_code": "r",
+          "dataset_id": "d",
+          "episode_id": "episode-1",
+          "rollout_id": "explicit:rollout:identity"
+        },
+        "data_version_id": "dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+        "version": 1,
+        "content_hash": "4e5220b549a3b87660206ebf9693a0b77c11eaff6f95587df3a108d8b7264349",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-g1-1c4cb0bf733c408f81dc6b40d229ca2f/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+        "frame_count": 3
+      },
+      "status": "UNKNOWN",
+      "evidence_status": "REPORT_MISSING",
+      "report": null,
+      "evidence": null,
+      "rules": [
+        {
+          "code": "QC_ACTION_JUMP",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_ACTION_MISSING",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COMPLETE_STEP_RATIO_LOW",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COVERAGE_LOW",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_FREQUENCY_LOW",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_GAP_EXCESSIVE",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_IMAGE_BLACK",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_IMAGE_CORRUPT",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_IMAGE_REPEATED",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_JOINT_OUT_OF_RANGE",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_MODALITY_OFFSET",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_POINT_CLOUD_EMPTY",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_POINT_COUNT_ABNORMAL",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_REQUIRED_TOPIC_MISSING",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_BACKWARD",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_DUPLICATE",
+          "topic": null,
+          "status": "skip",
+          "reason": "QC_REPORT_MISSING",
+          "participates_in_verdict": null,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "recorded_findings": 0
+          },
+          "thresholds": {},
+          "detector_findings": [],
+          "report_finding_indexes": []
+        }
+      ],
+      "additional_finding_codes": []
+    },
+    "data_review_status": "NOT_REVIEWED",
+    "latest_data_review": null,
+    "annotation": {
+      "availability": "FORBIDDEN",
+      "task_options": [],
+      "task_options_has_more": false,
+      "task_id": null,
+      "status": null,
+      "state_version": null,
+      "current_revision": null,
+      "latest_submission": null,
+      "latest_approval": null,
+      "latest_review": null,
+      "current_submission_id": null,
+      "current_approved_review_id": null,
+      "has_unsubmitted_changes": null,
+      "revision_files": []
+    },
+    "subtasks": {
+      "status": "NOT_SPECIFIED",
+      "delivery_id": null,
+      "revision": null,
+      "track": null,
+      "segment_count": null
+    },
+    "cameras": [],
+    "files": {
+      "data": {
+        "identity": {
+          "organization_id": "g1-1c4cb0bf733c408f81dc6b40d229ca2f",
+          "project_id": "p",
+          "region_code": "r",
+          "dataset_id": "d",
+          "episode_id": "episode-1",
+          "rollout_id": "explicit:rollout:identity"
+        },
+        "data_version_id": "dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+        "version": 1,
+        "content_hash": "4e5220b549a3b87660206ebf9693a0b77c11eaff6f95587df3a108d8b7264349",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-g1-1c4cb0bf733c408f81dc6b40d229ca2f/id-p/id-r/id-unknown/id-unknown/id-unknown/id-episode-1/id-dv_406738ec19cc06fb4baa754965087359cdceb1244e2f8c12d155fc9d267a9942",
+        "frame_count": 3
+      },
+      "items": [
+        {
+          "file_id": "bef6b6ae7a53e4ce4c1d9db116f2293cec898a504df44bf5051c2a737653cebd",
+          "path": "data/chunk-000/file-000.parquet",
+          "size": 2389,
+          "sha256": "9330abed5681f4f07b8410a32140333e613db587c0d36a2fd7f00181fb677a8c",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "NUMERIC",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "39c6c2f364724bcd12aa07ddd13276df3603b8cced44d5c4ebebb136bc38363c",
+          "path": "hc/calibration.json",
+          "size": 26,
+          "sha256": "ee393524efff9341a4598b77864838b4b9b57387e4078fe2de2fa5ce65113992",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "37958d602ce0e77ce1999d8ec53e23b18f485b26eaeb9a53c7017cc7e99937b4",
+          "path": "hc/conversion_report.json",
+          "size": 32,
+          "sha256": "0e81b6d3f90a63df6485b036ad23e87ce48d25ba4ebcc440f8e35c0743999743",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "d3962a3c8814c4c1793d83b40e34f30bd659c9902a8f76b711909eb1f72590d6",
+          "path": "hc/modalities.json",
+          "size": 12,
+          "sha256": "a5c02935e85b8628a276de92c984174ce736a5d6929e4bb9494e24a6815ff687",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "0f36e7945409b1ba6be236374b55fc2ddb1daaf4c174eb6d39bb73d22e8263fc",
+          "path": "hc/quality.json",
+          "size": 20,
+          "sha256": "6ab9fe06bc36d0b3d5335a0b6cb347c4967d0d40aba4682dbc7b86142645db00",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "b3bfb1848df5809d527cbc53c5f09c04b69f4fe7631419f23c102fe33a9e9ad5",
+          "path": "hc/source.json",
+          "size": 271,
+          "sha256": "b8ebb43075d7f632daddb7d12d659e289868c2cb2fe0d674a7dbf177f18f1eb9",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "0a6357ca16557c0d1b36e4889dd8519968be9613295715a6d44bbff7f15249d3",
+          "path": "meta/episodes/chunk-000/file-000.parquet",
+          "size": 2123,
+          "sha256": "dca20cdc5974c20b43824286d864c4bfc077e87f0f04ca65de5bafee5d4c1a2f",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "70415c8ac6e542f7b016d7d1764c6f0ce4a5599aa907669211ccad909f7050e1",
+          "path": "meta/info.json",
+          "size": 416,
+          "sha256": "ada30cbf90f76532858ea5082a7f9d05a79c0b2066d23b94914e5cd35a3d375e",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "8c27a8ac60e5570d2da39d5c3125631f4f7d5eac74806248549384b66d572a8b",
+          "path": "meta/stats.json",
+          "size": 2,
+          "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "27fb994304701c8615503b9da600960a78a14dd378639520eda671e76f0704ce",
+          "path": "meta/tasks.parquet",
+          "size": 782,
+          "sha256": "4ad3da53234f52fa902dee02ada9f12418a8f9cc944a638574685128011bad1b",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        }
+      ],
+      "total": 10,
+      "next_after": null
+    },
+    "deliveries": [],
+    "deliveries_has_more": false,
+    "package_status": "COMMITTED",
+    "allowed_actions": [
+      {
+        "action": "READ_FILES",
+        "allowed": true,
+        "required_capabilities": [
+          "dataset_version.read"
+        ],
+        "denied_reason": null
+      },
+      {
+        "action": "DOWNLOAD_COMPLETE",
+        "allowed": true,
+        "required_capabilities": [
+          "export.download"
+        ],
+        "denied_reason": null
+      },
+      {
+        "action": "SUBMIT_DATA_REVIEW",
+        "allowed": false,
+        "required_capabilities": [
+          "dataset_version.review"
+        ],
+        "denied_reason": "MISSING_CAPABILITY"
+      },
+      {
+        "action": "OPEN_ANNOTATION",
+        "allowed": false,
+        "required_capabilities": [
+          "annotation_task.read"
+        ],
+        "denied_reason": "MISSING_CAPABILITY"
+      },
+      {
+        "action": "CREATE_ANNOTATED_DELIVERY",
+        "allowed": false,
+        "required_capabilities": [
+          "annotation_task.read",
+          "export.create",
+          "export.download"
+        ],
+        "denied_reason": "MISSING_CAPABILITY"
+      }
+    ],
+    "observed_at": "2026-09-29T12:55:23.079946Z"
+  }
+}

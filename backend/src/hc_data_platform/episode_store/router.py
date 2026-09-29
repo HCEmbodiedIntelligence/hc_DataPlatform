@@ -2,15 +2,18 @@
 
 from contextlib import contextmanager
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Header, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from .detail import file_page, open_download, read_detail
+from .detail_models import EpisodeDetail, EpisodeFilePage
 from .download import complete_archive
 from .models import DataVersionRef
 from .postgres import PackageConflict
@@ -153,6 +156,79 @@ def steps(
     with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
         return service.steps.read_steps(
             identity, data_version_id, start_step, end_step, columns=columns
+        )
+
+
+@router.get(VERSION + "/overview", response_model=EpisodeDetail)
+def overview(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    auth: VerifiedAuth,
+    response: Response,
+    delivery_id: str | None = Query(None, pattern=r"^ad_[0-9a-f]{64}$"),
+    annotation_task_id: str | None = Query(None, min_length=1, max_length=256),
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        return read_detail(
+            service,
+            service.files.open(identity, data_version_id),
+            auth,
+            delivery_id=delivery_id,
+            annotation_task_id=annotation_task_id,
+        )
+
+
+@router.get(VERSION + "/files", response_model=EpisodeFilePage)
+def package_files(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    auth: VerifiedAuth,
+    response: Response,
+    after: str | None = Query(None, pattern=r"^[0-9a-f]{64}$"),
+    limit: int = Query(50, ge=1, le=100),
+):
+    response.headers["Cache-Control"] = "no-store"
+    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+        return file_page(
+            service.files.open(identity, data_version_id), auth, after=after, limit=limit
+        )
+
+
+@router.get(VERSION + "/files/{file_id}/download")
+def package_file_download(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    file_id: str,
+    auth: VerifiedAuth,
+):
+    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+        service,
+        identity,
+    ):
+        entry, stream = open_download(
+            service, service.files.open(identity, data_version_id), file_id, auth.subject_id
+        )
+        return StreamingResponse(
+            iter(lambda: stream.read(1024 * 1024), b""),
+            media_type=entry.media_type,
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Length": str(entry.size),
+                "X-Content-SHA256": entry.sha256,
+                "Content-Disposition": "attachment; filename*=UTF-8''"
+                + quote(entry.path.rsplit("/", 1)[-1], safe=""),
+            },
+            background=BackgroundTask(stream.close),
         )
 
 

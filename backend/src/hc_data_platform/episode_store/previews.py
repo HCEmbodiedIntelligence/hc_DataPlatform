@@ -116,7 +116,7 @@ class EpisodePreviews:
             )
             return cursor.fetchone()
 
-    def _verified(self, package, feature, row, source_hash):
+    def _verified(self, package, feature, row, source_hash, *, verify_bytes=True):
         receipt = PreviewReceipt.model_validate(row[2])
         expected_key = (
             f"{receipt.data.package_prefix}/{receipt.file.path}"
@@ -154,8 +154,9 @@ class EpisodePreviews:
         head = self.storage.head(receipt.object_key)
         if head is None or head.size != receipt.file.size:
             raise PackageConflict("ready preview file is missing or changed")
-        with self.files.cache.file(self.storage, receipt.object_key, receipt.file):
-            pass
+        if verify_bytes:
+            with self.files.cache.file(self.storage, receipt.object_key, receipt.file):
+                pass
         return receipt
 
     def prepare_all(self, data):
