@@ -251,6 +251,7 @@ class FailBeforeCommitCatalog(InMemoryLanceCatalog):
         steps: Sequence[StepRecord],
         *,
         simulate_catalog_failure: bool = False,
+        expected_version: int | None = None,
     ) -> tuple[DatasetVersionRef, DerivedReadyV1]:
         self.commit_attempts += 1
         if self.commit_attempts == 1:
@@ -259,6 +260,7 @@ class FailBeforeCommitCatalog(InMemoryLanceCatalog):
             manifest,
             steps,
             simulate_catalog_failure=simulate_catalog_failure,
+            expected_version=expected_version,
         )
 
 
@@ -1001,7 +1003,9 @@ async def test_continuous_v2_four_camera_real_media_temporal_vertical(
     assert len(processor.qc_reports) == 1
     assert next(iter(processor.qc_reports.values()))["status"] == "PASS"
     assert viewer_projection.calls == 2
-    assert catalog.commit_attempts == 3
+    # After the successful second commit, recovery only rebuilds the missing
+    # projection from its immutable receipt; it must not submit another commit.
+    assert catalog.commit_attempts == 2
     assert len(annotation_repository.automatic_triggers) == 1
 
     media_scope = AlignedMediaScopeV1(

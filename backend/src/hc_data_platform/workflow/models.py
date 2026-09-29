@@ -744,6 +744,7 @@ class IngestRolloutWorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=1)
     rollout_id: str = Field(min_length=1)
     automatic_qc_run_id: str = Field(default="initial", min_length=1, max_length=128)
+    processing_attempt: int = Field(default=1, ge=1, le=3)
     media_task_queue: str = Field(min_length=1, max_length=255)
     manifest: ManifestActivityInput
     verification: VerificationActivityInput

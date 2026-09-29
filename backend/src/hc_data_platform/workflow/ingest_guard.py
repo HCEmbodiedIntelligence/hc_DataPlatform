@@ -100,6 +100,28 @@ class PostgresIngestDispatchGuard:
                 )
                 if cursor.fetchone() is not None:
                     raise IngestDatasetBusy("a raw ingest is still writing this Dataset")
+                cursor.execute(
+                    """
+                    SELECT 1 FROM lance_dataset_versions version
+                     WHERE version.project_id=%s AND version.dataset_id=%s
+                       AND version.rollout_id<>%s
+                       AND NOT EXISTS (
+                           SELECT 1 FROM dataset_registry.dataset_version_content_projections page
+                            WHERE page.organization_id=%s AND page.project_id=version.project_id
+                              AND page.region_code=%s AND page.dataset_id=version.dataset_id
+                              AND page.version_id='version_lance_' || version.version::text
+                       ) LIMIT 1
+                    """,
+                    (
+                        request.project_id,
+                        request.dataset_id,
+                        request.rollout_id,
+                        request.organization_id,
+                        request.region_code,
+                    ),
+                )
+                if cursor.fetchone() is not None:
+                    raise IngestDatasetBusy("an earlier Dataset commit is awaiting publication")
                 now = datetime.now(timezone.utc)
                 # This separate committed transaction makes the reservation
                 # durable before the advisory lock is released and before RPC.

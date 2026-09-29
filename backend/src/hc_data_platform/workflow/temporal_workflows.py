@@ -205,6 +205,28 @@ def _error_code(error: BaseException) -> str:
     return re.sub(r"[^A-Z0-9_]+", "_", code.upper()).strip("_") or "WORKFLOW_FAILED"
 
 
+def _is_cancellation(error: BaseException) -> bool:
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, (asyncio.CancelledError, CancelledError)):
+            return True
+        current = current.__cause__
+    return False
+
+
+INGEST_RETRYABLE_ERRORS = frozenset(
+    {
+        "ALIGNED_MEDIA_GENERATION_CANCELLED",
+        "ALIGNED_MEDIA_VERSION_CONFLICT",
+        "ACTIVITY_ERROR",
+        "TIMEOUT_ERROR",
+        "CONNECTION_ERROR",
+        "LANCE_CATALOG_INDEX_PENDING",
+        "LANCE_RECONCILIATION_REQUIRED",
+    }
+)
+
+
 def _datetime_ns(value: datetime) -> int:
     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
     delta = value.astimezone(timezone.utc) - epoch
@@ -282,8 +304,18 @@ class _JobLifecycle:
 
 @workflow.defn(name=INGEST_ROLLOUT_WORKFLOW)
 class IngestRolloutWorkflow(_JobLifecycle):
-    async def _persist_job(self, request: IngestRolloutWorkflowInput) -> None:
+    async def _persist_job(
+        self, request: IngestRolloutWorkflowInput, *, terminal: bool = False
+    ) -> None:
         if not self._job_persistence_enabled:
+            return
+        if (
+            self._durable_recovery
+            and not terminal
+            and self._record().status not in {JobStatus.PENDING, JobStatus.RUNNING}
+        ):
+            # The dispatch guard must keep this Dataset occupied until cleanup
+            # finishes and we decide whether another execution is required.
             return
         if request.organization_id is None:
             raise ApplicationError(
@@ -324,11 +356,42 @@ class IngestRolloutWorkflow(_JobLifecycle):
 
     @workflow.run
     async def run(self, request: IngestRolloutWorkflowInput) -> JobRecord:
+        self._durable_recovery = workflow.patched("ingest-durable-recovery-v1")
+        try:
+            result = await self._run_attempt(request)
+            if not self._durable_recovery:
+                return result
+            if (
+                result.status is JobStatus.TECHNICAL_FAILED
+                and result.error_code in INGEST_RETRYABLE_ERRORS
+                and request.processing_attempt < 3
+            ):
+                self._job = result.model_copy(
+                    update={"status": JobStatus.PENDING, "stage": "retry_wait"}
+                )
+                await self._persist_job(request)
+                await workflow.sleep(timedelta(seconds=30 * request.processing_attempt))
+                workflow.continue_as_new(
+                    request.model_copy(
+                        update={"processing_attempt": request.processing_attempt + 1}
+                    )
+                )
+            await self._persist_job(request, terminal=True)
+            return result
+        except (asyncio.CancelledError, CancelledError):
+            if self._durable_recovery:
+                self._cancelled()
+                await asyncio.shield(self._persist_job(request, terminal=True))
+            raise
+
+    async def _run_attempt(self, request: IngestRolloutWorkflowInput) -> JobRecord:
         self._begin(
             job_type=INGEST_ROLLOUT_WORKFLOW,
             project_id=request.project_id,
             resource_id=request.rollout_id,
         )
+        if self._durable_recovery:
+            self._job = self._record().model_copy(update={"attempt": request.processing_attempt})
         self._job_persistence_enabled = True
         alignment_staging: AlignmentStagingArtifactV1 | None = None
         frame_selection: FrameSelectionManifestRefV1 | None = None
@@ -631,9 +694,11 @@ class IngestRolloutWorkflow(_JobLifecycle):
             await self._persist_job(request)
             raise
         except ActivityError as exc:
-            if "cancel" in str(exc).lower():
+            if _is_cancellation(exc) if self._durable_recovery else "cancel" in str(exc).lower():
                 self._cancelled()
                 await self._persist_job(request)
+                if self._durable_recovery:
+                    raise asyncio.CancelledError from exc
                 raise
             failed_job = self._technical_failure(exc)
             await self._persist_job(request)

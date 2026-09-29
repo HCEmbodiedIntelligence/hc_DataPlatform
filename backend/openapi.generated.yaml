@@ -7187,6 +7187,8 @@ components:
       - QUALITY_RISK
       - QUALITY_REJECTED
       - TECHNICAL_FAILED
+      - CANCELLED
+      - RETRY_PENDING
       - DATASET_MISMATCH
       type: string
     CollectionTaskPage:

@@ -704,7 +704,11 @@ class PostgresCollectionTaskRepository:
                 state = CollectionTaskPackageState.QUALITY_RISK
             elif qc_outcome is QcOutcome.REJECT:
                 state = CollectionTaskPackageState.QUALITY_REJECTED
-            elif str(row[4] or "") in {"TECHNICAL_FAILED", "FAILED", "CANCELLED"}:
+            elif str(row[4] or "") == "CANCELLED":
+                state = CollectionTaskPackageState.CANCELLED
+            elif str(row[4] or "") in {"PENDING", "RUNNING"} and row[5] == "retry_wait":
+                state = CollectionTaskPackageState.RETRY_PENDING
+            elif str(row[4] or "") in {"TECHNICAL_FAILED", "FAILED"}:
                 state = CollectionTaskPackageState.TECHNICAL_FAILED
             elif qc_outcome is None:
                 state = CollectionTaskPackageState.PENDING_QC

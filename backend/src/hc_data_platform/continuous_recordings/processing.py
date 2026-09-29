@@ -958,7 +958,9 @@ class ContinuousEpisodeProcessingService:
                 catalog_manifest, steps = self._catalog_fragments.prepare_streaming(
                     alignment, local_manifest, media_artifacts
                 )
-                version, ready = self._catalog.commit_fragment(catalog_manifest, steps)
+                version, ready = self._catalog.commit_fragment(
+                    catalog_manifest, steps, expected_version=expected_dataset_version
+                )
         if version.version != expected_dataset_version:
             raise ContinuousEpisodeProcessingError(
                 "Lance committed a version different from canonical media"

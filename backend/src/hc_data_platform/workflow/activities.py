@@ -71,6 +71,7 @@ from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedRead
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.lance_catalog.service import (
     CatalogConflictError,
+    CatalogError,
     SchemaIncompatibleError,
 )
 from hc_data_platform.lerobot_imports.cache import SourceCacheLimitExceeded
@@ -541,10 +542,17 @@ async def _with_heartbeats(
     except asyncio.CancelledError:
         if on_cancel is not None:
             on_cancel()
-        # Give the synchronous adapter a bounded interval to kill FFmpeg and
-        # remove its keyed staging directory before acknowledging cancellation.
+        # A thread cannot be cancelled by cancelling its asyncio waiter. Keep
+        # the activity alive until the adapter has stopped, or cleanup/a new
+        # writer could race a commit or encoder still running after 10 seconds.
+        while not task.done():
+            try:
+                await asyncio.wait({task}, timeout=_HEARTBEAT_INTERVAL_SECONDS)
+            except asyncio.CancelledError:
+                continue
+            _heartbeat(stage, "cancelling")
         with suppress(Exception, asyncio.CancelledError):
-            await asyncio.wait_for(asyncio.shield(task), timeout=10)
+            task.result()
         raise
 
 
@@ -585,11 +593,11 @@ async def _invoke(
             type=exc.code,
             non_retryable=False,
         ) from exc
-    except (CatalogConflictError, SchemaIncompatibleError) as exc:
+    except CatalogError as exc:
         raise ApplicationError(
             str(exc),
             type=exc.code,
-            non_retryable=True,
+            non_retryable=isinstance(exc, (CatalogConflictError, SchemaIncompatibleError)),
         ) from exc
     except (KeyError, TypeError, ValidationError, ValueError) as exc:
         raise ApplicationError(
@@ -919,11 +927,12 @@ async def process_ingest_source(
             if original_videos:
                 staging = staging.model_copy(update={"original_videos": original_videos})
             catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
-            current = catalog.current_version(
+            expected_version = _ingest_dataset_version(
+                catalog,
                 request.alignment.dataset_id,
-                project_id=request.alignment.project_id,
+                request.alignment.project_id,
+                staged_manifest.rollout_id,
             )
-            expected_version = 1 if current is None else current.version + 1
             alignment_output = AlignmentActivityOutput(
                 staged_manifest=staged_manifest,
                 alignment_staging=staging,
@@ -1131,8 +1140,9 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
                 name for name, stream in data.streams.items() if stream.kind is ModalityKind.IMAGE
             ),
         )
-        current = catalog.current_version(request.dataset_id, project_id=request.project_id)
-        expected_dataset_version = 1 if current is None else current.version + 1
+        expected_dataset_version = _ingest_dataset_version(
+            catalog, request.dataset_id, request.project_id, manifest.rollout_id
+        )
         return AlignmentActivityOutput(
             staged_manifest=manifest,
             alignment_staging=staging,
@@ -1150,6 +1160,22 @@ async def align_fragment(request: AlignmentActivityInput) -> AlignmentActivityOu
         organization_id=organization_id,
     ):
         return await _invoke("alignment", align_and_stage)
+
+
+def _ingest_dataset_version(
+    catalog: LanceCatalogPort, dataset_id: str, project_id: str, rollout_id: str
+) -> int:
+    current = catalog.current_version(dataset_id, project_id=project_id)
+    if current is None:
+        return 1
+    if rollout_id not in current.committed_rollouts:
+        return current.version + 1
+    # A worker may have died between the immutable storage commit and product
+    # publication. Reuse that rollout's original media version during recovery.
+    for version in catalog.list_versions(dataset_id, project_id=project_id):
+        if rollout_id in version.committed_rollouts:
+            return version.version
+    raise RuntimeError("committed rollout has no catalog version")
 
 
 def _publish_alignment_staging(
@@ -1413,7 +1439,7 @@ async def commit_aligned_bundle(
         actual_next = 1 if current is None else current.version + 1
         recovering_same_rollout = (
             current is not None
-            and current.version == request.expected_dataset_version
+            and current.version >= request.expected_dataset_version
             and source.rollout_id in current.committed_rollouts
         )
         if actual_next != request.expected_dataset_version and not recovering_same_rollout:
@@ -1463,7 +1489,9 @@ async def commit_aligned_bundle(
                 local_manifest,
                 request.media_artifacts,
             )
-            version, ready = catalog.commit_fragment(catalog_manifest, steps)
+            version, ready = catalog.commit_fragment(
+                catalog_manifest, steps, expected_version=request.expected_dataset_version
+            )
         if version.version != request.expected_dataset_version:
             raise RuntimeError("Lance committed a Dataset version different from its media key")
         repository.mark_dataset_committed(

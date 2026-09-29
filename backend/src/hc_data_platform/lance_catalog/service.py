@@ -42,6 +42,19 @@ class CatalogConflictError(CatalogError):
     code = "LANCE_CATALOG_CONFLICT"
 
 
+class CatalogVersionConflict(CatalogConflictError):
+    """The media reservation no longer matches the locked catalog writer."""
+
+    code = "ALIGNED_MEDIA_VERSION_CONFLICT"
+
+
+def _assert_expected_version(actual: int, expected: int | None) -> None:
+    if expected is not None and actual != expected:
+        raise CatalogVersionConflict(
+            f"reserved Dataset version {expected} differs from commit version {actual}"
+        )
+
+
 class SchemaIncompatibleError(CatalogError):
     code = "LANCE_SCHEMA_INCOMPATIBLE"
 
@@ -243,11 +256,13 @@ class InMemoryLanceCatalog:
         steps: Sequence[StepRecord],
         *,
         simulate_catalog_failure: bool = False,
+        expected_version: int | None = None,
     ) -> tuple[DatasetVersionRef, DerivedReadyV1]:
         key = manifest.project_id, manifest.dataset_id
         with self._lock_for(key):
             existing = self._idempotency.get(self._scoped_idempotency(manifest))
             if existing is not None:
+                _assert_expected_version(existing.receipt.version_ref.version, expected_version)
                 if not _same_idempotent_content(existing.receipt.manifest, manifest):
                     raise CatalogConflictError(
                         "an idempotency key was reused with different logical content"
@@ -270,6 +285,7 @@ class InMemoryLanceCatalog:
             _validate_steps(schema, manifest, steps)
 
             storage_history = self._storage_commits.setdefault(key, [])
+            _assert_expected_version(len(storage_history) + 1, expected_version)
             prior_steps = dict(storage_history[-1].steps_by_identity) if storage_history else {}
             prior_manifests = (
                 dict(storage_history[-1].manifests_by_rollout) if storage_history else {}
@@ -522,6 +538,8 @@ class LanceCatalogService:
         self,
         manifest: AlignedFragmentManifestV1,
         steps: Sequence[StepRecord],
+        *,
+        expected_version: int | None = None,
     ) -> tuple[DatasetVersionRef, DerivedReadyV1]:
         schema = self._schema(manifest.project_id, manifest.dataset_id)
         _validate_manifest(schema, manifest)
@@ -531,12 +549,14 @@ class LanceCatalogService:
                 manifest.project_id, manifest.dataset_id, manifest.idempotency_key
             )
             if existing is not None:
+                _assert_expected_version(existing.version_ref.version, expected_version)
                 result = self._return_existing(existing, manifest)
                 self._storage.cleanup_attempt(schema, manifest)
                 return result
 
             stored = self._storage.find_commit(schema, manifest.idempotency_key)
             if stored is not None:
+                _assert_expected_version(stored.version_ref.version, expected_version)
                 self._assert_idempotent_content(stored, manifest)
                 # Rebuild in logical order so a retry can also recover an empty
                 # or partially restored PostgreSQL catalog.
@@ -545,6 +565,10 @@ class LanceCatalogService:
                 return stored.version_ref, _ready_event(stored)
 
             self._reconcile_locked(schema)
+            current = self._repository.list_versions(manifest.project_id, manifest.dataset_id)
+            _assert_expected_version(
+                1 if not current else current[-1].version + 1, expected_version
+            )
             stage_uri = self._storage.stage_attempt(schema, manifest, steps)
             self._storage.validate_staged(schema, manifest, stage_uri)
             receipt = self._storage.commit_staged(schema, manifest, stage_uri)

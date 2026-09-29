@@ -5,6 +5,7 @@ import io
 import tempfile
 import threading
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
@@ -13,6 +14,7 @@ import pytest
 from pydantic import ValidationError
 from temporalio.client import WorkflowFailureError
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.exceptions import ApplicationError
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Replayer, Worker
 
@@ -758,6 +760,98 @@ class FailingAlignedMedia(StaticAlignedMedia):
         return super().generate(scope, request, cancelled=cancelled)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("failed_executions", "cancel_retry"), [(1, False), (3, False), (3, True)])
+async def test_media_cancellation_retries_after_cleanup_without_user_cancellation(
+    failed_executions: int,
+    cancel_retry: bool,
+) -> None:
+    events: list[str] = []
+
+    class TransientMedia(StaticAlignedMedia):
+        failures = 0
+
+        def generate(self, scope, request, *, cancelled=None):
+            if request.camera_id == FOUR_CAMERAS[-1] and self.failures < failed_executions:
+                self.failures += 1
+                raise ApplicationError(
+                    "depth generation was cancelled",
+                    type="ALIGNED_MEDIA_GENERATION_CANCELLED",
+                    non_retryable=True,
+                )
+            return super().generate(scope, request, cancelled=cancelled)
+
+        def complete_abandon_uncommitted(self, **kwargs):
+            events.append("cleanup")
+            super().complete_abandon_uncommitted(**kwargs)
+
+    class Recorder(WorkflowJobRecorder):
+        def put_job(self, request):
+            if (
+                request.job.stage == "retry_wait"
+                or request.job.status is JobStatus.TECHNICAL_FAILED
+            ):
+                assert events[-1] == "cleanup"
+                events.append(request.job.stage)
+            super().put_job(request)
+
+    environment = await WorkflowEnvironment.start_time_skipping(
+        data_converter=pydantic_data_converter
+    )
+    try:
+        catalog = InMemoryLanceCatalog()
+        catalog.register_schema(_schema())
+        media = TransientMedia()
+        recorder = Recorder()
+        dependencies, _ = _dependencies(
+            verifier=StaticVerifier(),
+            quality=StaticQuality(QualityStatus.PASS),
+            catalog=catalog,
+            aligned_media=media,
+            camera_topics=FOUR_CAMERAS,
+        )
+        configure_activity_dependencies(replace(dependencies, workflow_jobs=recorder))
+        queue = "durable-ingest-retry-tests"
+        async with Worker(
+            environment.client,
+            task_queue=queue,
+            workflows=list(ALL_WORKFLOWS),
+            activities=list(ALL_ACTIVITIES),
+        ):
+            handle = await environment.client.start_workflow(
+                IngestRolloutWorkflow.run,
+                _ingest_input(FOUR_CAMERAS).model_copy(update={"media_task_queue": queue}),
+                id=workflow_id("ingest-rollout", "p1", "retry-media"),
+                task_queue=queue,
+            )
+            if cancel_retry:
+
+                async def wait_for_retry():
+                    while not any(job.stage == "retry_wait" for job in recorder.jobs):
+                        await asyncio.sleep(0.01)
+
+                await asyncio.wait_for(wait_for_retry(), timeout=10)
+                await handle.cancel()
+                with pytest.raises(WorkflowFailureError):
+                    await handle.result()
+                assert recorder.jobs[-1].status is JobStatus.CANCELLED
+                assert max(job.attempt for job in recorder.jobs) == 1
+                assert not catalog.list_versions("d1", project_id="p1")
+                return
+            result = await handle.result()
+        assert result.status is (
+            JobStatus.SUCCEEDED if failed_executions == 1 else JobStatus.TECHNICAL_FAILED
+        )
+        assert result.attempt == min(failed_executions + 1, 3)
+        assert events.count("retry_wait") == min(failed_executions, 2)
+        assert all(job.status is not JobStatus.CANCELLED for job in recorder.jobs)
+        assert len(catalog.list_versions("d1", project_id="p1")) == (
+            1 if failed_executions == 1 else 0
+        )
+    finally:
+        await environment.shutdown()
+
+
 class CommitMarkerFailsUntilCleanup(StaticAlignedMedia):
     def __init__(self) -> None:
         super().__init__()
@@ -1385,9 +1479,10 @@ async def test_visible_lance_commit_is_reconciled_instead_of_deleting_media() ->
                 task_queue="commit-reconciliation-workflow-tests",
             )
 
-        assert result.status is JobStatus.TECHNICAL_FAILED
+        assert result.status is JobStatus.SUCCEEDED
+        assert result.attempt == 2
         assert len(catalog.list_versions("d1", project_id="p1")) == 1
-        assert aligned_media.commit_marker_calls == 9
+        assert aligned_media.commit_marker_calls == 10
         assert aligned_media.committed_artifact_ids == ("media-/camera/front/image",)
         assert aligned_media.abandoned_artifact_ids == ()
         assert aligned_media.abandon_completed is False
