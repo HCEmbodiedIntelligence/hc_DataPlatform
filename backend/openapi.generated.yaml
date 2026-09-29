@@ -14488,9 +14488,25 @@ components:
           type:
           - string
           - 'null'
+        collection_version_id:
+          maxLength: 256
+          minLength: 1
+          type:
+          - string
+          - 'null'
         created_at:
           format: date-time
           type: string
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        dataset_episode_id:
+          maxLength: 128
+          minLength: 1
+          type:
+          - string
+          - 'null'
         dataset_id:
           maxLength: 128
           minLength: 1

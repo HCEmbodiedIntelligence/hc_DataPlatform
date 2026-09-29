@@ -643,6 +643,12 @@ components:
         dataset_id: {type: [string, "null"], minLength: 1, maxLength: 128}
         dataset_version: {type: [integer, "null"], minimum: 1}
         lance_version: {type: [integer, "null"], minimum: 1}
+        data_ref:
+          anyOf:
+            - {$ref: "#/components/schemas/DataVersionRef"}
+            - {type: "null"}
+        collection_version_id: {type: [string, "null"], minLength: 1, maxLength: 256}
+        dataset_episode_id: {type: [string, "null"], minLength: 1, maxLength: 128}
         annotation_task_id: {type: [string, "null"], minLength: 1, maxLength: 128}
         aligned_media_camera_count: {type: [integer, "null"], minimum: 1, maximum: 128}
         failure_code: {type: [string, "null"], pattern: "^[A-Z0-9_]+$"}

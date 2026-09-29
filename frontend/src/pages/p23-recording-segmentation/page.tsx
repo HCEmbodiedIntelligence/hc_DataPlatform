@@ -1271,16 +1271,20 @@ function RecordingSegmentationPage({
                                 {episodeProcessing.status === "READY" &&
                                 episodeProcessing.dataset_id &&
                                 episodeProcessing.dataset_version &&
+                                (!episodeProcessing.data_ref ||
+                                  episodeProcessing.collection_version_id) &&
                                 episodeProcessing.annotation_task_id ? (
                                   <div className={styles.processingActions}>
                                     <Link
                                       to={datasetRoutes.episodeViewer.build({
                                         datasetId:
                                           episodeProcessing.dataset_id as DatasetId,
-                                        versionId:
-                                          `version_lance_${episodeProcessing.dataset_version}` as DatasetVersionId,
+                                        versionId: (episodeProcessing.data_ref
+                                          ? `version_${episodeProcessing.collection_version_id}`
+                                          : `version_lance_${episodeProcessing.dataset_version}`) as DatasetVersionId,
                                         episodeId:
-                                          (episodeProcessing.dataset_episode_id ?? episodeProcessing.episode_id) as EpisodeId,
+                                          (episodeProcessing.dataset_episode_id ??
+                                            episodeProcessing.episode_id) as EpisodeId,
                                         returnTo: globalThis.location.pathname,
                                       })}
                                     >

@@ -44,6 +44,11 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W2/W5 状态补充（2026-09-29）：连续录制账本支持完整标准包引用和集合 ID，
+  数据库核验 QC／Tag 任务／详情／全部相机预览后才 READY，无 Lance reservation。
+  实际服务同步并发与拒绝测试、32 项回归、7 项 Temporal、13 项前端通过；迁移
+  143/143 current，仅隔离应用。见 [状态证据及 G2 条件](continuous-ready.md)。
+  连续录制新包派发尚未接通；预置合成账本不算三入口或真人验收，17 项 P0 不变。
 - W2 恢复补充（2026-09-29）：Raw 桥接固定已登记的派生 command 和对象位置，
   不因 `/3`→`/4` 升级重新编码。12 项实际 PG/MinIO 登记与回归通过，包括并发、
   缺失 receipt、损坏来源及跨租户拒绝；隔离 worker 已恢复。见

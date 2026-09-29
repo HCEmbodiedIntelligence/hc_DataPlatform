@@ -183,6 +183,7 @@ class InMemoryContinuousRecordingRepository:
         expected_status: EpisodeProcessingStatus,
     ) -> EpisodeProcessing:
         key = (*_recording_key(episode.scope, episode.recording_id), episode.episode_id)
+        episode = EpisodeProcessing.model_validate(episode.model_dump())
         with self._lock:
             current = self._episode_processing.get(key)
             if current is None:
@@ -439,6 +440,7 @@ class PostgresContinuousRecordingRepository:
         *,
         expected_status: EpisodeProcessingStatus,
     ) -> EpisodeProcessing:
+        episode = EpisodeProcessing.model_validate(episode.model_dump())
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
@@ -447,6 +449,7 @@ class PostgresContinuousRecordingRepository:
                     UPDATE ingest.recording_episode_processing
                     SET status = %s, qc_report_id = %s, alignment_attempt_id = %s,
                         dataset_id = %s, dataset_version = %s, lance_version = %s,
+                        data_ref = %s::jsonb, collection_version_id = %s,
                         annotation_task_id = %s, aligned_media_camera_count = %s,
                         failure_code = %s, failure_stage = %s,
                         episode_document = %s::jsonb, updated_at = %s
@@ -460,6 +463,8 @@ class PostgresContinuousRecordingRepository:
                         episode.dataset_id,
                         episode.dataset_version,
                         episode.lance_version,
+                        None if episode.data_ref is None else episode.data_ref.model_dump_json(),
+                        episode.collection_version_id,
                         episode.annotation_task_id,
                         episode.aligned_media_camera_count,
                         episode.failure_code,

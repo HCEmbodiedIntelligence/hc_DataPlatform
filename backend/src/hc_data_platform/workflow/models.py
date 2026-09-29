@@ -570,6 +570,8 @@ class ContinuousEpisodeStateActivityInput(BaseModel):
     dataset_episode_id: str | None = Field(default=None, min_length=1, max_length=128)
     dataset_version: int | None = Field(default=None, ge=1)
     lance_version: int | None = Field(default=None, ge=1)
+    data_ref: DataVersionRef | None = None
+    collection_version_id: str | None = Field(default=None, min_length=1, max_length=256)
     annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)
     aligned_media_camera_count: int | None = Field(default=None, ge=1, le=128)
     failure_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]+$")

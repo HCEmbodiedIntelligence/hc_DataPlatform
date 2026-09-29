@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="13" failures="0" errors="0" time="1.109269657">
+    <testsuite name="src/pages/p23-recording-segmentation/model.test.ts" timestamp="2026-09-29T08:51:07.885Z" hostname="a1360ac109b5" tests="4" failures="0" errors="0" skipped="0" time="0.006553064">
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; formats three-hour source positions without rolling hours over" time="0.001356211">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; detects overlap and recording-boundary violations" time="0.002981824">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; clamps dragged boundaries against adjacent episodes and one-frame minimum" time="0.000380561">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; creates stable unique ids and sends sorted canonical nanosecond strings" time="0.000547882">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/page.test.tsx" timestamp="2026-09-29T08:51:07.887Z" hostname="a1360ac109b5" tests="5" failures="0" errors="0" skipped="0" time="1.080449842">
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; opens the committed lerobot_v3 collection without borrowing a storage version" time="0.33115297">
+            <system-err>
+Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; opens the committed legacy_lance collection without borrowing a storage version" time="0.106191276">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; uses the shared workflow queue for pending, review, and sliced recordings" time="0.053742382">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; opens the manual cutter from the continuous-recording list" time="0.117068531">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; creates an I/O slice and saves canonical nanosecond boundaries" time="0.47148512">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts" timestamp="2026-09-29T08:51:07.889Z" hostname="a1360ac109b5" tests="2" failures="0" errors="0" skipped="0" time="0.005901849">
+        <testcase classname="src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts" name="raw recording joint-angle stream &gt; preserves OpenArm joint names and mixed arm/gripper units" time="0.002058476">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts" name="raw recording joint-angle stream &gt; reads original MCAP windows and drives the shared robot frame source" time="0.002843962">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/workbench-adapter.test.ts" timestamp="2026-09-29T08:51:07.889Z" hostname="a1360ac109b5" tests="2" failures="0" errors="0" skipped="0" time="0.016364902">
+        <testcase classname="src/pages/p23-recording-segmentation/workbench-adapter.test.ts" name="recording segmentation workbench adapter &gt; adapts original recording videos to the shared viewer contract" time="0.013616783">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/workbench-adapter.test.ts" name="recording segmentation workbench adapter &gt; renders Episode slices as shared timeline segments" time="0.000824955">
+        </testcase>
+    </testsuite>
+</testsuites>

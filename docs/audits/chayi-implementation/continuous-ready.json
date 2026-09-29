@@ -1,0 +1,56 @@
+{
+  "scope": "synthetic source ledger; real PG, MinIO, package, annotation and SDK previews",
+  "episode": {
+    "schema_version": "recording-episode/v1",
+    "scope": {
+      "organization_id": "continuous-ready-e32360285003443684479696e28c735d",
+      "project_id": "writer-project",
+      "region_code": "writer-region"
+    },
+    "recording_id": "recording_parent",
+    "episode_id": "episode_cut",
+    "finalized_revision": 1,
+    "start_offset_ns": "0",
+    "end_offset_ns": "133333333",
+    "status": "READY",
+    "workflow_id": "continuous-ready-service/07e90ca1508944b385081374716ac2c6",
+    "event_id": "f71f09e5-9149-43a2-b443-f536545d2e16",
+    "qc_report_id": "test-qc-pass-6c548c606be140f1b82498a070bfaec4",
+    "alignment_attempt_id": "test-alignment",
+    "dataset_id": "dataset_ready",
+    "dataset_episode_id": "episode_package",
+    "dataset_version": 1,
+    "lance_version": null,
+    "data_ref": {
+      "identity": {
+        "organization_id": "continuous-ready-e32360285003443684479696e28c735d",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_ready",
+        "episode_id": "episode_package",
+        "rollout_id": "recording_parent:episode_cut"
+      },
+      "data_version_id": "dv_a0eddd1c2d5cf5f829887a38cd10592d789cb50f10da275bc3badd0a4151234f",
+      "version": 1,
+      "content_hash": "e295a2861e151922d38d5749a0086031c01a727c0ddec40f74ce9afd5e28a671",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-continuous-ready-e32360285003443684479696e28c735d/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_package/id-dv_a0eddd1c2d5cf5f829887a38cd10592d789cb50f10da275bc3badd0a4151234f",
+      "frame_count": 4
+    },
+    "collection_version_id": "cv_5aae56406c19658e3046c8343f751ce75b057f72184b35e14a23e95be72c8375",
+    "annotation_task_id": "44e1b2b7-05be-50dd-b714-d7a4799958cb",
+    "aligned_media_camera_count": 2,
+    "failure_code": null,
+    "failure_stage": null,
+    "created_at": "2026-09-29T08:52:57.586551Z",
+    "updated_at": "2026-09-29T08:52:58.887768Z"
+  },
+  "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "simultaneous_ready_calls": 3,
+  "lance_reservations": 0,
+  "missing_qc_and_preview_refused": true,
+  "forged_references_and_cross_scope_refused": true,
+  "document_and_window_mutations_refused": true,
+  "full_recording_ingress": "NOT_YET_WIRED"
+}

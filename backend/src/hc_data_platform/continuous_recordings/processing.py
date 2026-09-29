@@ -34,6 +34,7 @@ from hc_data_platform.alignment.models import (
     TimedSampleV1,
 )
 from hc_data_platform.alignment.ports import AlignmentPort, FragmentWriterPort
+from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.dataset_registry.models import DatasetId, DatasetIngestViewerTarget
 from hc_data_platform.ingest.models import (
     ManifestCameraV1,
@@ -641,13 +642,15 @@ class ContinuousEpisodeProcessingService:
             "dataset_episode_id": request.dataset_episode_id,
             "dataset_version": request.dataset_version,
             "lance_version": request.lance_version,
+            "data_ref": request.data_ref,
+            "collection_version_id": request.collection_version_id,
             "annotation_task_id": request.annotation_task_id,
             "aligned_media_camera_count": request.aligned_media_camera_count,
             "failure_code": request.failure_code,
             "failure_stage": request.failure_stage,
             "updated_at": datetime.now(timezone.utc),
         }
-        desired = current.model_copy(update=updates)
+        desired = type(current).model_validate({**current.model_dump(), **updates})
         if current.status is request.new_status:
             comparable = desired.model_copy(update={"updated_at": current.updated_at})
             if comparable != current:
@@ -660,9 +663,21 @@ class ContinuousEpisodeProcessingService:
             raise ContinuousEpisodeProcessingError(
                 f"Episode state is {current.status.value}, expected {request.expected_status.value}"
             )
-        persisted = self._repository.save_episode_processing(
-            desired, expected_status=request.expected_status
-        )
+        try:
+            persisted = self._repository.save_episode_processing(
+                desired, expected_status=request.expected_status
+            )
+        except ProblemException as exc:
+            if exc.problem.code != "EPISODE_PROCESSING_STATUS_CONFLICT":
+                raise
+            persisted = self._repository.get_episode_processing(
+                scope, request.recording_id, request.episode_id
+            )
+            if (
+                persisted is None
+                or desired.model_copy(update={"updated_at": persisted.updated_at}) != persisted
+            ):
+                raise
         self._settle_version_reservation(persisted)
         return ContinuousEpisodeStateActivityOutput(episode=persisted)
 
@@ -996,6 +1011,11 @@ class ContinuousEpisodeProcessingService:
         try:
             with connection.cursor() as cursor:
                 if episode.status is EpisodeProcessingStatus.READY:
+                    if episode.data_ref is not None:
+                        # The DB guard verifies exact package, collection, QC,
+                        # annotation and previews in the same state transaction.
+                        # Package publication never owns a Lance reservation.
+                        return
                     cursor.execute(
                         """
                         SELECT reservation_status, dataset_id, dataset_version

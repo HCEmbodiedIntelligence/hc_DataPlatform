@@ -226,6 +226,81 @@ afterEach(() => {
 });
 
 describe("P23 recording segmentation", () => {
+  it.each(["lerobot_v3", "legacy_lance"])(
+    "opens the committed %s collection without borrowing a storage version",
+    async (format) => {
+      const gateway = makeGateway();
+      const packages = format === "lerobot_v3";
+      const draft = await gateway.saveDraft(
+        scope,
+        recording.recording_id,
+        {
+          slices: [
+            {
+              episode_id: "episode_cut",
+              start_offset_ns: "0",
+              end_offset_ns: "133333333",
+            },
+          ],
+        },
+        recording.etag,
+      );
+      vi.mocked(gateway.detail).mockResolvedValue({
+        data: { ...draft.recording, status: "SLICED", finalized_revision: 1 },
+        current_slice_revision: { ...draft.revision, status: "FINALIZED" },
+      });
+      vi.mocked(gateway.processing).mockResolvedValue({
+        items: [
+          {
+            schema_version: "recording-episode/v1",
+            scope: recording.scope,
+            recording_id: recording.recording_id,
+            episode_id: "episode_cut",
+            finalized_revision: 1,
+            start_offset_ns: "0",
+            end_offset_ns: "133333333",
+            status: "READY",
+            dataset_id: "dataset_ready",
+            dataset_episode_id: "episode_package",
+            dataset_version: 7,
+            lance_version: packages ? null : 12,
+            annotation_task_id: "annotation_test",
+            collection_version_id: packages ? "cv_test" : null,
+            data_ref: packages
+              ? {
+                  identity: {
+                    ...recording.scope,
+                    dataset_id: "dataset_ready",
+                    episode_id: "episode_package",
+                    rollout_id: `${recording.recording_id}:episode_cut`,
+                  },
+                  data_version_id: "dv_test",
+                  version: 1,
+                  content_hash: "a".repeat(64),
+                  storage_format: "lerobot_v3",
+                  schema_snapshot_id: "schema_test",
+                  package_prefix: "episodes/test",
+                  frame_count: 4,
+                }
+              : null,
+          },
+        ],
+        total: 1,
+      });
+      renderPage(gateway, "/recordings/recording_three_hours/slice");
+      const link = await screen.findByRole("link", {
+        name: "打开 Dataset Episode",
+      });
+      expect(link.getAttribute("href")).toContain(
+        packages ? "version_cv_test" : "version_lance_7",
+      );
+      expect(link.getAttribute("href")).toContain("episode_package");
+      expect(
+        screen.getByRole("link", { name: "打开 TAGGING 任务" }),
+      ).toBeVisible();
+    },
+  );
+
   it("uses the shared workflow queue for pending, review, and sliced recordings", async () => {
     const gateway = makeGateway();
     vi.mocked(gateway.list).mockResolvedValue({

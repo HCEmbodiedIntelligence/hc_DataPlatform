@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.ingest.models import (
     CompletedPart,
     Identifier,
@@ -311,6 +312,8 @@ class EpisodeProcessing(BaseModel):
     dataset_episode_id: str | None = Field(default=None, min_length=1, max_length=128)
     dataset_version: int | None = Field(default=None, ge=1)
     lance_version: int | None = Field(default=None, ge=1)
+    data_ref: DataVersionRef | None = None
+    collection_version_id: str | None = Field(default=None, min_length=1, max_length=256)
     annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)
     aligned_media_camera_count: int | None = Field(default=None, ge=1, le=128)
     failure_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]+$")
@@ -343,16 +346,33 @@ class EpisodeProcessing(BaseModel):
         ready_values = (
             self.dataset_id,
             self.dataset_version,
-            self.lance_version,
             self.annotation_task_id,
             self.aligned_media_camera_count,
         )
         if self.status is EpisodeProcessingStatus.READY and any(
             value is None for value in ready_values
         ):
-            raise ValueError("READY Episodes require Dataset, Lance, task, and media evidence")
+            raise ValueError("READY Episodes require Dataset, task, and media evidence")
+        if self.status is EpisodeProcessingStatus.READY and (
+            (self.lance_version is None) == (self.data_ref is None)
+        ):
+            raise ValueError("READY Episode requires exactly one immutable storage binding")
+        if self.data_ref is not None:
+            identity = self.data_ref.identity
+            if (
+                self.collection_version_id is None
+                or identity.scope
+                != (self.scope.organization_id, self.scope.project_id, self.scope.region_code)
+                or identity.dataset_id != self.dataset_id
+                or identity.episode_id != self.dataset_episode_id
+                or identity.rollout_id != f"{self.recording_id}:{self.episode_id}"
+            ):
+                raise ValueError("Episode package binding differs from the finalized recording")
+        elif self.collection_version_id is not None:
+            raise ValueError("a package collection requires its Episode data reference")
         if self.status is not EpisodeProcessingStatus.READY and any(
-            value is not None for value in ready_values
+            value is not None
+            for value in (*ready_values, self.lance_version, self.data_ref, self.dataset_episode_id)
         ):
             raise ValueError("only READY Episodes expose Dataset, task, and media evidence")
         failed = self.status in {
