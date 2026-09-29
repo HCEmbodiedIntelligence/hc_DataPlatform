@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="84" failures="0" errors="0" time="0.182338885">
+    <testsuite name="src/features/viewer/buffered-joint-window-source.test.ts" timestamp="2026-09-29T02:25:57.922Z" hostname="5c6524146633" tests="3" failures="0" errors="0" skipped="0" time="0.007351266">
+        <testcase classname="src/features/viewer/buffered-joint-window-source.test.ts" name="buffered joint playback &gt; shares in-flight reads across the curve and robot, even when one consumer aborts" time="0.004111904">
+        </testcase>
+        <testcase classname="src/features/viewer/buffered-joint-window-source.test.ts" name="buffered joint playback &gt; prefetches the next robot chunk and reuses it for the curve and boundary crossing" time="0.001304471">
+        </testcase>
+        <testcase classname="src/features/viewer/buffered-joint-window-source.test.ts" name="buffered joint playback &gt; retries failed reads without caching the rejection" time="0.00095263">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/lance-window-source.test.ts" timestamp="2026-09-29T02:25:57.923Z" hostname="5c6524146633" tests="7" failures="0" errors="0" skipped="0" time="0.014602504">
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; preserves source joint identities when supplying the shared robot pose panel" time="0.005714311">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; maps the shared nanosecond timeline to a bounded fixed step interval and decodes real vectors" time="0.003676461">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; decodes Unitree named vectors and pose objects without flattening their metadata" time="0.001066402">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; fails closed when a response crosses the immutable rollout/version/window identity" time="0.000833016">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; decodes the declared pointcloud and event formats without treating arbitrary payloads as values" time="0.001268971">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; rejects malformed, unavailable and undeclared sample values rather than silently synthesizing a curve" time="0.000422512">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/lance-window-source.test.ts" name="P06 immutable Lance window source &gt; uses channel validity and skips gaps even when the aggregate row is invalid" time="0.000444532">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/package-window-source.test.ts" timestamp="2026-09-29T02:25:57.924Z" hostname="5c6524146633" tests="21" failures="0" errors="0" skipped="0" time="0.112288215">
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; pages a long range within reader limits, preserves ns/joint units and uses declared runtime routes" time="0.085146963">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to organization_id" time="0.002406612">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to project_id" time="0.001052355">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to region_code" time="0.000715604">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to dataset_id" time="0.000601215">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to episode_id" time="0.000662422">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects response identity changes to rollout_id" time="0.000532205">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;data_version_id&quot;:&quot;dv_other&quot;}" time="0.00117061">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;version&quot;:4}" time="0.00081285">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;content_hash&quot;:&quot;bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&quot;}" time="0.000623325">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;schema_snapshot_id&quot;:&quot;other-schema&quot;}" time="0.000559559">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;package_prefix&quot;:&quot;other/&quot;}" time="0.000411006">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects changed immutable version fields {&quot;frame_count&quot;:5001}" time="0.0003976">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-row" time="0.000555249">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: duplicate-step" time="0.000417674">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: out-of-order-time" time="0.000445286">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: foreign-rollout" time="0.000387346">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-validity" time="0.000380696">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; rejects corrupt or incomplete records: missing-channel" time="0.000378777">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; skips invalid channel samples without using aggregate row validity" time="0.000498172">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-window-source.test.ts" name="pinned Episode package numeric source through the scoped HTTP client &gt; cancels before another page and refuses bindings outside the selected scope" time="0.012882152">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" timestamp="2026-09-29T02:25:57.927Z" hostname="5c6524146633" tests="8" failures="0" errors="0" skipped="0" time="0.009396325">
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; routes a pinned package numeric stream without a Lance version" time="0.003852643">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; selects the named joint topic instead of humanoid observations or raw device state" time="0.000481299">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; uses only a server-projected camera binding to expose a lazy authorized MP4 source" time="0.001638679">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; does not invent a rollout or a browser video when a camera has no immutable binding" time="0.000226024">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; marks an unbound non-camera modality as missing rather than claiming its format is unsupported" time="0.000105188">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; uses only a server-projected non-camera binding to expose a lazy real Lance window source" time="0.000254729">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; fails closed on a malformed non-camera media binding before it can reach the viewer" time="0.000999876">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/viewer-stream-adapter.test.ts" name="P06 viewer stream adapter &gt; fails closed on a camera data binding or an incompatible declared pointcloud decoder" time="0.00047184">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/shared/api/http-client.test.ts" timestamp="2026-09-29T02:25:57.927Z" hostname="5c6524146633" tests="35" failures="0" errors="0" skipped="0" time="0.027886657">
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; accepts only bounded visible-ASCII bearer tokens" time="0.001142034">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; uses the bound scope for all scope headers" time="0.003252503">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; sends a scoped binary upload body without JSON encoding" time="0.000760588">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects mixed JSON and binary request bodies before fetch" time="0.000972216">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects a stale bound scope before issuing a request" time="0.000925049">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects a response when the active scope changes in flight" time="0.000855707">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; blocks writes while a scope transition is in progress" time="0.000256584">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; keeps session-scoped account requests independent from project changes" time="0.000690222">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; uses an explicit session bearer instead of shell state without tenant headers" time="0.000487219">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; rejects explicit bearers outside session mode or with unsafe characters" time="0.000597914">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; honors caller aborts for explicit-token session bootstrap reads" time="0.000579087">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; omits bearer and tenant scope headers for public discovery" time="0.000368907">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; sends a bounded public challenge response without bearer or tenant headers" time="0.000678369">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="scoped HTTP requests &gt; cancels only active-scope requests during a project scope change" time="0.001547294">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed before fetch for an operation absent from the runtime OpenAPI" time="0.000459073">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; allows runtime routes with a parameter followed by an action suffix" time="0.000645865">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses RFC 9457 403 responses without replacing the frontend classification" time="0.000826354">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses RFC 9457 401 responses and preserves the stable problem code" time="0.001137101">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; does not invalidate the active shell session for a rejected explicit bearer" time="0.000382022">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; parses and clamps only decimal Retry-After delay-seconds" time="0.002991962">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; projects allowlisted field errors from RFC 9457 422 details" time="0.000681657">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; marks RFC 9457 429 responses retryable only when the value is exactly true" time="0.00069989">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; uses only the sanitized 500 detail and ignores unapproved nested fields" time="0.00048732">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; uses the real HTTP status when the Problem Details status disagrees" time="0.000410769">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for an empty body without reporting a network error" time="0.000409575">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for an HTML body without reporting a network error" time="0.000513334">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for JSON null without reporting a network error" time="0.000551805">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for a JSON array without reporting a network error" time="0.000526119">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; fails closed for malformed JSON fields without reporting a network error" time="0.000411873">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; keeps fetch failures as retryable GET network errors" time="0.000387508">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; rethrows an existing DomainError without wrapping it" time="0.000315653">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; does not mark non-GET network failures as retryable" time="0.000353329">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; keeps aborted requests as non-retryable network errors" time="0.000380062">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; returns successful 200 JSON data unchanged" time="0.000446419">
+        </testcase>
+        <testcase classname="src/shared/api/http-client.test.ts" name="HTTP response handling &gt; normalizes omitted problem codes and recognizes created DomainErrors" time="0.000163841">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/datasets/api/wire-schemas.test.ts" timestamp="2026-09-29T02:25:57.943Z" hostname="5c6524146633" tests="10" failures="0" errors="0" skipped="0" time="0.010813918">
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; accepts a pinned RGB-D package reference without a Lance version" time="0.004121064">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects incompatible package decoder POINTCLOUD/VECTOR" time="0.000861936">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects incompatible package decoder EVENT/VECTOR" time="0.000192344">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects incompatible package decoder ACTION/EVENT" time="0.000175358">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects incompatible package decoder DEPTH/SCALAR" time="0.000202653">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects incompatible package decoder unknown/VECTOR" time="0.000151193">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Episode package revision binding &gt; rejects cross-tenant, cross-Episode, out-of-range or mixed-storage bindings" time="0.001382646">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Dataset Episode list wire contract &gt; accepts the formal nullable review projection for a newly ingested Episode" time="0.000663403">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Dataset Episode revision-history wire contract &gt; accepts one immutable selected revision per visible Version" time="0.00112659">
+        </testcase>
+        <testcase classname="src/features/datasets/api/wire-schemas.test.ts" name="Dataset Episode revision-history wire contract &gt; rejects a history item whose selected revision belongs to another Episode" time="0.000853938">
+        </testcase>
+    </testsuite>
+</testsuites>

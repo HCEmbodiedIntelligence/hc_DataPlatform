@@ -49,6 +49,8 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+      # The API generator reads this aggregate alongside the supplied runtime contract.
+      - ./backend/openapi.generated.yaml:/backend/openapi.generated.yaml:ro
   reader:
     profiles: [test]
     image: openarm-e-backend:integration

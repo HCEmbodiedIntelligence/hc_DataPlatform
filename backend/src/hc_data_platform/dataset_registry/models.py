@@ -526,6 +526,16 @@ class DatasetPageEpisodeStream(_DatasetPageModel):
             camera = kind in {"VIDEO", "RGB", "RGB_VIDEO", "DEPTH"}
             if camera != (self.package_binding.value_kind is None):
                 raise ValueError("package camera/numeric binding kind mismatch")
+            if not camera:
+                expected = (
+                    {"POINTCLOUD_XYZ"}
+                    if kind == "POINTCLOUD"
+                    else {"EVENT"}
+                    if kind == "EVENT"
+                    else {"SCALAR", "VECTOR"}
+                )
+                if kind not in non_camera_kinds or self.package_binding.value_kind not in expected:
+                    raise ValueError("package stream value kind differs from its modality")
         if self.data_binding is not None and kind not in non_camera_kinds:
             raise ValueError("data_binding is only valid for supported non-camera streams")
         if self.data_binding is not None and kind == "POINTCLOUD":

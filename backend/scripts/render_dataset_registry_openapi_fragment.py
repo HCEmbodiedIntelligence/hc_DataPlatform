@@ -9,7 +9,15 @@ from typing import Any
 from hc_data_platform.core.openapi import render, runtime_document
 
 _PATH_PREFIX = "/api/v1/projects/{project_id}/datasets"
-_SHARED_SCHEMAS = frozenset({"ProblemDetails", "HTTPValidationError", "ValidationError"})
+_SHARED_SCHEMAS = frozenset(
+    {
+        "ProblemDetails",
+        "HTTPValidationError",
+        "ValidationError",
+        "DataVersionRef",
+        "EpisodeIdentity",
+    }
+)
 
 
 def _schema_references(value: object) -> set[str]:

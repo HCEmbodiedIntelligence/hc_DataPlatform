@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { EpisodePackageBinding } from "../../features/datasets/api/episode-package-wire";
 import {
   episodeStreamWireSchema,
   type EpisodeRevisionWire,
@@ -30,6 +31,53 @@ function revision(
 }
 
 describe("P06 viewer stream adapter", () => {
+  it("routes a pinned package numeric stream without a Lance version", () => {
+    const packageBinding: EpisodePackageBinding = {
+      data: {
+        identity: {
+          organization_id: "org-p06",
+          project_id: "project-p06",
+          region_code: "region-p06",
+          dataset_id: "dataset_p06fixture",
+          episode_id: "episode_p06fixture",
+          rollout_id: "explicit-rollout",
+        },
+        data_version_id: "dv_test",
+        version: 1,
+        content_hash: "a".repeat(64),
+        storage_format: "lerobot_v3",
+        schema_snapshot_id: "schema-test",
+        package_prefix: "test/pinned/",
+        frame_count: 30,
+      },
+      rollout_id: "explicit-rollout",
+      feature_key: "action",
+      modality_key: "/action",
+      value_kind: "VECTOR",
+      start_step: 0,
+      end_step: 30,
+    };
+    const [stream] = adaptP06ViewerStreams(
+      revision([
+        {
+          episode_stream_id: "stream_p06action",
+          channel_path: "/action",
+          kind: "ACTION",
+          t_start_ns: "100",
+          t_end_ns: "1100",
+          aligned_media_binding: null,
+          data_binding: null,
+          package_binding: packageBinding,
+        },
+      ]),
+      "dataset_p06fixture",
+    );
+    expect(stream?.availability).toBe("ready");
+    expect(stream?.windowSource).toBeDefined();
+    expect(stream?.mediaSource).toBeUndefined();
+    expect(stream?.accessibleSummary).toContain("固定的 Episode 数据版本");
+    expect(stream?.accessibleSummary).not.toContain("Lance");
+  });
   it("selects the named joint topic instead of humanoid observations or raw device state", () => {
     const streams = adaptP06ViewerStreams(
       revision(

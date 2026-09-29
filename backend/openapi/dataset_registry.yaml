@@ -252,6 +252,12 @@ components:
           title: Suggested Version Id
         summary:
           $ref: '#/components/schemas/DatasetPageDetailSummary'
+        working_version_id:
+          anyOf:
+          - pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+            type: string
+          - type: 'null'
+          title: Working Version Id
       required:
       - scope
       - dataset
@@ -735,6 +741,53 @@ components:
       - snapshot_token
       title: DatasetPageDiffJobCommand
       type: object
+    DatasetPageEpisodeAlignedMediaBinding:
+      additionalProperties: false
+      description: Immutable logical selector for one already-READY canonical MP4.
+      properties:
+        artifact_id:
+          maxLength: 256
+          minLength: 1
+          title: Artifact Id
+          type: string
+        camera_id:
+          maxLength: 256
+          minLength: 1
+          title: Camera Id
+          type: string
+        dataset_version:
+          minimum: 1.0
+          title: Dataset Version
+          type: integer
+        end_step:
+          exclusiveMinimum: 0.0
+          maximum: 9007199254740991.0
+          title: End Step
+          type: integer
+        fps:
+          const: 30
+          default: 30
+          title: Fps
+          type: integer
+        rollout_id:
+          maxLength: 256
+          minLength: 1
+          title: Rollout Id
+          type: string
+        start_step:
+          maximum: 9007199254740991.0
+          minimum: 0.0
+          title: Start Step
+          type: integer
+      required:
+      - rollout_id
+      - dataset_version
+      - artifact_id
+      - camera_id
+      - start_step
+      - end_step
+      title: DatasetPageEpisodeAlignedMediaBinding
+      type: object
     DatasetPageEpisodeDataBinding:
       additionalProperties: false
       description: 'Immutable logical lineage for a non-camera Viewer stream.
@@ -899,52 +952,53 @@ components:
       - success_state
       title: DatasetPageEpisodeListItem
       type: object
-    DatasetPageEpisodeAlignedMediaBinding:
+    DatasetPageEpisodePackageBinding:
       additionalProperties: false
-      description: Immutable logical selector for one already-READY canonical MP4.
+      description: Exact committed package binding for either a numeric or RGB/depth stream.
       properties:
-        artifact_id:
-          maxLength: 256
-          minLength: 1
-          title: Artifact Id
-          type: string
-        dataset_version:
-          minimum: 1.0
-          title: Dataset Version
-          type: integer
-        camera_id:
-          maxLength: 256
-          minLength: 1
-          title: Camera Id
-          type: string
+        data:
+          $ref: '#/components/schemas/DataVersionRef'
         end_step:
           exclusiveMinimum: 0.0
-          maximum: 9007199254740991.0
           title: End Step
           type: integer
-        fps:
-          const: 30
-          default: 30
-          title: Fps
-          type: integer
+        feature_key:
+          maxLength: 512
+          minLength: 1
+          title: Feature Key
+          type: string
+        modality_key:
+          maxLength: 512
+          minLength: 1
+          title: Modality Key
+          type: string
         rollout_id:
           maxLength: 256
           minLength: 1
           title: Rollout Id
           type: string
         start_step:
-          maximum: 9007199254740991.0
           minimum: 0.0
           title: Start Step
           type: integer
+        value_kind:
+          anyOf:
+          - enum:
+            - SCALAR
+            - VECTOR
+            - POINTCLOUD_XYZ
+            - EVENT
+            type: string
+          - type: 'null'
+          title: Value Kind
       required:
+      - data
       - rollout_id
-      - dataset_version
-      - artifact_id
-      - camera_id
+      - feature_key
+      - modality_key
       - start_step
       - end_step
-      title: DatasetPageEpisodeAlignedMediaBinding
+      title: DatasetPageEpisodePackageBinding
       type: object
     DatasetPageEpisodeRevision:
       additionalProperties: false
@@ -1124,6 +1178,10 @@ components:
     DatasetPageEpisodeStream:
       additionalProperties: false
       properties:
+        aligned_media_binding:
+          anyOf:
+          - $ref: '#/components/schemas/DatasetPageEpisodeAlignedMediaBinding'
+          - type: 'null'
         channel_path:
           maxLength: 512
           minLength: 1
@@ -1142,9 +1200,9 @@ components:
           minLength: 1
           title: Kind
           type: string
-        aligned_media_binding:
+        package_binding:
           anyOf:
-          - $ref: '#/components/schemas/DatasetPageEpisodeAlignedMediaBinding'
+          - $ref: '#/components/schemas/DatasetPageEpisodePackageBinding'
           - type: 'null'
         t_end_ns:
           pattern: ^(0|[1-9][0-9]*)$

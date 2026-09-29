@@ -279,3 +279,48 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
   the G1 compose override; frontend recovered healthy without changing host limits.
   An offline frontend-test service provides a writable test mount. All 17 P0 rows
   remain pending for their full required acceptance scope.
+
+## Fixed-version numeric viewer milestone (partial W2/W5)
+
+- P06 numeric streams now select the package step reader from the explicit
+  product binding. Legacy streams keep the real Lance reader. Both use a shared
+  logical decoder for numeric vectors, named joints/units, poses, points and events.
+  New package streams display an Episode data-version description.
+- Requests pin organization/project/region/dataset/Episode/rollout/data version,
+  hash, schema, storage format and frame count. The source rejects mismatched
+  responses, incomplete or duplicate steps, unordered/out-of-range timestamps and
+  absent channel validity. Per-channel invalid samples are omitted independently
+  of aggregate row validity. Nanosecond arithmetic stays in bigint.
+- Requests exceeding the backend's 4096-step window limit are paged sequentially,
+  with cancellation checked before/after each request. This removes the hard
+  reader-window failure; large-recording rendering/memory performance is still
+  pending and is not inferred from the 5000-step frontend fixture.
+- Added an Episode API fragment and renderer; regenerated the dataset fragment,
+  aggregate OpenAPI, production-composed runtime client and operation allowlist.
+  The generation gate initially found the five missing Episode routes; it now
+  passes formal/runtime checks. Regeneration also includes the already-existing
+  robot recording retry route and dataset working-version field omitted by the
+  previous generated artifacts. No auth boundary was weakened.
+- Isolated frontend tests: **84 passed**, including the actual scoped HTTP client
+  and runtime operation gate, legacy decoder, numeric package source, adapters and
+  contracts. Responses in these frontend tests are fetch stubs; they do NOT count
+  as real browser/API, ingestion or sensor-data acceptance. Evidence:
+  `episode-viewer-frontend-tests.xml`. TypeScript build-mode checking passed.
+- Isolated backend tests: **51 passed** across core, product contracts, decoder
+  binding validation and real product projection services. Evidence:
+  `episode-viewer-contract-tests.xml`. An earlier invocation had 4 core failures
+  because test command overrides moved staging outside the production-approved
+  ephemeral path. Removing those overrides fixed the invocation; the production
+  validation and tested code were not relaxed. One existing Starlette/httpx warning.
+- Reproducibility: render `scripts/render_episode_store_openapi_fragment.py` and
+  `scripts/render_dataset_registry_openapi_fragment.py` in the backend test image;
+  run `python -m hc_data_platform.core.openapi` then its `--runtime --output ...`
+  variant. Set `HC_ROBOT_MODEL_ASSET_ROOT=/tmp/g1-openapi/robot-models` for the image's
+  non-root user. Supply the emitted runtime YAML to frontend
+  `node scripts/generate-api-client.mjs --runtime-contract ...`; `--check` passed
+  with runtime SHA-256 `c24d0f86b5690f1340faf0817aa2dfb9e319bdaa633cf32b6dcf090e3aecddd9`.
+- Remaining critical path: package RGB/depth media in P06; frozen new-format
+  processing plans and actual commit activity/resolver dispatch; storage-neutral
+  automatic annotation and continuous READY state (currently require Lance);
+  native HC sidecars/window materialization, unified detail/download UI, and the
+  remaining W3–W8 work. No P0 acceptance row is newly marked complete.

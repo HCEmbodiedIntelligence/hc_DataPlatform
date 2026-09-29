@@ -750,6 +750,34 @@ export const episodeStreamWireSchema = z
       });
     }
     const streamKind = value.kind.trim().toUpperCase();
+    if (value.package_binding?.value_kind != null) {
+      const supported = [
+        "POINTCLOUD",
+        "JOINT_STATE",
+        "ACTION",
+        "FORCE",
+        "POSE",
+        "IMU",
+        "TACTILE",
+        "EVENT",
+      ];
+      const expected =
+        streamKind === "POINTCLOUD"
+          ? ["POINTCLOUD_XYZ"]
+          : streamKind === "EVENT"
+            ? ["EVENT"]
+            : ["SCALAR", "VECTOR"];
+      if (
+        !supported.includes(streamKind) ||
+        !expected.includes(value.package_binding.value_kind)
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["package_binding", "value_kind"],
+          message: "package stream value kind differs from its modality",
+        });
+      }
+    }
     if (
       value.package_binding &&
       (value.aligned_media_binding ||

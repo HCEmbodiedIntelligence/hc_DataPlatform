@@ -67,6 +67,30 @@ describe("Episode package revision binding", () => {
     ).toEqual(data);
   });
 
+  it.each([
+    ["POINTCLOUD", "VECTOR"],
+    ["EVENT", "VECTOR"],
+    ["ACTION", "EVENT"],
+    ["DEPTH", "SCALAR"],
+    ["unknown", "VECTOR"],
+  ])("rejects incompatible package decoder %s/%s", (kind, value_kind) => {
+    expect(
+      episodeRevisionDataWireSchema.safeParse({
+        ...revision,
+        streams: [
+          {
+            ...revision.streams[0],
+            kind,
+            package_binding: {
+              ...revision.streams[0]!.package_binding,
+              value_kind,
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects cross-tenant, cross-Episode, out-of-range or mixed-storage bindings", () => {
     for (const identityChange of [
       { organization_id: "foreign" },

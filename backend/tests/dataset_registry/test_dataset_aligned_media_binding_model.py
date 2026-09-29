@@ -37,6 +37,54 @@ def _data_binding(**overrides: object) -> DatasetPageEpisodeDataBinding:
     return DatasetPageEpisodeDataBinding.model_validate(values)
 
 
+@pytest.mark.parametrize(
+    ("kind", "value_kind"),
+    [
+        ("POINTCLOUD", "VECTOR"),
+        ("EVENT", "VECTOR"),
+        ("ACTION", "EVENT"),
+        ("DEPTH", "SCALAR"),
+        ("unknown", "VECTOR"),
+    ],
+)
+def test_package_binding_rejects_an_incompatible_decoder(kind, value_kind):
+    with pytest.raises(ValidationError, match="package"):
+        DatasetPageEpisodeStream.model_validate(
+            {
+                "episode_stream_id": "stream_package",
+                "channel_path": "/source",
+                "kind": kind,
+                "t_start_ns": "0",
+                "t_end_ns": "1000",
+                "package_binding": {
+                    "data": {
+                        "identity": {
+                            "organization_id": "org",
+                            "project_id": "project",
+                            "region_code": "region",
+                            "dataset_id": "dataset_test",
+                            "episode_id": "episode_test",
+                            "rollout_id": "rollout",
+                        },
+                        "data_version_id": "dv_test",
+                        "version": 1,
+                        "content_hash": "a" * 64,
+                        "storage_format": "lerobot_v3",
+                        "schema_snapshot_id": "schema-test",
+                        "package_prefix": "test/pinned/",
+                        "frame_count": 30,
+                    },
+                    "rollout_id": "rollout",
+                    "feature_key": "source",
+                    "modality_key": "/source",
+                    "value_kind": value_kind,
+                    "start_step": 0,
+                    "end_step": 30,
+                },
+            }
+        )
+
+
 def test_episode_aligned_media_binding_is_camera_only_bounded_and_has_no_storage_locator() -> None:
     stream = DatasetPageEpisodeStream(
         episode_stream_id="stream_camera_1",

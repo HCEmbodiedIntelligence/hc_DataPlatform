@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 577a6dd4ef006cb219556baa6ed5cffa1cb508a720afa7c3ce31bc0ed1a5e3b3
+// Runtime-OpenAPI-SHA256: c24d0f86b5690f1340faf0817aa2dfb9e319bdaa633cf32b6dcf090e3aecddd9
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -251,6 +251,11 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:rotate-credential" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/data-sources/{source_id}:test-connection" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/data-sources/page" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/depth/{feature}/{frame_index}" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/download" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/steps" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/device-capture-facts" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
@@ -360,6 +365,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/robot-ingest/uploads/{upload_id}/processing" },
   { method: "GET", path: "/robot-ingest/uploads/{upload_id}/processing/diagnostics" },
   { method: "GET", path: "/robot-ingest/uploads/{upload_id}/recording" },
+  { method: "POST", path: "/robot-ingest/uploads/{upload_id}/recording:retry" },
 ] as const;
 
 export type RuntimeOperation = (typeof runtimeOperations)[number];
