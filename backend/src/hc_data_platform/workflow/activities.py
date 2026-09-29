@@ -903,7 +903,14 @@ async def process_ingest_source(
                     quality=quality_output,
                 )
 
-            alignment_data = session.alignment_data
+            from hc_data_platform.quality.boundaries import conversion_window
+
+            window_start, window_end = conversion_window(
+                quality_report, request.alignment.profile.frequency_hz
+            )
+            alignment_data = session.alignment_data.model_copy(
+                update={"start_ns": window_start, "end_ns": window_end}
+            )
             effective_request = request.alignment.model_copy(
                 update={"data": alignment_data, "source": None}
             )
@@ -912,6 +919,21 @@ async def process_ingest_source(
                 _dependencies.fragment_writers,
                 "alignment.FragmentWriterFactoryPort",
             ).create(effective_request)
+            tolerance = (
+                max(
+                    request.alignment.profile.default_tolerance_ns,
+                    *request.alignment.profile.stream_tolerance_ns.values(),
+                )
+                if request.alignment.profile.stream_tolerance_ns
+                else request.alignment.profile.default_tolerance_ns
+            )
+            # Consume the entire session for its audit receipt, but do not retain
+            # a long normal waiting period in the alignment lookahead buffers.
+            samples = (
+                (topic, sample)
+                for topic, sample in session.alignment_samples()
+                if window_start - tolerance <= sample.timestamp_ns < window_end + tolerance
+            )
             staged_manifest = alignment.align_stream_to_writer(
                 rollout_id=alignment_data.rollout_id,
                 source_sha256=alignment_data.source_sha256,
@@ -919,7 +941,7 @@ async def process_ingest_source(
                 start_ns=alignment_data.start_ns,
                 end_ns=alignment_data.end_ns,
                 stream_kinds={name: stream.kind for name, stream in alignment_data.streams.items()},
-                samples=session.alignment_samples(),
+                samples=samples,
                 profile=request.alignment.profile,
                 writer=writer,
             )

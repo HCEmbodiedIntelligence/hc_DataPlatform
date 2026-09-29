@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .boundaries import BOUNDARY_QUALITY_ENGINE_VERSION, active_topic_timing, common_window
 from .models import (
     NANOSECONDS_PER_SECOND,
     FindingSeverity,
@@ -73,6 +74,16 @@ class QualityEngine:
                 data,
                 profile.timing_for(topic),
             )
+            if (self._engine_version or profile.engine_version) == BOUNDARY_QUALITY_ENGINE_VERSION:
+                topic_metrics, topic_findings = active_topic_timing(
+                    topic=topic,
+                    timestamps=sorted(set(data.topic_timestamps_ns.get(topic, ()))),
+                    data=data,
+                    thresholds=profile.timing_for(topic),
+                    metrics=topic_metrics,
+                    findings=topic_findings,
+                    required=topic in profile.required_topics,
+                )
             metrics.append(topic_metrics)
             findings.extend(topic_findings)
 
@@ -82,6 +93,7 @@ class QualityEngine:
         findings.extend(self._point_clouds(data, profile))
         findings.extend(self._offsets(data, profile))
         findings.extend(self._complete_steps(data, profile))
+        self._check_common_window(findings, data, profile)
         findings = self._apply_policy(findings, profile)
         findings.sort(key=self._finding_key)
 
@@ -216,6 +228,23 @@ class QualityEngine:
                         data,
                         profile.timing_for(topic),
                     )
+                    if (
+                        self._engine_version or profile.engine_version
+                    ) == BOUNDARY_QUALITY_ENGINE_VERSION:
+                        topic_metrics, topic_findings = active_topic_timing(
+                            topic=topic,
+                            timestamps=(
+                                int(row[0])
+                                for row in database.execute(
+                                    "SELECT ts FROM timestamps WHERE topic=? ORDER BY ts", (topic,)
+                                )
+                            ),
+                            data=data,
+                            thresholds=profile.timing_for(topic),
+                            metrics=topic_metrics,
+                            findings=topic_findings,
+                            required=topic in profile.required_topics,
+                        )
                     metrics.append(topic_metrics)
                     findings.extend(topic_findings)
                 findings.extend(self._online_images(images, data, profile))
@@ -228,6 +257,7 @@ class QualityEngine:
         findings.extend(self._point_clouds(data, profile))
         findings.extend(self._offsets(data, profile))
         findings.extend(self._complete_steps(data, profile))
+        self._check_common_window(findings, data, profile)
         findings = self._apply_policy(findings, profile)
         findings.sort(key=self._finding_key)
         report = QcReportV1.build(
@@ -245,6 +275,31 @@ class QualityEngine:
         )
         self._persist(report)
         return report
+
+    def _check_common_window(
+        self,
+        findings: list[QcFinding],
+        data: QualityInputV1,
+        profile: QualityProfileV1,
+    ) -> None:
+        if (self._engine_version or profile.engine_version) != BOUNDARY_QUALITY_ENGINE_VERSION:
+            return
+        start, end = common_window(data.start_ns, data.end_ns, findings)
+        hz = profile.default_timing.target_frequency_hz
+        step = ((start - data.start_ns) * hz + NANOSECONDS_PER_SECOND - 1) // NANOSECONDS_PER_SECOND
+        if data.start_ns + step * NANOSECONDS_PER_SECOND // hz >= end:
+            findings.append(
+                self._finding(
+                    QualityCode.NO_COMMON_WINDOW,
+                    FindingSeverity.WARNING,
+                    "required modalities have no common active frame; human review required",
+                    "__multimodal_step__",
+                    data.start_ns,
+                    data.end_ns,
+                    observed=False,
+                    threshold="non-empty common active window",
+                )
+            )
 
     def _apply_policy(
         self,
@@ -1071,7 +1126,7 @@ class QualityEngine:
     def _status(findings: list[QcFinding]) -> QualityStatus:
         if any(item.severity == FindingSeverity.ERROR for item in findings):
             return QualityStatus.REJECT
-        if findings:
+        if any(item.severity == FindingSeverity.WARNING for item in findings):
             return QualityStatus.RISK
         return QualityStatus.PASS
 

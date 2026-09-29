@@ -40,6 +40,7 @@ class PostgresIngestDispatchGuard:
         workflow_id: str,
         *,
         retry_terminal: bool = False,
+        retry_quality: bool = False,
     ) -> None:
         context = current_request_context()
         if (
@@ -66,9 +67,12 @@ class PostgresIngestDispatchGuard:
                     (request.organization_id, request.project_id, workflow_id),
                 )
                 existing = cursor.fetchone()
-                if existing is not None and (
-                    not retry_terminal or existing[0] not in {"TECHNICAL_FAILED", "CANCELLED"}
-                ):
+                retryable = {"TECHNICAL_FAILED", "CANCELLED"} if retry_terminal else set()
+                if retry_quality:
+                    # Only an explicit policy re-evaluation may restart a quality
+                    # outcome. Ordinary delivery/recovery never silently releases it.
+                    retryable |= {"QUALITY_RISK", "QUALITY_REJECTED"}
+                if existing is not None and existing[0] not in retryable:
                     # A dispatch retry must reconnect to its existing execution,
                     # including a reservation persisted before a launcher crash.
                     return

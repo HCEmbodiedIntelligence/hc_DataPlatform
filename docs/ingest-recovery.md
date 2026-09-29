@@ -48,6 +48,35 @@ cores. Media encoding has a shared four-slot limit and two FFmpeg threads per
 encoder. Publishing prepared media does not consume an encoder slot. Other
 deployments can choose worker replicas and these limits independently.
 
+## Recording boundaries and interior gaps
+
+New MCAP format profiles (version 3) and native LeRobot profiles use
+`be06-qc/3`. Existing v1/v2 profiles and immutable reports retain their original
+semantics. Each required topic's initial/final waiting period is recorded as
+`QC_LEADING_IDLE` / `QC_TRAILING_IDLE` with `info` severity. These annotations do
+not make a recording RISK. The final sample covers one nominal sample period;
+static optional topics do not narrow the common active window.
+
+Every interior gap exceeding the profile's missing-sample threshold produces a
+separate warning, even when a larger boundary gap exists. Missing entire topics,
+corrupt images, and an empty common active window still require review. Normal
+boundary annotations are excluded from the problem-data warning count/range.
+
+Ingest aligns all modalities on the intersection of their active windows,
+renumbering derived steps and video frames from zero. Raw files and their original
+timestamps remain intact. The LeRobot exporter also trims invalid prefix/suffix
+frames from existing frozen datasets, uses the identical retained step selection
+for Parquet and every video, and writes `boundary_trim` provenance into
+`meta/annotations.json`. Interior invalid frames are retained and identified;
+human review/cleaning decides their treatment. Exports use a new immutable v5
+artifact identity so older archives cannot be mistaken for cropped output.
+
+Historical reports need a fresh timestamp scan: the old single-largest-gap
+summary cannot prove that a smaller interior gap is absent. Preserve the original
+reports, publish a new profile/report version, and explicitly reserve any released
+quality outcomes with `retry_quality=True` before restarting ingest. Ordinary
+transport recovery never retries a quality outcome automatically.
+
 ## Cancellation and recovery
 
 Terminal job state is persisted after cleanup. Cancellation of a synchronous

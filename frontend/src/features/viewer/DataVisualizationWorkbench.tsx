@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Bookmark,
   CircleAlert,
+  Info,
   ClipboardCopy,
   LockKeyhole,
   RefreshCw,
@@ -135,7 +136,11 @@ function FindingsInspectorComponent({
                 onClick={() => adapter.clock.seek(finding.startNs)}
               >
                 <span className={styles.findingTitle}>
-                  <CircleAlert aria-hidden="true" size={15} />
+                  {finding.severity === "info" ? (
+                    <Info aria-hidden="true" size={15} />
+                  ) : (
+                    <CircleAlert aria-hidden="true" size={15} />
+                  )}
                   <strong>{finding.title}</strong>
                   {finding.streamLabel ? <em>{finding.streamLabel}</em> : null}
                 </span>
@@ -298,10 +303,14 @@ export function DataVisualizationWorkbench({
         <div
           className={styles.banner}
           data-tone={adapter.banner.tone}
-          role="alert"
+          role={adapter.banner.tone === "info" ? "status" : "alert"}
         >
           <span className={styles.bannerLabel}>
-            <AlertTriangle aria-hidden="true" size={16} />
+            {adapter.banner.tone === "info" ? (
+              <Info aria-hidden="true" size={16} />
+            ) : (
+              <AlertTriangle aria-hidden="true" size={16} />
+            )}
             {adapter.banner.label}
           </span>
           <span className={styles.bannerMessage}>

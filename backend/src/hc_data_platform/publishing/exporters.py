@@ -435,7 +435,7 @@ class LeRobotV3Exporter:
         return _publish_validated(
             format=self.format,
             manifest=manifest,
-            steps=steps,
+            steps=archive.steps,
             sink=sink,
             attempt_id=attempt_id,
             staging_attempt_id=f"{attempt_id}-{EXPORT_REVISION}",

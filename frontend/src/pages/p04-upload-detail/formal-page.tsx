@@ -131,8 +131,12 @@ function diagnosticFindings(
     startNs: String(Math.max(0, Math.trunc(finding.start_ns))),
     endNs: String(Math.max(0, Math.trunc(finding.end_ns))),
     message: qualityFindingText(finding.code).description,
-    observed: String(finding.observed),
-    threshold: String(finding.threshold),
+    observed:
+      finding.severity === "info"
+        ? `${(Number(finding.observed) / 1_000_000_000).toFixed(3)} 秒`
+        : String(finding.observed),
+    threshold:
+      finding.severity === "info" ? undefined : String(finding.threshold),
   }));
 }
 
@@ -153,6 +157,45 @@ function diagnosticTracks(
       },
     ],
   }));
+}
+
+function BoundaryTrimSummary({
+  quality,
+}: {
+  readonly quality: FormalQcReport;
+}) {
+  const boundaries = quality.findings.filter(
+    (finding) =>
+      finding.code === "QC_LEADING_IDLE" || finding.code === "QC_TRAILING_IDLE",
+  );
+  if (!boundaries.length) return null;
+  const start = Math.max(
+    quality.start_ns,
+    ...boundaries
+      .filter((finding) => finding.code === "QC_LEADING_IDLE")
+      .map((finding) => finding.end_ns),
+  );
+  const end = Math.min(
+    quality.end_ns,
+    ...boundaries
+      .filter((finding) => finding.code === "QC_TRAILING_IDLE")
+      .map((finding) => finding.start_ns),
+  );
+  const elapsed = (value: number) =>
+    ((value - quality.start_ns) / 1_000_000_000).toFixed(3);
+  return (
+    <section className={styles.qualityPanel} aria-label="头尾裁剪标注">
+      <Typography.Title level={3}>头尾等待段：正常操作</Typography.Title>
+      <p>
+        {end > start
+          ? `共同有效区间：${elapsed(start)}–${elapsed(end)} 秒（相对录制开始）。转换时同步裁剪所有数据通道和视频，并重新从第 0 帧计数。`
+          : "各通道没有共同有效区间，需人工判断后再转换。"}
+      </p>
+      <p>
+        原始文件完整保留。中间缺帧在时间轴单独标记，需人工判断，不自动剪掉。
+      </p>
+    </section>
+  );
 }
 
 function rawCameraStreams(
@@ -470,6 +513,7 @@ function UploadDiagnostic({
         error={workflowMedia.error}
         onRefresh={workflowMedia.onRefresh}
       />
+      <BoundaryTrimSummary quality={detail.quality} />
       <RawDiagnosticWorkbench
         id={`upload-diagnostic:${detail.session.session_id ?? detail.session.rollout_id}`}
         title="Raw 诊断"
@@ -487,7 +531,12 @@ function UploadDiagnostic({
             label: detail.session.data_package_id,
             description: `机器人 ${detail.manifest.identifiers.robot_id}`,
             status: `自动质检 ${detail.quality.status}`,
-            statusTone: detail.quality.status === "RISK" ? "warning" : "error",
+            statusTone:
+              detail.quality.status === "PASS"
+                ? "success"
+                : detail.quality.status === "RISK"
+                  ? "warning"
+                  : "error",
             facts: [
               {
                 label: "开始",

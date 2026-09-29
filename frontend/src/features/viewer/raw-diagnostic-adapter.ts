@@ -1,13 +1,13 @@
-import type { PlaybackClock } from './PlaybackClock';
-import type { ViewerTimelineTrack } from './EpisodeWorkbenchCore';
-import type { StreamDescriptor } from './types';
+import type { PlaybackClock } from "./PlaybackClock";
+import type { ViewerTimelineTrack } from "./EpisodeWorkbenchCore";
+import type { StreamDescriptor } from "./types";
 import type {
   DataVisualizationWorkbenchAdapter,
   WorkbenchAction,
   WorkbenchCollectionItem,
   WorkbenchDiagnosticNotes,
   WorkbenchFinding,
-} from './workbench-contract';
+} from "./workbench-contract";
 
 /**
  * Narrow runtime projection from backend/openapi.generated.yaml.
@@ -15,7 +15,7 @@ import type {
  * camera discovery fields, so this boundary stays local until regeneration.
  */
 export interface RuntimeManifestDiscoveryProjection {
-  readonly source: 'MANIFEST';
+  readonly source: "MANIFEST";
   readonly read_only: true;
   readonly cameras: readonly {
     readonly camera_id: string;
@@ -43,7 +43,9 @@ export interface RawDiagnosticAdapterInput {
   readonly description?: string;
   readonly clock: PlaybackClock;
   readonly manifest: RuntimeManifestDiscoveryProjection;
-  readonly mediaStreamsByTopic: Readonly<Record<string, StreamDescriptor | undefined>>;
+  readonly mediaStreamsByTopic: Readonly<
+    Record<string, StreamDescriptor | undefined>
+  >;
   readonly collectionItems: readonly WorkbenchCollectionItem[];
   readonly selectedCollectionItemId?: string;
   readonly onSelectCollectionItem?: (id: string) => void;
@@ -55,33 +57,39 @@ export interface RawDiagnosticAdapterInput {
     readonly requestRecollection?: RawDiagnosticCommandPort;
     readonly runAutomatedCheck?: RawDiagnosticCommandPort;
   };
-  readonly onResourceError?: DataVisualizationWorkbenchAdapter['onResourceError'];
+  readonly onResourceError?: DataVisualizationWorkbenchAdapter["onResourceError"];
 }
 
 function missingCameraStream(
-  camera: RuntimeManifestDiscoveryProjection['cameras'][number],
+  camera: RuntimeManifestDiscoveryProjection["cameras"][number],
   clock: PlaybackClock,
 ): StreamDescriptor {
   return {
     id: `manifest-camera:${camera.camera_id}`,
     canonicalPath: camera.topic,
     displayName: camera.camera_id,
-    modality: camera.encoding?.toLowerCase().includes('depth') ? 'depth' : 'rgb',
-    semanticRole: 'manifest-camera',
+    modality: camera.encoding?.toLowerCase().includes("depth")
+      ? "depth"
+      : "rgb",
+    semanticRole: "manifest-camera",
     schema: {
-      id: camera.encoding ?? 'manifest-declared-camera',
-      version: 'runtime-manifest/v1',
+      id: camera.encoding ?? "manifest-declared-camera",
+      version: "runtime-manifest/v1",
       encoding: camera.encoding ?? undefined,
     },
     startNs: clock.startNs,
     endNs: clock.endNs,
-    frame: camera.frame_id ? { id: camera.frame_id, name: camera.frame_id } : undefined,
-    availability: 'missing',
+    frame: camera.frame_id
+      ? { id: camera.frame_id, name: camera.frame_id }
+      : undefined,
+    availability: "missing",
     accessibleSummary: `${camera.camera_id} 由数据清单声明，但当前预览流缺失。`,
   };
 }
 
-function cameraStreamsFromManifest(input: RawDiagnosticAdapterInput): readonly StreamDescriptor[] {
+function cameraStreamsFromManifest(
+  input: RawDiagnosticAdapterInput,
+): readonly StreamDescriptor[] {
   return input.manifest.cameras.map((camera) => {
     const stream = input.mediaStreamsByTopic[camera.topic];
     if (!stream) return missingCameraStream(camera, input.clock);
@@ -89,8 +97,10 @@ function cameraStreamsFromManifest(input: RawDiagnosticAdapterInput): readonly S
       ...stream,
       displayName: camera.camera_id,
       canonicalPath: camera.topic,
-      semanticRole: 'manifest-camera',
-      frame: camera.frame_id ? { id: camera.frame_id, name: camera.frame_id } : stream.frame,
+      semanticRole: "manifest-camera",
+      frame: camera.frame_id
+        ? { id: camera.frame_id, name: camera.frame_id }
+        : stream.frame,
       schema: {
         ...stream.schema,
         encoding: camera.encoding ?? stream.schema.encoding,
@@ -106,25 +116,29 @@ function cameraTimelineTracks(
   return streams.map((stream) => ({
     id: `camera:${stream.id}`,
     label: stream.displayName,
-    segments: stream.availability === 'missing' || stream.availability === 'unsupported'
-      ? []
-      : [{
-          id: `coverage:${stream.id}`,
-          label: stream.availability === 'partial'
-            ? '可用帧（存在缺口）'
-            : stream.availability === 'media-preparing'
-              ? '慢流缓冲中'
-              : '视频覆盖',
-          startNs: clock.startNs,
-          endNs: clock.endNs,
-          tone: 'signal',
-        }],
+    segments:
+      stream.availability === "missing" || stream.availability === "unsupported"
+        ? []
+        : [
+            {
+              id: `coverage:${stream.id}`,
+              label:
+                stream.availability === "partial"
+                  ? "可用帧（存在缺口）"
+                  : stream.availability === "media-preparing"
+                    ? "慢流缓冲中"
+                    : "视频覆盖",
+              startNs: clock.startNs,
+              endNs: clock.endNs,
+              tone: "signal",
+            },
+          ],
   }));
 }
 
 function commandAction(
   id: string,
-  kind: WorkbenchAction['kind'],
+  kind: WorkbenchAction["kind"],
   label: string,
   port: RawDiagnosticCommandPort | undefined,
   fallbackDisabledReason: string,
@@ -134,7 +148,9 @@ function commandAction(
     kind,
     label,
     invoke: port?.invoke,
-    disabledReason: port?.disabledReason ?? (port?.invoke ? undefined : fallbackDisabledReason),
+    disabledReason:
+      port?.disabledReason ??
+      (port?.invoke ? undefined : fallbackDisabledReason),
   };
 }
 
@@ -142,35 +158,39 @@ export function createRawDiagnosticWorkbenchAdapter(
   input: RawDiagnosticAdapterInput,
 ): DataVisualizationWorkbenchAdapter {
   const cameraStreams = cameraStreamsFromManifest(input);
+  const hasWarnings = input.findings.some(
+    (finding) => finding.severity !== "info",
+  );
   const actions: readonly WorkbenchAction[] = [
     commandAction(
-      'preserve-evidence',
-      'preserve-evidence',
-      '复制证据链接',
+      "preserve-evidence",
+      "preserve-evidence",
+      "复制证据链接",
       input.commands?.preserveEvidence,
-      '当前上下文没有可复制的稳定证据链接。',
+      "当前上下文没有可复制的稳定证据链接。",
     ),
     commandAction(
-      'request-recollection',
-      'request-recollection',
-      '请求重新采集',
+      "request-recollection",
+      "request-recollection",
+      "请求重新采集",
       input.commands?.requestRecollection,
-      '尚未提供经过授权的重采命令合同。',
+      "尚未提供经过授权的重采命令合同。",
     ),
     commandAction(
-      'run-automated-check',
-      'run-automated-check',
-      '重新运行自动校验',
+      "run-automated-check",
+      "run-automated-check",
+      "重新运行自动校验",
       input.commands?.runAutomatedCheck,
-      '服务端未允许为此结果重新运行自动校验。',
+      "服务端未允许为此结果重新运行自动校验。",
     ),
   ];
 
   return {
-    mode: 'raw-diagnostic',
+    mode: "raw-diagnostic",
     id: input.id,
-    title: input.title ?? 'Raw 诊断',
-    description: input.description ?? '按数据清单核对多相机、信号与自动质检证据。',
+    title: input.title ?? "Raw 诊断",
+    description:
+      input.description ?? "按数据清单核对多相机、信号与自动质检证据。",
     readOnly: true,
     clock: input.clock,
     cameraStreams,
@@ -181,14 +201,33 @@ export function createRawDiagnosticWorkbenchAdapter(
     timelineTracks: [
       ...cameraTimelineTracks(cameraStreams, input.clock),
       ...(input.signalTracks ?? []),
+      ...input.findings.map((finding) => ({
+        id: `finding:${finding.id}`,
+        label: finding.title,
+        segments: [
+          {
+            id: finding.id,
+            label: `${finding.title} · ${finding.topic ?? ""}`,
+            startNs: finding.startNs,
+            endNs: finding.endNs ?? finding.startNs,
+            tone:
+              finding.severity === "info"
+                ? ("signal" as const)
+                : ("issue" as const),
+          },
+        ],
+      })),
     ],
     notes: input.notes,
     actions,
     banner: {
-      label: '自动质检异常',
-      title: '异常数据保留在 Raw，不进入 Lance',
-      description: '诊断备注和证据操作不会覆盖自动质检结论。',
-      tone: 'error',
+      label: hasWarnings ? "自动质检待人工判断" : "采集边界标注",
+      title: hasWarnings
+        ? "请检查告警区间，原始数据完整保留"
+        : "头尾等待段属于正常操作",
+      description:
+        "转换时同步裁剪数据和视频的头尾；中间缺口保留标记，由人工决定处理方式。",
+      tone: hasWarnings ? "error" : "info",
     },
     onResourceError: input.onResourceError,
   };

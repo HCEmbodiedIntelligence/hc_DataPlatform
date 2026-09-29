@@ -158,7 +158,7 @@ def test_export_materializes_exact_frames_tags_statistics_and_standard_features(
     )
     manifest = export_manifest()
     result = coordinator.export(manifest, format=ExportFormat.LEROBOT_V3, attempt_id="portable")
-    assert "lerobot-materialized-v4-holobrain/" in result.artifact_uri
+    assert "lerobot-materialized-v5-boundary-trim/" in result.artifact_uri
     with zipfile.ZipFile(io.BytesIO(sink.artifacts[result.artifact_uri])) as archive:
         info = json.loads(archive.read("meta/info.json"))
         stats = json.loads(archive.read("meta/stats.json"))
@@ -214,6 +214,71 @@ def test_export_materializes_exact_frames_tags_statistics_and_standard_features(
     )
     assert replay.artifact_content_hash == result.artifact_content_hash
     assert assets.reads == reads  # Reuse the fixed artifact without re-encoding the source.
+
+
+def test_boundary_trim_cuts_data_and_actual_video_together_and_keeps_provenance(
+    portable_source: tuple[Assets, list[ExportStepV1]],
+    tmp_path: Path,
+) -> None:
+    assets, steps = portable_source
+    # The frozen selection is [0, 1, 4, 5]; only its two boundary frames are invalid.
+    steps = [
+        step.model_copy(update={"sample_valid": step.step_index not in {0, 5}}) for step in steps
+    ]
+    sink = InMemoryArtifactSink()
+    result = LeRobotV3Exporter(assets).export(
+        manifest=export_manifest(),
+        source=InMemoryExportSource(steps),
+        sink=sink,
+        attempt_id="trim",
+    )
+    assert result.row_count == 2
+    with zipfile.ZipFile(io.BytesIO(sink.artifacts[result.artifact_uri])) as archive:
+        rows = pq.read_table(pa.BufferReader(archive.read(DATA_PATH))).to_pylist()
+        metadata = json.loads(archive.read("meta/annotations.json"))["episodes"][0]
+        info = json.loads(archive.read("meta/info.json"))
+        video_path = info["video_path"].format(
+            video_key="observation.images.front", chunk_index=0, file_index=0
+        )
+        output = tmp_path / "trimmed.mp4"
+        output.write_bytes(archive.read(video_path))
+    assert [row["hc.source_step_index"] for row in rows] == [1, 4]
+    assert [row["frame_index"] for row in rows] == [0, 1]
+    assert metadata["boundary_trim"]["leading_removed_frames"] == 1
+    assert metadata["boundary_trim"]["trailing_removed_frames"] == 1
+    decoded = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            str(output),
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "pipe:1",
+        ],
+        capture_output=True,
+        check=True,
+    ).stdout
+    actual = np.frombuffer(decoded, dtype=np.uint8).reshape(2, -1).mean(axis=1)
+    np.testing.assert_allclose(actual, np.array([7, 10]) * 15, atol=3)
+
+
+def test_boundary_trim_preserves_interior_invalid_frames_for_human_decision(portable_source):
+    assets, steps = portable_source
+    steps = [step.model_copy(update={"sample_valid": step.step_index != 1}) for step in steps]
+    archive = LeRobotArchive(export_manifest(), [steps[index] for index in [0, 1, 4, 5]], assets)
+    assert [step.step_index for step in archive.steps] == [0, 1, 4, 5]
+    assert archive.boundary_trims[0]["interior_invalid_source_steps"] == [1]
+    with pytest.raises(ProblemException) as error:
+        LeRobotArchive(
+            export_manifest(),
+            [step.model_copy(update={"sample_valid": False}) for step in steps],
+            assets,
+        )
+    assert error.value.problem.code == "EXPORT_NO_COMMON_ACTIVE_WINDOW"
 
 
 @pytest.mark.parametrize("broken", ["video", "tags", "stats", "frame_tags", "episode_stats"])

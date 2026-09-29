@@ -294,6 +294,39 @@ afterEach(() => {
 });
 
 describe("P04 formal upload detail page", () => {
+  it("shows a common trim window while normal boundaries remain PASS", async () => {
+    const detail = detailFixture("PASS", 2);
+    if (!detail.quality) throw new Error("quality fixture missing");
+    detail.quality.findings = [
+      {
+        code: "QC_LEADING_IDLE",
+        severity: "info",
+        topic: "joint_cmd",
+        start_ns: 0,
+        end_ns: 2_000_000_000,
+        observed: 2_000_000_000,
+        threshold: "duration_ns",
+        message: "normal recording boundary",
+      },
+      {
+        code: "QC_TRAILING_IDLE",
+        severity: "info",
+        topic: "joint_cmd",
+        start_ns: 8_000_000_000,
+        end_ns: 10_000_000_000,
+        observed: 2_000_000_000,
+        threshold: "duration_ns",
+        message: "normal recording boundary",
+      },
+    ];
+    loadDetailMock.mockResolvedValue(detail);
+    renderPage();
+    expect(await screen.findByText("头尾等待段：正常操作")).toBeVisible();
+    expect(screen.getByText(/共同有效区间：2.000–8.000 秒/)).toBeVisible();
+    expect(screen.getByText("自动质检通过")).toBeVisible();
+    expect(screen.getByText(/中间缺帧在时间轴单独标记/)).toBeVisible();
+  });
+
   it("keeps a direct deep link/query/hash and exposes the authorized Raw source on PASS", async () => {
     renderPage();
 
@@ -312,7 +345,9 @@ describe("P04 formal upload detail page", () => {
         "4",
       ),
     );
-    expect(screen.getByText(/Canonical MP4 与 Lance 引用已提交/u)).toBeVisible();
+    expect(
+      screen.getByText(/Canonical MP4 与 Lance 引用已提交/u),
+    ).toBeVisible();
     expect(
       screen.getByRole("link", { name: "打开完整数据视图" }),
     ).toHaveAttribute(

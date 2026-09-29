@@ -60,6 +60,7 @@ class QualityStatus(str, Enum):
 
 
 class FindingSeverity(str, Enum):
+    INFO = "info"
     WARNING = "warning"
     ERROR = "error"
 
@@ -71,6 +72,9 @@ class QualityCode(str, Enum):
     FREQUENCY_LOW = "QC_FREQUENCY_LOW"
     GAP_EXCESSIVE = "QC_GAP_EXCESSIVE"
     CONSECUTIVE_FRAMES_MISSING = "QC_CONSECUTIVE_FRAMES_MISSING"
+    LEADING_IDLE = "QC_LEADING_IDLE"
+    TRAILING_IDLE = "QC_TRAILING_IDLE"
+    NO_COMMON_WINDOW = "QC_NO_COMMON_WINDOW"
     COVERAGE_LOW = "QC_COVERAGE_LOW"
     IMAGE_BLACK = "QC_IMAGE_BLACK"
     IMAGE_REPEATED = "QC_IMAGE_REPEATED"
@@ -610,9 +614,12 @@ class AutoQualityProblemV1(BaseModel):
     ) -> AutoQualityProblemV1:
         if report.status is QualityStatus.PASS or not report.findings:
             raise ValueError("only failed QC reports with findings can become problem data")
-        first = report.findings[0]
-        start_ns = min(item.start_ns for item in report.findings)
-        end_ns = max(max(item.end_ns, item.start_ns + 1) for item in report.findings)
+        findings = tuple(item for item in report.findings if item.severity != FindingSeverity.INFO)
+        if not findings:
+            raise ValueError("informational boundary annotations are not problem data")
+        first = findings[0]
+        start_ns = min(item.start_ns for item in findings)
+        end_ns = max(max(item.end_ns, item.start_ns + 1) for item in findings)
         return cls(
             id=f"qc_{report.content_sha256[:32]}",
             session_id=session_id,
@@ -625,9 +632,9 @@ class AutoQualityProblemV1(BaseModel):
             start_ns=str(start_ns),
             end_ns=str(end_ns),
             message=first.message[:1_000],
-            finding_count=len(report.findings),
-            finding_codes=tuple(sorted({item.code for item in report.findings}, key=str)),
-            topics=tuple(sorted({item.topic for item in report.findings})),
+            finding_count=len(findings),
+            finding_codes=tuple(sorted({item.code for item in findings}, key=str)),
+            topics=tuple(sorted({item.topic for item in findings})),
             report_sha256=report.content_sha256,
             updated_at=updated_at,
         )

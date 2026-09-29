@@ -130,3 +130,31 @@ def test_parallel_reservations_are_bounded_and_wait_for_legacy_writers(active, b
     assert pending.committed is not busy
     assert "count(*)" in control.queries[2][0]
     assert "parallel_preparation" in control.queries[2][0]
+
+
+@pytest.mark.parametrize("retry_quality", [False, True])
+def test_quality_policy_retry_requires_explicit_reservation(retry_quality):
+    answers = [(True,), ("QUALITY_RISK",)]
+    if retry_quality:
+        answers += [(0, False), None]
+    control, pending = Connection(answers), Connection([])
+    connections = iter([control, pending])
+    guard = PostgresIngestDispatchGuard(lambda: next(connections))
+    request = SimpleNamespace(
+        organization_id="org",
+        project_id="p",
+        region_code="r",
+        dataset_id="d",
+        rollout_id="episode",
+        parallel_preparation=True,
+    )
+    token = bind_request_context(
+        RequestContext(
+            organization_id="org", project_id="p", region_code="r", service_identity=True
+        )
+    )
+    try:
+        guard.reserve(request, "workflow", retry_terminal=True, retry_quality=retry_quality)
+    finally:
+        reset_request_context(token)
+    assert pending.committed is retry_quality

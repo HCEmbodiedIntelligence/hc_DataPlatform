@@ -611,6 +611,34 @@ describe("DataVisualizationWorkbench shared clock and boundaries", () => {
     expect(inspector).toHaveBeenCalledTimes(1);
   });
 
+  it("marks normal boundaries as information and lets reviewers seek each interval", () => {
+    const props = baseProps(1);
+    render(
+      <RawDiagnosticWorkbench
+        {...props}
+        findings={[
+          {
+            id: "normal-tail",
+            title: "结尾等待段（正常操作）",
+            severity: "info",
+            topic: "joint_cmd",
+            startNs: "2000000000",
+            endNs: "2500000000",
+            message: "转换时同步裁剪数据和视频。",
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("头尾等待段属于正常操作")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    const finding = screen.getByRole("button", {
+      name: "定位发现：结尾等待段（正常操作）",
+    });
+    expect(finding).toHaveAttribute("data-severity", "info");
+    fireEvent.click(finding);
+    expect(props.clock.currentNs()).toBe("2000000000");
+  });
+
   it("makes Raw status read-only and exposes no artificial PASS action", () => {
     const props = baseProps(1);
     render(
@@ -632,7 +660,7 @@ describe("DataVisualizationWorkbench shared clock and boundaries", () => {
     );
     expect(screen.getByText("只读诊断")).toBeInTheDocument();
     expect(
-      screen.getByText("异常数据保留在 Raw，不进入 Lance"),
+      screen.getByText("请检查告警区间，原始数据完整保留"),
     ).toBeInTheDocument();
     expect(screen.getByText(/备注只附加诊断上下文/)).toBeInTheDocument();
     expect(

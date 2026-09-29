@@ -36,7 +36,7 @@ export interface WorkbenchCollectionItem {
 export interface WorkbenchFinding {
   readonly id: string;
   readonly title: string;
-  readonly severity: "warning" | "error";
+  readonly severity: "info" | "warning" | "error";
   readonly streamLabel?: string;
   readonly topic?: string;
   readonly startNs: string;

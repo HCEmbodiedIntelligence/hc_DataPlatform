@@ -158,7 +158,8 @@ def build_quality_profile(manifest: RolloutManifestV1) -> QualityProfileV1:
     )
     return QualityProfileV1(
         profile_id="mcap-format-" + identity,
-        profile_version=2,
+        profile_version=3,
+        engine_version="be06-qc/3",
         required_topics=required,
         default_timing=timing,
         topic_timing={name: static for name in manifest.actual_topics if name not in required},
