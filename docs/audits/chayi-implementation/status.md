@@ -47,6 +47,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W7 物理清单补充（2026-09-30）：Raw manifest 展开、已有标准包/媒体/录制
+  对象流式大小和哈希核对、跨引用去重及显式失败。18 项定向服务/清点测试通过；
+  四条既有隔离输入的真实 CLI 共核验 167 对象/2132211 字节，见
+  [证据与未覆盖范围](migration-objects.md)。仍是合成输入；旧附件、媒体准备适配、
+  批次原子发布与回退演练继续。无现网业务写入。
+
 - W7 转换补充（2026-09-30）：固定历史版本的全行数值/时间/来源核验、RGB-D
   字节复用、不可覆盖 checkpoint、暂不激活提交。15 项实际服务测试及禁网官方
   reader/独立 HC 掩码验证通过，详见 [证据与限制](migration-conversion.md)。

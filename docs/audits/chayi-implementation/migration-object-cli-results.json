@@ -1,0 +1,118 @@
+[
+  {
+    "entry": "mcap",
+    "scope": {
+      "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+      "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335",
+      "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+      "region_code": "cn-test"
+    },
+    "verification_sha256": "d5ca5d4dd5d5463f486c2c76dbcb5e60c7a50978fb78895d0954c13cb6320bc2",
+    "exit_code": 0,
+    "status": "EXPANDED_OBJECTS_VERIFIED",
+    "unique_objects": 27,
+    "unique_declared_bytes": 439374,
+    "raw_manifests": [
+      {
+        "expanded": true,
+        "files": 1,
+        "manifest_key": "raw/v1/project=mcap-project-8d5675bc73764b4f8e74488cadad8335/date=2023-11-14/robot=synthetic-robot/job=job-8d5675bc73764b4f8e74488cadad8335/package=package-8d5675bc73764b4f8e74488cadad8335/rollout=000001-rollout-8d5675bc73764b4f8e74488cadad8335/sha256=5b5506841d92597c30c3861a8905415e10a6ac798e40e12e65a0f6e7f163faf1/rollout_manifest.json",
+        "raw_source_id": "upload-66f2bf4ee73c4f38b8edfbf28878e83e",
+        "schema": 1,
+        "source_format": "MCAP"
+      }
+    ],
+    "issues": [],
+    "artifact": "/app/.g1-artifacts/migration-objects/a32330197e174866bcb63cbe6e851bde/mcap-objects.json",
+    "synthetic_input": true,
+    "real_data_acceptance": false,
+    "nested_multipart_handles_omitted": true
+  },
+  {
+    "entry": "native",
+    "scope": {
+      "dataset_id": "dataset_task_0c61e72ae2458bb8af1325dd9f05b6b3",
+      "organization_id": "b-roundtrip-7ed579d6679c",
+      "project_id": "b-project-7ed579d6679c",
+      "region_code": "cn-test"
+    },
+    "verification_sha256": "79bb26eb17c706fe36c3439471b3a07eb06d57568bb3af43202861b499f90653",
+    "exit_code": 0,
+    "status": "EXPANDED_OBJECTS_VERIFIED",
+    "unique_objects": 33,
+    "unique_declared_bytes": 170406,
+    "raw_manifests": [
+      {
+        "expanded": true,
+        "files": 12,
+        "manifest_key": "raw/b-roundtrip-7ed579d6679c/dataset_task_0c61e72ae2458bb8af1325dd9f05b6b3/4d34e36d1facbcb78a6551863d565084/manifest.json",
+        "raw_source_id": "4d34e36d1facbcb78a6551863d565084",
+        "schema": "raw-upload-manifest/v1",
+        "source_format": "LEROBOT_V3"
+      }
+    ],
+    "issues": [],
+    "artifact": "/app/.g1-artifacts/migration-objects/a32330197e174866bcb63cbe6e851bde/native-objects.json",
+    "synthetic_input": true,
+    "real_data_acceptance": false,
+    "nested_multipart_handles_omitted": true
+  },
+  {
+    "entry": "continuous",
+    "scope": {
+      "dataset_id": "dataset_raw_pinning",
+      "organization_id": "raw-pin-a838e66279254a00bc3be7eb55026442",
+      "project_id": "raw-pin-project",
+      "region_code": "raw-pin-region"
+    },
+    "verification_sha256": "ec104a0a76603020306e96445c7e5636db59359a5d5e87cbe049e8c869ce8001",
+    "exit_code": 0,
+    "status": "EXPANDED_OBJECTS_VERIFIED",
+    "unique_objects": 71,
+    "unique_declared_bytes": 1318995,
+    "raw_manifests": [
+      {
+        "expanded": true,
+        "files": 15,
+        "manifest_key": "raw/raw-pin-a838e66279254a00bc3be7eb55026442/raw-pin-project/synthetic-raw-pin-787b79a3b44a48a4aa38144fc2e5609f/synthetic-platform-robot/riu-d20fad3cc3525d459e1db982598798f6/robot-ingest-manifest.json",
+        "raw_source_id": "raw-26b560c217ce5a5c9f0f7f063e25901f",
+        "schema": "robot-ingest-committed/v1",
+        "source_format": "CAPTURE_BUNDLE"
+      }
+    ],
+    "issues": [],
+    "artifact": "/app/.g1-artifacts/migration-objects/a32330197e174866bcb63cbe6e851bde/continuous-objects.json",
+    "synthetic_input": true,
+    "real_data_acceptance": false,
+    "nested_multipart_handles_omitted": true
+  },
+  {
+    "entry": "uploader",
+    "scope": {
+      "dataset_id": "dataset_task_4c0ca209045cc73e9b115362d63f7ddb",
+      "organization_id": "r3-org-4bf9c8df2264",
+      "project_id": "r3-project-4bf9c8df2264",
+      "region_code": "chayi-cn"
+    },
+    "verification_sha256": "f2037eea8883663790a04d1c30db2243c0a15148ea552e125ed1f388a54c1d0c",
+    "exit_code": 0,
+    "status": "EXPANDED_OBJECTS_VERIFIED",
+    "unique_objects": 36,
+    "unique_declared_bytes": 203436,
+    "raw_manifests": [
+      {
+        "expanded": true,
+        "files": 15,
+        "manifest_key": "raw/r3-org-4bf9c8df2264/r3-project-4bf9c8df2264/r3-task-4bf9c8df2264/r3-synthetic-4bf9c8df2264/riu-f0e417718e5a52198b9c732d0987ee44/robot-ingest-manifest.json",
+        "raw_source_id": "raw-5efb0c3ae0de5f6182c383db10f97362",
+        "schema": "robot-ingest-committed/v1",
+        "source_format": "LEROBOT_V3"
+      }
+    ],
+    "issues": [],
+    "artifact": "/app/.g1-artifacts/migration-objects/a32330197e174866bcb63cbe6e851bde/uploader-objects.json",
+    "synthetic_input": true,
+    "real_data_acceptance": false,
+    "nested_multipart_handles_omitted": true
+  }
+]
