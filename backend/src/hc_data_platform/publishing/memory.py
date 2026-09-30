@@ -9,6 +9,7 @@ from threading import RLock
 from urllib.parse import quote
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.data_formats.json import canonical_json_bytes
 
 from .models import (
     ApprovedAnnotationSnapshotV1,
@@ -20,7 +21,6 @@ from .models import (
     StepRangeV1,
 )
 from .ports import ArtifactSinkPort, ExportSourcePort
-from .service import canonical_json_bytes
 
 
 class InMemoryCatalogSnapshot:

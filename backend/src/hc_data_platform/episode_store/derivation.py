@@ -21,10 +21,10 @@ from hc_data_platform.continuous_recordings.package import (
     encoding_configuration,
     prepare_rgb_window,
 )
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.export_video import inspect_depth_video, inspect_video
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
-from hc_data_platform.publishing.lerobot_format import make_task_table
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.lerobot_format import make_task_table
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
+from hc_data_platform.data_formats.video import inspect_depth_video, inspect_video
 
 from .depth_window import PARENT_TIME_VERSION, prepare_depth_window
 from .derivation_models import TagEpisodePlan

@@ -14,10 +14,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
-from hc_data_platform.publishing.depth_evidence import file_hash, missing_measurement_status
-from hc_data_platform.publishing.depth_source import ENCODINGS, profile_hash
-from hc_data_platform.publishing.holobrain_depth import DepthProfile
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
+from hc_data_platform.data_formats.depth_evidence import file_hash, missing_measurement_status
+from hc_data_platform.data_formats.depth_source import ENCODINGS, profile_hash
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
 from .models import CommitReceipt, FileEntry, PackageInput, PackageManifest
 

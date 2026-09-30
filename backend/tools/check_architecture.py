@@ -23,6 +23,17 @@ PURE_MODULES = {
 }
 LEGACY_STORAGE = ("hc_data_platform.ingest.ports", "hc_data_platform.ingest.adapters")
 ADAPTER_SUPPORT = ("hc_data_platform.core.context", "hc_data_platform.core.errors")
+FORMATS = "hc_data_platform.data_formats"
+LEGACY_CODECS = tuple(
+    f"hc_data_platform.publishing.{name}"
+    for name in (
+        "depth_source",
+        "depth_evidence",
+        "holobrain_depth",
+        "feature_names",
+        "lerobot_format",
+    )
+) + ("hc_data_platform.lerobot_imports.feature_names",)
 
 
 def matches(module: str, prefix: str) -> bool:
@@ -61,6 +72,25 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
     package = module if is_package else module.rsplit(".", 1)[0]
     failures: set[str] = set()
     for line, target in imports(ast.parse(source), package):
+        if any(matches(target, prefix) for prefix in LEGACY_CODECS):
+            failures.add(f"{line}: format consumers must use data_formats, not {target}")
+        if matches(module, FORMATS) and (
+            target == "<dynamic-import>"
+            or target.startswith("hc_data_platform.")
+            and not (matches(target, FORMATS) or matches(target, "hc_data_platform.core.errors"))
+        ):
+            failures.add(f"{line}: format codecs must not depend on domain {target}")
+        if matches(module, "hc_data_platform.episode_store") and matches(
+            target, "hc_data_platform.publishing"
+        ):
+            failures.add(f"{line}: persistence must not import publishing {target}")
+        if module in {
+            "hc_data_platform.publishing.service",
+            "hc_data_platform.publishing.lerobot_export",
+        } and matches(target, "hc_data_platform.publishing.exporters"):
+            failures.add(
+                f"{line}: orchestration/archive must not import concrete exporters {target}"
+            )
         if matches(target, "hc_data_platform.workflow.projection_store") and not (
             module == "hc_data_platform.runtime"
             and target
@@ -119,7 +149,7 @@ def main() -> int:
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"Object-storage boundaries passed across {len(files)} Python source files.")
+    print(f"Migrated architecture boundaries passed across {len(files)} Python source files.")
     return 0
 
 

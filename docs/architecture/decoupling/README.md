@@ -71,3 +71,34 @@ S3 流下载、大小或校验失败以及读取方异常均释放临时副本�
 最初无网络容器中的 7 项 Temporal 工作流测试因无法下载测试服务失败；
 随后独立临时容器允许下载服务，7 项全部通过（artifact-workflow.xml）。
 没有使用业务 Temporal 或真实对象存储。
+
+## 共享格式契约（B21、B23、E01）
+
+`data_formats` 拥有独立的 JSON、Arrow 类型/值、LeRobot v3 目录/特征命名/任务表、
+深度来源声明、物理量化、HEVC 和证据格式，以及本地 RGB/深度媒体检查。
+codec 不引用上传、来源适配器、存储、发布业务、工作流、数据库或运行时。
+已有结构化错误沿用无框架依赖的 core.errors，保留历史错误码。
+同时把 core 的 ModuleRouter 导出改为延迟加载，防止纯契约导入间接加载 FastAPI。
+
+Episode、录制、原生导入、发布和工作流消费者已迁移；原发布路径及旧私有格式函数
+仅作为外部兼容导入。Episode 源码不再导入 publishing。发布档案构造也不再
+回调 exporter，步骤校验策略归 publishing.source_validation。
+持久化版本和导出 revision 仍分别拥有；没有统一两者的 JSON 转义或哈希。
+
+所有格式公开函数补充参数及返回类型，包括明确的 NumPy dtype、深度来源检查结果
+和 ROS 图像元数据小接口。存量动态 JSON 元数据继续允许扩展键。
+非法媒体缺少 time_base/像素格式时明确失败，不影响正常编码字节。
+
+验证：192 passed，3 skipped（未配置独立 PostgreSQL），15 integration deselected；
+18 个格式/发布/核心源码文件 mypy 通过，OpenAPI check、ruff 和格式门禁通过。
+相较提交 308dd949，独立进程实际生成的 ZIP 和全部 8 个成员 SHA-256 相同，
+深度视频/编码值/profile、两种 JSON 序列化和任务表 metadata 相同。证据：
+`results/format-bytes-before.json`、`format-bytes-after.json`、`formats-regression-final.xml`。
+比较脚本与旧源码快照位于外部 diagnostics/platform-decoupling-work。
+
+新增的运行时隔离测试检查 codec 导入不会加载任何领域服务、FastAPI、数据库、
+存储 SDK 或 Temporal；AST 门禁禁止恢复这些反向依赖。深度禁止重新量化的故障
+测试已改为拦截新模块中的实际实现，避免只拦截旧兼容入口而得到虚假通过。
+
+仍未完成：格式能力注册和冻结路由、导出器专属 preflight、流式归档/发布、
+逻辑数据版本等后续接口。这些不计入本批完成项。

@@ -10,11 +10,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from hc_data_platform.data_formats import depth_evidence, holobrain_depth
 from hc_data_platform.episode_store.depth_window import DepthWindow, prepare_depth_window
 from hc_data_platform.episode_store.models import FileEntry
 from hc_data_platform.episode_store.prepared_assets import PreparedVideo
 from hc_data_platform.episode_store.validation import parquet_rows, validate_depth
-from hc_data_platform.publishing import depth_evidence, holobrain_depth
 from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo, file_hash, read_validity
 from hc_data_platform.publishing.holobrain_depth import DEFAULT_PROFILE
 

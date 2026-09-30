@@ -12,14 +12,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
-from hc_data_platform.publishing.export_video import inspect_depth_video, inspect_video
-from hc_data_platform.publishing.exporters import _feature_type, _lerobot_value
-from hc_data_platform.publishing.lerobot_export import (
+from hc_data_platform.data_formats.arrow import feature_type, lerobot_value
+from hc_data_platform.data_formats.feature_names import feature_names
+from hc_data_platform.data_formats.lerobot_layout import (
     DATA_PATH,
     EPISODES_PATH,
     VIDEO_PATH,
-    _feature_names,
 )
+from hc_data_platform.data_formats.video import inspect_depth_video, inspect_video
 
 from .models import PackageInput, canonical
 from .postgres import assert_scope
@@ -77,7 +77,7 @@ def write_episode(
     first = next(iterator, None)
     if first is None:
         raise ValueError("cannot write an empty Episode")
-    mapping = _feature_names(sorted(first.modalities), camera_topics=metadata.get("camera_topics"))
+    mapping = feature_names(sorted(first.modalities), camera_topics=metadata.get("camera_topics"))
     cameras = set(assets.videos)
     if not cameras.issubset(mapping.values()):
         raise ValueError("prepared camera lacks an aligned modality")
@@ -88,7 +88,7 @@ def write_episode(
     (root / "hc").mkdir()
     features, types, encodings, source_types, source_shapes = {}, {}, {}, {}, {}
     for name, target in mapping.items():
-        value, encoding = _lerobot_value(first.modalities[name])
+        value, encoding = lerobot_value(first.modalities[name])
         if target in cameras:
             column, value, encoding = (
                 "hc.source_ref." + target,
@@ -97,7 +97,7 @@ def write_episode(
             )
         else:
             column = target
-        arrow_type, dtype, shape = _feature_type(value, pa)
+        arrow_type, dtype, shape = feature_type(value, pa)
         source_types[target], source_shapes[target] = arrow_type, list(shape)
         # Official LeRobot treats shape=(1,) as a scalar Parquet column. Keep
         # the source shape separately so platform reads reconstruct [value].
@@ -186,10 +186,10 @@ def write_episode(
                 if target in cameras:
                     row["hc.source_ref." + target] = canonical(step.modalities[name]).decode()
                 else:
-                    value, encoding = _lerobot_value(step.modalities[name])
+                    value, encoding = lerobot_value(step.modalities[name])
                     if encoding != encodings.get(target):
                         raise ValueError("numeric semantics changed within Episode")
-                    if _feature_type(value, pa)[0] != source_types[target]:
+                    if feature_type(value, pa)[0] != source_types[target]:
                         raise ValueError("numeric dtype/shape changed within Episode")
                     row[target] = value[0] if source_shapes[target] == [1] else value
                 # Unknown stays unknown in the trace; never infer validity from absent evidence.
@@ -281,7 +281,7 @@ def write_episode(
         for field, value in statistics.items():
             episode[f"stats/{key}/{field}"] = value
     pq.write_table(pa.Table.from_pylist([episode]), root / EPISODES_PATH)
-    from hc_data_platform.publishing.lerobot_format import make_task_table
+    from hc_data_platform.data_formats.lerobot_format import make_task_table
 
     pq.write_table(make_task_table([task]), root / "meta/tasks.parquet")
     info = {
@@ -345,7 +345,7 @@ def write_episode(
         if assets.auxiliary_root is None or not entry.path.startswith("hc/recording/"):
             raise ValueError("prepared auxiliary files require their recording evidence root")
         origin = package_file(assets.auxiliary_root, entry.path)
-        from hc_data_platform.publishing.depth_evidence import file_hash
+        from hc_data_platform.data_formats.depth_evidence import file_hash
 
         if origin.stat().st_size != entry.size or file_hash(origin) != entry.sha256:
             raise ValueError("prepared recording evidence differs from its frozen receipt")

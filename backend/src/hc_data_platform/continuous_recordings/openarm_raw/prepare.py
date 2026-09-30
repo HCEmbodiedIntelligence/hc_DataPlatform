@@ -18,8 +18,8 @@ from mcap.reader import make_reader
 from mcap.writer import CompressionType, Writer
 
 from hc_data_platform import recording_fields as public
-from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo
-from hc_data_platform.publishing.depth_source import profile_hash, require_depth_source
+from hc_data_platform.data_formats.depth_evidence import DepthEvidenceVideo
+from hc_data_platform.data_formats.depth_source import profile_hash, require_depth_source
 
 from .alignment import Aligner, target_count, target_time
 from .buffers import TimeCache

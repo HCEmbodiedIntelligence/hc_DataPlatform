@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 import av
 from pydantic import Field, field_serializer
 
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, VIDEO_PATH
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, VIDEO_PATH
 from hc_data_platform.quality.engine import QualityEngine
 from hc_data_platform.quality.models import (
     ActionObservation,

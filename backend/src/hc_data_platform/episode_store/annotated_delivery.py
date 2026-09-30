@@ -16,8 +16,8 @@ import pyarrow.parquet as pq
 from pydantic import Field, model_validator
 
 from hc_data_platform.annotation.subtasks import SourceFrame, SubtaskBinding, SubtaskProjection
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH
 
 from .models import DataVersionRef, FileEntry, FrozenModel, canonical, digest
 from .writer import Moments, write_json

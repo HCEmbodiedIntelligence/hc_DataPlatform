@@ -18,6 +18,7 @@ from hc_data_platform.alignment.models import (
     ModalityStreamV1,
     TimedSampleV1,
 )
+from hc_data_platform.data_formats.feature_names import native_feature_topic
 from hc_data_platform.quality.models import (
     ActionObservation,
     JointObservation,
@@ -26,7 +27,6 @@ from hc_data_platform.quality.models import (
 )
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as source_reader
 
-from .feature_names import native_feature_topic
 from .orchestration import LeRobotEpisodeSourceRefV1
 from .profiles import profile_for_info
 from .reader import read_episode

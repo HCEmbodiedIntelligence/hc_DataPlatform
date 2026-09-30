@@ -39,7 +39,7 @@ def frozen_metadata(cursor, storage, organization, region, manifest, rollout):
         "source_episode": episode,
         "recording_upload": command,
     }
-    from hc_data_platform.publishing.holobrain_depth import DEPTH_INFO
+    from hc_data_platform.data_formats.holobrain_depth import DEPTH_INFO
 
     result["source_features"] = {
         camera["topic"]: {

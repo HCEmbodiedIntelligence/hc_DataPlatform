@@ -16,12 +16,12 @@ import av
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from hc_data_platform.publishing.depth_evidence import (
+from hc_data_platform.data_formats.depth_evidence import (
     file_hash,
     missing_measurement_status,
     write_json,
 )
-from hc_data_platform.publishing.holobrain_depth import DepthProfile, DepthVideo
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile, DepthVideo
 
 from .frame_window import DepthWindow
 from .models import FileEntry, digest

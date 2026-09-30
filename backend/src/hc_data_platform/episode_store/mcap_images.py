@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
-from hc_data_platform.publishing.depth_source import ENCODINGS, profile_hash, validate_profile
+from hc_data_platform.data_formats.depth_source import ENCODINGS, profile_hash, validate_profile
 
 VERSION = "hc-mcap-camera-frame/1"
 MAX_BYTES = 64 * 1024 * 1024

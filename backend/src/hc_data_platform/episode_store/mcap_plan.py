@@ -5,10 +5,10 @@ from typing import Literal
 from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from hc_data_platform.alignment.models import AlignmentProfileV1
+from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.dataset_registry.models import DatasetId, EpisodeId
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.schema import compute_schema_fingerprint
-from hc_data_platform.publishing.feature_names import feature_names
 
 from .bundle_models import FrozenObject
 from .models import Digest, FrozenModel, Identifier, PackageInput, digest

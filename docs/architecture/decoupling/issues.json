@@ -67,8 +67,10 @@
       "title": "逻辑目录接口与 Lance 物理提交绑定",
       "scope": "两分支",
       "owner": "T5",
-      "status": "pending",
-      "evidence": [],
+      "status": "in_progress",
+      "evidence": [
+        "core.ModuleRouter is lazy so importing error/format contracts does not load FastAPI"
+      ],
       "remaining": "分离逻辑 Dataset/Episode 读取、提交、schema 和物理后端适配；用稳定数据版本引用与提交回执承载业务语义，历史 Lance 信息只在兼容映射中解释。"
     },
     {
@@ -206,9 +208,14 @@
       "title": "导出服务和格式实现存在内部循环",
       "scope": "两分支",
       "owner": "T4",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "规范序列化、Arrow 类型转换和 LeRobot 格式编码移到纯模块；编排 service 单向依赖 exporter 接口。"
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
+        "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
+        "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged"
+      ],
+      "remaining": ""
     },
     {
       "id": "B22",
@@ -224,9 +231,14 @@
       "title": "通用深度编码能力放在发布模块导致下层反向引用",
       "scope": "两分支",
       "owner": "T4",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "将深度物理语义、编码器、profile 与证据格式定义在独立媒体格式模块；发布只负责选择导出布局和产物。"
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
+        "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
+        "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged"
+      ],
+      "remaining": ""
     },
     {
       "id": "B24",
@@ -272,9 +284,14 @@
       "title": "Episode 存储读写直接依赖导出格式及私有转换函数",
       "scope": "chayi",
       "owner": "T4 T6",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "先抽取可独立使用的格式 codec；持久化格式契约与导出格式策略各自拥有版本，共享底层算法但不互相调用业务 exporter。"
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
+        "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
+        "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged"
+      ],
+      "remaining": ""
     },
     {
       "id": "E02",

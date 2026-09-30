@@ -892,8 +892,8 @@ class _LocalProjectionSession:
         self.package_images = True
 
     def _package_camera(self, schema: Any, channel: Any, message: Any, index: int) -> Any:
+        from hc_data_platform.data_formats.depth_source import profile_hash
         from hc_data_platform.episode_store.mcap_images import decode_camera
-        from hc_data_platform.publishing.depth_source import profile_hash
 
         frame = decode_camera(schema, channel, message, self._decoder)
         # MCAP message.sequence may be unset (all zero). A stable per-topic

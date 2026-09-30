@@ -17,6 +17,17 @@ from typing import Any
 from urllib.parse import quote
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.data_formats.archives import zip_files as _zip_files
+
+# External callers of the old private helpers retain their import during migration.
+from hc_data_platform.data_formats.arrow import (
+    FeatureShapeError as _FeatureShapeError,  # noqa: F401
+)
+from hc_data_platform.data_formats.arrow import feature_type as _feature_type  # noqa: F401
+from hc_data_platform.data_formats.arrow import lerobot_value as _lerobot_value  # noqa: F401
+from hc_data_platform.data_formats.arrow import parquet_bytes as _parquet_bytes  # noqa: F401
+from hc_data_platform.data_formats.arrow import require_arrow as _require_arrow
+from hc_data_platform.data_formats.json import canonical_json_bytes
 
 from .export_assets import ExportAssetsPort
 from .models import (
@@ -26,92 +37,9 @@ from .models import (
     PublishedDatasetManifestV1,
 )
 from .ports import ArtifactSinkPort, ExportSourcePort
-from .service import canonical_json_bytes
-
-
-def collect_and_validate_export_steps(
-    manifest: PublishedDatasetManifestV1, source: ExportSourcePort
-) -> list[ExportStepV1]:
-    collected: list[ExportStepV1] = []
-    modality_names: set[str] | None = None
-    for rollout in manifest.rollouts:
-        steps = sorted(
-            source.read_steps(
-                project_id=manifest.project_id,
-                dataset_id=manifest.dataset_id,
-                rollout_id=rollout.rollout_id,
-                lance_version=rollout.base_lance_version,
-                ranges=rollout.included_step_ranges,
-            ),
-            key=lambda item: item.step_index,
-        )
-        expected = [
-            index
-            for item in rollout.included_step_ranges
-            for index in range(item.start_step, item.end_step)
-        ]
-        actual = [step.step_index for step in steps]
-        if actual != expected or any(step.rollout_id != rollout.rollout_id for step in steps):
-            raise problem(
-                status=409,
-                code="EXPORT_SOURCE_INCOMPLETE",
-                title="Export source is incomplete",
-                detail=(
-                    f"Synchronized source steps do not match the manifest for {rollout.rollout_id}."
-                ),
-                details={"expected_steps": expected, "actual_steps": actual},
-            )
-        timestamps = [step.timestamp_ns for step in steps]
-        if any(right <= left for left, right in zip(timestamps, timestamps[1:], strict=False)):
-            raise problem(
-                status=409,
-                code="EXPORT_SOURCE_TIME_ORDER_INVALID",
-                title="Export source timestamps are not ordered",
-                detail=f"Rollout {rollout.rollout_id} is not strictly time ordered.",
-            )
-        for step in steps:
-            names = set(step.modalities)
-            if not names:
-                raise problem(
-                    status=409,
-                    code="EXPORT_MODALITIES_MISSING",
-                    title="Export modalities are missing",
-                    detail="Every exported Step must contain synchronized modality values.",
-                )
-            if modality_names is None:
-                modality_names = names
-            elif names != modality_names:
-                raise problem(
-                    status=409,
-                    code="EXPORT_MODALITY_SCHEMA_MISMATCH",
-                    title="Export modality schema mismatch",
-                    detail="All exported Steps must have the same modality keys.",
-                    details={
-                        "expected": sorted(modality_names),
-                        "actual": sorted(names),
-                        "rollout_id": step.rollout_id,
-                        "step_index": step.step_index,
-                    },
-                )
-        collected.extend(steps)
-    return collected
-
-
-def _zip_files(files: dict[str, bytes]) -> bytes:
-    output = io.BytesIO()
-    with zipfile.ZipFile(
-        output,
-        "w",
-        compression=zipfile.ZIP_DEFLATED,
-        compresslevel=9,
-    ) as archive:
-        for name in sorted(files):
-            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.create_system = 3
-            info.external_attr = 0o100644 << 16
-            archive.writestr(info, files[name])
-    return output.getvalue()
+from .source_validation import (
+    collect_and_validate_export_steps as collect_and_validate_export_steps,
+)
 
 
 def _safe_extract(archive_bytes: bytes, destination: Path) -> None:
@@ -204,20 +132,6 @@ def _publish_validated(
         row_count=len(steps),
         media_type=media_type,
     )
-
-
-def _require_arrow() -> tuple[Any, Any]:
-    try:
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-    except ImportError as exc:  # pragma: no cover - exercised in minimal deployments
-        raise problem(
-            status=503,
-            code="EXPORT_DEPENDENCY_MISSING",
-            title="Export dependency is missing",
-            detail="Install the backend data extra to enable native dataset exports.",
-        ) from exc
-    return pa, pq
 
 
 def _require_lance() -> Any:
@@ -336,71 +250,6 @@ class LanceSnapshotExporter:
                     title="Lance Snapshot validation failed",
                     detail="Reloaded Lance rows do not match the frozen training manifest.",
                 )
-
-
-class _FeatureShapeError(ValueError):
-    pass
-
-
-def _feature_type(value: Any, pa: Any) -> tuple[Any, str, tuple[int, ...]]:
-    if isinstance(value, bool):
-        return pa.bool_(), "bool", ()
-    if isinstance(value, int) and not isinstance(value, bool):
-        return pa.int64(), "int64", ()
-    if isinstance(value, float):
-        return pa.float64(), "float64", ()
-    if isinstance(value, str):
-        return pa.string(), "string", ()
-    if isinstance(value, bytes):
-        return pa.binary(), "binary", ()
-    if isinstance(value, (list, tuple)):
-        if not value:
-            raise _FeatureShapeError("empty modality arrays have no stable element type")
-        child_type, dtype, child_shape = _feature_type(value[0], pa)
-        for child in value[1:]:
-            current_type, current_dtype, current_shape = _feature_type(child, pa)
-            if current_type != child_type or current_dtype != dtype or current_shape != child_shape:
-                raise _FeatureShapeError("modality arrays must be rectangular and typed")
-        return pa.list_(child_type, len(value)), dtype, (len(value), *child_shape)
-    raise _FeatureShapeError(f"unsupported LeRobot modality value type: {type(value).__name__}")
-
-
-def _lerobot_value(value: Any) -> tuple[Any, dict[str, Any] | None]:
-    """Keep vectors numeric and preserve other structured modalities losslessly."""
-    if not isinstance(value, dict):
-        return value, None
-    for key in ("positions", "values"):
-        vector = value.get(key)
-        if (
-            set(value) <= {key, "names", "units"}
-            and isinstance(vector, (list, tuple))
-            and vector
-            and all(isinstance(item, (int, float)) for item in vector)
-        ):
-            return list(vector), {
-                "encoding": "vector",
-                "value_key": key,
-                "names": value.get("names"),
-                **({"units": value["units"]} if "units" in value else {}),
-            }
-    if set(value) == {"position_xyz", "orientation_wxyz"}:
-        return [*value["position_xyz"], *value["orientation_wxyz"]], {"encoding": "pose"}
-    # Keep non-vector structured values lossless in auxiliary JSON features.
-    return canonical_json_bytes(value).decode("utf-8"), {"encoding": "json"}
-
-
-def _parquet_bytes(table: Any, pq: Any) -> bytes:
-    output = io.BytesIO()
-    pq.write_table(
-        table,
-        output,
-        compression="NONE",
-        use_dictionary=False,
-        write_statistics=False,
-        version="2.6",
-        data_page_version="1.0",
-    )
-    return output.getvalue()
 
 
 def _scalar_feature(dtype: str) -> dict[str, Any]:

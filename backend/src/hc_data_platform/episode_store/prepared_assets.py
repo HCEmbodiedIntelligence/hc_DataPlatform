@@ -8,7 +8,7 @@ does not query or relax the READY-only export authorization service.
 from dataclasses import dataclass
 from pathlib import Path
 
-from hc_data_platform.publishing.depth_evidence import file_hash
+from hc_data_platform.data_formats.depth_evidence import file_hash
 
 from .models import EpisodeIdentity, FileEntry
 from .postgres import assert_scope

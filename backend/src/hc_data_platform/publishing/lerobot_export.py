@@ -13,18 +13,29 @@ from typing import Any
 import numpy as np
 
 from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
+from hc_data_platform.data_formats.archives import zip_files as _zip_files
+from hc_data_platform.data_formats.arrow import feature_type as _feature_type
+from hc_data_platform.data_formats.arrow import lerobot_value as _lerobot_value
+from hc_data_platform.data_formats.arrow import parquet_bytes as _parquet_bytes
+from hc_data_platform.data_formats.arrow import require_arrow as _require_arrow
+from hc_data_platform.data_formats.feature_names import camera_feature as _camera
+from hc_data_platform.data_formats.feature_names import feature_names as _feature_names
+from hc_data_platform.data_formats.json import canonical_json_bytes
+from hc_data_platform.data_formats.lerobot_layout import (
+    DATA_PATH as DATA_PATH,
+)
+from hc_data_platform.data_formats.lerobot_layout import (
+    EPISODES_PATH as EPISODES_PATH,
+)
+from hc_data_platform.data_formats.lerobot_layout import (
+    VIDEO_PATH as VIDEO_PATH,
+)
 
 from .export_assets import ExportAssetsPort, export_error
 from .export_video import inspect_depth_video, inspect_video, materialize_video
-from .feature_names import camera_feature as _camera
-from .feature_names import feature_names as _feature_names
 from .models import ExportStepV1, PublishedDatasetManifestV1
-from .service import canonical_json_bytes
 
 EXPORT_REVISION = "lerobot-materialized-v4-holobrain"
-VIDEO_PATH = "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4"
-DATA_PATH = "data/chunk-000/file-000.parquet"
-EPISODES_PATH = "meta/episodes/chunk-000/file-000.parquet"
 
 
 def _numeric_stats(values: Sequence[Any]) -> dict[str, Any]:
@@ -160,14 +171,6 @@ class LeRobotArchive:
         }
 
     def build(self) -> bytes:
-        from .exporters import (
-            _feature_type,
-            _lerobot_value,
-            _parquet_bytes,
-            _require_arrow,
-            _zip_files,
-        )
-
         pa, pq = _require_arrow()
         features: dict[str, Any] = {}
         columns: dict[str, list[Any]] = {}
@@ -391,7 +394,7 @@ class LeRobotArchive:
             if features[key]["dtype"] not in {"string", "binary"}
         }
         stats.update({key: _video_stats(items) for key, items in video_statistics.items()})
-        from .lerobot_format import make_task_table
+        from hc_data_platform.data_formats.lerobot_format import make_task_table
 
         tasks_table = make_task_table(tasks)
         robot_types = set(item["robot_type"] for item in self.metadata)
@@ -445,8 +448,6 @@ class LeRobotArchive:
 
     def validate(self, content: bytes) -> None:
         import io
-
-        from .exporters import _lerobot_value, _require_arrow
 
         pa, pq = _require_arrow()
         try:

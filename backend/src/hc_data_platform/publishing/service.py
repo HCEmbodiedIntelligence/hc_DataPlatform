@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.data_formats.json import canonical_json_bytes as canonical_json_bytes
 
 from .models import (
     DatasetVersionPublishedV1,
@@ -31,16 +31,6 @@ from .ports import (
     PublicationAssetSinkPort,
     PublishedManifestRepository,
 )
-
-
-def canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def select_export_rollouts(
@@ -539,7 +529,7 @@ class ExportCoordinator:
         """
 
         self._exporter(format)
-        from .exporters import collect_and_validate_export_steps
+        from .source_validation import collect_and_validate_export_steps
 
         return len(collect_and_validate_export_steps(manifest, self._source))
 
