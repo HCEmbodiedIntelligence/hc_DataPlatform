@@ -118,3 +118,20 @@ ExportCoordinator 按能力注册并调用导出器自己的 preflight。只有�
 验证：108 passed（15 集成测试排除），后续兼容导入调整后的定向测试 50 passed，
 8 个源文件 mypy 通过。X07 尚未完成：公开格式枚举、前端发现，以及 durable
 workflow 中版本冻结/重试仍须接入，不能把此注册表当作所有新格式均已可用。
+
+## 同步源分支及独立服务复验
+
+已合入源茶艺分支至 e25c0afc 的三个提交（迁移转换、原对象核验、工作版本分支选择），
+合并提交 c308ba08；源目录保持不变。架构门禁发现新增 migration_conversion 仍从
+publishing 获取格式函数，消费接口已迁移到 data_formats，迁移业务逻辑不改。
+
+新增外部测试入口 `check-services.py`：每次创建独立 internal 网络、tmpfs PostgreSQL/MinIO，
+使用工作区的完整迁移清单初始化，仅写合成测试数据，结束后删除创建的容器和网络。
+初次执行误用镜像内的旧迁移目录，已显式设置 HC_MIGRATIONS_DIR 修复。
+完整 Episode 套件还需要单独启动 HTTP API/Temporal；当前纯服务环境没有它们，
+完整套件不能记作通过（correct-schema 记录 60 passed、3 HTTP 连接失败后停止）。
+
+针对合并与 codec 消费的服务复验为 **69 passed、无 skip**：迁移转换/对象核验/工作版本、
+提交中断恢复/并发/延迟激活、真实 PostgreSQL 与 MinIO、RGBD 读取、深度窗口和
+集合/标注导出。证据 `results/merged-migration-storage-services.xml`。
+这补足了前一批仅本地编码回归对真实存取适配的验证，不代表整个应用端到端套件已通过。
