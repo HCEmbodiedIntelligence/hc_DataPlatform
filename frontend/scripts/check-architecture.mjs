@@ -10,7 +10,12 @@ const frontendRoot = path.resolve(
 
 export function checkSource(file, content, sourceRoot, options = {}) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join("/");
-  if (!relative.startsWith("shared/") || /\.(test|spec)\.tsx?$/u.test(relative))
+  const sourceLayer = relative.split("/")[0];
+  const prohibitedLayers = {
+    shared: ["entities", "features", "pages", "app"],
+    features: ["pages"],
+  }[sourceLayer];
+  if (!prohibitedLayers || /\.(test|spec)\.tsx?$/u.test(relative))
     return [];
   const tree = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true);
   const failures = new Set();
@@ -19,7 +24,7 @@ export function checkSource(file, content, sourceRoot, options = {}) {
       tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
     if (!value || !ts.isStringLiteralLike(value)) {
       failures.add(
-        `${relative}:${line}: shared imports must have statically known targets`,
+        `${relative}:${line}: ${sourceLayer} imports must have statically known targets`,
       );
       return;
     }
@@ -37,8 +42,8 @@ export function checkSource(file, content, sourceRoot, options = {}) {
         : null);
     if (target === null) return;
     const layer = path.relative(sourceRoot, target).split(path.sep)[0];
-    if (["entities", "features", "pages", "app"].includes(layer)) {
-      failures.add(`${relative}:${line}: shared cannot depend on ${specifier}`);
+    if (prohibitedLayers.includes(layer)) {
+      failures.add(`${relative}:${line}: ${sourceLayer} cannot depend on ${specifier}`);
     }
   }
   function visit(node) {
@@ -106,6 +111,6 @@ if (
     process.stderr.write(failures.join("\n") + "\n");
     process.exitCode = 1;
   } else {
-    process.stdout.write("Frontend shared-layer boundaries passed.\n");
+    process.stdout.write("Frontend shared and feature/page boundaries passed.\n");
   }
 }

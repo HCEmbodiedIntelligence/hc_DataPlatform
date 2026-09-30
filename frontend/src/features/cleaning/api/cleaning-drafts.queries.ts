@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { request } from '../../../shared/api/http-client';
 import { useShellStore } from '../../../shared/scope/shell-store';
-import type { CleaningDraftsSearch } from '../../../pages/p10-cleaning-drafts/query-codec';
+import type { CleaningDraftsSearch } from '../query-codec';
 import {
   adaptCleaningDraftDetailEnvelope,
   adaptCleaningDraftEventsEnvelope,

@@ -189,3 +189,17 @@ Temporal 新版本路由测试 5 passed，旧历史回放和输入兼容 4 passe
 相较旧 codec 基线，实际 ZIP/8 个成员、深度视频/编码值/profile、JSON、任务表摘要逐项相同。
 证据位于 results/export-extension-regression-final.xml、export-temporal-versions.xml、
 export-legacy-replay.xml、export-legacy-execution.xml、export-frontend-final.log、export-format-bytes.json。
+
+
+## 清洗查询契约归属（F02）
+
+`CleaningDraftsSearch`、查询编解码和投影链接由 features/cleaning/query-codec.ts 拥有，
+清洗 API hooks 与 P10 页面直接消费同一实现。旧页面路径保留重导出，既有 URL 测试继续通过。
+AST 门禁扩展为禁止 feature 从 pages 导入类型、函数或动态模块，避免新页面再次成为底层契约来源。
+验证：11 个边界测试、6 个现有清洗 query/routing/command 测试、完整 typecheck 和修改文件 ESLint 通过。
+
+已合入源分支 e1da84fd（迁移批次的原子发布/回滚），合并提交 97dc35a8；原源工作区未改。
+首次独立服务复验为 22 passed、3 failed、2 fixture errors：两项迁移测试硬编码 /app/.g1-artifacts
+及 /app/tools，测试容器补充独立 tmpfs 和当前工具挂载后重跑；三项 publication lineage 测试
+暴露发布仓储直接依赖 continuous_recordings 表的历史耦合，后续 B19/B20 治理须处理。
+这些失败没有记为已通过，详细证据 export-migration-service-validation.xml。

@@ -191,7 +191,9 @@
       "scope": "两分支",
       "owner": "T4 T5",
       "status": "pending",
-      "evidence": [],
+      "evidence": [
+        "Real PostgreSQL run: three publication-lineage tests fail because PostgresPublishedManifestRepository directly calls continuous_recordings.lineage on legacy-only schema; export-migration-service-validation.xml. Separate transactional integration port required."
+      ],
       "remaining": "目录模块拥有发布投影写入接口，发布提交协调器在同一事务或可恢复 outbox 协议中调用；避免改变已有发布原子性。"
     },
     {
@@ -384,9 +386,14 @@
       "title": "清洗 feature 从页面获取查询契约",
       "scope": "两分支",
       "owner": "T9",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "将查询类型和编解码放到对应 feature 的公开 API，页面单向消费。"
+      "status": "implemented_verified",
+      "evidence": [
+        "CleaningDraftsSearch, query codec and projections are owned by features/cleaning/query-codec.ts; feature query hooks and P10 consume that definition",
+        "Old page import path re-exports the same declarations for compatibility; existing codec tests still use it",
+        "Frontend AST gate rejects feature imports, type imports, re-exports and dynamic imports from pages; 11 gate tests passed",
+        "6 existing cleaning query/routing/command tests, full TypeScript check and affected-file ESLint passed"
+      ],
+      "remaining": ""
     },
     {
       "id": "F03",

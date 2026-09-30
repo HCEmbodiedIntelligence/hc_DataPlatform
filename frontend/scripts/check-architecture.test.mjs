@@ -33,3 +33,13 @@ test("permits shared contracts and explicitly known vendor imports", () => {
 test("current source satisfies the migrated boundary", () => {
   assert.deepEqual(checkRepository(), []);
 });
+
+for (const source of [
+  'import type { Search } from "../../pages/p10/query-codec";',
+  'export { Search } from "../../pages/p10/query-codec";',
+  'const load = () => import("../../pages/p10/query-codec");',
+]) {
+  test(`features cannot acquire contracts from pages: ${source}`, () => {
+    assert.equal(checkSource(path.join(root, "features/cleaning/unsafe.ts"), source, root).length, 1);
+  });
+}
