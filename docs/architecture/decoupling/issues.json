@@ -112,9 +112,13 @@
       "title": "媒体读取依赖编排层的 staging 端口",
       "scope": "两分支",
       "owner": "T1 T2 T4",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "将临时产物读取/发布契约独立，TTL、清扫和任务生命周期由编排负责，媒体只获得读取能力。"
+      "status": "implemented_verified",
+      "evidence": [
+        "object_storage.artifacts splits read, publish and cleanup capabilities; all production consumers migrated",
+        "Arrow media reads with file-only adapter; local/S3 failure cleanup tests",
+        "46 artifact/media/processing tests and 7 real Temporal test-server workflow tests passed; mypy 4 files"
+      ],
+      "remaining": ""
     },
     {
       "id": "B12",

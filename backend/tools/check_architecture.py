@@ -14,7 +14,13 @@ from importlib.util import resolve_name
 from pathlib import Path
 
 OBJECTS = "hc_data_platform.object_storage"
-PURE_MODULES = {OBJECTS, f"{OBJECTS}.models", f"{OBJECTS}.ports", f"{OBJECTS}.checksums"}
+PURE_MODULES = {
+    OBJECTS,
+    f"{OBJECTS}.models",
+    f"{OBJECTS}.ports",
+    f"{OBJECTS}.checksums",
+    f"{OBJECTS}.artifacts",
+}
 LEGACY_STORAGE = ("hc_data_platform.ingest.ports", "hc_data_platform.ingest.adapters")
 ADAPTER_SUPPORT = ("hc_data_platform.core.context", "hc_data_platform.core.errors")
 
@@ -55,6 +61,19 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
     package = module if is_package else module.rsplit(".", 1)[0]
     failures: set[str] = set()
     for line, target in imports(ast.parse(source), package):
+        if matches(target, "hc_data_platform.workflow.projection_store") and not (
+            module == "hc_data_platform.runtime"
+            and target
+            in {
+                "hc_data_platform.workflow.projection_store",
+                "hc_data_platform.workflow.projection_store.S3ProjectionStagingSweeper",
+            }
+        ):
+            failures.add(f"{line}: artifact consumers must use object_storage, not {target}")
+        if matches(module, "hc_data_platform.aligned_media") and matches(
+            target, "hc_data_platform.workflow"
+        ):
+            failures.add(f"{line}: media must not depend on workflow {target}")
         if any(matches(target, prefix) for prefix in LEGACY_STORAGE):
             failures.add(f"{line}: application source must use object_storage, not {target}")
         if not matches(module, OBJECTS):

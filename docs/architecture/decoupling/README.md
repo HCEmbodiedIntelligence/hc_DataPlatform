@@ -55,3 +55,19 @@ LeRobot 完成响应再转换回原 wire 类型。没有变更存储字节、对
 
 原始审计和完整任务说明位于 `/home/hc_op/workspace/diagnostics/platform-coupling-20260930/`。
 后续扫描使用新输出目录，保留原始审计证据。任何发布、真实资产迁移或机器人操作都不属于此次代码实施。
+
+## 临时产物接口（B11）
+
+`object_storage.artifacts` 提供 ArtifactFileReader、ArtifactReader、ArtifactPublisher、
+ArtifactDeleter、ArtifactWorkspace、StagedArtifactStore；媒体只接收文件读取接口。
+本地/S3 实现在 `object_storage.artifact_adapters`，TTL 清理策略仍由 workflow 持有。
+旧 workflow 导入仅作为外部兼容入口；应用消费者和 runtime 已迁移。
+
+本地发布改用条件创建，避免并发覆盖已有不可变内容；坏摘要不产生可见文件。
+S3 流下载、大小或校验失败以及读取方异常均释放临时副本并关闭已打开的流。
+新增替换测试证明媒体读取无需发布/删除能力。
+
+验证：46 项对象、媒体、连续处理、缓存测试通过，4 个源文件 mypy 通过。
+最初无网络容器中的 7 项 Temporal 工作流测试因无法下载测试服务失败；
+随后独立临时容器允许下载服务，7 项全部通过（artifact-workflow.xml）。
+没有使用业务 Temporal 或真实对象存储。

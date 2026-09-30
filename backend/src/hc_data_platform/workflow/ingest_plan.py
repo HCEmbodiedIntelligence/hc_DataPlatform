@@ -32,6 +32,7 @@ from hc_data_platform.dataset_registry.models import DatasetId
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
+from hc_data_platform.object_storage.artifacts import StagedArtifactStore
 from hc_data_platform.quality.models import (
     ImageObservation,
     QualityInputV1,
@@ -59,7 +60,6 @@ from .models import (
     QualityActivityInput,
     VerificationActivityInput,
 )
-from .projection_store import ProjectionArtifactStorePort
 
 _DATASET_ID_ADAPTER = TypeAdapter(DatasetId)
 
@@ -81,7 +81,7 @@ class PostgresIngestWorkflowInputResolver:
         *,
         decoder: DecoderProbe | None = None,
         maximum_messages: int = 250_000,
-        projection_store: ProjectionArtifactStorePort | None = None,
+        projection_store: StagedArtifactStore | None = None,
         projection_staging_root: Path = Path("/tmp/hc-data/projection-staging"),
         projection_ttl: timedelta = timedelta(hours=24),
         package_schemas: Any = None,
@@ -864,7 +864,7 @@ class _LocalProjectionSession:
         decoder: DecoderProbe | None,
         maximum_messages: int,
         staging_root: Path,
-        artifact_store: ProjectionArtifactStorePort | None,
+        artifact_store: StagedArtifactStore | None,
     ) -> None:
         self.source = source
         self.preflight = preflight

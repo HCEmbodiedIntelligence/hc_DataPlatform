@@ -19,6 +19,7 @@ CHECKER = Path(__file__).resolve().parents[2] / "tools/check_architecture.py"
         "from .providers import S3ObjectStorage",
         "from hc_data_platform.object_storage import providers",
         "import boto3",
+        "from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePort",
         "import importlib\nimportlib.import_module(computed_name)",
     ],
 )

@@ -7,7 +7,7 @@ from typing import Any
 
 from hc_data_platform.alignment.canonical import denormalize_from_json
 from hc_data_platform.alignment.models import AlignedValueV1
-from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePort
+from hc_data_platform.object_storage.artifacts import ArtifactFileReader
 
 from .models import AlignedMediaGenerationRequestV1, AlignmentCameraStagingArtifactV1
 from .ports import AlignedFrameV1
@@ -25,7 +25,7 @@ class AlignedCameraFrame:
 class ArrowAlignedFrameReader:
     """Read one camera lazily from short-lived Arrow staging, never from Lance."""
 
-    def __init__(self, store: ProjectionArtifactStorePort) -> None:
+    def __init__(self, store: ArtifactFileReader) -> None:
         self._store = store
 
     def read_camera_frames(
