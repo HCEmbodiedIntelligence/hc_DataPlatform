@@ -1,0 +1,59 @@
+{
+  "input_kind": "existing_8088_native_history_shared_video_window_isolated_copy",
+  "database_archive_sha256": "fd389bfee0be50fe0b51c8f3325924026ab7470f71132404829aa724d1eb0da8",
+  "source_inventory_sha256": "432c0c9ac0ea4f051db3a370228bbc343296a1c01e43e77d31b764b5f0a3c354",
+  "network": "disabled by container",
+  "lerobot": "0.6.1",
+  "platform_imported": false,
+  "official_reader_and_dataloader": true,
+  "package": {
+    "data_version_id": "dv_2a1d2dce71faea009074a5415ed4fe6a34c1c21e69519c60de26bbcbb7887889",
+    "frames": 920,
+    "depth_streams": 0,
+    "invalid_pixels_masked": 0,
+    "depth_unit": null,
+    "official_rounding_max_error_mm": null,
+    "numeric_reader_dtypes": {
+      "action": "float32",
+      "episode_index": "int64",
+      "frame_index": "int64",
+      "index": "int64",
+      "observation.state": "float32",
+      "task_index": "int64",
+      "timestamp": "float32"
+    },
+    "independent_hc_masks_applied": false,
+    "source_mapping_checked": true,
+    "all_manifest_hashes_verified": true,
+    "video_backend_requested": "torchcodec",
+    "depth_video_backend": null,
+    "plan_sha256": "bfac6e747e2e275b24e1be0184a6166e61f9df22f985015efe6b37cc7b65da84",
+    "legacy": {
+      "content_hash": "de8a46a607ca5d56224b5f924a93af1c43525e6a0523a7c64c57ee7090a3aa5a",
+      "data_version_id": "legacy_b143c3adc53bf59aa6b7984f86c47453ebe124c5264b87703632a9c191a166e8",
+      "dataset_uri": "s3://hc-data-local/lance/1/dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31/native-g1-v3-30hz-v1/30hz/aligned_steps.lance",
+      "dataset_version": 154,
+      "frame_count": 920,
+      "identity": {
+        "dataset_id": "dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31",
+        "episode_id": "episode_1a14fd81258997cb16d27afdf8dde2f2",
+        "organization_id": "1",
+        "project_id": "1",
+        "region_code": "cn-beijing",
+        "rollout_id": "lerobot-111653fda01a001e-ep-000104"
+      },
+      "lance_version": 154,
+      "schema_snapshot_id": "native-g1-v3-30hz-v1",
+      "storage_format": "lance"
+    },
+    "independent_logical_sha256": "de8a46a607ca5d56224b5f924a93af1c43525e6a0523a7c64c57ee7090a3aa5a",
+    "original_video_file_hashes_verified": true,
+    "rgb_and_depth_original_file_hashes_verified": false,
+    "review_automatically_transferred": false,
+    "shared_original_pixels_independently_verified": true,
+    "input_directory": "/app/.g1-artifacts/history-copy/native-downloaded-000104"
+  },
+  "sensor_provenance_independently_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

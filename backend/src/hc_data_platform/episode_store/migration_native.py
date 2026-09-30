@@ -1,8 +1,8 @@
 """Prepare historical native RGB assets from scoped, frozen database receipts.
 
-This adapter covers complete canonical RGB streams. Shared video windows and
-source depth require their explicit preparation adapters; they cannot silently
-be dropped or labelled RGB. Original objects and historical rows remain intact.
+Complete streams are reused; shared native windows preserve every decoded RGB
+pixel and original frame/time reference. Source depth requires its explicit
+evidence adapter. Original objects and historical rows remain intact.
 """
 
 import hashlib
@@ -14,11 +14,14 @@ from tempfile import TemporaryDirectory
 
 from psycopg import sql
 
-from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
+from hc_data_platform.aligned_media.models import (
+    AlignedMediaFrameReferenceV1,
+    OriginalVideoReferenceV1,
+)
 from hc_data_platform.ingest.raw_sources import RawSource
 from hc_data_platform.lerobot_imports.committed import read_committed_manifest
 from hc_data_platform.lerobot_imports.package import raw_files
-from hc_data_platform.lerobot_imports.reader import safe_relative
+from hc_data_platform.lerobot_imports.reader import episode_metadata, format_path, safe_relative
 from hc_data_platform.publishing.export_video import inspect_video
 from hc_data_platform.publishing.feature_names import feature_names
 
@@ -27,6 +30,7 @@ from .bundle_models import FrozenObject
 from .migration_conversion import freeze_plan, legacy_steps, pinned_legacy
 from .migration_inventory import FORMAT
 from .migration_objects import _ManifestBytes, validate_raw_file_set
+from .migration_rgb import prepare_rgb_selection
 from .models import digest
 from .postgres import PackageConflict, assert_scope
 from .prepared_assets import PreparedAssets, PreparedVideo
@@ -198,12 +202,13 @@ class NativeMigrationAssets:
         with TemporaryDirectory(prefix="native-migration-", dir=self.directory) as temporary:
             root = Path(temporary)
 
-            def local(relative):
+            def local(relative, *, max_bytes=64 * 1024**2):
                 file = files[relative]
-                if file.object.size > 64 * 1024**2:
-                    raise ValueError("native migration metadata exceeds 64 MiB")
+                if file.object.size > max_bytes:
+                    raise ValueError("native migration input exceeds its explicit byte limit")
                 target = root / "source" / relative
-                self.copy(file.object, target)
+                if not target.exists():
+                    self.copy(file.object, target)
                 return target
 
             info = json.loads(local("meta/info.json").read_bytes())
@@ -236,6 +241,7 @@ class NativeMigrationAssets:
             if metadata.get("modalities", {}).get("depth"):
                 raise ValueError("historical depth declaration requires its evidence adapter")
             videos = {}
+            native_episode, native_rows = None, None
             for camera in sorted(cameras):
                 binding = bindings[camera]
                 artifact = self._current(
@@ -250,18 +256,65 @@ class NativeMigrationAssets:
                 refs = [
                     AlignedMediaFrameReferenceV1.model_validate(r.modalities[camera]) for r in rows
                 ]
-                media = self._whole_media(artifact, binding, refs, rows, reference, lineage, schema)
-                path = root / f"video-{len(videos)}.mp4"
-                self.copy(media, path)
-                self._video_times(path, refs, artifact)
-                feature, _ = inspect_video(path, frame_count=len(rows), fps=artifact["fps"])
-                videos[mapping[camera]] = PreparedVideo(path, media.sha256, media.size, feature)
+                timeline = self._binding(artifact, binding, rows, reference, lineage, schema)
+                if timeline.get("original_source"):
+                    if native_episode is None:
+                        native_episode, native_rows = self._native_rows(
+                            files, local, root / "source", info, source["episode_index"]
+                        )
+                    original, media = self._original_media(
+                        artifact,
+                        refs,
+                        rows,
+                        files,
+                        info,
+                        native_episode,
+                        native_rows,
+                        mapping[camera],
+                    )
+                    path = root / f"original-{len(videos)}.mp4"
+                    self.copy(media, path)
+                    prepared = PreparedVideo(
+                        path,
+                        media.sha256,
+                        media.size,
+                        {
+                            "shape": [original.height, original.width, 3],
+                            "info": {"video.fps": original.fps},
+                        },
+                    )
+                    selected, report = prepare_rgb_selection(
+                        prepared,
+                        [r.frame_index for r in refs],
+                        artifact["fps"],
+                        root / f"video-{len(videos)}.mp4",
+                    )
+                    report.update(
+                        {
+                            "original_reference": original.model_dump(mode="json"),
+                            "source_references_sha256": digest(
+                                [r.model_dump(mode="json") for r in refs]
+                            ),
+                            "source_timestamp_contract": "native-parquet-float32-seconds/1",
+                        }
+                    )
+                    metadata["source"].setdefault("media_preparation", {})[mapping[camera]] = report
+                    videos[mapping[camera]] = selected
+                else:
+                    media = self._whole_media(
+                        artifact, binding, refs, rows, reference, lineage, schema
+                    )
+                    path = root / f"video-{len(videos)}.mp4"
+                    self.copy(media, path)
+                    self._video_times(path, refs, artifact)
+                    feature, _ = inspect_video(path, frame_count=len(rows), fps=artifact["fps"])
+                    videos[mapping[camera]] = PreparedVideo(path, media.sha256, media.size, feature)
             assets = PreparedAssets(identity, "historical-native", videos)
             plan = freeze_plan(inventory, reference, self.legacy, schema, assets, metadata=metadata)
             yield plan, assets
 
     @staticmethod
-    def _whole_media(a, binding, refs, rows, reference, lineage, schema):
+    def _binding(a, binding, rows, reference, lineage, schema):
         timeline = a.get("timeline_json") or {}
         if (
             a["status"] != "READY"
@@ -279,15 +332,20 @@ class NativeMigrationAssets:
             or binding["fps"] != a["fps"]
         ):
             raise PackageConflict("historical media differs from the scoped whole Episode")
-        if timeline.get("original_source"):
-            raise ValueError("shared/original media requires explicit window preparation")
         if (
-            timeline.get("frame_count") != len(refs)
+            timeline.get("frame_count") != len(rows)
             or timeline.get("fps") != a["fps"]
             or int(timeline.get("start_timestamp_ns", -1)) != rows[0].timestamp_ns
             or timeline.get("first_step") != 0
         ):
             raise PackageConflict("historical media timeline differs")
+        return timeline
+
+    @staticmethod
+    def _whole_media(a, binding, refs, rows, reference, lineage, schema):
+        timeline = NativeMigrationAssets._binding(a, binding, rows, reference, lineage, schema)
+        if timeline.get("original_source"):
+            raise ValueError("shared/original media requires explicit window preparation")
         for index, (ref, row) in enumerate(zip(refs, rows, strict=True)):
             if (
                 ref.artifact_id != a["artifact_id"]
@@ -304,6 +362,97 @@ class NativeMigrationAssets:
         if len(objects) != 1 or objects[0]["sha256"] != a["content_sha256"]:
             raise PackageConflict("historical media primary object is not in its receipt")
         return FrozenObject(objects[0]["key"], objects[0]["size"], objects[0]["sha256"])
+
+    @staticmethod
+    def _native_rows(files, local, root, info, index):
+        import math
+
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        for relative in files:
+            if relative.startswith("meta/episodes/") and relative.endswith(".parquet"):
+                local(relative)
+        episode = episode_metadata(root, info)[index]
+        relative = format_path(
+            info["data_path"],
+            chunk_index=episode["data/chunk_index"],
+            file_index=episode["data/file_index"],
+        )
+        data = pq.ParquetFile(local(relative, max_bytes=1024**3))
+        if data.schema_arrow.field("timestamp").type != pa.float32():
+            raise PackageConflict("historical native timestamp representation is unsupported")
+        selected = {}
+        columns = ["episode_index", "frame_index", "index", "timestamp", "task_index"]
+        count = 0
+        for batch in data.iter_batches(batch_size=128, columns=columns):
+            for row in batch.to_pylist():
+                if row["episode_index"] != index:
+                    continue
+                timestamp = row["timestamp"]
+                if (
+                    count >= 100000
+                    or row["frame_index"] != count
+                    or row["index"] != episode["dataset_from_index"] + count
+                    or not isinstance(timestamp, (int, float))
+                    or not math.isfinite(timestamp)
+                    or timestamp < 0
+                ):
+                    raise PackageConflict("historical native source row index/time differs")
+                stamp = round(timestamp * 1000000000)
+                if stamp in selected:
+                    raise PackageConflict("historical native source timestamps are ambiguous")
+                selected[stamp] = row
+                count += 1
+        if count != episode["length"]:
+            raise PackageConflict("historical native source Episode rows are incomplete")
+        return episode, selected
+
+    @staticmethod
+    def _original_media(a, refs, rows, files, info, episode, source_rows, feature):
+        original = OriginalVideoReferenceV1.model_validate(a["timeline_json"]["original_source"])
+        prefix = "videos/" + feature
+        relative = format_path(
+            info["video_path"],
+            video_key=feature,
+            chunk_index=episode[prefix + "/chunk_index"],
+            file_index=episode[prefix + "/file_index"],
+        )
+        frozen = files[relative].object
+        if (
+            (original.object_key, original.size_bytes, original.content_sha256)
+            != (frozen.key, frozen.size, frozen.sha256)
+            or original.object_key != a["media_object_key"]
+            or original.content_sha256 != a["content_sha256"]
+            or original.start_seconds != episode[prefix + "/from_timestamp"]
+            or original.end_seconds != episode[prefix + "/to_timestamp"]
+            or original.fps != info["fps"]
+            or [original.height, original.width, 3] != info["features"][feature]["shape"]
+        ):
+            raise PackageConflict(
+                "historical original video differs from the native manifest/window"
+            )
+        offset_ns = round(original.start_seconds * 1000000000)
+        for ref, row in zip(refs, rows, strict=True):
+            if len(ref.source_timestamps_ns) != 1:
+                raise PackageConflict("historical native video has no unique source timestamp")
+            stamp = ref.source_timestamps_ns[0]
+            expected_pts = offset_ns + stamp
+            if (
+                stamp not in source_rows
+                or ref.artifact_id != a["artifact_id"]
+                or ref.object_key != original.object_key
+                or ref.camera_id != a["camera_id"]
+                or ref.alignment_version != a["alignment_version"]
+                or ref.timestamp_ns != row.timestamp_ns
+                or Fraction(ref.pts * ref.pts_time_base_numerator, ref.pts_time_base_denominator)
+                != Fraction(expected_pts, 1000000000)
+                or ref.frame_index != round(expected_pts * original.fps / 1000000000)
+            ):
+                raise PackageConflict(
+                    "historical original frame/time differs from native source rows"
+                )
+        return original, frozen
 
     @staticmethod
     def _video_times(path, refs, artifact):

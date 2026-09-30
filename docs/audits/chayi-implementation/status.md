@@ -43,9 +43,16 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
-| MIG-01 | W7/G2 | Partial: historical native copy, 1 × 958-frame/four-camera migration and rollback verified; full RGB-D/window/annotation/batches pending | [Historical copy/CLI/official reader](historical-native.md), [synthetic RGB-D batch/HTTP](migration-batches.md); G2 and full acceptance remain |
+| MIG-01 | W7/G2 | Partial: historical native whole stream + shared window migration/read/rollback verified; full RGB-D/annotation/batches pending | [Historical copy](historical-native.md), [920-frame/four-camera window](historical-native-windows.md), [synthetic RGB-D batch/HTTP](migration-batches.md); G2 and full acceptance remain |
 
 ## Work log
+
+- W7 共享窗口补充（2026-09-30）：真实 920 帧四相机 AV1 窗口，逐流选帧及
+  libx264rgb 无损像素校验、完整包下载、官方 TorchCodec reader/DataLoader、批次
+  发布/回退和全部旧行哈希核对通过。81 项测试及 8 项原录制回归通过，见
+  [实际结果和存储代价](historical-native-windows.md)。已批准任务的 Lance 132 与
+  迁移来源 154 全行相同；持久标注映射仍待完成。PyAV 全帧基线在报告创建时仍
+  运行，不判通过。全部历史批次、真实 RGB-D/浏览器、P06/W8 和 G2/G3 继续。
 
 - W7 历史数据补充（2026-09-30）：只读制作完整数据库和原生数据集对象副本，
   独立恢复；1765 对象/13.83 GB 校验。新增 native plan/stage CLI，完成首条

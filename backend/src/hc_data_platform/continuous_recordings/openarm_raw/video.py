@@ -52,14 +52,21 @@ class FrameReader:
 
 
 class TrainingVideo:
-    def __init__(self, path, fps, shape):
+    def __init__(self, path, fps, shape, *, lossless_rgb=False):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.container = av.open(str(path), "w")
-        self.stream = self.container.add_stream("libx264", rate=Fraction(str(fps)))
+        self.stream = self.container.add_stream(
+            "libx264rgb" if lossless_rgb else "libx264", rate=Fraction(str(fps))
+        )
         self.stream.height, self.stream.width = shape[:2]
-        self.stream.pix_fmt = "yuv420p"
+        self.stream.pix_fmt = "rgb24" if lossless_rgb else "yuv420p"
         self.stream.codec_context.thread_count = 1
-        self.stream.options = {"crf": "18", "preset": "veryfast", "bf": "0", "tune": "zerolatency"}
+        self.stream.options = {
+            "crf": "0" if lossless_rgb else "18",
+            "preset": "veryfast",
+            "bf": "0",
+            "tune": "zerolatency",
+        }
         self.stream.time_base = 1 / Fraction(str(fps))
         self.fps, self.frames = fps, 0
 

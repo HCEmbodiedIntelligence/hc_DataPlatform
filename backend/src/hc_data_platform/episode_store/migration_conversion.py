@@ -303,6 +303,26 @@ def verify_conversion(root, plan, legacy):
             "requantized": False,
             "transcoded": False,
         }
+        preparation = plan.metadata.get("source", {}).get("media_preparation", {}).get(feature)
+        if preparation is not None:
+            from .migration_rgb import verify_rgb_preparation
+
+            info = document(root, "meta/info.json")
+            logical = next(
+                name for name, target in info["hc.feature_mapping"].items() if target == feature
+            )
+            verify_rgb_preparation(
+                package_file(root, path),
+                preparation,
+                (row.modalities[logical] for row in restored_steps(root, plan.legacy)),
+                frame_count=manifest.frame_count,
+                fps=plan.schema_snapshot.frequency_hz,
+            )
+            media_results[feature].update(
+                transcoded=preparation["transcoded"],
+                source_preparation=preparation,
+                decoded_pixels_exact=True,
+            )
         if feature in plan.required_depth_features:
             report = document(root, "hc/depth/" + feature + "/report.json")
             media_results[feature].update(

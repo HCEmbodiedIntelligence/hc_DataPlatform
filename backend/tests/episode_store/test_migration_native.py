@@ -211,3 +211,104 @@ def test_decode_checks_actual_pts_shape_count_and_h265_rgb(tmp_path, change):
     else:
         with pytest.raises(PackageConflict):
             NativeMigrationAssets._video_times(path, refs, artifact)
+
+
+def original_contract():
+    from hc_data_platform.episode_store.bundle_models import FrozenObject
+    from hc_data_platform.episode_store.native_plan import NativeFile
+
+    a, _, refs, rows, _, _, _ = media_contract()
+    original = {
+        "object_key": "raw/source/videos/head.mp4",
+        "content_sha256": "b" * 64,
+        "size_bytes": 200,
+        "start_seconds": 7 / 30,
+        "end_seconds": 9 / 30,
+        "width": 16,
+        "height": 16,
+        "codec": "av1",
+        "fps": 30,
+    }
+    a["timeline_json"]["original_source"] = original
+    a["media_object_key"] = original["object_key"]
+    stamps = (0, 33333335)  # Actual float32 1/30 converted to ns, not the MP4's rational PTS.
+    refs = [
+        ref.model_copy(
+            update={
+                "object_key": original["object_key"],
+                "frame_index": 7 + i,
+                "source_timestamps_ns": (stamps[i],),
+                "pts": 233333333 + stamps[i],
+                "pts_time_base_denominator": 1000000000,
+            }
+        )
+        for i, ref in enumerate(refs)
+    ]
+    info = {
+        "fps": 30,
+        "video_path": "videos/head.mp4",
+        "features": {"observation.images.head": {"shape": [16, 16, 3]}},
+    }
+    episode = {
+        "videos/observation.images.head/chunk_index": 0,
+        "videos/observation.images.head/file_index": 0,
+        "videos/observation.images.head/from_timestamp": original["start_seconds"],
+        "videos/observation.images.head/to_timestamp": original["end_seconds"],
+    }
+    files = {
+        "videos/head.mp4": NativeFile(
+            relative_path="videos/head.mp4",
+            object=FrozenObject(original["object_key"], 200, "b" * 64),
+        )
+    }
+    source_rows = {stamp: {"frame_index": i} for i, stamp in enumerate(stamps)}
+    return [a, refs, rows, files, info, episode, source_rows, "observation.images.head"]
+
+
+def test_shared_video_is_bound_to_raw_float32_time_and_frame_contract():
+    contract = original_contract()
+    original, frozen = NativeMigrationAssets._original_media(*contract)
+    assert original.start_seconds == 7 / 30 and frozen.sha256 == "b" * 64
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "window",
+        "hash",
+        "key",
+        "shape",
+        "fps",
+        "pts",
+        "frame",
+        "source_stamp",
+        "target_stamp",
+        "artifact",
+    ],
+)
+def test_shared_native_reference_tampering_rejected(change):
+    contract = original_contract()
+    a, refs = contract[:2]
+    if change in {"window", "hash", "key", "shape", "fps"}:
+        original = a["timeline_json"]["original_source"]
+        if change == "window":
+            original["start_seconds"] += 0.000000001
+        elif change == "hash":
+            original["content_sha256"] = "f" * 64
+        elif change == "key":
+            original["object_key"] = "foreign.mp4"
+        elif change == "shape":
+            original["width"] = 32
+        else:
+            original["fps"] = 29
+    else:
+        fields = {
+            "pts": {"pts": refs[1].pts + 1},
+            "frame": {"frame_index": 7},
+            "source_stamp": {"source_timestamps_ns": (33333333,)},
+            "target_stamp": {"timestamp_ns": refs[1].timestamp_ns + 1},
+            "artifact": {"artifact_id": "foreign"},
+        }
+        refs[1] = refs[1].model_copy(update=fields[change])
+    with pytest.raises(PackageConflict):
+        NativeMigrationAssets._original_media(*contract)
