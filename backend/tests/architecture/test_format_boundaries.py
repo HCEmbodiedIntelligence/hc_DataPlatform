@@ -12,6 +12,7 @@ CHECKER = Path(__file__).resolve().parents[2] / "tools/check_architecture.py"
 @pytest.mark.parametrize(
     ("module", "source"),
     [
+        ("capabilities.registry", "from hc_data_platform.publishing.ports import ExporterPort"),
         (
             "data_formats.video",
             "from hc_data_platform.publishing.export_assets import export_error",

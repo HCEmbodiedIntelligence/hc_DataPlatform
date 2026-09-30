@@ -102,3 +102,19 @@ Episode、录制、原生导入、发布和工作流消费者已迁移；原发�
 
 仍未完成：格式能力注册和冻结路由、导出器专属 preflight、流式归档/发布、
 逻辑数据版本等后续接口。这些不计入本批完成项。
+
+## 版本化能力与导出预检（X07 进行中）
+
+`capabilities.registry` 仅依赖标准库。ImplementationRef 绑定 key/version；
+CapabilityDescriptor 声明 required_inputs/outputs；VersionedRegistry 必须显式指定
+默认实现，重复 key/version 或重复默认值失败且不覆盖旧注册。指定版本缺失不自动
+回落到当前默认值，输入能力缺失返回完整原因。
+
+生产的 Lance/LeRobot 和两个内存参考导出器已声明 descriptor/preflight，
+ExportCoordinator 按能力注册并调用导出器自己的 preflight。只有选择了逐步数据
+策略的导出器才收集 Step；替换预检测试证明元数据校验不会读帧或修改存储。
+发布审核与源快照策略不变。
+
+验证：108 passed（15 集成测试排除），后续兼容导入调整后的定向测试 50 passed，
+8 个源文件 mypy 通过。X07 尚未完成：公开格式枚举、前端发现，以及 durable
+workflow 中版本冻结/重试仍须接入，不能把此注册表当作所有新格式均已可用。

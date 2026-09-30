@@ -469,9 +469,13 @@
       "title": "导出有接口但格式选择与输入假设仍集中",
       "scope": "两分支",
       "owner": "T4 T9",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "导出器声明 format/version、所需逻辑能力、自己的 preflight；前端从受控能力目录显示选项。公共校验只校验权限/冻结版本/快照完整性，格式校验由对应 exporter 完成。"
+      "status": "in_progress",
+      "evidence": [
+        "capabilities.registry provides explicit default, exact version selection, duplicate and missing-input rejection",
+        "Both production and reference exporters declare descriptors and own preflight; coordinator does not collect steps",
+        "108 publishing/registry/boundary tests passed; focused final 50 tests and 8-file mypy passed"
+      ],
+      "remaining": "仍需开放格式线协议和前端能力发现；将选定 exporter 版本冻结到持久任务并在重试沿用；完成第三种注册格式的端到端验证。"
     },
     {
       "id": "X08",

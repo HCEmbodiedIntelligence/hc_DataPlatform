@@ -8,9 +8,12 @@ from collections.abc import Sequence
 from threading import RLock
 from urllib.parse import quote
 
+from hc_data_platform.capabilities.registry import CapabilityDescriptor
 from hc_data_platform.core.errors import problem
+from hc_data_platform.data_formats.archives import zip_files as _zip_files
 from hc_data_platform.data_formats.json import canonical_json_bytes
 
+from .contracts import step_export_descriptor
 from .models import (
     ApprovedAnnotationSnapshotV1,
     CatalogRolloutSnapshotV1,
@@ -21,6 +24,7 @@ from .models import (
     StepRangeV1,
 )
 from .ports import ArtifactSinkPort, ExportSourcePort
+from .source_validation import collect_and_validate_export_steps
 
 
 class InMemoryCatalogSnapshot:
@@ -198,12 +202,17 @@ class InMemoryArtifactSink:
 # implementations live in ``publishing.exporters``.
 from .exporters import (  # noqa: E402
     _publish_validated,
-    _zip_files,
-    collect_and_validate_export_steps,
 )
 
 
 class InMemoryLanceSnapshotExporter:
+    @property
+    def descriptor(self) -> CapabilityDescriptor:
+        return step_export_descriptor(self.format.value, "test-lance-json/v1")
+
+    def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
+        return len(collect_and_validate_export_steps(manifest, source))
+
     @property
     def format(self) -> ExportFormat:
         return ExportFormat.LANCE_SNAPSHOT
@@ -281,6 +290,13 @@ class InMemoryLanceSnapshotExporter:
 
 
 class InMemoryLeRobotV3Exporter:
+    @property
+    def descriptor(self) -> CapabilityDescriptor:
+        return step_export_descriptor(self.format.value, "test-lerobot-json/v1")
+
+    def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
+        return len(collect_and_validate_export_steps(manifest, source))
+
     @property
     def format(self) -> ExportFormat:
         return ExportFormat.LEROBOT_V3

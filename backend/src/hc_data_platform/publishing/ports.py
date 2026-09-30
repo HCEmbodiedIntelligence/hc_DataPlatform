@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
+from hc_data_platform.capabilities.registry import CapabilityDescriptor
+
 from .models import (
     ApprovedAnnotationSnapshotV1,
     CatalogRolloutSnapshotV1,
@@ -93,7 +95,14 @@ class ArtifactSinkPort(Protocol):
 @runtime_checkable
 class ExporterPort(Protocol):
     @property
+    def descriptor(self) -> CapabilityDescriptor: ...
+
+    @property
     def format(self) -> ExportFormat: ...
+
+    def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
+        """Validate this format's own inputs without writing output artifacts."""
+        ...
 
     def export(
         self,

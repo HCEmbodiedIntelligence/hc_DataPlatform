@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from hc_data_platform.capabilities.registry import CapabilityDescriptor
 from hc_data_platform.core.errors import problem
 from hc_data_platform.data_formats.archives import zip_files as _zip_files
 
@@ -29,6 +30,7 @@ from hc_data_platform.data_formats.arrow import parquet_bytes as _parquet_bytes 
 from hc_data_platform.data_formats.arrow import require_arrow as _require_arrow
 from hc_data_platform.data_formats.json import canonical_json_bytes
 
+from .contracts import LEROBOT_EXPORT_REVISION, step_export_descriptor
 from .export_assets import ExportAssetsPort
 from .models import (
     ExportFormat,
@@ -149,6 +151,13 @@ def _require_lance() -> Any:
 
 class LanceSnapshotExporter:
     @property
+    def descriptor(self) -> CapabilityDescriptor:
+        return step_export_descriptor(self.format.value, "lance-snapshot/v1")
+
+    def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
+        return len(collect_and_validate_export_steps(manifest, source))
+
+    @property
     def format(self) -> ExportFormat:
         return ExportFormat.LANCE_SNAPSHOT
 
@@ -257,6 +266,13 @@ def _scalar_feature(dtype: str) -> dict[str, Any]:
 
 
 class LeRobotV3Exporter:
+    @property
+    def descriptor(self) -> CapabilityDescriptor:
+        return step_export_descriptor(self.format.value, LEROBOT_EXPORT_REVISION)
+
+    def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
+        return len(collect_and_validate_export_steps(manifest, source))
+
     def __init__(self, assets: ExportAssetsPort | None = None) -> None:
         self._assets = assets
 

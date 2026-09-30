@@ -72,6 +72,11 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
     package = module if is_package else module.rsplit(".", 1)[0]
     failures: set[str] = set()
     for line, target in imports(ast.parse(source), package):
+        if matches(module, "hc_data_platform.capabilities") and not (
+            target.split(".", 1)[0] in sys.stdlib_module_names
+            or matches(target, "hc_data_platform.capabilities")
+        ):
+            failures.add(f"{line}: capability registry must be independent of {target}")
         if any(matches(target, prefix) for prefix in LEGACY_CODECS):
             failures.add(f"{line}: format consumers must use data_formats, not {target}")
         if matches(module, FORMATS) and (

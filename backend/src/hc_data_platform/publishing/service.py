@@ -5,9 +5,16 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from urllib.parse import quote
 
+from hc_data_platform.capabilities.registry import (
+    CapabilityDescriptor,
+    ImplementationUnavailable,
+    UnsupportedInputs,
+    VersionedRegistry,
+)
 from hc_data_platform.core.errors import problem
 from hc_data_platform.data_formats.json import canonical_json_bytes as canonical_json_bytes
 
+from .contracts import FROZEN_MANIFEST, SYNCHRONIZED_STEPS
 from .models import (
     DatasetVersionPublishedV1,
     DerivedStatus,
@@ -478,9 +485,14 @@ class ExportCoordinator:
     ) -> None:
         self._source = source
         self._sink = sink
-        self._exporters = {exporter.format: exporter for exporter in exporters}
-        if len(self._exporters) != len(exporters):
-            raise ValueError("only one exporter may be configured for each format")
+        self._exporters: VersionedRegistry[ExporterPort] = VersionedRegistry()
+        for exporter in exporters:
+            if exporter.descriptor.ref.key != exporter.format.value:
+                raise ValueError("exporter descriptor must identify its declared format")
+            self._exporters.register(exporter.descriptor, exporter, default=True)
+
+    def descriptors(self) -> tuple[CapabilityDescriptor, ...]:
+        return self._exporters.descriptors()
 
     def export(
         self,
@@ -519,19 +531,14 @@ class ExportCoordinator:
         *,
         format: ExportFormat,
     ) -> int:
-        """Read and validate the immutable source before the materialization activity.
+        """Run the selected exporter's preflight policy against the frozen input.
 
-        The materializer deliberately reads the source again: shipping a possibly
-        large step list through Temporal history would make the job non-durable.
-        This separate bounded activity gives callers an honest preflight phase and
-        detects unavailable workers or incomplete source data before writing any
-        export bytes.
+        Step-based exporters validate synchronized rows here; metadata or future
+        sample formats own their own validation and need not collect step data.
+        No preflight result transports a large sample list through task history.
         """
 
-        self._exporter(format)
-        from .source_validation import collect_and_validate_export_steps
-
-        return len(collect_and_validate_export_steps(manifest, self._source))
+        return self._exporter(format).preflight(manifest=manifest, source=self._source)
 
     def verify_artifact(self, result: ExportResultV1) -> None:
         """Re-read the promoted object and verify its immutable content digest."""
@@ -572,8 +579,19 @@ class ExportCoordinator:
         return authorization
 
     def _exporter(self, format: ExportFormat) -> ExporterPort:
-        exporter = self._exporters.get(format)
-        if exporter is None:
+        try:
+            return self._exporters.select(
+                format.value, available_inputs=frozenset({FROZEN_MANIFEST, SYNCHRONIZED_STEPS})
+            ).implementation
+        except UnsupportedInputs as exc:
+            raise problem(
+                status=422,
+                code="EXPORT_INPUT_CAPABILITY_UNSUPPORTED",
+                title="Export input is unsupported",
+                detail="The selected exporter requires unavailable input capabilities.",
+                details={"missing_capabilities": sorted(exc.missing)},
+            ) from exc
+        except ImplementationUnavailable as exc:
             raise problem(
                 status=503,
                 code="EXPORTER_UNAVAILABLE",
@@ -582,5 +600,4 @@ class ExportCoordinator:
                     "The selected native export worker is not available. "
                     "Retry after the worker is restored."
                 ),
-            )
-        return exporter
+            ) from exc

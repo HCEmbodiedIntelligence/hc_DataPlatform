@@ -31,11 +31,12 @@ from hc_data_platform.data_formats.lerobot_layout import (
     VIDEO_PATH as VIDEO_PATH,
 )
 
+from .contracts import LEROBOT_EXPORT_REVISION
 from .export_assets import ExportAssetsPort, export_error
 from .export_video import inspect_depth_video, inspect_video, materialize_video
 from .models import ExportStepV1, PublishedDatasetManifestV1
 
-EXPORT_REVISION = "lerobot-materialized-v4-holobrain"
+EXPORT_REVISION = LEROBOT_EXPORT_REVISION
 
 
 def _numeric_stats(values: Sequence[Any]) -> dict[str, Any]:
