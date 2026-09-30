@@ -145,7 +145,7 @@ class EpisodeCollections:
                     or current.frequency_hz != schema.frequency_hz
                 ):
                     raise PackageConflict("collection schema/frequency changed")
-                entries, version = list(current.episodes), current.version + 1
+                entries = list(current.episodes)
                 # An undrained historical writer cannot silently overwrite collection numbering.
                 if legacy is not None and legacy.version >= current.version:
                     raise PackageConflict("legacy writer advanced after Episode collection switch")
@@ -160,7 +160,6 @@ class EpisodeCollections:
                         "historical Episodes require explicit bindings before switch"
                     )
                 entries = [] if legacy is None else list(self.legacy_entries(legacy))
-                version = 1 if legacy is None else legacy.version + 1
                 if legacy is not None and {e.identity.rollout_id for e in entries} != set(
                     legacy.committed_rollouts
                 ):
@@ -179,6 +178,16 @@ class EpisodeCollections:
                 if entries[index].identity != identity:
                     raise PackageConflict("Episode/rollout binding changed between data versions")
                 entries[index] = data
+            # Pointer rollback retains immutable newer snapshots. Allocate from
+            # their high-water mark so a subsequent write cannot reuse a version.
+            with self.packages.transaction() as cursor:
+                cursor.execute(
+                    """SELECT COALESCE(max(version),0) FROM episode_store.collections
+                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                      AND dataset_id=%s""",
+                    scope,
+                )
+                version = max(cursor.fetchone()[0], legacy.version if legacy else 0) + 1
             fields = dict(
                 organization_id=scope[0],
                 project_id=scope[1],

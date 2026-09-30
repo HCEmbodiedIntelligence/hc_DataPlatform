@@ -59,7 +59,15 @@ class EpisodePackageCommitter:
             self.storage.put_json(key, value, if_none_match=True)
         self._verify_object(key, len(body), hashlib.sha256(body).hexdigest())
 
-    def commit(self, root: Path, source: PackageInput) -> CommitReceipt:
+    def commit(self, root: Path, source: PackageInput, *, activate: bool = True) -> CommitReceipt:
+        """Commit verified bytes; migration batches may defer the current pointer.
+
+        Deferred packages remain immutable, explicitly addressable committed
+        versions. Only a separately verified batch may activate their pointers.
+        Retrying a commit never reactivates a version whose pointer moved later.
+        """
+        if type(activate) is not bool:
+            raise TypeError("activate must be an explicit boolean")
         assert_scope(source.identity)
         # Validate before reserving visibility; the source may still be PROCESSING.
         # Assets here are local, frozen attempt files, never the READY export resolver.
@@ -97,7 +105,7 @@ class EpisodePackageCommitter:
                 )
                 self.repository.set_attempt(source, attempt, "OBJECTS_VERIFIED")
                 self.checkpoint("objects_verified")
-                self.repository.commit(receipt, attempt)
+                self.repository.commit(receipt, attempt, activate=activate)
                 self.checkpoint("database_committed")
                 return receipt
             except BaseException as exc:

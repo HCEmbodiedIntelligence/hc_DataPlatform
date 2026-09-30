@@ -199,6 +199,38 @@ def test_concurrent_episode_publications_and_replacement_do_not_overwrite_histor
 
 
 @pytest.mark.integration
+def test_publication_after_pointer_rollback_never_reuses_an_archived_version(services, tmp_path):
+    repository, storage = services
+    ident = identity().model_copy(update={"organization_id": "rollback-number-" + uuid4().hex})
+    collections = EpisodeCollections(repository, storage)
+    published = []
+    source = None
+    for i in range(2):
+        source, _ = numeric(tmp_path / f"episode-{i}", ident, configuration=str(i + 1) * 64)
+        with scoped(source):
+            receipt = EpisodePackageCommitter(repository, storage).commit(
+                tmp_path / f"episode-{i}", source
+            )
+            published.append(collections.publish(receipt.data, schema(ident)))
+    with scoped(source):
+        # Simulate the isolated pointer condition; this is not the W7 rollback tool.
+        with repository.transaction() as cursor:
+            cursor.execute(
+                """UPDATE episode_store.collection_heads SET collection_version_id=%s
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
+                (published[0].collection_version_id, *ident.scope, ident.dataset_id),
+            )
+        root = tmp_path / "after-rollback"
+        next_input, _ = numeric(root, ident, configuration="8" * 64)
+        receipt = EpisodePackageCommitter(repository, storage).commit(root, next_input)
+        resumed = collections.publish(receipt.data, schema(ident))
+        assert resumed.version == 3
+        assert resumed.previous_collection_version_id == published[0].collection_version_id
+        assert collections.get(ident.dataset_id, version=2) == published[1]
+        assert [v.version for v in collections.list_versions(ident.dataset_id)] == [1, 2, 3]
+
+
+@pytest.mark.integration
 def test_actual_legacy_lance_and_new_parquet_in_one_collection(services, tmp_path, monkeypatch):
     repository, storage = services
     ident = identity().model_copy(

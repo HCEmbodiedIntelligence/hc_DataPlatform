@@ -161,7 +161,9 @@ class PostgresEpisodeStore:
                 (status, error_code, *source.identity.scope, source.data_version_id, attempt_id),
             )
 
-    def commit(self, receipt: CommitReceipt, attempt_id):
+    def commit(self, receipt: CommitReceipt, attempt_id, *, activate: bool = True):
+        if type(activate) is not bool:
+            raise TypeError("activate must be an explicit boolean")
         data, identity = receipt.data, receipt.data.identity
         assert_scope(identity)
         serialized = canonical(receipt.model_dump(mode="json")).decode()
@@ -200,12 +202,13 @@ class PostgresEpisodeStore:
                 AND region_code=%s AND data_version_id=%s""",
                 (serialized, *identity.scope, data.data_version_id),
             )
-            cursor.execute(
-                """UPDATE episode_store.bindings SET current_data_version_id=%s
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                AND dataset_id=%s AND episode_id=%s""",
-                (data.data_version_id, *identity.key),
-            )
+            if activate:
+                cursor.execute(
+                    """UPDATE episode_store.bindings SET current_data_version_id=%s
+                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                    AND dataset_id=%s AND episode_id=%s""",
+                    (data.data_version_id, *identity.key),
+                )
             cursor.execute(
                 """UPDATE episode_store.attempts SET status='COMMITTED',updated_at=clock_timestamp()
                 WHERE organization_id=%s AND project_id=%s AND region_code=%s

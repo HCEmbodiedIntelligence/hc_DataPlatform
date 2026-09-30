@@ -196,6 +196,65 @@ def test_concurrent_same_package_is_one_version_and_event(services, package):
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("fault", ["file_verified", "objects_verified", "database_committed"])
+def test_deferred_migration_commit_keeps_current_pointer_through_recovery(
+    services, package, existing, fault
+):
+    repository, storage = services
+    root, source = package
+    with scoped(source):
+        committer = EpisodePackageCommitter(repository, storage)
+        previous = committer.commit(root, source) if existing else None
+        candidate = source.model_copy(update={"configuration_sha256": "c" * 64})
+
+        def interrupt(stage):
+            if stage == fault:
+                raise InterruptedError("deferred migration interruption")
+
+        with pytest.raises(InterruptedError):
+            EpisodePackageCommitter(repository, storage, checkpoint=interrupt).commit(
+                root, candidate, activate=False
+            )
+        assert repository.current(source.identity) == previous
+        receipt = committer.commit(root, candidate, activate=False)
+        assert repository.current(source.identity) == previous
+        assert repository.get(source.identity, candidate.data_version_id) == receipt
+        assert committer.commit(root, candidate, activate=False) == receipt
+        # A default retry cannot silently activate an already committed batch member.
+        assert committer.commit(root, candidate) == receipt
+        assert repository.current(source.identity) == previous
+        with repository.transaction() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM episode_store.events WHERE organization_id=%s",
+                (source.identity.organization_id,),
+            )
+            assert cursor.fetchone()[0] == (2 if existing else 1)
+
+
+@pytest.mark.integration
+def test_concurrent_deferred_commit_does_not_change_old_head(services, package):
+    repository, storage = services
+    root, source = package
+    with scoped(source):
+        previous = EpisodePackageCommitter(repository, storage).commit(root, source)
+    candidate = source.model_copy(update={"configuration_sha256": "d" * 64})
+
+    def commit(_):
+        with scoped(source):
+            return EpisodePackageCommitter(repository, storage).commit(
+                root, candidate, activate=False
+            )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        receipts = list(pool.map(commit, range(4)))
+    assert all(receipt == receipts[0] for receipt in receipts)
+    with scoped(source):
+        assert repository.current(source.identity) == previous
+        assert len(repository.list_versions(source.identity)) == 2
+
+
+@pytest.mark.integration
 def test_corruption_or_missing_file_cannot_be_reported_ready(services, package):
     repository, storage = services
     root, source = package

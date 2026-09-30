@@ -40,9 +40,14 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
-| MIG-01 | W7 | Partial read-only inventory verified; conversion/checkpoint/rollback rehearsal pending | [Scoped inventory and actual CLI](migration-inventory.md); complete copy rehearsal remains |
+| MIG-01 | W7 | Partial read-only inventory and deferred commit verified; conversion/checkpoint/rollback rehearsal pending | [Scoped inventory and actual CLI](migration-inventory.md), [batch commit foundation](migration-commit-foundation.md); complete copy rehearsal remains |
 
 ## Work log
+
+- W7 提交基础补充（2026-09-30）：支持完整包提交后暂不推进当前指针；集合
+  版本号按保留历史分配，避免回退后重号。16 项提交、6 项集合服务回归通过，
+  见 [证据](migration-commit-foundation.md)。仅底层软件验证，批次命令/物理核验/
+  checkpoint/正式指针回退及完整副本演练仍继续，不算 W7 已完成。
 
 - W7 清点工具补充（2026-09-30）：固定作用域/只读快照、行哈希、旧版本候选、
   标注和审核原引用、不覆盖清单。最终 5 项服务测试及旧存储/三入口/独立客户端
