@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Literal, Protocol, runtime_checkable
 
 from .evidence import QcEvaluation
@@ -32,15 +32,24 @@ class QualityEvaluationPort(Protocol):
         profile: QualityProfileV1,
         *,
         observations: Iterable[QualityStreamObservationV1] | None = None,
+        expected_frames: Mapping[str, int] | None = None,
     ) -> QcEvaluation: ...
 
-    def evaluate(self, data: QualityInputV1, profile: QualityProfileV1) -> QcReportV1: ...
+    def evaluate(
+        self,
+        data: QualityInputV1,
+        profile: QualityProfileV1,
+        *,
+        expected_frames: Mapping[str, int] | None = None,
+    ) -> QcReportV1: ...
 
     def evaluate_stream(
         self,
         data: QualityInputV1,
         observations: Iterable[QualityStreamObservationV1],
         profile: QualityProfileV1,
+        *,
+        expected_frames: Mapping[str, int] | None = None,
     ) -> QcReportV1: ...
 
 

@@ -26734,9 +26734,9 @@ components:
           type: number
         target_frequency_hz:
           default: 30
+          exclusiveMinimum: 0
           maximum: 1000
-          minimum: 1
-          type: integer
+          type: number
       required:
       - target_frequency_hz
       - minimum_frequency_hz_risk

@@ -189,7 +189,7 @@ components:
         - maximum_duplicate_timestamps_reject
         - maximum_backward_timestamps_reject
       properties:
-        target_frequency_hz: {type: integer, minimum: 1, maximum: 1000, default: 30}
+        target_frequency_hz: {type: number, exclusiveMinimum: 0, maximum: 1000, default: 30}
         minimum_frequency_hz_risk: {type: number, minimum: 0, default: 28.5}
         minimum_frequency_hz_reject: {type: number, minimum: 0, default: 22.5}
         minimum_coverage_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0.98}

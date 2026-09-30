@@ -89,7 +89,7 @@ class TopicTimingProfileV1(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    target_frequency_hz: int = Field(default=30, gt=0, le=1000)
+    target_frequency_hz: int | float = Field(default=30, gt=0, le=1000)
     minimum_frequency_hz_risk: float = Field(default=28.5, ge=0)
     minimum_frequency_hz_reject: float = Field(default=22.5, ge=0)
     minimum_coverage_ratio_risk: float = Field(default=0.98, ge=0, le=1)
@@ -101,6 +101,15 @@ class TopicTimingProfileV1(BaseModel):
     maximum_duplicate_timestamps_risk: int = Field(default=0, ge=0)
     maximum_duplicate_timestamps_reject: int | None = Field(default=None, ge=0)
     maximum_backward_timestamps_reject: int = Field(default=0, ge=0)
+
+    @field_validator("target_frequency_hz", mode="before")
+    @classmethod
+    def preserve_integral_frequency(cls, value):
+        # Previously accepted integral floats became ints. Preserve their
+        # canonical profile bytes while admitting actual fractional frame rates.
+        if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+            return int(value)
+        return value
 
     @model_validator(mode="after")
     def validate_threshold_order(self) -> TopicTimingProfileV1:

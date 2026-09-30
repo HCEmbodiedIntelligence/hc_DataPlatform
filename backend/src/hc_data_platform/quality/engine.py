@@ -6,7 +6,9 @@ import math
 import sqlite3
 import tempfile
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from fractions import Fraction
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,7 @@ from .models import (
 )
 from .policy import LEGACY_QUALITY_ENGINE_VERSION, approved_risk_findings
 from .ports import MetadataSink, QualityPersistenceError, ReportSink
+from .spooled import SpilledOffsets
 
 
 class QualityEngine:
@@ -47,20 +50,28 @@ class QualityEngine:
         self._metadata_sink = metadata_sink
         self._engine_version = engine_version
 
-    def evaluate_with_evidence(self, data, profile, *, observations=None):
+    def evaluate_with_evidence(self, data, profile, *, observations=None, expected_frames=None):
         from .evidence import QcEvaluation, RuleEvidenceCollector
 
         collector = RuleEvidenceCollector(data, profile, streaming=observations is not None)
         report = (
-            self.evaluate(data, profile, _evidence=collector)
+            self.evaluate(data, profile, _evidence=collector, expected_frames=expected_frames)
             if observations is None
-            else self.evaluate_stream(data, observations, profile, _evidence=collector)
+            else self.evaluate_stream(
+                data, observations, profile, _evidence=collector, expected_frames=expected_frames
+            )
         )
         return QcEvaluation(report=report, evidence=collector.result)
 
     def evaluate(
-        self, data: QualityInputV1, profile: QualityProfileV1, *, _evidence=None
+        self,
+        data: QualityInputV1,
+        profile: QualityProfileV1,
+        *,
+        _evidence=None,
+        expected_frames: Mapping[str, int] | None = None,
     ) -> QcReportV1:
+        expected_frames = _frozen_frame_counts(expected_frames)
         findings: list[QcFinding] = []
         metrics: list[TopicTimingMetricsV1] = []
         missing_required = profile.required_topics - data.topic_timestamps_ns.keys()
@@ -85,6 +96,7 @@ class QualityEngine:
                 data.topic_timestamps_ns.get(topic, ()),
                 data,
                 profile.timing_for(topic),
+                expected_frames.get(topic),
             )
             metrics.append(topic_metrics)
             findings.extend(topic_findings)
@@ -124,9 +136,11 @@ class QualityEngine:
         profile: QualityProfileV1,
         *,
         _evidence=None,
+        expected_frames: Mapping[str, int] | None = None,
     ) -> QcReportV1:
         """Evaluate ingest facts online with exact timestamp state spilled to SQLite."""
 
+        expected_frames = _frozen_frame_counts(expected_frames)
         findings: list[QcFinding] = []
         metrics: list[TopicTimingMetricsV1] = []
         order: dict[str, dict[str, int | None]] = {}
@@ -235,6 +249,7 @@ class QualityEngine:
                         order.get(topic, {}),
                         data,
                         profile.timing_for(topic),
+                        expected_frames.get(topic),
                     )
                     metrics.append(topic_metrics)
                     findings.extend(topic_findings)
@@ -242,7 +257,7 @@ class QualityEngine:
             finally:
                 database.close()
 
-        # These ingest projections do not currently populate richer decoded facts.
+        # Numeric facts can be immutable tuples or validated disk-backed streams.
         findings.extend(self._joints(data, profile))
         findings.extend(self._actions(data, profile))
         findings.extend(self._point_clouds(data, profile))
@@ -286,14 +301,20 @@ class QualityEngine:
         state: dict[str, int | None],
         data: QualityInputV1,
         thresholds: TopicTimingProfileV1,
+        expected_frames: int | None = None,
     ) -> tuple[TopicTimingMetricsV1, list[QcFinding]]:
         duration_ns = data.end_ns - data.start_ns
-        expected = max(
-            1,
-            self._ceil_div(
-                duration_ns * thresholds.target_frequency_hz,
-                NANOSECONDS_PER_SECOND,
-            ),
+        rate = Fraction(str(thresholds.target_frequency_hz))
+        expected = (
+            expected_frames
+            if expected_frames is not None
+            else max(
+                1,
+                self._ceil_div(
+                    duration_ns * rate.numerator,
+                    NANOSECONDS_PER_SECOND * rate.denominator,
+                ),
+            )
         )
         timestamps = database.execute(
             "SELECT ts FROM timestamps WHERE topic = ? ORDER BY ts", (topic,)
@@ -307,10 +328,10 @@ class QualityEngine:
         missing_start, missing_end = data.start_ns, data.end_ns
 
         def slot(timestamp_ns: int) -> int:
+            denominator = NANOSECONDS_PER_SECOND * rate.denominator
             return (
-                (timestamp_ns - data.start_ns) * thresholds.target_frequency_hz
-                + NANOSECONDS_PER_SECOND // 2
-            ) // NANOSECONDS_PER_SECOND
+                (timestamp_ns - data.start_ns) * rate.numerator + denominator // 2
+            ) // denominator
 
         for raw in timestamps:
             timestamp = int(raw[0])
@@ -536,8 +557,10 @@ class QualityEngine:
         timestamps: tuple[int, ...],
         data: QualityInputV1,
         thresholds: TopicTimingProfileV1,
+        expected_frames: int | None = None,
     ) -> tuple[TopicTimingMetricsV1, list[QcFinding]]:
         duration_ns = data.end_ns - data.start_ns
+        rate = Fraction(str(thresholds.target_frequency_hz))
         unique = sorted(set(timestamps))
         counts = Counter(timestamps)
         duplicate_timestamps = sorted(timestamp for timestamp, count in counts.items() if count > 1)
@@ -548,12 +571,16 @@ class QualityEngine:
             if right < left
         ]
         intervals = [right - left for left, right in zip(unique, unique[1:], strict=False)]
-        expected = max(
-            1,
-            self._ceil_div(
-                duration_ns * thresholds.target_frequency_hz,
-                NANOSECONDS_PER_SECOND,
-            ),
+        expected = (
+            expected_frames
+            if expected_frames is not None
+            else max(
+                1,
+                self._ceil_div(
+                    duration_ns * rate.numerator,
+                    NANOSECONDS_PER_SECOND * rate.denominator,
+                ),
+            )
         )
         frequency = len(unique) * NANOSECONDS_PER_SECOND / duration_ns
         coverage = min(1.0, len(unique) / expected)
@@ -710,17 +737,18 @@ class QualityEngine:
         *,
         start_ns: int,
         end_ns: int,
-        target_frequency_hz: int,
+        target_frequency_hz: int | float,
         expected_count: int,
     ) -> tuple[int, int, int, int, int, int]:
         if not unique:
             return start_ns, end_ns, end_ns - start_ns, start_ns, end_ns, expected_count
 
+        rate = Fraction(str(target_frequency_hz))
+        denominator = NANOSECONDS_PER_SECOND * rate.denominator
+
         def slot(timestamp_ns: int) -> int:
             offset = timestamp_ns - start_ns
-            return (offset * target_frequency_hz + NANOSECONDS_PER_SECOND // 2) // (
-                NANOSECONDS_PER_SECOND
-            )
+            return (offset * rate.numerator + denominator // 2) // denominator
 
         gap_candidates: list[tuple[int, int, int]] = [
             (start_ns, unique[0], unique[0] - start_ns),
@@ -888,7 +916,7 @@ class QualityEngine:
                     threshold=threshold,
                 )
             )
-        for left, right in zip(data.actions, data.actions[1:], strict=False):
+        for left, right in pairwise(data.actions):
             start_ns, end_ns = sorted((left.timestamp_ns, right.timestamp_ns))
             if len(left.values) != len(right.values):
                 result.append(
@@ -1011,7 +1039,11 @@ class QualityEngine:
         result: list[QcFinding] = []
         thresholds = profile.modality_offset
         for topic, values in sorted(data.modality_offsets_ns.items()):
-            p95 = self._percentile([abs(value) for value in values], 0.95)
+            p95 = (
+                values.absolute_percentile(0.95)
+                if isinstance(values, SpilledOffsets)
+                else self._percentile((abs(value) for value in values), 0.95)
+            )
             if p95 is None:
                 continue
             severity_result = self._higher_is_worse(
@@ -1149,6 +1181,24 @@ class QualityEngine:
     @staticmethod
     def _ceil_div(dividend: int, divisor: int) -> int:
         return (dividend + divisor - 1) // divisor
+
+
+def _frozen_frame_counts(value):
+    """Optional exact target-grid counts supplied by a frozen Episode selection.
+
+    Raw ingest keeps duration-based expectations. A committed/selected frame
+    grid already establishes its count; nanosecond end rounding must not add a
+    phantom frame. This is an internal evaluator input, not a policy threshold.
+    """
+    if value is None:
+        return {}
+    result = dict(value)
+    if any(
+        not isinstance(topic, str) or not topic.strip() or type(count) is not int or count <= 0
+        for topic, count in result.items()
+    ):
+        raise ValueError("frozen expected frame counts require nonempty topics and positive ints")
+    return result
 
 
 def _required_state_int(value: object, name: str) -> int:
