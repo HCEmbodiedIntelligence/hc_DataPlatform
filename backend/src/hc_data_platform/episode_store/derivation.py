@@ -292,7 +292,9 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
                     )
                 else:
                     current, statistics = inspect_video(destination, frame_count=count, fps=fps)
-                features[key], stats[key] = current, statistics
+                features[key] = current
+                if statistics:
+                    stats[key] = statistics
                 receipts.append(
                     {
                         "feature": key,

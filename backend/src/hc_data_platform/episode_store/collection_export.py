@@ -141,6 +141,7 @@ def contract(info):
     result["fps"] = float(result["fps"])
     for feature in result["features"].values():
         feature.get("info", {}).pop("hc.stats_valid_pixels", None)
+        feature.get("info", {}).pop("hc.stats_status", None)
         if "video.fps" in feature.get("info", {}):
             feature["info"]["video.fps"] = float(feature["info"]["video.fps"])
     return result
@@ -286,9 +287,15 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
             subtask_offset += len(segments)
     statistics = {key: moments.document() for key, moments in numeric.items()}
     for key, items in videos.items():
-        statistics[key] = pooled_stats(items)
+        if items:
+            statistics[key] = pooled_stats(items)
+            statistics[key]["count"] = [offset]
         if info["features"][key].get("info", {}).get("is_depth_map"):
             info["features"][key]["info"]["hc.stats_valid_pixels"] = sum(w for _, w in items)
+            if items:
+                info["features"][key]["info"].pop("hc.stats_status", None)
+            else:
+                info["features"][key]["info"]["hc.stats_status"] = "NO_VALID_PIXELS"
     info.update(
         {
             "total_episodes": len(sources),
@@ -302,7 +309,13 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
         }
     )
     (root / EPISODES_PATH).parent.mkdir(parents=True, exist_ok=True)
-    pq.write_table(pa.Table.from_pylist(episodes), root / EPISODES_PATH)
+    # Arrow otherwise infers only the first row's keys, losing later measured
+    # statistics when the first Episode has no valid depth. Null means absent.
+    columns = dict.fromkeys(key for episode in episodes for key in episode)
+    pq.write_table(
+        pa.Table.from_pylist([{key: episode.get(key) for key in columns} for episode in episodes]),
+        root / EPISODES_PATH,
+    )
     pq.write_table(make_task_table(tasks), root / "meta/tasks.parquet")
     if annotated:
         (root / "hc/subtasks.jsonl").write_bytes(
@@ -487,9 +500,19 @@ def write_member(
         )
         entry = members[original]
         copy_member(root, view, entry, relative, checkpoint)
-        statistics[feature] = source_stats[feature]
-        weight = local_info["features"][feature].get("info", {}).get("hc.stats_valid_pixels", seen)
-        videos[feature].append((statistics[feature], weight))
+        media_info = local_info["features"][feature].get("info", {})
+        weight = media_info.get("hc.stats_valid_pixels", seen)
+        if feature in source_stats:
+            if weight <= 0:
+                raise ValueError("media statistics claim measurements without valid pixels")
+            statistics[feature] = source_stats[feature]
+            videos[feature].append((statistics[feature], weight))
+        elif not (
+            media_info.get("is_depth_map")
+            and media_info.get("hc.stats_status") == "NO_VALID_PIXELS"
+            and weight == 0
+        ):
+            raise ValueError("media statistics are missing without an explicit absence contract")
         media[feature] = {
             "path": relative,
             "source_path": original,

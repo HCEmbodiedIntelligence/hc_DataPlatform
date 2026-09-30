@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from PIL import Image
 
 from tests.episode_store.test_annotation_revision_files_services import files  # noqa: F401
 from tests.episode_store.test_commit_services import scoped
@@ -22,14 +23,38 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.parametrize(
         "prepared_bundle",
-        [{"identity": {"dataset_id": "dataset_tag_http", "episode_id": "episode_tag_parent"}}],
+        [
+            {
+                "identity": {"dataset_id": "dataset_tag_http", "episode_id": "episode_tag_parent"},
+                **depth,
+            }
+            for depth in (
+                {},
+                {"depth_missing_frames": [1, 2, 3]},
+                {"depth_invalid_frames": [1, 2, 3]},
+            )
+        ],
+        ids=["recorded", "all-missing", "all-invalid"],
         indirect=True,
     ),
 ]
 
 
-def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(tag_jobs, tmp_path):  # noqa: F811
+def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(
+    tag_jobs,  # noqa: F811
+    tmp_path,
+    request,
+):
     source, service, task_id, _ = tag_jobs
+    options = request.node.callspec.params["prepared_bundle"]
+    measurement_status = (
+        "NO_SOURCE_FRAMES"
+        if options.get("depth_missing_frames")
+        else "NO_VALID_PIXELS"
+        if options.get("depth_invalid_frames")
+        else "AVAILABLE"
+    )
+    quality_status = "RISK" if measurement_status == "NO_SOURCE_FRAMES" else "PASS"
     identity = source.identity
     body = {"revision": 1, "annotation_id": "child", "allow_unreviewed": True}
     with (
@@ -83,8 +108,10 @@ def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(t
         response = client.get(data_base + "/overview", headers=headers)
         assert response.status_code == 200, response.text
         detail = response.json()
-        assert detail["quality"]["status"] == "PASS"
+        assert detail["quality"]["status"] == quality_status
         assert detail["quality"]["evidence_status"] == "AVAILABLE"
+        depth = next(camera for camera in detail["cameras"] if camera["kind"] == "DEPTH")
+        assert depth["depth"]["measurement_status"] == measurement_status
         assert detail["data_review_status"] == "NOT_REVIEWED"
         assert detail["source"]["document"]["derivation"]["child_approvals_inherited"] is False
         assert detail["annotation"]["task_id"] == job["annotation_task_id"]
@@ -95,13 +122,20 @@ def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(t
             headers=headers,
         )
         assert png.status_code == 200 and png.content.startswith(b"\x89PNG"), png.text[:120]
+        if measurement_status != "AVAILABLE":
+            with Image.open(io.BytesIO(png.content)) as picture:
+                assert picture.convert("RGB").getextrema() == ((0, 0), (0, 0), (0, 0))
         pixel = client.get(
             data_base + "/depth/observation.images.head_depth/0/pixel",
             params={"x": 1, "y": 1, "unit": "m"},
             headers=headers,
         )
         assert pixel.status_code == 200, pixel.text
-        assert pixel.json()["valid"] and pixel.json()["value"] > 0
+        if measurement_status == "AVAILABLE":
+            assert pixel.json()["valid"] and pixel.json()["value"] > 0
+        else:
+            assert pixel.json()["valid"] is False and pixel.json()["value"] is None
+            assert pixel.json()["source"]["missing"] is (measurement_status == "NO_SOURCE_FRAMES")
         download = client.get(data_base + "/download", headers=headers)
         assert download.status_code == 200, download.text[:120]
         evidence = (
@@ -113,6 +147,10 @@ def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(t
         (evidence / "episode.zip").write_bytes(download.content)
         with zipfile.ZipFile(io.BytesIO(download.content)) as archive:
             manifest = json.loads(archive.read("episode/hc/manifest.json"))
+            if measurement_status != "AVAILABLE":
+                assert "observation.images.head_depth" not in json.loads(
+                    archive.read("episode/meta/stats.json")
+                )
             for entry in manifest["files"]:
                 payload = archive.read("episode/" + entry["path"])
                 assert (
@@ -166,7 +204,8 @@ def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(t
                     "official_realsense_png": True,
                     "physical_depth_m": pixel.json(),
                     "independent_child_annotation_task": True,
-                    "quality": "PASS",
+                    "quality": quality_status,
+                    "depth_measurement_status": measurement_status,
                     "inherited_approvals": False,
                     "revoked_cached_command_and_read_denied": True,
                     "synthetic_input": True,

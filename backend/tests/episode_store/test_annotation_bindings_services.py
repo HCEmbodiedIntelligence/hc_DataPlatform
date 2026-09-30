@@ -54,6 +54,17 @@ def actor(ident, name="editor"):
 def target(prepared_bundle, request):
     packages, source, bundle, assets, _ = prepared_bundle
     ident = source.identity
+    from hc_data_platform.episode_store.validation import parquet_rows
+
+    depth_frames = {
+        key: list(parquet_rows(media.evidence_root / "frames.parquet"))
+        for key, media in assets.videos.items()
+        if media.evidence_root is not None
+    }
+
+    def missing(key, index):
+        return key in depth_frames and depth_frames[key][index]["missing"]
+
     rows = tuple(
         StepRecord(
             rollout_id=ident.rollout_id,
@@ -64,9 +75,13 @@ def target(prepared_bundle, request):
                 "action": [float(i)],
                 **{key: {"frame_index": i} for key in assets.videos},
             },
-            source_timestamps_ns={key: (i * 33_333_333,) for key in assets.videos},
-            time_error_ns={key: 0 for key in assets.videos},
-            valid={key: True for key in ("/observation/state", "action", *assets.videos)},
+            source_timestamps_ns={
+                key: () if missing(key, i) else (i * 33_333_333,) for key in assets.videos
+            },
+            time_error_ns={key: None if missing(key, i) else 0 for key in assets.videos},
+            valid={
+                key: not missing(key, i) for key in ("/observation/state", "action", *assets.videos)
+            },
         )
         for i in range(4)
     )

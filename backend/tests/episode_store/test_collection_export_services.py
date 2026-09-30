@@ -30,7 +30,8 @@ from tests.episode_store.test_writer import build_rgbd_package
 
 
 @pytest.fixture
-def pair(target, tmp_path):
+def pair(target, tmp_path, request):
+    options = getattr(request, "param", {})
     packages, source, _, _, request = target
     identity = source.identity.model_copy(
         update={"episode_id": "second", "rollout_id": "second-rollout"}
@@ -38,7 +39,12 @@ def pair(target, tmp_path):
     directory = tmp_path / "second"
     directory.mkdir()
     root, other, _, _ = build_rgbd_package(
-        directory, identity, intensity_offset=50, depth_offset=1000, task="z distinct second task"
+        directory,
+        identity,
+        intensity_offset=50,
+        depth_offset=1000,
+        task="z distinct second task",
+        **options,
     )
     with scoped(source):
         receipt = packages.committer.commit(root, other)
@@ -127,6 +133,55 @@ def test_collection_rebuilds_indexes_tasks_stats_and_reuses_rgbd(pair, tmp_path,
                 indent=2,
             )
         )
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "prepared_bundle,pair,all_absent",
+    [
+        ({"depth_missing_frames": [0, 1, 2, 3]}, {}, False),
+        (
+            {"depth_missing_frames": [0, 1, 2, 3]},
+            {"depth_invalid_frames": [0, 1, 2, 3]},
+            True,
+        ),
+    ],
+    indirect=["prepared_bundle", "pair"],
+)
+def test_collection_preserves_unmeasured_depth_and_only_pools_valid_statistics(
+    pair, all_absent, tmp_path, monkeypatch
+):
+    source, first, second = pair
+    depth = "observation.images.head_depth"
+    root = (
+        Path(os.getenv("HC_G1_WRITER_EVIDENCE_ROOT", str(tmp_path)))
+        / "missing-depth-collection"
+        / first.receipt.data.data_version_id
+        / ("all-absent" if all_absent else "mixed")
+    )
+    with scoped(source):
+        forbid_quantization(monkeypatch)
+        manifest, _ = write_collection(
+            root, [CollectionSource(first), CollectionSource(second)], modalities="rgbd"
+        )
+        info = json.loads((root / "meta/info.json").read_bytes())["features"][depth]["info"]
+        stats = json.loads((root / "meta/stats.json").read_bytes())
+        rows = pq.read_table(root / "meta/episodes").to_pylist()
+        for member, row in zip(manifest["members"], rows, strict=True):
+            absent = all_absent or member["data"] == first.receipt.data.model_dump(mode="json")
+            assert (row.get(f"stats/{depth}/mean") is None) == absent
+            media = member["media"][depth]
+            assert file_hash(root / media["path"]) == media["sha256"]
+            assert (root / media["evidence_path"] / "validity/flags.parquet").is_file()
+        if all_absent:
+            assert depth not in stats
+            assert info["hc.stats_valid_pixels"] == 0
+            assert info["hc.stats_status"] == "NO_VALID_PIXELS"
+        else:
+            expected = second.document("meta/stats.json")[depth]
+            assert stats[depth] == {**expected, "count": [8]}
+            assert "hc.stats_status" not in info
+            assert info["hc.stats_valid_pixels"] > 0
 
 
 @pytest.mark.integration

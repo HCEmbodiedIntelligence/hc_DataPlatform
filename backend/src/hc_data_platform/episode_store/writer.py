@@ -258,7 +258,9 @@ def write_episode(
             feature, statistics = inspect_video(path, frame_count=count, fps=fps)
         if feature["shape"] != media.feature["shape"]:
             raise ValueError("prepared media dimensions differ from frozen source")
-        features[key], stats[key] = feature, statistics
+        features[key] = feature
+        if statistics:
+            stats[key] = statistics
         media_receipts.append(
             {
                 "feature": key,

@@ -427,19 +427,26 @@ def inspect_depth_video(path, frame_count, fps, info, *, masks=None):
         raise export_error(
             "EXPORT_DEPTH_FRAME_COUNT_INVALID", "Depth frame count differs from data rows."
         )
-    if not samples or (masks is not None and next(masks, None) is not None):
-        raise ValueError("depth statistics have no valid pixels or extra masks")
-    mean = total / samples
-    stats = {
-        k: [[[float(v)]]]
-        for k, v in {
-            "min": low,
-            "max": high,
-            "mean": mean,
-            "std": np.sqrt(max(0, square / samples - mean * mean)),
-        }.items()
-    }
-    stats["count"] = [count]
+    if masks is not None and next(masks, None) is not None:
+        raise ValueError("depth statistics have extra masks")
+    if count == 0:
+        raise ValueError("depth statistics require a nonempty stream")
+    mean = total / samples if samples else None
+    stats = (
+        {
+            k: [[[float(v)]]]
+            for k, v in {
+                "min": low,
+                "max": high,
+                "mean": mean,
+                "std": np.sqrt(max(0, square / samples - mean * mean)),
+            }.items()
+        }
+        if samples
+        else {}
+    )
+    if samples:
+        stats["count"] = [count]
     feature = {
         "dtype": "video",
         "shape": [height, width, 1],
@@ -448,4 +455,9 @@ def inspect_depth_video(path, frame_count, fps, info, *, masks=None):
     }
     if masks is not None:
         feature["info"]["hc.stats_valid_pixels"] = samples
+        if not samples:
+            # No finite placeholder is a measured min/max/mean/std. Official
+            # readers can read the video without that feature's statistics;
+            # normalization consumers must handle their explicit absence.
+            feature["info"]["hc.stats_status"] = "NO_VALID_PIXELS"
     return feature, stats

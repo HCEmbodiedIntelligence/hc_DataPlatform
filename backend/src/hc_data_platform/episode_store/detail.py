@@ -191,6 +191,11 @@ def depth_details(package, feature, declaration):
             "source_frame_count_reason": None if "source_frames" in window else "NOT_RECORDED",
             "shape": report["shape"],
             "totals": totals,
+            "measurement_status": "NO_SOURCE_FRAMES"
+            if totals["missing_frames"] == frames
+            else "NO_VALID_PIXELS"
+            if totals["valid_pixels"] == 0
+            else "AVAILABLE",
             "matched_frame_ratio": (frames - totals["missing_frames"]) / frames,
             "missing_frame_ratio": totals["missing_frames"] / frames,
             "invalid_pixel_ratio": totals["invalid_pixels"] / totals["pixels"],

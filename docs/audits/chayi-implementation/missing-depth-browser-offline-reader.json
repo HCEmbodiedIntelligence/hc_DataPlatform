@@ -1,0 +1,35 @@
+{
+  "input_archive": "/app/.g1-artifacts/missing-depth-browser/complete.zip",
+  "archive_sha256": "93bbd16a00d788036407db464caf7fb053ca84660cd6906af7a9309a124bb978",
+  "archive_format": "independent_episode_zip/1",
+  "members": [
+    {
+      "data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+      "frames": 3,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 768,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 6.572520305780927e-13,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true
+    }
+  ],
+  "official_reader_and_dataloader": true,
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "synthetic_input": true,
+  "human_acceptance": false,
+  "reassembled_collection_verified": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

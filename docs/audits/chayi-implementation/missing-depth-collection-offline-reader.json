@@ -1,0 +1,56 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "official_reader_and_cross_episode_dataloader": true,
+  "collections": [
+    {
+      "root": "/app/.g1-artifacts/missing-depth-collection/dv_831805bd297123acda78f350964a5e53b504542cb5edabc3a242c07fa2aea3bb/all-absent",
+      "manifest_sha256": "0309ff05fe516147cc5011703fb39f938f5c87d6f52ba8057962e0bf6f158704",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 2048,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 6.572520305780927e-13,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false
+    },
+    {
+      "root": "/app/.g1-artifacts/missing-depth-collection/dv_4e0380d941487e31d297e2160bbe1ee53138534c572c629f2d8f29a764538a38/mixed",
+      "manifest_sha256": "4400a25e5a2b4fe6421ac185f4e30bb880c90ca4f6839ffa6d075f3a86fd0ee0",
+      "modalities": "rgbd",
+      "episodes": 2,
+      "frames": 8,
+      "tasks": [
+        "annotation RGB-D binding",
+        "z distinct second task"
+      ],
+      "cross_episode_batches": 1,
+      "rgb_values_and_boundaries_checked": true,
+      "rebuilt_numeric_and_depth_stats_checked": true,
+      "annotation_tags_preserved": 0,
+      "invalid_pixels_masked": 1028,
+      "hc_source_frames_checked": true,
+      "hc_depth_masks_applied": true,
+      "official_rounding_max_error_mm": 0.40875187030087545,
+      "depth_streams": 1,
+      "transcoded": false,
+      "requantized": false
+    }
+  ],
+  "synthetic_input": true,
+  "real_sensor_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

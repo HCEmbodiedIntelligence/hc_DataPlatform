@@ -14,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
-from hc_data_platform.publishing.depth_evidence import file_hash
+from hc_data_platform.publishing.depth_evidence import file_hash, missing_measurement_status
 from hc_data_platform.publishing.depth_source import ENCODINGS, profile_hash
 from hc_data_platform.publishing.holobrain_depth import DepthProfile
 from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
@@ -65,7 +65,7 @@ def validate_depth(
     *,
     target_rows,
     feature_key: str,
-) -> None:
+) -> dict[str, int]:
     declaration = document(root, f"{evidence_path}/profile.json")
     profile = DepthProfile(
         **{
@@ -256,6 +256,7 @@ def validate_depth(
                 if (
                     flags.any()
                     or pixels.any()
+                    or target.get(f"hc.valid.{feature_key}", False) is not False
                     or row.get("source_profile_sha256") is not None
                     or any(
                         row[k] is not None
@@ -299,11 +300,22 @@ def validate_depth(
         or next(rows, None) is not None
         or next(masks, None) is not None
         or not with_source
+        and report.get("measurement_status") != "NO_SOURCE_FRAMES"
         or observed.hexdigest() != report["video_encoding"]["codes_sha256"]
         or report["totals"] != totals
         or report["quantization"]["unclipped_max_error_m"] != maximum_error
     ):
         raise ValueError("depth completeness/code hash mismatch")
+    expected_status = missing_measurement_status(totals, count).get("measurement_status")
+    if "measurement_status" in report and report["measurement_status"] != expected_status:
+        raise ValueError("depth measurement status differs from actual masks/source frames")
+    if "hc.stats_status" in feature["info"] and (
+        feature["info"]["hc.stats_status"] != "NO_VALID_PIXELS"
+        or totals["valid_pixels"] != 0
+        or feature["info"].get("hc.stats_valid_pixels") != 0
+    ):
+        raise ValueError("depth statistics availability differs from actual valid pixels")
+    return totals
 
 
 def validate_package(root: Path, source: PackageInput) -> PackageManifest:
@@ -436,7 +448,7 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 raise ValueError("depth reuse requires exact Episode timestamp evidence")
             target_columns = ["hc.timestamp_ns"] + [
                 f"hc.{kind}.{key}"
-                for kind in ("source_timestamps_ns", "time_error_ns", "repeated")
+                for kind in ("source_timestamps_ns", "time_error_ns", "repeated", "valid")
                 if f"hc.{kind}.{key}" in parquet.schema_arrow.names
             ]
             target_rows = (
@@ -444,7 +456,7 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 for batch in parquet.iter_batches(batch_size=128, columns=target_columns)
                 for row in batch.to_pylist()
             )
-            validate_depth(
+            depth_totals = validate_depth(
                 root,
                 modalities["depth"][key]["evidence_path"],
                 video,
@@ -454,6 +466,19 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 target_rows=target_rows,
                 feature_key=key,
             )
+            depth_info = feature["info"]
+            if (
+                "hc.stats_valid_pixels" in depth_info
+                and depth_info["hc.stats_valid_pixels"] != depth_totals["valid_pixels"]
+            ):
+                raise ValueError("depth statistics valid-pixel count differs from masks")
+            if depth_totals["valid_pixels"] == 0 and (
+                depth_info.get("hc.stats_status") != "NO_VALID_PIXELS"
+                or depth_info.get("hc.stats_valid_pixels") != 0
+                or key in document(root, "meta/stats.json")
+                or any(column.startswith(f"stats/{key}/") for column in episode)
+            ):
+                raise ValueError("depth statistics claim measurements for absent valid pixels")
         else:
             count = 0
             with av.open(str(video)) as container:

@@ -16,7 +16,11 @@ import av
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from hc_data_platform.publishing.depth_evidence import file_hash, write_json
+from hc_data_platform.publishing.depth_evidence import (
+    file_hash,
+    missing_measurement_status,
+    write_json,
+)
 from hc_data_platform.publishing.holobrain_depth import DepthProfile, DepthVideo
 
 from .frame_window import DepthWindow
@@ -233,6 +237,7 @@ def prepare_depth_window(
         **original_report,
         "frames": count,
         "totals": totals,
+        **missing_measurement_status(totals, count),
         "quantization": {
             **original_report["quantization"],
             "unclipped_max_error_m": max_error,

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="10" failures="0" errors="0" time="0.60743617">
+    <testsuite name="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" timestamp="2026-09-30T01:58:56.119Z" hostname="05b13a6d7575" tests="3" failures="0" errors="0" skipped="0" time="0.588719294">
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="shows distinct statuses and authorizes a file without fetching its bytes" time="0.353019429">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="keeps missing provenance explicit and never loads without read permission" time="0.103988004">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeDetailPanel.test.tsx" name="selects an explicit task without leaving the annotation tab or mixing an old review into the draft" time="0.130978469">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/episode-detail.test.ts" timestamp="2026-09-30T01:58:56.121Z" hostname="05b13a6d7575" tests="7" failures="0" errors="0" skipped="0" time="0.018716876">
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="reads a fixed version and preserves unknown source and track states" time="0.01155072">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched version" time="0.001696056">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched quality" time="0.00046178">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched review" time="0.000400188">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched selection" time="0.000509072">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects mismatched scope" time="0.000409754">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-detail.test.ts" name="rejects cross-version file pages and signed download identity mismatches" time="0.002642264">
+        </testcase>
+    </testsuite>
+</testsuites>

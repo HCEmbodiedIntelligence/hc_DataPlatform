@@ -177,6 +177,11 @@ def read(root):
     assert cross_batches >= 1 and seen == len(dataset) == len(rows)
     stats = document(root, "meta/stats.json")
     for feature, values in physical_statistics.items():
+        if not values:
+            assert feature not in stats
+            assert info["features"][feature]["info"]["hc.stats_status"] == "NO_VALID_PIXELS"
+            assert info["features"][feature]["info"]["hc.stats_valid_pixels"] == 0
+            continue
         np.testing.assert_allclose(
             np.asarray(stats[feature]["mean"]).item(), np.mean(values), rtol=1e-7
         )

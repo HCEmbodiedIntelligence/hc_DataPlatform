@@ -48,7 +48,11 @@ def prepared_bundle(services, tmp_path, request):
         update={"organization_id": "bundle-" + uuid4().hex, **options.get("identity", {})}
     )
     _, source, _, assets = build_rgbd_package(
-        tmp_path, ident, mcap_topics=options.get("mcap_topics", False)
+        tmp_path,
+        ident,
+        mcap_topics=options.get("mcap_topics", False),
+        depth_missing_frames=options.get("depth_missing_frames", ()),
+        depth_invalid_frames=options.get("depth_invalid_frames", ()),
     )
     camera_topics = {
         feature: "/camera/" + feature.removeprefix("observation.images.") + "/image"

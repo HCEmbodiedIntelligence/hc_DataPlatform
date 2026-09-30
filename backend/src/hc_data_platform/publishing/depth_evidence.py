@@ -32,6 +32,15 @@ def write_json(path, value):
     path.write_text(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False))
 
 
+def missing_measurement_status(totals, frames):
+    """Absent observations have no quantization-error or physical-depth statistics."""
+    if frames > 0 and totals["missing_frames"] == frames:
+        return {"measurement_status": "NO_SOURCE_FRAMES"}
+    if totals["valid_pixels"] == 0:
+        return {"measurement_status": "NO_VALID_PIXELS"}
+    return {}
+
+
 class DepthEvidenceVideo:
     def __init__(
         self,
@@ -285,6 +294,7 @@ class DepthEvidenceVideo:
                 "source_contract_required": self.require_source_profile,
                 "source_profiles": self.source_profiles,
                 "totals": self.totals,
+                **missing_measurement_status(self.totals, self.frames),
                 "quantization": {
                     "unclipped_max_error_m": self.max_error_m
                     if self.totals["unclipped_pixels"]

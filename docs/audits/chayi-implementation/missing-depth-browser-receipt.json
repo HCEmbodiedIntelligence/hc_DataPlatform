@@ -1,0 +1,2765 @@
+{
+  "ordinary_principal_id": "2d90f579-75e9-4954-9f1f-b799ba94daa0",
+  "parent_task_id": "24a33ce6-2ca5-5f9c-8cdf-68a10ebea8da",
+  "tag_job": {
+    "job_id": "td_7c49c2b8688ea654d3f5b94fc8e6a600f1220a1139263198434b7fe07eabd4db",
+    "status": "READY",
+    "phase": "completed",
+    "generation": 1,
+    "attempts": 1,
+    "committed_data": {
+      "identity": {
+        "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_missing_browser",
+        "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+        "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367"
+      },
+      "data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+      "version": 1,
+      "content_hash": "e140b5158b80358ca294660537300fb6c4d45c4ba8635515745412aec0207f90",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_b8d5b358b1f77188abf791418d6fb031/id-dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+      "frame_count": 3
+    },
+    "collection_version_id": "cv_713d37c0644d182ac08d60a2737b14103904a1d2b0396c74b70fce049118faae",
+    "viewer_target": {
+      "schema_version": "dataset-ingest-viewer-target/v1",
+      "dataset_id": "dataset_tag_missing_browser",
+      "version_id": "version_cv_713d37c0644d182ac08d60a2737b14103904a1d2b0396c74b70fce049118faae",
+      "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+      "revision_id": "revision_dda9ac06bfca102c650b97abb4aabcaa"
+    },
+    "annotation_task_id": "f3488224-4e66-5621-9bba-d169c3cc526f",
+    "error_code": null,
+    "created_at": "2026-09-30T02:13:22.317153Z",
+    "updated_at": "2026-09-30T02:13:27.495829Z",
+    "selection": {
+      "parent": {
+        "identity": {
+          "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "dataset_tag_missing_browser",
+          "episode_id": "episode_tag_missing_parent",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "data_version_id": "dv_452f3c7122b4958056713f8b4fd8cbefd0352793e4bf47e29a8ac3a2006c097a",
+        "version": 1,
+        "content_hash": "7cb5f49b0a460c670841fefe473369d3f6fa1b65f0c9e9ae87695c3f5d1f355d",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_missing_parent/id-dv_452f3c7122b4958056713f8b4fd8cbefd0352793e4bf47e29a8ac3a2006c097a",
+        "frame_count": 4
+      },
+      "parent_collection_version_id": "cv_c6d6e8efe487999ab36bb70f2bc960878ff9ce42f78ccb9155b621b1a410f717",
+      "task_id": "24a33ce6-2ca5-5f9c-8cdf-68a10ebea8da",
+      "revision": 1,
+      "revision_content_hash": "4cbf5a54f63bdfee5e234c8063ad18379929ee30b807a774c9aea4f4480cb0fc",
+      "annotation_file_sha256": "21e41edb1fb1ad8494a437cf3bb22f07d416017912fa01c4722938e4f9c5bf40",
+      "review_status": "UNREVIEWED",
+      "annotation_id": "child",
+      "start_step": 1,
+      "end_step": 4,
+      "start_timestamp_ns": "33333333",
+      "next_parent_timestamp_ns": null,
+      "display_name": "交叉子区间",
+      "new_episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+      "new_data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538"
+    }
+  },
+  "detail": {
+    "data": {
+      "identity": {
+        "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+        "project_id": "writer-project",
+        "region_code": "writer-region",
+        "dataset_id": "dataset_tag_missing_browser",
+        "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+        "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367"
+      },
+      "data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+      "version": 1,
+      "content_hash": "e140b5158b80358ca294660537300fb6c4d45c4ba8635515745412aec0207f90",
+      "storage_format": "lerobot_v3",
+      "schema_snapshot_id": "schema-1",
+      "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_b8d5b358b1f77188abf791418d6fb031/id-dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+      "frame_count": 3
+    },
+    "display_name": "交叉子区间",
+    "display_name_origin": "SOURCE",
+    "task": {
+      "task_id": "unknown",
+      "instructions": [
+        "annotation RGB-D binding"
+      ],
+      "requirements": null,
+      "requirements_status": "NOT_RECORDED"
+    },
+    "robot_id": "unknown",
+    "recording_date": "unknown",
+    "duration_seconds": 0.1,
+    "frequency_hz": 30.0,
+    "camera_stream_count": 2,
+    "physical_camera_count": null,
+    "physical_camera_count_reason": "PHYSICAL_CAMERA_PAIRING_NOT_RECORDED",
+    "source": {
+      "document": {
+        "derivation": {
+          "annotation_file_sha256": "21e41edb1fb1ad8494a437cf3bb22f07d416017912fa01c4722938e4f9c5bf40",
+          "annotation_id": "child",
+          "annotation_revision": 1,
+          "annotation_task_id": "24a33ce6-2ca5-5f9c-8cdf-68a10ebea8da",
+          "child_approvals_inherited": false,
+          "end_step": 4,
+          "kind": "annotation_interval",
+          "next_parent_timestamp_ns": null,
+          "parent_data": {
+            "content_hash": "7cb5f49b0a460c670841fefe473369d3f6fa1b65f0c9e9ae87695c3f5d1f355d",
+            "data_version_id": "dv_452f3c7122b4958056713f8b4fd8cbefd0352793e4bf47e29a8ac3a2006c097a",
+            "frame_count": 4,
+            "identity": {
+              "dataset_id": "dataset_tag_missing_browser",
+              "episode_id": "episode_tag_missing_parent",
+              "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_missing_parent/id-dv_452f3c7122b4958056713f8b4fd8cbefd0352793e4bf47e29a8ac3a2006c097a",
+            "schema_snapshot_id": "schema-1",
+            "storage_format": "lerobot_v3",
+            "version": 1
+          },
+          "parent_recording_window": {},
+          "start_step": 1,
+          "start_timestamp_ns": "33333333"
+        },
+        "display_name": "交叉子区间",
+        "identity": {
+          "dataset_id": "dataset_tag_missing_browser",
+          "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+          "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367"
+        },
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "parent_recording_id": null,
+      "parent_duration_ns": null,
+      "parent_duration_reason": "NOT_RECORDED",
+      "window": {},
+      "window_clock": "NOT_RECORDED",
+      "frame_mapping_files": [
+        "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+        "2954d4a8c12a7a923f4f55681f4c21f56725d37e7b56305f231237c41007e6c5",
+        "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b"
+      ]
+    },
+    "quality": {
+      "data": {
+        "identity": {
+          "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "dataset_tag_missing_browser",
+          "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+          "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367"
+        },
+        "data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+        "version": 1,
+        "content_hash": "e140b5158b80358ca294660537300fb6c4d45c4ba8635515745412aec0207f90",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_b8d5b358b1f77188abf791418d6fb031/id-dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+        "frame_count": 3
+      },
+      "status": "RISK",
+      "evidence_status": "AVAILABLE",
+      "report": {
+        "schema_version": "qc-report/v1",
+        "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367",
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "profile_id": "hc-tag-aligned-qc",
+        "profile_version": 1,
+        "profile_sha256": "bfa2016a06e0aaaa812441f426ba361da8cec00c081afd29d7705b59c4a0b564",
+        "engine_version": "be06-qc/2",
+        "start_ns": 33333333,
+        "end_ns": 133333332,
+        "duration_ns": 99999999,
+        "status": "RISK",
+        "topic_metrics": [
+          {
+            "topic": "/observation/state",
+            "message_count": 3,
+            "unique_frame_count": 3,
+            "expected_frame_count": 3,
+            "duplicate_count": 0,
+            "backward_count": 0,
+            "actual_frequency_hz": 30.0,
+            "interval_p50_ns": 33333333,
+            "interval_p95_ns": 33333333,
+            "interval_p99_ns": 33333333,
+            "maximum_gap_ns": 33333333,
+            "maximum_consecutive_missing": 0,
+            "coverage_ratio": 1.0
+          },
+          {
+            "topic": "action",
+            "message_count": 3,
+            "unique_frame_count": 3,
+            "expected_frame_count": 3,
+            "duplicate_count": 0,
+            "backward_count": 0,
+            "actual_frequency_hz": 30.0,
+            "interval_p50_ns": 33333333,
+            "interval_p95_ns": 33333333,
+            "interval_p99_ns": 33333333,
+            "maximum_gap_ns": 33333333,
+            "maximum_consecutive_missing": 0,
+            "coverage_ratio": 1.0
+          },
+          {
+            "topic": "observation.images.head_depth",
+            "message_count": 0,
+            "unique_frame_count": 0,
+            "expected_frame_count": 3,
+            "duplicate_count": 0,
+            "backward_count": 0,
+            "actual_frequency_hz": 0.0,
+            "interval_p50_ns": null,
+            "interval_p95_ns": null,
+            "interval_p99_ns": null,
+            "maximum_gap_ns": 99999999,
+            "maximum_consecutive_missing": 3,
+            "coverage_ratio": 0.0
+          },
+          {
+            "topic": "observation.images.head_rgb",
+            "message_count": 3,
+            "unique_frame_count": 3,
+            "expected_frame_count": 3,
+            "duplicate_count": 0,
+            "backward_count": 0,
+            "actual_frequency_hz": 30.0,
+            "interval_p50_ns": 33333333,
+            "interval_p95_ns": 33333333,
+            "interval_p99_ns": 33333333,
+            "maximum_gap_ns": 33333333,
+            "maximum_consecutive_missing": 0,
+            "coverage_ratio": 1.0
+          }
+        ],
+        "findings": [
+          {
+            "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+            "severity": "warning",
+            "message": "consecutive missing frames exceed the profile limit",
+            "topic": "observation.images.head_depth",
+            "start_ns": 33333333,
+            "end_ns": 133333332,
+            "observed": 3,
+            "threshold": 2
+          },
+          {
+            "code": "QC_FREQUENCY_LOW",
+            "severity": "warning",
+            "message": "topic frequency is below the profile limit",
+            "topic": "observation.images.head_depth",
+            "start_ns": 33333333,
+            "end_ns": 133333332,
+            "observed": 0.0,
+            "threshold": 28.5
+          },
+          {
+            "code": "QC_REQUIRED_TOPIC_MISSING",
+            "severity": "warning",
+            "message": "required topic is absent",
+            "topic": "observation.images.head_depth",
+            "start_ns": 33333333,
+            "end_ns": 133333332,
+            "observed": false,
+            "threshold": "required=true"
+          }
+        ],
+        "content_sha256": "1ec5d06cf8e2d898e83b0f6809935e54377dc711edab5840b8b58334d2687c6e"
+      },
+      "evidence": {
+        "format": "hc-qc-rule-evidence/1",
+        "report_sha256": "1ec5d06cf8e2d898e83b0f6809935e54377dc711edab5840b8b58334d2687c6e",
+        "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367",
+        "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+        "start_ns": 33333333,
+        "end_ns": 133333332,
+        "engine_version": "be06-qc/2",
+        "profile": {
+          "action": {
+            "dimension_mismatch_is_reject": true,
+            "maximum_jump_reject": null,
+            "maximum_jump_risk": null,
+            "minimum_observation_count_reject": 0,
+            "minimum_observation_count_risk": 1,
+            "topic": "action"
+          },
+          "complete_step": {
+            "minimum_ratio_reject": 0.8,
+            "minimum_ratio_risk": 0.98,
+            "topic": "__multimodal_step__"
+          },
+          "default_image": {
+            "black_luma_threshold": 5.0,
+            "maximum_black_frame_ratio_reject": 0.5,
+            "maximum_black_frame_ratio_risk": 0.02,
+            "maximum_corrupt_frame_ratio_reject": 0.0,
+            "maximum_corrupt_frame_ratio_risk": 0.0,
+            "maximum_repeated_frame_ratio_reject": 0.5,
+            "maximum_repeated_frame_ratio_risk": 0.05
+          },
+          "default_point_cloud": {
+            "maximum_abnormal_count_ratio_reject": 0.5,
+            "maximum_abnormal_count_ratio_risk": 0.0,
+            "maximum_empty_ratio_reject": 0.2,
+            "maximum_empty_ratio_risk": 0.0,
+            "maximum_point_count": null,
+            "minimum_point_count": null
+          },
+          "default_timing": {
+            "maximum_backward_timestamps_reject": 0,
+            "maximum_consecutive_missing_reject": 29,
+            "maximum_consecutive_missing_risk": 2,
+            "maximum_duplicate_timestamps_reject": null,
+            "maximum_duplicate_timestamps_risk": 0,
+            "maximum_gap_ns_reject": 1000000000,
+            "maximum_gap_ns_risk": 100000000,
+            "minimum_coverage_ratio_reject": 0.8,
+            "minimum_coverage_ratio_risk": 0.98,
+            "minimum_frequency_hz_reject": 22.5,
+            "minimum_frequency_hz_risk": 28.5,
+            "target_frequency_hz": 30
+          },
+          "engine_version": "be06-qc/2",
+          "image_profiles": {},
+          "joint_limits": {},
+          "joint_out_of_range_is_reject": true,
+          "joint_topic": "/observation/state",
+          "modality_offset": {
+            "maximum_p95_offset_ns_reject": 100000000,
+            "maximum_p95_offset_ns_risk": 20000000
+          },
+          "point_cloud_profiles": {},
+          "profile_id": "hc-tag-aligned-qc",
+          "profile_version": 1,
+          "required_topics": [
+            "/observation/state",
+            "action",
+            "observation.images.head_depth",
+            "observation.images.head_rgb"
+          ],
+          "schema_version": "quality-profile/v1",
+          "topic_timing": {}
+        },
+        "input_mode": "stream",
+        "rules": [
+          {
+            "code": "QC_ACTION_JUMP",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 2,
+            "expected_count": 2,
+            "observed": {
+              "adjacent_pairs": 2
+            },
+            "thresholds": {
+              "dimension_mismatch_is_reject": true,
+              "maximum_jump_reject": null,
+              "maximum_jump_risk": null
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_ACTION_MISSING",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "observation_count": 3
+            },
+            "thresholds": {
+              "minimum_observation_count_reject": 0,
+              "minimum_observation_count_risk": 1
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_COMPLETE_STEP_RATIO_LOW",
+            "topic": "__multimodal_step__",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "ratio": 1.0
+            },
+            "thresholds": {
+              "minimum_ratio_reject": 0.8,
+              "minimum_ratio_risk": 0.98,
+              "topic": "__multimodal_step__"
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+            "topic": "/observation/state",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_consecutive_missing": 0,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_consecutive_missing_reject": 29,
+              "maximum_consecutive_missing_risk": 2
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_consecutive_missing": 0,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_consecutive_missing_reject": 29,
+              "maximum_consecutive_missing_risk": 2
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+            "topic": "observation.images.head_depth",
+            "status": "warn",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_consecutive_missing": 3,
+              "message_count": 0
+            },
+            "thresholds": {
+              "maximum_consecutive_missing_reject": 29,
+              "maximum_consecutive_missing_risk": 2
+            },
+            "detector_findings": [
+              {
+                "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+                "severity": "warning",
+                "message": "consecutive missing frames exceed the profile limit",
+                "topic": "observation.images.head_depth",
+                "start_ns": 33333333,
+                "end_ns": 133333332,
+                "observed": 3,
+                "threshold": 2
+              }
+            ],
+            "report_finding_indexes": [
+              0
+            ]
+          },
+          {
+            "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+            "topic": "observation.images.head_rgb",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_consecutive_missing": 0,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_consecutive_missing_reject": 29,
+              "maximum_consecutive_missing_risk": 2
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_COVERAGE_LOW",
+            "topic": "/observation/state",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "coverage_ratio": 1.0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "minimum_coverage_ratio_reject": 0.8,
+              "minimum_coverage_ratio_risk": 0.98
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_COVERAGE_LOW",
+            "topic": "action",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "coverage_ratio": 1.0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "minimum_coverage_ratio_reject": 0.8,
+              "minimum_coverage_ratio_risk": 0.98
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_COVERAGE_LOW",
+            "topic": "observation.images.head_depth",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "coverage_ratio": 0.0,
+              "expected_frame_count": 3,
+              "message_count": 0
+            },
+            "thresholds": {
+              "minimum_coverage_ratio_reject": 0.8,
+              "minimum_coverage_ratio_risk": 0.98
+            },
+            "detector_findings": [
+              {
+                "code": "QC_COVERAGE_LOW",
+                "severity": "error",
+                "message": "topic coverage is below the profile limit",
+                "topic": "observation.images.head_depth",
+                "start_ns": 33333333,
+                "end_ns": 133333332,
+                "observed": 0.0,
+                "threshold": 0.8
+              }
+            ],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_COVERAGE_LOW",
+            "topic": "observation.images.head_rgb",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "coverage_ratio": 1.0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "minimum_coverage_ratio_reject": 0.8,
+              "minimum_coverage_ratio_risk": 0.98
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_FREQUENCY_LOW",
+            "topic": "/observation/state",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "actual_frequency_hz": 30.0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "minimum_frequency_hz_reject": 22.5,
+              "minimum_frequency_hz_risk": 28.5
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_FREQUENCY_LOW",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "actual_frequency_hz": 30.0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "minimum_frequency_hz_reject": 22.5,
+              "minimum_frequency_hz_risk": 28.5
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_FREQUENCY_LOW",
+            "topic": "observation.images.head_depth",
+            "status": "warn",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "actual_frequency_hz": 0.0,
+              "expected_frame_count": 3,
+              "message_count": 0
+            },
+            "thresholds": {
+              "minimum_frequency_hz_reject": 22.5,
+              "minimum_frequency_hz_risk": 28.5
+            },
+            "detector_findings": [
+              {
+                "code": "QC_FREQUENCY_LOW",
+                "severity": "error",
+                "message": "topic frequency is below the profile limit",
+                "topic": "observation.images.head_depth",
+                "start_ns": 33333333,
+                "end_ns": 133333332,
+                "observed": 0.0,
+                "threshold": 22.5
+              }
+            ],
+            "report_finding_indexes": [
+              1
+            ]
+          },
+          {
+            "code": "QC_FREQUENCY_LOW",
+            "topic": "observation.images.head_rgb",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "actual_frequency_hz": 30.0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "minimum_frequency_hz_reject": 22.5,
+              "minimum_frequency_hz_risk": 28.5
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_GAP_EXCESSIVE",
+            "topic": "/observation/state",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_gap_ns": 33333333,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_gap_ns_reject": 1000000000,
+              "maximum_gap_ns_risk": 100000000
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_GAP_EXCESSIVE",
+            "topic": "action",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_gap_ns": 33333333,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_gap_ns_reject": 1000000000,
+              "maximum_gap_ns_risk": 100000000
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_GAP_EXCESSIVE",
+            "topic": "observation.images.head_depth",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_gap_ns": 99999999,
+              "message_count": 0
+            },
+            "thresholds": {
+              "maximum_gap_ns_reject": 1000000000,
+              "maximum_gap_ns_risk": 100000000
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_GAP_EXCESSIVE",
+            "topic": "observation.images.head_rgb",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "expected_frame_count": 3,
+              "maximum_gap_ns": 33333333,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_gap_ns_reject": 1000000000,
+              "maximum_gap_ns_risk": 100000000
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_IMAGE_BLACK",
+            "topic": "observation.images.head_rgb",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "denominator": 3,
+              "frame_count": 3,
+              "observed_count": 0
+            },
+            "thresholds": {
+              "black_luma_threshold": 5.0,
+              "maximum_black_frame_ratio_reject": 0.5,
+              "maximum_black_frame_ratio_risk": 0.02
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_IMAGE_CORRUPT",
+            "topic": "observation.images.head_rgb",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "denominator": 3,
+              "frame_count": 3,
+              "observed_count": 0
+            },
+            "thresholds": {
+              "maximum_corrupt_frame_ratio_reject": 0.0,
+              "maximum_corrupt_frame_ratio_risk": 0.0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_IMAGE_REPEATED",
+            "topic": "observation.images.head_rgb",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 2,
+            "expected_count": 2,
+            "observed": {
+              "denominator": 2,
+              "frame_count": 3,
+              "observed_count": 0
+            },
+            "thresholds": {
+              "maximum_repeated_frame_ratio_reject": 0.5,
+              "maximum_repeated_frame_ratio_risk": 0.05
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_JOINT_OUT_OF_RANGE",
+            "topic": "/observation/state",
+            "status": "skip",
+            "reason": "NO_JOINT_LIMITS",
+            "participates_in_verdict": false,
+            "evaluated_count": 0,
+            "expected_count": 0,
+            "observed": {
+              "configured_joints": 0,
+              "joint_observations": 0
+            },
+            "thresholds": {
+              "reject": true
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_MODALITY_OFFSET",
+            "topic": "observation.images.head_rgb",
+            "status": "info",
+            "reason": "EXCLUDED_BY_VERDICT_POLICY",
+            "participates_in_verdict": false,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "offset_count": 3
+            },
+            "thresholds": {
+              "maximum_p95_offset_ns_reject": 100000000,
+              "maximum_p95_offset_ns_risk": 20000000
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_POINT_CLOUD_EMPTY",
+            "topic": null,
+            "status": "skip",
+            "reason": "NO_OBSERVATIONS",
+            "participates_in_verdict": false,
+            "evaluated_count": 0,
+            "expected_count": 0,
+            "observed": {
+              "empty_count": 0
+            },
+            "thresholds": {
+              "maximum_empty_ratio_reject": 0.2,
+              "maximum_empty_ratio_risk": 0.0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_POINT_COUNT_ABNORMAL",
+            "topic": null,
+            "status": "skip",
+            "reason": "NO_POINT_COUNT_LIMITS",
+            "participates_in_verdict": false,
+            "evaluated_count": 0,
+            "expected_count": 0,
+            "observed": {},
+            "thresholds": {
+              "maximum_abnormal_count_ratio_reject": 0.5,
+              "maximum_abnormal_count_ratio_risk": 0.0,
+              "maximum_empty_ratio_reject": 0.2,
+              "maximum_empty_ratio_risk": 0.0,
+              "maximum_point_count": null,
+              "minimum_point_count": null
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_REQUIRED_TOPIC_MISSING",
+            "topic": "/observation/state",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "topic_present": true
+            },
+            "thresholds": {
+              "required": true
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_REQUIRED_TOPIC_MISSING",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "topic_present": true
+            },
+            "thresholds": {
+              "required": true
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_REQUIRED_TOPIC_MISSING",
+            "topic": "observation.images.head_depth",
+            "status": "warn",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "topic_present": false
+            },
+            "thresholds": {
+              "required": true
+            },
+            "detector_findings": [
+              {
+                "code": "QC_REQUIRED_TOPIC_MISSING",
+                "severity": "error",
+                "message": "required topic is absent",
+                "topic": "observation.images.head_depth",
+                "start_ns": 33333333,
+                "end_ns": 133333332,
+                "observed": false,
+                "threshold": "required=true"
+              }
+            ],
+            "report_finding_indexes": [
+              2
+            ]
+          },
+          {
+            "code": "QC_REQUIRED_TOPIC_MISSING",
+            "topic": "observation.images.head_rgb",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 1,
+            "expected_count": 1,
+            "observed": {
+              "topic_present": true
+            },
+            "thresholds": {
+              "required": true
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_BACKWARD",
+            "topic": "/observation/state",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "backward_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_backward_timestamps_reject": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_BACKWARD",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "backward_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_backward_timestamps_reject": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_BACKWARD",
+            "topic": "observation.images.head_depth",
+            "status": "skip",
+            "reason": "INSUFFICIENT_OBSERVATIONS",
+            "participates_in_verdict": true,
+            "evaluated_count": 0,
+            "expected_count": 0,
+            "observed": {
+              "backward_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 0
+            },
+            "thresholds": {
+              "maximum_backward_timestamps_reject": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_BACKWARD",
+            "topic": "observation.images.head_rgb",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "backward_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_backward_timestamps_reject": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_DUPLICATE",
+            "topic": "/observation/state",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "duplicate_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_duplicate_timestamps_reject": null,
+              "maximum_duplicate_timestamps_risk": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_DUPLICATE",
+            "topic": "action",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "duplicate_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_duplicate_timestamps_reject": null,
+              "maximum_duplicate_timestamps_risk": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_DUPLICATE",
+            "topic": "observation.images.head_depth",
+            "status": "skip",
+            "reason": "NO_OBSERVATIONS",
+            "participates_in_verdict": true,
+            "evaluated_count": 0,
+            "expected_count": 0,
+            "observed": {
+              "duplicate_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 0
+            },
+            "thresholds": {
+              "maximum_duplicate_timestamps_reject": null,
+              "maximum_duplicate_timestamps_risk": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          },
+          {
+            "code": "QC_TIMESTAMP_DUPLICATE",
+            "topic": "observation.images.head_rgb",
+            "status": "pass",
+            "reason": null,
+            "participates_in_verdict": true,
+            "evaluated_count": 3,
+            "expected_count": 3,
+            "observed": {
+              "duplicate_count": 0,
+              "expected_frame_count": 3,
+              "message_count": 3
+            },
+            "thresholds": {
+              "maximum_duplicate_timestamps_reject": null,
+              "maximum_duplicate_timestamps_risk": 0
+            },
+            "detector_findings": [],
+            "report_finding_indexes": []
+          }
+        ],
+        "content_sha256": "5119daf9625056382ea8fc2fc7185865a76e1f928ed8850df12d8a5a008a48f2"
+      },
+      "rules": [
+        {
+          "code": "QC_ACTION_JUMP",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 2,
+          "expected_count": 2,
+          "observed": {
+            "adjacent_pairs": 2
+          },
+          "thresholds": {
+            "dimension_mismatch_is_reject": true,
+            "maximum_jump_reject": null,
+            "maximum_jump_risk": null
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_ACTION_MISSING",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "observation_count": 3
+          },
+          "thresholds": {
+            "minimum_observation_count_reject": 0,
+            "minimum_observation_count_risk": 1
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COMPLETE_STEP_RATIO_LOW",
+          "topic": "__multimodal_step__",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "ratio": 1.0
+          },
+          "thresholds": {
+            "minimum_ratio_reject": 0.8,
+            "minimum_ratio_risk": 0.98,
+            "topic": "__multimodal_step__"
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+          "topic": "/observation/state",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_consecutive_missing": 0,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_consecutive_missing_reject": 29,
+            "maximum_consecutive_missing_risk": 2
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_consecutive_missing": 0,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_consecutive_missing_reject": 29,
+            "maximum_consecutive_missing_risk": 2
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+          "topic": "observation.images.head_depth",
+          "status": "warn",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_consecutive_missing": 3,
+            "message_count": 0
+          },
+          "thresholds": {
+            "maximum_consecutive_missing_reject": 29,
+            "maximum_consecutive_missing_risk": 2
+          },
+          "detector_findings": [
+            {
+              "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+              "severity": "warning",
+              "message": "consecutive missing frames exceed the profile limit",
+              "topic": "observation.images.head_depth",
+              "start_ns": 33333333,
+              "end_ns": 133333332,
+              "observed": 3,
+              "threshold": 2
+            }
+          ],
+          "report_finding_indexes": [
+            0
+          ]
+        },
+        {
+          "code": "QC_CONSECUTIVE_FRAMES_MISSING",
+          "topic": "observation.images.head_rgb",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_consecutive_missing": 0,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_consecutive_missing_reject": 29,
+            "maximum_consecutive_missing_risk": 2
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COVERAGE_LOW",
+          "topic": "/observation/state",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "coverage_ratio": 1.0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "minimum_coverage_ratio_reject": 0.8,
+            "minimum_coverage_ratio_risk": 0.98
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COVERAGE_LOW",
+          "topic": "action",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "coverage_ratio": 1.0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "minimum_coverage_ratio_reject": 0.8,
+            "minimum_coverage_ratio_risk": 0.98
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COVERAGE_LOW",
+          "topic": "observation.images.head_depth",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "coverage_ratio": 0.0,
+            "expected_frame_count": 3,
+            "message_count": 0
+          },
+          "thresholds": {
+            "minimum_coverage_ratio_reject": 0.8,
+            "minimum_coverage_ratio_risk": 0.98
+          },
+          "detector_findings": [
+            {
+              "code": "QC_COVERAGE_LOW",
+              "severity": "error",
+              "message": "topic coverage is below the profile limit",
+              "topic": "observation.images.head_depth",
+              "start_ns": 33333333,
+              "end_ns": 133333332,
+              "observed": 0.0,
+              "threshold": 0.8
+            }
+          ],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_COVERAGE_LOW",
+          "topic": "observation.images.head_rgb",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "coverage_ratio": 1.0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "minimum_coverage_ratio_reject": 0.8,
+            "minimum_coverage_ratio_risk": 0.98
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_FREQUENCY_LOW",
+          "topic": "/observation/state",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "actual_frequency_hz": 30.0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "minimum_frequency_hz_reject": 22.5,
+            "minimum_frequency_hz_risk": 28.5
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_FREQUENCY_LOW",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "actual_frequency_hz": 30.0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "minimum_frequency_hz_reject": 22.5,
+            "minimum_frequency_hz_risk": 28.5
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_FREQUENCY_LOW",
+          "topic": "observation.images.head_depth",
+          "status": "warn",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "actual_frequency_hz": 0.0,
+            "expected_frame_count": 3,
+            "message_count": 0
+          },
+          "thresholds": {
+            "minimum_frequency_hz_reject": 22.5,
+            "minimum_frequency_hz_risk": 28.5
+          },
+          "detector_findings": [
+            {
+              "code": "QC_FREQUENCY_LOW",
+              "severity": "error",
+              "message": "topic frequency is below the profile limit",
+              "topic": "observation.images.head_depth",
+              "start_ns": 33333333,
+              "end_ns": 133333332,
+              "observed": 0.0,
+              "threshold": 22.5
+            }
+          ],
+          "report_finding_indexes": [
+            1
+          ]
+        },
+        {
+          "code": "QC_FREQUENCY_LOW",
+          "topic": "observation.images.head_rgb",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "actual_frequency_hz": 30.0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "minimum_frequency_hz_reject": 22.5,
+            "minimum_frequency_hz_risk": 28.5
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_GAP_EXCESSIVE",
+          "topic": "/observation/state",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_gap_ns": 33333333,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_gap_ns_reject": 1000000000,
+            "maximum_gap_ns_risk": 100000000
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_GAP_EXCESSIVE",
+          "topic": "action",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_gap_ns": 33333333,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_gap_ns_reject": 1000000000,
+            "maximum_gap_ns_risk": 100000000
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_GAP_EXCESSIVE",
+          "topic": "observation.images.head_depth",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_gap_ns": 99999999,
+            "message_count": 0
+          },
+          "thresholds": {
+            "maximum_gap_ns_reject": 1000000000,
+            "maximum_gap_ns_risk": 100000000
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_GAP_EXCESSIVE",
+          "topic": "observation.images.head_rgb",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "expected_frame_count": 3,
+            "maximum_gap_ns": 33333333,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_gap_ns_reject": 1000000000,
+            "maximum_gap_ns_risk": 100000000
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_IMAGE_BLACK",
+          "topic": "observation.images.head_rgb",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "denominator": 3,
+            "frame_count": 3,
+            "observed_count": 0
+          },
+          "thresholds": {
+            "black_luma_threshold": 5.0,
+            "maximum_black_frame_ratio_reject": 0.5,
+            "maximum_black_frame_ratio_risk": 0.02
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_IMAGE_CORRUPT",
+          "topic": "observation.images.head_rgb",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "denominator": 3,
+            "frame_count": 3,
+            "observed_count": 0
+          },
+          "thresholds": {
+            "maximum_corrupt_frame_ratio_reject": 0.0,
+            "maximum_corrupt_frame_ratio_risk": 0.0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_IMAGE_REPEATED",
+          "topic": "observation.images.head_rgb",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 2,
+          "expected_count": 2,
+          "observed": {
+            "denominator": 2,
+            "frame_count": 3,
+            "observed_count": 0
+          },
+          "thresholds": {
+            "maximum_repeated_frame_ratio_reject": 0.5,
+            "maximum_repeated_frame_ratio_risk": 0.05
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_JOINT_OUT_OF_RANGE",
+          "topic": "/observation/state",
+          "status": "skip",
+          "reason": "NO_JOINT_LIMITS",
+          "participates_in_verdict": false,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "configured_joints": 0,
+            "joint_observations": 0
+          },
+          "thresholds": {
+            "reject": true
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_MODALITY_OFFSET",
+          "topic": "observation.images.head_rgb",
+          "status": "info",
+          "reason": "EXCLUDED_BY_VERDICT_POLICY",
+          "participates_in_verdict": false,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "offset_count": 3
+          },
+          "thresholds": {
+            "maximum_p95_offset_ns_reject": 100000000,
+            "maximum_p95_offset_ns_risk": 20000000
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_POINT_CLOUD_EMPTY",
+          "topic": null,
+          "status": "skip",
+          "reason": "NO_OBSERVATIONS",
+          "participates_in_verdict": false,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "empty_count": 0
+          },
+          "thresholds": {
+            "maximum_empty_ratio_reject": 0.2,
+            "maximum_empty_ratio_risk": 0.0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_POINT_COUNT_ABNORMAL",
+          "topic": null,
+          "status": "skip",
+          "reason": "NO_POINT_COUNT_LIMITS",
+          "participates_in_verdict": false,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {},
+          "thresholds": {
+            "maximum_abnormal_count_ratio_reject": 0.5,
+            "maximum_abnormal_count_ratio_risk": 0.0,
+            "maximum_empty_ratio_reject": 0.2,
+            "maximum_empty_ratio_risk": 0.0,
+            "maximum_point_count": null,
+            "minimum_point_count": null
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_REQUIRED_TOPIC_MISSING",
+          "topic": "/observation/state",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "topic_present": true
+          },
+          "thresholds": {
+            "required": true
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_REQUIRED_TOPIC_MISSING",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "topic_present": true
+          },
+          "thresholds": {
+            "required": true
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_REQUIRED_TOPIC_MISSING",
+          "topic": "observation.images.head_depth",
+          "status": "warn",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "topic_present": false
+          },
+          "thresholds": {
+            "required": true
+          },
+          "detector_findings": [
+            {
+              "code": "QC_REQUIRED_TOPIC_MISSING",
+              "severity": "error",
+              "message": "required topic is absent",
+              "topic": "observation.images.head_depth",
+              "start_ns": 33333333,
+              "end_ns": 133333332,
+              "observed": false,
+              "threshold": "required=true"
+            }
+          ],
+          "report_finding_indexes": [
+            2
+          ]
+        },
+        {
+          "code": "QC_REQUIRED_TOPIC_MISSING",
+          "topic": "observation.images.head_rgb",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 1,
+          "expected_count": 1,
+          "observed": {
+            "topic_present": true
+          },
+          "thresholds": {
+            "required": true
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_BACKWARD",
+          "topic": "/observation/state",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "backward_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_backward_timestamps_reject": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_BACKWARD",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "backward_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_backward_timestamps_reject": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_BACKWARD",
+          "topic": "observation.images.head_depth",
+          "status": "skip",
+          "reason": "INSUFFICIENT_OBSERVATIONS",
+          "participates_in_verdict": true,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "backward_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 0
+          },
+          "thresholds": {
+            "maximum_backward_timestamps_reject": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_BACKWARD",
+          "topic": "observation.images.head_rgb",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "backward_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_backward_timestamps_reject": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_DUPLICATE",
+          "topic": "/observation/state",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "duplicate_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_duplicate_timestamps_reject": null,
+            "maximum_duplicate_timestamps_risk": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_DUPLICATE",
+          "topic": "action",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "duplicate_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_duplicate_timestamps_reject": null,
+            "maximum_duplicate_timestamps_risk": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_DUPLICATE",
+          "topic": "observation.images.head_depth",
+          "status": "skip",
+          "reason": "NO_OBSERVATIONS",
+          "participates_in_verdict": true,
+          "evaluated_count": 0,
+          "expected_count": 0,
+          "observed": {
+            "duplicate_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 0
+          },
+          "thresholds": {
+            "maximum_duplicate_timestamps_reject": null,
+            "maximum_duplicate_timestamps_risk": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        },
+        {
+          "code": "QC_TIMESTAMP_DUPLICATE",
+          "topic": "observation.images.head_rgb",
+          "status": "pass",
+          "reason": null,
+          "participates_in_verdict": true,
+          "evaluated_count": 3,
+          "expected_count": 3,
+          "observed": {
+            "duplicate_count": 0,
+            "expected_frame_count": 3,
+            "message_count": 3
+          },
+          "thresholds": {
+            "maximum_duplicate_timestamps_reject": null,
+            "maximum_duplicate_timestamps_risk": 0
+          },
+          "detector_findings": [],
+          "report_finding_indexes": []
+        }
+      ],
+      "additional_finding_codes": []
+    },
+    "data_review_status": "NOT_REVIEWED",
+    "latest_data_review": null,
+    "annotation": {
+      "availability": "AVAILABLE",
+      "task_options": [],
+      "task_options_has_more": false,
+      "task_id": "f3488224-4e66-5621-9bba-d169c3cc526f",
+      "status": "DRAFT",
+      "state_version": 0,
+      "current_revision": {
+        "task_id": "f3488224-4e66-5621-9bba-d169c3cc526f",
+        "revision": 0,
+        "content_hash": "5cccc044011cb11159f8e595674596abc316b514af8c662b9c6461296d1a5904",
+        "author_id": "system",
+        "created_at": "2026-09-30T02:13:27.464895Z"
+      },
+      "latest_submission": null,
+      "latest_approval": null,
+      "latest_review": null,
+      "current_submission_id": null,
+      "current_approved_review_id": null,
+      "has_unsubmitted_changes": true,
+      "revision_files": [
+        {
+          "status": "READY",
+          "task_id": "f3488224-4e66-5621-9bba-d169c3cc526f",
+          "revision": 0,
+          "error_code": null,
+          "generation": 1,
+          "size_bytes": 3258,
+          "content_sha256": "78fb59d2997cc9684910a2dadb40b82d4bbc115761973d41f9968b822937fcb8",
+          "revision_content_hash": "5cccc044011cb11159f8e595674596abc316b514af8c662b9c6461296d1a5904",
+          "download": {
+            "action": "DOWNLOAD_ANNOTATION_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "annotation_task.read",
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        }
+      ]
+    },
+    "subtasks": {
+      "status": "NOT_SPECIFIED",
+      "delivery_id": null,
+      "revision": null,
+      "track": null,
+      "segment_count": null
+    },
+    "cameras": [
+      {
+        "feature": "observation.images.head_depth",
+        "kind": "DEPTH",
+        "shape": [
+          16,
+          16,
+          1
+        ],
+        "video_file_id": "415be734f81106384b92930b1ffefd5c7105a4446becb95629602034976913ec",
+        "preview_status": "READY",
+        "preview_reason": null,
+        "depth": {
+          "profile": {
+            "bits": 12,
+            "codec": "hevc",
+            "container": "mp4",
+            "depth_max": 10.0,
+            "depth_min": 0.01,
+            "feature_info": {
+              "depth_unit": "mm",
+              "has_audio": false,
+              "is_depth_map": true,
+              "video.channels": 1,
+              "video.codec": "hevc",
+              "video.depth_max": 10.0,
+              "video.depth_min": 0.01,
+              "video.fps": 30.0,
+              "video.pix_fmt": "gray12le",
+              "video.shift": 3.5,
+              "video.use_log": true,
+              "video.video_backend": "pyav"
+            },
+            "input_unit": "mm",
+            "invalid_fill_code": 0,
+            "invalid_requires_hc_mask": true,
+            "official_reader_version": "0.6.1",
+            "parameter_unit": "m",
+            "pixel_format": "gray12le",
+            "profile_sha256": "2bb60550fcf728a475cc423e5e2d9c127bb7af096c4f269065a823ac75fec181",
+            "qmax": 4095,
+            "shift": 3.5,
+            "source_scale_unit": "m/source_unit",
+            "use_log": true,
+            "version": "hc-depth/1",
+            "x265_lossless": 1
+          },
+          "output_unit": "m",
+          "source_dtypes": [],
+          "source_scales_m_per_unit": [],
+          "source_profiles": {},
+          "source_frame_count": 4,
+          "target_frame_count": 3,
+          "source_frame_count_reason": null,
+          "shape": [
+            16,
+            16
+          ],
+          "totals": {
+            "invalid_pixels": 768,
+            "missing_frames": 3,
+            "pixels": 768,
+            "repeated_frames": 0,
+            "saturated_high_pixels": 0,
+            "saturated_low_pixels": 0,
+            "unclipped_pixels": 0,
+            "valid_pixels": 0
+          },
+          "measurement_status": "NO_SOURCE_FRAMES",
+          "matched_frame_ratio": 0.0,
+          "missing_frame_ratio": 1.0,
+          "invalid_pixel_ratio": 1.0,
+          "saturated_pixel_ratio": 0.0,
+          "maximum_time_error_ns": null,
+          "quantization": {
+            "float32_tolerance_m": 2e-05,
+            "half_cell_bound_passed": true,
+            "mm_reader_additional_rounding_bound_m": 0.0005,
+            "per_frame_percentiles": "frames.parquet",
+            "saturated_pixels_reported_separately": true,
+            "source_error_carried_forward": true,
+            "unclipped_max_error_m": null
+          },
+          "video_encoding": {
+            "codec_profile": "Rext",
+            "codes_sha256": "80422bc3d307b4a25bdafcc84ac7fb01cb55a09810e8b0f37bb12e0edb5c48ca",
+            "encoder_configuration_sha256": "ef983fbf2869b86f841ae82221639ebd0aa5bd88787d3f9a8a20a05e075e44cf",
+            "encoder_options": {
+              "preset": "ultrafast",
+              "x265-params": "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:pools=none:frame-threads=1:log-level=error"
+            },
+            "encoder_profile": "hc-hevc-gray12-lossless/2",
+            "ffmpeg_libraries": {
+              "libavcodec": [
+                61,
+                19,
+                101
+              ],
+              "libavdevice": [
+                61,
+                3,
+                100
+              ],
+              "libavfilter": [
+                10,
+                4,
+                100
+              ],
+              "libavformat": [
+                61,
+                7,
+                100
+              ],
+              "libavutil": [
+                59,
+                39,
+                100
+              ],
+              "libswresample": [
+                5,
+                3,
+                100
+              ],
+              "libswscale": [
+                8,
+                3,
+                100
+              ]
+            },
+            "lossless_codes": true,
+            "pyav_version": "15.1.0",
+            "video_sha256": "e5ee8d9d5a7bfd6733d634659d5b3e2924a78884388213662fe5106148c5adaf"
+          },
+          "frame_mapping_file_id": "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "mask_file_id": "02e929dbc14606f3db1847086bcf2519e2e6a7d9d8830ad9c90874678f1d7d43",
+          "calibration": {
+            "status": "unknown"
+          },
+          "model_depth_training_support": "NOT_VALIDATED"
+        }
+      },
+      {
+        "feature": "observation.images.head_rgb",
+        "kind": "RGB",
+        "shape": [
+          16,
+          16,
+          3
+        ],
+        "video_file_id": "5b294f2e99b489e5c0bd6177f9ee9bcbe082cd113d0507d5cd26f582e000b917",
+        "preview_status": "READY",
+        "preview_reason": null,
+        "depth": null
+      }
+    ],
+    "files": {
+      "data": {
+        "identity": {
+          "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+          "project_id": "writer-project",
+          "region_code": "writer-region",
+          "dataset_id": "dataset_tag_missing_browser",
+          "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+          "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367"
+        },
+        "data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+        "version": 1,
+        "content_hash": "e140b5158b80358ca294660537300fb6c4d45c4ba8635515745412aec0207f90",
+        "storage_format": "lerobot_v3",
+        "schema_snapshot_id": "schema-1",
+        "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_b8d5b358b1f77188abf791418d6fb031/id-dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+        "frame_count": 3
+      },
+      "items": [
+        {
+          "file_id": "bef6b6ae7a53e4ce4c1d9db116f2293cec898a504df44bf5051c2a737653cebd",
+          "path": "data/chunk-000/file-000.parquet",
+          "size": 8665,
+          "sha256": "5f3cdc68c0c134910ba42c9e7961a40180d93d29a256773941b44ebb59be49fe",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "NUMERIC",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "39c6c2f364724bcd12aa07ddd13276df3603b8cced44d5c4ebebb136bc38363c",
+          "path": "hc/calibration.json",
+          "size": 20,
+          "sha256": "a8e0ba654ce651dc312b81ee49fe54ecc3d8f326dcb8086581341823c2ed4139",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "37958d602ce0e77ce1999d8ec53e23b18f485b26eaeb9a53c7017cc7e99937b4",
+          "path": "hc/conversion_report.json",
+          "size": 3442,
+          "sha256": "4b71268e28572b24209297cb346d39e7f4966573a7cf2bf75686e34554b9a25b",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "path": "hc/depth/observation.images.head_depth/frames.parquet",
+          "size": 9590,
+          "sha256": "29fc0a686692ea0464129a651f4ccc220c28d575b26b1135b4716e6e0fdacf78",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "DEPTH",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "b6dc38bb2b070f80868ac35514ba1a6cd2c4a137b34a36db0dccaa80bcc5f535",
+          "path": "hc/depth/observation.images.head_depth/profile.json",
+          "size": 702,
+          "sha256": "a2989c9abc87a90582aed9da9e5314c3c31501c941946c8c1723a0feba844828",
+          "media_type": "application/json",
+          "category": "DEPTH",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "cbf8a00bda832f3d2ce3b4f0d274f133eb9d8906409c78ee32f54cadcfd66cc2",
+          "path": "hc/depth/observation.images.head_depth/report.json",
+          "size": 2671,
+          "sha256": "16079e005deba922c3fca5379b0202870f90b4b56c661f8c44c9f4d4a93a9094",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "02e929dbc14606f3db1847086bcf2519e2e6a7d9d8830ad9c90874678f1d7d43",
+          "path": "hc/depth/observation.images.head_depth/validity/flags.parquet",
+          "size": 1104,
+          "sha256": "35ee497e85524b19f1f7c037798c46da973974b202e69a71fa5f7adbd6d58b12",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "DEPTH",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "2954d4a8c12a7a923f4f55681f4c21f56725d37e7b56305f231237c41007e6c5",
+          "path": "hc/derivation/frames.parquet",
+          "size": 1832,
+          "sha256": "da92f60c6771cec9b1d6f73617fe3386dddec85c8b87244b73e0600aba81479d",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "7147d69d61b04b7212b49c9f21e3458294930aa898f0a37e4c1e7b85fec95546",
+          "path": "hc/derivation/parent/annotation.json",
+          "size": 3890,
+          "sha256": "21e41edb1fb1ad8494a437cf3bb22f07d416017912fa01c4722938e4f9c5bf40",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "8d05210cdf5bef590f5222b1e50f3b2c8b997ed71f491de0ca0d8abdacbbce27",
+          "path": "hc/derivation/parent/commit.json",
+          "size": 968,
+          "sha256": "5e146c72542ae4c8a4a895423d42b3b38cc3eddeb72441fe1fc6142dada8f4ac",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "5d4e36de00211e7f0d7c3d169f1cf1c5106d3443e7ae09127a8b26dfc55b521f",
+          "path": "hc/derivation/parent/hc/conversion_report.json",
+          "size": 608,
+          "sha256": "61903f11b0b2a6fb7ab86711fe6d866230bffbe502cecaa601e56673c6ffd237",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "084e867b16143ee66d40bc9fef6fb6ac970c95450ea9b178e6778a0e101ec819",
+          "path": "hc/derivation/parent/hc/modalities.json",
+          "size": 102,
+          "sha256": "8d3da591deb5ab328f5ec8c43758e855acb04b040f9ad783718920b78228de71",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "8dab9c253a7fbf48b4946f7615bb32d33a2301a4031f04fd6580cc73c3e5a68c",
+          "path": "hc/derivation/parent/hc/quality.json",
+          "size": 31,
+          "sha256": "1d43556ddcb732f4eee81361612d1166ab28d152c80058f73f90c231ba3a61f8",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "b3cd8e5ee71ac192b29f42de266ca7569ce36cd6ebbea1be1fdb7587a843bb04",
+          "path": "hc/derivation/parent/hc/source.json",
+          "size": 341,
+          "sha256": "54c28a1107819f79175acc8623079b6e851814e125b93982fc90500f664fb264",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "95a8c0cce7fd8ca4f0504d7109d04406858d4e853c320b777a67c5b592fc49ca",
+          "path": "hc/derivation/parent/manifest.json",
+          "size": 3703,
+          "sha256": "7cb5f49b0a460c670841fefe473369d3f6fa1b65f0c9e9ae87695c3f5d1f355d",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "ad19ec56bb1e4dfc1ad27ab04ec91062ceea22b314a1f16530169a0a37ca9d97",
+          "path": "hc/derivation/plan.json",
+          "size": 6245,
+          "sha256": "0496b65872e348e49d74c473a1db3f738ce074e06e37d4960df14d48cd250e13",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "d3962a3c8814c4c1793d83b40e34f30bd659c9902a8f76b711909eb1f72590d6",
+          "path": "hc/modalities.json",
+          "size": 102,
+          "sha256": "8d3da591deb5ab328f5ec8c43758e855acb04b040f9ad783718920b78228de71",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "0f36e7945409b1ba6be236374b55fc2ddb1daaf4c174eb6d39bb73d22e8263fc",
+          "path": "hc/quality.json",
+          "size": 4877,
+          "sha256": "db57469e70f1859c1e1c2b1bcfadfb65f0ab51806e6ab6c8bbeb9447f0eb01e7",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "4cfdf09a8628c3337365fb5378ff40aa4e53d69a73683096120672a8ca67077c",
+          "path": "hc/quality_rules.json",
+          "size": 17151,
+          "sha256": "4e00b5945a75084291b7f5431628d252b136a850979f6e5eb6709d16f89bef7c",
+          "media_type": "application/json",
+          "category": "REPORT",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "b3bfb1848df5809d527cbc53c5f09c04b69f4fe7631419f23c102fe33a9e9ad5",
+          "path": "hc/source.json",
+          "size": 1630,
+          "sha256": "04e820ccc291d717577171374428d30fcbadb3e4097a1719cc55c38b43aa3ae2",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b",
+          "path": "hc/source_frames.parquet",
+          "size": 3066,
+          "sha256": "c9aefac4545f66400dea97fcaabf5a6ccb677ecfbc0c6947c1dd9d7dfebd79fa",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "0a6357ca16557c0d1b36e4889dd8519968be9613295715a6d44bbff7f15249d3",
+          "path": "meta/episodes/chunk-000/file-000.parquet",
+          "size": 51108,
+          "sha256": "82dc0e494d2452f6a344dc1b3e7f7c0d4db546d856f50fcec1ffb2d7380e3fee",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "70415c8ac6e542f7b016d7d1764c6f0ce4a5599aa907669211ccad909f7050e1",
+          "path": "meta/info.json",
+          "size": 3468,
+          "sha256": "90956d6f94e4639e28804e9cce9768ee9cb7337988eea1b95e6fb158016cb167",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "8c27a8ac60e5570d2da39d5c3125631f4f7d5eac74806248549384b66d572a8b",
+          "path": "meta/stats.json",
+          "size": 1965,
+          "sha256": "c8f05008bc038625b287fa8d6fee5d3d8a94a19e94da507eda6306cfd636f1cd",
+          "media_type": "application/json",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "27fb994304701c8615503b9da600960a78a14dd378639520eda671e76f0704ce",
+          "path": "meta/tasks.parquet",
+          "size": 1734,
+          "sha256": "aa7065a3c477486baf9049a7b127f1a9c591cf5bf5c3fb86489988b5637fd7e2",
+          "media_type": "application/vnd.apache.parquet",
+          "category": "METADATA",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "415be734f81106384b92930b1ffefd5c7105a4446becb95629602034976913ec",
+          "path": "videos/observation.images.head_depth/chunk-000/file-000.mp4",
+          "size": 12358,
+          "sha256": "e5ee8d9d5a7bfd6733d634659d5b3e2924a78884388213662fe5106148c5adaf",
+          "media_type": "video/mp4",
+          "category": "DEPTH",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        },
+        {
+          "file_id": "5b294f2e99b489e5c0bd6177f9ee9bcbe082cd113d0507d5cd26f582e000b917",
+          "path": "videos/observation.images.head_rgb/chunk-000/file-000.mp4",
+          "size": 1507,
+          "sha256": "1473eec935ef4e2bb6e8a8122fc1502e3f6fe0f723e2fdbaa0ddc5a8a61758b4",
+          "media_type": "video/mp4",
+          "category": "RGB",
+          "availability": "AVAILABLE",
+          "integrity": "MANIFEST_BOUND",
+          "download": {
+            "action": "DOWNLOAD_FILE",
+            "allowed": true,
+            "required_capabilities": [
+              "export.download"
+            ],
+            "denied_reason": null
+          }
+        }
+      ],
+      "total": 27,
+      "next_after": null
+    },
+    "deliveries": [],
+    "deliveries_has_more": false,
+    "package_status": "COMMITTED",
+    "allowed_actions": [
+      {
+        "action": "READ_FILES",
+        "allowed": true,
+        "required_capabilities": [
+          "dataset_version.read"
+        ],
+        "denied_reason": null
+      },
+      {
+        "action": "DOWNLOAD_COMPLETE",
+        "allowed": true,
+        "required_capabilities": [
+          "export.download"
+        ],
+        "denied_reason": null
+      },
+      {
+        "action": "SUBMIT_DATA_REVIEW",
+        "allowed": true,
+        "required_capabilities": [
+          "dataset_version.review"
+        ],
+        "denied_reason": null
+      },
+      {
+        "action": "OPEN_ANNOTATION",
+        "allowed": true,
+        "required_capabilities": [
+          "annotation_task.read"
+        ],
+        "denied_reason": null
+      },
+      {
+        "action": "CREATE_ANNOTATED_DELIVERY",
+        "allowed": false,
+        "required_capabilities": [
+          "annotation_task.read",
+          "export.create",
+          "export.download"
+        ],
+        "denied_reason": "NO_CURRENT_APPROVED_REVISION"
+      }
+    ],
+    "observed_at": "2026-09-30T02:29:08.101543Z"
+  },
+  "delivery_job": {
+    "job_id": "ed_382ab50dce69f94a3f701e8f3b4ac36ff646ee88e4579ca77b58098e3c3d742b",
+    "plan": {
+      "format": "hc-episode-delivery-plan/1",
+      "members": [
+        {
+          "data": {
+            "identity": {
+              "organization_id": "bundle-84f3005960d941ebb695c1c9190b8e10",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "dataset_tag_missing_browser",
+              "episode_id": "episode_derived_b8d5b358b1f77188abf791418d6fb031",
+              "rollout_id": "derived:b8d5b358b1f77188abf791418d6fb031bf9b012cfc0e6f34a97e43a401cfb367"
+            },
+            "data_version_id": "dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+            "version": 1,
+            "content_hash": "e140b5158b80358ca294660537300fb6c4d45c4ba8635515745412aec0207f90",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-84f3005960d941ebb695c1c9190b8e10/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_b8d5b358b1f77188abf791418d6fb031/id-dv_4e77cd1fe16fdedddfd7f07bb5e229bacb59e50751fc88bd9a49947b935af538",
+            "frame_count": 3
+          },
+          "manifest_sha256": "e140b5158b80358ca294660537300fb6c4d45c4ba8635515745412aec0207f90",
+          "root": "episode",
+          "file_count": 29,
+          "byte_count": 149388
+        }
+      ],
+      "archive_format": "independent_episode_zip/1",
+      "modalities": "all_collected",
+      "annotation_selection": "package_contents_only",
+      "processor_version": "hc-episode-archive/1",
+      "reader_version": "lerobot/0.6.1"
+    },
+    "status": "READY",
+    "phase": "completed",
+    "generation": 1,
+    "attempts": 1,
+    "processed_files": 30,
+    "processed_bytes": 150837,
+    "total_files": 30,
+    "total_bytes": 150837,
+    "uploaded_bytes": 156077,
+    "artifact_sha256": "93bbd16a00d788036407db464caf7fb053ca84660cd6906af7a9309a124bb978",
+    "size_bytes": 156077,
+    "error_code": null,
+    "created_at": "2026-09-30T02:21:18.179912Z",
+    "updated_at": "2026-09-30T02:21:23.951109Z"
+  },
+  "archive_sha256": "93bbd16a00d788036407db464caf7fb053ca84660cd6906af7a9309a124bb978",
+  "archive_size_bytes": 156077,
+  "browser_created_tag": true,
+  "browser_queued_archive": true,
+  "browser_file_save_tested": false,
+  "authorized_http_download_hash_verified": true,
+  "synthetic_input": true,
+  "human_acceptance": false
+}

@@ -91,6 +91,8 @@ def build_rgbd_package(
     source_profile=None,
     intensity_offset=0,
     depth_offset=0,
+    depth_missing_frames=(),
+    depth_invalid_frames=(),
     task="synthetic RGB-D codec acceptance",
 ):
     ident = ident or identity()
@@ -132,14 +134,18 @@ def build_rgbd_package(
     for index in range(4):
         pixels = np.full((16, 16), depth_offset + 500 + index * 500, dtype=np.uint16)
         pixels[0, 0] = 0
+        if index in depth_invalid_frames:
+            pixels.fill(0)
+        missing = index in depth_missing_frames
         writer.write(
-            pixels,
-            0.001,
+            None if missing else pixels,
+            None if missing else 0.001,
             source_id="head",
-            source_seq=index,
-            source_timestamp_ns=index * 33_333_333,
+            source_seq=None if missing else index,
+            source_timestamp_ns=None if missing else index * 33_333_333,
             target_timestamp_ns=index * 33_333_333,
-            source_profile=source_profile,
+            missing=missing,
+            source_profile=None if missing else source_profile,
             invalid_values=source_profile["invalid_values"] if source_profile else (),
         )
     writer.close()
@@ -181,9 +187,12 @@ def build_rgbd_package(
                 rgb: {"frame_index": i},
                 depth: {"frame_index": i},
             },
-            valid={name: True for name in ("/observation/state", "action", rgb, depth)},
-            source_timestamps_ns={depth: (i * 33_333_333,)},
-            time_error_ns={depth: 0},
+            valid={
+                name: name != depth or i not in depth_missing_frames
+                for name in ("/observation/state", "action", rgb, depth)
+            },
+            source_timestamps_ns={depth: () if i in depth_missing_frames else (i * 33_333_333,)},
+            time_error_ns={depth: None if i in depth_missing_frames else 0},
         )
         for i in range(4)
     ]
@@ -224,6 +233,40 @@ def build_rgbd_package(
     finally:
         reset_request_context(token)
     return output, source, manifest, assets
+
+
+@pytest.mark.parametrize("missing", [True, False])
+def test_zero_measured_depth_has_no_fabricated_statistics_and_rejects_false_claims(
+    tmp_path, missing
+):
+    root, source, _, _ = build_rgbd_package(
+        tmp_path,
+        depth_missing_frames=range(4) if missing else (),
+        depth_invalid_frames=() if missing else range(4),
+    )
+    depth = "observation.images.head_depth"
+    info_path, stats_path = root / "meta/info.json", root / "meta/stats.json"
+    original_info, original_stats = info_path.read_bytes(), stats_path.read_bytes()
+    info, stats = json.loads(original_info), json.loads(original_stats)
+    assert depth not in stats
+    assert info["features"][depth]["info"]["hc.stats_status"] == "NO_VALID_PIXELS"
+    report = json.loads((root / "hc/depth" / depth / "report.json").read_bytes())
+    assert report["measurement_status"] == ("NO_SOURCE_FRAMES" if missing else "NO_VALID_PIXELS")
+    assert report["quantization"]["unclipped_max_error_m"] is None
+    for tamper in ("absent-marker", "invented-mean", "invented-count"):
+        info, stats = json.loads(original_info), json.loads(original_stats)
+        if tamper == "absent-marker":
+            del info["features"][depth]["info"]["hc.stats_status"]
+        elif tamper == "invented-mean":
+            stats[depth] = {"mean": [[[10.0]]]}
+        else:
+            info["features"][depth]["info"]["hc.stats_valid_pixels"] = 1024
+        info_path.write_text(json.dumps(info))
+        stats_path.write_text(json.dumps(stats))
+        with pytest.raises(ValueError, match="depth statistics"):
+            validate_package(root, source)
+    info_path.write_bytes(original_info)
+    stats_path.write_bytes(original_stats)
 
 
 def test_standalone_rgbd_writer_reuses_h265_and_depth_without_reencoding(tmp_path):

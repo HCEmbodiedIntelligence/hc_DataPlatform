@@ -31,7 +31,7 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | DATA-05 | W1/W2 | Pending | Interrupted, failed, retried and concurrent commits |
 | DATA-06 | W1/W2 | Pending | Units, numeric semantics, depth profile/mask/error/time |
 | SEG-01 | W2 | Pending | Whole recording and long recording windows |
-| SEG-02 | W3/W5 | Partial generator/product/command/browser/own QC verified; real/human pending | [Generation](tag-derivation.md), [product publication](tag-projection.md), [durable commands and 1440/1024 browser](tag-jobs.md), [independent QC](tag-quality.md) |
+| SEG-02 | W3/W5 | Partial generator/product/command/browser/own QC and absent-depth verified; real/human pending | [Generation](tag-derivation.md), [product publication](tag-projection.md), [durable commands and 1440/1024 browser](tag-jobs.md), [independent QC](tag-quality.md), [absent depth](missing-depth.md) |
 | ANN-01 | W1/W3/W7 | Pending | Complete tags and immutable review bindings |
 | ANN-02 | W3/W5 | Pending | Versioned JSON outbox, failure/retry/download |
 | ANN-03 | W3/W6 | Pending | Explicit subtask track, gaps/overlap/cross-track tests |
@@ -43,6 +43,13 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W2/W3/W5/W6 缺测深度补充（2026-09-30）：全缺帧/全无效区间保留视频与 HC
+  证据，不生成测量统计；集合兼容缺测与有效条目。57 个独立后端用例、10 项
+  前端及禁网官方 reader/跨 Episode DataLoader 通过。1440/1024 实际浏览器
+  验证 Tag 创建、SDK 预览、无效像素、独立 QC 范围和完整包准备；后续授权
+  HTTP 下载 ZIP 经哈希/离线读取验证。见 [证据与限制](missing-depth.md)。
+  输入仍合成；本轮补齐前阶段“新 QC 浏览器”缺项，真实/真人、W7/W8 继续。
 
 - W3/W4 Tag 独立 QC 补充（2026-09-30）：按固定区间重新检查主数值、有效性与
   解码视频，保存独立报告/执行证据；精确帧数与分数帧率、磁盘数值观测、旧计划

@@ -113,6 +113,49 @@ def test_identical_stream_reuses_every_byte_and_no_encoder(tmp_path, monkeypatch
     assert before == inventory(tmp_path / "input")
 
 
+def test_missing_only_window_is_explicit_and_reuses_codes_without_inventing_a_source(
+    tmp_path, monkeypatch
+):
+    media = make_depth(tmp_path / "input")
+    before = inventory(tmp_path / "input")
+    forbid_quantization(monkeypatch)
+    result = prepare_depth_window(
+        media, DepthWindow(2, 3, 1, 25, START + 80_000_000), tmp_path / "missing"
+    )
+    assert not decoded(result.path)[0].any()
+    assert before == inventory(tmp_path / "input")
+    report = json.loads((result.evidence_root / "report.json").read_bytes())
+    assert report["measurement_status"] == "NO_SOURCE_FRAMES"
+    assert report["totals"]["missing_frames"] == report["frames"] == 1
+    assert report["quantization"]["unclipped_max_error_m"] is None
+    monkeypatch.setattr(holobrain_depth.DepthVideo, "__init__", forbid)
+    assert (
+        prepare_depth_window(
+            result, DepthWindow(0, 1, 1, 25, START + 80_000_000), tmp_path / "reuse"
+        )
+        is result
+    )
+    # Exact-byte reuse still validates measured/absent semantics independently.
+    with pytest.raises(ValueError, match="claims measurement/source"):
+        validate_depth(
+            result.evidence_root.parent,
+            result.evidence_root.name,
+            result.path,
+            result.feature,
+            1,
+            25,
+            target_rows=iter([{"hc.timestamp_ns": START + 80_000_000, "hc.valid.depth": True}]),
+            feature_key="depth",
+        )
+    report["measurement_status"] = "NO_VALID_PIXELS"
+    (result.evidence_root / "report.json").write_text(json.dumps(report))
+    forged = replace(result, evidence_files=inventory(result.evidence_root))
+    with pytest.raises(ValueError, match="completeness"):
+        prepare_depth_window(
+            forged, DepthWindow(0, 1, 1, 25, START + 80_000_000), tmp_path / "forged"
+        )
+
+
 def test_parent_time_cut_keeps_original_nanoseconds_and_avoids_rounding_shift(
     tmp_path, monkeypatch
 ):

@@ -1,0 +1,128 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "official_reader_and_dataloader": true,
+  "episodes": [
+    {
+      "data_version_id": "dv_0491d4a013211a54a113d1437ffa00da94f78bb32f5e92bf274c4165c40cb2a2",
+      "frames": 3,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 768,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 6.572520305780927e-13,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "independent_qc": {
+        "status": "RISK",
+        "scope": "selected_aligned_episode",
+        "report_sha256": "474fb39b6796a3af40474479d233fae1731a63da6f56513ab385f53af89ae787",
+        "evidence_sha256": "6762003642161244fc338d18e501f8642758610c469f9f6dcde2923dc7246c88",
+        "rule_codes": [
+          "QC_ACTION_JUMP",
+          "QC_ACTION_MISSING",
+          "QC_COMPLETE_STEP_RATIO_LOW",
+          "QC_CONSECUTIVE_FRAMES_MISSING",
+          "QC_COVERAGE_LOW",
+          "QC_FREQUENCY_LOW",
+          "QC_GAP_EXCESSIVE",
+          "QC_IMAGE_BLACK",
+          "QC_IMAGE_CORRUPT",
+          "QC_IMAGE_REPEATED",
+          "QC_JOINT_OUT_OF_RANGE",
+          "QC_MODALITY_OFFSET",
+          "QC_POINT_CLOUD_EMPTY",
+          "QC_POINT_COUNT_ABNORMAL",
+          "QC_REQUIRED_TOPIC_MISSING",
+          "QC_TIMESTAMP_BACKWARD",
+          "QC_TIMESTAMP_DUPLICATE"
+        ]
+      },
+      "parent_data_version_id": "dv_20b41cc67c43dfa507cdc64c24d0709ae529b4bb271a0041317899d6717176fd",
+      "parent_annotation_revision": 1,
+      "annotation_id": "child",
+      "interval": [
+        1,
+        4
+      ],
+      "parent_tags_preserved": 2,
+      "parent_frame_and_nanosecond_trace_verified": true,
+      "new_episode_identity": true,
+      "parent_approvals_inherited": false,
+      "requantized": false,
+      "primary_manifest_sha256": "ff9fd2b33503e026ac2db67d4af9c4f36b02131b14fbbc0b2551b331d8bb3c98"
+    },
+    {
+      "data_version_id": "dv_b3fc186f69c9e34eaf78ad669384bc37d291c2c2fc839d0bb457f7739eb6b49d",
+      "frames": 3,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 768,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 6.572520305780927e-13,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "independent_qc": {
+        "status": "PASS",
+        "scope": "selected_aligned_episode",
+        "report_sha256": "2f4410f2bd5f7bcc4d5294e4c2bd6c9a916cab5d705da23197861f726548bf1f",
+        "evidence_sha256": "02d1dde58e4b42b0fcb7f267562a312963aba9e01cfc188087571357cdad5cce",
+        "rule_codes": [
+          "QC_ACTION_JUMP",
+          "QC_ACTION_MISSING",
+          "QC_COMPLETE_STEP_RATIO_LOW",
+          "QC_CONSECUTIVE_FRAMES_MISSING",
+          "QC_COVERAGE_LOW",
+          "QC_FREQUENCY_LOW",
+          "QC_GAP_EXCESSIVE",
+          "QC_IMAGE_BLACK",
+          "QC_IMAGE_CORRUPT",
+          "QC_IMAGE_REPEATED",
+          "QC_JOINT_OUT_OF_RANGE",
+          "QC_MODALITY_OFFSET",
+          "QC_POINT_CLOUD_EMPTY",
+          "QC_POINT_COUNT_ABNORMAL",
+          "QC_REQUIRED_TOPIC_MISSING",
+          "QC_TIMESTAMP_BACKWARD",
+          "QC_TIMESTAMP_DUPLICATE"
+        ]
+      },
+      "parent_data_version_id": "dv_618357abce5d3582d4f182080822318adfd29f56503a74c2a9c5aac2639bfd5e",
+      "parent_annotation_revision": 1,
+      "annotation_id": "child",
+      "interval": [
+        1,
+        4
+      ],
+      "parent_tags_preserved": 2,
+      "parent_frame_and_nanosecond_trace_verified": true,
+      "new_episode_identity": true,
+      "parent_approvals_inherited": false,
+      "requantized": false,
+      "primary_manifest_sha256": "0402696e5a0a64c372fc73124926140bc0141c7c515643edb7051e777d87b88d"
+    }
+  ],
+  "synthetic_input": true,
+  "queue_api_browser_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "platform_imported": false
+}

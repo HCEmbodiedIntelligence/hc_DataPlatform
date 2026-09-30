@@ -420,6 +420,22 @@ export function EpisodeDetailPanel({
                           {camera.shape.join(" × ")} · 预览
                           {previews[camera.preview_status]}
                         </p>
+                        {camera.depth?.measurement_status ===
+                          "NO_SOURCE_FRAMES" && (
+                          <Alert
+                            type="warning"
+                            title="本区间没有源深度帧"
+                            description="深度视频保留缺帧占位和掩码；物理值不可用，未生成深度统计。"
+                          />
+                        )}
+                        {camera.depth?.measurement_status ===
+                          "NO_VALID_PIXELS" && (
+                          <Alert
+                            type="warning"
+                            title="本区间没有有效深度像素"
+                            description="源帧与无效掩码已保留；物理值不可用，未生成深度统计。"
+                          />
+                        )}
                         {camera.depth && (
                           <Technical
                             title="深度单位、量化、有效性与误差"
