@@ -59,6 +59,8 @@ def test_unsupported_input_stops_before_any_exporter_or_source_work() -> None:
         coordinator.preflight(export_manifest(), format=exporter.format)
     assert captured.value.problem.code == "EXPORT_INPUT_CAPABILITY_UNSUPPORTED"
     assert captured.value.problem.details == {"missing_capabilities": ["audio-samples/v1"]}
+    [option] = coordinator.formats().items
+    assert not option.available and option.missing_inputs == ("audio-samples/v1",)
     source.read_steps.assert_not_called()
     assert sink.artifacts == {} and sink.attempts == {}
 

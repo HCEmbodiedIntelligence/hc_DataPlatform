@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: f9119df33557d3458d9a7375256e8359c7b01e945b76c24459f243089e550cd1
+// Runtime-OpenAPI-SHA256: 358a8757c85ce8fb3b985e160fe9f6977d18f7c39e19e207a01a918e877d3a2d
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -60,6 +60,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:cancel" },
   { method: "POST", path: "/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:retry" },
   { method: "GET", path: "/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}/download" },
+  { method: "GET", path: "/datasets/export-formats" },
   { method: "POST", path: "/datasets/publication-preflight" },
   { method: "POST", path: "/datasets/publications" },
   { method: "GET", path: "/jobs" },

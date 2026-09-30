@@ -13,7 +13,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.data_formats.archives import zip_files as _zip_files
 from hc_data_platform.data_formats.json import canonical_json_bytes
 
-from .contracts import step_export_descriptor
+from .contracts import ExportPresentation, step_export_descriptor
 from .models import (
     ApprovedAnnotationSnapshotV1,
     CatalogRolloutSnapshotV1,
@@ -207,6 +207,12 @@ from .exporters import (  # noqa: E402
 
 class InMemoryLanceSnapshotExporter:
     @property
+    def presentation(self) -> ExportPresentation:
+        return ExportPresentation(
+            "Lance 数据文件", "导出所选 Episode 的对齐 Step，并保留 rollout_id。"
+        )
+
+    @property
     def descriptor(self) -> CapabilityDescriptor:
         return step_export_descriptor(self.format.value, "test-lance-json/v1")
 
@@ -290,6 +296,12 @@ class InMemoryLanceSnapshotExporter:
 
 
 class InMemoryLeRobotV3Exporter:
+    @property
+    def presentation(self) -> ExportPresentation:
+        return ExportPresentation(
+            "LeRobot v3", "所选历史 Episode 的数值与媒体文件，生成 LeRobot v3 目录。"
+        )
+
     @property
     def descriptor(self) -> CapabilityDescriptor:
         return step_export_descriptor(self.format.value, "test-lerobot-json/v1")

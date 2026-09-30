@@ -11,8 +11,10 @@ from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 T = TypeVar("T")
-_KEY = re.compile(r"[a-z][a-z0-9_.-]{0,127}")
-_VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_./-]{0,127}")
+KEY_PATTERN = r"^[a-z][a-z0-9_.-]{0,127}$"
+VERSION_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$"
+_KEY = re.compile(KEY_PATTERN)
+_VERSION = re.compile(VERSION_PATTERN)
 
 
 @dataclass(frozen=True)

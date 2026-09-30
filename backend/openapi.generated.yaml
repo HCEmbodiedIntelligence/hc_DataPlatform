@@ -16253,10 +16253,16 @@ components:
           default: null
           description: Exact Episodes to export from this version; omitted preserves whole-version export.
         format:
-          enum:
-          - lance_snapshot
-          - lerobot_v3
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
           type: string
+        implementation_version:
+          anyOf:
+          - pattern: ^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$
+            type: string
+          - type: 'null'
+          default: null
+          description: Exact implementation selected from the format catalog. Omitted resolves and freezes
+            the current default when the job is created.
         project_id:
           minLength: 1
           type: string
@@ -16277,9 +16283,7 @@ components:
           format: date-time
           type: string
         format:
-          enum:
-          - lance_snapshot
-          - lerobot_v3
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
           type: string
         job_id:
           minLength: 1
@@ -16316,6 +16320,47 @@ components:
       - dataset_version
       - eligible_episode_ids
       type: object
+    ExportFormatCatalogV1:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/ExportFormatOptionV1'
+          type: array
+      required:
+      - items
+      type: object
+    ExportFormatOptionV1:
+      additionalProperties: false
+      properties:
+        available:
+          type: boolean
+        description:
+          type: string
+        display_name:
+          type: string
+        format:
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
+          type: string
+        implementation_version:
+          type: string
+        missing_inputs:
+          default: []
+          items:
+            type: string
+          type: array
+        required_inputs:
+          items:
+            type: string
+          type: array
+      required:
+      - format
+      - implementation_version
+      - display_name
+      - description
+      - required_inputs
+      - available
+      type: object
     ExportJobProgressV1:
       additionalProperties: false
       properties:
@@ -16349,9 +16394,7 @@ components:
           minLength: 1
           type: string
         format:
-          enum:
-          - lance_snapshot
-          - lerobot_v3
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
           type: string
         manifest_content_hash:
           pattern: ^[0-9a-f]{64}$
@@ -16408,9 +16451,7 @@ components:
           - string
           - 'null'
         format:
-          enum:
-          - lance_snapshot
-          - lerobot_v3
+          pattern: ^[a-z][a-z0-9_.-]{0,127}$
           type: string
         job_id:
           minLength: 1
@@ -29722,6 +29763,28 @@ paths:
       summary: Get Auto Annotation Capability
       tags:
       - annotation
+  /api/v1/datasets/export-formats:
+    get:
+      operationId: getExportFormats
+      parameters:
+      - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportFormatCatalogV1'
+          description: Registered default export implementations and their input requirements. Historical
+            versions remain routable by their frozen identity.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/NoStore'
+        '403':
+          description: Export read access is not granted in this project.
+      security:
+      - bearerAuth: []
+      tags:
+      - publishing
   /api/v1/datasets/publication-preflight:
     post:
       operationId: preflightDatasetPublication
@@ -29864,7 +29927,9 @@ paths:
         '409':
           description: An existing durable export result or immutable source is inconsistent.
         '422':
-          description: Invalid export request.
+          description: Invalid export request or unsupported input capabilities.
+        '503':
+          description: The selected export implementation is unavailable; no job is created.
       security:
       - bearerAuth: []
       tags:

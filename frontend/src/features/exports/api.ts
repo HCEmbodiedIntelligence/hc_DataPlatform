@@ -3,7 +3,9 @@ import type { components } from "../../shared/api/generated/platform";
 import { request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 
-export type PublishedExportFormat = components["schemas"]["ExportFormat"];
+export type PublishedExportFormat =
+  components["schemas"]["ExportDatasetRequestV1"]["format"];
+export type ExportFormatOption = components["schemas"]["ExportFormatOptionV1"];
 export type ExportDataStage = "annotated" | "dataset";
 export type PublishedExportJob = components["schemas"]["ExportJobV1"];
 export type PublishedExportDownload =
@@ -19,7 +21,44 @@ const exportEligibilitySchema = z
   })
   .strict();
 
-const exportFormatSchema = z.enum(["lance_snapshot", "lerobot_v3"]);
+export const exportFormatSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9_.-]{0,127}$/u);
+const exportFormatCatalogSchema = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          format: exportFormatSchema,
+          implementation_version: z.string().min(1),
+          display_name: z.string(),
+          description: z.string(),
+          required_inputs: z.array(z.string()),
+          available: z.boolean(),
+          missing_inputs: z.array(z.string()).default([]),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export async function fetchExportFormats(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<ExportFormatOption[]> {
+  const path = "/datasets/export-formats";
+  const raw = await request<unknown>({
+    method: "GET",
+    path,
+    query: { project_id: projectId },
+    signal,
+    cache: "no-store",
+  });
+  return parseWire(exportFormatCatalogSchema, raw, {
+    endpoint: path,
+    schemaVersion: "export-formats.v1",
+  }).items;
+}
 const exportResultSchema = z
   .object({
     format: exportFormatSchema,
@@ -99,6 +138,7 @@ export async function createPublishedExport(
   target: ExportTarget &
     Readonly<{
       format: PublishedExportFormat;
+      implementationVersion?: string;
       idempotencyKey: string;
       episodeIds?: readonly string[];
       dataStage?: ExportDataStage;
@@ -111,6 +151,9 @@ export async function createPublishedExport(
     body: {
       project_id: target.projectId,
       format: target.format,
+      ...(target.implementationVersion
+        ? { implementation_version: target.implementationVersion }
+        : {}),
       ...(target.dataStage ? { data_stage: target.dataStage } : {}),
       ...(target.episodeIds ? { episode_ids: target.episodeIds } : {}),
     },

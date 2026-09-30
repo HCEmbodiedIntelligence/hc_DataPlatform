@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from hc_data_platform.core.errors import ProblemException
+from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.publishing.audit import InMemoryExportAuditRecorder
 from hc_data_platform.publishing.memory import (
     InMemoryAnnotationSnapshot,
@@ -51,6 +51,7 @@ class PendingInMemoryWorkflowLauncher(InMemoryWorkflowLauncher):
         project_id: str,
         resource_id: str,
         runner: object,
+        initial_result: dict | None = None,
     ) -> JobRecord:
         del runner
         with self._lock:
@@ -63,6 +64,7 @@ class PendingInMemoryWorkflowLauncher(InMemoryWorkflowLauncher):
                 job_type=job_type,
                 project_id=project_id,
                 resource_id=resource_id,
+                result=initial_result,
                 status=JobStatus.RUNNING,
                 stage="materializing",
                 attempt=1,
@@ -456,10 +458,20 @@ def test_failed_export_can_be_retried_but_success_cannot(
     import hc_data_platform.publishing.router as router_module
 
     current["auth"] = _publisher_auth()
+
+    class UnavailableWorker(InMemoryLanceSnapshotExporter):
+        def export(self, **kwargs):
+            raise problem(
+                status=503,
+                code="EXPORTER_UNAVAILABLE",
+                title="Export worker is unavailable",
+                detail="Worker temporarily offline",
+            )
+
     unavailable = ExportCoordinator(
         source=InMemoryExportSource([_step()]),
         sink=InMemoryArtifactSink(),
-        exporters=[],
+        exporters=[UnavailableWorker()],
     )
     monkeypatch.setattr(router_module, "_export_coordinator", unavailable)
     failed = client.post(

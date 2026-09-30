@@ -37,6 +37,7 @@ with workflow.unsafe.imports_passed_through():
         RecordingAssetRole,
     )
     from hc_data_platform.episode_store.models import DataVersionRef
+    from hc_data_platform.publishing.models import export_format_key
     from hc_data_platform.quality.models import QualityStatus
     from hc_data_platform.verification.models import VerificationStatus
 
@@ -1234,10 +1235,15 @@ class ExportWorkflow(_JobLifecycle):
             project_id=manifest.project_id,
             resource_id=(
                 f"{manifest.dataset_id}/{manifest.dataset_version}/"
-                f"{request.format.value}/{request.attempt_id}"
+                f"{export_format_key(request.format)}/{request.attempt_id}"
             ),
         )
         selection = {"export_selection": request.selection} if request.selection else {}
+        if request.implementation_version is not None:
+            selection["export_implementation"] = {
+                "key": export_format_key(request.format),
+                "version": request.implementation_version,
+            }
         if selection:
             self._job = self._record().model_copy(update={"result": selection})
         try:
@@ -1247,6 +1253,7 @@ class ExportWorkflow(_JobLifecycle):
                 ExportPreflightActivityInput(
                     manifest=manifest,
                     format=request.format,
+                    implementation_version=request.implementation_version,
                 ),
                 ExportPreflightActivityOutput,
                 STANDARD_ACTIVITY,
@@ -1256,6 +1263,7 @@ class ExportWorkflow(_JobLifecycle):
                 manifest=manifest,
                 format=request.format,
                 attempt_id=request.attempt_id,
+                implementation_version=request.implementation_version,
             )
             result = await _execute_activity(
                 EXPORT_DATASET_ACTIVITY,

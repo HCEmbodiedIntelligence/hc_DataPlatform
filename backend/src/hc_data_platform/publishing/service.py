@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from urllib.parse import quote
 
 from hc_data_platform.capabilities.registry import (
     CapabilityDescriptor,
+    ImplementationRef,
     ImplementationUnavailable,
     UnsupportedInputs,
     VersionedRegistry,
@@ -20,7 +21,9 @@ from .models import (
     DerivedStatus,
     ExcludedRolloutV1,
     ExportDataStage,
-    ExportFormat,
+    ExportFormatCatalogV1,
+    ExportFormatKey,
+    ExportFormatOptionV1,
     ExportResultV1,
     PublicationAssetV1,
     PublishDatasetRequestV1,
@@ -28,6 +31,7 @@ from .models import (
     PublishedRolloutV1,
     PublishPreflightReportV1,
     StepRangeV1,
+    export_format_key,
 )
 from .ports import (
     AnnotationSnapshotPort,
@@ -482,38 +486,88 @@ class ExportCoordinator:
         source: ExportSourcePort,
         sink: ArtifactSinkPort,
         exporters: Sequence[ExporterPort],
+        defaults: Mapping[str, str] | None = None,
     ) -> None:
         self._source = source
         self._sink = sink
         self._exporters: VersionedRegistry[ExporterPort] = VersionedRegistry()
+        self._defaults: dict[str, ExporterPort] = {}
         for exporter in exporters:
-            if exporter.descriptor.ref.key != exporter.format.value:
+            key = export_format_key(exporter.format)
+            if exporter.descriptor.ref.key != key:
                 raise ValueError("exporter descriptor must identify its declared format")
-            self._exporters.register(exporter.descriptor, exporter, default=True)
+            default = defaults is None or defaults.get(key) == exporter.descriptor.ref.version
+            self._exporters.register(exporter.descriptor, exporter, default=default)
+            if default:
+                self._defaults[key] = exporter
+        if defaults is not None and set(defaults) != set(self._defaults):
+            raise ValueError("every configured default must identify a registered exporter")
 
     def descriptors(self) -> tuple[CapabilityDescriptor, ...]:
         return self._exporters.descriptors()
+
+    def formats(self) -> ExportFormatCatalogV1:
+        available_inputs = frozenset({FROZEN_MANIFEST, SYNCHRONIZED_STEPS})
+        return ExportFormatCatalogV1(
+            items=tuple(
+                ExportFormatOptionV1(
+                    format=key,
+                    implementation_version=exporter.descriptor.ref.version,
+                    display_name=exporter.presentation.display_name,
+                    description=exporter.presentation.description,
+                    required_inputs=tuple(sorted(exporter.descriptor.required_inputs)),
+                    available=exporter.descriptor.required_inputs <= available_inputs,
+                    missing_inputs=tuple(
+                        sorted(exporter.descriptor.required_inputs - available_inputs)
+                    ),
+                )
+                for key, exporter in sorted(self._defaults.items())
+            )
+        )
+
+    def implementation(
+        self, format: ExportFormatKey, version: str | None = None
+    ) -> ImplementationRef:
+        return self._exporter(format, version).descriptor.ref
 
     def export(
         self,
         manifest: PublishedDatasetManifestV1,
         *,
-        format: ExportFormat,
+        format: ExportFormatKey,
         attempt_id: str | None = None,
+        implementation_version: str | None = None,
     ) -> ExportResultV1:
-        exporter = self._exporter(format)
+        exporter = self._exporter(format, implementation_version)
         selected_attempt = (
             attempt_id
-            or hashlib.sha256(f"{manifest.content_hash}:{format.value}".encode()).hexdigest()[:32]
+            or hashlib.sha256(
+                f"{manifest.content_hash}:{export_format_key(format)}".encode()
+            ).hexdigest()[:32]
         )
         outcome = "success"
         try:
-            return exporter.export(
+            result = exporter.export(
                 manifest=manifest,
                 source=self._source,
                 sink=self._sink,
                 attempt_id=selected_attempt,
             )
+            if (
+                result.format != format
+                or result.project_id != manifest.project_id
+                or result.dataset_id != manifest.dataset_id
+                or result.dataset_version != manifest.dataset_version
+                or result.manifest_content_hash != manifest.content_hash
+                or result.attempt_id != selected_attempt
+            ):
+                raise problem(
+                    status=409,
+                    code="EXPORT_RESULT_IDENTITY_MISMATCH",
+                    title="Export result does not match its request",
+                    detail="The implementation returned a different frozen input or attempt.",
+                )
+            return result
         except Exception:
             outcome = "failure"
             raise
@@ -522,14 +576,15 @@ class ExportCoordinator:
 
             EXPORTS.labels(
                 outcome=outcome,
-                format=format.value,
+                format=export_format_key(format),
             ).inc()
 
     def preflight(
         self,
         manifest: PublishedDatasetManifestV1,
         *,
-        format: ExportFormat,
+        format: ExportFormatKey,
+        implementation_version: str | None = None,
     ) -> int:
         """Run the selected exporter's preflight policy against the frozen input.
 
@@ -538,7 +593,9 @@ class ExportCoordinator:
         No preflight result transports a large sample list through task history.
         """
 
-        return self._exporter(format).preflight(manifest=manifest, source=self._source)
+        return self._exporter(format, implementation_version).preflight(
+            manifest=manifest, source=self._source
+        )
 
     def verify_artifact(self, result: ExportResultV1) -> None:
         """Re-read the promoted object and verify its immutable content digest."""
@@ -578,10 +635,12 @@ class ExportCoordinator:
             )
         return authorization
 
-    def _exporter(self, format: ExportFormat) -> ExporterPort:
+    def _exporter(self, format: ExportFormatKey, version: str | None = None) -> ExporterPort:
         try:
             return self._exporters.select(
-                format.value, available_inputs=frozenset({FROZEN_MANIFEST, SYNCHRONIZED_STEPS})
+                export_format_key(format),
+                version=version,
+                available_inputs=frozenset({FROZEN_MANIFEST, SYNCHRONIZED_STEPS}),
             ).implementation
         except UnsupportedInputs as exc:
             raise problem(

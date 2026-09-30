@@ -177,6 +177,114 @@ afterAll(() => {
 });
 
 describe("P21 data export page", () => {
+  it("uses a newly registered format and freezes its selected implementation without page changes", async () => {
+    const metadata = {
+      format: "metadata_json",
+      implementation_version: "v7",
+      display_name: "元数据 JSON",
+      description: "不读取时序或机器人",
+      required_inputs: ["frozen-manifest/v1"],
+      available: true,
+      missing_inputs: [],
+    };
+    const job = {
+      job_id:
+        "export:v1:prj_fx_01:dataset_fx_01%2Fversion_fx_03%2Fmetadata_json%2Fnew",
+      project_id: "prj_fx_01",
+      dataset_id: datasetIds.dataset,
+      dataset_version: "version_fx_03",
+      format: metadata.format,
+      attempt_id: "new",
+      status: "PENDING",
+      stage: "queued",
+      progress: { phase: "queued", completed_phases: 0, total_phases: 3 },
+      cancellation_requested: false,
+      result: null,
+      error_code: null,
+      error_message: null,
+      created_at: "2026-09-30T00:00:00Z",
+      updated_at: "2026-09-30T00:00:00Z",
+    };
+    server.use(
+      http.get("*/datasets/export-formats", () =>
+        HttpResponse.json({
+          items: [
+            metadata,
+            {
+              ...metadata,
+              format: "audio_package",
+              display_name: "声音包",
+              available: false,
+              missing_inputs: ["audio/v1"],
+            },
+          ],
+        }),
+      ),
+      http.post("*/datasets/:datasetId/versions/:versionId/exports", () =>
+        HttpResponse.json(job, { status: 202 }),
+      ),
+      http.get("*/datasets/:datasetId/versions/:versionId/exports/:jobId", () =>
+        HttpResponse.json(job),
+      ),
+    );
+    const user = userEvent.setup();
+    render(
+      <ProviderHarness>
+        <MemoryRouter
+          initialEntries={[
+            `/exports?delivery=legacy&datasetId=${datasetIds.dataset}`,
+          ]}
+        >
+          <DataExportPage />
+        </MemoryRouter>
+      </ProviderHarness>,
+    );
+    expect(
+      await screen.findByRole("checkbox", { name: "元数据 JSON" }),
+    ).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "声音包" })).toBeDisabled();
+    const selectAll = await screen.findByRole("button", {
+      name: "全选可导出数据",
+    });
+    await waitFor(() => expect(selectAll).toBeEnabled());
+    await user.click(selectAll);
+    await user.click(screen.getByRole("button", { name: "创建 1 个导出任务" }));
+    expect(await screen.findByText("已创建 1 个导出任务")).toBeVisible();
+    expect(postedExports).toEqual([
+      expect.objectContaining({
+        format: "metadata_json",
+        implementation_version: "v7",
+      }),
+    ]);
+    expect(
+      window.sessionStorage.getItem(window.sessionStorage.key(0)!),
+    ).toContain("metadata_json");
+  });
+
+  it("blocks creation when the server cannot supply export formats", async () => {
+    server.use(
+      http.get("*/datasets/export-formats", () =>
+        HttpResponse.json({ items: [] }),
+      ),
+    );
+    render(
+      <ProviderHarness>
+        <MemoryRouter
+          initialEntries={[
+            `/exports?delivery=legacy&datasetId=${datasetIds.dataset}`,
+          ]}
+        >
+          <DataExportPage />
+        </MemoryRouter>
+      </ProviderHarness>,
+    );
+    expect(await screen.findByText("当前没有可用的导出格式。")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "创建 0 个导出任务" }),
+    ).toBeDisabled();
+    expect(postedExports).toHaveLength(0);
+  });
+
   it("defaults to standard packages and submits an explicit RGB subset without a Lance reference", async () => {
     const f = packageDeliveryFixture();
     Object.assign(f.data.identity, {
@@ -573,6 +681,7 @@ describe("P21 data export page", () => {
         {
           project_id: "prj_fx_01",
           format: "lance_snapshot",
+          implementation_version: "lance-snapshot/v1",
           data_stage: "annotated",
           episode_ids: [datasetIds.episode],
         },
@@ -691,12 +800,12 @@ describe("P21 data export page", () => {
 
       const downloadButtons = await screen.findAllByRole(
         "button",
-        { name: /下载 Assembly dataset .*压缩包/u },
+        { name: /下载 Assembly dataset .*文件/u },
         { timeout: 7_000 },
       );
       await user.click(downloadButtons[0]!);
       await waitFor(() => expect(downloadedName).toMatch(/\.zip$/u));
-      expect(await screen.findByText("压缩包下载已开始")).toBeVisible();
+      expect(await screen.findByText("文件下载已开始")).toBeVisible();
     },
   );
 });

@@ -1,3 +1,4 @@
+import { downloadExport } from "../../features/exports/download";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
   useMutation,
@@ -41,12 +42,14 @@ import {
   cancelPublishedExport,
   createPublishedExport,
   fetchExportEligibility,
+  exportFormatSchema,
   fetchPublishedExport,
   retryPublishedExport,
   type PublishedExportFormat,
   type ExportDataStage,
   type PublishedExportJob,
 } from "../../features/exports/api";
+import { useExportFormats } from "../../features/exports/use-export-formats";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -70,23 +73,6 @@ const MAX_BATCH_TASKS = 50;
 const CREATE_CONCURRENCY = 4;
 const exportJobIdPattern =
   /^export:v1:[A-Za-z0-9._~%-]{1,256}:[A-Za-z0-9._~%-]{1,1024}$/u;
-
-const formatOptions: readonly {
-  value: PublishedExportFormat;
-  label: string;
-  description: string;
-}[] = [
-  {
-    value: "lance_snapshot",
-    label: "Lance 数据文件",
-    description: "导出所选 Episode 的对齐 Step，并保留 rollout_id。",
-  },
-  {
-    value: "lerobot_v3",
-    label: "LeRobot v3",
-    description: "所选历史 Episode 的数值与媒体文件，生成 LeRobot v3 目录。",
-  },
-] as const;
 
 const statusLabels = {
   PENDING: "等待中",
@@ -133,6 +119,7 @@ type TaskRow = Readonly<{
   queryIndex: number;
 }>;
 type BatchRequest = Readonly<{
+  implementationVersion: string;
   source: ExportableSource;
   format: PublishedExportFormat;
   episodeIds: readonly string[];
@@ -186,18 +173,7 @@ function downloadFileName(ref: ExportTaskRef): string {
     .replace(/[<>:"/\\|?*]/gu, "-")
     .replace(/\s+/gu, "-")
     .slice(0, 120);
-  return `${stem || "data-export"}.zip`;
-}
-
-function triggerDownload(url: string, fileName: string): void {
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  anchor.rel = "noreferrer";
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
+  return stem || "data-export";
 }
 
 function readableError(error: unknown): string {
@@ -212,7 +188,7 @@ function readableError(error: unknown): string {
       return "当前 READY 版本尚未完成导出准备，请刷新数据后重试。";
     }
     if (error.problemCode === "EXPORT_SOURCE_NOT_FOUND") {
-      return "该版本的源数据已不可用，无法生成导出压缩包。";
+      return "该版本的源数据已不可用，无法生成导出文件。";
     }
   }
   return error instanceof Error ? error.message : "操作未完成，请稍后重试。";
@@ -226,10 +202,6 @@ function formatDate(value: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsed);
-}
-
-function formatLabel(format: PublishedExportFormat): string {
-  return formatOptions.find((item) => item.value === format)?.label ?? format;
 }
 
 function progressOf(job: PublishedExportJob | null): number {
@@ -270,7 +242,7 @@ function isTaskRef(value: unknown): value is ExportTaskRef {
     typeof item.versionId === "string" &&
     typeof item.datasetName === "string" &&
     typeof item.versionLabel === "string" &&
-    (item.format === "lance_snapshot" || item.format === "lerobot_v3") &&
+    exportFormatSchema.safeParse(item.format).success &&
     typeof item.createdAt === "string"
   );
 }
@@ -339,9 +311,9 @@ export function DataExportPage() {
   const standardMode =
     dataStage !== "raw" && params.get("delivery") !== "legacy";
   const [selectedSourceKeys, setSelectedSourceKeys] = useState<string[]>([]);
-  const [selectedFormats, setSelectedFormats] = useState<
-    PublishedExportFormat[]
-  >(["lance_snapshot"]);
+  const [formatSelection, setSelectedFormats] = useState<
+    PublishedExportFormat[] | null
+  >(null);
   const [taskQuery, setTaskQuery] = useState("");
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
   const [batchFeedback, setBatchFeedback] = useState<{
@@ -362,9 +334,23 @@ export function DataExportPage() {
     capabilities.has("episode.read");
   const canCreate = capabilities.has("export.create");
   const canDownload = capabilities.has("export.download");
+  const formats = useExportFormats(
+    scopeKey,
+    projectId,
+    canRead && !standardMode && dataStage !== "raw",
+  );
+  const formatOptions = formats.data ?? [];
+  const availableFormats = formatOptions.filter((item) => item.available);
+  const selectedFormats = (
+    formatSelection ?? availableFormats.slice(0, 1).map((item) => item.format)
+  ).filter((format) => availableFormats.some((item) => item.format === format));
+  const formatLabel = (format: PublishedExportFormat) =>
+    formatOptions.find((item) => item.format === format)?.display_name ??
+    format;
 
   useEffect(() => {
     setSelectedSourceKeys([]);
+    setSelectedFormats(null);
     setTaskStore((current) =>
       current.scopeKey === scopeKey
         ? current
@@ -621,6 +607,7 @@ export function DataExportPage() {
               datasetId: request.source.datasetId,
               datasetVersion: request.source.versionId,
               format: request.format,
+              implementationVersion: request.implementationVersion,
               episodeIds: request.episodeIds,
               dataStage: request.dataStage,
               idempotencyKey: idempotencyKey("published-export"),
@@ -668,7 +655,7 @@ export function DataExportPage() {
           type: "success",
           title: `已创建 ${result.created.length} 个导出任务`,
           description:
-            "各任务将独立生成 ZIP 压缩包，可在下方查看进度并分别下载。",
+            "各任务将独立生成 导出文件，可在下方查看进度并分别下载。",
         });
       } else if (result.created.length > 0) {
         setBatchFeedback({
@@ -726,9 +713,9 @@ export function DataExportPage() {
         jobId: ref.jobId,
       }),
     onSuccess: (authorization, ref) => {
-      triggerDownload(authorization.download_url, downloadFileName(ref));
+      downloadExport(authorization, downloadFileName(ref));
       setDownloadFeedback(
-        `${ref.datasetName} · ${formatLabel(ref.format)} 压缩包已开始下载，授权有效期至 ${formatDate(authorization.expires_at)}。`,
+        `${ref.datasetName} · ${formatLabel(ref.format)} 文件已开始下载，授权有效期至 ${formatDate(authorization.expires_at)}。`,
       );
     },
   });
@@ -759,13 +746,16 @@ export function DataExportPage() {
     setSelectedSourceKeys([]);
   };
   const startBatch = () => {
-    if (!projectId || dataStage === "raw") return;
+    if (!projectId || dataStage === "raw" || !formats.isSuccess) return;
     setBatchFeedback(null);
     createBatch.mutate(
       selectedSources.flatMap((source) =>
         selectedFormats.map((format) => ({
           source,
           format,
+          implementationVersion: availableFormats.find(
+            (item) => item.format === format,
+          )!.implementation_version,
           dataStage,
           episodeIds: selectedEpisodes
             .filter((episode) => episode.datasetId === source.datasetId)
@@ -936,7 +926,7 @@ export function DataExportPage() {
         if (status === "SUCCEEDED") {
           return (
             <Button
-              aria-label={`下载 ${row.ref.datasetName} ${formatLabel(row.ref.format)} 压缩包`}
+              aria-label={`下载 ${row.ref.datasetName} ${formatLabel(row.ref.format)} 文件`}
               disabled={!canDownload || downloadTask.isPending}
               icon={<Download aria-hidden="true" size={15} />}
               loading={downloading}
@@ -944,7 +934,7 @@ export function DataExportPage() {
               type="primary"
               onClick={() => downloadTask.mutate(row.ref)}
             >
-              下载压缩包
+              下载文件
             </Button>
           );
         }
@@ -971,6 +961,7 @@ export function DataExportPage() {
   const creationReady =
     canCreate &&
     Boolean(projectId) &&
+    formats.isSuccess &&
     batchTaskCount > 0 &&
     batchTaskCount <= MAX_BATCH_TASKS &&
     !sourceFiltersPending &&
@@ -1298,7 +1289,9 @@ export function DataExportPage() {
                               <strong id="export-format-title">
                                 选择导出格式
                               </strong>
-                              <small>格式可多选，每个格式独立生成 ZIP</small>
+                              <small>
+                                格式可多选，每个格式独立生成导出文件
+                              </small>
                             </span>
                           </div>
                         </div>
@@ -1306,33 +1299,57 @@ export function DataExportPage() {
                         <div className={styles.exportComposer}>
                           <fieldset className={styles.formatFieldset}>
                             <legend>导出格式（可多选）</legend>
+                            {formats.isPending ? (
+                              <p role="status">正在读取导出格式…</p>
+                            ) : null}
+                            {formats.isError ? (
+                              <p role="alert">
+                                无法读取导出格式，请重试。
+                                <Button onClick={() => void formats.refetch()}>
+                                  重试
+                                </Button>
+                              </p>
+                            ) : null}
+                            {formats.isSuccess &&
+                            availableFormats.length === 0 ? (
+                              <p role="status">当前没有可用的导出格式。</p>
+                            ) : null}
                             <div className={styles.formatOptions}>
                               {formatOptions.map((option) => {
                                 const checked = selectedFormats.includes(
-                                  option.value,
+                                  option.format,
                                 );
                                 return (
                                   <label
-                                    key={option.value}
+                                    key={option.format}
                                     data-selected={checked}
                                   >
                                     <Checkbox
-                                      aria-label={option.label}
+                                      aria-label={option.display_name}
                                       checked={checked}
+                                      disabled={!option.available}
                                       onChange={(event) =>
-                                        setSelectedFormats((current) =>
+                                        setSelectedFormats(
                                           event.target.checked
-                                            ? [...current, option.value]
-                                            : current.filter(
+                                            ? [
+                                                ...selectedFormats,
+                                                option.format,
+                                              ]
+                                            : selectedFormats.filter(
                                                 (format) =>
-                                                  format !== option.value,
+                                                  format !== option.format,
                                               ),
                                         )
                                       }
                                     />
                                     <span>
-                                      <strong>{option.label}</strong>
-                                      <small>{option.description}</small>
+                                      <strong>{option.display_name}</strong>
+                                      <small>
+                                        {option.description}
+                                        {!option.available
+                                          ? "（当前输入能力不支持）"
+                                          : ""}
+                                      </small>
                                     </span>
                                   </label>
                                 );
@@ -1486,7 +1503,7 @@ export function DataExportPage() {
                     showIcon
                     className={styles.taskAlert}
                     description={downloadFeedback}
-                    title="压缩包下载已开始"
+                    title="文件下载已开始"
                     type="success"
                     onClose={() => setDownloadFeedback(null)}
                   />

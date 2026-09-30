@@ -5,10 +5,10 @@ from typing import Protocol, runtime_checkable
 
 from hc_data_platform.capabilities.registry import CapabilityDescriptor
 
+from .contracts import ExportPresentation
 from .models import (
     ApprovedAnnotationSnapshotV1,
     CatalogRolloutSnapshotV1,
-    ExportFormat,
     ExportResultV1,
     ExportStepV1,
     PublishedDatasetManifestV1,
@@ -95,10 +95,13 @@ class ArtifactSinkPort(Protocol):
 @runtime_checkable
 class ExporterPort(Protocol):
     @property
+    def presentation(self) -> ExportPresentation: ...
+
+    @property
     def descriptor(self) -> CapabilityDescriptor: ...
 
     @property
-    def format(self) -> ExportFormat: ...
+    def format(self) -> str: ...
 
     def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
         """Validate this format's own inputs without writing output artifacts."""

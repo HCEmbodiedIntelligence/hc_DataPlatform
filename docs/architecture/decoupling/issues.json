@@ -474,13 +474,19 @@
       "title": "导出有接口但格式选择与输入假设仍集中",
       "scope": "两分支",
       "owner": "T4 T9",
-      "status": "in_progress",
+      "status": "implemented_verified",
       "evidence": [
         "capabilities.registry provides explicit default, exact version selection, duplicate and missing-input rejection",
         "Both production and reference exporters declare descriptors and own preflight; coordinator does not collect steps",
-        "108 publishing/registry/boundary tests passed; focused final 50 tests and 8-file mypy passed"
+        "108 publishing/registry/boundary tests passed; focused final 50 tests and 8-file mypy passed",
+        "ExportFormatKey accepts validated extension IDs; authenticated export-formats endpoint exposes registered defaults and missing input capabilities",
+        "ExportWorkflowInput and job result retain exact implementation version; retries keep it; old unversioned jobs map explicitly to historical versions",
+        "Third metadata_json exporter passes create/query/retry/download and tenant denial tests without changing core format enum or reading synchronized steps",
+        "P07/P21 use shared format discovery and MIME-aware downloads; 19 frontend tests, typecheck, ESLint and production build passed",
+        "131 backend regression tests passed; 8 external-service tests pending separate run; Temporal version tests 5 passed, baseline-history replay/wire tests 4 passed, legacy commit/export execution 1 passed",
+        "8 publishing/registry files pass mypy; workflow baseline/current both have identical 36 pre-existing errors; byte comparison matches prior LeRobot/depth/JSON artifacts"
       ],
-      "remaining": "仍需开放格式线协议和前端能力发现；将选定 exporter 版本冻结到持久任务并在重试沿用；完成第三种注册格式的端到端验证。"
+      "remaining": "X07 的发布版本导出链已验证。流式产物/大规模样本读取归 X08；无本体通用来源归 X09；独立训练消费者归 X10，均未因本项完成而关闭。"
     },
     {
       "id": "X08",

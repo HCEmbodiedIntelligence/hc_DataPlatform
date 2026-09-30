@@ -30,7 +30,7 @@ from hc_data_platform.data_formats.arrow import parquet_bytes as _parquet_bytes 
 from hc_data_platform.data_formats.arrow import require_arrow as _require_arrow
 from hc_data_platform.data_formats.json import canonical_json_bytes
 
-from .contracts import LEROBOT_EXPORT_REVISION, step_export_descriptor
+from .contracts import LEROBOT_EXPORT_REVISION, ExportPresentation, step_export_descriptor
 from .export_assets import ExportAssetsPort
 from .models import (
     ExportFormat,
@@ -151,6 +151,12 @@ def _require_lance() -> Any:
 
 class LanceSnapshotExporter:
     @property
+    def presentation(self) -> ExportPresentation:
+        return ExportPresentation(
+            "Lance 数据文件", "导出所选 Episode 的对齐 Step，并保留 rollout_id。"
+        )
+
+    @property
     def descriptor(self) -> CapabilityDescriptor:
         return step_export_descriptor(self.format.value, "lance-snapshot/v1")
 
@@ -266,6 +272,12 @@ def _scalar_feature(dtype: str) -> dict[str, Any]:
 
 
 class LeRobotV3Exporter:
+    @property
+    def presentation(self) -> ExportPresentation:
+        return ExportPresentation(
+            "LeRobot v3", "所选历史 Episode 的数值与媒体文件，生成 LeRobot v3 目录。"
+        )
+
     @property
     def descriptor(self) -> CapabilityDescriptor:
         return step_export_descriptor(self.format.value, LEROBOT_EXPORT_REVISION)

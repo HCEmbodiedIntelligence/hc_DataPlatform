@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
+
+from hc_data_platform.capabilities.registry import KEY_PATTERN, VERSION_PATTERN
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 
@@ -40,6 +42,45 @@ class ExportFormat(str, Enum):
 
     LANCE_SNAPSHOT = "lance_snapshot"
     LEROBOT_V3 = "lerobot_v3"
+
+
+EXPORT_FORMAT_PATTERN = KEY_PATTERN
+
+
+def export_format_key(value: str) -> str:
+    return value.value if isinstance(value, ExportFormat) else value
+
+
+def _known_format(value: str) -> str:
+    # Preserve old enum identities for existing in-process consumers and histories.
+    try:
+        return ExportFormat(value)
+    except ValueError:
+        return value
+
+
+ExportFormatKey = Annotated[
+    ExportFormat | Annotated[str, Field(pattern=EXPORT_FORMAT_PATTERN)],
+    AfterValidator(_known_format),
+]
+
+
+class ExportFormatOptionV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    format: ExportFormatKey
+    implementation_version: str
+    display_name: str
+    description: str
+    required_inputs: tuple[str, ...]
+    available: bool
+    missing_inputs: tuple[str, ...] = ()
+
+
+class ExportFormatCatalogV1(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    items: tuple[ExportFormatOptionV1, ...]
 
 
 class ExportJobStatus(str, Enum):
@@ -228,7 +269,8 @@ class ExportDatasetRequestV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     project_id: str = Field(min_length=1)
-    format: ExportFormat
+    format: ExportFormatKey
+    implementation_version: str | None = Field(default=None, pattern=VERSION_PATTERN)
     data_stage: ExportDataStage = ExportDataStage.ANNOTATED
     episode_ids: tuple[str, ...] | None = Field(default=None, min_length=1, max_length=10000)
 
@@ -236,7 +278,7 @@ class ExportDatasetRequestV1(BaseModel):
 class ExportResultV1(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    format: ExportFormat
+    format: ExportFormatKey
     project_id: str
     dataset_id: str
     dataset_version: str
@@ -254,7 +296,7 @@ class ExportJobResultV1(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    format: ExportFormat
+    format: ExportFormatKey
     project_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     dataset_version: str = Field(min_length=1)
@@ -290,7 +332,7 @@ class ExportJobV1(BaseModel):
     project_id: str = Field(min_length=1)
     dataset_id: str = Field(min_length=1)
     dataset_version: str = Field(min_length=1)
-    format: ExportFormat
+    format: ExportFormatKey
     attempt_id: str = Field(min_length=1)
     status: ExportJobStatus
     stage: str = Field(min_length=1)
@@ -309,7 +351,7 @@ class ExportDownloadAuthorizationV1(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     job_id: str = Field(min_length=1)
-    format: ExportFormat
+    format: ExportFormatKey
     download_url: str = Field(min_length=1)
     expires_at: datetime
     artifact_content_hash: str = Field(pattern=SHA256_PATTERN)

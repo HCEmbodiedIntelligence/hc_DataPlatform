@@ -285,6 +285,36 @@ async function validateReturnBody(request: Request): Promise<Response | null> {
 }
 
 export const datasetHandlers = [
+  http.get("*/datasets/export-formats", ({ request }) => {
+    if (
+      new URL(request.url).searchParams.get("project_id") !==
+      datasetFixtureScope.project_id
+    )
+      return error(403, "FORBIDDEN", "导出项目与当前 Scope 不一致");
+    return HttpResponse.json({
+      items: [
+        {
+          format: "lance_snapshot",
+          implementation_version: "lance-snapshot/v1",
+          display_name: "Lance 数据文件",
+          description: "导出所选 Episode 的对齐 Step，并保留 rollout_id。",
+          required_inputs: ["frozen-manifest/v1", "synchronized-steps/v1"],
+          available: true,
+          missing_inputs: [],
+        },
+        {
+          format: "lerobot_v3",
+          implementation_version: "lerobot-materialized-v4-holobrain",
+          display_name: "LeRobot v3",
+          description:
+            "所选历史 Episode 的数值与媒体文件，生成 LeRobot v3 目录。",
+          required_inputs: ["frozen-manifest/v1", "synchronized-steps/v1"],
+          available: true,
+          missing_inputs: [],
+        },
+      ],
+    });
+  }),
   http.get(`${api}/datasets\\:page-capabilities`, ({ request, params }) => {
     const invalid = validate(request, params);
     if (invalid) return invalid;

@@ -154,3 +154,38 @@ Node 22.23.0 / pnpm 10.14.0，未改锁文件。构建仅写本地 dist，未部
 命令入口：外部 diagnostics/platform-decoupling-work/check-frontend.sh。
 
 页面注册、跨页面复用、显式作用域 client 与 renderer 接口仍列为待办。
+
+
+## 开放导出格式与固定执行版本（X07）
+
+发布版本导出接口现在接受有长度和字符限制的格式标识。`ExportFormat` 仅保留为旧 Python
+调用方的兼容枚举，不再限定 HTTP、任务或前端可接受的格式集合。
+`GET /api/v1/datasets/export-formats?project_id=...` 在 export.read 授权后返回默认实现、显示名、
+输入要求和缺失能力；P07/P21 使用同一 feature 查询，目录失败或无可用能力时禁止新建。
+历史格式即使已从目录撤下，已有任务仍可查询和授权下载。文件名按产物 MIME 类型处理。
+
+新增实现需提供 `ExporterPort` 的 descriptor、presentation、format、preflight 和 export，
+然后在应用 composition 中传入 ExportCoordinator。需要保留旧实现时同时注册多个版本，
+通过 `defaults={format_key: version}` 显式选择新任务的默认值；不要修改页面或中央格式枚举。
+每个实现自己选择所需输入和预检策略；格式目录的 available 表示服务具备输入能力，
+实际快照是否满足格式要求仍由该实现预检判断。改变输出字节的实现须使用新的版本标识，
+并遵守 artifact sink 的不可变对象协议，不能覆盖同路径旧产物。
+
+新建任务先解析选定实现，保存 key/version 到任务输入和 result.export_implementation；
+Temporal preflight/materialize 与显式重试均使用精确版本。未安装实现返回 503，且不创建任务；
+已安装但暂时执行失败仍保留可重试的失败任务。旧任务无该字段时仅映射到两个历史版本，
+不会使用变化后的默认实现。未固定版本的历史输入序列化保持旧 JSON 形状；提交 76150bb5
+实际运行产生的历史保存在 tests/workflow/fixtures/export-workflow-legacy-v1.json 并通过新代码回放。
+实现返回错误的 project/dataset/version/format/attempt/hash 时，协调器拒绝该结果。
+
+第三种 metadata_json 测试实现完成了目录发现、创建、查询、下载和版本升级后的重试，
+不读取 Step、媒体或机器人实例。前端测试从服务端接收新格式和缺失能力并执行真实页面操作。
+这证明发布导出扩展接口可用，不代表全链路无本体数据、Episode 交付和训练能力已完成。
+
+验证：后端回归 131 passed、8 skipped（独立 PostgreSQL/MinIO 验证另列）；
+Temporal 新版本路由测试 5 passed，旧历史回放和输入兼容 4 passed，已有真实提交/导出执行 1 passed。
+前端 19 tests、完整 typecheck、ESLint、生产构建通过，正式 OpenAPI 与 runtime 对齐后重新生成客户端。
+8 个发布/注册源码文件 mypy 通过；workflow 三个文件的 36 个历史错误与改造前一致，仍需后续治理。
+相较旧 codec 基线，实际 ZIP/8 个成员、深度视频/编码值/profile、JSON、任务表摘要逐项相同。
+证据位于 results/export-extension-regression-final.xml、export-temporal-versions.xml、
+export-legacy-replay.xml、export-legacy-execution.xml、export-frontend-final.log、export-format-bytes.json。

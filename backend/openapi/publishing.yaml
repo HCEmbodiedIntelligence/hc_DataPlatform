@@ -1,4 +1,18 @@
 paths:
+  /api/v1/datasets/export-formats:
+    get:
+      operationId: getExportFormats
+      tags: [publishing]
+      parameters:
+        - $ref: '#/components/parameters/PublishingProjectId'
+      responses:
+        '200':
+          description: Registered default export implementations and their input requirements. Historical versions remain routable by their frozen identity.
+          headers: {Cache-Control: {$ref: '#/components/headers/NoStore'}}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ExportFormatCatalogV1'}
+        '403': {description: Export read access is not granted in this project.}
   /api/v1/datasets/{dataset_id}/versions/{dataset_version}/export-eligibility:
     get:
       operationId: getDatasetExportEligibility
@@ -103,7 +117,8 @@ paths:
               schema: {$ref: '#/components/schemas/ExportJobV1'}
         '404': {description: The immutable dataset version does not exist.}
         '409': {description: An existing durable export result or immutable source is inconsistent.}
-        '422': {description: Invalid export request.}
+        '422': {description: Invalid export request or unsupported input capabilities.}
+        '503': {description: The selected export implementation is unavailable; no job is created.}
   /api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports/{job_id}:
     get:
       operationId: getPublishedDatasetExportJob
@@ -353,13 +368,44 @@ components:
         excluded_rollouts:
           type: array
           items: {$ref: '#/components/schemas/ExcludedPublishedRolloutV1'}
+    ExportFormatOptionV1:
+      type: object
+      additionalProperties: false
+      required: [format, implementation_version, display_name, description, required_inputs, available]
+      properties:
+        format: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,127}$'}
+        implementation_version: {type: string}
+        display_name: {type: string}
+        description: {type: string}
+        required_inputs:
+          type: array
+          items: {type: string}
+        available: {type: boolean}
+        missing_inputs:
+          type: array
+          items: {type: string}
+          default: []
+    ExportFormatCatalogV1:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/ExportFormatOptionV1'}
     ExportDatasetRequestV1:
       type: object
       additionalProperties: false
       required: [project_id, format]
       properties:
+        implementation_version:
+          description: Exact implementation selected from the format catalog. Omitted resolves and freezes the current default when the job is created.
+          anyOf:
+            - {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_./-]{0,127}$'}
+            - {type: 'null'}
+          default: null
         project_id: {type: string, minLength: 1}
-        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        format: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,127}$'}
         data_stage: {$ref: '#/components/schemas/ExportDataStage'}
         episode_ids:
           description: Exact Episodes to export from this version; omitted preserves whole-version export.
@@ -387,7 +433,7 @@ components:
         - row_count
         - media_type
       properties:
-        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        format: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,127}$'}
         project_id: {type: string, minLength: 1}
         dataset_id: {type: string, minLength: 1}
         dataset_version: {type: string, minLength: 1}
@@ -425,7 +471,7 @@ components:
         project_id: {type: string}
         dataset_id: {type: string}
         dataset_version: {type: string}
-        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        format: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,127}$'}
         attempt_id: {type: string, minLength: 1}
         status: {$ref: '#/components/schemas/ExportJobStatus'}
         stage: {type: string, minLength: 1}
@@ -451,7 +497,7 @@ components:
         - media_type
       properties:
         job_id: {type: string, minLength: 1}
-        format: {type: string, enum: [lance_snapshot, lerobot_v3]}
+        format: {type: string, pattern: '^[a-z][a-z0-9_.-]{0,127}$'}
         download_url: {type: string, minLength: 1}
         expires_at: {type: string, format: date-time}
         artifact_content_hash: {type: string, pattern: '^[0-9a-f]{64}$'}
