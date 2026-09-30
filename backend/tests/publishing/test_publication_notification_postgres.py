@@ -25,6 +25,8 @@ from hc_data_platform.core.dbapi import (  # noqa: E402
     psycopg_connection_factory,
 )
 from hc_data_platform.core.migrations import apply_migrations  # noqa: E402
+from hc_data_platform.dataset_registry.publication import release_version_id  # noqa: E402
+from hc_data_platform.integrations.publication import postgres_publication_effects  # noqa: E402
 from hc_data_platform.publishing.models import (  # noqa: E402
     PublishedDatasetManifestV1,
     PublishedRolloutV1,
@@ -305,7 +307,9 @@ def test_publication_creates_one_durable_owner_notification_on_replay(
         dataset_version=dataset_version,
         rollout_id=rollout_id,
     )
-    repository = PostgresPublishedManifestRepository(psycopg_connection_factory(isolated_database))
+    repository = PostgresPublishedManifestRepository(
+        psycopg_connection_factory(isolated_database), side_effects=postgres_publication_effects
+    )
 
     with _request_scope(project_id, subject_id=owner_id):
         first = repository.create_immutable(candidate)
@@ -322,6 +326,29 @@ def test_publication_creates_one_durable_owner_notification_on_replay(
             """,
             (owner_id,),
         ).fetchall()
+        release = connection.execute(
+            "SELECT version_document FROM dataset_registry.dataset_versions "
+            "WHERE project_id=%s AND dataset_id=%s AND version_id=%s",
+            (project_id, dataset_id, release_version_id(dataset_version)),
+        ).fetchone()[0]
+        head = connection.execute(
+            "SELECT version,dataset_document FROM dataset_registry.datasets "
+            "WHERE project_id=%s AND dataset_id=%s",
+            (project_id, dataset_id),
+        ).fetchone()
+    assert release["version_id"] == release_version_id(dataset_version)
+    assert release["manifest"]["sha256"] == candidate.content_hash
+    assert release["version_token"] == "publication:" + candidate.content_hash
+    assert head[0] == 2  # Replaying publication did not increment the dataset ETag again.
+    assert head[1]["current_ready_version"]["version_id"] == release["version_id"]
+    with _request_scope(project_id, subject_id=owner_id):
+        loaded = repository.get(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            dataset_version=release_version_id(dataset_version),
+        )
+    assert loaded.content_hash == candidate.content_hash
+    assert loaded.dataset_version == release["version_id"]
     assert len(rows) == 1
     row = rows[0]
     assert tuple(str(value) for value in row[:5]) == (
@@ -353,7 +380,9 @@ def test_notification_failure_rolls_back_publication_and_lineage(
         create_account=False,
     )
     _seed_rollout(isolated_database, project_id=project_id, rollout_id=rollout_id)
-    repository = PostgresPublishedManifestRepository(psycopg_connection_factory(isolated_database))
+    repository = PostgresPublishedManifestRepository(
+        psycopg_connection_factory(isolated_database), side_effects=postgres_publication_effects
+    )
     candidate = _manifest(
         project_id=project_id,
         dataset_id=dataset_id,
@@ -389,4 +418,207 @@ def test_notification_failure_rolls_back_publication_and_lineage(
             """,
             (missing_owner_id,),
         ).fetchone()[0]
+        release_count = connection.execute(
+            "SELECT count(*) FROM dataset_registry.dataset_versions "
+            "WHERE project_id=%s AND dataset_id=%s AND version_scope='DATASET_RELEASE'",
+            (project_id, dataset_id),
+        ).fetchone()[0]
+        head = connection.execute(
+            "SELECT version,dataset_document FROM dataset_registry.datasets "
+            "WHERE project_id=%s AND dataset_id=%s",
+            (project_id, dataset_id),
+        ).fetchone()
     assert (publication_count, lineage_count, notification_count) == (0, 0, 0)
+    assert release_count == 0
+    assert head[0] == 1 and "current_ready_version" not in head[1]
+
+
+@pytest.mark.parametrize("failed_phase", ["prepare", "project", "notify"])
+def test_each_participant_failure_rolls_back_children_and_retry_publishes_once(
+    isolated_database: str,
+    failed_phase: str,
+) -> None:
+    project_id = f"atomic-{failed_phase}"
+    dataset_id, rollout_id, owner_id = (
+        f"dataset_{failed_phase}",
+        f"rollout-{failed_phase}",
+        str(uuid4()),
+    )
+    _seed_product_dataset(
+        isolated_database,
+        project_id=project_id,
+        dataset_id=dataset_id,
+        owner_id=owner_id,
+        create_account=True,
+    )
+    _seed_rollout(isolated_database, project_id=project_id, rollout_id=rollout_id)
+    candidate = _manifest(
+        project_id=project_id,
+        dataset_id=dataset_id,
+        dataset_version="published_1",
+        rollout_id=rollout_id,
+    )
+    release_id = release_version_id(candidate.dataset_version)
+    scope = {
+        "organization_id": ORGANIZATION_ID,
+        "project_id": project_id,
+        "region_code": REGION_CODE,
+    }
+    child = {
+        "scope": scope,
+        "dataset_id": dataset_id,
+        "version_id": "version_lance_1",
+        "content_snapshot": {"content_snapshot_id": "content-1", "sha256": "e" * 64},
+        "manifest": {"manifest_id": "manifest-1", "sha256": "f" * 64},
+    }
+    with psycopg.connect(isolated_database) as connection:
+        connection.execute(
+            """INSERT INTO dataset_registry.dataset_version_content_projections (
+                organization_id,project_id,region_code,dataset_id,version_id,
+                content_snapshot_id,content_snapshot_hash,manifest_id,manifest_sha256,
+                operational_revision,content_document
+            ) VALUES (%s,%s,%s,%s,'version_lance_1','content-1',%s,'manifest-1',%s,'r1',
+                      %s::jsonb)""",
+            (
+                ORGANIZATION_ID,
+                project_id,
+                REGION_CODE,
+                dataset_id,
+                "e" * 64,
+                "f" * 64,
+                json.dumps(child),
+            ),
+        )
+        connection.execute(
+            """INSERT INTO dataset_registry.dataset_version_schema_summaries (
+                organization_id,project_id,region_code,dataset_id,version_id,
+                schema_snapshot_id,channel_count,schema_document
+            ) VALUES (%s,%s,%s,%s,'version_lance_1','schema-1',2,%s::jsonb)""",
+            (
+                ORGANIZATION_ID,
+                project_id,
+                REGION_CODE,
+                dataset_id,
+                json.dumps(
+                    {
+                        "scope": scope,
+                        "dataset_id": dataset_id,
+                        "version_id": "version_lance_1",
+                        "schema_snapshot_id": "schema-1",
+                        "sentinel": "frozen-schema",
+                    }
+                ),
+            ),
+        )
+
+    def failing_effects(cursor):
+        real = postgres_publication_effects(cursor)
+
+        class FailingEffects:
+            def prepare_sources(self, manifest):
+                real.prepare_sources(manifest)
+                if failed_phase == "prepare":
+                    raise RuntimeError("injected preparation failure")
+
+            def project_release(self, manifest):
+                real.project_release(manifest)
+                if failed_phase == "project":
+                    raise RuntimeError("injected projection failure")
+
+            def notify_owner(self, manifest):
+                real.notify_owner(manifest)
+                if failed_phase == "notify":
+                    raise RuntimeError("injected notification failure")
+
+        return FailingEffects()
+
+    failed = PostgresPublishedManifestRepository(
+        psycopg_connection_factory(isolated_database),
+        side_effects=failing_effects,
+    )
+    with (
+        _request_scope(project_id, subject_id=owner_id),
+        pytest.raises(RuntimeError, match="injected"),
+    ):
+        failed.create_immutable(candidate)
+    with psycopg.connect(isolated_database) as connection:
+        for table in (
+            "dataset_versions",
+            "dataset_version_content_projections",
+            "dataset_version_schema_summaries",
+        ):
+            count = connection.execute(
+                sql.SQL(
+                    "SELECT count(*) FROM dataset_registry.{} "
+                    "WHERE project_id=%s AND dataset_id=%s AND version_id=%s"
+                ).format(sql.Identifier(table)),
+                (project_id, dataset_id, release_id),
+            ).fetchone()[0]
+            assert count == 0
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM publishing.dataset_versions WHERE project_id=%s",
+                (project_id,),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM publishing.rollout_publication_lineage WHERE project_id=%s",
+                (project_id,),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM access_control.account_notifications WHERE recipient_id=%s",
+                (owner_id,),
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            connection.execute(
+                "SELECT version FROM dataset_registry.datasets "
+                "WHERE project_id=%s AND dataset_id=%s",
+                (project_id, dataset_id),
+            ).fetchone()[0]
+            == 1
+        )
+
+    complete = PostgresPublishedManifestRepository(
+        psycopg_connection_factory(isolated_database),
+        side_effects=postgres_publication_effects,
+    )
+    with _request_scope(project_id, subject_id=owner_id):
+        assert complete.create_immutable(candidate) == candidate
+        assert complete.create_immutable(candidate) == candidate
+    with psycopg.connect(isolated_database) as connection:
+        copied = connection.execute(
+            "SELECT content_document FROM dataset_registry.dataset_version_content_projections "
+            "WHERE project_id=%s AND dataset_id=%s AND version_id=%s",
+            (project_id, dataset_id, release_id),
+        ).fetchone()[0]
+        assert copied["content_snapshot"] == child["content_snapshot"]
+        assert copied["scope"] == scope and copied["version_id"] == release_id
+        assert copied["manifest"]["sha256"] == candidate.content_hash
+        schema = connection.execute(
+            "SELECT schema_document FROM dataset_registry.dataset_version_schema_summaries "
+            "WHERE project_id=%s AND dataset_id=%s AND version_id=%s",
+            (project_id, dataset_id, release_id),
+        ).fetchone()[0]
+        assert schema["sentinel"] == "frozen-schema" and schema["version_id"] == release_id
+        assert (
+            connection.execute(
+                "SELECT version FROM dataset_registry.datasets "
+                "WHERE project_id=%s AND dataset_id=%s",
+                (project_id, dataset_id),
+            ).fetchone()[0]
+            == 2
+        )
+        assert (
+            connection.execute(
+                "SELECT count(*) FROM access_control.account_notifications WHERE recipient_id=%s",
+                (owner_id,),
+            ).fetchone()[0]
+            == 1
+        )

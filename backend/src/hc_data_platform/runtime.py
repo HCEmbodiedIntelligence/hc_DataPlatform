@@ -140,6 +140,7 @@ from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
+from hc_data_platform.integrations.publication import postgres_publication_effects
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
     PostgresAdvisoryDatasetLock,
@@ -967,7 +968,9 @@ def build_runtime(
             annotations=annotation,
             catalog=catalog,
         ),
-        repository=PostgresPublishedManifestRepository(connection_factory),
+        repository=PostgresPublishedManifestRepository(
+            connection_factory, side_effects=postgres_publication_effects
+        ),
         artifact_sink=artifact_sink,
     )
     exporter = ExportCoordinator(

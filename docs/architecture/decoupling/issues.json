@@ -190,19 +190,25 @@
       "title": "发布仓储直接写数据集目录内部表",
       "scope": "两分支",
       "owner": "T4 T5",
-      "status": "pending",
+      "status": "implemented_verified",
       "evidence": [
-        "Real PostgreSQL run: three publication-lineage tests fail because PostgresPublishedManifestRepository directly calls continuous_recordings.lineage on legacy-only schema; export-migration-service-validation.xml. Separate transactional integration port required."
+        "Real PostgreSQL run: three publication-lineage tests fail because PostgresPublishedManifestRepository directly calls continuous_recordings.lineage on legacy-only schema; export-migration-service-validation.xml. Separate transactional integration port required.",
+        "publishing.postgres delegates three phases to PublicationSideEffects; dataset_registry owns DatasetReleaseProjection/Port and SQL; security owns AccountNotificationWriter and SQL; continuous_recordings owns source preparation",
+        "runtime injects integrations.publication.postgres_publication_effects, binding all participants to one cursor/transaction; publication-only composition must be selected explicitly",
+        "9 real PostgreSQL tests passed: previous three isolated lineage failures recovered, directory and notification idempotence, child projection rollback and retry for every participant phase",
+        "172 domain/API/architecture tests passed; 9 source files pass mypy; formal/runtime OpenAPI unchanged; AST gate prohibits foreign table strings and direct concrete participant dependencies"
       ],
-      "remaining": "目录模块拥有发布投影写入接口，发布提交协调器在同一事务或可恢复 outbox 协议中调用；避免改变已有发布原子性。"
+      "remaining": ""
     },
     {
       "id": "B20",
       "title": "跨领域 SQL 读取让内部表成为事实接口",
       "scope": "两分支",
       "owner": "T4 T5 T10",
-      "status": "pending",
-      "evidence": [],
+      "status": "in_progress",
+      "evidence": [
+        "Publication manifest adapter no longer reads dataset/account tables. Cross-domain catalog readiness, source binding SQL and other modules remain to migrate."
+      ],
       "remaining": "为稳定投影或查询服务声明所有权与版本；区分正常聚合读取和越界写入。不要把所有 JOIN 机械改成远程 RPC。"
     },
     {

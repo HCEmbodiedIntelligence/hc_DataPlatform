@@ -209,3 +209,33 @@ AST 门禁扩展为禁止 feature 从 pages 导入类型、函数或动态模块
 覆盖原子发布/回滚、中断恢复、并发、作用域隔离、对象损坏、实际 CLI 和历史下载；
 服务和产物均位于临时容器中，已清理。证据 export-migration-services-final.xml。
 publication lineage 的三项历史依赖失败仍保留，未用跳过或 mock 将其记成通过。
+
+
+## 发布事务中的模块职责（B19）
+
+`publishing.postgres` 现在只保存发布 Manifest、发布来源关系与标注定版事实，
+不直接操作 dataset_registry/account_notifications，也不导入连续录制实现。
+`PublicationSideEffects` 明确 prepare_sources、project_release、notify_owner 三个阶段；
+领域端口不传游标，不提交事务、不发送外部消息。各 PostgreSQL 适配器由 application
+integration 在同一游标上装配，最后仍由发布仓储提交或回滚，维护 fencing 语义。
+
+- dataset_registry.publication：DatasetReleaseProjection、DatasetReleaseProjectionPort、DatasetOwnerLookup。
+- dataset_registry.publication_postgres：目录版本、当前指针、内容与子项复制、精确作用域的 owner 查询。
+- continuous_recordings.publication/lineage：RecordingPublicationLineage 与相同事务中的具体来源准备。
+- security.notification_writer/notification_postgres：账户通知命令、去重写入及原 subject 恢复。
+- integrations.publication：跨域请求转换与事务装配，保持已有发布 ID、事件 key、内容摘要和旧错误详情。
+
+直接构造 PostgresPublishedManifestRepository 需显式传入 side_effects：生产 runtime 使用
+postgres_publication_effects；独立发布模块使用 publication_only。没有默认暗中装配其他模块，
+也没有依赖缺表异常来决定是否发布。原 HTTP 和 runtime OpenAPI 完全相同。
+目录 projection 内原缺表兼容检查仍保留；完整应用使用已安装 schema，后续清理按数据目录阶段处理。
+
+真实 PostgreSQL **9 项全通过**：旧三项 lineage 失败已修复；发布/目录/通知重复调用只写一次；
+准备、投影或通知发生故障后，目录子项、当前版本指针、发布与通知均回滚，重试正常。
+子项测试验证内容快照保持不变且版本/Manifest 引用正确更新。新增端口替换与反向依赖门禁通过，
+总回归 **172 passed、24 integration deselected**，参与模块 9 个源码文件 mypy 通过，ruff 通过。
+连续录制既有冲突分支缺失 ProblemDetails.detail 导致 TypeError 的问题一并修复，保留原错误码，
+并验证歧义来源、错误机器人和不可变身份冲突均在写入前返回 409。
+证据：results/publication-transactions-atomic.xml、publication-port-contracts.xml、publication-domain-regression.xml。
+
+B20 仍在进行：目录准备、来源关系及其他模块中的跨域读取没有全部改造；这次不把它记为完成。

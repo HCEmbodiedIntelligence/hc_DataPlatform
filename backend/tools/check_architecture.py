@@ -71,7 +71,39 @@ def imports(tree: ast.Module, package: str) -> list[tuple[int, str]]:
 def check_source(module: str, source: str, *, is_package: bool = False) -> list[str]:
     package = module if is_package else module.rsplit(".", 1)[0]
     failures: set[str] = set()
-    for line, target in imports(ast.parse(source), package):
+    tree = ast.parse(source)
+    if module == "hc_data_platform.publishing.postgres":
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and any(
+                    foreign in node.value.lower()
+                    for foreign in ("dataset_registry.", "access_control.")
+                )
+            ):
+                failures.add(
+                    f"{node.lineno}: publication storage cannot access another domain's tables"
+                )
+    for line, target in imports(tree, package):
+        if module == "hc_data_platform.publishing.postgres" and any(
+            matches(target, "hc_data_platform." + domain)
+            for domain in ("dataset_registry", "continuous_recordings", "integrations")
+        ):
+            failures.add(
+                f"{line}: publication storage must consume transaction ports, not {target}"
+            )
+        if (
+            module
+            in {
+                "hc_data_platform.dataset_registry.publication",
+                "hc_data_platform.continuous_recordings.publication",
+            }
+            and target.split(".", 1)[0] not in sys.stdlib_module_names
+        ):
+            failures.add(
+                f"{line}: publication participant contract must remain independent of {target}"
+            )
         if matches(module, "hc_data_platform.capabilities") and not (
             target.split(".", 1)[0] in sys.stdlib_module_names
             or matches(target, "hc_data_platform.capabilities")
