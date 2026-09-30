@@ -3,6 +3,7 @@ import {
   type PageDescriptor,
 } from "../../shared/routing/page-descriptor";
 import { replaceRegisteredPageRoutes } from "../../shared/routing/route-registry";
+import { authRoutes } from "../../pages/auth/routes";
 
 const modules = import.meta.glob<{ page: PageDescriptor }>(
   ["/src/pages/*/routes.tsx", "!/src/pages/auth/routes.tsx"],
@@ -14,6 +15,12 @@ export const pageCatalog = buildPageCatalog(
     if (!module.page) throw new Error(`Missing page descriptor: ${path}`);
     return module.page;
   }),
+  {
+    reservedPaths: [
+      "/",
+      ...authRoutes.flatMap((route) => (route.path ? [route.path] : [])),
+    ],
+  },
 );
 
 replaceRegisteredPageRoutes(

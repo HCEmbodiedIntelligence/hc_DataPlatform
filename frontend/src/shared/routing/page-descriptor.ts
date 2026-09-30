@@ -118,9 +118,15 @@ export function definePage(page: PageDescriptor): PageDescriptor {
 
 export function buildPageCatalog(
   descriptors: readonly PageDescriptor[],
+  options: { reservedPaths?: readonly string[] } = {},
 ): PageCatalog {
   const ids = new Set<string>();
-  const paths = new Set<string>();
+  const routeIdentity = (path: string) =>
+    path
+      .replace(/:[^/]+/gu, ":param")
+      .replace(/\/+$/u, "")
+      .toLowerCase();
+  const paths = new Set(options.reservedPaths?.map(routeIdentity));
   const pages = descriptors.map(definePage);
   const enabled = pages.filter((page) => page.enabled);
   const routes: PageRoute[] = [];
@@ -138,10 +144,7 @@ export function buildPageCatalog(
     for (const route of page.routes) {
       // React Router matches paths case-insensitively by default. Parameter names
       // and trailing slashes cannot distinguish two routes either.
-      const key = route.path
-        .replace(/:[^/]+/gu, ":param")
-        .replace(/\/+$/u, "")
-        .toLowerCase();
+      const key = routeIdentity(route.path);
       if (paths.has(key)) throw new Error(`Duplicate page path: ${route.path}`);
       paths.add(key);
       routes.push(route);

@@ -58,6 +58,9 @@ describe("page descriptors", () => {
   });
 
   it("rejects duplicate ids, ambiguous paths and missing navigation owners", () => {
+    expect(() =>
+      buildPageCatalog([page], { reservedPaths: ["/CUSTOM-DATASETS/"] }),
+    ).toThrow("Duplicate page path");
     expect(() => buildPageCatalog([page, page])).toThrow("Duplicate page id");
     expect(() => buildPageCatalog([page, { ...page, id: "OTHER" }])).toThrow(
       "Duplicate page path",
