@@ -1,0 +1,54 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "official_reader_and_dataloader": true,
+  "packages": [
+    {
+      "data_version_id": "dv_18e3feb0c5ced5084950102de0a6c3da6ed7c88b1348ccfcc731772249014c08",
+      "frames": 4,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 4,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "plan_sha256": "0782214e38c8ac75307db30106d5ca41123333db736b39f3351ee11a7eb46073",
+      "legacy": {
+        "content_hash": "77f53e1d2e9214f578edd703c4fdb911b373625831e5393cb210ec0a59435345",
+        "data_version_id": "legacy_a2779897db59d5408bc395db8d47091c37749102fadb432988b1aa2d7066740c",
+        "dataset_uri": "/tmp/pytest-of-unknown/pytest-0/test_rgbd_conversion_reuses_me0/historic-lance/migration-project-dad8b248b294448bb194db4c3a184646/dataset_migration_529da8ec5a3f4bc3bc0808edc44baddb/schema-1/30hz/aligned_steps.lance",
+        "dataset_version": 1,
+        "frame_count": 4,
+        "identity": {
+          "dataset_id": "dataset_migration_529da8ec5a3f4bc3bc0808edc44baddb",
+          "episode_id": "episode_migration",
+          "organization_id": "migration-60e9985381004d418f47f6cd278fdb4d",
+          "project_id": "migration-project-dad8b248b294448bb194db4c3a184646",
+          "region_code": "writer-region",
+          "rollout_id": "explicit:writer-rollout"
+        },
+        "lance_version": 1,
+        "schema_snapshot_id": "schema-1",
+        "storage_format": "lance"
+      },
+      "independent_logical_sha256": "77f53e1d2e9214f578edd703c4fdb911b373625831e5393cb210ec0a59435345",
+      "rgb_and_depth_original_file_hashes_verified": true,
+      "review_automatically_transferred": false,
+      "input_directory": "/app/.g1-artifacts/migration-conversion/0782214e38c8ac75307db30106d5ca41123333db736b39f3351ee11a7eb46073"
+    }
+  ],
+  "synthetic_input": true,
+  "real_historical_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

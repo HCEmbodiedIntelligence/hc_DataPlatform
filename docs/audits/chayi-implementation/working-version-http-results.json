@@ -1,0 +1,79 @@
+{
+  "scope": "G1 isolated real HTTP over synthetic existing ingress outputs",
+  "entries": [
+    {
+      "entry": "mcap",
+      "scope": {
+        "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+        "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335",
+        "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+        "region_code": "cn-test"
+      },
+      "working_version_id": "version_cv_a70b3e58031fa49dc220cef0870f1c0115e7f888a3c9aec08efcaf7acac1aca2",
+      "suggested_version_id": "version_cv_a70b3e58031fa49dc220cef0870f1c0115e7f888a3c9aec08efcaf7acac1aca2",
+      "current_ready_version": null,
+      "bootstrap_http": 200,
+      "versions_http": 200,
+      "selected_working_bootstrap_http": 200,
+      "business_release_list_excludes_internal": true,
+      "standard_session": true,
+      "synthetic_input": true
+    },
+    {
+      "entry": "native",
+      "scope": {
+        "dataset_id": "dataset_task_0c61e72ae2458bb8af1325dd9f05b6b3",
+        "organization_id": "b-roundtrip-7ed579d6679c",
+        "project_id": "b-project-7ed579d6679c",
+        "region_code": "cn-test"
+      },
+      "working_version_id": "version_cv_83a1fe04051b14e6a93b43097e372957ca751c7a3974e2a5aef8acd01beb22d4",
+      "suggested_version_id": "version_cv_83a1fe04051b14e6a93b43097e372957ca751c7a3974e2a5aef8acd01beb22d4",
+      "current_ready_version": null,
+      "bootstrap_http": 200,
+      "versions_http": 200,
+      "selected_working_bootstrap_http": 200,
+      "business_release_list_excludes_internal": true,
+      "standard_session": true,
+      "synthetic_input": true
+    },
+    {
+      "entry": "continuous",
+      "scope": {
+        "dataset_id": "dataset_raw_pinning",
+        "organization_id": "raw-pin-a838e66279254a00bc3be7eb55026442",
+        "project_id": "raw-pin-project",
+        "region_code": "raw-pin-region"
+      },
+      "working_version_id": "version_cv_9db9e4f33d6986036f54f1438f105825578b205254974c8f5cbaf571413f9e20",
+      "suggested_version_id": "version_cv_9db9e4f33d6986036f54f1438f105825578b205254974c8f5cbaf571413f9e20",
+      "current_ready_version": null,
+      "bootstrap_http": 200,
+      "versions_http": 200,
+      "selected_working_bootstrap_http": 200,
+      "business_release_list_excludes_internal": true,
+      "standard_session": true,
+      "synthetic_input": true
+    },
+    {
+      "entry": "uploader",
+      "scope": {
+        "dataset_id": "dataset_task_4c0ca209045cc73e9b115362d63f7ddb",
+        "organization_id": "r3-org-4bf9c8df2264",
+        "project_id": "r3-project-4bf9c8df2264",
+        "region_code": "chayi-cn"
+      },
+      "working_version_id": "version_cv_f65c3e41f2962feebcda5714fbfed20d35b042e84908c72027b906c70533960d",
+      "suggested_version_id": "version_cv_f65c3e41f2962feebcda5714fbfed20d35b042e84908c72027b906c70533960d",
+      "current_ready_version": null,
+      "bootstrap_http": 200,
+      "versions_http": 200,
+      "selected_working_bootstrap_http": 200,
+      "business_release_list_excludes_internal": true,
+      "standard_session": true,
+      "synthetic_input": true
+    }
+  ],
+  "real_recording_acceptance": false,
+  "browser_flow": false
+}

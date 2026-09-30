@@ -43,9 +43,26 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
-| MIG-01 | W7 | Partial read-only inventory and deferred commit verified; conversion/checkpoint/rollback rehearsal pending | [Scoped inventory and actual CLI](migration-inventory.md), [batch commit foundation](migration-commit-foundation.md); complete copy rehearsal remains |
+| MIG-01 | W7/G2 | Inventory, deferred commit and fixed-version conversion/resume software verified; atomic batch/product rollback and real migration pending | [Inventory](migration-inventory.md), [commit foundation](migration-commit-foundation.md), [conversion and offline reader](migration-conversion.md); complete batch copy rehearsal remains |
 
 ## Work log
+
+- 当前版本读取补充（2026-09-30）：bootstrap 识别实际 Episode 集合头及其已登记
+  祖先，支持登记延迟、回退/重新发布，保留旧 Lance 与业务发布语义。23 项测试
+  和四入口标准会话 HTTP 验证通过，见 [证据](working-version.md)。仍是合成输入；
+  正式批次回退与 P06 业务发布的新存储适配继续，未新增完整验收结论。
+
+- W7 物理清单补充（2026-09-30）：Raw manifest 展开、已有标准包/媒体/录制
+  对象流式大小和哈希核对、跨引用去重及显式失败。18 项定向服务/清点测试通过；
+  四条既有隔离输入的真实 CLI 共核验 167 对象/2132211 字节，见
+  [证据与未覆盖范围](migration-objects.md)。仍是合成输入；旧附件、媒体准备适配、
+  批次原子发布与回退演练继续。无现网业务写入。
+
+- W7 转换补充（2026-09-30）：固定历史版本的全行数值/时间/来源核验、RGB-D
+  字节复用、不可覆盖 checkpoint、暂不激活提交。15 项实际服务测试及禁网官方
+  reader/独立 HC 掩码验证通过，详见 [证据与限制](migration-conversion.md)。
+  输入仍合成；历史资产展开、批次 CLI、产品/集合指针原子发布和回退演练继续。
+  用户已授权完成 G1 后自动接续 G2/G3，授权也追加至当前 goal 引用的源文件。
 
 - W7 提交基础补充（2026-09-30）：支持完整包提交后暂不推进当前指针；集合
   版本号按保留历史分配，避免回退后重号。16 项提交、6 项集合服务回归通过，

@@ -78,6 +78,14 @@ def capture_inventory(connections, dataset_id, *, max_rows=10000):
                     # Hash the complete row even where operational secrets/leases
                     # are omitted from the persisted, reviewable reference.
                     document = record if keep is None else {k: record[k] for k in keep}
+                    if keep is not None and "asset_document" in document:
+                        # The nested model also carries the operational upload
+                        # handle; omitting only its SQL column is insufficient.
+                        document["asset_document"] = {
+                            k: v
+                            for k, v in document["asset_document"].items()
+                            if k != "multipart_upload_id"
+                        }
                     result.append({"row_sha256": digest(record), "document": document})
             result.sort(key=lambda r: canonical(r["document"]))
             documents[table] = result
