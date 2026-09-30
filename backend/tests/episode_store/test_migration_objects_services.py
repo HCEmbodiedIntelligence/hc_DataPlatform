@@ -111,6 +111,26 @@ def test_manifest_expansion_stream_hashes_and_deduplication(objects):
     assert not result["visible_pointers_changed"] and result["remaining_checks"]
 
 
+@pytest.mark.parametrize("change", [None, "version", "format", "hash"])
+def test_historical_web_lerobot_label_keeps_exact_inventory_hash(objects, change):
+    source, storage, inventory, manifest = objects
+    historical = {**manifest, "source_format": "lerobot"}
+    if change == "version":
+        historical["source_format_version"] = "v2.1"
+    elif change == "format":
+        historical["source_format"] = "LeRobot"
+    elif change == "hash":
+        historical["files"] = [dict(f) for f in manifest["files"]]
+        historical["files"][0]["sha256"] = "f" * 64
+    storage.put_json(manifest["manifest_key"], historical, if_none_match=False)
+    with scoped(source):
+        report = InventoryObjectVerifier(storage).verify(inventory)["verification"]
+    assert (report["status"] == "EXPANDED_OBJECTS_VERIFIED") == (change is None)
+    if change is None:
+        assert report["unique_objects"] == 3
+        assert all(obj["verified"] for obj in report["objects"])
+
+
 @pytest.mark.parametrize(
     "damage", ["same_size", "larger", "missing", "manifest_scope", "file_set_hash"]
 )

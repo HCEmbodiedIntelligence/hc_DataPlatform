@@ -1,0 +1,345 @@
+{
+  "format": "hc-historical-native-rehearsal/1",
+  "source_checkout_head": "89df980da61062d8c9fe2c16db5d3a78d9fadf18",
+  "source_writes": false,
+  "target_database": "hc_chayi_history_fd389bfee0be",
+  "target_project": "hc-chayi-g1",
+  "database_archive": {
+    "source_container": "hc-data-platform-restore-test-postgres-1",
+    "target_container": "hc-chayi-g1-postgres-1",
+    "target_database": "hc_chayi_history_fd389bfee0be",
+    "archive": "backend/.g1-artifacts/history-copy/20260930T043641Z/source.pgdump",
+    "sha256": "fd389bfee0be50fe0b51c8f3325924026ab7470f71132404829aa724d1eb0da8",
+    "size_bytes": 136389679,
+    "restore_exit_code": 0,
+    "snapshot_started_at_utc": "20260930T043641Z",
+    "source_read_only": true,
+    "source_business_writes": false,
+    "purpose": "G1 isolated historical rehearsal; not G2 backup acceptance"
+  },
+  "native_inventory_sha256": "432c0c9ac0ea4f051db3a370228bbc343296a1c01e43e77d31b764b5f0a3c354",
+  "object_copy": {
+    "source_inventory_sha256": "432c0c9ac0ea4f051db3a370228bbc343296a1c01e43e77d31b764b5f0a3c354",
+    "target": "hc-chayi-g1 MinIO only",
+    "objects": 1765,
+    "bytes": 13832271695,
+    "source_writes": false,
+    "objects_overwritten": false
+  },
+  "object_verification": {
+    "status": "INCOMPLETE",
+    "unique_objects": 1283,
+    "unique_declared_bytes": 13447915589,
+    "issues": [
+      {
+        "code": "MEDIA_NOT_READY",
+        "identity": "256ff134-622f-48c8-85be-8ff16725de5f",
+        "kind": "aligned_media"
+      },
+      {
+        "code": "MEDIA_NOT_READY",
+        "identity": "41659766-07b2-427b-ac23-d06ed49102f3",
+        "kind": "aligned_media"
+      }
+    ],
+    "remaining_checks": [
+      "legacy_lance_physical_and_logical_equivalence",
+      "export_and_annotation_artifact_expansion",
+      "depth_numeric_time_calibration_equivalence",
+      "fixed_review_equivalence",
+      "batch_publication_and_rollback"
+    ]
+  },
+  "all_expanded_object_bytes_verified": true,
+  "object_verification_sha256": "f8c119e8407a53653b1ec5e96a03a14ecd0e1bc05dd505621fe7452dbf054f00",
+  "existing_native_episode_count": 154,
+  "existing_native_source_frames": 123603,
+  "existing_legacy_aligned_frames": 123610,
+  "migrated_episode_count": 1,
+  "plan_sha256": "af8176381153e8e77e72c09243ee07b827cac2cd65172540db247c71f9947a84",
+  "new_data_version_id": "dv_392f4a5e2d287ba60f70a69cb47cec8c1f3e46ab78dd9e3cfc6b162d4bbc18ca",
+  "frames": 958,
+  "video_streams": 4,
+  "depth_streams": 0,
+  "all_logical_rows_exact": true,
+  "media_operations": {
+    "observation.images.head_stereo_left": {
+      "operation": "byte_copy",
+      "requantized": false,
+      "sha256": "e7b5d0522495f670be02c38d59cde874865b8a09966d00b9258fb17dd03e998f",
+      "transcoded": false
+    },
+    "observation.images.head_stereo_right": {
+      "operation": "byte_copy",
+      "requantized": false,
+      "sha256": "149d2367adc0f67b01a9cb7c6ce05fb3623932f82d527d1037be14a4ccfab6e8",
+      "transcoded": false
+    },
+    "observation.images.wrist_left": {
+      "operation": "byte_copy",
+      "requantized": false,
+      "sha256": "f5c45027fa9d1b216e010c29889761476e6aacc9f045177a3a00adc135c04ca4",
+      "transcoded": false
+    },
+    "observation.images.wrist_right": {
+      "operation": "byte_copy",
+      "requantized": false,
+      "sha256": "49977a042b0fee4439ba04561737936ed4dd6af9dc938736366121e2f26825ce",
+      "transcoded": false
+    }
+  },
+  "states": {
+    "prepared": "PREPARED",
+    "published": "PUBLISHED",
+    "rolled-back": "ROLLED_BACK"
+  },
+  "batch_id": "mb_69f79aa7c690a3ff462ab68d1769abb5d60541e1ba4aa2d9da47bf3217f5dea6",
+  "collection_version_id": "cv_3235ce5572e9b7833a5f9efb5fc4d44975b45914b662b3d388e522705d116049",
+  "all_historical_rows_unchanged_after_publish": true,
+  "rollback_verification": {
+    "phase": "rolled-back-complete",
+    "source_inventory_sha256": "432c0c9ac0ea4f051db3a370228bbc343296a1c01e43e77d31b764b5f0a3c354",
+    "all_historical_rows_unchanged": true,
+    "annotation_history_unchanged": true,
+    "tables": {
+      "aligned_media.artifacts": {
+        "before": 618,
+        "after": 618,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_operations": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_reviews": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_revisions": {
+        "before": 156,
+        "after": 156,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_submissions": {
+        "before": 2,
+        "after": 2,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_tasks": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_content_projections": {
+        "before": 155,
+        "after": 156,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_episode_revisions": {
+        "before": 12089,
+        "after": 12243,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_episodes": {
+        "before": 12089,
+        "after": 12243,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_manifest_entries": {
+        "before": 12089,
+        "after": 12243,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_review_decisions": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_review_findings": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_schema_details": {
+        "before": 155,
+        "after": 156,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_source_provenance": {
+        "before": 12089,
+        "after": 12243,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_versions": {
+        "before": 155,
+        "after": 156,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.datasets": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.bindings": {
+        "before": 0,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.collection_heads": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.collections": {
+        "before": 0,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.data_reviews": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.migration_batches": {
+        "before": 0,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.qc_evidence": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.versions": {
+        "before": 0,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.continuous_recordings": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.raw_source_episodes": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.raw_sources": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_episode_asset_windows": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_episode_processing": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_episode_slices": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_slice_revisions": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_upload_assets": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.robot_ingest_assets": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.rollout_objects": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_dataset_versions": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_datasets": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_rollout_lineage": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_schema_snapshots": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.dataset_versions": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.export_attempts": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.publication_assets": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.published_exports": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.rollout_publication_lineage": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      }
+    },
+    "collection_heads": [],
+    "episode_current_pointers": [
+      null
+    ],
+    "legacy_versions_unchanged": true
+  },
+  "annotation_counts": {
+    "annotation.annotation_operations": 0,
+    "annotation.annotation_reviews": 1,
+    "annotation.annotation_revisions": 156,
+    "annotation.annotation_submissions": 2,
+    "annotation.annotation_tasks": 154
+  },
+  "historical_annotation_chain_rebound_to_new_package": false,
+  "g1_complete": false,
+  "g2_started": false,
+  "g3_started": false,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "retry_after_rollback": {
+    "same_receipt": true,
+    "same_package_path": true,
+    "same_equivalence_report": true,
+    "new_version_count": 1,
+    "collection_heads": [],
+    "episode_current_pointers": [
+      null
+    ],
+    "all_historical_rows_unchanged": true
+  }
+}
