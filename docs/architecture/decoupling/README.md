@@ -270,3 +270,12 @@ features/annotation。页面和跨页消费者直接依赖这些能力，旧导�
 UI 测试有现存 flushSync/hydration 提示，均未改为跳过。日志位于 results/frontend-pages-*.log。
 F04 只完成标注链接/查询能力的跨页迁移，其余页面间 API、组件、媒体和上传处理复用继续治理；
 API 校验生成与业务请求显式 scope（F06/F09）仍未完成。
+
+
+已同步源分支 dc2850d7（历史原生 RGB 迁移准备），使用独立合并提交保留来源历史。
+新 migration_native.py 中 inspect_video/feature_names 改用 data_formats 公共接口，
+修复边界门禁发现的两条存储→发布反向依赖；源分支工作区未修改。
+独立临时 PostgreSQL/MinIO 的 native migration / object verification **54 项通过，无 skip**，
+Ruff 与 452 个 Python 源文件的架构门禁通过。证据 results/native-migration-integration.xml。
+本轮没有重跑源分支文档中的真实历史副本迁移，也没有据其报告宣称完成现网迁移。
+页面注册另增加应用根路径/登录入口的保留路径校验，避免新增页面覆盖应用入口；相关 28 项复验通过。

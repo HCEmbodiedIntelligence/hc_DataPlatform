@@ -622,5 +622,6 @@
       "evidence": [],
       "remaining": "区分显式 scope 的纯 API/client 和读取当前会话的 UI hooks；缓存 key 与取消逻辑使用同一显式作用域。允许多个独立工作台实例而无需篡改全局 shell 状态。"
     }
-  ]
+  ],
+  "integrated_source_head": "dc2850d7b2b6af7b709f86332327a0ceed8bb50b"
 }

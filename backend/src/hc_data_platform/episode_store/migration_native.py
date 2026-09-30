@@ -15,12 +15,12 @@ from tempfile import TemporaryDirectory
 from psycopg import sql
 
 from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
+from hc_data_platform.data_formats.feature_names import feature_names
+from hc_data_platform.data_formats.video import inspect_video
 from hc_data_platform.ingest.raw_sources import RawSource
 from hc_data_platform.lerobot_imports.committed import read_committed_manifest
 from hc_data_platform.lerobot_imports.package import raw_files
 from hc_data_platform.lerobot_imports.reader import safe_relative
-from hc_data_platform.publishing.export_video import inspect_video
-from hc_data_platform.publishing.feature_names import feature_names
 
 from .bundle_assets import BundleAssetsLoader
 from .bundle_models import FrozenObject
