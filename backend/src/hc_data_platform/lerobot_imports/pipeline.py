@@ -22,10 +22,11 @@ from hc_data_platform.ingest.models import (
     RolloutManifestV1,
     RolloutStatus,
 )
-from hc_data_platform.ingest.ports import ObjectStoragePort, crc64_ecma
 from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository, RawSource
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
+from hc_data_platform.object_storage.checksums import crc64_ecma
+from hc_data_platform.object_storage.ports import JsonObjectStore
 from hc_data_platform.quality.models import QualityProfileV1, QualityStreamObservationV1
 from hc_data_platform.quality.postgres import PostgresQualityRepository
 from hc_data_platform.verification.models import (
@@ -63,7 +64,7 @@ class LeRobotPipeline:
     def __init__(
         self,
         connection_factory: Callable[[], Any],
-        storage: ObjectStoragePort,
+        storage: JsonObjectStore,
         catalog: LanceCatalogPort,
         staging: ProjectionArtifactStorePort,
         cache_root: Path,

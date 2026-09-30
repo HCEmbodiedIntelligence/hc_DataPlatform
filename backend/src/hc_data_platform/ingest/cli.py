@@ -14,8 +14,9 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from hc_data_platform.object_storage.checksums import crc64_ecma
+
 from .models import IngestProcessingMode, RolloutManifestV1, raw_object_key
-from .ports import crc64_ecma
 
 DEFAULT_PART_SIZE = 64 * 1024 * 1024
 MIN_MULTIPART_PART_SIZE = 5 * 1024 * 1024

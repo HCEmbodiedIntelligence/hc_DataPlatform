@@ -8,15 +8,15 @@ from typing import Any
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser
 from hc_data_platform.ingest.models import ManifestDiscoveryV1
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.ingest.service import AlternateManifestDiscoveryPort
+from hc_data_platform.object_storage.ports import ObjectReader
 
 
 class NativeManifestDiscovery:
     def __init__(
         self,
         connections: Callable[[], Any],
-        storage: ObjectStoragePort,
+        storage: ObjectReader,
         fallback: AlternateManifestDiscoveryPort,
     ) -> None:
         self.connections, self.parser, self.fallback = (

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.object_storage.checksums import crc64_ecma
 
 from .profiles import OPENARM_AXES, OPENARM_UNITS, profile_for_info
 

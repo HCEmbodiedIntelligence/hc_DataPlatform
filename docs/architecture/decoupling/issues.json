@@ -1,0 +1,564 @@
+{
+  "source_head": "f9a0804ebd7f5b897acc795a24ce8ca9e69afc5a",
+  "source_repo": "/home/hc_op/workspace/hc_DataPlatform-chayi-work",
+  "branch": "codex/platform-decoupling-20260930",
+  "objective_status": "active",
+  "issues": [
+    {
+      "id": "B01",
+      "title": "通用对象存储契约归属于上传模块",
+      "scope": "两分支",
+      "owner": "T1",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/object_storage/",
+        "backend/tests/object_storage/test_capabilities.py",
+        "backend/tests/architecture/test_object_boundaries.py",
+        "114 selected regression tests passed"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B02",
+      "title": "存储接口文件同时承载实现和校验算法",
+      "scope": "两分支",
+      "owner": "T1",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/object_storage/",
+        "backend/tests/object_storage/test_capabilities.py",
+        "backend/tests/architecture/test_object_boundaries.py",
+        "114 selected regression tests passed"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B03",
+      "title": "只读消费者被迫依赖上传和写入能力",
+      "scope": "两分支",
+      "owner": "T1 T4 T6",
+      "status": "in_progress",
+      "evidence": [
+        "Narrow read interfaces consumed by manifests, media, exports and native sources",
+        "Focused object-storage AST gate in both backend CI workflows"
+      ],
+      "remaining": "按读取、范围读取、下载授权、写入、multipart 能力拆分小接口；消费者只依赖用到的能力，不建立万能 StorageService。"
+    },
+    {
+      "id": "B04",
+      "title": "对象存储 SDK 适配在多个模块重复实现",
+      "scope": "两分支",
+      "owner": "T1 T4 T5 T10",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "统一对象操作与条件写入/流关闭/错误语义的适配；各领域保留自身端口。备份版本号和 Object Lock 等专属能力另设扩展接口。"
+    },
+    {
+      "id": "B05",
+      "title": "运行时把原始 SDK 客户端作为跨模块公共依赖",
+      "scope": "两分支",
+      "owner": "T0 T1",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "运行时工厂返回明确的存储能力集合；厂商选择及凭据组装留在基础设施层，消费模块不拿裸客户端。"
+    },
+    {
+      "id": "B06",
+      "title": "逻辑目录接口与 Lance 物理提交绑定",
+      "scope": "两分支",
+      "owner": "T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分离逻辑 Dataset/Episode 读取、提交、schema 和物理后端适配；用稳定数据版本引用与提交回执承载业务语义，历史 Lance 信息只在兼容映射中解释。"
+    },
+    {
+      "id": "B07",
+      "title": "业务公开契约暴露 Lance 版本语义",
+      "scope": "两分支",
+      "owner": "T0 T4 T5 T7 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "先制定兼容的数据版本契约，再迁移消费者；现有 API 字段和历史快照经适配兼容，不能直接重命名字段或重算已保存哈希。"
+    },
+    {
+      "id": "B08",
+      "title": "业务模块反向依赖工作流 DTO 和标识规则",
+      "scope": "两分支",
+      "owner": "T2 T3 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "业务事实/命令/结果和任务身份规则下沉到稳定契约；Temporal Activity/Workflow 输入由编排层适配。领域对象不携带调度器实现。"
+    },
+    {
+      "id": "B09",
+      "title": "业务处理器调用工作流私有实现",
+      "scope": "两分支",
+      "owner": "T2 T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将通用采样/对齐元数据运算及执行上下文变成有明确输入输出的公共能力；工作流层注入这些能力。"
+    },
+    {
+      "id": "B10",
+      "title": "业务分发器依赖具体 Temporal 启动器",
+      "scope": "两分支",
+      "owner": "T2 T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "定义任务启动/查询端口，把 Temporal 编码和队列命名移到编排适配器；配置常量不从 worker 入口回流。"
+    },
+    {
+      "id": "B11",
+      "title": "媒体读取依赖编排层的 staging 端口",
+      "scope": "两分支",
+      "owner": "T1 T2 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将临时产物读取/发布契约独立，TTL、清扫和任务生命周期由编排负责，媒体只获得读取能力。"
+    },
+    {
+      "id": "B12",
+      "title": "模块通过别人的路由获取服务",
+      "scope": "两分支",
+      "owner": "T0 T2 T3 T4 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "通过应用级依赖容器或显式构造参数注入端口；路由只做 HTTP 转换与授权，禁止跨模块 router 导入。"
+    },
+    {
+      "id": "B13",
+      "title": "路由全局单例和隐式内存回退形成装配时序依赖",
+      "scope": "两分支",
+      "owner": "T0",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "依赖以应用实例为作用域；生产构造必须完整且失败可见，测试显式提供内存实现。"
+    },
+    {
+      "id": "B14",
+      "title": "业务函数自行读取配置并打开数据库",
+      "scope": "两分支",
+      "owner": "T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将任务/机器人/数据集/标注规则查询作为用例端口注入；数据库连接生命周期归装配和仓储适配器。"
+    },
+    {
+      "id": "B15",
+      "title": "运行时入口同时承载数据算法与依赖装配",
+      "scope": "两分支",
+      "owner": "T0 T2 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "算法移动到对应适配器模块；bootstrap 只组装，API/worker 使用同一显式组件工厂，入口间仅共享配置契约。"
+    },
+    {
+      "id": "B16",
+      "title": "服务端 LeRobot 核心逻辑反向复用命令行转换工具",
+      "scope": "两分支",
+      "owner": "T3 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "提取独立 LeRobot 格式读取与数据转换库，CLI 和服务端共同依赖它；CLI 参数、上传传输和路径约定留在 tools。"
+    },
+    {
+      "id": "B17",
+      "title": "导入处理器创建其他领域的具体 PostgreSQL 仓储",
+      "scope": "两分支",
+      "owner": "T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "由装配层注入原始数据、处理状态、质量查询和目录提交端口；处理器不借用另一个服务的连接工厂。"
+    },
+    {
+      "id": "B18",
+      "title": "机器人录制桥接依赖另一个模块的私有 SQL 序列化",
+      "scope": "两分支",
+      "owner": "T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "为连续录制提供接受已验证 Raw 事实的登记端口；跨表原子性通过明确 UnitOfWork/事务适配器保留，不拆成可能半成功的多次调用。"
+    },
+    {
+      "id": "B19",
+      "title": "发布仓储直接写数据集目录内部表",
+      "scope": "两分支",
+      "owner": "T4 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "目录模块拥有发布投影写入接口，发布提交协调器在同一事务或可恢复 outbox 协议中调用；避免改变已有发布原子性。"
+    },
+    {
+      "id": "B20",
+      "title": "跨领域 SQL 读取让内部表成为事实接口",
+      "scope": "两分支",
+      "owner": "T4 T5 T10",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "为稳定投影或查询服务声明所有权与版本；区分正常聚合读取和越界写入。不要把所有 JOIN 机械改成远程 RPC。"
+    },
+    {
+      "id": "B21",
+      "title": "导出服务和格式实现存在内部循环",
+      "scope": "两分支",
+      "owner": "T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "规范序列化、Arrow 类型转换和 LeRobot 格式编码移到纯模块；编排 service 单向依赖 exporter 接口。"
+    },
+    {
+      "id": "B22",
+      "title": "连续录制与导出元数据相互依赖",
+      "scope": "两分支",
+      "owner": "T3 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "源快照读取由来源适配器提供，错误值独立；导出只消费冻结后的来源元数据契约。"
+    },
+    {
+      "id": "B23",
+      "title": "通用深度编码能力放在发布模块导致下层反向引用",
+      "scope": "两分支",
+      "owner": "T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将深度物理语义、编码器、profile 与证据格式定义在独立媒体格式模块；发布只负责选择导出布局和产物。"
+    },
+    {
+      "id": "B24",
+      "title": "模型和底层工具内部仍存在小型循环",
+      "scope": "两分支",
+      "owner": "T3 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分别抽出 schema 指纹、路径/本地文件读取、时间诊断纯函数；以实际调用关系验收单向依赖。"
+    },
+    {
+      "id": "B25",
+      "title": "包入口同时导出契约和具体实现扩大隐式导入面",
+      "scope": "两分支",
+      "owner": "T5 T0",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "建立清晰的 contracts/public API 与 adapters 入口；维持旧入口兼容，同时增加导入副作用验证。"
+    },
+    {
+      "id": "B26",
+      "title": "备份命令入口相互调用私有装配函数",
+      "scope": "两分支",
+      "owner": "T10",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "公共备份装配工厂与 CLI 分离，保留备份版本、签名和恢复协议；不要把合法灾备跨域访问当作业务越界一并删掉。"
+    },
+    {
+      "id": "B27",
+      "title": "缺少可执行的模块边界约束",
+      "scope": "两分支",
+      "owner": "T0",
+      "status": "in_progress",
+      "evidence": [
+        "Narrow read interfaces consumed by manifests, media, exports and native sources",
+        "Focused object-storage AST gate in both backend CI workflows"
+      ],
+      "remaining": "增加 AST/导入图边界门禁和小型替换后端契约测试；对获准装配、类型引用、迁移/备份和历史基线明确例外。"
+    },
+    {
+      "id": "E01",
+      "title": "Episode 存储读写直接依赖导出格式及私有转换函数",
+      "scope": "chayi",
+      "owner": "T4 T6",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "先抽取可独立使用的格式 codec；持久化格式契约与导出格式策略各自拥有版本，共享底层算法但不互相调用业务 exporter。"
+    },
+    {
+      "id": "E02",
+      "title": "存储模块模型渗透到标注和摄取的公开契约",
+      "scope": "chayi",
+      "owner": "T0 T3 T5 T6 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "把稳定身份、版本、哈希、schema 和逻辑模态引用放到独立数据契约；物理布局由后端定位器解释，历史 wire 数据通过兼容适配读取。"
+    },
+    {
+      "id": "E03",
+      "title": "EpisodePackageService 集中组装存储预览目录和交付",
+      "scope": "chayi",
+      "owner": "T6 T7 T0",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "拆分数据包提交、查询、预览、目录发布、交付端口，由 bootstrap 组装；使用明确的窄接口替代整个服务对象。"
+    },
+    {
+      "id": "E04",
+      "title": "领域错误和作用域校验定义在 PostgreSQL 实现中",
+      "scope": "chayi",
+      "owner": "T6 T7 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "错误类型和授权作用域契约独立；Postgres 只实现持久化，不提供领域基础规则。"
+    },
+    {
+      "id": "E05",
+      "title": "交付和派生模块调用标注服务私有方法",
+      "scope": "chayi",
+      "owner": "T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "标注模块提供冻结选区与授权快照的公共端口；交付和派生只获得稳定的快照输入及数据包读取接口。"
+    },
+    {
+      "id": "E06",
+      "title": "Tag 派生服务直接创建目录投影和自动标注仓储",
+      "scope": "chayi",
+      "owner": "T7 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "把派生用例作为显式编排器，注入提交/目录投影/质量/标注端口；错误恢复顺序和 durable receipt 由用例协议定义。"
+    },
+    {
+      "id": "E07",
+      "title": "服务端包提交和交付重复实现上传分片协议",
+      "scope": "chayi",
+      "owner": "T1 T6 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "增加流式不可变对象写入能力，分片策略和重试/abort 由存储适配器负责；包提交仍负责 manifest、哈希验证及发布可见性。"
+    },
+    {
+      "id": "E08",
+      "title": "Episode 内部多组循环依赖和全局服务回读",
+      "scope": "chayi",
+      "owner": "T6 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "scope/交付 inventory 纯能力独立；父子路由通过同一个注入依赖获得服务，不从彼此文件回读全局变量。"
+    },
+    {
+      "id": "E09",
+      "title": "目录 Tag 投影循环依赖并穿透服务内部组件",
+      "scope": "chayi",
+      "owner": "T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "投影输入数据和纯构造器独立；通过 Episode/Collection 查询端口获取冻结事实，投影器只负责目录投影事务。"
+    },
+    {
+      "id": "F01",
+      "title": "shared 基础层反向依赖 entities",
+      "scope": "两分支",
+      "owner": "T8",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "明确认证/作用域是否属于基础契约：可移动基础身份类型，或把业务授权逻辑上移；避免为满足目录规则复制一份 Scope 类型。"
+    },
+    {
+      "id": "F02",
+      "title": "清洗 feature 从页面获取查询契约",
+      "scope": "两分支",
+      "owner": "T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将查询类型和编解码放到对应 feature 的公开 API，页面单向消费。"
+    },
+    {
+      "id": "F03",
+      "title": "页面反向依赖应用装配并与路由表形成循环",
+      "scope": "两分支",
+      "owner": "T8 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "稳定路由描述/URL 构造器和 UI 通知契约独立；app 持有组件路由装配，页面只消费稳定导航接口。"
+    },
+    {
+      "id": "F04",
+      "title": "多个业务页面直接复用另一页面的接口和组件",
+      "scope": "两分支",
+      "owner": "T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "按能力移至 features/ingest、datasets、collection-tasks、account、exports 或公共 UI；页面只组合这些能力，禁止跨页面导入。"
+    },
+    {
+      "id": "F05",
+      "title": "Episode 物理格式兼容逻辑进一步扩散到前端页面",
+      "scope": "chayi",
+      "owner": "T9 T5 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "前端 feature 提供统一的数据版本、逻辑流和媒体授权模型，Lance/Episode wire 差异在一个适配层集中转换；后端提供稳定逻辑视图。"
+    },
+    {
+      "id": "X01",
+      "title": "格式注册只覆盖机器人接入，尚未贯通上传和处理路由",
+      "scope": "两分支",
+      "owner": "T3 T2 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "区分传输方式、容器格式、编码、逻辑 schema、处理能力和存储布局；注册表返回版本化能力描述，重复注册报错或显式版本选择。任务冻结实际选中适配器，不靠文件名或 worker 中的连续 if 路由。"
+    },
+    {
+      "id": "X02",
+      "title": "消息解码可注册，但原始校验契约仍偏向 MCAP/topic",
+      "scope": "两分支",
+      "owner": "T11 T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "保留解码器扩展点，另设容器验证器选择和公共完整性报告；格式特有证据放版本化扩展。缺失检查能力必须报告 unsupported/skip，不能视作通过。"
+    },
+    {
+      "id": "X03",
+      "title": "质检可以换整套引擎，但新增检测规则仍要改中央实现",
+      "scope": "两分支",
+      "owner": "T11",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "建立规则描述、版本、输入能力、适用条件及 batch/stream 执行契约；规则发现、执行、报告汇总和判定策略分离。先让现有规则通过同一注册方式工作，保留确定性结果。"
+    },
+    {
+      "id": "X04",
+      "title": "QC 历史证据校验依赖当前代码中的全部规则枚举",
+      "scope": "chayi",
+      "owner": "T11",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "按证据/引擎版本冻结 required rule set，新增规则使用新版本；旧 bytes、哈希与旧集合保持不变，并验证旧证据在新代码中仍可读取。"
+    },
+    {
+      "id": "X05",
+      "title": "对齐接口存在，但模态和策略枚举限制新数据形态",
+      "scope": "两分支",
+      "owner": "T11 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分离时序对齐与普通样本集合；对齐策略声明支持的模态/schema，保留 Arrow 作为具体 staging adapter。不要为非时序数据伪造时间戳或关节。"
+    },
+    {
+      "id": "X06",
+      "title": "标注提供方可扩展，标注对象仍以 step 区间为核心",
+      "scope": "两分支",
+      "owner": "T7 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "以版本化 target selector 表达 sample/time interval/region/text span，保留现有 interval 适配；提供方声明支持的任务和输出 schema，审核、渲染、导出共同消费该契约。新增能力分期实施，不改变已有区间语义。"
+    },
+    {
+      "id": "X07",
+      "title": "导出有接口但格式选择与输入假设仍集中",
+      "scope": "两分支",
+      "owner": "T4 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "导出器声明 format/version、所需逻辑能力、自己的 preflight；前端从受控能力目录显示选项。公共校验只校验权限/冻结版本/快照完整性，格式校验由对应 exporter 完成。"
+    },
+    {
+      "id": "X08",
+      "title": "部分导出接口要求整包 bytes 和整段 steps，扩展训练数据量成本高",
+      "scope": "两分支",
+      "owner": "T4 T1 T12",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "支持流/文件句柄/分片迭代和不可变提交回执，明确定长、校验和关闭责任；训练读取按样本批次/分片消费版本引用，不要求先把所有数据导成一个内存压缩包。"
+    },
+    {
+      "id": "X09",
+      "title": "无本体数据已有只存入口，但完整处理链仍强制机器人语义",
+      "scope": "两分支",
+      "owner": "T0 T3 T5 T7 T9 T11",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "通用来源/样本/schema 与可选 embodiment 分开；机器人任务专门校验 robot/model/calibration。无本体能力用真实视频或图片样本端到端证明，禁止创建假 robot、零 action 或虚构关节来通过校验。"
+    },
+    {
+      "id": "X10",
+      "title": "训练扩展尚缺独立契约，不能直接复用当前发布门槛代替",
+      "scope": "未来能力缺口",
+      "owner": "T12 T0 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "训练作为冻结数据快照的独立消费者：TrainingDatasetSpec、样本读取、TrainerBackend、任务状态/取消/恢复、模型和指标产物；按任务能力选择发布/质量策略，不移除当前审核门槛。先用 fake backend 验证边界，实际训练平台选型另行实施。"
+    },
+    {
+      "id": "R01",
+      "title": "机器人模型元数据、内容存储和上传完成协议集中在 RegistryService",
+      "scope": "两分支",
+      "owner": "T13 T1",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分离模型元数据仓储、AssetContentReader/Writer、上传会话及旧资源迁移适配。当前 PostgreSQL 持久内容是已有选择，不强行迁到对象存储；两种实现通过相同窄接口验证。"
+    },
+    {
+      "id": "R02",
+      "title": "URDF 解析与发布策略没有独立模型格式接口",
+      "scope": "两分支",
+      "owner": "T13 T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "提取版本化 ModelDefinitionValidator/模型资源清单和结构化诊断，URDF 作为默认适配器；前端保留快速预览但以后端发布结论为准。覆盖 resource path/package URI、关节映射、资源哈希及格式能力，不假定前端检查等于服务端验证。"
+    },
+    {
+      "id": "R03",
+      "title": "实例绑定与模型注册的事务边界没有显式领域契约",
+      "scope": "两分支",
+      "owner": "T13",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "明确模型版本查询、实例绑定历史的所有权；以已发布模型快照/绑定事务端口表达协作，保留现有单事务、ETag、幂等和组织作用域。不要拆成两个非原子的 HTTP 调用。"
+    },
+    {
+      "id": "R04",
+      "title": "回放辅助函数按实例当前绑定查模型，缺少冻结的模型输入",
+      "scope": "两分支",
+      "owner": "T13 T14 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "优先从数据快照取得 robot_model_version、joint_mapping/calibration 引用与哈希；历史数据缺失时标明“当前绑定兼容预览”，不把当前值当历史事实。绑定变化前后验证同一数据快照得到相同模型资产。"
+    },
+    {
+      "id": "R05",
+      "title": "URDF 导入用例仍在页面，通用 viewer 带具体机器人特判",
+      "scope": "两分支",
+      "owner": "T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将导入状态机和模型资源处理放到机器人 feature，页面负责组合；兼容预览 provenance/availability 由数据适配器描述，不靠 viewer 的 robot_id 常量判断。"
+    },
+    {
+      "id": "F06",
+      "title": "生成 API 类型与手写运行时校验并存，扩展需同步多份事实",
+      "scope": "两分支",
+      "owner": "T0 T8 T9 T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "统一契约来源和按领域的 wire adapter；保留有价值的运行时验证，并用生成或契约样例检查重复 schema。只在边界解释 snake_case、历史字段和 UNKNOWN，页面不自己解释物理存储。"
+    },
+    {
+      "id": "F07",
+      "title": "页面可自动发现，但导航和权限元数据仍分散",
+      "scope": "两分支",
+      "owner": "T8",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "建立带稳定 id/path/navigation/capabilities 的页面描述契约，由 app 聚合生成导航、守卫和回跳白名单；组件懒加载仅在 app 装配，保留特殊权限策略的显式表达和默认拒绝。"
+    },
+    {
+      "id": "F08",
+      "title": "可视化数据源与插槽可复用，模态选择仍是中央映射",
+      "scope": "两分支",
+      "owner": "T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "保留现有工作台和时钟，增加受控 renderer 注册描述（能力、schema、优先级、懒加载、清理）；未知模态继续明确降级。无需复制整套 viewer 来新增声音、文本或图像标注。"
+    },
+    {
+      "id": "F09",
+      "title": "部分 feature 同时承担 API 与全局作用域选择",
+      "scope": "两分支",
+      "owner": "T8 T9 T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "区分显式 scope 的纯 API/client 和读取当前会话的 UI hooks；缓存 key 与取消逻辑使用同一显式作用域。允许多个独立工作台实例而无需篡改全局 shell 状态。"
+    }
+  ]
+}

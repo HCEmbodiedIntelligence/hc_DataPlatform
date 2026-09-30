@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from pydantic import ValidationError
 
 from hc_data_platform.core.errors import ProblemException, problem
+from hc_data_platform.object_storage.ports import ObjectReader
 
 from .models import (
     ManifestDiscoveryV1,
@@ -18,7 +19,6 @@ from .models import (
     ManifestTimeRangeV1,
     RolloutManifestV1,
 )
-from .ports import ObjectStoragePort
 
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_JSON_DEPTH = 16
@@ -38,7 +38,7 @@ class ObjectStorageManifestParser:
 
     def __init__(
         self,
-        storage: ObjectStoragePort,
+        storage: ObjectReader,
         *,
         max_bytes: int = MAX_MANIFEST_BYTES,
     ) -> None:

@@ -131,7 +131,6 @@ from hc_data_platform.dataset_registry.models import (
 from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
 from hc_data_platform.dataset_registry.router import configure_dataset_page
 from hc_data_platform.dataset_registry.service import DatasetPageService
-from hc_data_platform.ingest.adapters import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.ingest.device_facts import (
     DeviceCaptureFactService,
     PostgresDeviceCaptureFactRepository,
@@ -167,6 +166,7 @@ from hc_data_platform.manual_cleaning.models import (
 from hc_data_platform.manual_cleaning.repository import PostgresManualIssueRepository
 from hc_data_platform.manual_cleaning.router import configure_manual_issues
 from hc_data_platform.manual_cleaning.service import ManualIssueService
+from hc_data_platform.object_storage.providers import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.platform_ops.maintenance import (
     MaintenanceWriteGate,
     PostgresMaintenanceRepository,

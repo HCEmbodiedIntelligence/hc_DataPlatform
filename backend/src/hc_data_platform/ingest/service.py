@@ -9,6 +9,10 @@ from uuid import NAMESPACE_URL, uuid5
 
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.core.pagination import CursorCodec
+from hc_data_platform.object_storage.checksums import crc64_ecma, normalize_etag
+from hc_data_platform.object_storage.models import CompletedPart as StorageCompletedPart
+from hc_data_platform.object_storage.models import ObjectMetadata
+from hc_data_platform.object_storage.ports import ObjectStoragePort
 from hc_data_platform.security.idempotency import IdempotencyStore, InMemoryIdempotencyStore
 from hc_data_platform.workflow.models import WorkflowKind, ingest_rollout_workflow_id, workflow_id
 
@@ -49,7 +53,6 @@ from .persistence import (
     InMemoryIngestPersistence,
     source_recording_duplicate,
 )
-from .ports import ObjectMetadata, ObjectStoragePort, crc64_ecma, normalize_etag
 from .raw_sources import (
     CommittedRawSourceGraph,
     InMemoryRawSourceRepository,
@@ -509,7 +512,7 @@ class UploadSessionService:
             metadata = self.storage.complete_multipart(
                 session.object_key,
                 session.multipart_upload_id,
-                parts,
+                tuple(StorageCompletedPart(part.part_number, part.etag) for part in parts),
             )
         now = utc_now()
         updated = session.model_copy(

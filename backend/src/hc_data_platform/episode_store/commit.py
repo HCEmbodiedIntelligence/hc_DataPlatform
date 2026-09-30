@@ -6,7 +6,7 @@ from contextlib import suppress
 from pathlib import Path
 from uuid import uuid4
 
-from hc_data_platform.ingest.models import CompletedPart
+from hc_data_platform.object_storage.models import CompletedPart
 
 from .models import CommitReceipt, DataVersionRef, PackageInput, canonical
 from .postgres import PackageConflict, assert_scope

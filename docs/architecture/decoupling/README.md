@@ -1,0 +1,57 @@
+# 数据平台解耦实施记录
+
+目标仍是审计中的全部模块边界与扩展能力，未缩减为存储重构。逐项状态见
+[issues.json](issues.json)；`implemented_verified` 只用于已有实际消费迁移及测试证据的项目。
+
+源基线为茶艺分支 `f9a0804ebd7f5b897acc795a24ce8ca9e69afc5a`，实施分支
+`codex/platform-decoupling-20260930`，独立目录
+`/home/hc_op/workspace/hc_DataPlatform-decoupling-work`。
+源工作区已有迁移工作不动；`activate=False` 和集合版本高水位语义保留。
+
+## 已落地的对象契约
+
+公共接口归 `hc_data_platform.object_storage`，包入口不加载实现。
+
+| 导入模块 | 责任 |
+| --- | --- |
+| `models` | ObjectMetadata、MultipartPart、CompletedPart、只读 CompletedPartReference |
+| `ports` | head、分块读取、范围读取、下载授权、JSON 写入和 multipart 的小接口 |
+| `checksums` | 保持原算法的 CRC64/XZ 与 ETag 规范化 |
+| `validation` | 分片完整性检查，保持旧 ProblemDetails 错误码 |
+| `memory` | 显式导入的内存实现 |
+| `providers` | S3/OSS 适配，不引用上传领域模型 |
+
+需要读取的消费者使用 ObjectChunks、ObjectReader 或 BrowsableObjectReader；
+标注元数据使用 JsonObjectStore。完整 ObjectStoragePort 暂保留给使用多种能力的上传用例。
+尚未全部拆完的领域 sink、原始 SDK 注入及服务端 multipart 编排继续列为待办，不算已完成。
+
+`ingest.ports` / `ingest.adapters` 保留旧导入兼容，应用源码已改用新归属。
+HTTP `ingest.models.CompletedPart` 保持原名称与校验；上传用例显式转换到存储值，
+LeRobot 完成响应再转换回原 wire 类型。没有变更存储字节、对象路径、数据库或公开 JSON。
+
+## 验证
+
+测试使用现有 `hc-chayi-backend:realsense-2.58.4` 镜像，在无网络、只读源码的临时容器执行。
+命令入口为 `/home/hc_op/workspace/diagnostics/platform-decoupling-work/check-backend.sh`。
+结果写入同目录 `results/`，不连接现有业务 PostgreSQL/MinIO。
+
+- 修改前的上传、适配器及机器人模型 API 基线：38 passed。
+- 存储契约、架构门禁、上传、机器人接入、原始存储、原生上传、媒体及连续录制回归：114 passed。
+- 同一对象行为契约覆盖内存和实际本地文件适配器，包含失败后重试、不可变写、abort、范围读取。
+- 只有 head/read_chunks 的只读实现可以执行 Manifest 解析；独立进程导入存储契约不加载上传、SDK、数据库或 FastAPI。
+- 新存储模块及主要已迁移消费者的 mypy：15 个源码文件通过。
+- `python -m hc_data_platform.core.openapi --check` 通过；公开 API 生成文件未改变。
+- 导入门禁检查 421 个后端源文件，并通过故意注入反向依赖的失败测试；已接入两个后端 CI 工作流。
+
+以上不代表全仓类型检查、真实云存储或整个架构改造已完成。
+扩展检查 publishing/export_assets 时仍有三个类型错误：两处调用旧的无类型注解函数，
+以及 raw_source_id 的可空推导。它们涉及后续来源元数据/格式抽取，仍需修复并完成全仓检查。
+
+## 后续实施顺序
+
+继续隔离对象 sink 和 staging，建立可复用的不可变流写入接口；再移除存储对发布 codec 的反向依赖。
+并行分工文档中的逻辑版本、任务、规则、模型绑定和前端公共契约尚需逐项落地，
+不能把本批对象接口提交当作整个 T0 或 G0 完成。
+
+原始审计和完整任务说明位于 `/home/hc_op/workspace/diagnostics/platform-coupling-20260930/`。
+后续扫描使用新输出目录，保留原始审计证据。任何发布、真实资产迁移或机器人操作都不属于此次代码实施。

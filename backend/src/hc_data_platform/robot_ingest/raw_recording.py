@@ -9,7 +9,7 @@ from pathlib import Path
 from hc_data_platform.continuous_recordings.asset_models import CreateRecordingUploadCommand
 from hc_data_platform.continuous_recordings.openarm_raw.prepare import VERSION, prepare
 from hc_data_platform.ingest.models import CompletedPart
-from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.object_storage.checksums import crc64_ecma
 
 from .models import RobotIngestAsset
 

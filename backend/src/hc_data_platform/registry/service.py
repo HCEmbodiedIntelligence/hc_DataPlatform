@@ -16,8 +16,8 @@ from xml.etree import ElementTree
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
-from hc_data_platform.ingest.models import CompletedPart
-from hc_data_platform.ingest.ports import MultipartPart, ObjectStoragePort
+from hc_data_platform.object_storage.models import CompletedPart, MultipartPart
+from hc_data_platform.object_storage.ports import ObjectStoragePort
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.idempotency import idempotency_conflict, request_fingerprint
 from hc_data_platform.security.scope import ScopeGuard

@@ -17,8 +17,8 @@ from hc_data_platform.ingest.models import (
     UploadStatus,
     utc_now,
 )
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.ingest.service import UploadSessionService
+from hc_data_platform.object_storage.ports import ObjectStoragePort
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
@@ -1130,8 +1130,10 @@ class ContinuousRecordingService:
                         status=422,
                         code="OPENARM_SLICE_FRAME_BOUNDARIES_INVALID",
                         title="Slices must contain distinct complete frames",
-                        detail=("Adjust the boundaries and save again; "
-                                "OpenArm slices snap to 30 Hz frames."),
+                        detail=(
+                            "Adjust the boundaries and save again; "
+                            "OpenArm slices snap to 30 Hz frames."
+                        ),
                     ) from error
         ordered = sorted(
             inputs.slices,

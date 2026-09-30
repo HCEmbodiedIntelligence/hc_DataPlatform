@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 
 from hc_data_platform.core.context import current_request_context, select_request_scope
 from hc_data_platform.core.errors import problem
+from hc_data_platform.object_storage.memory import InMemoryObjectStorage
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 
@@ -37,7 +38,6 @@ from .models import (
     UploadSessionListV1,
     UploadStatus,
 )
-from .ports import InMemoryObjectStorage
 from .processing import UploadJobStatusPort, read_upload_processing_status
 from .service import UploadSessionService
 

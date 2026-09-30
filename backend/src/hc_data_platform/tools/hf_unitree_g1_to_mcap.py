@@ -34,7 +34,7 @@ from mcap.writer import CompressionType, Writer
 from PIL import Image
 
 from hc_data_platform.ingest.manifest import parse_manifest_bytes
-from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.object_storage.checksums import crc64_ecma
 from hc_data_platform.verification.engine import McapVerifier
 from hc_data_platform.verification.models import VerificationStatus
 from hc_data_platform.verification.ports import RegisteredDecoderProbe

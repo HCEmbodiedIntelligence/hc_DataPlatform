@@ -41,13 +41,13 @@ from hc_data_platform.ingest.models import (
     ManifestDiscoveryV1,
     ManifestTopicV1,
 )
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.lance_catalog.models import (
     DatasetSchemaSnapshot,
     DatasetVersionRef,
     DerivedReadyV1,
 )
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
+from hc_data_platform.object_storage.ports import ObjectStoragePort
 from hc_data_platform.quality.models import (
     QualityInputV1,
     QualityStatus,

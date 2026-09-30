@@ -44,6 +44,7 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run ruff check src tests
       - run: uv run mypy src
+      - run: uv run python tools/check_architecture.py
       - run: uv run pytest --cov=hc_data_platform --cov-report=term-missing
       - run: uv run python -m hc_data_platform.core.openapi --check
       - name: OpenAPI target compatibility

@@ -11,9 +11,9 @@ from typing import Any, Protocol
 from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.lerobot_imports.committed import read_committed_manifest
+from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .adapters import parse_lance_version
 from .models import PublishedDatasetManifestV1, PublishedRolloutV1
@@ -53,7 +53,7 @@ def export_error(code: str, detail: str) -> Exception:
 
 
 class PostgresExportAssets:
-    def __init__(self, connections: Callable[[], Any], storage: ObjectStoragePort) -> None:
+    def __init__(self, connections: Callable[[], Any], storage: ObjectChunks) -> None:
         self.connections, self.storage = connections, storage
 
     def _scope(

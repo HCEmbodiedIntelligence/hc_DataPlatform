@@ -18,7 +18,7 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.episode_store.models import canonical
-from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.object_storage.ports import JsonObjectStore
 from hc_data_platform.security import AuthContext, ScopeGuard
 
 from .models import AnnotationHistory, ReviewDecision, TagSchemaVersion
@@ -327,7 +327,7 @@ class AnnotationRevisionFileService:
         self,
         annotation: AnnotationService,
         repository: PostgresRevisionFiles,
-        storage: ObjectStoragePort,
+        storage: JsonObjectStore,
     ):
         self.annotation, self.repository, self.storage = annotation, repository, storage
 

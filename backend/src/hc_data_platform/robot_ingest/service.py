@@ -12,13 +12,10 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from hc_data_platform.core.context import select_organization_scope, select_request_scope
 from hc_data_platform.core.errors import ProblemException, problem
-from hc_data_platform.ingest.models import CompletedPart as StorageCompletedPart
-from hc_data_platform.ingest.ports import (
-    InMemoryObjectStorage,
-    ObjectStoragePort,
-    crc64_ecma,
-    normalize_etag,
-)
+from hc_data_platform.object_storage.checksums import crc64_ecma, normalize_etag
+from hc_data_platform.object_storage.memory import InMemoryObjectStorage
+from hc_data_platform.object_storage.models import CompletedPart as StorageCompletedPart
+from hc_data_platform.object_storage.ports import ObjectStoragePort
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 

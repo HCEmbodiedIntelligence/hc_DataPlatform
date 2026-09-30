@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import SpooledTemporaryFile, TemporaryDirectory
 
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost, renewing_lease
-from hc_data_platform.ingest.models import CompletedPart
+from hc_data_platform.object_storage.models import CompletedPart
 from hc_data_platform.security import ScopeGuard
 
 from .collection_delivery import CollectionDelivery
