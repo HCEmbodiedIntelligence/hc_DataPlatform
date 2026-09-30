@@ -12,7 +12,7 @@ import {
   getPublicAuthConfiguration,
   requestPasswordRecovery,
   type PublicAuthConfiguration,
-} from "./api";
+} from "../../features/account/session/api";
 import styles from "./styles.module.css";
 
 interface RecoveryRequestValues {

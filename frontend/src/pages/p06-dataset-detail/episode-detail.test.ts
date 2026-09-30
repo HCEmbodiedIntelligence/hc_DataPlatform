@@ -5,7 +5,7 @@ import {
   loadEpisodeFiles,
   loadEpisodeOverview,
   secondsFromNs,
-} from "./episode-detail";
+} from "../../features/datasets/episodes/episode-detail";
 import { episodeDetailFixture } from "./testing/episode-detail-fixture";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));

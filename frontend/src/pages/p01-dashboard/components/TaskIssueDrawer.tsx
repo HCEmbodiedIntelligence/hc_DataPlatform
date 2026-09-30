@@ -9,7 +9,7 @@ import { EntityDrawer } from "../../../shared/ui";
 import { VideoPreviewModal } from "../../../features/viewer/VideoPreviewModal";
 
 const OriginalSourceBrowser = lazy(
-  () => import("../../p03-upload-jobs/components/OriginalSourceBrowser"),
+  () => import("../../../features/ingest/browser/OriginalSourceBrowser"),
 );
 const DuplicateIssueActions = lazy(() => import("./DuplicateIssueActions"));
 const ResumeProcessingAction = lazy(() => import("./ResumeProcessingAction"));

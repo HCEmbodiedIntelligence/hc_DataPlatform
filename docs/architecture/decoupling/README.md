@@ -279,3 +279,41 @@ API 校验生成与业务请求显式 scope（F06/F09）仍未完成。
 Ruff 与 452 个 Python 源文件的架构门禁通过。证据 results/native-migration-integration.xml。
 本轮没有重跑源分支文档中的真实历史副本迁移，也没有据其报告宣称完成现网迁移。
 页面注册另增加应用根路径/登录入口的保留路径校验，避免新增页面覆盖应用入口；相关 28 项复验通过。
+
+
+## 跨页 API、组件与样式复用（F04）
+
+生产页面中的跨页导入已经清零，包括 type、动态组件、路由组件复用和 CSS。
+共享业务能力由 feature 拥有；应用壳也不再通过上传页取得队列状态、通过 auth 页取得会话接口。
+32 个原有能力文件迁移后，全部生产消费方直接引用新所属模块；旧 TS 路径保留重导出，
+旧队列入口与新入口使用同一个 Zustand 实例。组件本身的业务 API、请求、错误码与缓存 key 保持兼容。
+
+- features/ingest/upload：上传契约、正式/原生传输 API、队列与相关上传样式。
+- features/ingest/processing、browser：处理记录、目标选择、标签配置、处理路由及原始数据浏览。
+- features/ingest/detail：上传详情 API 和 UploadDetailView；视图显式接收 uploadId/pathname/returnTo，
+  P04 与问题诊断各用自己的薄路由适配器，后者不再懒加载另一个页面。
+- features/datasets/episodes：Episode 详情、数据审核、完整交付、纳秒步骤映射、媒体授权适配和展示语义。
+  错误构造独立于步骤读取；旧 p06DataError 名称只在旧页面兼容入口映射至 datasetDataError。
+- features/datasets/components/DatasetTables：版本/Episode/来源表及分页组件。
+  表格只带自身的四类样式，数据集页继续负责工作区布局，P05/P06 共享表格能力。
+- features/annotation/runtime：现有标注运行时、包绑定校验和交付 API；features/exports 提供批量交付 API。
+- features/collection-tasks：CollectionTaskGateway 及类型，上传/数据集/导出页使用相同接口。
+- features/account/session：登录/会话/作用域装配及错误文案，auth、账户设置、平台设置与 shell 共同消费。
+- shared/ui/workspace.module.css：原型页中被多处使用的通用工作区样式归公共 UI。
+
+AST 门禁拒绝任何生产页面导入另一个页面的 API、类型、组件、重导出或样式；
+feature 不能从页面或 app 获得实现。测试、testing/ 视觉 fixture 的跨页样例共享保持显式例外。
+24 项架构测试通过，包含 type/dynamic/CSS/reexport 负例；完整 frontend typecheck 通过。
+172 个修改/新增 TS/脚本文件 ESLint 与生产构建通过。
+
+第一次全量回归为 918 passed、2 failed，改造前 88bfc33b 的两个对应测试也同样失败。
+P04 的隔离测试缺少已启用路由目录，现以实际目录初始化并用真正的问题诊断路由适配器测试，
+过滤后的列表返回地址得以验证。抽屉测试改为验证 Drawer 的实际容器聚焦政策，继续检验
+Tab 到关闭按钮、Escape 关闭、恢复触发器焦点以及移动端不自动聚焦文本输入。
+两项定向复验通过，最终 **153 个文件、920 项测试全通过，无 skip**。
+初次失败、基线复验、最终全量、ESLint 与构建日志均保留于 results/frontend-features-*.log；
+32 文件的所有权映射为 results/frontend-feature-relocations.json。
+
+F05 仍在进行：物理格式兼容逻辑已进入业务适配器，但统一的后端逻辑数据视图与开放格式协议尚未完成。
+F09 仍待实施：机器人/模型 hooks 与部分纯 API 仍会隐式选择 shell 作用域；本次页面依赖清零不等同于
+独立工作台/多作用域请求已全部解耦。F06/F08、机器人后端和训练边界也继续按原审计推进。

@@ -29,14 +29,14 @@ import {
   resolveReviewRevision,
   resolveReviewSubmission,
   runtimeAnnotationScopeFromShell,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
   AnnotationWorkbenchMode,
   RuntimeAnnotationBundle,
   RuntimeAnnotationScope,
   RuntimeAnnotationTag,
   RuntimeReviewDecision,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   clearTagDraftRecovery,
   loadTagDraftRecovery,

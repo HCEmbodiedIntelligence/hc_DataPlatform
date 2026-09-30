@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Alert, Button } from "antd";
-import type { PublicAuthChallengeConfiguration } from "./api";
+import type { PublicAuthChallengeConfiguration } from "../../features/account/session/api";
 import styles from "./styles.module.css";
 
 const TURNSTILE_SCRIPT_ID = "hc-turnstile-api";

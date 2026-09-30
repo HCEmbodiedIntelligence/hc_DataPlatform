@@ -4,7 +4,7 @@ import {
   configureRuntime,
   resetRuntimeConfigForTests,
 } from "../../shared/config/runtime";
-import { createDatasetAlignedMediaSource } from "./aligned-media-source";
+import { createDatasetAlignedMediaSource } from "../../features/datasets/episodes/aligned-media-source";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 

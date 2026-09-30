@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Alert, Button, Divider, Form, Input } from "antd";
 import { KeyRound, ShieldCheck, UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { PublicAuthChallengeConfiguration } from "./api";
+import type { PublicAuthChallengeConfiguration } from "../../features/account/session/api";
 import type { LoginValues } from "./use-login-flow";
 import { PasswordField } from "./PasswordField";
 import { TurnstileChallenge } from "./TurnstileChallenge";

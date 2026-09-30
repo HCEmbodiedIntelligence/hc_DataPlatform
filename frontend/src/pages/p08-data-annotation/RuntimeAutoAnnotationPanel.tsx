@@ -19,12 +19,12 @@ import {
   getRuntimeAutoAnnotationJob,
   loadRuntimeAutoAnnotationCapability,
   retryRuntimeAutoAnnotationJob,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
   RuntimeAnnotationScope,
   RuntimeAnnotationTask,
   RuntimeAutoAnnotationJob,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import styles from "./workbench.module.css";
 
 type PendingAction = "start" | "cancel" | "retry" | "apply" | null;

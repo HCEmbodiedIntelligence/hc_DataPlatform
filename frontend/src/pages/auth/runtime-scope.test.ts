@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeScopeKey } from "../../entities/scope";
 import { useShellStore } from "../../shared/scope/shell-store";
-import type { SessionBootstrap } from "./api";
-import { installSessionBootstrap } from "./runtime-scope";
+import type { SessionBootstrap } from "../../features/account/session/api";
+import { installSessionBootstrap } from "../../features/account/session/runtime-scope";
 
 const bootstrap: SessionBootstrap = {
   principal: {

@@ -16,23 +16,23 @@ import {
 import { UploadPrecheckPanel } from "./components/UploadPrecheckPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
 import { UploadRecordsPanel } from "./components/UploadRecordsPanel";
-import { LeRobotProcessingRecords } from "./components/LeRobotProcessingRecords";
+import { LeRobotProcessingRecords } from "../../features/ingest/processing/components/LeRobotProcessingRecords";
 import { RobotUploadRecordsPanel } from "./components/RobotUploadRecordsPanel";
 import {
   listFormalUploadSessions,
   preflightUploadManifest,
   type UploadStatus,
-} from "./formal-client";
-import styles from "./styles.module.css";
+} from "../../features/ingest/upload/formal-client";
+import styles from "../../features/ingest/upload/upload.module.css";
 import {
   inspectLocalUploadSelection,
   type LocalUploadSelection,
   type ServerCheckedUploadUnit,
   type UploadFlowState,
 } from "./upload-flow";
-import { uploadProblemCopy } from "./upload-contract";
-import type { LeRobotTargetBinding } from "./lerobot-client";
-import { useUploadQueueStore } from "./upload-queue-store";
+import { uploadProblemCopy } from "../../features/ingest/upload/upload-contract";
+import type { LeRobotTargetBinding } from "../../features/ingest/upload/lerobot-client";
+import { useUploadQueueStore } from "../../features/ingest/upload/upload-queue-store";
 
 function useNetworkStatus(): boolean {
   const [online, setOnline] = useState(

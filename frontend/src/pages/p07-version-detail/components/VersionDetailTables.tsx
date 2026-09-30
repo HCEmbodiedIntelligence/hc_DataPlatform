@@ -19,7 +19,7 @@ import { CursorPager, DataTable, StatusTag } from "../../../shared/ui";
 import {
   episodeInclusionLabel,
   episodeReviewPresentation,
-} from "../../p06-dataset-detail/episode-presentation";
+} from "../../../features/datasets/episodes/episode-presentation";
 import styles from "../styles.module.css";
 
 type RevisionStream = EpisodeRevisionWire["streams"][number];

@@ -7,7 +7,7 @@ import { useCapabilities } from "../../../shared/auth/use-capabilities";
 import {
   nativeRoot,
   type NativeProgress,
-} from "../../p03-upload-jobs/lerobot-processing";
+} from "../../../features/ingest/processing/lerobot-processing";
 
 export default function ResumeProcessingAction({
   scope,

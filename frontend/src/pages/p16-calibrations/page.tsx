@@ -31,7 +31,7 @@ import {
   StandardPageScaffold,
   StatusTag,
 } from "../../shared/ui";
-import workspace from "../ui-011e/workspace.module.css";
+import workspace from "../../shared/ui/workspace.module.css";
 import { pageCalibrationsQueryCodec } from "./query-codec";
 import { CalibrationThreePreview } from "./components/CalibrationThreePreview";
 

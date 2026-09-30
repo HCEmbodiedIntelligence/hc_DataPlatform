@@ -8,7 +8,7 @@ import { DataReviewPanel } from "./DataReviewPanel";
 import { DepthPixelPanel } from "./DepthPixelPanel";
 import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
 import { CompleteDeliveryPanel } from "./CompleteDeliveryPanel";
-import type { ReviewDataRef } from "./data-reviews";
+import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
 import {
   authorizeEpisodeFile,
   loadEpisodeFiles,
@@ -17,7 +17,7 @@ import {
   type DetailSelection,
   type EpisodeFile,
   type EpisodeOverview,
-} from "./episode-detail";
+} from "../../features/datasets/episodes/episode-detail";
 import styles from "./EpisodeDetailPanel.module.css";
 
 const reviews = { NOT_REVIEWED: "未审核", APPROVED: "通过", RETURNED: "退回" };

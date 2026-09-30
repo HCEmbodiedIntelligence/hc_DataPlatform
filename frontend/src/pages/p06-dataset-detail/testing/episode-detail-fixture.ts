@@ -1,4 +1,4 @@
-import type { EpisodeOverview } from "../episode-detail";
+import type { EpisodeOverview } from "../../../features/datasets/episodes/episode-detail";
 import { qualityFixture } from "./quality-fixture";
 
 export function episodeDetailFixture() {

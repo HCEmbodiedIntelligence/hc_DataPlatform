@@ -18,7 +18,7 @@ import {
   resolveReviewSubmission,
   runtimeAnnotationScopeFromShell,
   saveRuntimeAnnotationDraft,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   createVisualAnnotationBundle,
   visualAnnotationScope,

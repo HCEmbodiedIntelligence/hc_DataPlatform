@@ -10,11 +10,11 @@ import { request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 import {
   decodeStepRecords,
-  p06DataError,
+  datasetDataError,
   safeStepWireSchema,
   stepRecordWireSchema,
   stepWindowForTime,
-} from "./step-window";
+} from "../../features/datasets/episodes/step-window";
 
 const packageWindowSchema = z
   .object({
@@ -42,7 +42,7 @@ export function createDatasetPackageWindowSource(input: {
     identity.dataset_id !== input.datasetId ||
     binding.value_kind === null
   ) {
-    throw p06DataError(
+    throw datasetDataError(
       "P06_PACKAGE_BINDING_MISMATCH",
       "数据绑定与当前作用域或数值通道不一致。",
     );
@@ -79,13 +79,13 @@ export function createDatasetPackageWindowSource(input: {
           page.start_step !== start ||
           page.end_step !== end
         ) {
-          throw p06DataError(
+          throw datasetDataError(
             "P06_WINDOW_IDENTITY_MISMATCH",
             "数据窗口与固定的 Episode 数据版本不一致。",
           );
         }
         if (page.steps.length !== end - start) {
-          throw p06DataError(
+          throw datasetDataError(
             "P06_WINDOW_RECORD_MISMATCH",
             "标准包的数据窗口不完整。",
           );
@@ -102,7 +102,7 @@ export function createDatasetPackageWindowSource(input: {
             !(binding.modality_key in record.modalities) ||
             !(binding.modality_key in record.valid)
           ) {
-            throw p06DataError(
+            throw datasetDataError(
               "P06_WINDOW_RECORD_MISMATCH",
               "标准包的步骤、时间轴或通道记录不一致。",
             );

@@ -28,7 +28,7 @@ vi.mock("./ResumeProcessingAction", () => ({
   ),
 }));
 
-vi.mock("../../p03-upload-jobs/components/OriginalSourceBrowser", () => ({
+vi.mock("../../../features/ingest/browser/OriginalSourceBrowser", () => ({
   default: ({
     importId,
     initialEpisodeIndex,

@@ -22,7 +22,7 @@ export const routes: PageRoute[] = [
     path: "/manual/issues/raw-diagnostic/:uploadId",
     requiredCapabilities: ["manual_issue.read", "upload.read"],
     lazy: async () => ({
-      Component: (await import("../p04-upload-detail/formal-page")).default,
+      Component: (await import("./raw-diagnostic-route")).default,
     }),
   },
 ];

@@ -34,8 +34,8 @@ import {
   type PlatformReleaseHistory,
 } from "../../features/platform-operations/api";
 import { isDomainError } from "../../shared/api/domain-error";
-import { getSessionBootstrap } from "../auth/api";
-import { installSessionBootstrap } from "../auth/runtime-scope";
+import { getSessionBootstrap } from "../../features/account/session/api";
+import { installSessionBootstrap } from "../../features/account/session/runtime-scope";
 import { useShellStore } from "../../shared/scope/shell-store";
 import {
   PageState,

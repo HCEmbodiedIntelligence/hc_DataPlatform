@@ -43,7 +43,7 @@ import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 
 const server = setupServer(...datasetHandlers);
 const postedExports: { episode_ids: string[] }[] = [];
-vi.mock("../p20-collection-tasks/api", () => ({
+vi.mock("../../features/collection-tasks/api", () => ({
   collectionTaskGateway: {
     list: async () => ({
       items: [

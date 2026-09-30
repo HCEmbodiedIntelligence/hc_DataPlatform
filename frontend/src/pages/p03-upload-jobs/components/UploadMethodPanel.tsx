@@ -1,5 +1,5 @@
 import { FileJson2, FolderOpen, LoaderCircle } from "lucide-react";
-import styles from "../styles.module.css";
+import styles from "../../../features/ingest/upload/upload.module.css";
 
 export type BrowserSelectionMode = "package" | "folder" | "raw";
 

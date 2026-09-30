@@ -13,8 +13,8 @@ import {
 import {
   nativeRoot,
   type NativeProgress,
-} from "../p03-upload-jobs/lerobot-processing";
-import { getFormalRolloutQuality } from "../p04-upload-detail/formal-detail-client";
+} from "../../features/ingest/processing/lerobot-processing";
+import { getFormalRolloutQuality } from "../../features/ingest/detail/client";
 
 const runningStatuses = new Set(["PENDING", "RUNNING"]);
 const retryableStatuses = new Set(["FAILED", "PARTIALLY_FAILED", "CANCELLED"]);

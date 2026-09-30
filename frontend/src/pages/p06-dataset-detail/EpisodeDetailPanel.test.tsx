@@ -10,11 +10,11 @@ import {
   authorizeEpisodeFile,
   loadEpisodeFiles,
   loadEpisodeOverview,
-} from "./episode-detail";
+} from "../../features/datasets/episodes/episode-detail";
 import { episodeDetailFixture } from "./testing/episode-detail-fixture";
 
-vi.mock("./episode-detail", async (original) => ({
-  ...(await original<typeof import("./episode-detail")>()),
+vi.mock("../../features/datasets/episodes/episode-detail", async (original) => ({
+  ...(await original<typeof import("../../features/datasets/episodes/episode-detail")>()),
   loadEpisodeOverview: vi.fn(),
   loadEpisodeFiles: vi.fn(),
   authorizeEpisodeFile: vi.fn(),

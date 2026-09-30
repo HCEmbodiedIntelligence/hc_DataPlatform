@@ -3,7 +3,7 @@ import {
   checkedAnnotationRef,
   annotationPackageEndpoint,
   sameAnnotationDataRef,
-} from "./annotation-package";
+} from "../../features/annotation/runtime/annotation-package";
 import { episodeDataReferenceWireSchema } from "../../features/datasets/api/episode-package-wire";
 import { z } from "zod";
 import { bufferJointWindows } from "../../features/viewer/buffered-joint-window-source";
@@ -21,14 +21,14 @@ import type {
   RuntimeAnnotationBundle,
   RuntimeAnnotationScope,
   RuntimeAnnotationTask,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 export { buildJointFrameSource as buildRuntimeJointFrameSource } from "../../features/viewer";
 import {
   normalizeStepRateHz,
   stepToTimelineNs,
   timelineNsToStep,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 const decimalNsWireSchema = z.string().regex(/^(0|[1-9][0-9]*)$/u);
 const safeStepWireSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);

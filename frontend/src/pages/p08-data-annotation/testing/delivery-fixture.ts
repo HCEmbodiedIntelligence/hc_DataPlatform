@@ -1,4 +1,4 @@
-import type { DeliveryJob } from "../annotation-deliveries";
+import type { DeliveryJob } from "../../../features/annotation/runtime/annotation-deliveries";
 import {
   createVisualAnnotationBundle,
   visualAnnotationScope as scope,

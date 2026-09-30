@@ -9,12 +9,12 @@ import { request } from "../../shared/api/http-client";
 import { parseWire } from "../../shared/api/validate";
 import {
   decodeStepRecords,
-  p06DataError,
+  datasetDataError,
   safeStepWireSchema,
   stepRecordWireSchema,
   stepWindowForTime,
   type StepValueBinding,
-} from "./step-window";
+} from "../../features/datasets/episodes/step-window";
 
 export interface EpisodeDataBinding extends StepValueBinding {
   readonly lance_version: number;
@@ -51,7 +51,7 @@ function assertWindowIdentity(
     window.start_step !== input.startStep ||
     window.end_step !== input.endStep
   ) {
-    throw p06DataError(
+    throw datasetDataError(
       "P06_WINDOW_IDENTITY_MISMATCH",
       "固定采集条目的数据窗口与服务端响应不一致。",
     );

@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Alert, Button, Form, Input } from "antd";
 import { UserRound } from "lucide-react";
 import { Link } from "react-router-dom";
-import type { PasswordPolicyView } from "./api";
+import type { PasswordPolicyView } from "../../features/account/session/api";
 import { PasswordField } from "./PasswordField";
 import styles from "./styles.module.css";
 

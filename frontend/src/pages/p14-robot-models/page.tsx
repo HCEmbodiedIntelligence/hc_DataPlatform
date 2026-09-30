@@ -45,7 +45,7 @@ import {
   StandardPageScaffold,
   StatusTag,
 } from "../../shared/ui";
-import workspace from "../ui-011e/workspace.module.css";
+import workspace from "../../shared/ui/workspace.module.css";
 import { robotModelsQueryCodec } from "./query-codec";
 
 const detailTabs = [

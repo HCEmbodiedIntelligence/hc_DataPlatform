@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Scope } from "../../entities/scope";
 import { episodeDataReferenceWireSchema } from "../../features/datasets/api/episode-package-wire";
 import { request } from "../../shared/api/http-client";
-import type { ReviewDataRef } from "./data-reviews";
+import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
 
 const digest = z.string().regex(/^[0-9a-f]{64}$/u);
 const scalar = z.union([

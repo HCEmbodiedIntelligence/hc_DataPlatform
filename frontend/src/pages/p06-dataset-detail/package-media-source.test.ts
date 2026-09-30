@@ -5,7 +5,7 @@ import {
   resetRuntimeConfigForTests,
 } from "../../shared/config/runtime";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { createDatasetPackageMediaSource } from "./package-media-source";
+import { createDatasetPackageMediaSource } from "../../features/datasets/episodes/package-media-source";
 import { adaptP06ViewerStreams } from "./viewer-stream-adapter";
 
 const scope = {

@@ -57,7 +57,7 @@ import { PageState, StandardPageScaffold, StatusTag } from "../../shared/ui";
 import {
   collectionTaskGateway,
   type CollectionTask,
-} from "../p20-collection-tasks/api";
+} from "../../features/collection-tasks/api";
 import { PackageBatchPanel } from "./PackageBatchPanel";
 import styles from "./styles.module.css";
 

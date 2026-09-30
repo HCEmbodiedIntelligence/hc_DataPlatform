@@ -10,10 +10,10 @@ import {
   createAnnotationDelivery,
   commandAnnotationDelivery,
   authorizeAnnotationDelivery,
-} from "./annotation-deliveries";
+} from "../../features/annotation/runtime/annotation-deliveries";
 import { deliveryFixture } from "./testing/delivery-fixture";
 
-vi.mock("./annotation-deliveries", () => ({
+vi.mock("../../features/annotation/runtime/annotation-deliveries", () => ({
   listAnnotationDeliveries: vi.fn(),
   createAnnotationDelivery: vi.fn(),
   commandAnnotationDelivery: vi.fn(),

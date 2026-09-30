@@ -34,12 +34,12 @@ import {
 import { DatasetFilterPanel } from "./components/DatasetFilterPanel";
 import { DatasetTable } from "./components/DatasetTable";
 import { SelectedDatasetSummary } from "./components/SelectedDatasetSummary";
-import { EpisodeTable } from "../p06-dataset-detail/components/DatasetDetailTables";
+import { EpisodeTable } from "../../features/datasets/components/DatasetTables";
 import {
   collectionTaskGateway,
   type CollectionTaskPackage,
   type CollectionTaskScope,
-} from "../p20-collection-tasks/api";
+} from "../../features/collection-tasks/api";
 import datasetsQueryCodec, { type DatasetsSearch } from "./query-codec";
 import styles from "./styles.module.css";
 

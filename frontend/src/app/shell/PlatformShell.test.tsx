@@ -26,7 +26,7 @@ import { PlatformShell, type ScopeOption } from "./PlatformShell";
 import {
   resetUploadQueueStoreForTests,
   useUploadQueueStore,
-} from "../../pages/p03-upload-jobs/upload-queue-store";
+} from "../../features/ingest/upload/upload-queue-store";
 
 const scope = {
   organizationId: "org-shell-test",

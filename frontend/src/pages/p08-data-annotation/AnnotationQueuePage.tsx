@@ -1,4 +1,4 @@
-import { annotationDataLabel } from "./annotation-package";
+import { annotationDataLabel } from "../../features/annotation/runtime/annotation-package";
 import { useDeferredValue, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -24,12 +24,12 @@ import {
   claimRuntimeAnnotationTask,
   listRuntimeAnnotationTasks,
   runtimeAnnotationScopeFromShell,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
   AnnotationWorkbenchMode,
   RuntimeAnnotationScope,
   RuntimeAnnotationTask,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   annotationQueueQueryCodec,
   type AnnotationQueueStage,

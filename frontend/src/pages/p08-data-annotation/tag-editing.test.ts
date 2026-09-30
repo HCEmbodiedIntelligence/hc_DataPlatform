@@ -4,7 +4,7 @@ import {
   removeIntervalTag,
   updateIntervalTag,
 } from "./tag-editing";
-import type { RuntimeAnnotationTag } from "./runtime-annotation-adapter";
+import type { RuntimeAnnotationTag } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   createVisualAnnotationBundle,
   visualTag,

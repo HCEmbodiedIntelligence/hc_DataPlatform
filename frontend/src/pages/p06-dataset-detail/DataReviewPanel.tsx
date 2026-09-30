@@ -8,7 +8,7 @@ import {
   recordDataReview,
   type DataReviewCommand,
   type ReviewDataRef,
-} from "./data-reviews";
+} from "../../features/datasets/episodes/data-reviews";
 
 const statusLabel = {
   NOT_REVIEWED: "尚未审核",

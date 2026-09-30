@@ -6,8 +6,8 @@ import type {
 import type { EpisodeRevisionWire } from "../../features/datasets/api/wire-schemas";
 import { createDatasetLanceWindowSource } from "./lance-window-source";
 import { createDatasetPackageWindowSource } from "./package-window-source";
-import { createDatasetPackageMediaSource } from "./package-media-source";
-import { createDatasetAlignedMediaSource } from "./aligned-media-source";
+import { createDatasetPackageMediaSource } from "../../features/datasets/episodes/package-media-source";
+import { createDatasetAlignedMediaSource } from "../../features/datasets/episodes/aligned-media-source";
 
 function modality(kind: string): ViewerStreamModality {
   const byContractKind: Readonly<Record<string, ViewerStreamModality>> = {

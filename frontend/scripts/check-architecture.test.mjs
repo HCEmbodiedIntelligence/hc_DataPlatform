@@ -41,8 +41,40 @@ test("page links cannot import component route assembly", () => {
       path.join(root, "pages/example/page.tsx"),
       'import { annotationRoutes } from "../p08-data-annotation/routes";',
       root,
-    ).length,
-    1,
+    ).some((failure) =>
+      failure.includes("page consumers must use URL builders"),
+    ),
+    true,
+  );
+});
+
+for (const source of [
+  'import { nativeRoot } from "../p03-upload-jobs/lerobot-processing";',
+  'import type { CollectionTask } from "../p20-collection-tasks/api";',
+  'const load = () => import("../p03-upload-jobs/components/OriginalSourceBrowser");',
+  'import workspace from "../ui-011e/workspace.module.css";',
+  'export { Component } from "../p04-upload-detail/formal-page";',
+]) {
+  test(`pages cannot reuse another page as a feature: ${source}`, () => {
+    assert.equal(
+      checkSource(
+        path.join(root, "pages/p21-data-export/unsafe.tsx"),
+        source,
+        root,
+      ).length,
+      1,
+    );
+  });
+}
+
+test("pages compose feature capabilities and their own private components", () => {
+  assert.deepEqual(
+    checkSource(
+      path.join(root, "pages/p21-data-export/page.tsx"),
+      'import { api } from "../../features/exports/api"; import("./PackageBatchPanel");',
+      root,
+    ),
+    [],
   );
 });
 

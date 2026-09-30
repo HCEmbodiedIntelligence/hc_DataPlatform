@@ -11,9 +11,11 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import "../../app/router/page-catalog";
 import { createDomainError } from "../../shared/api/domain-error";
-import type { FormalUploadDetail } from "./formal-detail-client";
+import type { FormalUploadDetail } from "../../features/ingest/detail/client";
 import FormalUploadDetailPage from "./formal-page";
+import RawDiagnosticRoute from "../p09-manual-issues/raw-diagnostic-route";
 
 const { loadDetailMock, loadRawMediaMock, loadWorkflowMock } = vi.hoisted(
   () => ({
@@ -39,9 +41,11 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
   }),
 }));
 
-vi.mock("./formal-detail-client", async (importOriginal) => {
+vi.mock("../../features/ingest/detail/client", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("./formal-detail-client")>();
+    await importOriginal<
+      typeof import("../../features/ingest/detail/client")
+    >();
   return {
     ...actual,
     loadFormalUploadDetail: loadDetailMock,
@@ -266,7 +270,7 @@ function renderPage(path = "/ingest/uploads/session-a?from=pending#quality") {
           />
           <Route
             path="/manual/issues/raw-diagnostic/:uploadId"
-            element={<FormalUploadDetailPage />}
+            element={<RawDiagnosticRoute />}
           />
         </Routes>
       </MemoryRouter>
@@ -312,7 +316,9 @@ describe("P04 formal upload detail page", () => {
         "4",
       ),
     );
-    expect(screen.getByText(/Canonical MP4 与 Lance 引用已提交/u)).toBeVisible();
+    expect(
+      screen.getByText(/Canonical MP4 与 Lance 引用已提交/u),
+    ).toBeVisible();
     expect(
       screen.getByRole("link", { name: "打开完整数据视图" }),
     ).toHaveAttribute(

@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   RuntimeAnnotationHistory,
   RuntimeAnnotationScope,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   downloadRevisionFile,
   loadRevisionFile,

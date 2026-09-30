@@ -11,7 +11,7 @@ import {
 import type {
   RuntimeAnnotationHistory,
   RuntimeAnnotationScope,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import styles from "./workbench.module.css";
 
 const phases = {

@@ -24,7 +24,7 @@ import type {
   CollectionTask,
   CollectionTaskGateway,
   CollectionTaskProgress,
-} from "./api";
+} from "../../features/collection-tasks/api";
 import { CollectionTaskPage } from "./page";
 
 const scope = {

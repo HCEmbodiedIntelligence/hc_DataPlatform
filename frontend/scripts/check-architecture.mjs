@@ -54,6 +54,15 @@ export function checkSource(file, content, sourceRoot, options = {}) {
         `${relative}:${line}: ${sourceLayer} cannot depend on ${specifier}`,
       );
     }
+    if (sourceLayer === "pages" && layer === "pages") {
+      const owner = relative.split("/")[1];
+      const targetOwner = path.relative(sourceRoot, target).split(path.sep)[1];
+      if (owner !== targetOwner) {
+        failures.add(
+          `${relative}:${line}: page ${owner} cannot depend on page ${targetOwner}: ${specifier}`,
+        );
+      }
+    }
     if (
       sourceLayer === "pages" &&
       layer === "pages" &&
@@ -131,7 +140,7 @@ if (
     process.exitCode = 1;
   } else {
     process.stdout.write(
-      "Frontend shared, feature/page and page/app boundaries passed.\n",
+      "Frontend shared, feature/page, page/app and cross-page boundaries passed.\n",
     );
   }
 }

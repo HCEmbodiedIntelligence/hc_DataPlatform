@@ -7,10 +7,10 @@ import { PageState } from "../../shared/ui";
 import {
   nativeRoot,
   type NativeProgress,
-} from "../p03-upload-jobs/lerobot-processing";
+} from "../../features/ingest/processing/lerobot-processing";
 
 const OriginalSourceBrowser = lazy(
-  () => import("../p03-upload-jobs/components/OriginalSourceBrowser"),
+  () => import("../../features/ingest/browser/OriginalSourceBrowser"),
 );
 
 export default function RawDataExportPanel({

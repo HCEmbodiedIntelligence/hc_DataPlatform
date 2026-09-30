@@ -78,7 +78,7 @@ import styles from "./styles.module.css";
 import { RawDiagnosticActions } from "./RawDiagnosticActions";
 
 const OriginalSourceBrowser = lazy(
-  () => import("../p03-upload-jobs/components/OriginalSourceBrowser"),
+  () => import("../../features/ingest/browser/OriginalSourceBrowser"),
 );
 
 type DialogState =

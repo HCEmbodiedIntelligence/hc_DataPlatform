@@ -7,7 +7,7 @@ import {
   ServerCog,
 } from "lucide-react";
 import type { UploadFlowState } from "../upload-flow";
-import styles from "../styles.module.css";
+import styles from "../../../features/ingest/upload/upload.module.css";
 
 type PrecheckState = Extract<
   UploadFlowState,

@@ -5,7 +5,7 @@ import { LoginPanel } from "./LoginPanel";
 import {
   getPublicAuthConfiguration,
   type PublicAuthChallengeConfiguration,
-} from "./api";
+} from "../../features/account/session/api";
 import { useLoginFlow } from "./use-login-flow";
 
 export function LoginRoute() {

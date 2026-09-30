@@ -8,7 +8,7 @@ import type {
   RuntimeAnnotationTag,
   RuntimeAnnotationTask,
   RuntimeTagSchemaVersion,
-} from "../runtime-annotation-adapter";
+} from "../../../features/annotation/runtime/runtime-annotation-adapter";
 
 export const visualAnnotationScope: RuntimeAnnotationScope = {
   organizationId: "visual-org",

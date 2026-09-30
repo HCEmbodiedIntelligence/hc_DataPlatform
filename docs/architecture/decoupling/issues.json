@@ -420,19 +420,25 @@
       "title": "多个业务页面直接复用另一页面的接口和组件",
       "scope": "两分支",
       "owner": "T9",
-      "status": "in_progress",
+      "status": "implemented_verified",
       "evidence": [
-        "Annotation URL/query contract moved to features/annotation; all production annotation-link consumers migrated off page route assembly. Remaining cross-page APIs/components/media/upload dependencies still pending."
+        "32 reusable capability files assigned to ingest upload/processing/browser/detail, dataset episode/media/delivery/table, annotation runtime, exports, collection-tasks, account/session and shared workspace styling; all production consumers migrated",
+        "No production page-to-page imports remain, including dynamic components, types, CSS and route aliases; shell uses feature-owned upload/session interfaces; legacy TS paths reexport canonical identities",
+        "UploadDetailView receives uploadId/pathname/returnTo; P04 and problem diagnostic compose the same view through their own route adapters; dataset tables have independent styles and typed props",
+        "24 AST architecture tests passed; full TypeScript check, 172-file ESLint and production build passed",
+        "Full frontend suite: 153 files / 920 tests passed without skip; initial 2 failures also reproduced at 88bfc33b, then corrected real-route fixture setup and Drawer-managed focus assertion while preserving keyboard/focus lifecycle checks; all logs retained"
       ],
-      "remaining": "按能力移至 features/ingest、datasets、collection-tasks、account、exports 或公共 UI；页面只组合这些能力，禁止跨页面导入。"
+      "remaining": ""
     },
     {
       "id": "F05",
       "title": "Episode 物理格式兼容逻辑进一步扩散到前端页面",
       "scope": "chayi",
       "owner": "T9 T5 T7",
-      "status": "pending",
-      "evidence": [],
+      "status": "in_progress",
+      "evidence": [
+        "Package media/data bindings and annotation runtime compatibility logic moved out of pages into owning feature adapters; unified logical data view and open format capabilities remain pending."
+      ],
       "remaining": "前端 feature 提供统一的数据版本、逻辑流和媒体授权模型，Lance/Episode wire 差异在一个适配层集中转换；后端提供稳定逻辑视图。"
     },
     {

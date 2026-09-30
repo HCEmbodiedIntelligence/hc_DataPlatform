@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { makeScopeKey } from "../../entities/scope";
-import * as authApi from "../../pages/auth/api";
+import * as authApi from "../../features/account/session/api";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { ProviderHarness } from "../providers";
 import { RuntimePlatformShell } from "./RuntimePlatformShell";

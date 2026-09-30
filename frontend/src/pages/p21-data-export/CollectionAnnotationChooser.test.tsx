@@ -4,16 +4,16 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { loadEpisodeOverview } from "../p06-dataset-detail/episode-detail";
+import { loadEpisodeOverview } from "../../features/datasets/episodes/episode-detail";
 import { episodeDetailFixture } from "../p06-dataset-detail/testing/episode-detail-fixture";
-import { loadCollectionAnnotationHistory } from "./package-deliveries";
+import { loadCollectionAnnotationHistory } from "../../features/exports/package-deliveries";
 import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 import { CollectionAnnotationChooser } from "./CollectionAnnotationChooser";
 
-vi.mock("../p06-dataset-detail/episode-detail", () => ({
+vi.mock("../../features/datasets/episodes/episode-detail", () => ({
   loadEpisodeOverview: vi.fn(),
 }));
-vi.mock("./package-deliveries", () => ({
+vi.mock("../../features/exports/package-deliveries", () => ({
   loadCollectionAnnotationHistory: vi.fn(),
 }));
 afterEach(() => {

@@ -48,7 +48,7 @@ vi.mock("../../features/cleaning/api", async (importOriginal) => {
     useCreateDraftFromManualIssue: mutation,
   };
 });
-vi.mock("../p03-upload-jobs/components/OriginalSourceBrowser", () => ({
+vi.mock("../../features/ingest/browser/OriginalSourceBrowser", () => ({
   default: (props: { importId: string; initialEpisodeIndex: number }) => {
     previewMock(props);
     return (

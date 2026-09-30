@@ -23,7 +23,7 @@ import {
   type CollectionTaskGateway,
   type CollectionTaskScope,
   type CreateCollectionTask,
-} from "./api";
+} from "../../features/collection-tasks/api";
 import { CollectionTaskDrawer } from "./components/CollectionTaskDrawer";
 import {
   CollectionTaskTable,

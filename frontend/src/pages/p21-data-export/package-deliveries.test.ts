@@ -6,7 +6,7 @@ import {
   downloadPackageJob,
   loadPackageCandidates,
   loadCollectionAnnotationHistory,
-} from "./package-deliveries";
+} from "../../features/exports/package-deliveries";
 import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));

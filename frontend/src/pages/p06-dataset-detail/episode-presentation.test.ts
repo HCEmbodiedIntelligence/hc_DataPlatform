@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { episodeInclusionLabel, episodeReviewPresentation, episodeSuccessPresentation } from './episode-presentation';
+import { episodeInclusionLabel, episodeReviewPresentation, episodeSuccessPresentation } from '../../features/datasets/episodes/episode-presentation';
 
 describe('Episode presentation', () => {
   it('does not present an unknown review result as zero findings', () => {

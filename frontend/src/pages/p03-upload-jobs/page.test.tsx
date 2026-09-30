@@ -19,7 +19,7 @@ import {
   resetUploadQueueStoreForTests,
   useUploadQueueStore,
   type UploadQueueItem,
-} from "./upload-queue-store";
+} from "../../features/ingest/upload/upload-queue-store";
 import { UploadMethodPanel } from "./components/UploadMethodPanel";
 import { UploadQueuePanel } from "./components/UploadQueuePanel";
 
@@ -61,8 +61,8 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
   }),
 }));
 
-vi.mock("./formal-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./formal-client")>();
+vi.mock("../../features/ingest/upload/formal-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../features/ingest/upload/formal-client")>();
   return {
     ...actual,
     createFormalUploadSession: createSessionMock,
@@ -80,8 +80,8 @@ vi.mock("../../features/datasets/api/hooks", () => ({
     isError: false,
   }),
 }));
-vi.mock("./lerobot-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./lerobot-client")>()),
+vi.mock("../../features/ingest/upload/lerobot-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../features/ingest/upload/lerobot-client")>()),
   uploadNativeLeRobot: nativeUploadMock,
 }));
 

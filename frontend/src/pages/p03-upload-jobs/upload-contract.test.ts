@@ -11,7 +11,7 @@ import {
   planUploadParts,
   uploadProblemCopy,
   validateObjectStorageUri,
-} from "./upload-contract";
+} from "../../features/ingest/upload/upload-contract";
 
 function folderFile(
   contents: BlobPart[],

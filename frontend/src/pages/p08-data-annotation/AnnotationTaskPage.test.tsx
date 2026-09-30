@@ -14,7 +14,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TagReviewTaskPage } from "./AnnotationTaskPage";
 import type { AnnotationWorkbenchView } from "./AnnotationWorkbenchView";
-import type { RuntimeAnnotationBundle } from "./runtime-annotation-adapter";
+import type { RuntimeAnnotationBundle } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   createVisualAnnotationBundle,
   visualAnnotationScope,
@@ -52,8 +52,8 @@ vi.mock("../../features/robot-models/api", () => ({
   useRobotModelJointMappings: () => ({ data: undefined }),
 }));
 
-vi.mock("./runtime-annotation-adapter", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./runtime-annotation-adapter")>()),
+vi.mock("../../features/annotation/runtime/runtime-annotation-adapter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../features/annotation/runtime/runtime-annotation-adapter")>()),
   loadRuntimeAnnotationBundle: loadBundleMock,
   createRuntimeAnnotationCommands: () => ({ review: reviewMock }),
 }));

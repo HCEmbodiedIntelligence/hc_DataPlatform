@@ -1,5 +1,5 @@
 import { defineQueryCodec } from "../../shared/routing/route-registry";
-import type { CollectionTaskStatus } from "./api";
+import type { CollectionTaskStatus } from "../../features/collection-tasks/api";
 
 export type CollectionTaskStatusFilter = "ALL" | CollectionTaskStatus;
 export type CollectionTaskDrawerState =

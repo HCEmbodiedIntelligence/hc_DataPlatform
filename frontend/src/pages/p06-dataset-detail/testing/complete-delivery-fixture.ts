@@ -1,4 +1,4 @@
-import type { CompleteDeliveryJob } from "../complete-deliveries";
+import type { CompleteDeliveryJob } from "../../../features/datasets/episodes/complete-deliveries";
 import { episodeDetailFixture } from "./episode-detail-fixture";
 
 export function completeDeliveryFixture() {

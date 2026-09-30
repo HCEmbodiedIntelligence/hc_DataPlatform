@@ -10,11 +10,11 @@ import {
   annotationTaskStatusLabel,
   listRuntimeAnnotationRevisionThreads,
   runtimeAnnotationScopeFromShell,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
   RuntimeAnnotationRevisionThread,
   RuntimeAnnotationScope,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import { annotationRoutes } from "../../features/annotation/routing";
 import "./p08.css";
 

@@ -6,7 +6,7 @@ import {
   resetRuntimeConfigForTests,
 } from "../../shared/config/runtime";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { collectionTaskGateway, type CollectionTaskScope } from "./api";
+import { collectionTaskGateway, type CollectionTaskScope } from "../../features/collection-tasks/api";
 
 const scope: CollectionTaskScope = {
   organizationId: "org-a",

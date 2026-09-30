@@ -14,7 +14,7 @@ import { MemoryRouter } from "react-router-dom";
 import { AnnotationQueuePage, TagReviewQueuePage } from "./AnnotationQueuePage";
 import { annotationQueueQueryCodec } from "./query-codec";
 import type { AnnotationQueueStage } from "./query-codec";
-import type { RuntimeAnnotationTask } from "./runtime-annotation-adapter";
+import type { RuntimeAnnotationTask } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 const { grantedCapabilities, listTasksMock } = vi.hoisted(() => ({
   grantedCapabilities: new Set<string>(),
@@ -45,9 +45,9 @@ vi.mock("../../shared/scope/shell-store", () => ({
     }),
 }));
 
-vi.mock("./runtime-annotation-adapter", async (importOriginal) => {
+vi.mock("../../features/annotation/runtime/runtime-annotation-adapter", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("./runtime-annotation-adapter")>();
+    await importOriginal<typeof import("../../features/annotation/runtime/runtime-annotation-adapter")>();
   return {
     ...actual,
     listRuntimeAnnotationTasks: listTasksMock,
