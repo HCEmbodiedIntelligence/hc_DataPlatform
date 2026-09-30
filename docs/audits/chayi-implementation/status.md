@@ -47,6 +47,11 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- 当前版本读取补充（2026-09-30）：bootstrap 识别实际 Episode 集合头及其已登记
+  祖先，支持登记延迟、回退/重新发布，保留旧 Lance 与业务发布语义。23 项测试
+  和四入口标准会话 HTTP 验证通过，见 [证据](working-version.md)。仍是合成输入；
+  正式批次回退与 P06 业务发布的新存储适配继续，未新增完整验收结论。
+
 - W7 物理清单补充（2026-09-30）：Raw manifest 展开、已有标准包/媒体/录制
   对象流式大小和哈希核对、跨引用去重及显式失败。18 项定向服务/清点测试通过；
   四条既有隔离输入的真实 CLI 共核验 167 对象/2132211 字节，见

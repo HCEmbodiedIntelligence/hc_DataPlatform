@@ -472,15 +472,7 @@ class DatasetPageService:
             dataset_id=dataset_id,
             filters=DatasetPageVersionFilters(),
         )
-        all_versions = self._repository.list_versions(
-            scope=scope,
-            dataset_id=dataset_id,
-            filters=DatasetPageVersionFilters(include_internal=True),
-        )
-        internal_versions = tuple(
-            version for version in all_versions if version.version_id.startswith("version_lance_")
-        )
-        working_version_id = self._suggested_version_id(internal_versions)
+        working_version_id = self._repository.working_version_id(scope=scope, dataset_id=dataset_id)
         facts = self._repository.detail_facts(scope=scope, dataset_id=dataset_id)
         now = self._clock()
         self._audit(
