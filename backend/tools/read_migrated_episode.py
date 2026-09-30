@@ -1,16 +1,19 @@
 """Network-disabled official reader plus independent migration logical-hash check.
 
-No platform imports. Use the complete committed fixture copy and result.json from
-the service exercise; this is not acceptance of real historical recordings.
+No platform imports. Use a complete committed copy and its frozen result.json.
+The fixture CLI labels synthetic input; historical callers must record their
+audited provenance and supply original files for independent RGB comparison.
 """
 
 import hashlib
 import importlib.util
 import json
 import sys
+from fractions import Fraction
 from importlib.metadata import version
 from pathlib import Path
 
+import av
 import pyarrow.parquet as pq
 
 spec = importlib.util.spec_from_file_location(
@@ -24,14 +27,39 @@ def document(path):
     return json.loads(path.read_bytes())
 
 
-def check(root):
+def source_rgb_hash(path, indexes, fps):
+    """Independently select original decoded source frames, without platform code."""
+    checksum, selected = hashlib.sha256(), 0
+    rate = Fraction(str(fps))
+    with av.open(str(path)) as source:
+        stream = source.streams.video[0]
+        if indexes[0]:
+            source.seek(
+                int(Fraction(indexes[0]) / rate / stream.time_base), stream=stream, backward=True
+            )
+        for frame in source.decode(stream):
+            index = round(frame.pts * frame.time_base * rate)
+            assert abs(frame.pts * frame.time_base - Fraction(index) / rate) <= Fraction(1, 1000000)
+            assert index <= indexes[selected], "source decode skipped a selected frame"
+            if index == indexes[selected]:
+                pixels = frame.to_ndarray(format="rgb24").tobytes()
+                while selected < len(indexes) and indexes[selected] == index:
+                    checksum.update(pixels)
+                    selected += 1
+                if selected == len(indexes):
+                    break
+    assert selected == len(indexes)
+    return checksum.hexdigest()
+
+
+def check(root, *, source_files=None, video_backend="pyav"):
     reference = document(root / "result.json")
     plan, receipt, report = (reference[k] for k in ("plan", "receipt", "report"))
     plan_hash = hashlib.sha256(
         json.dumps(plan, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     ).hexdigest()
     package = root / "episode"
-    result = reader.read_package(package, receipt)
+    result = reader.read_package(package, receipt, video_backend=video_backend)
     assert document(package / "hc/migration.json") == report
     assert report["plan_sha256"] == plan_hash
     assert document(package / "hc/manifest.json")["input"]["configuration_sha256"] == plan_hash
@@ -91,8 +119,37 @@ def check(root):
     assert logical_hash == plan["legacy"]["content_hash"] == report["converted_logical_sha256"]
     for feature, media in plan["asset_contract"]["videos"].items():
         assert reader.sha(package / f"videos/{feature}/chunk-000/file-000.mp4") == media["sha256"]
-        assert report["media"][feature]["transcoded"] is False
         assert report["media"][feature]["requantized"] is False
+        preparation = plan["metadata"].get("source", {}).get("media_preparation", {}).get(feature)
+        if preparation is None:
+            assert report["media"][feature]["transcoded"] is False
+        else:
+            assert preparation == report["media"][feature]["source_preparation"]
+            assert preparation["decoded_pixels_exact"]
+            logical_name = next(
+                name for name, key in info["hc.feature_mapping"].items() if key == feature
+            )
+            references = [row["modalities"][logical_name] for row in logical]
+            indexes = [ref["frame_index"] for ref in references]
+            assert (
+                hashlib.sha256(json.dumps(indexes, separators=(",", ":")).encode()).hexdigest()
+                == preparation["frame_indexes_sha256"]
+            )
+            checksum = hashlib.sha256()
+            with av.open(str(package / f"videos/{feature}/chunk-000/file-000.mp4")) as video:
+                for frame in video.decode(video=0):
+                    checksum.update(frame.to_ndarray(format="rgb24").tobytes())
+            assert (
+                checksum.hexdigest()
+                == preparation["output_rgb_sha256"]
+                == preparation["selected_source_rgb_sha256"]
+            )
+            if source_files is not None:
+                original = preparation["original_reference"]
+                path = source_files[original["object_key"]]
+                assert reader.sha(path) == original["content_sha256"]
+                assert path.stat().st_size == original["size_bytes"]
+                assert source_rgb_hash(path, indexes, original["fps"]) == checksum.hexdigest()
     result.update(
         plan_sha256=plan_hash,
         legacy=plan["legacy"],
@@ -101,6 +158,8 @@ def check(root):
         rgb_and_depth_original_file_hashes_verified=bool(plan["required_depth_features"])
         and len(plan["asset_contract"]["videos"]) > len(plan["required_depth_features"]),
         review_automatically_transferred=False,
+        shared_original_pixels_independently_verified=source_files is not None
+        and bool(plan["metadata"].get("source", {}).get("media_preparation")),
         input_directory=str(root),
     )
     return result

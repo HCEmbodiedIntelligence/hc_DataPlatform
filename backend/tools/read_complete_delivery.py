@@ -29,7 +29,7 @@ def sha(path):
     return checksum.hexdigest()
 
 
-def read_package(root, member):
+def read_package(root, member, *, video_backend="pyav"):
     manifest = json.loads((root / "hc/manifest.json").read_text())
     assert sha(root / "hc/manifest.json") == member["manifest_sha256"]
     assert json.loads((root / "hc/commit.json").read_text())["data"] == member["data"]
@@ -39,7 +39,9 @@ def read_package(root, member):
     rows = pq.read_table(root / "data").to_pylist()
     modalities = json.loads((root / "hc/modalities.json").read_text())
     info = json.loads((root / "meta/info.json").read_text())
-    dataset = LeRobotDataset("local/chayi-complete-delivery", root=root, video_backend="pyav")
+    dataset = LeRobotDataset(
+        "local/chayi-complete-delivery", root=root, video_backend=video_backend
+    )
     masks, mappings, expected_depth = {}, {}, {}
     for feature, declaration in modalities["depth"].items():
         evidence = root / declaration["evidence_path"]
@@ -111,6 +113,8 @@ def read_package(root, member):
         "independent_hc_masks_applied": bool(masks),
         "source_mapping_checked": True,
         "all_manifest_hashes_verified": True,
+        "video_backend_requested": video_backend,
+        "depth_video_backend": "pyav" if masks else None,
     }
 
 

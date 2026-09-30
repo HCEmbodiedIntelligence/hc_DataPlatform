@@ -221,7 +221,8 @@
         "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
         "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
         "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
-        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged"
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged",
+        "Source ce580918 shared native RGB windows/legacy ROS fixes integrated; new consumers use neutral data_formats.RgbVideoWriter, depth_evidence and video inspectors; old TrainingVideo facade retains identity. 178 unit checks, 57 unique real PostgreSQL/MinIO cases including isolated Temporal workflow/replay/retry pass across retained runs, no skipped tests; 4 real RGB encoder cases match source bytes/clocks exactly."
       ],
       "remaining": ""
     },
@@ -244,7 +245,8 @@
         "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
         "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
         "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
-        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged"
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged",
+        "Source ce580918 shared native RGB windows/legacy ROS fixes integrated; new consumers use neutral data_formats.RgbVideoWriter, depth_evidence and video inspectors; old TrainingVideo facade retains identity. 178 unit checks, 57 unique real PostgreSQL/MinIO cases including isolated Temporal workflow/replay/retry pass across retained runs, no skipped tests; 4 real RGB encoder cases match source bytes/clocks exactly."
       ],
       "remaining": ""
     },
@@ -297,7 +299,8 @@
         "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
         "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
         "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
-        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged"
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged",
+        "Source ce580918 shared native RGB windows/legacy ROS fixes integrated; new consumers use neutral data_formats.RgbVideoWriter, depth_evidence and video inspectors; old TrainingVideo facade retains identity. 178 unit checks, 57 unique real PostgreSQL/MinIO cases including isolated Temporal workflow/replay/retry pass across retained runs, no skipped tests; 4 real RGB encoder cases match source bytes/clocks exactly."
       ],
       "remaining": ""
     },
@@ -638,5 +641,5 @@
       "remaining": ""
     }
   ],
-  "integrated_source_head": "dc2850d7b2b6af7b709f86332327a0ceed8bb50b"
+  "integrated_source_head": "ce58091890c7d190cdd007d3767d91d8989f0bc3"
 }

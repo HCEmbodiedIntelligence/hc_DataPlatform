@@ -5,6 +5,10 @@ from pathlib import Path
 
 import av
 
+from hc_data_platform.data_formats.rgb_video import RgbVideoWriter as TrainingVideo
+
+__all__ = ["FrameReader", "TrainingVideo"]
+
 
 class FrameReader:
     def __init__(self, root):
@@ -49,29 +53,3 @@ class FrameReader:
             self.container.close()
         self.container = None
         self.path = None
-
-
-class TrainingVideo:
-    def __init__(self, path, fps, shape):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.container = av.open(str(path), "w")
-        self.stream = self.container.add_stream("libx264", rate=Fraction(str(fps)))
-        self.stream.height, self.stream.width = shape[:2]
-        self.stream.pix_fmt = "yuv420p"
-        self.stream.codec_context.thread_count = 1
-        self.stream.options = {"crf": "18", "preset": "veryfast", "bf": "0", "tune": "zerolatency"}
-        self.stream.time_base = 1 / Fraction(str(fps))
-        self.fps, self.frames = fps, 0
-
-    def write(self, pixels):
-        frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
-        frame.pts = self.frames
-        frame.time_base = 1 / Fraction(str(self.fps))
-        for packet in self.stream.encode(frame):
-            self.container.mux(packet)
-        self.frames += 1
-
-    def close(self):
-        for packet in self.stream.encode(None):
-            self.container.mux(packet)
-        self.container.close()

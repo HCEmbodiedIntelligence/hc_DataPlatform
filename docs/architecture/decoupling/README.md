@@ -371,3 +371,23 @@ response.scope.project_id 保留，不被前端误当成所选页面项目。
 
 仍待处理：URDF 导入用例下沉、冻结 embodiment、来源 provenance、renderer 能力注册，
 以及原审计中的数据格式、任务、QC、训练、逻辑版本和其余存储/后端边界。
+
+## 原生 RGB 窗口与旧 ROS 图像修复同步
+
+仅合入茶艺分支已提交的 `01d3cde6`、`ce580918`，没有复制或覆盖源工作区正在进行的
+标注迁移和前端未提交改动。保留共享视频窗口的原帧引用、无损 RGB 选帧、冻结回执复核，
+以及旧 ROS Image/CompressedImage 名称和显式 PNG 深度声明的修复。
+
+新增 RGB 迁移最初再次引用 publishing 检查工具和 continuous_recordings 的 TrainingVideo。
+现在编码器归 `data_formats.rgb_video.RgbVideoWriter`，迁移、MCAP 包、连续录制包和
+原始录制预处理直接使用公共格式层；原 TrainingVideo 路径只重导出相同类供旧调用者兼容。
+FrameReader 仍属于原始录制来源适配器，没有被当作通用格式能力搬迁。门禁拒绝恢复这些反向依赖。
+
+实际验证：178 项格式、迁移、像素、深度、来源和架构测试通过；隔离 PostgreSQL/MinIO 的
+57 个不同服务用例全部最终通过，包含临时 Temporal 的 MCAP/连续录制工作流、重试及历史 replay，
+没有跳过测试。最初 3 项因环境缺少 Temporal 变量失败，补充临时服务后 1 项还缺证据输出变量；
+补充证据路径后该项也通过，原始失败日志和各次 JUnit 保留，不把失败记为产品缺陷或静默删除。
+4 组真实 RGB 编码对比覆盖普通/无损编码和整数/分数 FPS：产物 SHA-256、大小、帧时间与源提交
+完全相同，无损解码 RGB 像素一致；新公共编码器 mypy、全部相关 Ruff 和 454 文件依赖门禁通过。
+证据位于外部 results/rgb-migration-*.xml、rgb-codec-compatibility.json。
+源提交自带的历史数据演练诊断按原证据合入；本批独立验证使用合成数据，没有重新操作真实历史资产。

@@ -19,6 +19,18 @@ CHECKER = Path(__file__).resolve().parents[2] / "tools/check_architecture.py"
         ),
         ("data_formats.arrow", "from ..publishing.service import canonical_json_bytes"),
         ("data_formats.feature_names", "from ..lerobot_imports import profiles"),
+        (
+            "data_formats.rgb_video",
+            "from ..continuous_recordings.openarm_raw.video import TrainingVideo",
+        ),
+        (
+            "episode_store.migration_rgb",
+            "from ..continuous_recordings.openarm_raw.video import TrainingVideo",
+        ),
+        (
+            "episode_store.mcap_package",
+            "from hc_data_platform.continuous_recordings.openarm_raw import video",
+        ),
         ("data_formats.depth_source", "import importlib\nimportlib.import_module(target)"),
         ("episode_store.writer", "from ..publishing.exporters import _feature_type"),
         ("continuous_recordings.package", "from ..publishing.depth_evidence import file_hash"),

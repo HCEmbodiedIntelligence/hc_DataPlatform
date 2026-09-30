@@ -1,0 +1,74 @@
+{
+  "input_kind": "existing_8088_mcap_history_read_only_copy",
+  "source_sha256": "d170410ea8a2b63d8fc945219cedda0c62117f337e7fc73b05c8ad0e0e25b37a",
+  "source_bytes": 15584050,
+  "topics": {
+    "/io_teleop/camera_head/depth": {
+      "schema": "sensor_msgs/CompressedImage",
+      "channel_metadata": {
+        "offered_qos_profiles": ""
+      },
+      "decoded_rgb_frames": 0,
+      "depth_frames_refused_missing_source_contract": 131,
+      "source_first": null,
+      "source_last": null,
+      "missing_source_contract_reason": "DEPTH_SOURCE_CONTRACT_REQUIRED: MCAP integer PNG has no units"
+    },
+    "/io_teleop/camera_head/color": {
+      "schema": "sensor_msgs/CompressedImage",
+      "channel_metadata": {
+        "offered_qos_profiles": ""
+      },
+      "decoded_rgb_frames": 111,
+      "depth_frames_refused_missing_source_contract": 0,
+      "source_first": {
+        "topic": "/io_teleop/camera_head/color",
+        "channel_id": 11,
+        "schema_id": 5,
+        "sequence": 0,
+        "log_time_ns": 1788228591216256413,
+        "publish_time_ns": 1788228591216256413,
+        "sensor_timestamp_ns": 1788228591001921000,
+        "alignment_clock": "mcap_log_time",
+        "message_sha256": "a8522f72b6789bfe6d54c0dd8bbe51957fad97438c90b1cb76be540db8419bde",
+        "source_encoding": "jpeg",
+        "source_dtype": "|u1",
+        "source_shape": [
+          400,
+          640,
+          3
+        ],
+        "row_step": null,
+        "is_bigendian": null
+      },
+      "source_last": {
+        "topic": "/io_teleop/camera_head/color",
+        "channel_id": 11,
+        "schema_id": 5,
+        "sequence": 0,
+        "log_time_ns": 1788228595569079936,
+        "publish_time_ns": 1788228595569079936,
+        "sensor_timestamp_ns": 1788228595369181000,
+        "alignment_clock": "mcap_log_time",
+        "message_sha256": "099bc3d680cbef252c2395197d066f227f9a32b75b8f33017278c1ae1629a408",
+        "source_encoding": "jpeg",
+        "source_dtype": "|u1",
+        "source_shape": [
+          400,
+          640,
+          3
+        ],
+        "row_step": null,
+        "is_bigendian": null
+      }
+    }
+  },
+  "mcap_crc_validation": true,
+  "source_bytes_rewritten": false,
+  "rgb_source_decoder": "official mcap_ros2 dynamic CDR decoder with registered source schema",
+  "source_depth_scale_inferred": false,
+  "complete_rgbd_package_created": false,
+  "depth_migration": "PENDING_SOURCE_UNIT_PROFILE_EVIDENCE",
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

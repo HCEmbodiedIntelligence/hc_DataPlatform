@@ -33,7 +33,10 @@ LEGACY_CODECS = tuple(
         "feature_names",
         "lerobot_format",
     )
-) + ("hc_data_platform.lerobot_imports.feature_names",)
+) + (
+    "hc_data_platform.lerobot_imports.feature_names",
+    "hc_data_platform.continuous_recordings.openarm_raw.video.TrainingVideo",
+)
 
 
 def matches(module: str, prefix: str) -> bool:
@@ -121,6 +124,10 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
             target, "hc_data_platform.publishing"
         ):
             failures.add(f"{line}: persistence must not import publishing {target}")
+        if matches(module, "hc_data_platform.episode_store") and matches(
+            target, "hc_data_platform.continuous_recordings.openarm_raw.video"
+        ):
+            failures.add(f"{line}: persistence must use neutral data_formats codecs, not {target}")
         if module in {
             "hc_data_platform.publishing.service",
             "hc_data_platform.publishing.lerobot_export",
