@@ -40,9 +40,15 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
-| MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
+| MIG-01 | W7 | Partial read-only inventory verified; conversion/checkpoint/rollback rehearsal pending | [Scoped inventory and actual CLI](migration-inventory.md); complete copy rehearsal remains |
 
 ## Work log
+
+- W7 清点工具补充（2026-09-30）：固定作用域/只读快照、行哈希、旧版本候选、
+  标注和审核原引用、不覆盖清单。最终 5 项服务测试及旧存储/三入口/独立客户端
+  现有隔离输出的 CLI 清点通过，详见 [报告](migration-inventory.md)。发现并修正
+  QC 绑定字段、产品 Episode 与录制切片 ID 的差异；保留初次失败证据。仅清点
+  数据库引用，物理展开/等价核验、批次转换/续跑/指针回退仍待完成。无 G2/G3。
 
 - W2/W3/W5/W6 缺测深度补充（2026-09-30）：全缺帧/全无效区间保留视频与 HC
   证据，不生成测量统计；集合兼容缺测与有效条目。57 个独立后端用例、10 项

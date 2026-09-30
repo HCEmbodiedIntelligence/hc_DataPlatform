@@ -1,0 +1,268 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="5" time="9.847" timestamp="2026-09-30T02:50:27.749733+00:00" hostname="5c3761a2e407"><testcase classname="tests.episode_store.test_migration_inventory_services" name="test_read_only_inventory_preserves_fixed_annotation_and_review_bindings[prepared_bundle0]" time="2.079"><failure message="psycopg.errors.UndefinedColumn: column r.data_version_id does not exist&#10;LINE 1: ... AND r.&quot;project_id&quot;=$2 AND r.&quot;region_code&quot;=$3 AND r.data_ver...&#10;                                                             ^">projected = (PackageInput(identity=EpisodeIdentity(organization_id='bundle-d148ef49590142d0b8afdee72e52f371', project_id='writer-p...zoneinfo.ZoneInfo(key='Etc/UTC')), manifest_sha256='77be542605f9265c44a7a96f842dda010c5f739d4acd6c6fc205c13eedf4e99e'))
+files = (PackageInput(identity=EpisodeIdentity(organization_id='bundle-d148ef49590142d0b8afdee72e52f371', project_id='writer-p...d148ef49590142d0b8afdee72e52f371', 'writer-project', 'writer-region')}), organization_scoped_capabilities=frozenset()))
+target = (&lt;hc_data_platform.episode_store.service.EpisodePackageService object at 0x70876466b500&gt;, PackageInput(identity=Episod...-unknown/id-episode_inventory/id-dv_d20d4e567410e8ffb93212b718b857f6c122a846506c28e4cb773a70dc6543ad', frame_count=4)))
+tmp_path = PosixPath('/tmp/pytest-of-unknown/pytest-0/test_read_only_inventory_prese0')
+
+    def test_read_only_inventory_preserves_fixed_annotation_and_review_bindings(
+        projected,  # noqa: F811
+        files,  # noqa: F811
+        target,
+        tmp_path,
+    ):
+        source, packages, _, _, _ = projected
+        _, task, _, _ = files
+        annotation = target[2]
+        with scoped(source):
+            submission = annotation.submit_for_review(
+                task.task_id,
+                actor(source.identity),
+                expected_revision=1,
+                if_match=annotation.get_task(task.task_id).etag,
+                idempotency_key="inventory-submit",
+            )
+            annotation.review(
+                task.task_id,
+                actor(source.identity, "reviewer"),
+                ReviewDecision.APPROVE,
+                revision=1,
+                submission_id=submission.submission_id,
+                if_match=annotation.get_task(task.task_id).etag,
+            )
+&gt;           inventory = capture_inventory(packages.repository.connections, source.identity.dataset_id)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/episode_store/test_migration_inventory_services.py:60:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src/hc_data_platform/episode_store/migration_inventory.py:264: in capture_inventory
+    rows(
+src/hc_data_platform/episode_store/migration_inventory.py:59: in rows
+    cursor.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;psycopg.Cursor [no result] [BAD] at 0x7087627f7f50&gt;
+query = Composed([SQL('SELECT to_jsonb(r) FROM '), Identifier('episode_store', 'qc_evidence'), SQL(' r WHERE '), Composed([Com...QL('r.'), Identifier('region_code'), SQL('=%s')]), SQL(' AND '), SQL('r.data_version_id=ANY(%s)')]), SQL(' LIMIT %s')])
+params = ('bundle-d148ef49590142d0b8afdee72e52f371', 'writer-project', 'writer-region', ['dv_d20d4e567410e8ffb93212b718b857f6c122a846506c28e4cb773a70dc6543ad'], 10001)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -&gt; Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+&gt;           raise ex.with_traceback(None)
+E           psycopg.errors.UndefinedColumn: column r.data_version_id does not exist
+E           LINE 1: ... AND r."project_id"=$2 AND r."region_code"=$3 AND r.data_ver...
+E                                                                        ^
+
+/opt/venv/lib/python3.12/site-packages/psycopg/cursor.py:117: UndefinedColumn</failure></testcase><testcase classname="tests.episode_store.test_migration_inventory_services" name="test_inventory_never_falls_back_to_a_foreign_scope[organization_id-prepared_bundle0]" time="1.849" /><testcase classname="tests.episode_store.test_migration_inventory_services" name="test_inventory_never_falls_back_to_a_foreign_scope[project_id-prepared_bundle0]" time="1.801" /><testcase classname="tests.episode_store.test_migration_inventory_services" name="test_inventory_never_falls_back_to_a_foreign_scope[region_code-prepared_bundle0]" time="1.767" /><testcase classname="tests.episode_store.test_collections_services" name="test_actual_legacy_lance_and_new_parquet_in_one_collection" time="1.999"><failure message="psycopg.errors.UndefinedColumn: column r.data_version_id does not exist&#10;LINE 1: ... AND r.&quot;project_id&quot;=$2 AND r.&quot;region_code&quot;=$3 AND r.data_ver...&#10;                                                             ^">services = (&lt;hc_data_platform.episode_store.postgres.PostgresEpisodeStore object at 0x70876263b260&gt;, &lt;hc_data_platform.ingest.adapters.S3ObjectStorage object at 0x708762696810&gt;)
+tmp_path = PosixPath('/tmp/pytest-of-unknown/pytest-0/test_actual_legacy_lance_and_n0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x708750786cf0&gt;
+
+    @pytest.mark.integration
+    def test_actual_legacy_lance_and_new_parquet_in_one_collection(services, tmp_path, monkeypatch):
+        repository, storage = services
+        ident = identity().model_copy(
+            update={
+                "organization_id": "mixed-" + uuid4().hex,
+                "project_id": "mixed-project-" + uuid4().hex,
+                "dataset_id": "dataset_mixed_" + uuid4().hex,
+            }
+        )
+        old_identity = ident.model_copy(
+            update={"episode_id": "episode_explicit_old", "rollout_id": "old::rollout"}
+        )
+        new_root = tmp_path / "new"
+        source, rows = numeric(new_root, ident)
+        adapter = LanceAdapter(tmp_path / "existing-lance")
+        legacy = LanceCatalogService(
+            adapter,
+            PostgresCatalogAdapter(repository.connections),
+            PostgresAdvisoryDatasetLock(repository.connections),
+        )
+        frozen_schema = schema(ident)
+        with scoped(source):
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    """INSERT INTO registry.organization_projects
+                    (organization_id,project_id,display_name) VALUES (%s,%s,'G1 historical fixture')""",
+                    (ident.organization_id, ident.project_id),
+                )
+            legacy.register_schema(frozen_schema)
+            old_rows = tuple(
+                row.model_copy(update={"rollout_id": old_identity.rollout_id}) for row in rows
+            )
+            fragment = AlignedFragmentManifestV1(
+                project_id=ident.project_id,
+                dataset_id=ident.dataset_id,
+                schema_snapshot_id=frozen_schema.schema_snapshot_id,
+                schema_fingerprint=frozen_schema.fingerprint,
+                frequency_hz=30,
+                rollout_id=old_identity.rollout_id,
+                source_sha256="a" * 64,
+                converter_version="historical-fixture/1",
+                attempt_id="historical",
+                fragment_uri="file:///historical",
+                step_count=len(old_rows),
+                content_hash=compute_fragment_hash(old_rows),
+            )
+            old_version, _ = legacy.commit_fragment(fragment, old_rows)
+
+            # Historical physical writes are limited to preparing this explicit fixture.
+            def forbidden(*args, **kwargs):
+                raise AssertionError("new package/collection attempted a Lance write")
+
+            monkeypatch.setattr(adapter, "stage_attempt", forbidden)
+            monkeypatch.setattr(adapter, "commit_staged", forbidden)
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    """INSERT INTO dataset_registry.datasets
+                    (organization_id,project_id,region_code,dataset_id,name,description,availability,
+                     owner_id,owner_display_name,asset_state,storage_class,version,dataset_document,
+                     created_at,updated_at,activity_at)
+                    VALUES (%s,%s,%s,%s,'Historical fixture','','ACTIVE','fixture','fixture',
+                            'READY','HOT',1,%s::jsonb,now(),now(),now())""",
+                    (
+                        *ident.scope,
+                        ident.dataset_id,
+                        canonical({"dataset_id": ident.dataset_id}).decode(),
+                    ),
+                )
+                cursor.execute(
+                    """INSERT INTO dataset_registry.dataset_versions
+                    (organization_id,project_id,region_code,dataset_id,version_id,display_version,
+                     version_kind,version_status,created_at,published_at,version_document)
+                    VALUES (%s,%s,%s,%s,'version_lance_1','v1','RAW','READY',now(),now(),%s::jsonb)""",
+                    (
+                        *ident.scope,
+                        ident.dataset_id,
+                        canonical(
+                            {
+                                "dataset_id": ident.dataset_id,
+                                "version_id": "version_lance_1",
+                                "kind": "RAW",
+                                "status": "READY",
+                            }
+                        ).decode(),
+                    ),
+                )
+                cursor.execute(
+                    """INSERT INTO dataset_registry.dataset_version_episodes
+                    (organization_id,project_id,region_code,dataset_id,version_id,episode_id,revision_id,
+                     ordinal,started_at_ns,included,success_state,episode_document)
+                    VALUES (%s,%s,%s,%s,'version_lance_1',%s,'revision_old',0,0,true,
+                            'SUCCEEDED',%s::jsonb)""",
+                    (
+                        *ident.scope,
+                        ident.dataset_id,
+                        old_identity.episode_id,
+                        canonical(
+                            {
+                                "dataset_id": ident.dataset_id,
+                                "version_id": "version_lance_1",
+                                "episode_id": old_identity.episode_id,
+                            }
+                        ).decode(),
+                    ),
+                )
+                cursor.execute(
+                    """INSERT INTO dataset_registry.dataset_version_episode_revisions
+                    (organization_id,project_id,region_code,dataset_id,version_id,episode_id,revision_id,ordinal,revision_document)
+                    VALUES (%s,%s,%s,%s,%s,%s,'revision_old',0,%s::jsonb)""",
+                    (
+                        *ident.scope,
+                        ident.dataset_id,
+                        f"version_lance_{old_version.version}",
+                        old_identity.episode_id,
+                        canonical(
+                            {"streams": [{"data_binding": {"rollout_id": old_identity.rollout_id}}]}
+                        ).decode(),
+                    ),
+                )
+            collections = EpisodeCollections(
+                repository,
+                storage,
+                legacy=legacy,
+                legacy_entries=PostgresLegacyEntries(repository, legacy),
+            )
+            receipt = EpisodePackageCommitter(repository, storage).commit(new_root, source)
+            mixed = collections.publish(receipt.data, frozen_schema)
+            assert mixed.version == 2
+            assert {e.storage_format for e in mixed.episodes} == {"lance", "lerobot_v3"}
+            cache = VerifiedFileCache(tmp_path / "cache")
+            try:
+                files = PackageFiles(repository, storage, cache)
+                reader = EpisodeCatalogReader(legacy, collections, files, ParquetStepReader(files))
+                for rollout, expected in (
+                    (old_identity.rollout_id, old_rows),
+                    (ident.rollout_id, rows),
+                ):
+                    selected = reader.read_steps(
+                        ident.dataset_id, rollout, 0, 3, project_id=ident.project_id, version=2
+                    )
+                    assert [s.modalities for s in selected.steps] == [s.modalities for s in expected]
+                    assert selected.dataset_version == 2
+                    assert selected.data.identity.rollout_id == rollout
+                assert (
+                    reader.version_snapshot(ident.dataset_id, version=1, project_id=ident.project_id)
+                    == old_version
+                )
+                assert (
+                    reader.lineage(
+                        ident.dataset_id, ident.rollout_id, version=2, project_id=ident.project_id
+                    ).data
+                    == receipt.data
+                )
+                assert (
+                    legacy.current_version(ident.dataset_id, project_id=ident.project_id) == old_version
+                )
+                assert reader.current_version(ident.dataset_id) == mixed
+                assert reader.list_versions(ident.dataset_id) == (old_version, mixed)
+&gt;               inventory = capture_inventory(repository.connections, ident.dataset_id)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/episode_store/test_collections_services.py:360:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src/hc_data_platform/episode_store/migration_inventory.py:264: in capture_inventory
+    rows(
+src/hc_data_platform/episode_store/migration_inventory.py:59: in rows
+    cursor.execute(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;psycopg.Cursor [no result] [BAD] at 0x7087627f6c90&gt;
+query = Composed([SQL('SELECT to_jsonb(r) FROM '), Identifier('episode_store', 'qc_evidence'), SQL(' r WHERE '), Composed([Com...QL('r.'), Identifier('region_code'), SQL('=%s')]), SQL(' AND '), SQL('r.data_version_id=ANY(%s)')]), SQL(' LIMIT %s')])
+params = ('mixed-bf991aef549249ebb506fe34b8d24d85', 'mixed-project-fb243ef85d494bc69b17fab3ce084db8', 'writer-region', ['dv_a0687af6f9586cd50151fec3d32b91953d64532521cb18bb9986e0a4c73d2e35'], 10001)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -&gt; Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+&gt;           raise ex.with_traceback(None)
+E           psycopg.errors.UndefinedColumn: column r.data_version_id does not exist
+E           LINE 1: ... AND r."project_id"=$2 AND r."region_code"=$3 AND r.data_ver...
+E                                                                        ^
+
+/opt/venv/lib/python3.12/site-packages/psycopg/cursor.py:117: UndefinedColumn</failure></testcase></testsuite></testsuites>

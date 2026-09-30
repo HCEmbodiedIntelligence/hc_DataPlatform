@@ -1,0 +1,491 @@
+{
+  "synthetic_input": true,
+  "real_recording_verified": false,
+  "human_acceptance": false,
+  "snapshots": [
+    {
+      "artifact": "backend/.g1-artifacts/migration-inventory/836da67d7db0f30161797e44b20ed8ef44920f23c7844eb21888e41bde82b2a8.json",
+      "inventory_sha256": "836da67d7db0f30161797e44b20ed8ef44920f23c7844eb21888e41bde82b2a8",
+      "scope": {
+        "dataset_id": "dataset_inventory",
+        "organization_id": "bundle-9d801e9c234e473abd4b7e99342d7be1",
+        "project_id": "writer-project",
+        "region_code": "writer-region"
+      },
+      "observed_transaction": {
+        "isolation": "repeatable read",
+        "read_only": "on"
+      },
+      "rows": {
+        "aligned_media.artifacts": 2,
+        "annotation.annotation_operations": 1,
+        "annotation.annotation_reviews": 1,
+        "annotation.annotation_revisions": 2,
+        "annotation.annotation_submissions": 1,
+        "annotation.annotation_tasks": 1,
+        "dataset_registry.dataset_version_content_projections": 1,
+        "dataset_registry.dataset_version_episode_revisions": 1,
+        "dataset_registry.dataset_version_episodes": 1,
+        "dataset_registry.dataset_version_manifest_entries": 1,
+        "dataset_registry.dataset_version_review_decisions": 0,
+        "dataset_registry.dataset_version_review_findings": 0,
+        "dataset_registry.dataset_version_schema_details": 1,
+        "dataset_registry.dataset_version_source_provenance": 1,
+        "dataset_registry.dataset_versions": 1,
+        "dataset_registry.datasets": 1,
+        "episode_store.bindings": 1,
+        "episode_store.collection_heads": 1,
+        "episode_store.collections": 1,
+        "episode_store.data_reviews": 0,
+        "episode_store.qc_evidence": 0,
+        "episode_store.versions": 1,
+        "ingest.continuous_recordings": 0,
+        "ingest.raw_source_episodes": 0,
+        "ingest.raw_sources": 0,
+        "ingest.recording_episode_asset_windows": 0,
+        "ingest.recording_episode_processing": 0,
+        "ingest.recording_episode_slices": 0,
+        "ingest.recording_slice_revisions": 0,
+        "ingest.recording_upload_assets": 0,
+        "ingest.robot_ingest_assets": 0,
+        "ingest.rollout_objects": 0,
+        "public.lance_dataset_versions": 0,
+        "public.lance_datasets": 0,
+        "public.lance_rollout_lineage": 0,
+        "public.lance_schema_snapshots": 0,
+        "publishing.dataset_versions": 0,
+        "publishing.export_attempts": 0,
+        "publishing.publication_assets": 0,
+        "publishing.published_exports": 0,
+        "publishing.rollout_publication_lineage": 0
+      },
+      "legacy_candidates": [],
+      "annotation_revision_hashes": [
+        {
+          "task_id": "e344bc4c-9a7d-50a2-a61d-97b824b5fa64",
+          "revision": 1,
+          "content_hash": "e590b1a12250bf9e391ab940f35db6a0ee73ed8835e4d051c2559fff2a8546dc",
+          "row_sha256": "409ee1a1c765587a52ef14fdc5274a9ee28f5058863fc0ac8e4369a84b9f7ae8"
+        },
+        {
+          "task_id": "e344bc4c-9a7d-50a2-a61d-97b824b5fa64",
+          "revision": 0,
+          "content_hash": "67e7f2ddbe633f366f7de64ba9028a12259178ccf771edf3c990f7e2b11a32f0",
+          "row_sha256": "1b02a1e368b6dbd916d388d3b9c70fd34c56022e7b1578d58f441e66d256ec02"
+        }
+      ],
+      "dry_run": {
+        "depth_source_evidence_verified": false,
+        "numeric_and_time_equivalence_verified": false,
+        "physical_objects_verified": false,
+        "raw_manifests_expanded": false,
+        "review_equivalence_verified": false,
+        "status": "REFERENCES_CAPTURED",
+        "visible_pointers_changed": false
+      }
+    },
+    {
+      "artifact": "backend/.g1-artifacts/migration-inventory/cli-final-continuous.json",
+      "inventory_sha256": "e53b526816b50f32518a99f56dd3f52093d016b6511321d8c15c0eead5c2b833",
+      "scope": {
+        "dataset_id": "dataset_raw_pinning",
+        "organization_id": "raw-pin-a838e66279254a00bc3be7eb55026442",
+        "project_id": "raw-pin-project",
+        "region_code": "raw-pin-region"
+      },
+      "observed_transaction": {
+        "isolation": "repeatable read",
+        "read_only": "on"
+      },
+      "rows": {
+        "aligned_media.artifacts": 0,
+        "annotation.annotation_operations": 0,
+        "annotation.annotation_reviews": 0,
+        "annotation.annotation_revisions": 1,
+        "annotation.annotation_submissions": 0,
+        "annotation.annotation_tasks": 1,
+        "dataset_registry.dataset_version_content_projections": 1,
+        "dataset_registry.dataset_version_episode_revisions": 1,
+        "dataset_registry.dataset_version_episodes": 1,
+        "dataset_registry.dataset_version_manifest_entries": 1,
+        "dataset_registry.dataset_version_review_decisions": 0,
+        "dataset_registry.dataset_version_review_findings": 0,
+        "dataset_registry.dataset_version_schema_details": 1,
+        "dataset_registry.dataset_version_source_provenance": 1,
+        "dataset_registry.dataset_versions": 1,
+        "dataset_registry.datasets": 1,
+        "episode_store.bindings": 1,
+        "episode_store.collection_heads": 1,
+        "episode_store.collections": 1,
+        "episode_store.data_reviews": 0,
+        "episode_store.qc_evidence": 0,
+        "episode_store.versions": 1,
+        "ingest.continuous_recordings": 1,
+        "ingest.raw_source_episodes": 0,
+        "ingest.raw_sources": 1,
+        "ingest.recording_episode_asset_windows": 36,
+        "ingest.recording_episode_processing": 1,
+        "ingest.recording_episode_slices": 2,
+        "ingest.recording_slice_revisions": 2,
+        "ingest.recording_upload_assets": 36,
+        "ingest.robot_ingest_assets": 15,
+        "ingest.rollout_objects": 0,
+        "public.lance_dataset_versions": 0,
+        "public.lance_datasets": 0,
+        "public.lance_rollout_lineage": 0,
+        "public.lance_schema_snapshots": 0,
+        "publishing.dataset_versions": 0,
+        "publishing.export_attempts": 0,
+        "publishing.publication_assets": 0,
+        "publishing.published_exports": 0,
+        "publishing.rollout_publication_lineage": 0
+      },
+      "legacy_candidates": [],
+      "annotation_revision_hashes": [
+        {
+          "task_id": "eb44804d-99df-57b4-ade3-c0afc0916c95",
+          "revision": 0,
+          "content_hash": "112624ee6497ebd2608e4e12ef01d2b59dab7aabd78ef774d3389f72bed31477",
+          "row_sha256": "683d7d70fe8c689efe6ca3fe7d6166db5b76eecee0d2c3e0f6a2ee5838e4bf6b"
+        }
+      ],
+      "dry_run": {
+        "depth_source_evidence_verified": false,
+        "numeric_and_time_equivalence_verified": false,
+        "physical_objects_verified": false,
+        "raw_manifests_expanded": false,
+        "review_equivalence_verified": false,
+        "status": "REFERENCES_CAPTURED",
+        "visible_pointers_changed": false
+      }
+    },
+    {
+      "artifact": "backend/.g1-artifacts/migration-inventory/cli-final-legacy.json",
+      "inventory_sha256": "9f3581164a44024ab574cab2755d9560f702b4a0aca37d55040cb20e321cc5a9",
+      "scope": {
+        "dataset_id": "dataset_mixed_eeb329a1bd244fb4a6230c84ea1261ea",
+        "organization_id": "mixed-5afdfbcda6334b55b49b52c3b5aa15a8",
+        "project_id": "mixed-project-54bee0e6094b4d289ce9d2e8a2628de3",
+        "region_code": "writer-region"
+      },
+      "observed_transaction": {
+        "isolation": "repeatable read",
+        "read_only": "on"
+      },
+      "rows": {
+        "aligned_media.artifacts": 0,
+        "annotation.annotation_operations": 0,
+        "annotation.annotation_reviews": 0,
+        "annotation.annotation_revisions": 0,
+        "annotation.annotation_submissions": 0,
+        "annotation.annotation_tasks": 0,
+        "dataset_registry.dataset_version_content_projections": 0,
+        "dataset_registry.dataset_version_episode_revisions": 1,
+        "dataset_registry.dataset_version_episodes": 1,
+        "dataset_registry.dataset_version_manifest_entries": 0,
+        "dataset_registry.dataset_version_review_decisions": 0,
+        "dataset_registry.dataset_version_review_findings": 0,
+        "dataset_registry.dataset_version_schema_details": 0,
+        "dataset_registry.dataset_version_source_provenance": 0,
+        "dataset_registry.dataset_versions": 1,
+        "dataset_registry.datasets": 1,
+        "episode_store.bindings": 1,
+        "episode_store.collection_heads": 1,
+        "episode_store.collections": 1,
+        "episode_store.data_reviews": 0,
+        "episode_store.qc_evidence": 0,
+        "episode_store.versions": 1,
+        "ingest.continuous_recordings": 0,
+        "ingest.raw_source_episodes": 0,
+        "ingest.raw_sources": 0,
+        "ingest.recording_episode_asset_windows": 0,
+        "ingest.recording_episode_processing": 0,
+        "ingest.recording_episode_slices": 0,
+        "ingest.recording_slice_revisions": 0,
+        "ingest.recording_upload_assets": 0,
+        "ingest.robot_ingest_assets": 0,
+        "ingest.rollout_objects": 0,
+        "public.lance_dataset_versions": 1,
+        "public.lance_datasets": 1,
+        "public.lance_rollout_lineage": 1,
+        "public.lance_schema_snapshots": 1,
+        "publishing.dataset_versions": 0,
+        "publishing.export_attempts": 0,
+        "publishing.publication_assets": 0,
+        "publishing.published_exports": 0,
+        "publishing.rollout_publication_lineage": 0
+      },
+      "legacy_candidates": [
+        {
+          "annotation_hash_rewrite": false,
+          "episode_id": "episode_explicit_old",
+          "issues": [],
+          "legacy": {
+            "content_hash": "4ead9bf52eef0b12e3765daaa7b1a71892b260fb17796f71743cb8f6e8c6b63c",
+            "data_version_id": "legacy_e37526372c60c89577c77acd696f1bd76da0d0c6e2af60fd63b7ac787c6f0432",
+            "dataset_uri": "/tmp/pytest-of-unknown/pytest-0/test_actual_legacy_lance_and_n0/existing-lance/mixed-project-54bee0e6094b4d289ce9d2e8a2628de3/dataset_mixed_eeb329a1bd244fb4a6230c84ea1261ea/schema-1/30hz/aligned_steps.lance",
+            "dataset_version": 1,
+            "frame_count": 3,
+            "identity": {
+              "dataset_id": "dataset_mixed_eeb329a1bd244fb4a6230c84ea1261ea",
+              "episode_id": "episode_explicit_old",
+              "organization_id": "mixed-5afdfbcda6334b55b49b52c3b5aa15a8",
+              "project_id": "mixed-project-54bee0e6094b4d289ce9d2e8a2628de3",
+              "region_code": "writer-region",
+              "rollout_id": "old::rollout"
+            },
+            "lance_version": 1,
+            "schema_snapshot_id": "schema-1",
+            "storage_format": "lance"
+          },
+          "review_transferred": false,
+          "revision_row_sha256": "e35a3f1821ee4fe25b11d7e7f9c686773cf9bb799e3ebc734c3036ab04531f03",
+          "state": "AWAITING_VERIFICATION",
+          "target_data": null,
+          "version_id": "version_lance_1"
+        }
+      ],
+      "annotation_revision_hashes": [],
+      "dry_run": {
+        "depth_source_evidence_verified": false,
+        "numeric_and_time_equivalence_verified": false,
+        "physical_objects_verified": false,
+        "raw_manifests_expanded": false,
+        "review_equivalence_verified": false,
+        "status": "REFERENCES_CAPTURED",
+        "visible_pointers_changed": false
+      }
+    },
+    {
+      "artifact": "backend/.g1-artifacts/migration-inventory/cli-final-mcap.json",
+      "inventory_sha256": "af38dae567b3d0519181f50857122a6794104032f1895c42157d5f047c748fb1",
+      "scope": {
+        "dataset_id": "dataset_8d5675bc73764b4f8e74488cadad8335",
+        "organization_id": "mcap-8d5675bc73764b4f8e74488cadad8335",
+        "project_id": "mcap-project-8d5675bc73764b4f8e74488cadad8335",
+        "region_code": "cn-test"
+      },
+      "observed_transaction": {
+        "isolation": "repeatable read",
+        "read_only": "on"
+      },
+      "rows": {
+        "aligned_media.artifacts": 0,
+        "annotation.annotation_operations": 0,
+        "annotation.annotation_reviews": 0,
+        "annotation.annotation_revisions": 1,
+        "annotation.annotation_submissions": 0,
+        "annotation.annotation_tasks": 1,
+        "dataset_registry.dataset_version_content_projections": 1,
+        "dataset_registry.dataset_version_episode_revisions": 1,
+        "dataset_registry.dataset_version_episodes": 1,
+        "dataset_registry.dataset_version_manifest_entries": 1,
+        "dataset_registry.dataset_version_review_decisions": 0,
+        "dataset_registry.dataset_version_review_findings": 0,
+        "dataset_registry.dataset_version_schema_details": 1,
+        "dataset_registry.dataset_version_source_provenance": 1,
+        "dataset_registry.dataset_versions": 1,
+        "dataset_registry.datasets": 1,
+        "episode_store.bindings": 1,
+        "episode_store.collection_heads": 1,
+        "episode_store.collections": 1,
+        "episode_store.data_reviews": 0,
+        "episode_store.qc_evidence": 0,
+        "episode_store.versions": 1,
+        "ingest.continuous_recordings": 0,
+        "ingest.raw_source_episodes": 1,
+        "ingest.raw_sources": 1,
+        "ingest.recording_episode_asset_windows": 0,
+        "ingest.recording_episode_processing": 0,
+        "ingest.recording_episode_slices": 0,
+        "ingest.recording_slice_revisions": 0,
+        "ingest.recording_upload_assets": 0,
+        "ingest.robot_ingest_assets": 0,
+        "ingest.rollout_objects": 1,
+        "public.lance_dataset_versions": 0,
+        "public.lance_datasets": 0,
+        "public.lance_rollout_lineage": 0,
+        "public.lance_schema_snapshots": 0,
+        "publishing.dataset_versions": 0,
+        "publishing.export_attempts": 0,
+        "publishing.publication_assets": 0,
+        "publishing.published_exports": 0,
+        "publishing.rollout_publication_lineage": 0
+      },
+      "legacy_candidates": [],
+      "annotation_revision_hashes": [
+        {
+          "task_id": "e7c4dfff-2083-590f-950e-33478a840c0b",
+          "revision": 0,
+          "content_hash": "55b3025161862f3768826dc61cb9e3d21ead6c615d32d2523686ada19eba193f",
+          "row_sha256": "ec5756e3dbcef7ed98e7c8db8fd5ced9b64d874e0dbf7ebca46c06f2318350e1"
+        }
+      ],
+      "dry_run": {
+        "depth_source_evidence_verified": false,
+        "numeric_and_time_equivalence_verified": false,
+        "physical_objects_verified": false,
+        "raw_manifests_expanded": false,
+        "review_equivalence_verified": false,
+        "status": "REFERENCES_CAPTURED",
+        "visible_pointers_changed": false
+      }
+    },
+    {
+      "artifact": "backend/.g1-artifacts/migration-inventory/cli-final-native.json",
+      "inventory_sha256": "fc67ad429260a3ff306a626768fe640663c58afb76042980331fdb1ed868e8c0",
+      "scope": {
+        "dataset_id": "dataset_task_0c61e72ae2458bb8af1325dd9f05b6b3",
+        "organization_id": "b-roundtrip-7ed579d6679c",
+        "project_id": "b-project-7ed579d6679c",
+        "region_code": "cn-test"
+      },
+      "observed_transaction": {
+        "isolation": "repeatable read",
+        "read_only": "on"
+      },
+      "rows": {
+        "aligned_media.artifacts": 0,
+        "annotation.annotation_operations": 0,
+        "annotation.annotation_reviews": 1,
+        "annotation.annotation_revisions": 2,
+        "annotation.annotation_submissions": 1,
+        "annotation.annotation_tasks": 1,
+        "dataset_registry.dataset_version_content_projections": 1,
+        "dataset_registry.dataset_version_episode_revisions": 1,
+        "dataset_registry.dataset_version_episodes": 1,
+        "dataset_registry.dataset_version_manifest_entries": 1,
+        "dataset_registry.dataset_version_review_decisions": 0,
+        "dataset_registry.dataset_version_review_findings": 0,
+        "dataset_registry.dataset_version_schema_details": 1,
+        "dataset_registry.dataset_version_source_provenance": 1,
+        "dataset_registry.dataset_versions": 1,
+        "dataset_registry.datasets": 1,
+        "episode_store.bindings": 1,
+        "episode_store.collection_heads": 1,
+        "episode_store.collections": 1,
+        "episode_store.data_reviews": 0,
+        "episode_store.qc_evidence": 0,
+        "episode_store.versions": 1,
+        "ingest.continuous_recordings": 0,
+        "ingest.raw_source_episodes": 1,
+        "ingest.raw_sources": 1,
+        "ingest.recording_episode_asset_windows": 0,
+        "ingest.recording_episode_processing": 0,
+        "ingest.recording_episode_slices": 0,
+        "ingest.recording_slice_revisions": 0,
+        "ingest.recording_upload_assets": 0,
+        "ingest.robot_ingest_assets": 0,
+        "ingest.rollout_objects": 0,
+        "public.lance_dataset_versions": 0,
+        "public.lance_datasets": 0,
+        "public.lance_rollout_lineage": 0,
+        "public.lance_schema_snapshots": 0,
+        "publishing.dataset_versions": 0,
+        "publishing.export_attempts": 0,
+        "publishing.publication_assets": 0,
+        "publishing.published_exports": 0,
+        "publishing.rollout_publication_lineage": 0
+      },
+      "legacy_candidates": [],
+      "annotation_revision_hashes": [
+        {
+          "task_id": "92d4e1e6-107a-520a-9b13-5f2e6cc2ca10",
+          "revision": 1,
+          "content_hash": "02f65ba70ede5b82605922543fc7e85fd2745931b6a710b34486844af96976c2",
+          "row_sha256": "6372ee760242725bb898c393adc120feb27b7f8fb3decc6a08dd73a58e117f0b"
+        },
+        {
+          "task_id": "92d4e1e6-107a-520a-9b13-5f2e6cc2ca10",
+          "revision": 0,
+          "content_hash": "c815d9b3d75b2d9621e83a15e3ade2e1f15c8110a08c6246e19f600e12499859",
+          "row_sha256": "ed0d03e8f583bee244adf6f77b7e85129edd5fecabd1d26054d91f753b71d194"
+        }
+      ],
+      "dry_run": {
+        "depth_source_evidence_verified": false,
+        "numeric_and_time_equivalence_verified": false,
+        "physical_objects_verified": false,
+        "raw_manifests_expanded": false,
+        "review_equivalence_verified": false,
+        "status": "REFERENCES_CAPTURED",
+        "visible_pointers_changed": false
+      }
+    },
+    {
+      "artifact": "backend/.g1-artifacts/migration-inventory/cli-final-uploader.json",
+      "inventory_sha256": "b83c0b0b1c70ebe5dc845e880eb8c76b71f15ae9f7f0aa2a65ab7b95f250e4c1",
+      "scope": {
+        "dataset_id": "dataset_task_4c0ca209045cc73e9b115362d63f7ddb",
+        "organization_id": "r3-org-4bf9c8df2264",
+        "project_id": "r3-project-4bf9c8df2264",
+        "region_code": "chayi-cn"
+      },
+      "observed_transaction": {
+        "isolation": "repeatable read",
+        "read_only": "on"
+      },
+      "rows": {
+        "aligned_media.artifacts": 0,
+        "annotation.annotation_operations": 0,
+        "annotation.annotation_reviews": 0,
+        "annotation.annotation_revisions": 1,
+        "annotation.annotation_submissions": 0,
+        "annotation.annotation_tasks": 1,
+        "dataset_registry.dataset_version_content_projections": 1,
+        "dataset_registry.dataset_version_episode_revisions": 1,
+        "dataset_registry.dataset_version_episodes": 1,
+        "dataset_registry.dataset_version_manifest_entries": 1,
+        "dataset_registry.dataset_version_review_decisions": 0,
+        "dataset_registry.dataset_version_review_findings": 0,
+        "dataset_registry.dataset_version_schema_details": 1,
+        "dataset_registry.dataset_version_source_provenance": 1,
+        "dataset_registry.dataset_versions": 1,
+        "dataset_registry.datasets": 1,
+        "episode_store.bindings": 1,
+        "episode_store.collection_heads": 1,
+        "episode_store.collections": 1,
+        "episode_store.data_reviews": 0,
+        "episode_store.qc_evidence": 0,
+        "episode_store.versions": 1,
+        "ingest.continuous_recordings": 0,
+        "ingest.raw_source_episodes": 1,
+        "ingest.raw_sources": 1,
+        "ingest.recording_episode_asset_windows": 0,
+        "ingest.recording_episode_processing": 0,
+        "ingest.recording_episode_slices": 0,
+        "ingest.recording_slice_revisions": 0,
+        "ingest.recording_upload_assets": 0,
+        "ingest.robot_ingest_assets": 15,
+        "ingest.rollout_objects": 0,
+        "public.lance_dataset_versions": 0,
+        "public.lance_datasets": 0,
+        "public.lance_rollout_lineage": 0,
+        "public.lance_schema_snapshots": 0,
+        "publishing.dataset_versions": 0,
+        "publishing.export_attempts": 0,
+        "publishing.publication_assets": 0,
+        "publishing.published_exports": 0,
+        "publishing.rollout_publication_lineage": 0
+      },
+      "legacy_candidates": [],
+      "annotation_revision_hashes": [
+        {
+          "task_id": "e431bf37-ee7b-54d5-af20-1b455903d9a5",
+          "revision": 0,
+          "content_hash": "0516f13087ac270884289b00cdb5797a1d3c4d1fa159114e2c5bc55fe731a646",
+          "row_sha256": "ef69c1a58788798dc409d424791daa7fd14156b15ef422655c7a71c23b88fc9d"
+        }
+      ],
+      "dry_run": {
+        "depth_source_evidence_verified": false,
+        "numeric_and_time_equivalence_verified": false,
+        "physical_objects_verified": false,
+        "raw_manifests_expanded": false,
+        "review_equivalence_verified": false,
+        "status": "REFERENCES_CAPTURED",
+        "visible_pointers_changed": false
+      }
+    }
+  ]
+}

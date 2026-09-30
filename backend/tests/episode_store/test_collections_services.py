@@ -1,6 +1,8 @@
 """Collection recovery/concurrency and real legacy Lance + new Parquet routing."""
 
+import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -9,6 +11,7 @@ from hc_data_platform.episode_store.catalog import EpisodeCatalogReader, Postgre
 from hc_data_platform.episode_store.collections import EpisodeCollections
 from hc_data_platform.episode_store.commit import EpisodePackageCommitter
 from hc_data_platform.episode_store.files import PackageFiles, VerifiedFileCache
+from hc_data_platform.episode_store.migration_inventory import capture_inventory, save_inventory
 from hc_data_platform.episode_store.models import PackageInput, canonical
 from hc_data_platform.episode_store.postgres import PackageConflict
 from hc_data_platform.episode_store.prepared_assets import PreparedAssets
@@ -354,6 +357,31 @@ def test_actual_legacy_lance_and_new_parquet_in_one_collection(services, tmp_pat
             )
             assert reader.current_version(ident.dataset_id) == mixed
             assert reader.list_versions(ident.dataset_id) == (old_version, mixed)
+            inventory = capture_inventory(repository.connections, ident.dataset_id)
+            tables = inventory["inventory"]["tables"]
+            assert len(tables["public.lance_dataset_versions"]) == 1
+            assert (
+                tables["public.lance_dataset_versions"][0]["document"]["lance_version"]
+                == old_version.lance_version
+            )
+            assert (
+                tables["public.lance_rollout_lineage"][0]["document"]["fragment_content_hash"]
+                == fragment.content_hash
+            )
+            assert len(tables["episode_store.versions"]) == 1
+            candidate = inventory["inventory"]["legacy_candidates"][0]
+            assert candidate["legacy"] == PostgresLegacyEntries(repository, legacy)(old_version)[
+                0
+            ].model_dump(mode="json")
+            assert candidate["state"] == "AWAITING_VERIFICATION"
+            assert candidate["target_data"] is None and not candidate["review_transferred"]
+            assert capture_inventory(repository.connections, ident.dataset_id) == inventory
+            save_inventory(
+                Path(os.getenv("HC_G1_WRITER_EVIDENCE_ROOT", tmp_path))
+                / "migration-inventory"
+                / (inventory["inventory_sha256"] + ".json"),
+                inventory,
+            )
             other_region = source.model_copy(
                 update={"identity": ident.model_copy(update={"region_code": "elsewhere"})}
             )
