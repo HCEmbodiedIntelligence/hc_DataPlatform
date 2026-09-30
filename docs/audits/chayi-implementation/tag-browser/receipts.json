@@ -1,0 +1,366 @@
+{
+  "ordinary_principal_id": "64da32e7-cdd5-404e-9f93-bc9b6e51ea40",
+  "parent_task_id": "a81a3374-1c36-5d63-b55a-8fda1079f275",
+  "synthetic_input": true,
+  "human_acceptance": false,
+  "episodes": [
+    {
+      "job": {
+        "job_id": "td_fb745a395340efe3b31a93136c25123f68fd6bf6ec9e4a55a6a7870a0dc726c2",
+        "status": "READY",
+        "phase": "completed",
+        "generation": 1,
+        "attempts": 1,
+        "committed_data": {
+          "identity": {
+            "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+            "project_id": "writer-project",
+            "region_code": "writer-region",
+            "dataset_id": "dataset_tag_browser",
+            "episode_id": "episode_derived_b1f30409336a7c0465251ad728a8baff",
+            "rollout_id": "derived:b1f30409336a7c0465251ad728a8baffd0f3f756a80c3a39c1fc136424a1fc2d"
+          },
+          "data_version_id": "dv_155d5dccc47245595bea2c121b817706671cb04be3f7ced24f4c872b5337218a",
+          "version": 1,
+          "content_hash": "df93ab6e65d47362b60901a240145c4746ca5e721036666e57d25974ce8b047c",
+          "storage_format": "lerobot_v3",
+          "schema_snapshot_id": "schema-1",
+          "package_prefix": "episodes/id-bundle-87d690a012444ef1b8e0f2217656e99b/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_b1f30409336a7c0465251ad728a8baff/id-dv_155d5dccc47245595bea2c121b817706671cb04be3f7ced24f4c872b5337218a",
+          "frame_count": 2
+        },
+        "collection_version_id": "cv_14176104e8d08210d539b79f1bee9f3bea88766898e2ccf313eb27401fa38fb8",
+        "viewer_target": {
+          "schema_version": "dataset-ingest-viewer-target/v1",
+          "dataset_id": "dataset_tag_browser",
+          "version_id": "version_cv_14176104e8d08210d539b79f1bee9f3bea88766898e2ccf313eb27401fa38fb8",
+          "episode_id": "episode_derived_b1f30409336a7c0465251ad728a8baff",
+          "revision_id": "revision_927e602e50c02bf7ca9bb73b4cbe7689"
+        },
+        "annotation_task_id": "178d0fee-0725-5f90-a4f5-2d2d438fcaa7",
+        "error_code": null,
+        "created_at": "2026-09-30T00:59:13.535281Z",
+        "updated_at": "2026-09-30T00:59:19.668205Z",
+        "selection": {
+          "parent": {
+            "identity": {
+              "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "dataset_tag_browser",
+              "episode_id": "episode_tag_browser_parent",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+            "version": 1,
+            "content_hash": "235a1417b49d1fc01e600b83f82513e6c313ebdd80940169fb8113e20c83ebc1",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-87d690a012444ef1b8e0f2217656e99b/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_browser_parent/id-dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+            "frame_count": 4
+          },
+          "parent_collection_version_id": "cv_d2b3a7ff73fa656bb623cd4fd9bb10e84f81d81b272fff31fc94ed5e91ea3e7a",
+          "task_id": "a81a3374-1c36-5d63-b55a-8fda1079f275",
+          "revision": 1,
+          "revision_content_hash": "108543e6fc19517c594bc0ba6088b93aca563cac353eecfee4a2beb835dd6c48",
+          "annotation_file_sha256": "b0191bd2f27870b7e69f79c4d64cfeb09b86190aaeb8672eb2f18b4cbacf774d",
+          "review_status": "UNREVIEWED",
+          "annotation_id": "parent",
+          "start_step": 0,
+          "end_step": 2,
+          "start_timestamp_ns": "0",
+          "next_parent_timestamp_ns": "66666666",
+          "display_name": "父",
+          "new_episode_id": "episode_derived_b1f30409336a7c0465251ad728a8baff",
+          "new_data_version_id": "dv_155d5dccc47245595bea2c121b817706671cb04be3f7ced24f4c872b5337218a"
+        }
+      },
+      "source": {
+        "document": {
+          "derivation": {
+            "annotation_file_sha256": "b0191bd2f27870b7e69f79c4d64cfeb09b86190aaeb8672eb2f18b4cbacf774d",
+            "annotation_id": "parent",
+            "annotation_revision": 1,
+            "annotation_task_id": "a81a3374-1c36-5d63-b55a-8fda1079f275",
+            "child_approvals_inherited": false,
+            "end_step": 2,
+            "kind": "annotation_interval",
+            "next_parent_timestamp_ns": "66666666",
+            "parent_data": {
+              "content_hash": "235a1417b49d1fc01e600b83f82513e6c313ebdd80940169fb8113e20c83ebc1",
+              "data_version_id": "dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+              "frame_count": 4,
+              "identity": {
+                "dataset_id": "dataset_tag_browser",
+                "episode_id": "episode_tag_browser_parent",
+                "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "rollout_id": "explicit:writer-rollout"
+              },
+              "package_prefix": "episodes/id-bundle-87d690a012444ef1b8e0f2217656e99b/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_browser_parent/id-dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+              "schema_snapshot_id": "schema-1",
+              "storage_format": "lerobot_v3",
+              "version": 1
+            },
+            "parent_recording_window": {},
+            "start_step": 0,
+            "start_timestamp_ns": "0"
+          },
+          "display_name": "父",
+          "identity": {
+            "dataset_id": "dataset_tag_browser",
+            "episode_id": "episode_derived_b1f30409336a7c0465251ad728a8baff",
+            "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+            "project_id": "writer-project",
+            "region_code": "writer-region",
+            "rollout_id": "derived:b1f30409336a7c0465251ad728a8baffd0f3f756a80c3a39c1fc136424a1fc2d"
+          },
+          "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "parent_recording_id": null,
+        "parent_duration_ns": null,
+        "parent_duration_reason": "NOT_RECORDED",
+        "window": {},
+        "window_clock": "NOT_RECORDED",
+        "frame_mapping_files": [
+          "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "2954d4a8c12a7a923f4f55681f4c21f56725d37e7b56305f231237c41007e6c5",
+          "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b"
+        ]
+      },
+      "quality_status": "UNKNOWN",
+      "data_review_status": "NOT_REVIEWED",
+      "annotation": {
+        "availability": "AVAILABLE",
+        "task_options": [],
+        "task_options_has_more": false,
+        "task_id": "178d0fee-0725-5f90-a4f5-2d2d438fcaa7",
+        "status": "DRAFT",
+        "state_version": 0,
+        "current_revision": {
+          "task_id": "178d0fee-0725-5f90-a4f5-2d2d438fcaa7",
+          "revision": 0,
+          "content_hash": "60583619e0b4b687fab4cc9e5aa996e929afee1e12b2dc6ac120291fa7ca8ee0",
+          "author_id": "system",
+          "created_at": "2026-09-30T00:59:19.633349Z"
+        },
+        "latest_submission": null,
+        "latest_approval": null,
+        "latest_review": null,
+        "current_submission_id": null,
+        "current_approved_review_id": null,
+        "has_unsubmitted_changes": true,
+        "revision_files": [
+          {
+            "status": "READY",
+            "task_id": "178d0fee-0725-5f90-a4f5-2d2d438fcaa7",
+            "revision": 0,
+            "error_code": null,
+            "generation": 1,
+            "size_bytes": 3234,
+            "content_sha256": "89c9690ded19bef78b180e5b4e212f7d74be994ad99bc80e3e95fc61db606e08",
+            "revision_content_hash": "60583619e0b4b687fab4cc9e5aa996e929afee1e12b2dc6ac120291fa7ca8ee0",
+            "download": {
+              "action": "DOWNLOAD_ANNOTATION_FILE",
+              "allowed": true,
+              "required_capabilities": [
+                "annotation_task.read",
+                "export.download"
+              ],
+              "denied_reason": null
+            }
+          }
+        ]
+      },
+      "cameras": [
+        {
+          "feature": "observation.images.head_depth",
+          "preview_status": "READY"
+        },
+        {
+          "feature": "observation.images.head_rgb",
+          "preview_status": "READY"
+        }
+      ]
+    },
+    {
+      "job": {
+        "job_id": "td_347cb2329f26e0c454878828ac610deed8f31bdf2f103c975e2c00b8f8caba5d",
+        "status": "READY",
+        "phase": "completed",
+        "generation": 1,
+        "attempts": 1,
+        "committed_data": {
+          "identity": {
+            "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+            "project_id": "writer-project",
+            "region_code": "writer-region",
+            "dataset_id": "dataset_tag_browser",
+            "episode_id": "episode_derived_2d8f28ee47bf8ef2e894d608a114e7ed",
+            "rollout_id": "derived:2d8f28ee47bf8ef2e894d608a114e7ed5a402d78fcaab81e9a6a921aab90126c"
+          },
+          "data_version_id": "dv_ad061dae98f8bef9ff1574e840164b1659d329a6a413cbbc344f16fe24e727a6",
+          "version": 1,
+          "content_hash": "4afe1d3c0243ec3315be081984c27b03c2184ca40e47e389cedfd9430d807d4b",
+          "storage_format": "lerobot_v3",
+          "schema_snapshot_id": "schema-1",
+          "package_prefix": "episodes/id-bundle-87d690a012444ef1b8e0f2217656e99b/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_derived_2d8f28ee47bf8ef2e894d608a114e7ed/id-dv_ad061dae98f8bef9ff1574e840164b1659d329a6a413cbbc344f16fe24e727a6",
+          "frame_count": 3
+        },
+        "collection_version_id": "cv_d1e68da6ca4977abe1cfa83ccc09d5b2aa089a69945545170cd12d0cc56fa930",
+        "viewer_target": {
+          "schema_version": "dataset-ingest-viewer-target/v1",
+          "dataset_id": "dataset_tag_browser",
+          "version_id": "version_cv_d1e68da6ca4977abe1cfa83ccc09d5b2aa089a69945545170cd12d0cc56fa930",
+          "episode_id": "episode_derived_2d8f28ee47bf8ef2e894d608a114e7ed",
+          "revision_id": "revision_0467adb8b33f1919cc6c426076dfd2cc"
+        },
+        "annotation_task_id": "825bd61a-e993-5bb5-af8e-136c09e114db",
+        "error_code": null,
+        "created_at": "2026-09-30T00:50:24.574667Z",
+        "updated_at": "2026-09-30T00:50:32.374696Z",
+        "selection": {
+          "parent": {
+            "identity": {
+              "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+              "project_id": "writer-project",
+              "region_code": "writer-region",
+              "dataset_id": "dataset_tag_browser",
+              "episode_id": "episode_tag_browser_parent",
+              "rollout_id": "explicit:writer-rollout"
+            },
+            "data_version_id": "dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+            "version": 1,
+            "content_hash": "235a1417b49d1fc01e600b83f82513e6c313ebdd80940169fb8113e20c83ebc1",
+            "storage_format": "lerobot_v3",
+            "schema_snapshot_id": "schema-1",
+            "package_prefix": "episodes/id-bundle-87d690a012444ef1b8e0f2217656e99b/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_browser_parent/id-dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+            "frame_count": 4
+          },
+          "parent_collection_version_id": "cv_d2b3a7ff73fa656bb623cd4fd9bb10e84f81d81b272fff31fc94ed5e91ea3e7a",
+          "task_id": "a81a3374-1c36-5d63-b55a-8fda1079f275",
+          "revision": 1,
+          "revision_content_hash": "108543e6fc19517c594bc0ba6088b93aca563cac353eecfee4a2beb835dd6c48",
+          "annotation_file_sha256": "b0191bd2f27870b7e69f79c4d64cfeb09b86190aaeb8672eb2f18b4cbacf774d",
+          "review_status": "UNREVIEWED",
+          "annotation_id": "child",
+          "start_step": 1,
+          "end_step": 4,
+          "start_timestamp_ns": "33333333",
+          "next_parent_timestamp_ns": null,
+          "display_name": "交叉子区间",
+          "new_episode_id": "episode_derived_2d8f28ee47bf8ef2e894d608a114e7ed",
+          "new_data_version_id": "dv_ad061dae98f8bef9ff1574e840164b1659d329a6a413cbbc344f16fe24e727a6"
+        }
+      },
+      "source": {
+        "document": {
+          "derivation": {
+            "annotation_file_sha256": "b0191bd2f27870b7e69f79c4d64cfeb09b86190aaeb8672eb2f18b4cbacf774d",
+            "annotation_id": "child",
+            "annotation_revision": 1,
+            "annotation_task_id": "a81a3374-1c36-5d63-b55a-8fda1079f275",
+            "child_approvals_inherited": false,
+            "end_step": 4,
+            "kind": "annotation_interval",
+            "next_parent_timestamp_ns": null,
+            "parent_data": {
+              "content_hash": "235a1417b49d1fc01e600b83f82513e6c313ebdd80940169fb8113e20c83ebc1",
+              "data_version_id": "dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+              "frame_count": 4,
+              "identity": {
+                "dataset_id": "dataset_tag_browser",
+                "episode_id": "episode_tag_browser_parent",
+                "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+                "project_id": "writer-project",
+                "region_code": "writer-region",
+                "rollout_id": "explicit:writer-rollout"
+              },
+              "package_prefix": "episodes/id-bundle-87d690a012444ef1b8e0f2217656e99b/id-writer-project/id-writer-region/id-unknown/id-unknown/id-unknown/id-episode_tag_browser_parent/id-dv_22b3bf4ed1b48a9d96b6091cca9f8893775a57ecbbc57c7bfba53f88ba73c588",
+              "schema_snapshot_id": "schema-1",
+              "storage_format": "lerobot_v3",
+              "version": 1
+            },
+            "parent_recording_window": {},
+            "start_step": 1,
+            "start_timestamp_ns": "33333333"
+          },
+          "display_name": "交叉子区间",
+          "identity": {
+            "dataset_id": "dataset_tag_browser",
+            "episode_id": "episode_derived_2d8f28ee47bf8ef2e894d608a114e7ed",
+            "organization_id": "bundle-87d690a012444ef1b8e0f2217656e99b",
+            "project_id": "writer-project",
+            "region_code": "writer-region",
+            "rollout_id": "derived:2d8f28ee47bf8ef2e894d608a114e7ed5a402d78fcaab81e9a6a921aab90126c"
+          },
+          "source_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "parent_recording_id": null,
+        "parent_duration_ns": null,
+        "parent_duration_reason": "NOT_RECORDED",
+        "window": {},
+        "window_clock": "NOT_RECORDED",
+        "frame_mapping_files": [
+          "fe1040f691b7385a4ab5e26b33b3c15c514dc5e6a52eb0617a04aa97bca3f893",
+          "2954d4a8c12a7a923f4f55681f4c21f56725d37e7b56305f231237c41007e6c5",
+          "90d9d157a9565f30a5b7d03d92175ecd90a8a72e21579176083ab55f39bd469b"
+        ]
+      },
+      "quality_status": "UNKNOWN",
+      "data_review_status": "NOT_REVIEWED",
+      "annotation": {
+        "availability": "AVAILABLE",
+        "task_options": [],
+        "task_options_has_more": false,
+        "task_id": "825bd61a-e993-5bb5-af8e-136c09e114db",
+        "status": "DRAFT",
+        "state_version": 0,
+        "current_revision": {
+          "task_id": "825bd61a-e993-5bb5-af8e-136c09e114db",
+          "revision": 0,
+          "content_hash": "d78678a323e1c68fa0177d33f851a0a1ed05a973a03ca7bf9ceb889437f84cb1",
+          "author_id": "system",
+          "created_at": "2026-09-30T00:50:32.335933Z"
+        },
+        "latest_submission": null,
+        "latest_approval": null,
+        "latest_review": null,
+        "current_submission_id": null,
+        "current_approved_review_id": null,
+        "has_unsubmitted_changes": true,
+        "revision_files": [
+          {
+            "status": "READY",
+            "task_id": "825bd61a-e993-5bb5-af8e-136c09e114db",
+            "revision": 0,
+            "error_code": null,
+            "generation": 1,
+            "size_bytes": 3234,
+            "content_sha256": "75d4ca5ad7bebf9978bcc0d3f3f2c177d23208bd7665a934503d491ccd5eef9b",
+            "revision_content_hash": "d78678a323e1c68fa0177d33f851a0a1ed05a973a03ca7bf9ceb889437f84cb1",
+            "download": {
+              "action": "DOWNLOAD_ANNOTATION_FILE",
+              "allowed": true,
+              "required_capabilities": [
+                "annotation_task.read",
+                "export.download"
+              ],
+              "denied_reason": null
+            }
+          }
+        ]
+      },
+      "cameras": [
+        {
+          "feature": "observation.images.head_depth",
+          "preview_status": "READY"
+        },
+        {
+          "feature": "observation.images.head_rgb",
+          "preview_status": "READY"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="71" failures="0" errors="0" time="8.659387611">
+    <testsuite name="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" timestamp="2026-09-30T00:50:37.487Z" hostname="c13af9a1fdf3" tests="5" failures="0" errors="0" skipped="0" time="0.245378619">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="requires an explicit track and unreviewed choice, and keeps media inclusion visible" time="0.108943098">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="rejects overlap only within the chosen track" time="0.051117787">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="retries the frozen generation without creating a new revision" time="0.021857832">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="keeps command buttons disabled without export.create" time="0.011017841">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationDeliveryPanel.test.tsx" name="keeps the idempotency key after an ambiguous network failure" time="0.051781061">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" timestamp="2026-09-30T00:50:37.489Z" hostname="c13af9a1fdf3" tests="5" failures="0" errors="0" skipped="0" time="0.099237085">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit APPROVE with review permission" time="0.068874273">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit NEEDS_REVISION with review permission" time="0.010277971">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; allows the submitter to submit REJECT with review permission" time="0.007646773">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; keeps self review disabled without review permission" time="0.007281053">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationTaskPage.test.tsx" name="TagReviewTaskPage self review &gt; keeps self review disabled without the submitted snapshot" time="0.00429211">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" timestamp="2026-09-30T00:50:37.489Z" hostname="c13af9a1fdf3" tests="44" failures="0" errors="0" skipped="0" time="8.040843857">
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; keeps ordinary wheels available for page scrolling in annotation while allowing modified model zoom" time="0.154763906">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; keeps ordinary wheels available for page scrolling in tag-review while allowing modified model zoom" time="0.043496291">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; places work modes above the three-column body and keeps camera tools local" time="0.075710017">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; defaults to view without a draft, locks unavailable modes, and focuses create" time="0.111822262">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; calls the real create callback once and enters annotation after the draft arrives" time="0.133757513">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; keeps view mode hard read-only across controls, drag events, and shortcuts" time="0.045744678">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; supports roving arrow-key mode changes and skips locked modes" time="0.107324594">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; protects dirty mode changes with continue, discard, and save choices" time="0.365800093">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; uses one review submit action and approves when no issue is marked" time="0.11075678">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; returns the task for modification with the selected annotation location" time="0.363040696">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 page-level workspace navigation &gt; shows a reasoned empty review state instead of disabled review actions" time="0.037072394">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps the synchronized layout and read-only Tag behavior when annotation falls back to viewing" time="0.108977138">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps the synchronized layout and read-only Tag behavior when tag-review falls back to viewing" time="0.107006313">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; reports a selected annotation range into the unified problem center" time="0.612512537">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps +0 Manifest cameras on one shared timeline" time="0.047249636">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps 1 Manifest cameras on one shared timeline" time="0.039630126">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps 4 Manifest cameras on one shared timeline" time="0.039620647">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;annotation&apos; keeps 8 Manifest cameras on one shared timeline" time="0.03912602">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps +0 Manifest cameras on one shared timeline" time="0.038728416">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps 1 Manifest cameras on one shared timeline" time="0.039612505">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps 4 Manifest cameras on one shared timeline" time="0.053953929">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; &apos;tag-review&apos; keeps 8 Manifest cameras on one shared timeline" time="0.041032597">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; reuses camera, pose and curve panels for review without an audit checklist" time="0.246465952">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps a camera media binding stable across unrelated local UI changes" time="0.170995921">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 viewer-slot composition &gt; keeps collection data folded by default and preserves task selection in the drawer" time="0.15967217">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; uses the annotation dock for joint curves instead of Tag summary or automatic annotation" time="0.275511604">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; switches view, annotation, and immutable history inside one workbench" time="0.444559034">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; keeps Tag creation to one compact row without manual hierarchy controls" time="0.045366824">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; starts every synchronized view from the clicked Tag boundary" time="0.185636288">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates an independent Tag at 600–700 after selecting tag1" time="0.230383757">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates an independent Tag at 330–420 after selecting tag1" time="0.236275354">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates an independent Tag at 250–500 after selecting tag1" time="0.210569378">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; creates hierarchical Tags, edits their names and intervals, and deletes a parent while keeping its children" time="0.910584679">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; cancels edits without mutating Tags and ignores Enter during Chinese composition" time="0.174216598">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; becomes read-only when edit capabilities are revoked" time="0.062603938">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; shows a true 409 conflict and keeps writes disabled" time="0.078725401">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; derives the review result from issue selection without requiring a comment" time="0.135515322">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; requires explicit confirmation before persisting an immutable modification" time="0.165790205">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; restores a selected historical data revision only after explicit confirmation" time="0.308872718">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 hierarchy, capabilities and conflicts &gt; blocks navigation until an immutable restore and authoritative refetch finish" time="0.442901102">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; does not run or render the precheck during initialization, editing, or save" time="0.251091225">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; starts once on submit click, shows loading, then continues to confirmation" time="0.211568252">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; blocks submission and exposes failure reasons until the user edits" time="0.155084356">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/AnnotationWorkbenchView.test.tsx" name="P08 submit precheck timing &gt; fails closed on a precheck exception and allows an explicit retry" time="0.21970717">
+            <system-err>
+flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" timestamp="2026-09-30T00:50:37.493Z" hostname="c13af9a1fdf3" tests="6" failures="0" errors="0" skipped="0" time="0.261665566">
+        <testcase classname="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" name="requires one saved Tag and explicit unreviewed choice, while displaying depth and independent reviews" time="0.114978295">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" name="keeps the same idempotency key across an ambiguous response and changes it for a new selection" time="0.077511648">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" name="recovers already committed data without offering cancellation" time="0.02077493">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" name="only offers pending cancellation before any attempt (attempts=0)" time="0.012775832">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" name="only offers pending cancellation before any attempt (attempts=1)" time="0.009342425">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/TagEpisodePanel.test.tsx" name="disables primary creation without upload.manage and does not fetch without source-read permissions" time="0.02548587">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/tag-episodes.test.ts" timestamp="2026-09-30T00:50:37.493Z" hostname="c13af9a1fdf3" tests="11" failures="0" errors="0" skipped="0" time="0.012262484">
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched tenant" time="0.004978382">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched revision" time="0.0005712">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched tag interval" time="0.000485755">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched child scope" time="0.000387803">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched child frame count" time="0.000414968">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched viewer collection" time="0.000337244">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched inherited task" time="0.000390973">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a mismatched unfinished READY" time="0.000321229">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="keeps exact epoch nanoseconds and scopes uncached pagination" time="0.002162927">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="rejects a valid response for a different selected Tag" time="0.00061166">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/tag-episodes.test.ts" name="retry pins the job and its generation" time="0.000770797">
+        </testcase>
+    </testsuite>
+</testsuites>

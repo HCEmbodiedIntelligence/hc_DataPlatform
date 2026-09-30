@@ -21,6 +21,7 @@ import type {
 import { RuntimeAutoAnnotationPanel } from "./RuntimeAutoAnnotationPanel";
 import { AnnotationRevisionFilesPanel } from "./AnnotationRevisionFilesPanel";
 import { AnnotationDeliveryPanel } from "./AnnotationDeliveryPanel";
+import { TagEpisodePanel } from "./TagEpisodePanel";
 import {
   createRuntimeAnnotationCommands,
   createClientMutationId,
@@ -578,6 +579,20 @@ function RuntimeAnnotationTaskPage({
               dirty={dirty}
               canCreate={capabilities.has("export.create")}
               canDownload={capabilities.has("export.download")}
+            />
+          )}
+          {bundle.task.data_ref && (
+            <TagEpisodePanel
+              key={`tag/${scope.organizationId}/${scope.projectId}/${scope.regionCode}/${bundle.task.task_id}`}
+              scope={scope}
+              history={bundle.history}
+              dirty={dirty}
+              canCreate={capabilities.has("upload.manage")}
+              canRead={[
+                "dataset_version.read",
+                "annotation_task.read",
+                "export.download",
+              ].every((c) => capabilities.has(c))}
             />
           )}
         </>

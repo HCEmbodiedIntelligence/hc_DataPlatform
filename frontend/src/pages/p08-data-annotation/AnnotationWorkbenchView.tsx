@@ -2413,7 +2413,7 @@ export function AnnotationWorkbenchView(
           aria-haspopup="dialog"
           onClick={() => setRevisionFilesOpen(true)}
         >
-          标注 JSON
+          标注文件与派生
         </button>
       ) : null}
     </CameraViewToolbar>
@@ -2656,7 +2656,7 @@ export function AnnotationWorkbenchView(
       <EntityDrawer
         open={revisionFilesOpen}
         returnFocusRef={revisionFilesTriggerRef}
-        title="版本化标注 JSON"
+        title="标注文件与 Episode 派生"
         width={400}
         onClose={() => setRevisionFilesOpen(false)}
       >

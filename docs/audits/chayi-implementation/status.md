@@ -31,18 +31,27 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | DATA-05 | W1/W2 | Pending | Interrupted, failed, retried and concurrent commits |
 | DATA-06 | W1/W2 | Pending | Units, numeric semantics, depth profile/mask/error/time |
 | SEG-01 | W2 | Pending | Whole recording and long recording windows |
-| SEG-02 | W3/W5 | Partial generator/product verified; command/UI/real/human pending | [Tag RGB-D generation](tag-derivation.md), [product publication](tag-projection.md); end-to-end command remains |
+| SEG-02 | W3/W5 | Partial generator/product/command/browser verified; own QC/real/human pending | [Generation](tag-derivation.md), [product publication](tag-projection.md), [durable commands and 1440/1024 browser](tag-jobs.md) |
 | ANN-01 | W1/W3/W7 | Pending | Complete tags and immutable review bindings |
 | ANN-02 | W3/W5 | Pending | Versioned JSON outbox, failure/retry/download |
 | ANN-03 | W3/W6 | Pending | Explicit subtask track, gaps/overlap/cross-track tests |
 | QC-01 | W4/W5 | Pending | Three independent reviews, warn/skip/unknown |
-| UI-01 | W4/W5 | Pending | Real API browser at 1440/1024; human tasks separately |
+| UI-01 | W4/W5 | Partial Tag flow browser verified; full entries/real/human pending | [Actual API/worker browser with synthetic RGB-D at 1440/1024](tag-jobs.md); full acceptance remains |
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W3/W5 Tag 任务与页面补充（2026-09-30）：显式固定修订/区间，持久 outbox、
+  租约、幂等、提交后恢复与独立标注任务；P08 接入创建/重试/取消和新条目链接。
+  后端 37 项、前端含工作台回归 71 项及 HTTP 下载包的禁网官方 reader/独立掩码
+  通过。实际 Firefox 在 1440/1024 完成两条合成 RGB-D 派生，验证预览、物理值、
+  独立空标注和无横向溢出；浏览器发现的显式作用域路径错误已修复。见
+  [代码行为、证据与未完成条件](tag-jobs.md)。隔离迁移 149/149。独立 QC 仍 UNKNOWN，
+  实际录制/真人、全入口浏览器、来源补全及 W7/W8 继续；未判定任何完整 P0 完成。
+  下方任务/API/页面“尚未接通”是对应早期阶段历史状态。
 
 - W3 Tag 产品登记补充：固定父集合与数据版本，登记独立子条目、真实 RGB-D stream
   与新标注任务；父快照和原始容量不变。4 项新测试、4 项现有/历史存储回归通过，

@@ -1,0 +1,45 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "official_reader_and_dataloader": true,
+  "episodes": [
+    {
+      "data_version_id": "dv_9b204fb76ac9d38dbb4b6aee35521c25e53b5269c0801a1fca8c3eee250d29f6",
+      "frames": 3,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 3,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "parent_data_version_id": "dv_9dd2afcf383f4ce56a337dcb2fe0de22d1a099f5c18b7c775a5cf400c701922f",
+      "parent_annotation_revision": 1,
+      "annotation_id": "child",
+      "interval": [
+        1,
+        4
+      ],
+      "parent_tags_preserved": 2,
+      "parent_frame_and_nanosecond_trace_verified": true,
+      "new_episode_identity": true,
+      "parent_approvals_inherited": false,
+      "requantized": false,
+      "primary_manifest_sha256": "78510d90ea4c119ecdb8e9715027c97522deebea53d746d01165e643b90d449e"
+    }
+  ],
+  "synthetic_input": true,
+  "queue_api_browser_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "platform_imported": false
+}

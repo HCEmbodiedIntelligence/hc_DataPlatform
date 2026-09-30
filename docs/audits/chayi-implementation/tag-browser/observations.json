@@ -1,0 +1,96 @@
+{
+  "input": "synthetic 16x16 RGB-D, not a physical recording",
+  "browser": "real headless Firefox, ordinary restored API session; no API mocks",
+  "gateway": "http://127.0.0.1:48088",
+  "viewports": [
+    [
+      1440,
+      1014
+    ],
+    [
+      1024,
+      1014
+    ]
+  ],
+  "created_windows": {
+    "1440": [
+      1,
+      4
+    ],
+    "1024": [
+      0,
+      2
+    ]
+  },
+  "horizontal_overflow": false,
+  "child_video_observation": {
+    "rgb_ready_state": 4,
+    "depth_ready_state": 4,
+    "decode_error": null,
+    "depth_preview": "rs-2.58.4-dynamic-jet-h264-v1"
+  },
+  "depth_pixel_observed": {
+    "frame": 0,
+    "x": 1,
+    "y": 0,
+    "display_value_m": "0.999551",
+    "renderer": "official RealSense colorizer"
+  },
+  "annotation_observation": {
+    "child_task_id": "825bd61a-e993-5bb5-af8e-136c09e114db",
+    "revision": 0,
+    "tag_count": 0,
+    "independent_reviews": true
+  },
+  "human_acceptance": false,
+  "real_recording_acceptance": false,
+  "all_three_ingestion_entries_tested_in_browser": false,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "files": [
+    {
+      "path": "1024-child-viewer.png",
+      "size_bytes": 172579,
+      "sha256": "c9f521ef2cfae2227d5bf4a01c0893ba5f7a39b14a4034e0c5056c7830b0ce8f"
+    },
+    {
+      "path": "1024-independent-annotation.png",
+      "size_bytes": 170676,
+      "sha256": "dee3623b62a7e3342b738a7ae033627a3f7b68f66ebf87a7b0bfa89075e5eb32"
+    },
+    {
+      "path": "1024-official-depth-pixel.png",
+      "size_bytes": 252210,
+      "sha256": "8ddb108927f25b66ca449f090a8b2dbacb53ddedd6b48a1280246579a00f9670"
+    },
+    {
+      "path": "1024-tag-created.png",
+      "size_bytes": 216549,
+      "sha256": "1db642525481069ee35ad6e2d26ee0bb2b6e58512aeb0c3c5d39f018e7708cf1"
+    },
+    {
+      "path": "1024-two-tag-episodes.png",
+      "size_bytes": 220860,
+      "sha256": "c9fd329da1a374b79b4a686e6e71eeff6f57e3fb7bcb66f4c4af2196bf0820e7"
+    },
+    {
+      "path": "1440-independent-annotation.png",
+      "size_bytes": 219604,
+      "sha256": "0e36fdc349089840fa9d8f2f84866d6a955ec107906db53f01a59a7674782df1"
+    },
+    {
+      "path": "1440-tag-created.png",
+      "size_bytes": 272625,
+      "sha256": "4a8e1d02c30063777ef96544aece9ac1daae34deaf1f801434e896a0b4be53b0"
+    },
+    {
+      "path": "1440-two-tag-episodes.png",
+      "size_bytes": 251493,
+      "sha256": "4a6954b8a28af79536a52ceef263f386b96e9b90d94a9a0bf8d978528bf04cd3"
+    },
+    {
+      "path": "receipts.json",
+      "size_bytes": 17134,
+      "sha256": "ba053576e9c709022cd0e4bdcadde9810984553a0697fe33f9a9d4c73774fa3f"
+    }
+  ]
+}
