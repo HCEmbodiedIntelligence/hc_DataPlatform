@@ -47,6 +47,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W7 MCAP 消息补充（2026-09-30）：官方 CDR decoder 兼容历史短 schema 名，
+  明确 16 位 PNG 布局和源 profile 后保留像素；34 项定向/真实服务回归通过。
+  实际历史文件 111 帧 RGB 解码，131 帧深度因源单位未声明全部拒绝，见
+  [原件检查和限制](historical-mcap-cameras.md)。未推断毫米、未写原件或创建假
+  RGB-D 完整包。实际深度证据和迁移、标注映射、P06/W8 继续。
+
 - W7 共享窗口补充（2026-09-30）：真实 920 帧四相机 AV1 窗口，逐流选帧及
   libx264rgb 无损像素校验、完整包下载、官方 TorchCodec reader/DataLoader、批次
   发布/回退和全部旧行哈希核对通过。81 项测试及 8 项原录制回归通过，见

@@ -192,10 +192,13 @@ def test_present_frame_cannot_forge_its_aligned_source_reference(field):
         frame_for(step, "/declared_camera", contract)
 
 
+@pytest.mark.parametrize("name", ["sensor_msgs/Image", "sensor_msgs/msg/Image"])
 @pytest.mark.parametrize(
     "encoding,big_endian", [("16UC1", False), ("16UC1", True), ("32FC1", True)]
 )
-def test_actual_ros_cdr_decoding_preserves_padding_byte_order_and_nonfinite(encoding, big_endian):
+def test_actual_ros_cdr_decoding_preserves_padding_byte_order_and_nonfinite(
+    encoding, big_endian, name
+):
     dtype = np.dtype((">" if big_endian else "<") + ("f4" if encoding == "32FC1" else "u2"))
     pixels = np.array([[0, 65535, 5], [4000, 4001, 48000]], dtype=dtype)
     if encoding == "32FC1":
@@ -210,7 +213,6 @@ def test_actual_ros_cdr_decoding_preserves_padding_byte_order_and_nonfinite(enco
         "step": 3 * dtype.itemsize + 2,
         "data": packed,
     }
-    name = "sensor_msgs/msg/Image"
     body = serialize_dynamic(name, ROS_IMAGE)[name](value)
     schema = Schema(id=1, name=name, encoding="ros2msg", data=ROS_IMAGE.encode())
     args = objects(body, encoding="cdr", contract=profile(encoding), schema=schema)
@@ -229,6 +231,72 @@ def test_actual_ros_cdr_decoding_preserves_padding_byte_order_and_nonfinite(enco
     )
     with pytest.raises(ValueError, match="DEPTH_SOURCE_CONTRACT_REQUIRED"):
         decode_camera(args[0], replace(args[1], metadata={}), args[2], McapRos2DecoderProbe())
+
+
+ROS_COMPRESSED_IMAGE = (
+    "std_msgs/Header header\nstring format\nuint8[] data\n" + ROS_IMAGE[ROS_IMAGE.index("=" * 80) :]
+)
+
+
+def compressed_cdr(pixels, name, *, contract=None, image_format=None):
+    compressed = io.BytesIO()
+    compression = "PNG" if pixels.ndim == 2 else "JPEG"
+    Image.fromarray(pixels).save(compressed, format=compression)
+    value = {
+        "header": {"stamp": {"sec": 7, "nanosec": 123}, "frame_id": "source_sensor"},
+        "format": image_format or ("16UC1; png" if pixels.ndim == 2 else "rgb8; jpeg"),
+        "data": compressed.getvalue(),
+    }
+    body = serialize_dynamic(name, ROS_COMPRESSED_IMAGE)[name](value)
+    schema = Schema(id=1, name=name, encoding="ros2msg", data=ROS_COMPRESSED_IMAGE.encode())
+    return objects(body, encoding="cdr", contract=contract, schema=schema)
+
+
+@pytest.mark.parametrize("name", ["sensor_msgs/CompressedImage", "sensor_msgs/msg/CompressedImage"])
+def test_compressed_ros_depth_png_preserves_source_pixels_with_explicit_units(name):
+    pixels = np.array([[0, 65535, 5], [4000, 4001, 48000]], np.uint16)
+    args = compressed_cdr(pixels, name, contract=profile())
+    frame = decode_camera(*args, McapRos2DecoderProbe())
+    assert frame.kind == "depth" and frame.profile == profile()
+    assert frame.source["source_encoding"] == "16UC1; png"
+    assert frame.source["sensor_timestamp_ns"] == 7_000_000_123
+    np.testing.assert_array_equal(frame.pixels, pixels)
+    restored = CameraFrame.from_projection(frame.projection_value())
+    np.testing.assert_array_equal(restored.pixels, pixels)
+    with pytest.raises(ValueError, match="DEPTH_SOURCE_CONTRACT_REQUIRED"):
+        decode_camera(args[0], replace(args[1], metadata={}), args[2], McapRos2DecoderProbe())
+
+
+@pytest.mark.parametrize("name", ["sensor_msgs/CompressedImage", "sensor_msgs/msg/CompressedImage"])
+def test_compressed_ros_rgb_alias_keeps_its_source_identity_and_pixels(name):
+    args = compressed_cdr(np.arange(48, dtype=np.uint8).reshape(4, 4, 3), name)
+    frame = decode_camera(*args, McapRos2DecoderProbe())
+    assert frame.kind == "rgb" and frame.pixels.shape == (4, 4, 3)
+    assert frame.source["message_sha256"] == hashlib.sha256(args[2].data).hexdigest()
+    assert frame.source["source_encoding"] == "rgb8; jpeg"
+
+
+@pytest.mark.parametrize(
+    "image_format,contract",
+    [
+        ("16UC1; compressedDepth png", profile()),
+        ("png", profile()),
+        ("mono16; png", profile()),
+        ("32FC1; png", profile("32FC1")),
+        ("16UC1; jpeg", profile()),
+    ],
+)
+def test_compressed_ros_depth_transport_and_layout_must_match_explicit_contract(
+    image_format, contract
+):
+    args = compressed_cdr(
+        np.full((2, 3), 4000, dtype=np.uint16),
+        "sensor_msgs/CompressedImage",
+        contract=contract,
+        image_format=image_format,
+    )
+    with pytest.raises(ValueError):
+        decode_camera(*args, McapRos2DecoderProbe())
 
 
 @pytest.mark.parametrize(

@@ -179,6 +179,8 @@ def decode_camera(schema, channel, message, decoder):
         and schema is not None
         and schema.name
         in {
+            "sensor_msgs/Image",
+            "sensor_msgs/CompressedImage",
             "sensor_msgs/msg/Image",
             "sensor_msgs/msg/CompressedImage",
         }
@@ -197,8 +199,6 @@ def decode_camera(schema, channel, message, decoder):
             encoding = get_field(value, "format", "")
             if "compressedDepth" in encoding:
                 raise ValueError("MCAP compressedDepth requires a validated transport decoder")
-            if profile is not None:
-                raise ValueError("MCAP compressed depth requires an explicit pixel-layout contract")
             expected = (
                 "JPEG"
                 if "jpeg" in encoding.lower()
@@ -208,7 +208,13 @@ def decode_camera(schema, channel, message, decoder):
             )
             if expected is None:
                 raise ValueError("unsupported MCAP CompressedImage format")
-            pixels = encoded_pixels(bounded_bytes(get_field(value, "data")), expected, None)
+            if profile is not None and (
+                expected != "PNG"
+                or encoding.split(";", 1)[0].strip() not in {"16UC1", "mono16"}
+                or encoding.split(";", 1)[0].strip() != profile["encoding"]
+            ):
+                raise ValueError("MCAP compressed depth requires an explicit pixel-layout contract")
+            pixels = encoded_pixels(bounded_bytes(get_field(value, "data")), expected, profile)
         else:
             pixels, encoding = raw_pixels(value)
             if pixels.ndim == 2:
