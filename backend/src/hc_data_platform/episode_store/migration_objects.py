@@ -31,6 +31,27 @@ class _ManifestBytes:
         yield self.body
 
 
+def validate_raw_file_set(raw, manifest):
+    """Recognize the historical web label without changing its hashed inventory.
+
+    The pre-656853ae writer emitted ``lerobot`` in the manifest but hashed
+    ``lerobot_v3``/``v3.0``. This is one documented alias, not case folding or
+    permission to accept another format's digest.
+    """
+    declared = manifest.get("source_format")
+    historical = (
+        declared == "lerobot"
+        and manifest.get("source_format_version") == "v3.0"
+        and raw.source_format.value == "LEROBOT_V3"
+        and raw.source_format_version == "v3.0"
+    )
+    if (
+        not (declared == raw.source_format.value or historical)
+        or _raw_content_digest(manifest["files"], raw.source_format.value) != raw.content_hash
+    ):
+        raise PackageConflict("raw file set hash/format differs from inventory")
+
+
 class InventoryObjectVerifier:
     def __init__(
         self,
@@ -164,11 +185,8 @@ class InventoryObjectVerifier:
             ):
                 raise PackageConflict("raw manifest scope/identity differs from inventory")
             files = manifest["files"]
-            if schema == "raw-upload-manifest/v1" and (
-                manifest["source_format"] != raw.source_format.value
-                or _raw_content_digest(files, raw.source_format.value) != raw.content_hash
-            ):
-                raise PackageConflict("raw file set hash differs from inventory")
+            if schema == "raw-upload-manifest/v1":
+                validate_raw_file_set(raw, manifest)
             paths = [safe_relative(f["path"]) for f in files]
             if (
                 len(set(paths)) != len(paths)

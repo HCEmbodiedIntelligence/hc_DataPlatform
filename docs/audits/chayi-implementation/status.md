@@ -43,9 +43,16 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
-| MIG-01 | W7/G2 | Inventory, conversion, atomic batch/product publication and rollback software/CLI verified on synthetic RGB-D; media adapters, complete historical copy and real migration pending | [Inventory](migration-inventory.md), [objects](migration-objects.md), [conversion](migration-conversion.md), [batch/rollback/HTTP/offline evidence](migration-batches.md); full historical and annotation/review equivalence remain |
+| MIG-01 | W7/G2 | Partial: historical native copy, 1 × 958-frame/four-camera migration and rollback verified; full RGB-D/window/annotation/batches pending | [Historical copy/CLI/official reader](historical-native.md), [synthetic RGB-D batch/HTTP](migration-batches.md); G2 and full acceptance remain |
 
 ## Work log
+
+- W7 历史数据补充（2026-09-30）：只读制作完整数据库和原生数据集对象副本，
+  独立恢复；1765 对象/13.83 GB 校验。新增 native plan/stage CLI，完成首条
+  958 帧四路 RGB 的发布/回退及禁网官方 reader/DataLoader 全帧读取，旧行和
+  非空标注审核链原哈希保留。54 项测试通过，见 [证据和未验收项](historical-native.md)。
+  尚未迁移全部 154 条，真实 MCAP 深度缺明确源单位证据，共享窗口/标注等价/
+  浏览器/P06/W8 继续。原工作区现为 89df980d，G2 须保留其外部改动。
 
 - W7 批次补充（2026-09-30）：冻结转换计划/产品快照、SDK 预览、集合与成员指针/
   页面登记原子发布、带并发保护的持久回退、CLI。最终 19 项批次测试及相关回归

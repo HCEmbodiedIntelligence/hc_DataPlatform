@@ -105,10 +105,10 @@ def read_package(root, member):
         "frames": seen,
         "depth_streams": len(masks),
         "invalid_pixels_masked": invalid,
-        "depth_unit": "mm",
-        "official_rounding_max_error_mm": max_rounding_error,
+        "depth_unit": "mm" if masks else None,
+        "official_rounding_max_error_mm": max_rounding_error if masks else None,
         "numeric_reader_dtypes": numeric_dtypes,
-        "independent_hc_masks_applied": True,
+        "independent_hc_masks_applied": bool(masks),
         "source_mapping_checked": True,
         "all_manifest_hashes_verified": True,
     }

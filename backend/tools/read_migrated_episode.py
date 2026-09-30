@@ -97,7 +97,9 @@ def check(root):
         plan_sha256=plan_hash,
         legacy=plan["legacy"],
         independent_logical_sha256=logical_hash,
-        rgb_and_depth_original_file_hashes_verified=True,
+        original_video_file_hashes_verified=True,
+        rgb_and_depth_original_file_hashes_verified=bool(plan["required_depth_features"])
+        and len(plan["asset_contract"]["videos"]) > len(plan["required_depth_features"]),
         review_automatically_transferred=False,
         input_directory=str(root),
     )
