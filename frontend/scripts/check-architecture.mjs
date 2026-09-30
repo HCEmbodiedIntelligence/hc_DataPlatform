@@ -13,9 +13,16 @@ export function checkSource(file, content, sourceRoot, options = {}) {
   const sourceLayer = relative.split("/")[0];
   const prohibitedLayers = {
     shared: ["entities", "features", "pages", "app"],
-    features: ["pages"],
+    features: ["pages", "app"],
+    pages: ["app"],
   }[sourceLayer];
-  if (!prohibitedLayers || /\.(test|spec)\.tsx?$/u.test(relative))
+  // Visual fixtures explicitly compose the application test harness; they are
+  // separate from production page/feature entry points.
+  if (
+    !prohibitedLayers ||
+    /\.(test|spec)\.tsx?$/u.test(relative) ||
+    relative.includes("/testing/")
+  )
     return [];
   const tree = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true);
   const failures = new Set();
@@ -43,7 +50,19 @@ export function checkSource(file, content, sourceRoot, options = {}) {
     if (target === null) return;
     const layer = path.relative(sourceRoot, target).split(path.sep)[0];
     if (prohibitedLayers.includes(layer)) {
-      failures.add(`${relative}:${line}: ${sourceLayer} cannot depend on ${specifier}`);
+      failures.add(
+        `${relative}:${line}: ${sourceLayer} cannot depend on ${specifier}`,
+      );
+    }
+    if (
+      sourceLayer === "pages" &&
+      layer === "pages" &&
+      /\/routes(?:\.tsx?)?$/u.test(target) &&
+      !relative.endsWith("/routes.tsx")
+    ) {
+      failures.add(
+        `${relative}:${line}: page consumers must use URL builders, not route assembly: ${specifier}`,
+      );
     }
   }
   function visit(node) {
@@ -111,6 +130,8 @@ if (
     process.stderr.write(failures.join("\n") + "\n");
     process.exitCode = 1;
   } else {
-    process.stdout.write("Frontend shared and feature/page boundaries passed.\n");
+    process.stdout.write(
+      "Frontend shared, feature/page and page/app boundaries passed.\n",
+    );
   }
 }

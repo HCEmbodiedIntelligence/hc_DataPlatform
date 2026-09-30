@@ -15,7 +15,7 @@ import type {
   RuntimeAnnotationRevisionThread,
   RuntimeAnnotationScope,
 } from "./runtime-annotation-adapter";
-import { annotationRoutes } from "./routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import "./p08.css";
 
 type RevisionStatusFilter = RuntimeAnnotationRevisionThread["status"] | "ALL";

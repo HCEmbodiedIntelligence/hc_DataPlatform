@@ -1,25 +1,26 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export type DataExportRouteObject = PageRoute;
 
-export type DataExportRouteObject = RouteObject & {
-  readonly navigationOwnerPageId: "P21";
-  readonly navigationOwnerGroupId: "production";
-  readonly requiredCapabilities: readonly string[];
-};
-
-export const p21Routes: DataExportRouteObject[] = [
+export const p21Routes: PageRoute[] = [
   {
     path: "/exports",
-    navigationOwnerPageId: "P21",
-    navigationOwnerGroupId: "production",
     requiredCapabilities: [
       "export.read",
       "dataset.read",
       "dataset_version.read",
     ],
+    navigation: {
+      label: "数据导出",
+      groupId: "production",
+      order: 40,
+      visibility: "discoverable",
+    },
     lazy: async () => ({ Component: (await import("./page")).DataExportPage }),
   },
 ];
 
-registerPageRoutes("P21", p21Routes);
+export const page = definePage({ id: "P21", enabled: true, routes: p21Routes });
 export default p21Routes;

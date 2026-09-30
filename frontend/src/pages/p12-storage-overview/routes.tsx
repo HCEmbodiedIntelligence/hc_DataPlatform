@@ -1,13 +1,23 @@
-import type { RouteObject } from 'react-router-dom';
-import { registerPageRoutes } from '../../shared/routing/route-registry';
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
 
-const routes: RouteObject[] = [{
-  path: '/storage/overview',
-  lazy: async () => {
-    const module = await import('./page');
-    return { Component: module.StorageOverviewPage };
+export const routes: PageRoute[] = [
+  {
+    path: "/storage/overview",
+    requiredCapabilities: ["storage.overview.read"],
+    navigation: {
+      label: "存储容量",
+      groupId: "governance",
+      order: 10,
+      visibility: "authorized",
+    },
+    lazy: async () => ({
+      Component: (await import("./page")).StorageOverviewPage,
+    }),
   },
-}];
+];
 
-registerPageRoutes('P12', routes);
+export const page = definePage({ id: "P12", enabled: true, routes: routes });
 export default routes;

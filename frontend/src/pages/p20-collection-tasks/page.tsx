@@ -9,7 +9,7 @@ import { Alert, Button, Input, Modal, Select, Space, Typography } from "antd";
 import { Plus, RefreshCw, RotateCcw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useToast } from "../../app/providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";

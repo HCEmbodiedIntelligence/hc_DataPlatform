@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
-import { annotationRoutes } from "./routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import {
   commandTagEpisode,
   createTagEpisode,

@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RouterProvider, type RouterProviderProps } from 'react-router-dom';
-import { ErrorBoundary } from './ErrorBoundary';
-import { ScopeProvider } from './ScopeProvider';
-import { ToastProvider } from './ToastProvider';
-import { UiProvider } from './UiProvider';
+import { useState, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider, type RouterProviderProps } from "react-router-dom";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { ScopeProvider } from "./ScopeProvider";
+import { ToastProvider } from "../../shared/ui/ToastProvider";
+import { UiProvider } from "./UiProvider";
 
 function ApplicationProviderStack({
   children,
@@ -24,7 +24,11 @@ function ApplicationProviderStack({
   );
 }
 
-export function AppProviders({ router }: { router: RouterProviderProps['router'] }) {
+export function AppProviders({
+  router,
+}: {
+  router: RouterProviderProps["router"];
+}) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -45,5 +49,9 @@ export function AppProviders({ router }: { router: RouterProviderProps['router']
 
 export function ProviderHarness({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
-  return <ApplicationProviderStack queryClient={queryClient}>{children}</ApplicationProviderStack>;
+  return (
+    <ApplicationProviderStack queryClient={queryClient}>
+      {children}
+    </ApplicationProviderStack>
+  );
 }

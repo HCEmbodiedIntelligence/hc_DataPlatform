@@ -406,17 +406,24 @@
       "title": "页面反向依赖应用装配并与路由表形成循环",
       "scope": "两分支",
       "owner": "T8 T9",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "稳定路由描述/URL 构造器和 UI 通知契约独立；app 持有组件路由装配，页面只消费稳定导航接口。"
+      "status": "implemented_verified",
+      "evidence": [
+        "shared/routing/page-descriptor.ts defines validated page contracts; app automatically derives lazy routes, navigation, availability and safe return URLs from all page declarations",
+        "No production page imports app; Toast shared context and annotation feature URL/query builders replace reverse dependencies, with compatibility reexports",
+        "18 TS AST boundary tests passed; 297 frontend regression cases passed; 28 affected route cases rechecked after catalog replacement; full typecheck, 62-file ESLint and production build passed",
+        "Real MemoryRouter extension page requires one declaration; navigation and access agree, unauthorized component never runs; unknown permissions fail closed including platform admin; disabled paths removed when catalog replaced"
+      ],
+      "remaining": ""
     },
     {
       "id": "F04",
       "title": "多个业务页面直接复用另一页面的接口和组件",
       "scope": "两分支",
       "owner": "T9",
-      "status": "pending",
-      "evidence": [],
+      "status": "in_progress",
+      "evidence": [
+        "Annotation URL/query contract moved to features/annotation; all production annotation-link consumers migrated off page route assembly. Remaining cross-page APIs/components/media/upload dependencies still pending."
+      ],
       "remaining": "按能力移至 features/ingest、datasets、collection-tasks、account、exports 或公共 UI；页面只组合这些能力，禁止跨页面导入。"
     },
     {
@@ -588,9 +595,14 @@
       "title": "页面可自动发现，但导航和权限元数据仍分散",
       "scope": "两分支",
       "owner": "T8",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "建立带稳定 id/path/navigation/capabilities 的页面描述契约，由 app 聚合生成导航、守卫和回跳白名单；组件懒加载仅在 app 装配，保留特殊权限策略的显式表达和默认拒绝。"
+      "status": "implemented_verified",
+      "evidence": [
+        "shared/routing/page-descriptor.ts defines validated page contracts; app automatically derives lazy routes, navigation, availability and safe return URLs from all page declarations",
+        "No production page imports app; Toast shared context and annotation feature URL/query builders replace reverse dependencies, with compatibility reexports",
+        "18 TS AST boundary tests passed; 297 frontend regression cases passed; 28 affected route cases rechecked after catalog replacement; full typecheck, 62-file ESLint and production build passed",
+        "Real MemoryRouter extension page requires one declaration; navigation and access agree, unauthorized component never runs; unknown permissions fail closed including platform admin; disabled paths removed when catalog replaced"
+      ],
+      "remaining": ""
     },
     {
       "id": "F08",

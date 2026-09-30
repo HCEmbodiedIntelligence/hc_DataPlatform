@@ -1,7 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { registerPageRoutes, safeReturnTo } from "./route-registry";
+import { beforeEach, describe, expect, it } from "vitest";
+import {
+  registerPageRoutes,
+  replaceRegisteredPageRoutes,
+  safeReturnTo,
+} from "./route-registry";
+
+beforeEach(() => {
+  registerPageRoutes("test-routes", [
+    "/ingest/uploads/new",
+    "/ingest/uploads/:uploadId",
+    "/settings/platform-operations",
+  ]);
+});
 
 describe("safeReturnTo", () => {
+  it("removes disabled paths when the application replaces its catalog", () => {
+    replaceRegisteredPageRoutes([{ pageId: "example", routes: ["/example"] }]);
+    expect(safeReturnTo("/example?tab=one#detail")).toBe(
+      "/example?tab=one#detail",
+    );
+    expect(safeReturnTo("/settings/platform-operations")).toBeNull();
+    replaceRegisteredPageRoutes([]);
+    expect(safeReturnTo("/example")).toBeNull();
+  });
+
   it("keeps query and hash for the formal upload and Raw diagnostic routes", () => {
     expect(safeReturnTo("/ingest/uploads/new?source=browser#manifest")).toBe(
       "/ingest/uploads/new?source=browser#manifest",

@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Tabs, Typography } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import type { Scope } from "../../entities/scope";
-import { annotationRoutes } from "../p08-data-annotation/routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import { DataReviewPanel } from "./DataReviewPanel";
 import { DepthPixelPanel } from "./DepthPixelPanel";
 import { EpisodeQualityPanel } from "./EpisodeQualityPanel";

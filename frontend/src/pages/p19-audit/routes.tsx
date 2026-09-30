@@ -1,13 +1,21 @@
-import type { RouteObject } from 'react-router-dom';
-import { registerPageRoutes } from '../../shared/routing/route-registry';
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
 
-const routes: RouteObject[] = [{
-  path: '/settings/audit',
-  lazy: async () => {
-    const module = await import('./page');
-    return { Component: module.AuditPage };
+export const routes: PageRoute[] = [
+  {
+    path: "/settings/audit",
+    requiredCapabilities: ["audit.read"],
+    navigation: {
+      label: "审计日志",
+      groupId: "security",
+      order: 20,
+      visibility: "authorized",
+    },
+    lazy: async () => ({ Component: (await import("./page")).AuditPage }),
   },
-}];
+];
 
-registerPageRoutes('P19', routes);
+export const page = definePage({ id: "P19", enabled: true, routes: routes });
 export default routes;

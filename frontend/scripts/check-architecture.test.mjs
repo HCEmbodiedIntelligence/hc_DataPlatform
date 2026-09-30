@@ -19,6 +19,33 @@ for (const source of [
   });
 }
 
+for (const layer of ["features", "pages"]) {
+  for (const source of [
+    'import { useToast } from "../../app/providers/ToastProvider";',
+    'export type { Routes } from "../../app/router";',
+    'const load = () => import("../../app/router");',
+  ]) {
+    test(`${layer} cannot depend on application composition: ${source}`, () => {
+      assert.equal(
+        checkSource(path.join(root, layer, "example/unsafe.tsx"), source, root)
+          .length,
+        1,
+      );
+    });
+  }
+}
+
+test("page links cannot import component route assembly", () => {
+  assert.equal(
+    checkSource(
+      path.join(root, "pages/example/page.tsx"),
+      'import { annotationRoutes } from "../p08-data-annotation/routes";',
+      root,
+    ).length,
+    1,
+  );
+});
+
 test("permits shared contracts and explicitly known vendor imports", () => {
   assert.deepEqual(
     checkSource(
@@ -40,6 +67,10 @@ for (const source of [
   'const load = () => import("../../pages/p10/query-codec");',
 ]) {
   test(`features cannot acquire contracts from pages: ${source}`, () => {
-    assert.equal(checkSource(path.join(root, "features/cleaning/unsafe.ts"), source, root).length, 1);
+    assert.equal(
+      checkSource(path.join(root, "features/cleaning/unsafe.ts"), source, root)
+        .length,
+      1,
+    );
   });
 }

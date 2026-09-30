@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Descriptions, Progress, Space, Typography } from "antd";
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { dataUploadRoutes } from "../../app/shell/navigation-routes";
+import { dataUploadRoutes } from "../../shared/routing/navigation-routes";
 import type { IngestScope } from "../../entities/data-source";
 import type { AutoQualityProblem } from "../../features/cleaning/api";
 import { request } from "../../shared/api/http-client";

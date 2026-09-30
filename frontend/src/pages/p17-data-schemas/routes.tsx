@@ -1,9 +1,10 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+// Schema authoring is intentionally unavailable; contracts belong to configuration packages.
 
-// Schema contracts are registered by robot/configuration packages. The former
-// authoring screen intentionally has no UI route for any role.
-export const routes: RouteObject[] = [];
+export const routes: PageRoute[] = [];
 
-registerPageRoutes("P17", routes);
+export const page = definePage({ id: "P17", enabled: false, routes: routes });
 export default routes;

@@ -1,16 +1,21 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
 
-const routes: RouteObject[] = [
+export const routes: PageRoute[] = [
   {
     path: "/dashboard",
-    lazy: async () => {
-      const module = await import("./page");
-      return { Component: module.DashboardPage };
+    requiredCapabilities: [],
+    navigation: {
+      label: "工作台",
+      groupId: "dashboard",
+      order: 10,
+      visibility: "discoverable",
     },
+    lazy: async () => ({ Component: (await import("./page")).DashboardPage }),
   },
 ];
 
-registerPageRoutes("P01", routes);
-
+export const page = definePage({ id: "P01", enabled: true, routes: routes });
 export default routes;

@@ -1,23 +1,24 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export type PlatformOperationsRouteObject = PageRoute;
 
-export type PlatformOperationsRouteObject = RouteObject & {
-  readonly navigationOwnerPageId: "P22";
-  readonly navigationOwnerGroupId: "security";
-  readonly requiredCapabilities: readonly string[];
-};
-
-export const p22Routes: PlatformOperationsRouteObject[] = [
+export const p22Routes: PageRoute[] = [
   {
     path: "/settings/platform-operations",
-    navigationOwnerPageId: "P22",
-    navigationOwnerGroupId: "security",
     requiredCapabilities: ["platform.operations.read"],
+    navigation: {
+      label: "平台设置",
+      groupId: "security",
+      order: 30,
+      visibility: "authorized",
+    },
     lazy: async () => ({
       Component: (await import("./page")).PlatformOperationsPage,
     }),
   },
 ];
 
-registerPageRoutes("P22", p22Routes);
+export const page = definePage({ id: "P22", enabled: true, routes: p22Routes });
 export default p22Routes;

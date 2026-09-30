@@ -1,31 +1,28 @@
-import type { RouteObject } from 'react-router-dom';
-import { registerPageRoutes } from '../../shared/routing/route-registry';
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export { registerPageRoutes } from "../../shared/routing/route-registry";
+export type DatasetRouteObject = PageRoute;
 
-export type DatasetRouteObject = RouteObject & {
-  readonly navigationOwnerPageId: 'P06';
-  readonly navigationOwnerGroupId: 'datasets';
-  readonly hiddenFromNavigation?: boolean;
-  readonly requiredCapabilities: readonly string[];
-};
-
-export const p06Routes: DatasetRouteObject[] = [
+export const p06Routes: PageRoute[] = [
   {
-    path: '/datasets/:datasetId',
-    navigationOwnerPageId: 'P06',
-    navigationOwnerGroupId: 'datasets',
-    requiredCapabilities: ['dataset.read'],
-    lazy: async () => ({ Component: (await import('./page')).DatasetDetailPage }),
+    path: "/datasets/:datasetId",
+    requiredCapabilities: ["dataset.read"],
+    navigationOwnerPageId: "P05",
+    lazy: async () => ({
+      Component: (await import("./page")).DatasetDetailPage,
+    }),
   },
   {
-    path: '/datasets/:datasetId/versions/:versionId/episodes/:episodeId/view',
-    navigationOwnerPageId: 'P06',
-    navigationOwnerGroupId: 'datasets',
-    hiddenFromNavigation: true,
-    requiredCapabilities: ['episode.read'],
-    lazy: async () => ({ Component: (await import('./ViewerShell')).EpisodeViewerShell }),
+    path: "/datasets/:datasetId/versions/:versionId/episodes/:episodeId/view",
+    requiredCapabilities: ["episode.read"],
+    navigationOwnerPageId: "P05",
+    lazy: async () => ({
+      Component: (await import("./ViewerShell")).EpisodeViewerShell,
+    }),
   },
 ];
 
-registerPageRoutes('P06', p06Routes);
-export { registerPageRoutes };
+export const page = definePage({ id: "P06", enabled: true, routes: p06Routes });
 export default p06Routes;

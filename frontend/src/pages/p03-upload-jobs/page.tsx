@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Modal } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { dataUploadRoutes } from "../../app/shell/navigation-routes";
+import { dataUploadRoutes } from "../../shared/routing/navigation-routes";
 import { useRobotUploadHistory } from "../../features/robot-ingest/api";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { useCapabilities } from "../../shared/auth/use-capabilities";

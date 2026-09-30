@@ -239,3 +239,34 @@ postgres_publication_effects；独立发布模块使用 publication_only。没�
 证据：results/publication-transactions-atomic.xml、publication-port-contracts.xml、publication-domain-regression.xml。
 
 B20 仍在进行：目录准备、来源关系及其他模块中的跨域读取没有全部改造；这次不把它记为完成。
+
+
+## 页面契约与应用装配（F03、F07）
+
+`shared/routing/page-descriptor.ts` 提供 PageDescriptor/PageRoute、definePage、buildPageCatalog。
+每个页面在自己的 routes.tsx 声明 id、enabled、URL、requiredCapabilities、lazy 与可选导航信息；
+app/router/page-catalog.ts 自动发现声明，生成 32 个实际可用的页面路由、菜单、可用性与返回 URL 清单。
+不再按 Pxx 文件名猜测权限，不再维护 pageReadCapability、lazyIngestPages 或第二份页面菜单清单。
+新页面只增加自己的声明和组件；分组名称和排序规则是共享 UI 政策，不含页面实现。
+
+详情页显式选择导航归属：数据集详情/版本/回放属于数据集，上传详情属于上传，
+清洗草稿/工作台属于标注；机器人兼容入口仍归机器人模型。标定页与 schema 编辑页仍禁用。
+不存在的 P10Q 菜单项和返回 URL 不再被静态清单误认为可用。替换目录时会撤销已禁用的返回路径。
+路由路径、查询构造、懒加载组件与原有授权要求保持兼容；普通菜单仍可发现，实际路由检查权限。
+P18 明确保留页面内的 project access.read / global platform.account.read 两组授权边界。
+全局权限词汇独立于项目角色能力清单，项目管理员不会因此获得平台管理员权限。
+缺失/未知权限、重复页面、歧义路径和缺失导航归属会使注册失败；未知权限也不能被管理员绕过。
+
+ToastProvider/useToast 由 shared/ui 拥有同一个上下文，保留原敏感信息过滤与 Ant 通知行为；
+应用只装配。上传/标注 URL 常量属于 shared/routing；标注 URL 构造器及查询编解码属于
+features/annotation。页面和跨页消费者直接依赖这些能力，旧导入入口保留重导出。
+页面不再导入 app；业务页面不能导入组件路由文件来构造链接。测试与 testing/ 视觉 fixture
+可显式装配应用测试 harness，其余生产入口由 TS AST 门禁约束。
+
+验证：18 个架构门禁测试，36 个文件中的 **297 项** 回归通过（应用壳、授权、作用域、HTTP、
+标注、采集任务、切片、账户设置与存储路由）；目录替换补充后相关 **28 项** 再次通过。
+新增页面用真实 MemoryRouter 渲染：一次声明即可访问并生成一致菜单，无 grant 时组件不执行。
+完整 typecheck、62 个源码/脚本文件 ESLint、生产构建通过。构建仍有原大 chunk 提示，
+UI 测试有现存 flushSync/hydration 提示，均未改为跳过。日志位于 results/frontend-pages-*.log。
+F04 只完成标注链接/查询能力的跨页迁移，其余页面间 API、组件、媒体和上传处理复用继续治理；
+API 校验生成与业务请求显式 scope（F06/F09）仍未完成。

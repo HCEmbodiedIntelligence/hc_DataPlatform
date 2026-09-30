@@ -8,7 +8,7 @@ import {
 } from "../../pages/auth/runtime-scope";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { useToast } from "../providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import type { PageAvailability } from "./navigation-manifest";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
 

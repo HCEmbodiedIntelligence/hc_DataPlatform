@@ -38,7 +38,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { useToast } from "../../app/providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import type { DatasetId } from "../../entities/dataset";
 import type { DatasetVersionId } from "../../entities/dataset-version";
 import type { EpisodeId } from "../../entities/episode";
@@ -63,7 +63,7 @@ import { StandardPageScaffold } from "../../shared/ui/layout/StandardPageScaffol
 import { PageState } from "../../shared/ui/state/PageState";
 import { StatusTag } from "../../shared/ui/state/StatusTag";
 import { WorkflowQueuePage } from "../../shared/ui/workflow/WorkflowQueuePage";
-import { annotationRoutes } from "../p08-data-annotation/routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import {
   recordingGateway,
   type ContinuousRecording,

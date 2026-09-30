@@ -33,8 +33,8 @@ import type {
 import {
   annotationQueueQueryCodec,
   type AnnotationQueueStage,
-} from "./query-codec";
-import { annotationRoutes } from "./routes";
+} from "../../features/annotation/query-codec";
+import { annotationRoutes } from "../../features/annotation/routing";
 import "./p08.css";
 
 interface QueueStageDefinition {

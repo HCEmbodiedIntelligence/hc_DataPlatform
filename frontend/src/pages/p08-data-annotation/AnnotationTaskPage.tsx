@@ -43,7 +43,7 @@ import {
   saveTagDraftRecovery,
 } from "./tag-draft-recovery";
 import type { TagDraftRecoveryIdentity } from "./tag-draft-recovery";
-import { annotationRoutes } from "./routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
 import styles from "./workbench.module.css";
 

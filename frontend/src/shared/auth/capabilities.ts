@@ -86,3 +86,32 @@ const capabilitySet: ReadonlySet<string> = new Set(CANONICAL_CAPABILITIES);
 export function isCapability(value: unknown): value is Capability {
   return typeof value === "string" && capabilitySet.has(value);
 }
+
+// Global grants are separate from the project-role capability bundles.
+export const PLATFORM_CAPABILITIES = [
+  "platform.admin",
+  "platform.account.read",
+  "platform.account.manage",
+  "platform.account_security.manage",
+  "platform.operations.read",
+  "platform.maintenance.operate",
+  "platform.release.operate",
+  "platform.maintenance.verify",
+  "platform.break_glass",
+] as const;
+
+export type RegisteredCapability =
+  | Capability
+  | (typeof PLATFORM_CAPABILITIES)[number];
+const platformCapabilitySet: ReadonlySet<string> = new Set(
+  PLATFORM_CAPABILITIES,
+);
+
+export function isRegisteredCapability(
+  value: unknown,
+): value is RegisteredCapability {
+  return (
+    isCapability(value) ||
+    (typeof value === "string" && platformCapabilitySet.has(value))
+  );
+}

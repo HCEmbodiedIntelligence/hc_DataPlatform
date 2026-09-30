@@ -26,7 +26,7 @@ import {
 import { qualityFindingText } from "../../shared/lib/quality-presentation";
 import { safeReturnTo } from "../../shared/routing/route-registry";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
-import { annotationRoutes } from "../p08-data-annotation/routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import { createDatasetAlignedMediaSource } from "../p06-dataset-detail/aligned-media-source";
 import {
   PageState,

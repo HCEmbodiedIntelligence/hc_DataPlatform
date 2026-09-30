@@ -1,27 +1,25 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export type CleaningRouteObject = PageRoute;
 
-type CleaningRouteObject = RouteObject & {
-  readonly navigationOwnerPageId: "P09";
-  readonly navigationOwnerGroupId: "manual";
-  readonly requiredCapabilities: readonly string[];
-};
-
-export const routes: CleaningRouteObject[] = [
+export const routes: PageRoute[] = [
   {
     path: "/manual/issues",
-    navigationOwnerPageId: "P09",
-    navigationOwnerGroupId: "manual",
     requiredCapabilities: ["manual_issue.read"],
-    lazy: async () => {
-      const module = await import("./page");
-      return { Component: module.ManualIssuesPage };
+    navigation: {
+      label: "问题数据",
+      groupId: "production",
+      order: 50,
+      visibility: "discoverable",
     },
+    lazy: async () => ({
+      Component: (await import("./page")).ManualIssuesPage,
+    }),
   },
   {
     path: "/manual/issues/raw-diagnostic/:uploadId",
-    navigationOwnerPageId: "P09",
-    navigationOwnerGroupId: "manual",
     requiredCapabilities: ["manual_issue.read", "upload.read"],
     lazy: async () => ({
       Component: (await import("../p04-upload-detail/formal-page")).default,
@@ -29,5 +27,5 @@ export const routes: CleaningRouteObject[] = [
   },
 ];
 
-registerPageRoutes("P09", routes);
+export const page = definePage({ id: "P09", enabled: true, routes: routes });
 export default routes;

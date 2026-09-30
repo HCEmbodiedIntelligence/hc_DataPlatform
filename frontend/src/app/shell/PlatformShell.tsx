@@ -64,7 +64,7 @@ import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { useScope } from "../providers/ScopeProvider";
-import { useToast } from "../providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import {
   filterNavigationManifest,
   navigationManifest,
