@@ -1,0 +1,97 @@
+{
+  "lerobot": "0.6.1",
+  "network": "disabled by container",
+  "platform_imported": false,
+  "official_reader_and_dataloader": true,
+  "packages": [
+    {
+      "data_version_id": "dv_cc08bdb7eeee67ab366027800a18ce38b7244cc6628159ccb90c017ad2883fb2",
+      "frames": 4,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 4,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "plan_sha256": "0fc32b2f6b6d682b634828973009508b7a4cd6109e70d6e650ebe6504d334432",
+      "legacy": {
+        "content_hash": "5097e036c289af3477b21c7abdecd4968bc3a9c474a97061fdfd20dff1cbb15f",
+        "data_version_id": "legacy_566aec4fd4db3d562da7ef8a094b1c93c26681b1d7e5e2095843593bc2766946",
+        "dataset_uri": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/legacy/batch-project-278937fedcc94feabe0727b27bc5052e/dataset_batch_278937fedcc94feabe0727b27bc5052e/schema-1/30hz/aligned_steps.lance",
+        "dataset_version": 2,
+        "frame_count": 4,
+        "identity": {
+          "dataset_id": "dataset_batch_278937fedcc94feabe0727b27bc5052e",
+          "episode_id": "episode_e0d1980eee22766a61cfe3c1785d082a",
+          "organization_id": "batch-278937fedcc94feabe0727b27bc5052e",
+          "project_id": "batch-project-278937fedcc94feabe0727b27bc5052e",
+          "region_code": "writer-region",
+          "rollout_id": "batch-rollout-0"
+        },
+        "lance_version": 2,
+        "schema_snapshot_id": "schema-1",
+        "storage_format": "lance"
+      },
+      "independent_logical_sha256": "5097e036c289af3477b21c7abdecd4968bc3a9c474a97061fdfd20dff1cbb15f",
+      "rgb_and_depth_original_file_hashes_verified": true,
+      "review_automatically_transferred": false,
+      "input_directory": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/downloaded/episode_e0d1980eee22766a61cfe3c1785d082a"
+    },
+    {
+      "data_version_id": "dv_7af9ac8259e15fafce0af632a2671e3967defb8b49774e56fe4154b5a1950465",
+      "frames": 4,
+      "depth_streams": 1,
+      "invalid_pixels_masked": 4,
+      "depth_unit": "mm",
+      "official_rounding_max_error_mm": 0.44905683730519286,
+      "numeric_reader_dtypes": {
+        "action": "float32",
+        "episode_index": "int64",
+        "frame_index": "int64",
+        "index": "int64",
+        "observation.state": "float32",
+        "task_index": "int64",
+        "timestamp": "float32"
+      },
+      "independent_hc_masks_applied": true,
+      "source_mapping_checked": true,
+      "all_manifest_hashes_verified": true,
+      "plan_sha256": "e27badc0dada1fa7229604f53d911baa1d8cd978e0f9418c6df9488e056daee2",
+      "legacy": {
+        "content_hash": "0be62ec8be3b1b88d36929708586ee0d5191cc680deecb5d5888a913d5167777",
+        "data_version_id": "legacy_8792285b45a8be4dd65445147f2d74b0fe714eb444305b9265b389f8cdd14783",
+        "dataset_uri": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/legacy/batch-project-278937fedcc94feabe0727b27bc5052e/dataset_batch_278937fedcc94feabe0727b27bc5052e/schema-1/30hz/aligned_steps.lance",
+        "dataset_version": 2,
+        "frame_count": 4,
+        "identity": {
+          "dataset_id": "dataset_batch_278937fedcc94feabe0727b27bc5052e",
+          "episode_id": "episode_ba12aa7b1158f6f5d31299f63f4edbb3",
+          "organization_id": "batch-278937fedcc94feabe0727b27bc5052e",
+          "project_id": "batch-project-278937fedcc94feabe0727b27bc5052e",
+          "region_code": "writer-region",
+          "rollout_id": "batch-rollout-1"
+        },
+        "lance_version": 2,
+        "schema_snapshot_id": "schema-1",
+        "storage_format": "lance"
+      },
+      "independent_logical_sha256": "0be62ec8be3b1b88d36929708586ee0d5191cc680deecb5d5888a913d5167777",
+      "rgb_and_depth_original_file_hashes_verified": true,
+      "review_automatically_transferred": false,
+      "input_directory": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/downloaded/episode_ba12aa7b1158f6f5d31299f63f4edbb3"
+    }
+  ],
+  "synthetic_input": true,
+  "real_historical_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED"
+}

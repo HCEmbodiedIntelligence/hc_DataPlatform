@@ -275,7 +275,14 @@ def capture_inventory(connections, dataset_id, *, max_rows=10000):
                 params=(publications,),
             )
         # Existing standard packages and heads also belong to the rollback baseline.
-        for table in ("versions", "bindings", "collections", "collection_heads", "data_reviews"):
+        for table in (
+            "versions",
+            "bindings",
+            "collections",
+            "collection_heads",
+            "data_reviews",
+            "migration_batches",
+        ):
             rows("episode_store." + table, exact, scope)
         rows(
             "episode_store.qc_evidence",

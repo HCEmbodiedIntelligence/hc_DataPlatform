@@ -43,9 +43,16 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | UI-02 | W5/W6 | Partial software verified; real/browser/human pending | [Complete/RGB/RGB-D/annotated/raw entry evidence](collection-delivery.md); real browser/nearby-flow acceptance remains |
 | UI-03 | W1/W5 | Pending | Data-version labels with legacy details retained |
 | EXP-01 | W6 | Partial software verified; real/scale/human pending | [Queued multi-Episode RGB-D and byte reuse](collection-delivery.md); actual recording/scale conditions remain |
-| MIG-01 | W7/G2 | Inventory, deferred commit and fixed-version conversion/resume software verified; atomic batch/product rollback and real migration pending | [Inventory](migration-inventory.md), [commit foundation](migration-commit-foundation.md), [conversion and offline reader](migration-conversion.md); complete batch copy rehearsal remains |
+| MIG-01 | W7/G2 | Inventory, conversion, atomic batch/product publication and rollback software/CLI verified on synthetic RGB-D; media adapters, complete historical copy and real migration pending | [Inventory](migration-inventory.md), [objects](migration-objects.md), [conversion](migration-conversion.md), [batch/rollback/HTTP/offline evidence](migration-batches.md); full historical and annotation/review equivalence remain |
 
 ## Work log
+
+- W7 批次补充（2026-09-30）：冻结转换计划/产品快照、SDK 预览、集合与成员指针/
+  页面登记原子发布、带并发保护的持久回退、CLI。最终 19 项批次测试及相关回归
+  共 38 个独立用例通过；两条 RGB-D 的实际 CLI、回退后禁网官方 reader/HC 掩码、
+  标准会话 HTTP/预览/Range/物理深度值验证通过。详见 [证据和缺项](migration-batches.md)。
+  新增隔离 migration 0016（150 项）；均为合成输入，历史媒体适配、非空旧审核链、
+  完整副本、浏览器、P06 业务发布和 W8 继续。G2/G3 尚未开始，goal 顺序授权不变。
 
 - 当前版本读取补充（2026-09-30）：bootstrap 识别实际 Episode 集合头及其已登记
   祖先，支持登记延迟、回退/重新发布，保留旧 Lance 与业务发布语义。23 项测试

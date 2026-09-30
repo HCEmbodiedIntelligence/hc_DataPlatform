@@ -1,0 +1,88 @@
+{
+  "scope": "G1 real HTTP over synthetic migrated inputs after rollback",
+  "batch_id": "mb_85330441e4e30d78e8799acfe474103564342f14d3a6d1d71cd2c3a4240e498a",
+  "working_version_id": "version_lance_2",
+  "retained_collection": "version_cv_d627feaa8575e31fc304c6c5acee14435fa6c4df67ae4dd1954140f6192f7c63",
+  "dataset_bootstrap_http": 200,
+  "archived_bootstrap_http": 200,
+  "episodes": [
+    {
+      "data_version_id": "dv_7af9ac8259e15fafce0af632a2671e3967defb8b49774e56fe4154b5a1950465",
+      "detail_http": 200,
+      "previews": [
+        {
+          "feature": "observation.images.head_rgb",
+          "authorization_http": 200,
+          "media_http": 200,
+          "range_http": 206,
+          "media_sha256": "be41f3e48f89b291d84b6ebc578a6f18a439dc801e356ee5ea5c44959422ff1d",
+          "source_video_sha256": "658605654d776926e7b5b51e5e51e27ffb1d086bc87ede98afb0dfbe633b2043",
+          "colorizer": null
+        },
+        {
+          "feature": "observation.images.head_depth",
+          "authorization_http": 200,
+          "media_http": 200,
+          "range_http": 206,
+          "media_sha256": "96095cf42b9985cdaa5412e976c547c3ba0c3a18e0b201627c907629ac02f9a1",
+          "source_video_sha256": "f528ad20fc44760e96d807cdeb16ed9eaa07d13bd1a327d1c615fc18c9c95cc2",
+          "colorizer": {
+            "sdk_version": "2.58.4.10922",
+            "color_scheme": "Jet",
+            "display_input": "reconstructed_z16_in_memory_only",
+            "invalid_depth": 0,
+            "visual_preset": "Dynamic",
+            "implementation": "pyrealsense2.colorizer",
+            "distance_color_scale": "per_frame_histogram",
+            "display_depth_units_m": 0.00015259021896696422,
+            "histogram_equalization_enabled": true
+          }
+        }
+      ],
+      "depth_valid_m": 1.5006723403930664,
+      "depth_invalid_null": true,
+      "unauthenticated_http": 401
+    },
+    {
+      "data_version_id": "dv_cc08bdb7eeee67ab366027800a18ce38b7244cc6628159ccb90c017ad2883fb2",
+      "detail_http": 200,
+      "previews": [
+        {
+          "feature": "observation.images.head_rgb",
+          "authorization_http": 200,
+          "media_http": 200,
+          "range_http": 206,
+          "media_sha256": "be41f3e48f89b291d84b6ebc578a6f18a439dc801e356ee5ea5c44959422ff1d",
+          "source_video_sha256": "658605654d776926e7b5b51e5e51e27ffb1d086bc87ede98afb0dfbe633b2043",
+          "colorizer": null
+        },
+        {
+          "feature": "observation.images.head_depth",
+          "authorization_http": 200,
+          "media_http": 200,
+          "range_http": 206,
+          "media_sha256": "96095cf42b9985cdaa5412e976c547c3ba0c3a18e0b201627c907629ac02f9a1",
+          "source_video_sha256": "f528ad20fc44760e96d807cdeb16ed9eaa07d13bd1a327d1c615fc18c9c95cc2",
+          "colorizer": {
+            "sdk_version": "2.58.4.10922",
+            "color_scheme": "Jet",
+            "display_input": "reconstructed_z16_in_memory_only",
+            "invalid_depth": 0,
+            "visual_preset": "Dynamic",
+            "implementation": "pyrealsense2.colorizer",
+            "distance_color_scale": "per_frame_histogram",
+            "display_depth_units_m": 0.00015259021896696422,
+            "histogram_equalization_enabled": true
+          }
+        }
+      ],
+      "depth_valid_m": 1.5006723403930664,
+      "depth_invalid_null": true,
+      "unauthenticated_http": 401
+    }
+  ],
+  "standard_session": true,
+  "session_logged_out": true,
+  "real_recording_acceptance": false,
+  "browser_flow": false
+}

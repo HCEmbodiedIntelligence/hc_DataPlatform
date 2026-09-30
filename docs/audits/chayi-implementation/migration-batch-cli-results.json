@@ -1,0 +1,51 @@
+{
+  "browser_flow": false,
+  "commands": [
+    {
+      "batch_id": "mb_85330441e4e30d78e8799acfe474103564342f14d3a6d1d71cd2c3a4240e498a",
+      "collection_version_id": "cv_d627feaa8575e31fc304c6c5acee14435fa6c4df67ae4dd1954140f6192f7c63",
+      "command": "prepare",
+      "members": 2,
+      "output": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/cli-prepared.json",
+      "status": "PREPARED"
+    },
+    {
+      "batch_id": "mb_85330441e4e30d78e8799acfe474103564342f14d3a6d1d71cd2c3a4240e498a",
+      "collection_version_id": "cv_d627feaa8575e31fc304c6c5acee14435fa6c4df67ae4dd1954140f6192f7c63",
+      "command": "publish",
+      "members": 2,
+      "output": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/cli-published.json",
+      "status": "PUBLISHED"
+    },
+    {
+      "batch_id": "mb_85330441e4e30d78e8799acfe474103564342f14d3a6d1d71cd2c3a4240e498a",
+      "collection_version_id": "cv_d627feaa8575e31fc304c6c5acee14435fa6c4df67ae4dd1954140f6192f7c63",
+      "command": "status",
+      "members": 2,
+      "output": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/cli-status.json",
+      "status": "PUBLISHED"
+    },
+    {
+      "batch_id": "mb_85330441e4e30d78e8799acfe474103564342f14d3a6d1d71cd2c3a4240e498a",
+      "collection_version_id": "cv_d627feaa8575e31fc304c6c5acee14435fa6c4df67ae4dd1954140f6192f7c63",
+      "command": "rollback",
+      "members": 2,
+      "output": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/cli-rollback.json",
+      "status": "ROLLED_BACK"
+    },
+    {
+      "batch_id": "mb_85330441e4e30d78e8799acfe474103564342f14d3a6d1d71cd2c3a4240e498a",
+      "collection_version_id": "cv_d627feaa8575e31fc304c6c5acee14435fa6c4df67ae4dd1954140f6192f7c63",
+      "command": "publish",
+      "members": 2,
+      "output": "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/cli-retry-after-rollback.json",
+      "status": "ROLLED_BACK"
+    }
+  ],
+  "downloaded_after_rollback": [
+    "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/downloaded/episode_e0d1980eee22766a61cfe3c1785d082a",
+    "/app/.g1-artifacts/migration-batches/278937fedcc94feabe0727b27bc5052e/downloaded/episode_ba12aa7b1158f6f5d31299f63f4edbb3"
+  ],
+  "real_recording_acceptance": false,
+  "scope": "G1 isolated CLI over synthetic two-Episode Lance/RGB-D fixture"
+}
