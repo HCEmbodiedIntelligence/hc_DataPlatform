@@ -491,7 +491,8 @@
         "Third metadata_json exporter passes create/query/retry/download and tenant denial tests without changing core format enum or reading synchronized steps",
         "P07/P21 use shared format discovery and MIME-aware downloads; 19 frontend tests, typecheck, ESLint and production build passed",
         "131 backend regression tests passed; 8 external-service tests pending separate run; Temporal version tests 5 passed, baseline-history replay/wire tests 4 passed, legacy commit/export execution 1 passed",
-        "8 publishing/registry files pass mypy; workflow baseline/current both have identical 36 pre-existing errors; byte comparison matches prior LeRobot/depth/JSON artifacts"
+        "8 publishing/registry files pass mypy; workflow baseline/current both have identical 36 pre-existing errors; byte comparison matches prior LeRobot/depth/JSON artifacts",
+        "Separate disposable PostgreSQL/MinIO run: 23 migration/export-audit/object/notification tests passed, no skips; 3 old publication lineage fixture failures remain recorded under B19/B20"
       ],
       "remaining": "X07 的发布版本导出链已验证。流式产物/大规模样本读取归 X08；无本体通用来源归 X09；独立训练消费者归 X10，均未因本项完成而关闭。"
     },

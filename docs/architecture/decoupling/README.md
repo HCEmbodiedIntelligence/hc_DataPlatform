@@ -203,3 +203,9 @@ AST 门禁扩展为禁止 feature 从 pages 导入类型、函数或动态模块
 及 /app/tools，测试容器补充独立 tmpfs 和当前工具挂载后重跑；三项 publication lineage 测试
 暴露发布仓储直接依赖 continuous_recordings 表的历史耦合，后续 B19/B20 治理须处理。
 这些失败没有记为已通过，详细证据 export-migration-service-validation.xml。
+
+
+修正独立测试容器挂载后，迁移批次 19 项与发布审计/MinIO/通知 4 项共 **23 passed、无 skip**。
+覆盖原子发布/回滚、中断恢复、并发、作用域隔离、对象损坏、实际 CLI 和历史下载；
+服务和产物均位于临时容器中，已清理。证据 export-migration-services-final.xml。
+publication lineage 的三项历史依赖失败仍保留，未用跳过或 mock 将其记成通过。
