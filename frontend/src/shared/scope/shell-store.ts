@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import type { ActorSummary } from "../../entities/actor";
-import type { AuthorizationSnapshot } from "../../entities/capability";
-import { makeScopeKey, type Scope, type ScopeKey } from "../../entities/scope";
+import type { ActorSummary } from "../auth/contracts";
+import type { AuthorizationSnapshot } from "../auth/contracts";
+import { makeScopeKey, type Scope, type ScopeKey } from "../scope/model";
 import { readPersistedSession, writePersistedSession } from "./session-storage";
 
 interface ShellState {

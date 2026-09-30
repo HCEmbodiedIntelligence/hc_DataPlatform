@@ -1,5 +1,5 @@
 import { getRuntimeConfig } from "../config/runtime";
-import { makeScopeKey, type Scope } from "../../entities/scope";
+import { makeScopeKey, type Scope } from "../scope/model";
 import { camelToSnake } from "../lib/case-convert";
 import { getShellState } from "../scope/shell-store";
 import {

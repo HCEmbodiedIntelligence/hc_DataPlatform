@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { ActorSummary } from "../../entities/actor";
-import { makeScopeKey, type Scope } from "../../entities/scope";
+import type { ActorSummary } from "../auth/contracts";
+import { makeScopeKey, type Scope } from "../scope/model";
 
 const SESSION_STORAGE_KEY = "hc-platform-current-session";
 

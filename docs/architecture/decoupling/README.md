@@ -135,3 +135,22 @@ publishing 获取格式函数，消费接口已迁移到 data_formats，迁移�
 提交中断恢复/并发/延迟激活、真实 PostgreSQL 与 MinIO、RGBD 读取、深度窗口和
 集合/标注导出。证据 `results/merged-migration-storage-services.xml`。
 这补足了前一批仅本地编码回归对真实存取适配的验证，不代表整个应用端到端套件已通过。
+
+## 前端基础身份边界（F01）
+
+`shared/scope/model.ts` 是 Scope/ScopeKey 与作用域键函数的唯一来源；
+`shared/auth/contracts.ts` 保存登录身份、项目角色标识与授权快照；
+`shared/auth/capabilities.ts` 保存跨领域权限标识目录。角色权限组合策略仍在 entities。
+原 entities 路径重导出同一实现和类型，shared 的实际消费者已不再引用 entities。
+未更改授权判断、会话存储格式、请求头或 scope 缓存键。
+
+TypeScript AST 门禁（`pnpm check:architecture`）解析静态导入、类型导入、重导出、
+require 与动态 import，禁止 shared 引用 entities/features/pages/app，已接入 CI。
+运行时测试仍通过旧兼容导入路径，类型检查验证完整调用链；没有复制第二套 Scope。
+
+验证：47 个作用域/会话/权限/HTTP 测试、8 个门禁用例、完整 typecheck、
+所改文件 ESLint 和 `pnpm build:container` 均通过。使用现有前端依赖镜像内
+Node 22.23.0 / pnpm 10.14.0，未改锁文件。构建仅写本地 dist，未部署。
+命令入口：外部 diagnostics/platform-decoupling-work/check-frontend.sh。
+
+页面注册、跨页面复用、显式作用域 client 与 renderer 接口仍列为待办。

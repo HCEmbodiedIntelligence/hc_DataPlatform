@@ -370,9 +370,14 @@
       "title": "shared 基础层反向依赖 entities",
       "scope": "两分支",
       "owner": "T8",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "明确认证/作用域是否属于基础契约：可移动基础身份类型，或把业务授权逻辑上移；避免为满足目录规则复制一份 Scope 类型。"
+      "status": "implemented_verified",
+      "evidence": [
+        "shared/scope/model owns Scope/ScopeKey; shared/auth/contracts owns ActorSummary/AuthorizationSnapshot",
+        "shared/auth/capabilities owns canonical authorization vocabulary; entity role bundles remain in entities",
+        "Shared production consumers migrated; old entity imports reexport the same identities",
+        "47 scope/auth/HTTP tests, 8 architecture tests, typecheck, ESLint and production container build passed"
+      ],
+      "remaining": ""
     },
     {
       "id": "F02",

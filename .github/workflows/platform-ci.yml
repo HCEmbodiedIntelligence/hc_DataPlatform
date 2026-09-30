@@ -27,6 +27,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm check:architecture
       - name: Production bundle safety gate
         env:
           VITE_API_BASE_URL: /api/v1
