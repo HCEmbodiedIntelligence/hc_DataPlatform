@@ -28,6 +28,7 @@ from hc_data_platform.publishing.lerobot_format import make_task_table
 
 from .depth_window import PARENT_TIME_VERSION, prepare_depth_window
 from .derivation_models import TagEpisodePlan
+from .derivation_quality import AUTO_QUALITY, evaluate_tag_quality, freeze_quality
 from .frame_window import DepthWindow
 from .models import canonical
 from .postgres import PackageConflict, assert_scope
@@ -38,8 +39,11 @@ from .validation import parquet_rows, validate_package
 from .writer import Moments, write_json
 
 
-def derivation_encoding():
-    return {**encoding_configuration(), "depth_window": PARENT_TIME_VERSION}
+def derivation_encoding(quality=None):
+    encoding = {**encoding_configuration(), "depth_window": PARENT_TIME_VERSION}
+    if quality is not None:
+        encoding["quality"] = quality
+    return encoding
 
 
 def verify_annotation(package, annotation, snapshot):
@@ -64,7 +68,9 @@ def verify_annotation(package, annotation, snapshot):
     return projection.segments[0]
 
 
-def freeze_tag_episode(package, annotation, snapshot, schema, *, display_name=None):
+def freeze_tag_episode(
+    package, annotation, snapshot, schema, *, display_name=None, quality_contract=AUTO_QUALITY
+):
     tag = verify_annotation(package, annotation, snapshot)
     EpisodeSchemas.validate(schema)
     info = package.document("meta/info.json")
@@ -76,7 +82,11 @@ def freeze_tag_episode(package, annotation, snapshot, schema, *, display_name=No
             return next(window_rows(path, index, index + 1, ["hc.timestamp_ns"]))["hc.timestamp_ns"]
 
         origin, start = stamp(0), stamp(tag.start_step)
+        last = stamp(tag.end_step - 1)
         end = stamp(tag.end_step) if tag.end_step < package.receipt.data.frame_count else None
+    quality = freeze_quality(
+        package, info, start, last, end, tag.end_step - tag.start_step, quality_contract
+    )
     return TagEpisodePlan(
         parent=package.receipt.data,
         parent_input=package.manifest.input,
@@ -89,7 +99,7 @@ def freeze_tag_episode(package, annotation, snapshot, schema, *, display_name=No
         start_timestamp_ns=start,
         next_parent_timestamp_ns=end,
         display_name=display_name or tag.label or tag.tag_id,
-        encoding=derivation_encoding(),
+        encoding=derivation_encoding(quality),
     )
 
 
@@ -114,12 +124,17 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
         or package.manifest.input != plan.parent_input
         or (tag.start_step, tag.end_step, tag.annotation_id)
         != (plan.start_step, plan.end_step, plan.annotation_id)
-        or derivation_encoding() != plan.encoding
+        or derivation_encoding(plan.encoding.get("quality")) != plan.encoding
     ):
         raise PackageConflict("Tag derivation input or encoder differs from the frozen plan")
     if (
         freeze_tag_episode(
-            package, plan.annotation, snapshot, plan.schema_snapshot, display_name=plan.display_name
+            package,
+            plan.annotation,
+            snapshot,
+            plan.schema_snapshot,
+            display_name=plan.display_name,
+            quality_contract=plan.encoding.get("quality"),
         )
         != plan
     ):
@@ -310,6 +325,8 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
     write_json(root, "meta/info.json", info)
     write_json(root, "meta/stats.json", stats)
     write_json(root, "hc/modalities.json", modalities)
+    if "quality" in plan.encoding:
+        evaluate_tag_quality(root, plan, info, checkpoint=checkpoint)
     checkpoint()
     return validate_package(root, plan.input)
 

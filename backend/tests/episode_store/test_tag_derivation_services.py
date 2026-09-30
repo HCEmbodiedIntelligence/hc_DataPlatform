@@ -7,6 +7,7 @@ from pathlib import Path
 
 import av
 import numpy as np
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
@@ -15,11 +16,13 @@ from hc_data_platform.annotation.delivery_models import RequestAnnotationDeliver
 from hc_data_platform.annotation.delivery_repository import PostgresAnnotationDeliveries
 from hc_data_platform.annotation.revision_files import SnapshotBusy
 from hc_data_platform.episode_store.derivation import freeze_tag_episode, write_tag_episode
+from hc_data_platform.episode_store.derivation_quality import evaluate_tag_quality
 from hc_data_platform.episode_store.models import canonical
 from hc_data_platform.episode_store.postgres import PackageConflict
 from hc_data_platform.episode_store.quality import read_episode_quality
 from hc_data_platform.episode_store.validation import parquet_rows
 from hc_data_platform.publishing.lerobot_export import DATA_PATH
+from hc_data_platform.quality.models import QualityCode
 from tests.episode_store.test_annotation_bindings_services import actor
 from tests.episode_store.test_annotation_revision_files_services import files  # noqa: F401
 from tests.episode_store.test_commit_services import scoped
@@ -93,8 +96,23 @@ def test_tag_interval_commits_new_rgbd_identity_and_preserves_parent(
         assert ready.data == receipt.data and ready.step_count == end - start
         assert len(version.episodes) == 2 and parent in version.episodes
         child = packages.files.open(plan.input.identity, receipt.data.data_version_id)
-        assert read_episode_quality(child).status == "UNKNOWN"
-        assert read_episode_quality(child).evidence_status == "REPORT_MISSING"
+        quality = read_episode_quality(child)
+        assert quality.status == "PASS" and quality.evidence_status == "AVAILABLE"
+        assert quality.report.rollout_id == plan.input.identity.rollout_id
+        assert {r.code for r in quality.rules} == set(QualityCode)
+        assert all(m.expected_frame_count == end - start for m in quality.report.topic_metrics)
+        black = next(
+            r
+            for r in quality.rules
+            if r.code == QualityCode.IMAGE_BLACK and r.topic.endswith("head_rgb")
+        )
+        assert black.observed["observed_count"] == (1 if start == 0 else 0)
+        for rule in quality.rules:
+            if rule.topic and rule.topic.endswith("head_depth"):
+                if rule.code == QualityCode.IMAGE_CORRUPT:
+                    assert rule.status == "pass" and rule.evaluated_count == end - start
+                if rule.code in {QualityCode.IMAGE_BLACK, QualityCode.IMAGE_REPEATED}:
+                    assert rule.status == "skip" and rule.evaluated_count == 0
         with package.file(DATA_PATH) as path:
             original = pq.read_table(path)
         result = pq.read_table(root / DATA_PATH)
@@ -184,7 +202,7 @@ def test_tag_interval_commits_new_rgbd_identity_and_preserves_parent(
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("field", ["window", "encoder", "annotation", "tenant"])
+@pytest.mark.parametrize("field", ["window", "encoder", "annotation", "tenant", "quality_count"])
 def test_forged_tag_derivation_rejected_before_output(selected, tmp_path, field):
     source, _, freeze = selected
     with scoped(source):
@@ -197,6 +215,19 @@ def test_forged_tag_derivation_rejected_before_output(selected, tmp_path, field)
             from dataclasses import replace
 
             snapshot = replace(snapshot, content=snapshot.content + b" ")
+        elif field == "quality_count":
+            quality = plan.encoding["quality"]
+            plan = plan.model_copy(
+                update={
+                    "encoding": {
+                        **plan.encoding,
+                        "quality": {
+                            **quality,
+                            "expected_frames": {k: 99 for k in quality["expected_frames"]},
+                        },
+                    }
+                }
+            )
         else:
             plan = plan.model_copy(
                 update={
@@ -296,3 +327,65 @@ def test_recording_window_uses_parent_clock_and_full_interval_reuses_bytes(
         original = annotation.get_history(task.task_id, auth)
         assert original.revisions[1].tags == history.revisions[1].tags
         assert whole_plan.input.identity != plan.input.identity
+
+
+@pytest.mark.integration
+def test_legacy_plan_replays_unchanged_and_new_qc_is_a_separate_data_version(selected, tmp_path):
+    source, _, freeze = selected
+    with scoped(source):
+        package, snapshot, current = freeze("child")
+        legacy = freeze_tag_episode(
+            package,
+            current.annotation,
+            snapshot,
+            current.schema_snapshot,
+            display_name=current.display_name,
+            quality_contract=None,
+        )
+        assert legacy.input.identity == current.input.identity
+        assert legacy.input.data_version_id != current.input.data_version_id
+        assert legacy.encoding == {k: v for k, v in current.encoding.items() if k != "quality"}
+        root = tmp_path / "legacy"
+        manifest = write_tag_episode(root, package, snapshot, legacy)
+        assert write_tag_episode(tmp_path / "replay", package, snapshot, legacy) == manifest
+        report = json.loads((root / "hc/quality.json").read_bytes())
+        assert report["status"] == "UNKNOWN" and report["parent_decision_inherited"] is False
+        assert not (root / "hc/quality_rules.json").exists()
+
+
+@pytest.mark.integration
+def test_quality_reads_selected_primary_values_and_validity_instead_of_parent_verdict(
+    selected, tmp_path
+):
+    source, _, freeze = selected
+    with scoped(source):
+        package, snapshot, plan = freeze("child")
+        root = tmp_path / "selected"
+        write_tag_episode(root, package, snapshot, plan)
+        info = json.loads((root / "meta/info.json").read_bytes())
+        contract = json.loads(json.dumps(plan.encoding["quality"]))
+        contract["profile"]["action"]["maximum_jump_risk"] = 0.5
+        contract["profile"]["action"]["maximum_jump_reject"] = 2.0
+        stricter = plan.model_copy(update={"encoding": {**plan.encoding, "quality": contract}})
+        assert stricter.input.identity == plan.input.identity
+        assert stricter.input.data_version_id != plan.input.data_version_id
+        evaluation = evaluate_tag_quality(root, stricter, info)
+        jumps = [f for f in evaluation.report.findings if f.code == QualityCode.ACTION_JUMP]
+        assert len(jumps) == 2 and all(f.observed == 1.0 for f in jumps)
+        assert evaluation.report.status.value == "RISK"
+        # Mutate only this uncommitted test output; no input package or product
+        # pointer changes. Actual child validity must change its QC result.
+        table = pq.read_table(root / DATA_PATH)
+        index = table.schema.get_field_index("hc.valid.action")
+        pq.write_table(
+            table.set_column(index, table.schema.field(index), pa.array([False] * 3)),
+            root / DATA_PATH,
+        )
+        evaluation = evaluate_tag_quality(root, plan, info)
+        assert any(f.code == QualityCode.ACTION_MISSING for f in evaluation.report.findings)
+        action = next(r for r in evaluation.evidence.rules if r.code == QualityCode.ACTION_MISSING)
+        assert action.observed["observation_count"] == 0
+        metric = next(m for m in evaluation.report.topic_metrics if m.topic == "action")
+        assert metric.message_count == 0 and metric.expected_frame_count == 3
+        with package.file(DATA_PATH) as path:
+            assert pq.read_table(path)["hc.valid.action"].to_pylist() == [True] * 4

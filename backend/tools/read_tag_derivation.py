@@ -64,13 +64,52 @@ def check(root):
     report = document(root, "hc/conversion_report.json")
     assert report["requantized"] is False
     assert all(m["requantized"] is False for m in report["media"])
-    assert document(root, "hc/quality.json")["parent_decision_inherited"] is False
+    quality = document(root, "hc/quality.json")
+    assert quality["parent_decision_inherited"] is False
     assert document(root, "hc/source.json")["derivation"]["child_approvals_inherited"] is False
     configuration = json.dumps(
         plan, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode()
     manifest = document(root, "hc/manifest.json")
     assert manifest["input"]["configuration_sha256"] == hashlib.sha256(configuration).hexdigest()
+    if "quality" in plan["encoding"]:
+        contract = plan["encoding"]["quality"]
+        qc, evidence = quality["quality_report"], document(root, "hc/quality_rules.json")
+
+        def quality_hash(value):
+            return hashlib.sha256(
+                json.dumps(
+                    value,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode()
+            ).hexdigest()
+
+        for value in (qc, evidence):
+            assert (
+                quality_hash({k: v for k, v in value.items() if k != "content_sha256"})
+                == value["content_sha256"]
+            )
+            assert value["rollout_id"] == data["identity"]["rollout_id"]
+            assert value["source_sha256"] == manifest["input"]["source_sha256"]
+            assert (value["start_ns"], value["end_ns"]) == (
+                contract["start_ns"],
+                contract["end_ns"],
+            )
+        assert quality["input_contract"] == contract
+        assert evidence["profile"] == contract["profile"]
+        assert quality_hash(evidence["profile"]) == qc["profile_sha256"]
+        assert evidence["report_sha256"] == qc["content_sha256"]
+        assert all(m["expected_frame_count"] == data["frame_count"] for m in qc["topic_metrics"])
+        result["independent_qc"] = {
+            "status": qc["status"],
+            "scope": contract["scope"],
+            "report_sha256": qc["content_sha256"],
+            "evidence_sha256": evidence["content_sha256"],
+            "rule_codes": sorted({rule["code"] for rule in evidence["rules"]}),
+        }
     result.update(
         parent_data_version_id=plan["parent"]["data_version_id"],
         parent_annotation_revision=binding["revision"],

@@ -61,6 +61,11 @@ export function EpisodeQualityPanel({
               <Typography.Paragraph>
                 数据版本 {data.version} · 自动检查结构与信号。
               </Typography.Paragraph>
+              {quality.report?.profile_id === "hc-tag-aligned-qc" && (
+                <Typography.Paragraph>
+                  检查范围：当前 Tag 区间的已对齐数据与视频。原始录制的质检结果保留在来源附件中。
+                </Typography.Paragraph>
+              )}
               {quality.evidence_status !== "AVAILABLE" && (
                 <Alert
                   type="warning"

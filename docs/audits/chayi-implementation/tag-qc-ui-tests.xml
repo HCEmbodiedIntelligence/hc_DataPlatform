@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="9" failures="0" errors="0" time="0.29876199">
+    <testsuite name="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" timestamp="2026-09-30T01:39:56.790Z" hostname="b7e91c4f0b65" tests="3" failures="0" errors="0" skipped="0" time="0.287866812">
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" name="shows total PASS while keeping unmeasured rules visibly separate" time="0.22871205">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" name="displays the missing historical evidence reason" time="0.044331638">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/EpisodeQualityPanel.test.tsx" name="does not load QC without the read capability" time="0.014046911">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/episode-quality.test.ts" timestamp="2026-09-30T01:39:56.792Z" hostname="b7e91c4f0b65" tests="6" failures="0" errors="0" skipped="0" time="0.010895178">
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent version" time="0.005799831">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent report" time="0.000563348">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent rule" time="0.000389175">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent legacy-pass" time="0.000342058">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="rejects inconsistent scope" time="0.000287871">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/episode-quality.test.ts" name="retains PASS alongside missing historical execution evidence" time="0.002701691">
+        </testcase>
+    </testsuite>
+</testsuites>

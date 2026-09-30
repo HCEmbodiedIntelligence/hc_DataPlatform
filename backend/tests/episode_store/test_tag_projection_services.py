@@ -249,7 +249,7 @@ def test_tag_product_transaction_retry_and_fresh_annotation(
             read_episode_quality(
                 packages.files.open(ready.data.identity, ready.data.data_version_id)
             ).status
-            == "UNKNOWN"
+            == "PASS"
         )
         with packages.repository.transaction() as cursor:
             cursor.execute(
@@ -305,7 +305,7 @@ def test_tag_product_transaction_retry_and_fresh_annotation(
                     "child_annotation_revision": child.current_revision,
                     "inherited_approvals": False,
                     "raw_bytes_before_and_after": [1000, 1000],
-                    "child_quality": "UNKNOWN",
+                    "child_quality": "PASS",
                     "synthetic_input": True,
                     "http_queue_ui_verified": False,
                     "human_acceptance": False,

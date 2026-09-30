@@ -14,6 +14,7 @@ export function qualityFixture() {
       source_sha256: "a".repeat(64),
       content_sha256: "b".repeat(64),
       profile_sha256: "c".repeat(64),
+      profile_id: "test-quality-profile",
       engine_version: "be06-qc/2",
       status: "PASS",
       findings: [],

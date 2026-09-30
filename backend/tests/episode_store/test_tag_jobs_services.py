@@ -102,6 +102,13 @@ def test_concurrent_command_freezes_once_and_outbox_creates_new_primary(tag_jobs
         assert ready.viewer_target.episode_id == ready.committed_data.identity.episode_id
         assert ready.plan == job.plan
         assert service.list(task_id, auth) == (ready,)
+        with service.packages.repository.transaction() as cursor:
+            cursor.execute(
+                """SELECT count(*) FROM episode_store.qc_evidence
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND rollout_id=%s""",
+                (*source.identity.scope, ready.committed_data.identity.rollout_id),
+            )
+            assert cursor.fetchone()[0] == 1
         with monkeypatch.context() as guard:
             guard.setattr(
                 service,
@@ -121,7 +128,8 @@ def test_concurrent_command_freezes_once_and_outbox_creates_new_primary(tag_jobs
 
 
 @pytest.mark.parametrize(
-    "point", ["before_commit", "lost_commit", "preview", "product", "annotation", "lost_finish"]
+    "point",
+    ["before_commit", "lost_commit", "quality", "preview", "product", "annotation", "lost_finish"],
 )
 def test_failure_recovers_same_plan_without_rebuilding_committed_data(tag_jobs, monkeypatch, point):
     source, service, task_id, auth = tag_jobs
@@ -142,6 +150,8 @@ def test_failure_recovers_same_plan_without_rebuilding_committed_data(tag_jobs, 
                     interrupted()
 
                 fault.setattr(service.packages.committer, "commit", lost)
+            elif point == "quality":
+                fault.setattr(service.packages.quality_evidence, "put", interrupted)
             elif point == "preview":
                 fault.setattr(service.packages.previews, "prepare_all", interrupted)
             elif point == "product":

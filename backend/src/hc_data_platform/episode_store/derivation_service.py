@@ -21,6 +21,7 @@ from hc_data_platform.dataset_registry.ingest_projection import (
     PostgresDatasetIngestProjector,
 )
 from hc_data_platform.dataset_registry.tag_projection import parent_projection
+from hc_data_platform.quality.evidence import QcEvaluation
 from hc_data_platform.security import AuthContext, ScopeGuard
 
 from .delivery_repository import scope_key
@@ -29,6 +30,7 @@ from .derivation_jobs import TagDerivationPlan
 from .derivation_repository import TagDerivationBusy, failure, public_job
 from .models import digest
 from .postgres import PackageConflict
+from .quality import read_episode_quality
 
 logger = logging.getLogger(__name__)
 
@@ -158,6 +160,13 @@ class TagDerivationService:
                         self.repository.phase(row, "committing")
                         receipt = self.packages.committer.commit(root, source)
                 self.repository.pin_data(row, receipt.data)
+                quality = read_episode_quality(
+                    self.packages.files.open(source.identity, source.data_version_id)
+                )
+                if quality.evidence is not None:
+                    self.packages.quality_evidence.put(
+                        QcEvaluation(report=quality.report, evidence=quality.evidence)
+                    )
                 checkpoint()
                 self.repository.phase(row, "projecting")
                 # Recovery verifies every committed primary member before reusing

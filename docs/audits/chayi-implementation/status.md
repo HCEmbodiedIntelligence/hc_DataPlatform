@@ -31,7 +31,7 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | DATA-05 | W1/W2 | Pending | Interrupted, failed, retried and concurrent commits |
 | DATA-06 | W1/W2 | Pending | Units, numeric semantics, depth profile/mask/error/time |
 | SEG-01 | W2 | Pending | Whole recording and long recording windows |
-| SEG-02 | W3/W5 | Partial generator/product/command/browser verified; own QC/real/human pending | [Generation](tag-derivation.md), [product publication](tag-projection.md), [durable commands and 1440/1024 browser](tag-jobs.md) |
+| SEG-02 | W3/W5 | Partial generator/product/command/browser/own QC verified; real/human pending | [Generation](tag-derivation.md), [product publication](tag-projection.md), [durable commands and 1440/1024 browser](tag-jobs.md), [independent QC](tag-quality.md) |
 | ANN-01 | W1/W3/W7 | Pending | Complete tags and immutable review bindings |
 | ANN-02 | W3/W5 | Pending | Versioned JSON outbox, failure/retry/download |
 | ANN-03 | W3/W6 | Pending | Explicit subtask track, gaps/overlap/cross-track tests |
@@ -43,6 +43,13 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | MIG-01 | W7 | Pending | Inventory/checkpoint/resume/pointer rollback on copy |
 
 ## Work log
+
+- W3/W4 Tag 独立 QC 补充（2026-09-30）：按固定区间重新检查主数值、有效性与
+  解码视频，保存独立报告/执行证据；精确帧数与分数帧率、磁盘数值观测、旧计划
+  重放和提交后 QC 收据恢复均验证。104 个独立后端用例最近执行通过，实际 HTTP
+  下载包通过禁网官方 reader/DataLoader 与独立 HC 掩码，见 [报告](tag-quality.md)。
+  输入仍为合成夹具；实采/真人/规模、新 QC 浏览器及 W7/W8 继续。以下 UNKNOWN
+  描述是对应早期阶段状态，旧冻结计划继续保留该语义。
 
 - W3/W5 Tag 任务与页面补充（2026-09-30）：显式固定修订/区间，持久 outbox、
   租约、幂等、提交后恢复与独立标注任务；P08 接入创建/重试/取消和新条目链接。

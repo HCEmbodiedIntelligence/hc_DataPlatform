@@ -44,6 +44,7 @@ const report = z.object({
   source_sha256: digest,
   content_sha256: digest,
   profile_sha256: digest,
+  profile_id: z.string().min(1),
   engine_version: z.string(),
   status: z.enum(["PASS", "RISK", "REJECT"]),
   findings: z.array(finding),

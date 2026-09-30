@@ -83,7 +83,8 @@ def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(t
         response = client.get(data_base + "/overview", headers=headers)
         assert response.status_code == 200, response.text
         detail = response.json()
-        assert detail["quality"]["status"] == "UNKNOWN"
+        assert detail["quality"]["status"] == "PASS"
+        assert detail["quality"]["evidence_status"] == "AVAILABLE"
         assert detail["data_review_status"] == "NOT_REVIEWED"
         assert detail["source"]["document"]["derivation"]["child_approvals_inherited"] is False
         assert detail["annotation"]["task_id"] == job["annotation_task_id"]
@@ -165,7 +166,7 @@ def test_ordinary_tag_command_persistent_worker_detail_download_and_revocation(t
                     "official_realsense_png": True,
                     "physical_depth_m": pixel.json(),
                     "independent_child_annotation_task": True,
-                    "quality": "UNKNOWN",
+                    "quality": "PASS",
                     "inherited_approvals": False,
                     "revoked_cached_command_and_read_denied": True,
                     "synthetic_input": True,
