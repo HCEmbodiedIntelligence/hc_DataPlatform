@@ -1,11 +1,11 @@
 import { useMemo } from "react";
+import { authorizeRobotModelViewerAssets } from "../robot-models/api/client";
 import {
-  authorizeRobotModelViewerAssets,
-  useRobotModelAssets,
-  useRobotModelJointMappings,
-  useRobotModelVersion,
-} from "../robot-models/api";
-import { useRobotBootstrap } from "../robots/api";
+  useScopedRobotModelAssets,
+  useScopedRobotModelJointMappings,
+  useScopedRobotModelVersion,
+} from "../robot-models/api/hooks";
+import { useScopedRobotBootstrap } from "../robots/api/hooks";
 import { createLazyThreeRobotSceneLoader } from "./lazy-three-loader";
 import { buildJointFrameSource } from "./joint-frame-source";
 import type { StreamDescriptor } from "./types";
@@ -15,12 +15,25 @@ export function useEpisodeRobotScene(
   jointAngleStream: StreamDescriptor | null,
   scope: { readonly organizationId: string } | null,
 ) {
-  const robotBootstrap = useRobotBootstrap(manifestRobotId);
+  const organizationId = scope?.organizationId ?? null;
+  const robotBootstrap = useScopedRobotBootstrap(
+    organizationId,
+    manifestRobotId,
+  );
   const boundVersionId =
     robotBootstrap.data?.effectiveModelBinding?.robotModelVersionId ?? null;
-  const robotModelVersion = useRobotModelVersion(boundVersionId);
-  const robotModelAssets = useRobotModelAssets(boundVersionId);
-  const robotJointMappings = useRobotModelJointMappings(boundVersionId);
+  const robotModelVersion = useScopedRobotModelVersion(
+    organizationId,
+    boundVersionId,
+  );
+  const robotModelAssets = useScopedRobotModelAssets(
+    organizationId,
+    boundVersionId,
+  );
+  const robotJointMappings = useScopedRobotModelJointMappings(
+    organizationId,
+    boundVersionId,
+  );
   const jointFrameSource = useMemo(() => {
     const base = buildJointFrameSource(jointAngleStream);
     if (!base) return;

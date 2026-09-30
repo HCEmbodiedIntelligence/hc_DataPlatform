@@ -98,13 +98,7 @@ export function installSessionBootstrap(bootstrap: SessionBootstrap): void {
     organizationsFromBootstrap(bootstrap),
   );
   if (grants.length === 0) {
-    store.clearSensitiveState();
-    store.setSessionScopes(
-      grants,
-      bootstrap.capability_revision,
-      bootstrap.platform_capabilities,
-      organizationsFromBootstrap(bootstrap),
-    );
+    store.clearActiveScopeState();
     return;
   }
   const current = store.scope;

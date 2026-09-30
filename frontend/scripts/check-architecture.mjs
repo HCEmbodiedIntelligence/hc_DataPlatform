@@ -36,6 +36,17 @@ export function checkSource(file, content, sourceRoot, options = {}) {
       return;
     }
     const specifier = value.text;
+    const explicitScopeContract =
+      /^features\/(robots|robot-models)\/api\/client\.ts$/u.test(relative) ||
+      relative === "shared/api/scoped-query-keys.ts";
+    if (
+      explicitScopeContract &&
+      ["react", "zustand", "@tanstack/react-query"].includes(specifier)
+    ) {
+      failures.add(
+        `${relative}:${line}: pure scoped contracts cannot depend on session UI: ${specifier}`,
+      );
+    }
     const resolved = ts.resolveModuleName(
       specifier,
       file,
@@ -48,6 +59,23 @@ export function checkSource(file, content, sourceRoot, options = {}) {
         ? path.resolve(path.dirname(file), specifier)
         : null);
     if (target === null) return;
+    const targetRelative = path
+      .relative(sourceRoot, target)
+      .split(path.sep)
+      .join("/");
+    if (
+      explicitScopeContract &&
+      (/^shared\/scope\/(shell-store|current-organization|use-)/u.test(
+        targetRelative,
+      ) ||
+        /^features\/(robots|robot-models)\/api(?:\/(index|hooks)(?:\.tsx?)?)?$/u.test(
+          targetRelative,
+        ))
+    ) {
+      failures.add(
+        `${relative}:${line}: pure scoped contracts require explicit scope and cannot depend on session UI: ${specifier}`,
+      );
+    }
     const layer = path.relative(sourceRoot, target).split(path.sep)[0];
     if (prohibitedLayers.includes(layer)) {
       failures.add(

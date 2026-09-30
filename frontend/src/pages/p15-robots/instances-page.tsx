@@ -1,4 +1,3 @@
-import { useQueries } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -29,7 +28,6 @@ import {
   useRobotModels,
 } from "../../features/robot-models/api";
 import {
-  getRobotBootstrap,
   useCreateRobot,
   useDeleteRobot,
   useRobotBootstrap,
@@ -37,6 +35,8 @@ import {
   useTransitionRobotLifecycle,
   useUpdateRobot,
 } from "../../features/robots/api";
+import { useScopedRobotBootstraps } from "../../features/robots/api/hooks";
+import { useCurrentOrganizationId } from "../../shared/scope/current-organization";
 import { createMutationIntentKey } from "../../features/ingest/mutation-machine";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
@@ -106,14 +106,10 @@ export function Component() {
   });
   const models = useRobotModels();
   const items = robots.data?.items ?? [];
-  const bootstraps = useQueries({
-    queries: items.map((robot) => ({
-      queryKey: ["robots", "organization-bootstrap", robot.id],
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        getRobotBootstrap(robot.id, signal),
-      staleTime: 15_000,
-    })),
-  });
+  const bootstraps = useScopedRobotBootstraps(
+    useCurrentOrganizationId(),
+    items.map((robot) => robot.id),
+  );
   const bootstrapById = new Map(
     bootstraps.flatMap((result, index) =>
       result.data && items[index]

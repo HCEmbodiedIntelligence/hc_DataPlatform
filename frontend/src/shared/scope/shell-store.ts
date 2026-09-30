@@ -7,6 +7,8 @@ import { readPersistedSession, writePersistedSession } from "./session-storage";
 interface ShellState {
   principal: ActorSummary | null;
   sessionToken: string | null;
+  /** Local cache identity; never includes a bearer token or persisted credential. */
+  sessionRevision: number;
   sessionExpired: boolean;
   scope: Scope | null;
   scopeKey: ScopeKey;
@@ -34,6 +36,7 @@ interface ShellState {
     organizations?: readonly SessionOrganizationGrant[],
   ) => void;
   finishScopeChange: () => void;
+  clearActiveScopeState: () => void;
   clearSensitiveState: () => void;
 }
 
@@ -60,6 +63,7 @@ const restoredScope = restoredSession?.scope ?? null;
 export const useShellStore = create<ShellState>((set) => ({
   principal: restoredSession?.principal ?? null,
   sessionToken: restoredSession?.sessionToken ?? null,
+  sessionRevision: 0,
   sessionExpired: false,
   scope: restoredScope,
   scopeKey: restoredScope === null ? UNSCOPED_KEY : makeScopeKey(restoredScope),
@@ -83,6 +87,7 @@ export const useShellStore = create<ShellState>((set) => ({
       return {
         principal,
         sessionToken,
+        sessionRevision: state.sessionRevision + 1,
         sessionExpired: false,
         scope,
         scopeKey: scope === null ? UNSCOPED_KEY : makeScopeKey(scope),
@@ -103,6 +108,7 @@ export const useShellStore = create<ShellState>((set) => ({
       return {
         principal: null,
         sessionToken: null,
+        sessionRevision: state.sessionRevision + 1,
         sessionExpired: true,
         scope: null,
         scopeKey: UNSCOPED_KEY,
@@ -167,6 +173,17 @@ export const useShellStore = create<ShellState>((set) => ({
       bootstrapLoaded: true,
     }),
   finishScopeChange: () => set({ scopeChanging: false }),
+  clearActiveScopeState: () =>
+    set((state) => {
+      writePersistedSession(state.principal, state.sessionToken, null);
+      return {
+        scope: null,
+        scopeKey: UNSCOPED_KEY,
+        authorization: null,
+        authorizationLoading: false,
+        authorizationFailed: false,
+      };
+    }),
   clearSensitiveState: () =>
     set((state) => {
       writePersistedSession(state.principal, state.sessionToken, null);

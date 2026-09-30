@@ -69,8 +69,11 @@ vi.mock("../../features/ingest/api", () => ({
   }),
 }));
 
-vi.mock("../../features/robots/api", () => ({
+vi.mock("../../features/robots/api/client", () => ({
   getRobotBootstrap: vi.fn(),
+}));
+
+vi.mock("../../features/robots/api", () => ({
   useCreateRobot: () => ({
     isPending: false,
     error: null,

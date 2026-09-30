@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from hc_data_platform.core.app import _request_context
+from hc_data_platform.core.context import bind_request_context, reset_request_context
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.ports import InMemoryObjectStorage
 from hc_data_platform.registry.filesystem_storage import FilesystemRobotModelStorage
@@ -123,6 +126,76 @@ def _app(current: dict[str, AuthContext | None]) -> FastAPI:
 
     app.include_router(router)
     return app
+
+
+def test_explicit_organization_client_uses_verified_registry_project_without_ui_headers() -> None:
+    _, source = _service()
+    version = source.get_robot_model_version(
+        organization_id="organization-a", project_id="project-a", version_id="version-a"
+    )
+    assert version is not None
+    repository = InMemoryRegistryRepository(
+        organization_projects=(("organization-a", "project-a"), ("organization-b", "project-b")),
+        versions=(
+            ("organization-a", version),
+            ("organization-b", version.model_copy(update={"robot_model_id": "model-b"})),
+        ),
+    )
+    configure_registry(RegistryService(repository))
+    a = _auth()
+    b = _auth(project_id="project-b")
+    auth = replace(
+        a,
+        organization_ids=a.organization_ids | b.organization_ids,
+        project_ids=a.project_ids | b.project_ids,
+        scope_pairs=a.scope_pairs | b.scope_pairs,
+        organization_scope_triples=a.organization_scope_triples | b.organization_scope_triples,
+        scoped_capabilities=a.scoped_capabilities | b.scoped_capabilities,
+        organization_scoped_capabilities=(
+            a.organization_scoped_capabilities | b.organization_scoped_capabilities
+        ),
+    )
+    current: dict[str, AuthContext | None] = {"value": auth}
+    app = _app(current)
+
+    @app.middleware("http")
+    async def bind_production_scope(request: Request, call_next: Any) -> Any:
+        token = bind_request_context(
+            _request_context(request, request_id="registry-router-test", auth=current["value"])
+        )
+        try:
+            return await call_next(request)
+        finally:
+            reset_request_context(token)
+
+    client = TestClient(app)
+    for organization_id, project_id, model_id in (
+        ("organization-a", "project-a", "model-a"),
+        ("organization-b", "project-b", "model-b"),
+    ):
+        response = client.get(
+            f"/api/v1/organizations/{organization_id}/robot-model-versions/version-a",
+            headers={"Authorization": "Bearer test", "X-Organization-Id": organization_id},
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["robot_model_id"] == model_id
+        assert response.json()["scope"] == {
+            "organization_id": organization_id,
+            "project_id": project_id,
+        }
+
+    current["value"] = a
+    denied = client.get(
+        "/api/v1/organizations/organization-b/robot-model-versions/version-a",
+        headers={"Authorization": "Bearer test", "X-Organization-Id": "organization-b"},
+    )
+    assert denied.status_code == 403
+    current["value"] = _auth(can_read=False)
+    denied_capability = client.get(
+        "/api/v1/organizations/organization-a/robot-model-versions/version-a",
+        headers={"Authorization": "Bearer test", "X-Organization-Id": "organization-a"},
+    )
+    assert denied_capability.status_code == 403
 
 
 def test_robot_model_read_contract_scope_and_publish_is_not_a_product_501() -> None:

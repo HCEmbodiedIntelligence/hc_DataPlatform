@@ -51,10 +51,14 @@ export function RouteCapabilityGuard({
   useEffect(() => {
     if (!blocked) return;
     void queryClient.cancelQueries({
-      predicate: (query) => query.queryKey[1] === scopeKey,
+      predicate: (query) =>
+        query.queryKey[1] === scopeKey &&
+        query.meta?.scopeBinding !== "explicit",
     });
     queryClient.removeQueries({
-      predicate: (query) => query.queryKey[1] === scopeKey,
+      predicate: (query) =>
+        query.queryKey[1] === scopeKey &&
+        query.meta?.scopeBinding !== "explicit",
     });
     void cancelActiveTransports();
   }, [blocked, queryClient, scopeKey]);

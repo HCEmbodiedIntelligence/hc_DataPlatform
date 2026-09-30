@@ -624,9 +624,18 @@
       "title": "部分 feature 同时承担 API 与全局作用域选择",
       "scope": "两分支",
       "owner": "T8 T9 T14",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "区分显式 scope 的纯 API/client 和读取当前会话的 UI hooks；缓存 key 与取消逻辑使用同一显式作用域。允许多个独立工作台实例而无需篡改全局 shell 状态。"
+      "status": "implemented_verified",
+      "evidence": [
+        "frontend/src/features/{robots,robot-models}/api/client.ts: explicit organization clients; api/hooks.ts: scoped query/mutation hooks; legacy session adapters isolated in api/index.ts",
+        "frontend/src/features/viewer/use-episode-robot-scene.ts and P23 replay use their supplied organization; P15 batch bootstrap cache includes organization",
+        "frontend/src/shared/api/scoped-query-keys.ts, use-scoped-query.ts, use-scoped-mutation.ts: immutable explicit scope keys, session identity/revision separation, frozen mutation scope and authorization-revision invalidation",
+        "frontend/src/shared/api/http-client.ts and session-scope-lease.ts: explicit grants, session/owner cancellation and post-body guards; URDF multipart operation cannot use a replacement session",
+        "frontend/src/app/shell/scope-transaction.ts: preserve session grants and independent queries during selection switches; active-mode and logout behavior retained",
+        "39 architecture tests and production dependency gate; complete TypeScript, changed-source ESLint and production build",
+        "Full frontend: 157 files / 954 tests (maxWorkers=4) passed without skip; two-organization scene, revocation, cache isolation, queued/rendered callback and multipart cancellation tests",
+        "16 actual backend registry/robot HTTP and contract tests passed, including production request-context binding with organization-only client headers; missing organization/project grants or capability still denied"
+      ],
+      "remaining": ""
     }
   ],
   "integrated_source_head": "dc2850d7b2b6af7b709f86332327a0ceed8bb50b"

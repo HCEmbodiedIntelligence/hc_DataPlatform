@@ -315,5 +315,59 @@ Tab 到关闭按钮、Escape 关闭、恢复触发器焦点以及移动端不自
 32 文件的所有权映射为 results/frontend-feature-relocations.json。
 
 F05 仍在进行：物理格式兼容逻辑已进入业务适配器，但统一的后端逻辑数据视图与开放格式协议尚未完成。
-F09 仍待实施：机器人/模型 hooks 与部分纯 API 仍会隐式选择 shell 作用域；本次页面依赖清零不等同于
-独立工作台/多作用域请求已全部解耦。F06/F08、机器人后端和训练边界也继续按原审计推进。
+以上为 F04 批次的边界：当时 F09 尚未实施，后续实现见下节。
+F06/F08、机器人后端和训练边界继续按原审计推进。
+
+## 显式作用域客户端、缓存与会话生命周期（F09）
+
+机器人和模型能力分别拆为 api/client.ts（显式 organizationId、wire 校验与转换）、
+api/hooks.ts（显式组织查询/修改）及 api/index.ts（旧会话 UI 适配与兼容导出）。
+纯客户端不导入 React、Query hooks、shell-store 或另一 feature 的会话 API 入口。
+旧 getRobotBootstrap(robotId) / loadRobotBindingTarget(target) 只在兼容入口保留；
+生产纯调用及 Viewer/P23 回放使用 client.ts 和显式 hooks。
+机器人实例列表的批量详情查询也进入同一显式 hooks，其缓存不再遗漏组织。
+
+useEpisodeRobotScene 收到的组织控制实例 Bootstrap、版本、资产、关节映射和签名授权；
+null 作用域停用查询，不回退到 shell 当前组织。两个组织即使使用相同 robot/version ID，
+也能在同一 QueryClient 中形成各自场景，切换页面选择不改变场景所属组织。
+响应的组织须与请求匹配，结构正确但组织错误的响应按 CONTRACT_MISMATCH 拒绝。
+
+shared/api/scoped-query-keys.ts 是不读取会话的纯 key 契约；旧 makeQueryKey 留在选择适配器。
+useScopedQuery/useScopedMutation 为显式工作台提供查询与修改接口：key 同时含显式 scope、
+资源身份、本地会话序号与权限版本，不含 token 或签名 URL。修改在调用时冻结 scope，
+成功后只写入该作用域缓存；同一会话权限版本变化会刷新该作用域的最新查询。
+授权被撤销时立即隔离旧缓存；新登录会话不能读取前一会话缓存，也不能执行旧回调或排队修改。
+
+request 的 scopeMode="explicit" 要求实际会话授权，不将当前选中项目当授权证据。
+显式请求在项目选择切换期间保持独立，仍遵守调用方 signal、登录失效、组织/项目/区域授权撤销，
+并在返回头和响应体读取后再次检查。会话或授权变化会主动 abort，请求结束会移除监听。
+createSessionScopeLease 将多请求操作及外部签名传输绑定到同一个会话，URDF 分片上传已消费，
+登录变化或 owner 取消后不会继续授权、上传分片或借新会话完成旧文件。
+
+shell 将 clearActiveScopeState 与 clearSensitiveState 分开：页面切换保留会话授权清单，
+退出/过期仍清除所有敏感状态。scope-transaction 与页面权限守卫只取消/删除页面所属查询，
+显式工作台查询以 scopeBinding="explicit" 声明独立生命周期；Viewer 资源由各实例 registry 管理。
+现有 active/organization/session/public 请求模式保持原行为，业务页面可以继续使用当前选择适配器。
+
+requestWithResponse 提供受相同保护的 data/status/headers；采集任务详情不再复制 fetch、token、
+租户头和失效判断，继续使用 active 模式及相同 ETag 缺失错误。
+其他业务的逻辑数据接口与 wire 生成仍归 F05/F06，不能把此入口当作其全部完成。
+
+核对后端实际契约后，模型请求不再夹带当前页面的项目/区域头。
+registry.resolve_registry_project 从已验证会话推导授权/审计项目，资源身份仍是组织和模型版本；
+response.scope.project_id 保留，不被前端误当成所选页面项目。
+使用实际 FastAPI 路由和生产 _request_context 复验两个组织的相同版本 ID：只传组织头可分别取得
+各自模型，项目授权与 robot_model.read 缺失仍返回 403。没有改动后端权限、公开 API 或资源身份。
+
+验证证据位于 results/frontend-scope-*.log / frontend-scope-backend-http.xml：
+双组织真实客户端回放、空 scope、错误组织响应、权限撤销、慢响应体、独立取消、登录替换、
+修改缓存归属、权限版本刷新及完整 URDF 分片流程均有回归。
+完整前端 **157 个文件、954 项测试通过，无 skip**（最终采用 maxWorkers=4）。
+39 项 AST 门禁、完整 typecheck、34 个修改前端源码/脚本 ESLint 和生产构建通过。
+曾在测试与构建并行时遇到一项导出对话框等待超时；对应文件单独 11 项通过，
+随后降低 worker 并发重跑所有测试通过，保留 concurrent-build / export-rerun 日志，未跳过或延长测试等待。
+后端模型/机器人 HTTP 与契约回归 **16 项通过，无 skip**，对应测试 Ruff 通过。
+原 React/JSDOM/大 chunk 提示仍保留；此次没有重跑真实云服务或将后端历史模型冻结（R04）记为完成。
+
+仍待处理：URDF 导入用例下沉、冻结 embodiment、来源 provenance、renderer 能力注册，
+以及原审计中的数据格式、任务、QC、训练、逻辑版本和其余存储/后端边界。

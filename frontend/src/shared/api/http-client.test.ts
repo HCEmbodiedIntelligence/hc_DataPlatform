@@ -5,7 +5,7 @@ import {
   resetRuntimeConfigForTests,
 } from "../config/runtime";
 import { useShellStore } from "../scope/shell-store";
-import { isSafeBearerToken, request } from "./http-client";
+import { isSafeBearerToken, request, requestWithResponse } from "./http-client";
 import { cancelActiveTransports } from "./transport-lifecycle";
 import {
   createDomainError,
@@ -24,6 +24,200 @@ const otherScope: Scope = {
   projectId: "project-b",
   regionCode: "region-b",
 };
+
+function installExplicitGrants() {
+  useShellStore.getState().setSessionScopes(
+    [activeScope, otherScope].map((scope) => ({
+      organizationId: scope.organizationId,
+      projectId: scope.projectId!,
+      regionCodes: [scope.regionCode!],
+      projectWide: false,
+      capabilities: [],
+    })),
+    1,
+  );
+}
+
+function explicitRequest(scope: Scope = activeScope, signal?: AbortSignal) {
+  return request({
+    method: "GET",
+    path: `/projects/${scope.projectId ?? "project-a"}/storage/capacity`,
+    scopeMode: "explicit",
+    scope,
+    ...(signal ? { signal } : {}),
+  });
+}
+
+describe("explicit workspace HTTP requests", () => {
+  beforeEach(() => {
+    configureTestRuntime();
+    installExplicitGrants();
+  });
+  afterEach(() => {
+    resetTestRuntime();
+    useShellStore.getState().setSession(null, null);
+  });
+
+  it("keeps an authorized workspace independent from active selection and scope cancellation", async () => {
+    let complete!: (response: Response) => void;
+    let capturedSignal!: AbortSignal;
+    const fetchMock = vi.fn((_input: unknown, init?: RequestInit) => {
+      capturedSignal = init!.signal!;
+      return new Promise<Response>((resolve) => {
+        complete = resolve;
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const pending = explicitRequest();
+    useShellStore.getState().beginScopeChange();
+    useShellStore.getState().clearActiveScopeState();
+    useShellStore.getState().setScope(otherScope);
+    await cancelActiveTransports();
+    expect(capturedSignal.aborted).toBe(false);
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("X-Organization-Id")).toBe(activeScope.organizationId);
+    expect(headers.get("X-Project-Id")).toBe(activeScope.projectId);
+    expect(headers.get("X-Region-Code")).toBe(activeScope.regionCode);
+    complete(new Response(JSON.stringify({ workspace: "a" })));
+    await expect(pending).resolves.toEqual({ workspace: "a" });
+  });
+
+  it("allows writes to an explicitly authorized project while the UI switches", async () => {
+    stubResponse(new Response(JSON.stringify({ created: true })));
+    useShellStore.getState().beginScopeChange();
+    useShellStore.getState().setScope(otherScope);
+    await expect(
+      request({
+        method: "POST",
+        path: "/projects/project-a/storage/lifecycle-policies",
+        scopeMode: "explicit",
+        scope: activeScope,
+        body: {},
+      }),
+    ).resolves.toEqual({ created: true });
+  });
+
+  it.each([
+    { organizationId: "unknown" },
+    { ...activeScope, projectId: "unknown" },
+    { ...activeScope, regionCode: "unknown" },
+  ])("rejects an ungranted scope before transport: %j", async (scope) => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(explicitRequest(scope)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      blockedReasons: [{ code: "SCOPE_NOT_GRANTED" }],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not treat a selected but ungranted project as authorization", async () => {
+    useShellStore.getState().setSessionScopes([], 2);
+    vi.stubGlobal("fetch", vi.fn());
+    await expect(explicitRequest()).rejects.toMatchObject({
+      blockedReasons: [{ code: "SCOPE_NOT_GRANTED" }],
+    });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("aborts and rejects work when its grant is revoked, even if fetch ignores abort", async () => {
+    let complete!: (response: Response) => void;
+    let signal!: AbortSignal;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input, init: RequestInit) => {
+        signal = init.signal!;
+        return new Promise<Response>((resolve) => {
+          complete = resolve;
+        });
+      }),
+    );
+    const pending = explicitRequest();
+    useShellStore.getState().setSessionScopes([], 2);
+    expect(signal.aborted).toBe(true);
+    complete(new Response(JSON.stringify({ stale: true })));
+    await expect(pending).rejects.toMatchObject({
+      blockedReasons: [{ code: "SCOPE_NOT_GRANTED" }],
+    });
+  });
+
+  it("checks session identity again after a slow response body", async () => {
+    let complete!: (body: string) => void;
+    let signal!: AbortSignal;
+    let bodyStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input, init: RequestInit) => {
+        signal = init.signal!;
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: () => {
+            bodyStarted();
+            return new Promise<string>((resolve) => {
+              complete = resolve;
+            });
+          },
+        } as Response);
+      }),
+    );
+    const pending = explicitRequest();
+    await started;
+    useShellStore
+      .getState()
+      .setSession(
+        { actorId: "new-actor", displayName: "new", roleIds: [] },
+        "new-token",
+      );
+    installExplicitGrants();
+    expect(signal.aborted).toBe(true);
+    complete(JSON.stringify({ stale: true }));
+    await expect(pending).rejects.toMatchObject({
+      blockedReasons: [{ code: "SESSION_CHANGED" }],
+    });
+  });
+
+  it("honors its owner's cancellation independently of UI cancellation", async () => {
+    const owner = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        owner.abort();
+        return new Response(JSON.stringify({ ignoredAbort: true }));
+      }),
+    );
+    await expect(
+      explicitRequest(activeScope, owner.signal),
+    ).rejects.toMatchObject({ code: "NETWORK_ERROR", retryable: false });
+  });
+
+  it("exposes ETag through the guarded transport and releases completed subscriptions", async () => {
+    let signal!: AbortSignal;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input, init: RequestInit) => {
+        signal = init.signal!;
+        return new Response(JSON.stringify({ version: 1 }), {
+          headers: { ETag: '"version:1"' },
+        });
+      }),
+    );
+    const response = await requestWithResponse({
+      method: "GET",
+      path: "/projects/project-a/storage/capacity",
+      scopeMode: "explicit",
+      scope: activeScope,
+    });
+    expect(response.data).toEqual({ version: 1 });
+    expect(response.headers.get("ETag")).toBe('"version:1"');
+    useShellStore.getState().setSession(null, null);
+    expect(signal.aborted).toBe(false);
+  });
+});
 
 function problemResponse(
   body: unknown,
@@ -497,7 +691,8 @@ describe("HTTP response handling", () => {
     useShellStore.getState().setScope(otherScope);
     finish(new Blob(["old-tenant-data"]));
     expect(await rejectedDomainError(pending)).toMatchObject({
-      code: "PRECONDITION_FAILED", blockedReasons: [{ code: "SCOPE_CHANGED" }],
+      code: "PRECONDITION_FAILED",
+      blockedReasons: [{ code: "SCOPE_CHANGED" }],
     });
   });
 

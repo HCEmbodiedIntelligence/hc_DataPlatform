@@ -40,13 +40,10 @@ import {
 } from "../../features/ingest/connectors/registry";
 import { createMutationIntentKey } from "../../features/ingest/mutation-machine";
 import { routes } from "../../features/ingest/routing";
+import { getRobotBootstrap } from "../../features/robots/api/client";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { useBindRobotModelVersion } from "../../features/robot-models/api";
-import {
-  getRobotBootstrap,
-  useCreateRobot,
-  useRobotBootstrap,
-} from "../../features/robots/api";
+import { useCreateRobot, useRobotBootstrap } from "../../features/robots/api";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useAsyncJob } from "../../shared/jobs/use-async-job";
@@ -515,7 +512,10 @@ export default function DataSourcesPage() {
         } else {
           robotId = provisioning.robotId;
           if (provisioning.modelVersionId) {
-            const robot = await getRobotBootstrap(provisioning.robotId);
+            const robot = await getRobotBootstrap(
+              scope.organizationId,
+              provisioning.robotId,
+            );
             if (
               robot.effectiveModelBinding?.robotModelVersionId !==
               provisioning.modelVersionId

@@ -3,11 +3,8 @@ import type {
   operations,
 } from "../../shared/api/generated/platform";
 import { createDomainError } from "../../shared/api/domain-error";
-import { domainErrorFromResponse } from "../../shared/api/http-client";
-import { request } from "../../shared/api/http-client";
-import { getRuntimeConfig } from "../../shared/config/runtime";
-import { makeScopeKey, type Scope } from "../../entities/scope";
-import { getShellState } from "../../shared/scope/shell-store";
+import { request, requestWithResponse } from "../../shared/api/http-client";
+import type { Scope } from "../../entities/scope";
 import { fetchDatasets } from "../datasets/api/queries";
 
 export type CollectionTask = components["schemas"]["CollectionTask"];
@@ -127,98 +124,17 @@ function assertTaskScope(
   });
 }
 
-function joinUrl(base: string, path: string): string {
-  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${normalizedBase}${normalizedPath}`;
-}
-
-async function responseJson(response: Response): Promise<unknown> {
-  const body = await response.text();
-  if (!body) return undefined;
-  try {
-    return JSON.parse(body) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
 async function getCollectionTaskSnapshot(
   scope: CollectionTaskScope,
   collectionTaskId: string,
   signal?: AbortSignal,
 ): Promise<CollectionTaskSnapshot> {
-  const shell = getShellState();
-  const requestScopeKey = makeScopeKey(scope);
-  if (shell.scopeKey !== requestScopeKey) {
-    throw createDomainError({
-      code: "PRECONDITION_FAILED",
-      message: "当前项目已变化，请重新打开任务。",
-      fieldErrors: [],
-      operationErrors: [],
-      blockedReasons: [
-        { code: "SCOPE_CHANGED", message: "请求项目与当前项目不一致。" },
-      ],
-      requestId: null,
-      retryable: false,
-      httpStatus: null,
-    });
-  }
-
-  const config = getRuntimeConfig();
-  const headers = new Headers({
-    Accept: "application/json",
-    "Accept-Language": globalThis.navigator?.language || "zh-CN",
-    "X-Client-Version": config.buildVersion,
-    "X-Project-Id": scope.projectId,
-    "X-Region-Code": scope.regionCode,
+  const response = await requestWithResponse<CollectionTask>({
+    method: "GET",
+    path: `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}`,
+    scope,
+    ...(signal ? { signal } : {}),
   });
-  if (scope.organizationId) {
-    headers.set("X-Organization-Id", scope.organizationId);
-  }
-  if (shell.sessionToken) {
-    headers.set("Authorization", `Bearer ${shell.sessionToken}`);
-  }
-
-  let response: Response;
-  try {
-    response = await globalThis.fetch(
-      joinUrl(
-        config.apiBaseUrl,
-        `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}`,
-      ),
-      { method: "GET", headers, signal },
-    );
-  } catch {
-    throw createDomainError({
-      code: "NETWORK_ERROR",
-      message: signal?.aborted ? "请求已取消" : "网络连接失败",
-      fieldErrors: [],
-      operationErrors: [],
-      blockedReasons: [],
-      requestId: null,
-      retryable: !signal?.aborted,
-      httpStatus: null,
-    });
-  }
-
-  const raw = await responseJson(response);
-  if (getShellState().scopeKey !== requestScopeKey) {
-    throw createDomainError({
-      code: "PRECONDITION_FAILED",
-      message: "请求返回时当前项目已变化，请重新打开任务。",
-      fieldErrors: [],
-      operationErrors: [],
-      blockedReasons: [
-        { code: "SCOPE_CHANGED", message: "响应所属项目已经失效。" },
-      ],
-      requestId: null,
-      retryable: false,
-      httpStatus: null,
-    });
-  }
-  if (!response.ok) throw domainErrorFromResponse(response.status, raw);
-
   const etag = response.headers.get("ETag");
   if (!etag) {
     throw createDomainError({
@@ -234,7 +150,7 @@ async function getCollectionTaskSnapshot(
       httpStatus: null,
     });
   }
-  const task = raw as CollectionTask;
+  const task = response.data;
   assertTaskScope(task, scope);
   return { task, etag };
 }

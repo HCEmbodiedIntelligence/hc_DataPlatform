@@ -93,6 +93,40 @@ test("current source satisfies the migrated boundary", () => {
   assert.deepEqual(checkRepository(), []);
 });
 
+for (const feature of ["robots", "robot-models"]) {
+  for (const source of [
+    'import { useEffect } from "react";',
+    'import { create } from "zustand";',
+    'import { useQuery } from "@tanstack/react-query";',
+    'import type { Scope } from "../../../shared/scope/shell-store";',
+    'export { getCurrentOrganizationId } from "../../../shared/scope/current-organization";',
+    'const load = () => import("../../robots/api");',
+    'type Api = import("../../robot-models/api/hooks").Api;',
+  ]) {
+    test(`pure ${feature} client rejects session coupling: ${source}`, () => {
+      assert.equal(
+        checkSource(
+          path.join(root, `features/${feature}/api/client.ts`),
+          source,
+          root,
+        ).length,
+        1,
+      );
+    });
+  }
+}
+
+test("pure scoped cache keys cannot acquire active shell selection", () => {
+  assert.equal(
+    checkSource(
+      path.join(root, "shared/api/scoped-query-keys.ts"),
+      'import { getShellState } from "../scope/shell-store";',
+      root,
+    ).length,
+    1,
+  );
+});
+
 for (const source of [
   'import type { Search } from "../../pages/p10/query-codec";',
   'export { Search } from "../../pages/p10/query-codec";',
