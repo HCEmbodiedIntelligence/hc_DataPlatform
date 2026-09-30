@@ -482,6 +482,8 @@ def _annotation_revision_files(annotation, connection_factory, object_storage):
 def _annotation_deliveries(annotation, connection_factory, object_storage, packages):
     from hc_data_platform.annotation.delivery import AnnotationDeliveryService
     from hc_data_platform.annotation.delivery_repository import PostgresAnnotationDeliveries
+    from hc_data_platform.episode_store.derivation_repository import PostgresTagDerivations
+    from hc_data_platform.episode_store.derivation_service import TagDerivationService
 
     service = AnnotationDeliveryService(
         _annotation_revision_files(annotation, connection_factory, object_storage),
@@ -489,6 +491,9 @@ def _annotation_deliveries(annotation, connection_factory, object_storage, packa
         PostgresAnnotationDeliveries(connection_factory),
     )
     packages.deliveries.annotations = service
+    packages.tag_derivations = TagDerivationService(
+        packages, service, PostgresTagDerivations(connection_factory)
+    )
     return service
 
 
@@ -1399,6 +1404,7 @@ def build_worker_outbox(
     from hc_data_platform.annotation.delivery import AnnotationDeliveryOutboxHandler
     from hc_data_platform.annotation.revision_files import AnnotationRevisionFileOutboxHandler
     from hc_data_platform.episode_store.delivery import EpisodeDeliveryOutboxHandler
+    from hc_data_platform.episode_store.derivation_service import TagDerivationOutboxHandler
     from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
     from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
     from hc_data_platform.robot_ingest.processing_store import EVENT_TYPE
@@ -1446,6 +1452,9 @@ def build_worker_outbox(
             ),
             EpisodeDeliveryOutboxHandler.EVENT_TYPE: EpisodeDeliveryOutboxHandler(
                 delivery_packages.deliveries
+            ),
+            TagDerivationOutboxHandler.EVENT_TYPE: TagDerivationOutboxHandler(
+                delivery_packages.tag_derivations
             ),
         },
         worker_id=f"hc-outbox-{socket.gethostname()}",

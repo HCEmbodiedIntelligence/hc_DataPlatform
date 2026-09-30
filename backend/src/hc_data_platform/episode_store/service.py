@@ -42,6 +42,7 @@ class EpisodePackageService:
         )
         self.files = PackageFiles(self.repository, storage, self.cache)
         self.deliveries = EpisodeDeliveryService(self, PostgresEpisodeDeliveries(connections))
+        self.tag_derivations = None
         self.committer = EpisodePackageCommitter(self.repository, storage)
         self.steps = ParquetStepReader(self.files)
         self.depth = PhysicalDepthReader(self.files)

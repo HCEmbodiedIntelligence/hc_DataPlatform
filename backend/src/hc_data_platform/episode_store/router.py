@@ -13,6 +13,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .delivery_router import router as delivery_router
+from .derivation_router import router as derivation_router
 from .detail import file_page, open_download, read_detail
 from .detail_models import EpisodeDetail, EpisodeFileGrant, EpisodeFilePage
 from .download import complete_archive
@@ -36,6 +37,7 @@ BASE = (
 VERSION = BASE + "/{data_version_id}"
 router = APIRouter(prefix="/api/v1", tags=["episode_data"])
 router.include_router(delivery_router)
+router.include_router(derivation_router)
 _service: EpisodePackageService | None = None
 
 

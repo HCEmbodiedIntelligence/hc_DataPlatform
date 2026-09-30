@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: c2bbf1e2ba720aca0d075d99af9212d5330325078842dab60992e9667bd37f6d
+// Runtime-OpenAPI-SHA256: 0ea892822355da9f1237090920115a376b45385e630d06eb651dd19a8186f6ce
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -216,6 +216,11 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/quality-profiles" },
   { method: "GET", path: "/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/manifest-discovery" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes/{job_id}" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes/{job_id}/cancel" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes/{job_id}/retry" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/calibration-sets" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/calibration-sets" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/calibration-sets/{set_id}" },

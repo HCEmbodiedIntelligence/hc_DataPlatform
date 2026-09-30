@@ -207,6 +207,7 @@ EXPECTED_MANIFEST = (
     "episode_store/0012_qc_rule_evidence.sql",
     "episode_store/0013_package_deliveries.sql",
     "episode_store/0014_collection_deliveries.sql",
+    "episode_store/0015_tag_derivations.sql",
 )
 
 
