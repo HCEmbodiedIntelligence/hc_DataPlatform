@@ -8,9 +8,9 @@ from .models import RobotModelAsset, RobotModelJointMapping
 
 def published_model_inputs(
     cursor: Any, organization_id: str, version_id: str
-) -> tuple[str, tuple[RobotModelAsset, ...], str, tuple[RobotModelJointMapping, ...]]:
+) -> tuple[str, str, tuple[RobotModelAsset, ...], str, tuple[RobotModelJointMapping, ...]]:
     cursor.execute(
-        """SELECT lifecycle,asset_manifest_hash,validation_input_hash
+        """SELECT lifecycle,asset_manifest_hash,validation_input_hash,robot_model_id
         FROM registry.robot_model_versions WHERE organization_id=%s AND version_id=%s FOR SHARE""",
         (organization_id, version_id),
     )
@@ -45,7 +45,7 @@ def published_model_inputs(
         RobotModelJointMapping(source_joint_name=row[0], target_joint_name=row[1], direction=row[2])
         for row in cursor.fetchall()
     )
-    return version[1], assets, version[2], mappings
+    return str(version[3]), version[1], assets, version[2], mappings
 
 
 class PublishedModelAssetReader:

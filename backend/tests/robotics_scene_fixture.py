@@ -165,6 +165,13 @@ def assert_frozen_scene(runtime, package, fixture, auth, connections):
     ident = data.identity
     frozen = package.document("hc/robot_scene.json")
     assert frozen["status"] == "FROZEN" and frozen["model_version_id"] == first[0]
+    with connections() as db:
+        expected_model_id = db.execute(
+            "SELECT robot_model_id FROM registry.robot_model_versions "
+            "WHERE organization_id=%s AND version_id=%s",
+            (ident.organization_id, first[0]),
+        ).fetchone()[0]
+    assert frozen["model_id"] == str(expected_model_id)
     assert frozen["robot_id"] == robot_id
     assert frozen["joint_mappings"][0]["target_joint_name"] == "joint_one"
     assert frozen["calibration"] == package.document("hc/calibration.json")

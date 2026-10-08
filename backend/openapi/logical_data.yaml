@@ -71,6 +71,11 @@ components:
             $ref: '#/components/schemas/RobotModelJointMapping'
           title: Joint Mappings
           type: array
+        model_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Id
         model_version_id:
           anyOf:
           - type: string
