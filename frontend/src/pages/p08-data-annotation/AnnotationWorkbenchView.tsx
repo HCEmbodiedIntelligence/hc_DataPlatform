@@ -2920,8 +2920,7 @@ export function AnnotationWorkbenchView(
               检查已通过
             </p>
             <p>
-              提交后会生成一个新的 Episode 版本并进入审核；草稿保存本身不会增加
-              Episode 版本号。
+              提交后会生成固定标注提交版本并进入审核；原始数据版本保持不变。
             </p>
           </>
         ) : null}

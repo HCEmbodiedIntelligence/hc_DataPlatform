@@ -674,9 +674,13 @@
       "title": "URDF 导入用例仍在页面，通用 viewer 带具体机器人特判",
       "scope": "两分支",
       "owner": "T14",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "将导入状态机和模型资源处理放到机器人 feature，页面负责组合；兼容预览 provenance/availability 由数据适配器描述，不靠 viewer 的 robot_id 常量判断。"
+      "status": "implemented_verified",
+      "evidence": [
+        "frontend a506d1f9: import feature and Episode provenance adapter consumed by P15/P06/P08",
+        "integration 62322e41: 1027 frontend,54 gates,5 real model services,production build",
+        "B031 ordinary browser: create/update/publish,WebGL canvas,old fixed assets/mappings preserved; diagnostics evidence/B/urdf-published-webgl.png"
+      ],
+      "remaining": ""
     },
     {
       "id": "F06",

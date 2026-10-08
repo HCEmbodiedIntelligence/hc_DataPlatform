@@ -1149,7 +1149,7 @@ export function ViewerJointAngleCurvePanel({
         <div className="viewer-joint-curves__empty" role="status">
           <span className="viewer-joint-curves__loading" aria-hidden="true" />
           <strong>正在读取关节角</strong>
-          <span>从固定 Lance 版本加载当前光标附近的真实样本。</span>
+          <span>从固定数据快照加载当前光标附近的真实样本。</span>
         </div>
       ) : windowState.status === "error" ? (
         <div className="viewer-joint-curves__empty" role="alert">
