@@ -117,3 +117,20 @@ HTTP/持久 worker/下载/备份回归通过；另外 27 项 Temporal 工作流�
 稳定浏览器候选继续保持 3df。B 浏览器已确认 P21 四种包与 P08 带标注包
 创建、worker、下载/官方 reader；旧迁移 seed 的 Tag 因同摘要多来源被正确拒绝，
 另建来源唯一、已审核的原生父条目（browser-tag-seed.json）待 B 点击验收。
+
+
+## A：第三批本地集成验收
+
+代码 c69c4743b66b439aed72d8dcf3f22c82e8fa1f81 整合录制登记 B18、纯辅助
+函数 B24 和包入口 B25。14 项真实服务回归（6 项 API/worker/下载/备份，
+8 项登记/旧派生固定/原生处理）及 93 项契约/架构检查通过，无跳过。前端
+实际 runtime 生成检查、完整类型、54 架构检查及生产构建通过；前端源码
+与此前 1004 Vitest 通过版本一致。协议 SHA256 保持 125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206。
+证据：协调目录 results/A-services/integration-batch-three-{runtime,processing,contracts}.xml
+及 runtime-integration-batch-three.yaml。前端两次命令准备失败（缺 uv、只读
+/app）已修正为读取实际 runtime 契约并在 /verify 构建，最终全部通过。
+
+B013 已给出候选切换窗口：Tag 正向创建、QC、三帧 RGB-D 和官方 reader
+通过。B011 撤权 201 尚未通过验收：辅助动作遗漏 upload.manage 的隐含发布
+能力，正在修正并复验。B014 逻辑样本把聚合有效性错误叠加到单通道，尚待
+代码修复和真实存储回归；逻辑 API 仍不在本批主线。
