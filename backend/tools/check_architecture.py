@@ -125,7 +125,17 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                 failures.add(
                     f"{node.lineno}: publication storage cannot access another domain's tables"
                 )
+    if module == "hc_data_platform.dataset_registry.tag_projection":
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+                failures.add(f"{node.lineno}: Tag projection must consume public injected ports")
     for line, target in imports(tree, package):
+        if module in {
+            "hc_data_platform.dataset_registry.tag_projection",
+            "hc_data_platform.dataset_registry.projection_writer",
+            "hc_data_platform.dataset_registry.projection_models",
+        } and matches(target, "hc_data_platform.dataset_registry.ingest_projection"):
+            failures.add(f"{line}: projection ownership must not depend back on ingest service")
         if module in {
             "hc_data_platform.backup.composition",
             "hc_data_platform.backup.restore_cli",

@@ -573,3 +573,18 @@ plan/execute/reconcile 均消费公共工厂，去除 restore_cli → whole_cli 
 restore plan CLI（含重复计划与精确签名哈希篡改拒绝），2 passed，0 skipped。
 证据为外部 `backup-composition-services-recheck.xml`。初次挂载目录错误和负例
 异常断言错误保留在原 XML 与 failures.txt。未称真实 Vault/KMS/灾备执行已验收。
+
+
+## A：Tag 目录投影独立与共享事务写入
+
+API 和持久 worker 的共同装配已将 Tag 切换到 PostgresTagProjector，显式注入
+集合/文件/样本读取和 DatasetProjectionWriter。Tag 不再回读摄取服务的
+_episode_packages 或调用其私有 SQL；固定父集合、包、来源和子提交校验仍在
+Tag 自己的事务中。摄取与迁移也消费同一个目录 SQL 所有者，既有 16 个 SQL/辅助
+方法的 AST 保持一致；版本高水位、幂等和完整产品事务仍由服务回归验证。
+
+43 个真实 PG/MinIO/API/持久 worker 用例、55 项架构/实例/原生 Viewer 检查、
+5 文件严格 mypy 与 Ruff 通过。原循环及私有调用的注入负例由门禁拒绝。
+该后端切片不改变 OpenAPI；集成候选使用当前已消费的运行时契约。原失败保留：旧夹具 _stable_id 兼容
+导入漏出、故障注入点仍指向已迁走的 _put_schema；修正导入与注入落点后复验
+全部 43 项，无删除故障测试或放宽校验。B08/E02/E03 的其余边界仍待实施。

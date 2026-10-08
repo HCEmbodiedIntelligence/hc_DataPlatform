@@ -7,7 +7,7 @@ from fastapi import APIRouter, Header, Query, Response
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
-from hc_data_platform.dataset_registry.ingest_projection import DatasetIngestProjectionConflict
+from hc_data_platform.dataset_registry.projection_models import DatasetIngestProjectionConflict
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .dependencies import PackageServices

@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
+from hc_data_platform.dataset_registry.projection_writer import DatasetProjectionWriter
 from hc_data_platform.lance_catalog.models import DerivedReadyV1, StepRecord, StepWindow
 from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
 from hc_data_platform.workflow.models import IngestProjectionSourceV1
@@ -67,7 +67,7 @@ def test_native_committed_values_preserve_numeric_viewer_types(tmp_path: Path) -
         step_count=90,
         content_hash="c" * 64,
     )
-    streams = PostgresDatasetIngestProjector._streams(
+    streams = DatasetProjectionWriter._streams(
         alignment=metadata,
         camera_topics=frozenset(),
         ready=ready,

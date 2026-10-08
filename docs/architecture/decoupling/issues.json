@@ -414,10 +414,15 @@
       "id": "E09",
       "title": "目录 Tag 投影循环依赖并穿透服务内部组件",
       "scope": "chayi",
-      "owner": "T5",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "投影输入数据和纯构造器独立；通过 Episode/Collection 查询端口获取冻结事实，投影器只负责目录投影事务。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "runtime API/worker _annotation_deliveries inject PostgresTagProjector with ProjectionCollections/ProjectionFiles/PackageStepReaderPort and DatasetProjectionWriter; no ingest instance or private foreign attributes",
+        "Dedicated Tag transaction validates frozen parent collection/package/source provenance and exact child commit, then shared SQL writer applies product projection; ingest and migration consume the same SQL owner",
+        "43 actual PostgreSQL/MinIO/API/persistent-worker cases: Tag transaction interruption/idempotence/concurrency/recovery/current permissions, product projection, working high-watermark and collection releases; results/A-services/tag-projection-final-services.xml",
+        "55 architecture/app/native-viewer checks, 5-file strict mypy, Ruff; acyclic projection imports and rejection of private collaborator access; OpenAPI unchanged"
+      ],
+      "remaining": "Ingest projection still consumes historical workflow DTOs and EpisodePackageService; B08/E02/E03 track those independent remaining boundaries."
     },
     {
       "id": "F01",

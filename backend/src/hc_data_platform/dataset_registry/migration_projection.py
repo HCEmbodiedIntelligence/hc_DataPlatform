@@ -11,8 +11,6 @@ from hc_data_platform.episode_store.models import canonical, digest
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.versioning import ResourceVersion
 
-from .ingest_projection import PostgresDatasetIngestProjector as Projector
-from .ingest_projection import _stable_id
 from .models import (
     DatasetPageContentSnapshot,
     DatasetPageEpisodePackageBinding,
@@ -29,6 +27,8 @@ from .models import (
     DatasetPageVersionSchemaDetail,
     DatasetPageVersionSchemaSummary,
 )
+from .projection_models import stable_id
+from .projection_writer import DatasetProjectionWriter as Projector
 
 # Fixed identifiers only; full SQL rows bind both indexed and document facts.
 TABLES = {
@@ -212,7 +212,7 @@ def transform_projection(rows, collection, members, *, legacy):
                     }
                 )
             )
-        new_id = _stable_id("revision", data.data_version_id)
+        new_id = stable_id("revision", data.data_version_id)
         revision_ids[revision.revision_id] = new_id
         selected = episode.selected_revision.model_copy(
             update={"revision_id": new_id, "content_sha256": data.content_hash}

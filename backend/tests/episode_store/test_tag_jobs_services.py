@@ -21,7 +21,8 @@ from hc_data_platform.core.context import (
 )
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
-from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
+from hc_data_platform.dataset_registry.projection_writer import DatasetProjectionWriter
+from hc_data_platform.dataset_registry.tag_projection import PostgresTagProjector
 from hc_data_platform.episode_store.derivation import write_tag_episode
 from hc_data_platform.episode_store.derivation_jobs import RequestTagEpisode
 from hc_data_platform.episode_store.derivation_repository import (
@@ -59,7 +60,13 @@ def tag_jobs(projected, files):  # noqa: F811
         packages,
         annotations.selections,
         repository,
-        projector=PostgresDatasetIngestProjector(repository.connections, episode_packages=packages),
+        projector=PostgresTagProjector(
+            repository.connections,
+            collections=packages.collections,
+            files=packages.files,
+            steps=packages.steps,
+            projections=DatasetProjectionWriter(files=packages.files, steps=packages.steps),
+        ),
         automatic=AutomaticAnnotationTaskService(
             PostgresAutomaticAnnotationRepository(repository.connections)
         ),
@@ -174,7 +181,7 @@ def test_failure_recovers_same_plan_without_rebuilding_committed_data(tag_jobs, 
             elif point == "preview":
                 fault.setattr(service.packages.previews, "prepare_all", interrupted)
             elif point == "product":
-                fault.setattr(service.projector, "_put_schema", interrupted)
+                fault.setattr(service.projector.projections, "_put_schema", interrupted)
             elif point == "annotation":
                 original = service.automatic._repository.create_automatic
 
