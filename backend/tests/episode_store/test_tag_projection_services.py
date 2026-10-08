@@ -28,6 +28,7 @@ from hc_data_platform.dataset_registry.models import (
     DatasetPageEpisodeRecord,
     DatasetPageEpisodeRevision,
 )
+from hc_data_platform.dataset_registry.tag_projection import PostgresTagProjector
 from hc_data_platform.episode_store.catalog_models import EpisodeDerivedReady
 from hc_data_platform.episode_store.derivation import write_tag_episode
 from hc_data_platform.episode_store.quality import read_episode_quality
@@ -127,7 +128,14 @@ def projected(selected):  # noqa: F811
             ),
             media_artifacts=(),
         )
-    return source, packages, freeze, projector, collection
+    tag_projector = PostgresTagProjector(
+        packages.repository.connections,
+        collections=packages.collections,
+        files=packages.files,
+        steps=packages.steps,
+        projections=projector.projections,
+    )
+    return source, packages, freeze, tag_projector, collection
 
 
 def records(packages, source, version):
@@ -213,7 +221,7 @@ def test_tag_product_transaction_retry_and_fresh_annotation(
         def interrupted(*args, **kwargs):
             raise InterruptedError("synthetic projection transaction failure")
 
-        fault.setattr(projector, "_put_schema", interrupted)
+        fault.setattr(projector.projections, "_put_schema", interrupted)
         with pytest.raises(InterruptedError):
             project()
     with scoped(source):

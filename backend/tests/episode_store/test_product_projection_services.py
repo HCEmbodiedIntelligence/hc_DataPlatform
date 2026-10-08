@@ -268,7 +268,7 @@ def test_project_rgbd_append_reprocess_retry_and_atomic_recovery(
             def interrupted(*args, **kwargs):
                 raise InterruptedError("synthetic product projection transaction failure")
 
-            fault.setattr(projector, "_put_schema", interrupted)
+            fault.setattr(projector.projections, "_put_schema", interrupted)
             with pytest.raises(InterruptedError):
                 project(second_source, second)
         with scoped(source):

@@ -15,7 +15,7 @@ from hc_data_platform.annotation.revision_models import SnapshotIntegrityError
 from hc_data_platform.annotation.selection_ports import AnnotationSelectionPort
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost, renewing_lease
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.dataset_registry.ingest_projection import (
+from hc_data_platform.dataset_registry.projection_models import (
     DatasetIngestProjectionConflict,
 )
 from hc_data_platform.quality.evidence import QcEvaluation

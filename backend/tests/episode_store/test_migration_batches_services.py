@@ -225,7 +225,7 @@ def batch_source(services, tmp_path, request, monkeypatch):
                     )
                 )
             with packages.transaction() as cursor:
-                projector._insert_projection(
+                projector.projections.write(
                     cursor,
                     source=projection_source,
                     alignment=AlignmentInputV1(

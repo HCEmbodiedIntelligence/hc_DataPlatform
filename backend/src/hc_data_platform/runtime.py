@@ -128,9 +128,11 @@ from hc_data_platform.dataset_registry.models import (
     DatasetPageMutationRecord,
     DatasetPageReturnReviewMutationRecord,
 )
+from hc_data_platform.dataset_registry.projection_writer import DatasetProjectionWriter
 from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
 from hc_data_platform.dataset_registry.router import configure_dataset_page
 from hc_data_platform.dataset_registry.service import DatasetPageService
+from hc_data_platform.dataset_registry.tag_projection import PostgresTagProjector
 from hc_data_platform.ingest.device_facts import (
     DeviceCaptureFactService,
     PostgresDeviceCaptureFactRepository,
@@ -505,7 +507,13 @@ def _annotation_deliveries(annotation, connection_factory, object_storage, packa
         packages,
         service.selections,
         PostgresTagDerivations(connection_factory),
-        projector=PostgresDatasetIngestProjector(connection_factory, episode_packages=packages),
+        projector=PostgresTagProjector(
+            connection_factory,
+            collections=packages.collections,
+            files=packages.files,
+            steps=packages.steps,
+            projections=DatasetProjectionWriter(files=packages.files, steps=packages.steps),
+        ),
         automatic=AutomaticAnnotationTaskService(
             PostgresAutomaticAnnotationRepository(connection_factory)
         ),

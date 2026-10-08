@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
 from hc_data_platform.dataset_registry.models import DatasetPageScope
+from hc_data_platform.dataset_registry.projection_writer import DatasetProjectionWriter
 from hc_data_platform.dataset_registry.repository import (
     DatasetPageVersionFilters,
     InMemoryDatasetPageRepository,
@@ -112,7 +112,7 @@ def test_active_collection_ancestry_controls_default_across_projection_delay_and
                 VALUES (%s,%s,'Working version fixture')""",
                 (ident.organization_id, ident.project_id),
             )
-            PostgresDatasetIngestProjector._put_dataset(
+            DatasetProjectionWriter._put_dataset(
                 cursor,
                 _record().model_copy(
                     update={
@@ -127,7 +127,7 @@ def test_active_collection_ancestry_controls_default_across_projection_delay_and
 
         def project(version):
             with packages.transaction() as cursor:
-                PostgresDatasetIngestProjector._put_version(
+                DatasetProjectionWriter._put_version(
                     cursor,
                     _ready_version().model_copy(
                         update={
