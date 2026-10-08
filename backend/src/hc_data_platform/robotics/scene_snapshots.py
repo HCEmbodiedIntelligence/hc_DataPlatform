@@ -11,7 +11,7 @@ from hc_data_platform.registry.models import RobotModelAsset, RobotModelJointMap
 from hc_data_platform.robotics.scene_models import FrozenRobotScene, scene_hash
 
 Plan = TypeVar("Plan", McapEpisodePlan, NativeEpisodePlan)
-ModelInputs = tuple[str, tuple[RobotModelAsset, ...], str, tuple[RobotModelJointMapping, ...]]
+ModelInputs = tuple[str, str, tuple[RobotModelAsset, ...], str, tuple[RobotModelJointMapping, ...]]
 
 
 class RobotSceneSnapshots:
@@ -57,11 +57,12 @@ class RobotSceneSnapshots:
                 binding = self.binding_query(cursor, identity.organization_id, source.robot_id)
                 model: dict[str, Any] = {}
                 if binding is not None:
-                    assets_hash, assets, mapping_hash, mappings = self.model_query(
+                    model_id, assets_hash, assets, mapping_hash, mappings = self.model_query(
                         cursor, identity.organization_id, binding[1]
                     )
                     model = dict(
                         binding_id=binding[0],
+                        model_id=model_id,
                         model_version_id=binding[1],
                         asset_manifest_sha256=assets_hash,
                         assets=assets,

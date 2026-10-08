@@ -301,3 +301,5 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 新增实际 POST `lerobot-imports:capabilities`，显式组织/项目/区域和 upload.manage，返回元数据 SHA、`lerobot-native-episode/1` revision、存储/处理支持及阶段化拒绝原因。调用生产原生 profile 校验，float64 与额外特征保留，不依赖机器人型号前端白名单。只声明元数据适用性；上传 commit 仍核对原始 info 字节内容，worker 仍验证实际表格/视频/深度证据。
 
 新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。
+
+R04/B049 补齐固定 `model_id`，从发布版本的 `robot_model_id` 原值冻结，不由robot/version猜测；NO_MODEL_BINDING仍为null。实际普通HTTP读取/跨项目资产/换绑/4并发重试/Tag继承完整服务1通过，3文件mypy及OpenAPI生成通过。首轮数据库列名误用model_id导致实际worker失败的证据 frozen-scene-model-id-services.xml 保留，改成真实robot_model_id后v2通过，未放宽验证。runtime-frozen-robot-scene-model-id.yaml SHA256=40ce3f4fde3e763a50b8b39ac3dfb1a057581569ed891d80139d1aea51c21b13。此检查点仍待B消费，不关闭R04。

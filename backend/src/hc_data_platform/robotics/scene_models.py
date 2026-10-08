@@ -26,6 +26,7 @@ class FrozenRobotScene(BaseModel):
     robot_id: str
     status: Literal["FROZEN", "NO_MODEL_BINDING"]
     binding_id: str | None = None
+    model_id: str | None = None
     model_version_id: str | None = None
     asset_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     assets: tuple[RobotModelAsset, ...] = ()
@@ -42,6 +43,7 @@ class FrozenRobotScene(BaseModel):
             if any(
                 (
                     self.binding_id,
+                    self.model_id,
                     self.model_version_id,
                     self.assets,
                     self.joint_mappings,
@@ -52,6 +54,7 @@ class FrozenRobotScene(BaseModel):
                 raise ValueError("missing binding cannot claim a model")
         elif (
             not self.binding_id
+            or not self.model_id
             or not self.model_version_id
             or not self.assets
             or scene_hash([item.model_dump(mode="json") for item in self.assets])
