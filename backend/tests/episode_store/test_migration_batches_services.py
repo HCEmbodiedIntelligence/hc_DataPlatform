@@ -60,7 +60,8 @@ pytestmark = pytest.mark.integration
 def batch_source(services, tmp_path, request, monkeypatch):
     packages, storage = services
     run = uuid4().hex
-    persistent = request.node.name in {
+    logical_media = getattr(request, "param", {}).get("logical_media", False)
+    persistent = logical_media or request.node.name in {
         "test_batch_publish_rollback_roundtrip",
         "test_batch_cli_and_retained_downloads",
         "test_real_logical_http_reads_native_and_legacy_with_identical_contract",
@@ -180,6 +181,11 @@ def batch_source(services, tmp_path, request, monkeypatch):
                 ended_at=now,
                 camera_modality_keys=tuple(assets.videos),
             )
+            media_ids = {}
+            if logical_media:
+                from tests.episode_store.logical_media_fixture import publish_media
+
+                media_ids = publish_media(packages, storage, source, version, assets)
             streams = []
             for name in schema.fields:
                 camera = name in assets.videos
@@ -199,7 +205,7 @@ def batch_source(services, tmp_path, request, monkeypatch):
                         aligned_media_binding=DatasetPageEpisodeAlignedMediaBinding(
                             rollout_id=rollout,
                             dataset_version=version.version,
-                            artifact_id="fixture-" + name,
+                            artifact_id=media_ids.get(name, "fixture-" + name),
                             camera_id=name,
                             start_step=0,
                             end_step=4,

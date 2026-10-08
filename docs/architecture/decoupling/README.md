@@ -594,3 +594,19 @@ plan/execute/reconcile 均消费公共工厂，去除 restore_cli → whole_cli 
 restore plan CLI（含重复计划与精确签名哈希篡改拒绝），2 passed，0 skipped。
 证据为外部 `backup-composition-services-recheck.xml`。初次挂载目录错误和负例
 异常断言错误保留在原 XML 与 failures.txt。未称真实 Vault/KMS/灾备执行已验收。
+
+
+## A：统一逻辑流媒体授权
+
+`POST .../logical/streams/{stream_id}/media/authorize` 仅接受已授权固定版本的
+snapshot token/id，调用与逻辑样本相同的物理 adapter。Episode 使用已生成预览；
+Lance 使用固定 artifact receipt，并保留旧 episode.read 门槛与审计。返回
+LogicalMediaGrant，不要求浏览器从 package/Lance 字段选择读取路径。
+逻辑第 i 个样本对应 media_start_seconds + i/sample_rate_hz；原视频非零偏移
+和深度 colorizer/单位范围保留。授权不启动编码，未准备/失败/退休仍返回原错误。
+
+真实 PG/MinIO/API 的两种存储媒体下载、sha、视频帧解码、Range、隔离、撤权及
+审计通过；原逻辑样本 HTTP 回归同时通过，共 2 项零跳过。54 项契约/架构与
+3 项非零偏移/冻结收据检查通过，mypy 2 文件通过。运行时 OpenAPI SHA256
+`5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad`。
+前端 B 尚待消费，不关闭 B06/B07/F05，不声称非时序图片链路已完成。

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Protocol
 
-from .models import LogicalSampleBatch, LogicalSnapshotView, SnapshotSelection
+from .models import LogicalMediaGrant, LogicalSampleBatch, LogicalSnapshotView, SnapshotSelection
 
 if TYPE_CHECKING:
     from hc_data_platform.security import AuthContext
@@ -27,6 +27,16 @@ class SnapshotReader(Protocol):
         snapshot_token: str,
         snapshot_id: str,
     ) -> LogicalSampleBatch: ...
+
+    def authorize_media(
+        self,
+        selection: SnapshotSelection,
+        stream_id: str,
+        *,
+        auth: AuthContext,
+        snapshot_token: str,
+        snapshot_id: str,
+    ) -> LogicalMediaGrant: ...
 
     def iter_samples(
         self,

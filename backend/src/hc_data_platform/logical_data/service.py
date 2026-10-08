@@ -40,7 +40,7 @@ class LogicalDataService:
     def snapshot(self, selection, *, auth, snapshot_token):
         return self._resolve(selection, auth, snapshot_token)[1]
 
-    def read_samples(self, selection, stream_id, start, end, *, auth, snapshot_token, snapshot_id):
+    def _stream(self, selection, stream_id, *, auth, snapshot_token, snapshot_id):
         revision, view = self._resolve(selection, auth, snapshot_token)
         if view.snapshot_id != snapshot_id:
             raise problem(
@@ -54,6 +54,12 @@ class LogicalDataService:
             raise KeyError("stream is absent from the frozen snapshot")
         adapter = self.adapters.for_stream(stream)
         descriptor = adapter.describe(stream)
+        return revision, view, stream, adapter, descriptor
+
+    def read_samples(self, selection, stream_id, start, end, *, auth, snapshot_token, snapshot_id):
+        revision, view, stream, adapter, descriptor = self._stream(
+            selection, stream_id, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        )
         if not 0 <= start <= end <= descriptor.sample_count or end - start > 4096:
             raise ValueError("invalid or oversized logical sample window")
         samples = adapter.read(revision, stream, start, end)
@@ -64,6 +70,12 @@ class LogicalDataService:
             end=end,
             samples=samples,
         )
+
+    def authorize_media(self, selection, stream_id, *, auth, snapshot_token, snapshot_id):
+        revision, view, stream, adapter, _ = self._stream(
+            selection, stream_id, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        )
+        return adapter.authorize_media(revision, stream, auth=auth, snapshot_id=view.snapshot_id)
 
     def iter_samples(
         self, selection, stream_id, *, auth, snapshot_token, snapshot_id, batch_size=128

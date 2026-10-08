@@ -1120,7 +1120,10 @@ def build_runtime(
         logical_data=LogicalDataService(
             dataset_page,
             SampleAdapters(
-                (EpisodeSampleAdapter(episode_packages.steps), LanceSampleAdapter(catalog))
+                (
+                    EpisodeSampleAdapter(episode_packages.steps, episode_packages.previews),
+                    LanceSampleAdapter(catalog, aligned_media, aligned_media_audit),
+                )
             ),
         ),
         manual_issues=manual_issues,

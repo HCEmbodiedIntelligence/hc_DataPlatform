@@ -28,6 +28,7 @@ def main():
                     "LogicalSnapshotView",
                     "LogicalSample",
                     "LogicalSampleBatch",
+                    "LogicalMediaGrant",
                 )
             },
         },

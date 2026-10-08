@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -89,3 +90,28 @@ class LogicalSampleBatch(FrozenModel):
         ):
             raise ValueError("sample batch must completely cover its selected half-open window")
         return self
+
+
+class LogicalMediaGrant(FrozenModel):
+    """Playback mapping for one frozen stream, without storage dispatch fields.
+
+    Logical sample i maps to media_start_seconds + i / sample_rate_hz.
+    Original videos retain their real offset; depth previews retain their
+    colorizer metadata. The URL grants existing media and never starts encoding.
+    """
+
+    snapshot_id: str
+    stream_id: str
+    kind: Literal["video", "depth-preview"]
+    media_url: str
+    content_type: Literal["video/mp4"] = "video/mp4"
+    expires_at: datetime
+    sample_count: int = Field(gt=0)
+    sample_rate_hz: float = Field(gt=0, allow_inf_nan=False)
+    media_start_seconds: float = Field(ge=0, allow_inf_nan=False)
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    media_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    depth_min_m: float | None = None
+    depth_max_m: float | None = None
+    colorizer: dict[str, Any] | None = None

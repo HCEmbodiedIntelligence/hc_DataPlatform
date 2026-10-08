@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
-from .models import LogicalSampleBatch, LogicalSnapshotView, SnapshotSelection
+from .models import LogicalMediaGrant, LogicalSampleBatch, LogicalSnapshotView, SnapshotSelection
 from .service import LogicalDataService
 
 router = APIRouter(
@@ -129,6 +129,41 @@ def samples(
             stream_id,
             start,
             end,
+            auth=auth,
+            snapshot_token=snapshot_token,
+            snapshot_id=snapshot_id,
+        ),
+    )
+
+
+@router.post(
+    "/streams/{stream_id}/media/authorize",
+    operation_id="authorizeLogicalDataMedia",
+    response_model=LogicalMediaGrant,
+)
+def authorize_media(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    version_id: str,
+    revision_id: str,
+    stream_id: str,
+    auth: VerifiedAuth,
+    organization_id: Organization,
+    snapshot_token: SnapshotToken,
+    service: Reader,
+    response: Response,
+    snapshot_id: str = Query(pattern=r"^snapshot_[0-9a-f]{64}$"),
+):
+    selection = _selection(
+        auth, organization_id, project_id, region_code, dataset_id, version_id, revision_id
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _read(
+        service,
+        lambda reader: reader.authorize_media(
+            selection,
+            stream_id,
             auth=auth,
             snapshot_token=snapshot_token,
             snapshot_id=snapshot_id,

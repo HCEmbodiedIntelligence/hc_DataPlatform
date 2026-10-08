@@ -17892,6 +17892,96 @@ components:
       - items
       - page_info
       type: object
+    LogicalMediaGrant:
+      additionalProperties: false
+      description: 'Playback mapping for one frozen stream, without storage dispatch fields.
+
+
+        Logical sample i maps to media_start_seconds + i / sample_rate_hz.
+
+        Original videos retain their real offset; depth previews retain their
+
+        colorizer metadata. The URL grants existing media and never starts encoding.'
+      properties:
+        colorizer:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Colorizer
+        content_type:
+          const: video/mp4
+          default: video/mp4
+          title: Content Type
+          type: string
+        depth_max_m:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Depth Max M
+        depth_min_m:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Depth Min M
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        height:
+          exclusiveMinimum: 0.0
+          title: Height
+          type: integer
+        kind:
+          enum:
+          - video
+          - depth-preview
+          title: Kind
+          type: string
+        media_sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Media Sha256
+        media_start_seconds:
+          minimum: 0.0
+          title: Media Start Seconds
+          type: number
+        media_url:
+          title: Media Url
+          type: string
+        sample_count:
+          exclusiveMinimum: 0.0
+          title: Sample Count
+          type: integer
+        sample_rate_hz:
+          exclusiveMinimum: 0.0
+          title: Sample Rate Hz
+          type: number
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+        stream_id:
+          title: Stream Id
+          type: string
+        width:
+          exclusiveMinimum: 0.0
+          title: Width
+          type: integer
+      required:
+      - snapshot_id
+      - stream_id
+      - kind
+      - media_url
+      - expires_at
+      - sample_count
+      - sample_rate_hz
+      - media_start_seconds
+      - width
+      - height
+      title: LogicalMediaGrant
+      type: object
     LogicalSample:
       additionalProperties: false
       properties:
@@ -46456,6 +46546,87 @@ paths:
       security:
       - bearerAuth: []
       summary: Snapshot
+      tags:
+      - logical_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/media/authorize
+  : post:
+      operationId: authorizeLogicalDataMedia
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: path
+        name: stream_id
+        required: true
+        schema:
+          title: Stream Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: query
+        name: snapshot_id
+        required: true
+        schema:
+          pattern: ^snapshot_[0-9a-f]{64}$
+          title: Snapshot Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalMediaGrant'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Authorize Media
       tags:
       - logical_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/samples

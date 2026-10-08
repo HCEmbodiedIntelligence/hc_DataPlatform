@@ -72,7 +72,8 @@
         "core.ModuleRouter is lazy so importing error/format contracts does not load FastAPI",
         "logical_data models/ports/service/router with actual runtime composition",
         "integrations/logical_samples.py real Lance and Episode adapters",
-        "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip"
+        "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip",
+        "LogicalMediaGrant: real Episode/legacy media authorized by frozen snapshot+stream, actual bytes decoded/Range/sha/audit/revocation validated; 2 HTTP service cases, 3 offset/receipt cases, 54 contract/architecture checks; B consumer pending"
       ],
       "remaining": "新逻辑快照/样本 HTTP 已使用两个真实 adapter；仍需 B 迁移页面读取、接通逻辑媒体授权、继续迁移旧业务公开物理语义与下游消费者。"
     },
@@ -85,7 +86,8 @@
       "evidence": [
         "logical_data models/ports/service/router with actual runtime composition",
         "integrations/logical_samples.py real Lance and Episode adapters",
-        "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip"
+        "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip",
+        "LogicalMediaGrant: real Episode/legacy media authorized by frozen snapshot+stream, actual bytes decoded/Range/sha/audit/revocation validated; 2 HTTP service cases, 3 offset/receipt cases, 54 contract/architecture checks; B consumer pending"
       ],
       "remaining": "新逻辑快照/样本 HTTP 已使用两个真实 adapter；仍需 B 迁移页面读取、接通逻辑媒体授权、继续迁移旧业务公开物理语义与下游消费者。"
     },
