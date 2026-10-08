@@ -27,6 +27,7 @@ import {
 import { routes, type DatasetDetailTab } from "../../features/datasets/routing";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   formatEffectiveDuration,
   formatStorageSize,
@@ -56,6 +57,8 @@ import {
   episodeSuccessPresentation,
 } from "../../features/datasets/episodes/episode-presentation";
 import styles from "./styles.module.css";
+import { CollectionReleaseDialog } from "./CollectionReleaseDialog";
+import { workingCollectionId } from "../../features/datasets/api/collection-releases";
 
 const invalidDataset = "dataset_invalid" as DatasetId;
 const invalidVersion = "version_invalid" as DatasetVersionId;
@@ -433,7 +436,11 @@ export function DatasetDetailPage() {
   const [compactInspector, setCompactInspector] = useState(
     () => globalThis.innerWidth <= 1440,
   );
-  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishContext, setPublishContext] = useState<string | null>(null);
+  const sessionRevision = useShellStore((state) => state.sessionRevision);
+  const authorizationRevision = useShellStore(
+    (state) => state.authorization?.roleVersion,
+  );
   const [publicationVersion, setPublicationVersion] = useState("");
   const search = datasetDetailQueryCodec.parse(params);
   const rawCollectionTaskId = params.get("collectionTaskId");
@@ -455,6 +462,21 @@ export function DatasetDetailPage() {
     invalidVersion;
   const hasChosenVersion = chosenVersionId !== invalidVersion;
   const workingVersionId = bootstrap.data?.workingVersionId ?? null;
+  const collectionId = workingCollectionId(workingVersionId);
+  const publicationContext = JSON.stringify([
+    rawScope,
+    datasetId,
+    workingVersionId,
+    sessionRevision,
+    authorizationRevision,
+  ]);
+  const publishOpen = publishContext === publicationContext;
+  const canPublishCollection = Boolean(
+    collectionId &&
+      rawScope &&
+      capabilities.has("dataset_version.publish") &&
+      capabilities.has("annotation_task.read"),
+  );
   const baseLanceVersion =
     workingVersionId?.match(/^version_lance_([1-9][0-9]*)$/u)?.[1] ?? null;
   const versions = useDatasetVersionsQuery(
@@ -763,8 +785,8 @@ export function DatasetDetailPage() {
             {capabilities.has("dataset_version.publish") ? (
               <Button
                 type="primary"
-                disabled={!baseLanceVersion}
-                onClick={() => setPublishOpen(true)}
+                disabled={!baseLanceVersion && !canPublishCollection}
+                onClick={() => setPublishContext(publicationContext)}
               >
                 手动发布版本
               </Button>
@@ -1126,9 +1148,31 @@ export function DatasetDetailPage() {
           />
         ) : null}
       </EntityDrawer>
+      {publishOpen && canPublishCollection && collectionId && rawScope ? (
+        <CollectionReleaseDialog
+          key={publicationContext}
+          scope={rawScope}
+          datasetId={datasetId}
+          collectionId={collectionId}
+          onClose={() => setPublishContext(null)}
+          onPublished={(release) => {
+            setPublishContext(null);
+            applySearch({
+              tab: "versions",
+              versionId: release.version_id as DatasetVersionId,
+              after: undefined,
+              before: undefined,
+            });
+          }}
+        />
+      ) : null}
       <Modal
         title="手动发布数据集版本"
-        open={publishOpen}
+        open={
+          publishOpen &&
+          !collectionId &&
+          capabilities.has("dataset_version.publish")
+        }
         okText="发布并定版"
         cancelText="取消"
         confirmLoading={publishVersion.isPending}
@@ -1137,7 +1181,7 @@ export function DatasetDetailPage() {
         }}
         onCancel={() => {
           if (publishVersion.isPending) return;
-          setPublishOpen(false);
+          setPublishContext(null);
           publishVersion.reset();
         }}
         onOk={() => {
@@ -1149,7 +1193,7 @@ export function DatasetDetailPage() {
               baseLanceVersion,
             })
             .then(() => {
-              setPublishOpen(false);
+              setPublishContext(null);
               setPublicationVersion("");
               publishVersion.reset();
             })
