@@ -26,6 +26,7 @@ def main():
                     "LogicalStream",
                     "LogicalSnapshot",
                     "LogicalSnapshotView",
+                    "AnnotationLogicalSnapshot",
                     "LogicalSample",
                     "LogicalSampleBatch",
                     "LogicalMediaGrant",

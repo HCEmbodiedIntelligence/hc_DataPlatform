@@ -26,6 +26,7 @@ from .delivery_models import (
     DeliveryGeneration,
     RequestAnnotationDelivery,
 )
+from .logical_router import router as logical_router
 from .models import (
     AnnotationApprovedV1,
     AnnotationCurrent,
@@ -1064,3 +1065,6 @@ def apply_auto_annotation_job(
     )
     response.headers["ETag"] = service.read_task(task_id, auth).etag
     return revision
+
+
+router.include_router(logical_router)

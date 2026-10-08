@@ -1,5 +1,28 @@
 components:
   schemas:
+    AnnotationLogicalSnapshot:
+      additionalProperties: false
+      properties:
+        snapshot:
+          $ref: '#/components/schemas/LogicalSnapshot'
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+        snapshot_token:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+        task_id:
+          title: Task Id
+          type: string
+      required:
+      - snapshot_id
+      - snapshot
+      - task_id
+      - snapshot_token
+      title: AnnotationLogicalSnapshot
+      type: object
     LogicalMediaGrant:
       additionalProperties: false
       description: 'Playback mapping for one frozen stream, without storage dispatch fields.
@@ -293,6 +316,55 @@ info:
   version: '2026-10-08'
 openapi: 3.1.0
 paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/logical:
+    get:
+      operationId: getAnnotationLogicalDataSnapshot
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationLogicalSnapshot'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Snapshot
+      tags:
+      - annotation
+      - logical_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical
   : get:
       operationId: getLogicalDataSnapshot

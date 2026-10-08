@@ -991,6 +991,7 @@ def create_app(
         app.state.runtime = runtime
         app.state.episode_packages = runtime.episode_packages
         app.state.logical_data = runtime.logical_data
+        app.state.annotation_logical = runtime.annotation_logical
         if runtime.episode_packages is not None:
             app.router.add_event_handler("shutdown", runtime.episode_packages.close)
         resolved_access_service = resolved_access_service or runtime.access
