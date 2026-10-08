@@ -12,6 +12,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from .capabilities import LeRobotCapabilities, LeRobotCapabilityRequest, detect_capabilities
 from .configuration import NativeConfiguration
 from .models import (
     AuthorizeLeRobotPartsV1,
@@ -66,6 +67,20 @@ Service = Annotated[LeRobotWebUploadService, Depends(get_service)]
 class NativeLabelsRequest(BaseModel):
     dataset_id: str = Field(min_length=1, max_length=128)
     labels: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.post(":capabilities", operation_id="detectLeRobotImportCapabilities")
+def get_import_capabilities(
+    project_id: str,
+    region_code: str,
+    command: LeRobotCapabilityRequest,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    response: Response,
+) -> LeRobotCapabilities:
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    response.headers["Cache-Control"] = "no-store"
+    return detect_capabilities(command.info)
 
 
 @router.get("/{import_id}/episodes/{episode_index}/resolution")

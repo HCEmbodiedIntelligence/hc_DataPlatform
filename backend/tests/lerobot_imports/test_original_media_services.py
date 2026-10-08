@@ -41,6 +41,24 @@ def test_raw_depth_is_download_only_and_original_bytes_remain_available(services
             capabilities=["upload.read", "upload.manage", "dataset.create"],
         )
         base = f"/api/v1/projects/{ident.project_id}/regions/{ident.region_code}/lerobot-imports"
+        eligibility = client.post(
+            base + ":capabilities", headers=headers, json={"info": manifest["info"]}
+        )
+        assert eligibility.status_code == 200, eligibility.text
+        assert eligibility.json()["processing_supported"] is True
+        assert eligibility.json()["profile_id"] == "native-generic-v3"
+        assert eligibility.headers["Cache-Control"] == "no-store"
+        assert (
+            client.post(base + ":capabilities", json={"info": manifest["info"]}).status_code == 401
+        )
+        assert (
+            client.post(
+                base + ":capabilities",
+                headers={**headers, "X-Organization-Id": "foreign"},
+                json={"info": manifest["info"]},
+            ).status_code
+            == 403
+        )
         created = client.post(
             f"/api/v1/projects/{ident.project_id}/datasets",
             headers={**headers, "Idempotency-Key": uuid4().hex},
@@ -116,3 +134,9 @@ def test_raw_depth_is_download_only_and_original_bytes_remain_available(services
                 (principal,),
             )
         assert client.get(path + "/episodes/0", headers=headers).status_code == 403
+        assert (
+            client.post(
+                base + ":capabilities", headers=headers, json={"info": manifest["info"]}
+            ).status_code
+            == 403
+        )

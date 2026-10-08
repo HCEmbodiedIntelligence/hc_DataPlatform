@@ -385,6 +385,13 @@ class LeRobotPipeline:
     def _prepare(
         self, task: LeRobotEpisodeTaskV1, raw: RawSource, body: bytes, root: Path
     ) -> IngestRolloutWorkflowInput:
+        if task.storage_format == "lerobot_v3":
+            from .capabilities import validate_processing_selection
+
+            validate_processing_selection(
+                json.loads((root / "meta/info.json").read_text()),
+                json.loads(body).get("processing_capability_revision"),
+            )
         native_source = task.source.model_copy(
             update={"preserve_source_features": task.storage_format == "lerobot_v3"}
         )
