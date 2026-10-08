@@ -18,8 +18,8 @@ from .detail_models import (
     EpisodeRevisionIdentity,
 )
 from .detail_state import detail_state
+from .errors import PackageConflict
 from .models import DataVersionRef, canonical
-from .postgres import PackageConflict
 from .quality import read_episode_quality
 from .review_models import EpisodeDataReview
 

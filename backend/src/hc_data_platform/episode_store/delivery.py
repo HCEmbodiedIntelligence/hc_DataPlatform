@@ -20,8 +20,8 @@ from .collection_delivery import CollectionDelivery
 from .collection_delivery_models import CollectionDeliveryPlan, EpisodeDeliveryCandidates
 from .delivery_models import EpisodeDeliveryDownload, EpisodeDeliveryMember, EpisodeDeliveryPlan
 from .delivery_repository import EpisodeDeliveryBusy, failure, public_job, scope_key
+from .errors import PackageConflict
 from .models import canonical, digest
-from .postgres import PackageConflict
 
 logger = logging.getLogger(__name__)
 

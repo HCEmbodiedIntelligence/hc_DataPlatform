@@ -18,6 +18,7 @@ from hc_data_platform.core.context import (
 )
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.episode_store.commit import EpisodePackageCommitter
+from hc_data_platform.episode_store.errors import PackageConflict
 from hc_data_platform.episode_store.migration_conversion import (
     LegacyEpisodeConverter,
     MigrationEpisodePlan,
@@ -26,7 +27,7 @@ from hc_data_platform.episode_store.migration_conversion import (
 from hc_data_platform.episode_store.migration_inventory import read_inventory
 from hc_data_platform.episode_store.migration_native import NativeMigrationAssets
 from hc_data_platform.episode_store.models import LegacyEpisodeRef
-from hc_data_platform.episode_store.postgres import PackageConflict, PostgresEpisodeStore
+from hc_data_platform.episode_store.postgres import PostgresEpisodeStore
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
     PostgresAdvisoryDatasetLock,

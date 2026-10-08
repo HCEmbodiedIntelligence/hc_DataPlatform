@@ -12,13 +12,15 @@ from .collections import EpisodeCollections
 from .commit import EpisodePackageCommitter
 from .delivery import EpisodeDeliveryService
 from .delivery_repository import PostgresEpisodeDeliveries
+from .errors import PackageConflict
 from .files import PackageFiles, VerifiedFileCache
-from .postgres import PackageConflict, PostgresEpisodeStore, assert_scope
+from .postgres import PostgresEpisodeStore
 from .previews import EpisodePreviews
 from .quality import EpisodeQualityEvidence
 from .reader import ParquetStepReader, PhysicalDepthReader
 from .reviews import EpisodeDataReviews
 from .schemas import EpisodeSchemas
+from .scope import assert_scope
 from .writer import write_episode
 
 

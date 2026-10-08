@@ -29,12 +29,13 @@ from hc_data_platform.data_formats.video import inspect_depth_video, inspect_vid
 from .depth_window import PARENT_TIME_VERSION, prepare_depth_window
 from .derivation_models import TagEpisodePlan
 from .derivation_quality import AUTO_QUALITY, evaluate_tag_quality, freeze_quality
+from .errors import PackageConflict
 from .frame_window import DepthWindow
 from .models import canonical
-from .postgres import PackageConflict, assert_scope
 from .prepared_assets import PreparedVideo
 from .reader import window_rows
 from .schemas import EpisodeSchemas
+from .scope import assert_scope
 from .validation import parquet_rows, validate_package
 from .writer import Moments, write_json
 

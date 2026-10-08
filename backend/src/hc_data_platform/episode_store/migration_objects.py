@@ -13,10 +13,10 @@ from hc_data_platform.lerobot_imports.committed import read_committed_manifest
 from hc_data_platform.lerobot_imports.reader import safe_relative
 from hc_data_platform.lerobot_imports.service import _raw_content_digest
 
-from .collections import collection_scope
+from .errors import PackageConflict
 from .migration_inventory import FORMAT, InventoryLimit
 from .models import CollectionSnapshot, CommitReceipt, FileEntry, PackageManifest, canonical, digest
-from .postgres import PackageConflict, assert_scope
+from .scope import assert_scope, collection_scope
 
 
 class _ManifestBytes:

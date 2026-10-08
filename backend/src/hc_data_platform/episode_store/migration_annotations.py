@@ -36,9 +36,10 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.lance_catalog.service import compute_fragment_hash
 
 from .commit import EpisodePackageCommitter
+from .errors import PackageConflict
 from .migration_conversion import legacy_steps, pinned_legacy
 from .models import DataVersionRef, LegacyEpisodeRef, canonical, digest
-from .postgres import PackageConflict, assert_scope
+from .scope import assert_scope
 
 FORMAT = "hc-annotation-migration-plan/1"
 MAX_BYTES = 16 * 1024**2

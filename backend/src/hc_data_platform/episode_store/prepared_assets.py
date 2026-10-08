@@ -11,7 +11,7 @@ from pathlib import Path
 from hc_data_platform.data_formats.depth_evidence import file_hash
 
 from .models import EpisodeIdentity, FileEntry
-from .postgres import assert_scope
+from .scope import assert_scope
 
 
 @dataclass(frozen=True)

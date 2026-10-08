@@ -15,8 +15,9 @@ from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
 
+from .errors import PackageConflict
 from .models import CommitReceipt, EpisodeIdentity, FileEntry, PackageManifest
-from .postgres import PackageConflict, assert_scope
+from .scope import assert_scope
 
 
 class VerifiedFileCache:

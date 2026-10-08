@@ -21,8 +21,8 @@ from hc_data_platform.lance_catalog.adapters import PostgresAdvisoryDatasetLock
 from hc_data_platform.lance_catalog.service import compute_fragment_hash
 
 from .catalog_models import CollectionVersion
-from .collections import collection_scope
 from .commit import EpisodePackageCommitter
+from .errors import PackageConflict
 from .files import PackageFiles, VerifiedFileCache
 from .migration_conversion import (
     MigrationEpisodePlan,
@@ -32,9 +32,9 @@ from .migration_conversion import (
     verify_conversion,
 )
 from .models import CollectionSnapshot, canonical, digest
-from .postgres import PackageConflict, assert_scope
 from .previews import EpisodePreviews
 from .schemas import EpisodeSchemas
+from .scope import assert_scope, collection_scope
 from .validation import document, validate_package
 
 

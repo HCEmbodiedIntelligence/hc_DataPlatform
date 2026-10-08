@@ -25,8 +25,8 @@ from hc_data_platform.quality.models import (
 )
 from hc_data_platform.quality.spooled import SpilledQualityInput
 
+from .errors import PackageConflict
 from .models import FrozenModel
-from .postgres import PackageConflict
 from .quality import read_episode_quality
 from .reader import restore_value
 from .validation import parquet_rows

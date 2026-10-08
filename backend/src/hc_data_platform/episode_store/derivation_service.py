@@ -28,8 +28,8 @@ from .delivery_repository import scope_key
 from .derivation import freeze_tag_episode, write_tag_episode
 from .derivation_jobs import TagDerivationPlan
 from .derivation_repository import TagDerivationBusy, failure, public_job
+from .errors import PackageConflict
 from .models import digest
-from .postgres import PackageConflict
 from .quality import read_episode_quality
 
 logger = logging.getLogger(__name__)

@@ -5,9 +5,9 @@ import math
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.schema import compute_schema_fingerprint
 
-from .collections import collection_scope
+from .errors import PackageConflict
 from .models import canonical, digest
-from .postgres import PackageConflict
+from .scope import collection_scope
 
 
 class EpisodeSchemas:

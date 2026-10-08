@@ -19,8 +19,8 @@ from hc_data_platform.aligned_media.models import (
 from .bundle_models import DepthAssetContract as DepthAssetContract
 from .bundle_models import FrozenObject
 from .bundle_models import SourceInventory as SourceInventory
-from .postgres import assert_scope
 from .prepared_assets import PreparedAssets, PreparedVideo
+from .scope import assert_scope
 
 
 class BundleAssetsLoader:

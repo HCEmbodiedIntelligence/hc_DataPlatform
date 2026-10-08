@@ -4,17 +4,9 @@ from contextlib import contextmanager
 
 from hc_data_platform.core.context import current_request_context
 
+from .errors import PackageConflict as PackageConflict
 from .models import CommitReceipt, EpisodeIdentity, PackageManifest, canonical, digest
-
-
-class PackageConflict(ValueError):
-    pass
-
-
-def assert_scope(identity: EpisodeIdentity) -> None:
-    context = current_request_context()
-    if identity.scope != (context.organization_id, context.project_id, context.region_code):
-        raise PermissionError("Episode data reference is outside the verified request scope")
+from .scope import assert_scope as assert_scope
 
 
 class PostgresEpisodeStore:

@@ -14,8 +14,8 @@ from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 from hc_data_platform.data_formats.video import inspect_video
 
+from .errors import PackageConflict
 from .models import digest
-from .postgres import PackageConflict
 from .prepared_assets import PreparedVideo
 
 VERSION = "hc-native-rgb-selection/1"

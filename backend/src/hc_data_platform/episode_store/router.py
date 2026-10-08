@@ -13,13 +13,14 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .delivery_router import router as delivery_router
+from .dependencies import PackageServices
 from .derivation_router import router as derivation_router
 from .detail import file_page, open_download, read_detail
 from .detail_models import EpisodeDetail, EpisodeFileGrant, EpisodeFilePage
 from .download import complete_archive
+from .errors import PackageConflict
 from .migration_annotations import read_annotation_migration
 from .models import DataVersionRef
-from .postgres import PackageConflict
 from .previews import EpisodePreviewGrant
 from .quality import EpisodeQualityView, read_episode_quality
 from .reader import DepthPixelValue, PackageStepWindow
@@ -30,7 +31,6 @@ from .review_models import (
     EpisodeDataReviewPage,
     SubmitEpisodeDataReview,
 )
-from .service import EpisodePackageService
 
 BASE = (
     "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}"
@@ -41,18 +41,10 @@ RELEASES = "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/c
 router = APIRouter(prefix="/api/v1", tags=["episode_data"])
 router.include_router(delivery_router)
 router.include_router(derivation_router)
-_service: EpisodePackageService | None = None
-
-
-def configure_episode_packages(service: EpisodePackageService):
-    global _service
-    if _service is not None and _service is not service:
-        _service.close()
-    _service = service
 
 
 @contextmanager
-def authorized_releases(auth, project_id, region_code, dataset_id, *, publish=False):
+def authorized_releases(packages, auth, project_id, region_code, dataset_id, *, publish=False):
     organization = current_request_context().organization_id
     authorize_scope(
         auth,
@@ -62,7 +54,7 @@ def authorized_releases(auth, project_id, region_code, dataset_id, *, publish=Fa
         organization,
     )
     authorize_scope(auth, project_id, "annotation_task.read", region_code, organization)
-    if _service is None:
+    if packages is None:
         raise problem(
             status=503,
             code="EPISODE_PACKAGES_UNAVAILABLE",
@@ -70,7 +62,7 @@ def authorized_releases(auth, project_id, region_code, dataset_id, *, publish=Fa
             detail="Episode package service is not configured.",
         )
     try:
-        yield _service.releases
+        yield packages.releases
     except KeyError as exc:
         raise problem(
             status=404,
@@ -108,9 +100,12 @@ def collection_release_preflight(
     dataset_id: str,
     command: PublishCollectionRelease,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
-    with authorized_releases(auth, project_id, region_code, dataset_id, publish=True) as service:
+    with authorized_releases(
+        packages, auth, project_id, region_code, dataset_id, publish=True
+    ) as service:
         response.headers["Cache-Control"] = "no-store"
         return service.preflight(dataset_id, command)
 
@@ -122,9 +117,12 @@ def publish_collection_release(
     dataset_id: str,
     command: PublishCollectionRelease,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
-    with authorized_releases(auth, project_id, region_code, dataset_id, publish=True) as service:
+    with authorized_releases(
+        packages, auth, project_id, region_code, dataset_id, publish=True
+    ) as service:
         response.headers["Cache-Control"] = "no-store"
         return service.publish(dataset_id, command)
 
@@ -136,15 +134,16 @@ def collection_release(
     dataset_id: str,
     dataset_version: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
-    with authorized_releases(auth, project_id, region_code, dataset_id) as service:
+    with authorized_releases(packages, auth, project_id, region_code, dataset_id) as service:
         response.headers["Cache-Control"] = "no-store"
         return service.get(dataset_id, dataset_version)
 
 
 @contextmanager
-def authorized(auth, project_id, region_code, dataset_id, episode_id, *, download=False):
+def authorized(packages, auth, project_id, region_code, dataset_id, episode_id, *, download=False):
     organization = current_request_context().organization_id
     if not organization:
         raise problem(
@@ -160,7 +159,7 @@ def authorized(auth, project_id, region_code, dataset_id, episode_id, *, downloa
         region_code,
         organization,
     )
-    if _service is None:
+    if packages is None:
         raise problem(
             status=503,
             code="EPISODE_PACKAGES_UNAVAILABLE",
@@ -168,8 +167,8 @@ def authorized(auth, project_id, region_code, dataset_id, episode_id, *, downloa
             detail="Episode package service is not configured.",
         )
     try:
-        identity = _service.repository.identity(dataset_id, episode_id)
-        yield _service, identity
+        identity = packages.repository.identity(dataset_id, episode_id)
+        yield packages, identity
     except KeyError as exc:
         raise problem(
             status=404,
@@ -207,10 +206,14 @@ def versions(
     dataset_id: str,
     episode_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     before: int | None = Query(None, ge=1),
     limit: int = Query(100, ge=1, le=100),
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return service.repository.list_versions(identity, before=before, limit=limit)
 
 
@@ -222,8 +225,12 @@ def detail(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         package = service.files.open(identity, data_version_id)
         return {
             "data": package.receipt.data,
@@ -248,11 +255,15 @@ def steps(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     start_step: int = Query(ge=0),
     end_step: int = Query(ge=0),
     columns: Annotated[list[str] | None, Query()] = None,
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return service.steps.read_steps(
             identity, data_version_id, start_step, end_step, columns=columns
         )
@@ -271,8 +282,11 @@ def annotation_migration_json(
     data_version_id: str,
     mapping_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+    with authorized(
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+    ) as (
         service,
         identity,
     ):
@@ -303,12 +317,16 @@ def overview(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     delivery_id: str | None = Query(None, pattern=r"^ad_[0-9a-f]{64}$"),
     annotation_task_id: str | None = Query(None, min_length=1, max_length=256),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return read_detail(
             service,
             service.files.open(identity, data_version_id),
@@ -326,12 +344,16 @@ def package_files(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     after: str | None = Query(None, pattern=r"^[0-9a-f]{64}$"),
     limit: int = Query(50, ge=1, le=100),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return file_page(
             service.files.open(identity, data_version_id), auth, after=after, limit=limit
         )
@@ -346,10 +368,13 @@ def authorize_file_download(
     data_version_id: str,
     file_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+    with authorized(
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+    ) as (
         service,
         identity,
     ):
@@ -382,8 +407,11 @@ def package_file_download(
     data_version_id: str,
     file_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+    with authorized(
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+    ) as (
         service,
         identity,
     ):
@@ -412,10 +440,14 @@ def fixed_quality(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return read_episode_quality(service.files.open(identity, data_version_id))
 
 
@@ -427,12 +459,16 @@ def data_review_history(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     before: int | None = Query(None, ge=1),
     limit: int = Query(25, ge=1, le=100),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         page = service.data_reviews.list(identity, data_version_id, before=before, limit=limit)
         actions = []
         for action, capabilities in (
@@ -463,11 +499,15 @@ def submit_data_review(
     data_version_id: str,
     command: SubmitEpisodeDataReview,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     idempotency_key: Annotated[str, Header(min_length=1, max_length=256)],
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         authorize_scope(
             auth, project_id, "dataset_version.review", region_code, identity.organization_id
         )
@@ -493,10 +533,14 @@ def authorize_preview(
     data_version_id: str,
     feature: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return service.previews.authorize(
             identity, data_version_id, feature, actor_id=auth.subject_id
         )
@@ -512,10 +556,14 @@ def depth(
     feature: str,
     frame_index: int,
     auth: VerifiedAuth,
+    packages: PackageServices,
     unit: Literal["m", "mm"] = "mm",
     representation: Literal["metadata", "npz", "png"] = "metadata",
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         frame = service.depth.read(identity, data_version_id, feature, frame_index, unit=unit)
         if representation == "metadata":
             return frame.metadata()
@@ -541,13 +589,17 @@ def depth_pixel(
     feature: str,
     frame_index: int,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     x: int = Query(ge=0),
     y: int = Query(ge=0),
     unit: Literal["m", "mm"] = "m",
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+        service,
+        identity,
+    ):
         return service.depth.read(identity, data_version_id, feature, frame_index, unit=unit).pixel(
             x, y
         )
@@ -561,8 +613,11 @@ def download(
     episode_id: str,
     data_version_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
 ):
-    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+    with authorized(
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+    ) as (
         service,
         identity,
     ):

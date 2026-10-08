@@ -2,24 +2,12 @@
 
 from contextlib import contextmanager
 
-from hc_data_platform.core.context import current_request_context
-
 from .catalog_models import CollectionVersion
 from .commit import EpisodePackageCommitter
+from .errors import PackageConflict
 from .models import CollectionSnapshot, DataVersionRef, canonical, digest
-from .postgres import PackageConflict, assert_scope
-
-
-def collection_scope(dataset_id, project_id=None):
-    context = current_request_context()
-    if (
-        not context.organization_id
-        or not context.project_id
-        or not context.region_code
-        or (project_id is not None and project_id != context.project_id)
-    ):
-        raise PermissionError("collection access requires an exact organization/project/region")
-    return context.organization_id, context.project_id, context.region_code, dataset_id
+from .scope import assert_scope
+from .scope import collection_scope as collection_scope
 
 
 class EpisodeCollections:

@@ -136,8 +136,10 @@
       "title": "路由全局单例和隐式内存回退形成装配时序依赖",
       "scope": "两分支",
       "owner": "T0",
-      "status": "pending",
-      "evidence": [],
+      "status": "in_progress",
+      "evidence": [
+        "Episode parent/delivery/derivation routers resolve app-owned components through one explicit FastAPI dependency; process-global locator and child-to-parent reads removed. create_app owns shutdown. Two simultaneous apps plus unconfigured third prove isolation, actual runtime/API/worker regression 34 passed. Other module globals/internal Episode service cycles remain pending."
+      ],
       "remaining": "依赖以应用实例为作用域；生产构造必须完整且失败可见，测试显式提供内存实现。"
     },
     {
@@ -327,9 +329,15 @@
       "title": "领域错误和作用域校验定义在 PostgreSQL 实现中",
       "scope": "chayi",
       "owner": "T6 T7 T5",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "错误类型和授权作用域契约独立；Postgres 只实现持久化，不提供领域基础规则。"
+      "status": "implemented_verified",
+      "evidence": [
+        "PackageConflict lives in episode_store.errors; assert_scope/collection_scope live in episode_store.scope without repository/service imports",
+        "All production consumers, including historical migration CLI adapters, use the owned contracts; old Postgres/collections names reexport identical values for Python compatibility",
+        "Independent-process pure-import/alias test and parent/child application route isolation: 35 contract/architecture tests passed; three new typed modules pass mypy; full modified-source Ruff passed",
+        "34 actual isolated PG/MinIO/API/persistent-worker cases passed: collection releases, tenant-scoped HTTP, data reviews, annotation delivery, Tag creation, range/download and complete/collection delivery",
+        "Production-composed runtime OpenAPI SHA256 remains 125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206"
+      ],
+      "remaining": ""
     },
     {
       "id": "E05",
@@ -369,8 +377,10 @@
       "title": "Episode 内部多组循环依赖和全局服务回读",
       "scope": "chayi",
       "owner": "T6 T7",
-      "status": "pending",
-      "evidence": [],
+      "status": "in_progress",
+      "evidence": [
+        "Episode parent/delivery/derivation routers resolve app-owned components through one explicit FastAPI dependency; process-global locator and child-to-parent reads removed. create_app owns shutdown. Two simultaneous apps plus unconfigured third prove isolation, actual runtime/API/worker regression 34 passed. Other module globals/internal Episode service cycles remain pending."
+      ],
       "remaining": "scope/交付 inventory 纯能力独立；父子路由通过同一个注入依赖获得服务，不从彼此文件回读全局变量。"
     },
     {

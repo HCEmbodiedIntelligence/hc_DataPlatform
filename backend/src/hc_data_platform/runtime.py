@@ -1120,10 +1120,6 @@ def build_runtime(
 
 
 def configure_api(runtime: RuntimeComponents) -> None:
-    from hc_data_platform.episode_store.router import configure_episode_packages
-
-    if runtime.episode_packages is not None:
-        configure_episode_packages(runtime.episode_packages)
     configure_audit_projection(runtime.audit_projection, runtime.audit_governance)
     configure_dashboard(runtime.dashboard)
     configure_ingest_service(runtime.ingest)

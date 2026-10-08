@@ -502,3 +502,19 @@ mypy 通过。临时 PG/MinIO/API/持久 worker 回归覆盖 53 项：首次 52 
 
 范围仅为 E07；SDK 注入统一、公共导出整包 bytes 和样本批量读取等仍待实施。
 没有将原 48088 服务重启，也没有改原工作树或真实业务数据。
+
+## Episode 基础契约及应用实例依赖
+
+PackageConflict、assert_scope、collection_scope 归属 errors/scope，所有生产读取者
+和迁移 CLI 消费新路径；旧 Postgres/collections 名称重导出同一对象。纯导入不加载
+Postgres、集合实现、服务或 FastAPI。E04 的基础规则不再由数据库适配器拥有。
+
+Episode 父路由和两个子路由通过同一显式依赖读取 app.state.episode_packages。
+create_app 绑定并拥有关闭职责，构造另一个 app 不再替换或关闭原 app 的服务；
+未配置实例返回 503，仍先保持原授权/租户检查。没有恢复进程全局回退。
+其他领域全局服务及 Episode 内部服务循环仍未完成，B13/E08 仅记进行中。
+
+35 项契约/架构用例、34 项真实 PG/MinIO/API/持久 worker 用例通过，无跳过；
+3 个新模块 mypy、全部修改 Python Ruff 通过。实际 runtime OpenAPI 字节/哈希
+与 12c5a744 完全相同。初次门禁发现三个迁移 CLI 的旧错误导入，已迁移并复验；
+首次失败 XML 仍保留。OpenAPI 检查容器使用独立可写暂存路径，未改生产校验。

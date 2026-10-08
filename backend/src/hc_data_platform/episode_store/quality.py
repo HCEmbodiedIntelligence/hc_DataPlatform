@@ -6,8 +6,8 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.quality.evidence import QcEvaluation, QcRuleEvidence, RuleExecution
 from hc_data_platform.quality.models import QcReportV1, QualityCode
 
+from .errors import PackageConflict
 from .models import DataVersionRef, FrozenModel
-from .postgres import PackageConflict
 
 
 class EpisodeQualityView(FrozenModel):

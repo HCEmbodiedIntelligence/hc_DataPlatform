@@ -17,8 +17,8 @@ from .collection_export import (
     write_collection,
 )
 from .delivery_repository import failure, scope_key
+from .errors import PackageConflict
 from .models import canonical, digest
-from .postgres import PackageConflict
 
 
 class CollectionDelivery:

@@ -17,16 +17,15 @@ from .delivery_models import (
     EpisodeDeliveryJob,
     RequestEpisodeDelivery,
 )
-from .postgres import PackageConflict
+from .dependencies import PackageServices
+from .errors import PackageConflict
 
 router = APIRouter(tags=["episode_data"])
 BASE = "/projects/{project_id}/regions/{region_code}/episode-deliveries"
 
 
 @contextmanager
-def delivery_service(auth, project_id, region_code):
-    from .router import _service
-
+def delivery_service(packages, auth, project_id, region_code):
     organization = current_request_context().organization_id
     if not organization:
         raise problem(
@@ -36,7 +35,7 @@ def delivery_service(auth, project_id, region_code):
             detail="Select an organization.",
         )
     authorize_scope(auth, project_id, "dataset_version.read", region_code, organization)
-    if _service is None:
+    if packages is None:
         raise problem(
             status=503,
             code="EPISODE_PACKAGES_UNAVAILABLE",
@@ -44,7 +43,7 @@ def delivery_service(auth, project_id, region_code):
             detail="Package service is not configured.",
         )
     try:
-        yield _service.deliveries
+        yield packages.deliveries
     except KeyError as exc:
         raise problem(
             status=404,
@@ -89,11 +88,12 @@ def request_episode_delivery(
     region_code: str,
     body: RequestEpisodeDelivery,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=160)],
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.request(body, idempotency_key, auth)
 
 
@@ -103,11 +103,12 @@ def request_collection_delivery(
     region_code: str,
     body: RequestCollectionDelivery,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=160)],
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.request_collection(body, idempotency_key, auth)
 
 
@@ -116,6 +117,7 @@ def list_episode_deliveries(
     project_id: str,
     region_code: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     data_version_id: str | None = Query(None, max_length=256),
     limit: int = Query(25, ge=1, le=100),
@@ -123,7 +125,7 @@ def list_episode_deliveries(
     kind: Literal["independent", "collection"] | None = None,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.list(
             auth, data_version_id=data_version_id, limit=limit, before=before, kind=kind
         )
@@ -134,6 +136,7 @@ def episode_delivery_candidates(
     project_id: str,
     region_code: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     dataset_id: str = Query(min_length=1, max_length=256),
     collection_version_id: str | None = Query(None, max_length=256),
@@ -141,7 +144,7 @@ def episode_delivery_candidates(
     limit: int = Query(25, ge=1, le=100),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.candidates(
             dataset_id,
             auth,
@@ -153,10 +156,15 @@ def episode_delivery_candidates(
 
 @router.get(BASE + "/{job_id}", response_model=EpisodeDeliveryJob)
 def get_episode_delivery(
-    project_id: str, region_code: str, job_id: str, auth: VerifiedAuth, response: Response
+    project_id: str,
+    region_code: str,
+    job_id: str,
+    auth: VerifiedAuth,
+    packages: PackageServices,
+    response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.status(job_id, auth)
 
 
@@ -167,10 +175,11 @@ def retry_episode_delivery(
     job_id: str,
     body: EpisodeDeliveryGeneration,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.command(job_id, body.expected_generation, auth, retry=True)
 
 
@@ -181,17 +190,23 @@ def cancel_episode_delivery(
     job_id: str,
     body: EpisodeDeliveryGeneration,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.command(job_id, body.expected_generation, auth, retry=False)
 
 
 @router.post(BASE + "/{job_id}/download", response_model=EpisodeDeliveryDownload)
 def download_episode_delivery(
-    project_id: str, region_code: str, job_id: str, auth: VerifiedAuth, response: Response
+    project_id: str,
+    region_code: str,
+    job_id: str,
+    auth: VerifiedAuth,
+    packages: PackageServices,
+    response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code) as service:
         return service.download(job_id, auth)

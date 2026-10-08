@@ -23,10 +23,11 @@ from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot, StepRec
 from hc_data_platform.lance_catalog.service import compute_fragment_hash
 
 from .commit import EpisodePackageCommitter
+from .errors import PackageConflict
 from .models import Digest, FrozenModel, LegacyEpisodeRef, PackageInput, canonical, digest
-from .postgres import PackageConflict, assert_scope
 from .reader import restore_value
 from .schemas import EpisodeSchemas
+from .scope import assert_scope
 from .validation import document, package_file, parquet_rows, validate_package
 from .writer import write_episode, write_json
 

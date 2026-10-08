@@ -22,7 +22,7 @@ from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PAT
 
 from .annotated_delivery import write_annotated_delivery
 from .models import FileEntry, canonical, digest
-from .postgres import assert_scope
+from .scope import assert_scope
 from .writer import Moments, write_json
 
 PROCESSOR = "hc-lerobot-collection/1"

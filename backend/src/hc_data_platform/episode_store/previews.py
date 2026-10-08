@@ -25,9 +25,10 @@ from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.holobrain_depth import DepthProfile, dequantize
 from hc_data_platform.data_formats.lerobot_layout import VIDEO_PATH
 
+from .errors import PackageConflict
 from .models import DataVersionRef, Digest, FileEntry, FrozenModel, canonical, digest
-from .postgres import PackageConflict, assert_scope
 from .realsense_colorizer import RealSenseColorizer, display_profile
+from .scope import assert_scope
 from .validation import parquet_rows
 
 PROFILE = "rs-2.58.4-dynamic-jet-h264-v1"

@@ -6,8 +6,8 @@ business release is rewritten, and the dataset's business default is untouched.
 
 from psycopg import sql
 
+from hc_data_platform.episode_store.errors import PackageConflict
 from hc_data_platform.episode_store.models import canonical, digest
-from hc_data_platform.episode_store.postgres import PackageConflict
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.versioning import ResourceVersion
 

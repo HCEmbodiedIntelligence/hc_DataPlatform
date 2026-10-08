@@ -20,10 +20,11 @@ from hc_data_platform.core.context import (
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.episode_store.catalog import PostgresLegacyEntries
 from hc_data_platform.episode_store.collections import EpisodeCollections
+from hc_data_platform.episode_store.errors import PackageConflict
 from hc_data_platform.episode_store.migration_batches import MigrationBatches
 from hc_data_platform.episode_store.migration_conversion import MigrationEpisodePlan, _save
 from hc_data_platform.episode_store.models import CommitReceipt
-from hc_data_platform.episode_store.postgres import PackageConflict, PostgresEpisodeStore
+from hc_data_platform.episode_store.postgres import PostgresEpisodeStore
 from hc_data_platform.episode_store.validation import document, package_file
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,

@@ -3,9 +3,9 @@
 from hc_data_platform.lance_catalog.models import DatasetVersionRef
 
 from .catalog_models import CollectionStepWindow, EpisodeLineage
-from .collections import collection_scope
+from .errors import PackageConflict
 from .models import DataVersionRef, EpisodeIdentity, LegacyEpisodeRef, digest
-from .postgres import PackageConflict
+from .scope import collection_scope
 
 
 class PostgresLegacyEntries:

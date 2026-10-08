@@ -6,7 +6,7 @@ from hc_data_platform.alignment.models import AlignmentInputV1
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.episode_store.catalog_models import CollectionVersion, EpisodeDerivedReady
 from hc_data_platform.episode_store.derivation_models import TagEpisodePlan
-from hc_data_platform.episode_store.postgres import assert_scope
+from hc_data_platform.episode_store.scope import assert_scope
 
 from .ingest_projection import (
     DatasetIngestProjectionConflict,

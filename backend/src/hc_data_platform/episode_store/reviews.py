@@ -7,8 +7,8 @@ from uuid import uuid4
 from hc_data_platform.core.errors import problem
 
 from .models import CommitReceipt, canonical, digest
-from .postgres import assert_scope
 from .review_models import EpisodeDataReview, EpisodeDataReviewPage
+from .scope import assert_scope
 
 
 def failure(code, detail, status=409):

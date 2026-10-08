@@ -22,8 +22,8 @@ from hc_data_platform.data_formats.lerobot_layout import (
 from hc_data_platform.data_formats.video import inspect_depth_video, inspect_video
 
 from .models import PackageInput, canonical
-from .postgres import assert_scope
 from .prepared_assets import PreparedAssets
+from .scope import assert_scope
 from .validation import parquet_rows, validate_package
 
 

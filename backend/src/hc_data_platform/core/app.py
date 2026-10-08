@@ -989,6 +989,9 @@ def create_app(
         runtime = build_runtime(resolved_settings)
         configure_api(runtime)
         app.state.runtime = runtime
+        app.state.episode_packages = runtime.episode_packages
+        if runtime.episode_packages is not None:
+            app.router.add_event_handler("shutdown", runtime.episode_packages.close)
         resolved_access_service = resolved_access_service or runtime.access
         resolved_admin_account_service = resolved_admin_account_service or runtime.admin_accounts
         resolved_recovery_service = resolved_recovery_service or runtime.recovery

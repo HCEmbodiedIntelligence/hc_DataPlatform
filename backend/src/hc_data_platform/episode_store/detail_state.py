@@ -1,7 +1,7 @@
 """One SQL snapshot for independently changing annotation/review/file pointers."""
 
+from .errors import PackageConflict
 from .models import canonical
-from .postgres import PackageConflict
 
 
 def detail_state(

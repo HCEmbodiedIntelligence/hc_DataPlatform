@@ -10,22 +10,21 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.dataset_registry.ingest_projection import DatasetIngestProjectionConflict
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from .dependencies import PackageServices
 from .derivation_jobs import (
     RequestTagEpisode,
     TagDerivationGeneration,
     TagDerivationView,
     tag_job_view,
 )
-from .postgres import PackageConflict
+from .errors import PackageConflict
 
 router = APIRouter(tags=["episode_data"])
 BASE = "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes"
 
 
 @contextmanager
-def derivations(auth, project_id, region_code):
-    from .router import _service
-
+def derivations(packages, auth, project_id, region_code):
     organization = current_request_context().organization_id
     if not organization:
         raise problem(
@@ -35,7 +34,7 @@ def derivations(auth, project_id, region_code):
             detail="Select an organization.",
         )
     authorize_scope(auth, project_id, "dataset_version.read", region_code, organization)
-    if _service is None or _service.tag_derivations is None:
+    if packages is None or packages.tag_derivations is None:
         raise problem(
             status=503,
             code="TAG_EPISODE_UNAVAILABLE",
@@ -43,7 +42,7 @@ def derivations(auth, project_id, region_code):
             detail="The Tag creation service is not configured.",
         )
     try:
-        yield _service.tag_derivations
+        yield packages.tag_derivations
     except KeyError as exc:
         raise problem(
             status=404,
@@ -81,6 +80,7 @@ def create_tag_episode(
     task_id: str,
     body: RequestTagEpisode,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1, max_length=160)],
 ):
@@ -90,7 +90,7 @@ def create_tag_episode(
     Original tags and media remain immutable; approvals are not inherited.
     """
     response.headers["Cache-Control"] = "no-store"
-    with derivations(auth, project_id, region_code) as service:
+    with derivations(packages, auth, project_id, region_code) as service:
         return tag_job_view(service.request(task_id, body, idempotency_key, auth))
 
 
@@ -100,12 +100,13 @@ def list_tag_episodes(
     region_code: str,
     task_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
     limit: int = Query(25, ge=1, le=100),
     before: str | None = Query(None, pattern=r"^td_[0-9a-f]{64}$"),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with derivations(auth, project_id, region_code) as service:
+    with derivations(packages, auth, project_id, region_code) as service:
         return tuple(
             tag_job_view(job) for job in service.list(task_id, auth, limit=limit, before=before)
         )
@@ -118,10 +119,11 @@ def get_tag_episode(
     task_id: str,
     job_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with derivations(auth, project_id, region_code) as service:
+    with derivations(packages, auth, project_id, region_code) as service:
         return tag_job_view(service.status(task_id, job_id, auth))
 
 
@@ -133,10 +135,11 @@ def retry_tag_episode(
     job_id: str,
     body: TagDerivationGeneration,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with derivations(auth, project_id, region_code) as service:
+    with derivations(packages, auth, project_id, region_code) as service:
         return tag_job_view(
             service.command(task_id, job_id, body.expected_generation, auth, retry=True)
         )
@@ -150,11 +153,12 @@ def cancel_tag_episode(
     job_id: str,
     body: TagDerivationGeneration,
     auth: VerifiedAuth,
+    packages: PackageServices,
     response: Response,
 ):
     """Cancel only a never-started command; started primary data is never deleted."""
     response.headers["Cache-Control"] = "no-store"
-    with derivations(auth, project_id, region_code) as service:
+    with derivations(packages, auth, project_id, region_code) as service:
         return tag_job_view(
             service.command(task_id, job_id, body.expected_generation, auth, retry=False)
         )

@@ -10,8 +10,9 @@ from hc_data_platform.object_storage.immutable import MultipartImmutableWriter, 
 from hc_data_platform.object_storage.models import ObjectIntegrityError
 from hc_data_platform.object_storage.ports import ImmutableObjectWriter
 
+from .errors import PackageConflict
 from .models import CommitReceipt, DataVersionRef, PackageInput, canonical
-from .postgres import PackageConflict, assert_scope
+from .scope import assert_scope
 from .validation import package_file, validate_package
 
 

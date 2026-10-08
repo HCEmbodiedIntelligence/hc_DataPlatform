@@ -50,9 +50,9 @@ def main():
                 parser.error("verify-objects requires --inventory")
             import boto3
 
+            from hc_data_platform.episode_store.errors import PackageConflict
             from hc_data_platform.episode_store.migration_conversion import _save
             from hc_data_platform.episode_store.migration_objects import InventoryObjectVerifier
-            from hc_data_platform.episode_store.postgres import PackageConflict
             from hc_data_platform.object_storage.providers import S3ObjectStorage
 
             frozen = read_inventory(args.inventory)

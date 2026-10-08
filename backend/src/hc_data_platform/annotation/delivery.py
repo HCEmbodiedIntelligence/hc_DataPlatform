@@ -17,8 +17,8 @@ from hc_data_platform.episode_store.annotated_delivery import (
     ReviewReference,
     write_annotated_delivery,
 )
+from hc_data_platform.episode_store.errors import PackageConflict
 from hc_data_platform.episode_store.models import canonical, digest
-from hc_data_platform.episode_store.postgres import PackageConflict
 from hc_data_platform.ingest.models import CompletedPart
 from hc_data_platform.security import AuthContext
 

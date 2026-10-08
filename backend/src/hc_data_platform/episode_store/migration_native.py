@@ -27,13 +27,14 @@ from hc_data_platform.lerobot_imports.reader import episode_metadata, format_pat
 
 from .bundle_assets import BundleAssetsLoader
 from .bundle_models import FrozenObject
+from .errors import PackageConflict
 from .migration_conversion import freeze_plan, legacy_steps, pinned_legacy
 from .migration_inventory import FORMAT
 from .migration_objects import _ManifestBytes, validate_raw_file_set
 from .migration_rgb import prepare_rgb_selection
 from .models import digest
-from .postgres import PackageConflict, assert_scope
 from .prepared_assets import PreparedAssets, PreparedVideo
+from .scope import assert_scope
 from .validation import parquet_rows
 
 

@@ -14,9 +14,9 @@ from pathlib import Path
 
 from psycopg import sql
 
-from .collections import collection_scope
+from .errors import PackageConflict
 from .models import EpisodeIdentity, LegacyEpisodeRef, canonical, digest
-from .postgres import PackageConflict
+from .scope import collection_scope
 
 FORMAT = "hc-episode-migration-inventory/1"
 REGISTRY_TABLES = (

@@ -45,16 +45,16 @@ from hc_data_platform.dataset_registry.publication_postgres import (
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.versioning import ResourceVersion
 
-from .collections import collection_scope
+from .errors import PackageConflict
 from .migration_annotations import source_snapshot
 from .models import CollectionSnapshot, DataVersionRef, canonical, digest
-from .postgres import PackageConflict
 from .release_models import (
     CollectionRelease,
     CollectionReleaseExclusion,
     CollectionReleasePreflight,
     PublishCollectionRelease,
 )
+from .scope import collection_scope
 
 MAX_BYTES = 64 * 1024**2
 

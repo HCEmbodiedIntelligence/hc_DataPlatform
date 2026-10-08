@@ -119,6 +119,17 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                     f"{node.lineno}: publication storage cannot access another domain's tables"
                 )
     for line, target in imports(tree, package):
+        if target in {
+            "hc_data_platform.episode_store.postgres.PackageConflict",
+            "hc_data_platform.episode_store.postgres.assert_scope",
+            "hc_data_platform.episode_store.collections.collection_scope",
+        }:
+            failures.add(f"{line}: Episode contracts must use errors/scope, not {target}")
+        if module in {
+            "hc_data_platform.episode_store.delivery_router",
+            "hc_data_platform.episode_store.derivation_router",
+        } and matches(target, "hc_data_platform.episode_store.router"):
+            failures.add(f"{line}: child routers must consume application dependencies")
         if module == "hc_data_platform.publishing.postgres" and any(
             matches(target, "hc_data_platform." + domain)
             for domain in ("dataset_registry", "continuous_recordings", "integrations")
