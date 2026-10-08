@@ -6,13 +6,10 @@ import hashlib
 import json
 import logging
 from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Literal
+from datetime import timezone
+from typing import Any
 from urllib.parse import quote
 from uuid import uuid4
-
-from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
@@ -23,10 +20,24 @@ from hc_data_platform.security import AuthContext, ScopeGuard
 
 from .models import AnnotationHistory, ReviewDecision, TagSchemaVersion
 from .postgres import ConnectionFactory, _row
+from .revision_models import (
+    FORMAT as FORMAT,
+)
+from .revision_models import (
+    AnnotationRevisionFile as AnnotationRevisionFile,
+)
+from .revision_models import (
+    RevisionFileDownload as RevisionFileDownload,
+)
+from .revision_models import (
+    SnapshotBusy as SnapshotBusy,
+)
+from .revision_models import (
+    SnapshotIntegrityError as SnapshotIntegrityError,
+)
 from .service import AnnotationService, normalize_operations
 from .validation import revision_content_hash, schema_content_hash
 
-FORMAT = "hc-annotation/1"
 MAX_BYTES = 64 * 1024 * 1024
 logger = logging.getLogger(__name__)
 _SCOPE = """
@@ -35,30 +46,6 @@ AND project_id = NULLIF(current_setting('app.project_id', true), '')
 AND region_code = NULLIF(current_setting('app.region_code', true), '')
 """
 _IDENTITY = f"task_id = %s AND revision = %s AND format_version = %s AND {_SCOPE}"
-
-
-class AnnotationRevisionFile(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    task_id: str
-    revision: int = Field(ge=0)
-    revision_content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    format_version: Literal["hc-annotation/1"] = FORMAT
-    status: Literal["NOT_REQUESTED", "PENDING", "GENERATING", "READY", "FAILED"]
-    generation: int = Field(ge=0)
-    attempts: int = Field(ge=0)
-    content_sha256: str | None = None
-    size_bytes: int | None = None
-    error_code: str | None = None
-    updated_at: datetime | None = None
-
-
-class SnapshotIntegrityError(RuntimeError):
-    pass
-
-
-class SnapshotBusy(RuntimeError):
-    pass
 
 
 def _failure(code: str, detail: str, status: int = 409):
@@ -311,17 +298,6 @@ def revision_document(
     }
 
 
-@dataclass(frozen=True)
-class RevisionFileDownload:
-    content: bytes
-    file: AnnotationRevisionFile
-    approved: bool
-    review_id: str | None
-    submission_id: str | None
-    # Internal locator, never serialized in public responses or supplied by a client.
-    object_key: str | None = None
-
-
 class AnnotationRevisionFileService:
     def __init__(
         self,
@@ -331,7 +307,7 @@ class AnnotationRevisionFileService:
     ):
         self.annotation, self.repository, self.storage = annotation, repository, storage
 
-    def _authorize(self, task_id, auth, *, capability="annotation_task.read"):
+    def authorize(self, task_id, auth, *, capability="annotation_task.read"):
         context = current_request_context()
         if not all((context.organization_id, context.project_id, context.region_code)):
             raise _failure(
@@ -342,7 +318,7 @@ class AnnotationRevisionFileService:
         return self.annotation.read_task(task_id, auth)
 
     def status(self, task_id, revision, auth):
-        self._authorize(task_id, auth)
+        self.authorize(task_id, auth)
         saved = self.annotation.get_revision(task_id, revision, auth)
         row = self.repository.get(task_id, revision)
         if row is not None:
@@ -357,14 +333,14 @@ class AnnotationRevisionFileService:
         )
 
     def request(self, task_id, revision, expected_generation, auth):
-        self._authorize(task_id, auth, capability="annotation.save")
+        self.authorize(task_id, auth, capability="annotation.save")
         self.annotation.get_revision(task_id, revision, auth)
         return _public(
             self.repository.request(task_id, revision, expected_generation, auth.subject_id)
         )
 
     def generate(self, task_id, revision, generation, content_hash, auth):
-        self._authorize(task_id, auth)
+        self.authorize(task_id, auth)
         row = self.repository.claim(task_id, revision, generation, content_hash)
         if row is None:
             return
@@ -423,8 +399,33 @@ class AnnotationRevisionFileService:
             raise SnapshotIntegrityError("annotation object hash mismatch")
         return bytes(body)
 
+    def read_frozen(
+        self, task_id, revision, auth, *, revision_content_hash, content_sha256, size_bytes
+    ):
+        """Read an already frozen revision with current authorization and exact hashes.
+
+        This does not select a current approval. Its caller verifies the frozen
+        approval/submission independently; later reviews do not rewrite this file.
+        """
+        self.authorize(task_id, auth, capability="export.download")
+        saved = self.annotation.get_revision(task_id, revision, auth)
+        row = self.repository.get(task_id, revision)
+        if (
+            saved.content_hash != revision_content_hash
+            or row is None
+            or row["status"] != "READY"
+            or row["revision_content_hash"] != revision_content_hash
+            or row["content_sha256"] != content_sha256
+            or row["size_bytes"] != size_bytes
+        ):
+            raise SnapshotIntegrityError("frozen annotation file is unavailable")
+        body = self._read_verified(row["object_key"], content_sha256, size_bytes)
+        return RevisionFileDownload(
+            body, _public(row), False, None, None, object_key=row["object_key"]
+        )
+
     def download(self, task_id, auth, *, revision=None, allow_unreviewed=False):
-        self._authorize(task_id, auth, capability="export.download")
+        self.authorize(task_id, auth, capability="export.download")
         history = self.annotation.get_history(task_id, auth)
         task = history.task
         selected = task.approved_revision if revision is None else revision

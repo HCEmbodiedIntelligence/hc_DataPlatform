@@ -9,23 +9,20 @@ from tempfile import TemporaryDirectory
 from hc_data_platform.annotation.automation import (
     AutomaticAnnotationBlocked,
     AutomaticAnnotationRequest,
-    AutomaticAnnotationTaskService,
-    PostgresAutomaticAnnotationRepository,
 )
 from hc_data_platform.annotation.delivery_models import RequestAnnotationDelivery
-from hc_data_platform.annotation.revision_files import SnapshotIntegrityError
+from hc_data_platform.annotation.revision_models import SnapshotIntegrityError
+from hc_data_platform.annotation.selection_ports import AnnotationSelectionPort
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost, renewing_lease
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.dataset_registry.ingest_projection import (
     DatasetIngestProjectionConflict,
-    PostgresDatasetIngestProjector,
 )
-from hc_data_platform.dataset_registry.tag_projection import parent_projection
 from hc_data_platform.quality.evidence import QcEvaluation
 from hc_data_platform.security import AuthContext, ScopeGuard
 
 from .delivery_repository import scope_key
-from .derivation import freeze_tag_episode, write_tag_episode
+from .derivation import freeze_tag_episode
 from .derivation_jobs import TagDerivationPlan
 from .derivation_repository import TagDerivationBusy, failure, public_job
 from .errors import PackageConflict
@@ -36,14 +33,23 @@ logger = logging.getLogger(__name__)
 
 
 class TagDerivationService:
-    def __init__(self, packages, annotations, repository):
+    def __init__(
+        self,
+        packages,
+        annotations: AnnotationSelectionPort,
+        repository,
+        *,
+        projector,
+        automatic,
+        committer,
+        quality_evidence,
+        publish,
+        derive,
+    ):
         self.packages, self.annotations, self.repository = packages, annotations, repository
-        self.projector = PostgresDatasetIngestProjector(
-            repository.connections, episode_packages=packages
-        )
-        self.automatic = AutomaticAnnotationTaskService(
-            PostgresAutomaticAnnotationRepository(repository.connections)
-        )
+        self.projector, self.automatic = projector, automatic
+        self.committer, self.quality_evidence = committer, quality_evidence
+        self.publish, self.derive = publish, derive
 
     def authorize(self, task_id, auth, *, command=False):
         organization, project, region = scope_key()
@@ -66,7 +72,7 @@ class TagDerivationService:
         return job
 
     def freeze(self, task, body, auth):
-        selection, _ = self.annotations._freeze(
+        frozen = self.annotations.freeze_selection(
             task.task_id,
             RequestAnnotationDelivery(
                 revision=body.revision,
@@ -79,7 +85,7 @@ class TagDerivationService:
             ),
             auth,
         )
-        snapshot = self.annotations.snapshot_for_plan(selection, auth)
+        selection, snapshot = frozen.plan, frozen.snapshot
         data = task.data_ref
         package = self.packages.files.open(data.identity, data.data_version_id)
         schema = self.packages.schemas.schema_for(
@@ -93,8 +99,7 @@ class TagDerivationService:
         )
         # Missing/ambiguous product provenance is rejected before enqueuing any
         # primary writes. The immutable selection is rechecked by the producer.
-        with self.repository.transaction() as cursor:
-            parent_projection(self.projector, cursor, episode, collection.collection_version_id)
+        self.projector.validate_tag_parent(episode, collection.collection_version_id)
         return TagDerivationPlan(
             episode=episode, parent_collection_version_id=collection.collection_version_id
         )
@@ -144,10 +149,7 @@ class TagDerivationService:
                 parent = self.packages.files.open(
                     episode.parent.identity, episode.parent.data_version_id
                 )
-                with self.repository.transaction() as cursor:
-                    parent_projection(
-                        self.projector, cursor, episode, plan.parent_collection_version_id
-                    )
+                self.projector.validate_tag_parent(episode, plan.parent_collection_version_id)
                 try:
                     receipt = self.packages.repository.get(source.identity, source.data_version_id)
                 except KeyError:
@@ -156,22 +158,22 @@ class TagDerivationService:
                     directory.mkdir(parents=True, exist_ok=True)
                     with TemporaryDirectory(prefix="attempt-", dir=directory) as temporary:
                         root = Path(temporary) / "episode"
-                        write_tag_episode(root, parent, snapshot, episode, checkpoint=checkpoint)
+                        self.derive(root, parent, snapshot, episode, checkpoint=checkpoint)
                         self.repository.phase(row, "committing")
-                        receipt = self.packages.committer.commit(root, source)
+                        receipt = self.committer.commit(root, source)
                 self.repository.pin_data(row, receipt.data)
                 quality = read_episode_quality(
                     self.packages.files.open(source.identity, source.data_version_id)
                 )
                 if quality.evidence is not None:
-                    self.packages.quality_evidence.put(
+                    self.quality_evidence.put(
                         QcEvaluation(report=quality.report, evidence=quality.evidence)
                     )
                 checkpoint()
                 self.repository.phase(row, "projecting")
                 # Recovery verifies every committed primary member before reusing
                 # previews/collection. It never re-quantizes or cuts the media again.
-                publication = self.packages.recover_bundle(episode)
+                publication = self.publish(episode)
                 if publication is None:
                     raise PackageConflict("committed Tag package disappeared during publication")
                 version, ready = publication

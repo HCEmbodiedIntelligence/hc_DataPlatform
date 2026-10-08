@@ -492,6 +492,18 @@ class PostgresDatasetIngestProjector:
         finally:
             connection.close()
 
+    def validate_tag_parent(self, plan, parent_collection_version_id):
+        """Read and validate frozen product provenance in this domain's transaction."""
+        from .tag_projection import parent_projection
+
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                return parent_projection(self, cursor, plan, parent_collection_version_id)
+        finally:
+            connection.rollback()
+            connection.close()
+
     def project_tag_episode(self, *, plan, parent_collection_version_id, version, ready):
         from .tag_projection import project_tag_episode
 

@@ -531,3 +531,26 @@ qc-evidence.v1 注册 be06-qc/1、/2 的 17 条历史规则与 /3 的 20 条规�
 测试、7 项真实 PG/MinIO/API/持久 worker 测试、Ruff 和新模块 mypy 通过；
 服务包含固定版本 HTTP、旧缺失证据、租户隔离与 Tag 独立 QC。证据位于协调目录
 qc-archived-rule-sets.xml、qc-rule-set-services.xml。X03 单规则执行插件机制仍待做。
+
+## 授权标注冻结、Tag 装配与 Episode 循环（E05/E06/E08）
+
+AnnotationSelectionPort 提供 authorize、freeze_selection、snapshot_for_plan；
+返回 FrozenAnnotationSelection(plan, snapshot)。集合交付和 Tag 实际生产消费者
+只获取该端口，不再调用标注交付服务的 _freeze。独立选区服务保留权限、审核回执、
+精确修订/文件哈希与包 manifest 绑定；每次冻结快照读取重验当前授权和不可变历史。
+文件/审核收据与端口纯导入不会加载 PostgreSQL、Arrow、FastAPI 或交付实现。
+
+API 与 worker 共用装配函数，显式注入 Tag 的 projector、automatic、committer、
+quality_evidence、publish 和 derive；派生服务不再创建外域 Postgres 仓储，也不借
+自己事务去运行目录私有查询。目录负责 validate_tag_parent 的事务。任务原有租约、
+幂等、取消、失败阶段恢复和不重复生成已提交 primary 数据均经服务回归。
+
+delivery_inventory 移出执行器，集合归档不再回读 delivery；加上前批 scope 和
+路由应用依赖迁移，Episode 模块（含函数内 import）无循环并有图门禁。
+43 项架构/应用检查和新增图门禁、2 个纯模块 mypy、全部修改 Ruff 通过。
+37 项实际服务用例中首次 35 通过；2 个 Tag 测试错误地要求 v2 带当前所有规则，
+稳定候选 3df9fc78 同样失败，故明确版本为 be06-qc/2 并用改动前 golden 比较。
+该文件全部 10 项真实用例复验通过；未放宽产品 QC。保留所有失败 XML、基线复现、
+修复复验及说明。实际 runtime OpenAPI 仍为 125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206。
+
+这不代表 EpisodePackageService 大对象、目录投影内部 E09 或所有逻辑数据契约已经完成。

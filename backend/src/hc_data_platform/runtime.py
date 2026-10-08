@@ -485,6 +485,7 @@ def _annotation_revision_files(annotation, connection_factory, object_storage):
 def _annotation_deliveries(annotation, connection_factory, object_storage, packages):
     from hc_data_platform.annotation.delivery import AnnotationDeliveryService
     from hc_data_platform.annotation.delivery_repository import PostgresAnnotationDeliveries
+    from hc_data_platform.episode_store.derivation import write_tag_episode
     from hc_data_platform.episode_store.derivation_repository import PostgresTagDerivations
     from hc_data_platform.episode_store.derivation_service import TagDerivationService
 
@@ -493,9 +494,19 @@ def _annotation_deliveries(annotation, connection_factory, object_storage, packa
         packages,
         PostgresAnnotationDeliveries(connection_factory),
     )
-    packages.deliveries.annotations = service
+    packages.deliveries.annotations = service.selections
     packages.tag_derivations = TagDerivationService(
-        packages, service, PostgresTagDerivations(connection_factory)
+        packages,
+        service.selections,
+        PostgresTagDerivations(connection_factory),
+        projector=PostgresDatasetIngestProjector(connection_factory, episode_packages=packages),
+        automatic=AutomaticAnnotationTaskService(
+            PostgresAutomaticAnnotationRepository(connection_factory)
+        ),
+        committer=packages.committer,
+        quality_evidence=packages.quality_evidence,
+        publish=packages.recover_bundle,
+        derive=write_tag_episode,
     )
     return service
 

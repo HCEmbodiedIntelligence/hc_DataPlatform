@@ -5,10 +5,10 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from hc_data_platform.episode_store.annotated_delivery import ReviewReference
 from hc_data_platform.episode_store.models import Digest, FrozenModel, digest
 
 from .models import AnnotationReview, AnnotationSubmission
+from .revision_models import ReviewReference
 from .subtasks import SubtaskBinding, SubtaskTrack
 
 

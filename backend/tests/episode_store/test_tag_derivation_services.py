@@ -50,7 +50,7 @@ def selected(files, target):  # noqa: F811
         assert state.status == "READY"
 
     def freeze(tag, revision=1):
-        annotation, _ = delivery._freeze(
+        frozen = delivery.selections.freeze_selection(
             task.task_id,
             RequestAnnotationDelivery(
                 revision=revision,
@@ -63,7 +63,8 @@ def selected(files, target):  # noqa: F811
             ),
             auth,
         )
-        snapshot = delivery.snapshot_for_plan(annotation, auth)
+        annotation = frozen.plan
+        snapshot = delivery.selections.snapshot_for_plan(annotation, auth)
         data = annotation.binding.data
         package = packages.files.open(data.identity, data.data_version_id)
         schema = packages.schemas.schema_for(data.identity.project_id, data.identity.dataset_id)
@@ -99,7 +100,13 @@ def test_tag_interval_commits_new_rgbd_identity_and_preserves_parent(
         quality = read_episode_quality(child)
         assert quality.status == "PASS" and quality.evidence_status == "AVAILABLE"
         assert quality.report.rollout_id == plan.input.identity.rollout_id
-        assert {r.code for r in quality.rules} == set(QualityCode)
+        assert quality.report.engine_version == "be06-qc/2"
+        archived = json.loads(
+            (Path(__file__).parents[1] / "quality/fixtures/archived-be06-qc-2.json").read_text()
+        )
+        assert {r.code.value for r in quality.rules} == {
+            rule["code"] for rule in archived["evidence"]["rules"]
+        }
         assert all(m.expected_frame_count == end - start for m in quality.report.topic_metrics)
         black = next(
             r

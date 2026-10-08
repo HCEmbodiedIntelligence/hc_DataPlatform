@@ -343,19 +343,35 @@
       "id": "E05",
       "title": "交付和派生模块调用标注服务私有方法",
       "scope": "chayi",
-      "owner": "T7",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "标注模块提供冻结选区与授权快照的公共端口；交付和派生只获得稳定的快照输入及数据包读取接口。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/annotation/selection_ports.py",
+        "backend/src/hc_data_platform/annotation/selections.py",
+        "backend/src/hc_data_platform/episode_store/derivation_service.py",
+        "backend/src/hc_data_platform/runtime.py:_annotation_deliveries",
+        "backend/tests/architecture/test_annotation_selection_boundaries.py",
+        "43 architecture/app checks, 37 distinct real service tests passed after archived v2 test expectation correction; runtime OpenAPI unchanged",
+        "coordination results/A-services/annotation-selection-services-recheck.xml and tag-derivation-archived-expectation-recheck.xml"
+      ],
+      "remaining": ""
     },
     {
       "id": "E06",
       "title": "Tag 派生服务直接创建目录投影和自动标注仓储",
       "scope": "chayi",
-      "owner": "T7 T5",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "把派生用例作为显式编排器，注入提交/目录投影/质量/标注端口；错误恢复顺序和 durable receipt 由用例协议定义。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/annotation/selection_ports.py",
+        "backend/src/hc_data_platform/annotation/selections.py",
+        "backend/src/hc_data_platform/episode_store/derivation_service.py",
+        "backend/src/hc_data_platform/runtime.py:_annotation_deliveries",
+        "backend/tests/architecture/test_annotation_selection_boundaries.py",
+        "43 architecture/app checks, 37 distinct real service tests passed after archived v2 test expectation correction; runtime OpenAPI unchanged",
+        "coordination results/A-services/annotation-selection-services-recheck.xml and tag-derivation-archived-expectation-recheck.xml"
+      ],
+      "remaining": ""
     },
     {
       "id": "E07",
@@ -376,12 +392,18 @@
       "id": "E08",
       "title": "Episode 内部多组循环依赖和全局服务回读",
       "scope": "chayi",
-      "owner": "T6 T7",
-      "status": "in_progress",
+      "owner": "A",
+      "status": "implemented_verified",
       "evidence": [
-        "Episode parent/delivery/derivation routers resolve app-owned components through one explicit FastAPI dependency; process-global locator and child-to-parent reads removed. create_app owns shutdown. Two simultaneous apps plus unconfigured third prove isolation, actual runtime/API/worker regression 34 passed. Other module globals/internal Episode service cycles remain pending."
+        "backend/src/hc_data_platform/annotation/selection_ports.py",
+        "backend/src/hc_data_platform/annotation/selections.py",
+        "backend/src/hc_data_platform/episode_store/derivation_service.py",
+        "backend/src/hc_data_platform/runtime.py:_annotation_deliveries",
+        "backend/tests/architecture/test_annotation_selection_boundaries.py",
+        "43 architecture/app checks, 37 distinct real service tests passed after archived v2 test expectation correction; runtime OpenAPI unchanged",
+        "coordination results/A-services/annotation-selection-services-recheck.xml and tag-derivation-archived-expectation-recheck.xml"
       ],
-      "remaining": "scope/交付 inventory 纯能力独立；父子路由通过同一个注入依赖获得服务，不从彼此文件回读全局变量。"
+      "remaining": ""
     },
     {
       "id": "E09",

@@ -16,6 +16,7 @@ from .collection_export import (
     selected_info,
     write_collection,
 )
+from .delivery_inventory import inventory_document
 from .delivery_repository import failure, scope_key
 from .errors import PackageConflict
 from .models import canonical, digest
@@ -54,13 +55,14 @@ class CollectionDelivery:
                 task = self.owner.annotations.authorize(selected.annotation.task_id, auth)
                 if task.data_ref != data:
                     raise PackageConflict("selected annotation is bound to different data")
-                annotation, _ = self.owner.annotations._freeze(
+                selection = self.owner.annotations.freeze_selection(
                     selected.annotation.task_id,
                     RequestAnnotationDelivery(
                         **selected.annotation.model_dump(exclude={"task_id"})
                     ),
                     auth,
                 )
+                annotation = selection.plan
             _, depth, _ = selected_info(package, body.modalities)
             evidence = package.document("hc/modalities.json")["depth"]
             profiles = {
@@ -153,8 +155,6 @@ class CollectionDelivery:
         return result
 
     def build(self, plan, directory, archive_path, row, checkpoint):
-        from .delivery import inventory_document
-
         self.owner.repository.phase(row, "projecting")
         root = directory / "collection"
         manifest, _ = write_collection(

@@ -105,6 +105,13 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                 failures.add(
                     f"{node.lineno}: Episode publication must consume ImmutableObjectWriter"
                 )
+    if module in {
+        "hc_data_platform.episode_store.collection_delivery",
+        "hc_data_platform.episode_store.derivation_service",
+    }:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {"_freeze", "_snapshot"}:
+                failures.add(f"{node.lineno}: consume the public AnnotationSelectionPort")
     if module == "hc_data_platform.publishing.postgres":
         for node in ast.walk(tree):
             if (
@@ -119,6 +126,30 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                     f"{node.lineno}: publication storage cannot access another domain's tables"
                 )
     for line, target in imports(tree, package):
+        if module == "hc_data_platform.episode_store.derivation_service" and (
+            target.endswith(".PostgresDatasetIngestProjector")
+            or target.endswith(".PostgresAutomaticAnnotationRepository")
+            or matches(target, "hc_data_platform.dataset_registry.tag_projection")
+        ):
+            failures.add(f"{line}: Tag dependencies must be injected by composition")
+        if module == "hc_data_platform.episode_store.collection_delivery" and matches(
+            target, "hc_data_platform.episode_store.delivery"
+        ):
+            failures.add(f"{line}: collection archive must consume delivery_inventory")
+        if module in {
+            "hc_data_platform.annotation.selection_ports",
+            "hc_data_platform.annotation.revision_models",
+            "hc_data_platform.annotation.delivery_models",
+        } and any(
+            matches(target, name)
+            for name in (
+                "hc_data_platform.annotation.revision_files",
+                "hc_data_platform.annotation.delivery",
+                "hc_data_platform.episode_store.annotated_delivery",
+            )
+        ):
+            failures.add(f"{line}: annotation selection contracts must remain pure")
+
         if target in {
             "hc_data_platform.episode_store.postgres.PackageConflict",
             "hc_data_platform.episode_store.postgres.assert_scope",

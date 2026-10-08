@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import io
-import json
 import logging
 import zipfile
 from contextlib import suppress
@@ -12,9 +11,7 @@ from tempfile import TemporaryDirectory
 
 from hc_data_platform.core.artifact_tasks import renewing_lease
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.core.errors import problem
 from hc_data_platform.episode_store.annotated_delivery import (
-    ReviewReference,
     write_annotated_delivery,
 )
 from hc_data_platform.episode_store.errors import PackageConflict
@@ -22,16 +19,14 @@ from hc_data_platform.episode_store.models import canonical, digest
 from hc_data_platform.ingest.models import CompletedPart
 from hc_data_platform.security import AuthContext
 
-from .delivery_models import AnnotationDeliveryDownload, AnnotationDeliveryPlan
+from .delivery_models import AnnotationDeliveryDownload
 from .delivery_repository import DeliveryLeaseLost, public_job
 from .revision_files import (
-    AnnotationRevisionFile,
-    RevisionFileDownload,
     SnapshotBusy,
     SnapshotIntegrityError,
     _failure,
 )
-from .subtasks import SubtaskProjection, SubtaskProjectionError
+from .selections import AnnotationSelections
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +65,13 @@ def archive_delivery(root, manifest, destination, checkpoint):
 
 
 class AnnotationDeliveryService:
-    def __init__(self, files, packages, repository):
+    def __init__(self, files, packages, repository, *, selections=None):
         self.files, self.packages, self.repository = files, packages, repository
         self.storage = files.storage
+        self.selections = selections or AnnotationSelections(files, packages.files)
 
     def authorize(self, task_id, auth, *, command=False):
-        task = self.files._authorize(task_id, auth, capability="export.download")
+        task = self.selections.authorize(task_id, auth)
         if command:
             scope = current_request_context()
             auth.require_capability("export.create", scope.project_id, scope.organization_id)
@@ -87,41 +83,8 @@ class AnnotationDeliveryService:
         return task
 
     def _freeze(self, task_id, body, auth):
-        download = self.files.download(
-            task_id, auth, revision=body.revision, allow_unreviewed=body.allow_unreviewed
-        )
-        history = self.files.annotation.get_history(task_id, auth)
-        data = history.task.data_ref
-        package = self.packages.files.open(data.identity, data.data_version_id)
-        try:
-            projection = SubtaskProjection.freeze(
-                json.loads(download.content), data, download.file.content_sha256, body.track
-            )
-        except SubtaskProjectionError as exc:
-            raise problem(
-                status=422,
-                code=exc.code,
-                title="Invalid subtask selection",
-                detail=str(exc),
-                details={"annotation_ids": list(exc.annotation_ids)},
-            ) from exc
-        review = next((r for r in history.reviews if r.review_id == download.review_id), None)
-        submission = next(
-            (s for s in history.submissions if s.submission_id == download.submission_id), None
-        )
-        plan = AnnotationDeliveryPlan(
-            binding=projection.binding,
-            annotation_size=len(download.content),
-            review=ReviewReference(
-                status="APPROVED" if download.approved else "UNREVIEWED",
-                review_id=download.review_id,
-                submission_id=download.submission_id,
-            ),
-            approval=review,
-            submission=submission,
-            parent_manifest_sha256=package.receipt.manifest_sha256,
-        )
-        return plan, download.object_key
+        selected = self.selections.freeze_selection(task_id, body, auth)
+        return selected.plan, selected.snapshot.object_key
 
     def request(self, task_id, body, key, auth):
         self.authorize(task_id, auth, command=True)
@@ -194,60 +157,13 @@ class AnnotationDeliveryService:
         )
 
     def _snapshot(self, row, plan, auth):
-        task = self.authorize(row["task_id"], auth)
-        if task.data_ref != plan.binding.data or plan.job_id != row["job_id"]:
+        if plan.job_id != row["job_id"] or plan.binding.task_id != row["task_id"]:
             raise SnapshotIntegrityError("delivery plan changed")
-        history = self.files.annotation.get_history(row["task_id"], auth)
-        saved = history.revisions[plan.binding.revision]
-        if saved.content_hash != plan.binding.revision_content_hash:
-            raise SnapshotIntegrityError("delivery revision changed")
-        if plan.approval is not None and (
-            plan.approval not in history.reviews or plan.submission not in history.submissions
-        ):
-            raise SnapshotIntegrityError("frozen delivery approval is unavailable")
-        body = self.files._read_verified(
-            row["annotation_key"], plan.binding.annotation_file_sha256, plan.annotation_size
-        )
-        return RevisionFileDownload(
-            body,
-            AnnotationRevisionFile(
-                task_id=row["task_id"],
-                revision=plan.binding.revision,
-                revision_content_hash=plan.binding.revision_content_hash,
-                content_sha256=plan.binding.annotation_file_sha256,
-                size_bytes=plan.annotation_size,
-                status="READY",
-                generation=1,
-                attempts=0,
-            ),
-            plan.review.status == "APPROVED",
-            plan.review.review_id,
-            plan.review.submission_id,
-        )
+        return self.selections.snapshot_for_plan(plan, auth)
 
     def snapshot_for_plan(self, plan, auth):
-        """Read a collection's fixed binding through the same annotation authorization."""
-        self.authorize(plan.binding.task_id, auth)
-        row = self.files.repository.get(plan.binding.task_id, plan.binding.revision)
-        if (
-            row is None
-            or row["status"] != "READY"
-            or (
-                row["content_sha256"] != plan.binding.annotation_file_sha256
-                or row["revision_content_hash"] != plan.binding.revision_content_hash
-                or row["size_bytes"] != plan.annotation_size
-            )
-        ):
-            raise SnapshotIntegrityError("frozen annotation file is unavailable")
-        return self._snapshot(
-            {
-                "task_id": plan.binding.task_id,
-                "job_id": plan.job_id,
-                "annotation_key": row["object_key"],
-            },
-            plan,
-            auth,
-        )
+        """Compatibility delegate; new consumers receive AnnotationSelectionPort."""
+        return self.selections.snapshot_for_plan(plan, auth)
 
     def generate(self, task_id, job_id, generation, auth):
         self.authorize(task_id, auth)

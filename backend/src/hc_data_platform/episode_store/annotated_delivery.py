@@ -15,6 +15,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import Field, model_validator
 
+from hc_data_platform.annotation.revision_models import ReviewReference as ReviewReference
 from hc_data_platform.annotation.subtasks import SourceFrame, SubtaskBinding, SubtaskProjection
 from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH
@@ -23,21 +24,6 @@ from .models import DataVersionRef, FileEntry, FrozenModel, canonical, digest
 from .writer import Moments, write_json
 
 PROCESSOR = "hc-annotated-episode/1"
-
-
-class ReviewReference(FrozenModel):
-    status: Literal["APPROVED", "UNREVIEWED"]
-    review_id: str | None = None
-    submission_id: str | None = None
-
-    @model_validator(mode="after")
-    def immutable_review_reference(self):
-        if self.status == "APPROVED":
-            if not self.review_id or not self.submission_id:
-                raise ValueError("approved annotation requires its immutable review and submission")
-        elif self.review_id is not None or self.submission_id is not None:
-            raise ValueError("unreviewed annotation cannot claim approval references")
-        return self
 
 
 class AnnotatedDeliveryManifest(FrozenModel):

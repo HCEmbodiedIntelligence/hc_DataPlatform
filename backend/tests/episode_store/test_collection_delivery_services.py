@@ -256,7 +256,7 @@ def test_collection_binds_annotation_and_rechecks_permissions_on_cached_archive(
     _, task, revision_files, annotation_auth = files
     service.annotations = AnnotationDeliveryService(
         revision_files, target[0], PostgresAnnotationDeliveries(target[0].repository.connections)
-    )
+    ).selections
     with scoped(source):
         for _ in range(100):
             state = revision_files.status(task.task_id, 1, annotation_auth)

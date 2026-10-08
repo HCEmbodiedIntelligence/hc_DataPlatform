@@ -10,6 +10,7 @@ from contextlib import suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from hc_data_platform.annotation.selection_ports import AnnotationSelectionPort
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost, renewing_lease
 from hc_data_platform.object_storage.immutable import MultipartImmutableWriter, verify_object
 from hc_data_platform.object_storage.models import ObjectIntegrityError
@@ -18,24 +19,13 @@ from hc_data_platform.security import ScopeGuard
 
 from .collection_delivery import CollectionDelivery
 from .collection_delivery_models import CollectionDeliveryPlan, EpisodeDeliveryCandidates
+from .delivery_inventory import inventory_document
 from .delivery_models import EpisodeDeliveryDownload, EpisodeDeliveryMember, EpisodeDeliveryPlan
 from .delivery_repository import EpisodeDeliveryBusy, failure, public_job, scope_key
 from .errors import PackageConflict
 from .models import canonical, digest
 
 logger = logging.getLogger(__name__)
-
-
-def inventory_document(plan):
-    return canonical(
-        {
-            "format": "hc-episode-delivery/1",
-            "job_id": plan.job_id,
-            "plan": plan.model_dump(mode="json"),
-            "is_reassembled_collection": isinstance(plan, CollectionDeliveryPlan),
-            "model_depth_training_support": "NOT_VALIDATED",
-        }
-    )
 
 
 def archive_packages(packages, plan, destination, checkpoint, progress):
@@ -110,7 +100,7 @@ class EpisodeDeliveryService:
         self.packages, self.repository = packages, repository
         self.storage = packages.files.storage
         self.writer = writer if writer is not None else MultipartImmutableWriter(self.storage)
-        self.annotations = None
+        self.annotations: AnnotationSelectionPort | None = None
         self.collection = CollectionDelivery(self)
 
     @staticmethod

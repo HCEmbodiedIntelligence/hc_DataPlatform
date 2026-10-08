@@ -7,6 +7,10 @@ from dataclasses import replace
 import psycopg
 import pytest
 
+from hc_data_platform.annotation.automation import (
+    AutomaticAnnotationTaskService,
+    PostgresAutomaticAnnotationRepository,
+)
 from hc_data_platform.annotation.delivery import AnnotationDeliveryService
 from hc_data_platform.annotation.delivery_repository import PostgresAnnotationDeliveries
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost
@@ -17,6 +21,8 @@ from hc_data_platform.core.context import (
 )
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
+from hc_data_platform.episode_store.derivation import write_tag_episode
 from hc_data_platform.episode_store.derivation_jobs import RequestTagEpisode
 from hc_data_platform.episode_store.derivation_repository import (
     PostgresTagDerivations,
@@ -49,7 +55,19 @@ def tag_jobs(projected, files):  # noqa: F811
     annotations = AnnotationDeliveryService(
         revision_files, packages, PostgresAnnotationDeliveries(packages.repository.connections)
     )
-    service = TagDerivationService(packages, annotations, repository)
+    service = TagDerivationService(
+        packages,
+        annotations.selections,
+        repository,
+        projector=PostgresDatasetIngestProjector(repository.connections, episode_packages=packages),
+        automatic=AutomaticAnnotationTaskService(
+            PostgresAutomaticAnnotationRepository(repository.connections)
+        ),
+        committer=packages.committer,
+        quality_evidence=packages.quality_evidence,
+        publish=packages.recover_bundle,
+        derive=write_tag_episode,
+    )
     auth = replace(auth, capabilities=auth.capabilities | {"upload.manage", "dataset_version.read"})
     return source, service, task.task_id, auth
 
@@ -116,7 +134,8 @@ def test_concurrent_command_freezes_once_and_outbox_creates_new_primary(tag_jobs
                 lambda *a, **k: pytest.fail("idempotent request refroze selection"),
             )
             guard.setattr(
-                "hc_data_platform.episode_store.derivation_service.write_tag_episode",
+                service,
+                "derive",
                 lambda *a, **k: pytest.fail("READY job rebuilt"),
             )
             assert request(service, task_id, auth) == ready
@@ -187,7 +206,8 @@ def test_failure_recovers_same_plan_without_rebuilding_committed_data(tag_jobs, 
         assert cancel.value.problem.code == "TAG_EPISODE_CANCEL_NOT_ALLOWED"
         if state.committed_data is not None:
             monkeypatch.setattr(
-                "hc_data_platform.episode_store.derivation_service.write_tag_episode",
+                service,
+                "derive",
                 lambda *a, **k: pytest.fail("committed data rebuilt"),
             )
         run_job(service, retry)
@@ -255,7 +275,8 @@ def test_crash_after_primary_commit_recovers_without_encoding(tag_jobs, monkeypa
                 (job.job_id,),
             )
         monkeypatch.setattr(
-            "hc_data_platform.episode_store.derivation_service.write_tag_episode",
+            service,
+            "derive",
             lambda *a, **k: pytest.fail("crashed committed data rebuilt"),
         )
         run_job(service, job)
