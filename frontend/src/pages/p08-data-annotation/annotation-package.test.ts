@@ -1,6 +1,16 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { adaptLogicalViewerStreams } from "../../features/datasets/episodes/logical-viewer";
+import { useShellStore } from "../../shared/scope/shell-store";
+import {
+  installAnnotationSession,
+  annotationLogicalFixture,
+  logicalMediaFixture,
+} from "./testing/annotation-logical-fixture";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { request } from "../../shared/api/http-client";
-import { resetRuntimeConfigForTests } from "../../shared/config/runtime";
+import {
+  configureRuntime,
+  resetRuntimeConfigForTests,
+} from "../../shared/config/runtime";
 import { episodeDataReferenceWireSchema } from "../../features/datasets/api/episode-package-wire";
 import {
   buildRuntimeCameraStreams,
@@ -15,7 +25,17 @@ import {
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 const requestMock = vi.mocked(request);
+beforeEach(() => {
+  installAnnotationSession(scope);
+  configureRuntime({
+    apiBaseUrl: "/api/v1",
+    sseBaseUrl: "/api/v1/events",
+    buildVersion: "test",
+    releaseEnv: "test",
+  });
+});
 afterEach(() => {
+  useShellStore.getState().clearSensitiveState();
   vi.resetAllMocks();
   resetRuntimeConfigForTests();
 });
@@ -75,7 +95,14 @@ function install() {
       depth: { "observation.images.depth": "hc/depth/depth/profile.json" },
     },
   };
+  const logical = annotationLogicalFixture(task, scope, [
+    { camera_id: "color", topic: "/camera/rgb" },
+    { camera_id: "depth", topic: "/camera/depth" },
+  ]);
+  logical.snapshot.selection.version_id = "version-fixed-collection";
+  logical.snapshot.streams[1]!.kind = "DEPTH";
   requestMock.mockImplementation(async (options) => {
+    if (options.path.endsWith("/logical")) return logical as never;
     if (options.path.endsWith(`/annotation-tasks/${task.task_id}`))
       return task as never;
     if (options.path.endsWith("/annotation-tasks")) return [task] as never;
@@ -87,11 +114,11 @@ function install() {
       return metadata as never;
     throw new Error(`Unexpected ${options.path}`);
   });
-  return { task, data, metadata, history };
+  return { task, data, metadata, history, logical };
 }
 
 it("loads fixed package metadata and exposes RGB plus official depth preview without a Lance lookup", async () => {
-  const { task, data } = install();
+  const { task, data, logical } = install();
   const bundle = await loadRuntimeAnnotationBundle(
     scope,
     task.task_id,
@@ -110,17 +137,12 @@ it("loads fixed package metadata and exposes RGB plus official depth preview wit
     ),
   ).toBe(false);
   requestMock.mockResolvedValue({
-    data,
-    feature: "observation.images.depth",
-    profile_id: "rs-2.58.4-dynamic-jet-h264-v1",
+    ...logicalMediaFixture(
+      logical,
+      "depth",
+      "https://media.invalid/official-preview.mp4",
+    ),
     kind: "depth-preview",
-    source_reused: false,
-    source_video_sha256: "c".repeat(64),
-    media_sha256: "d".repeat(64),
-    frame_count: data.frame_count,
-    fps: 30,
-    width: 640,
-    height: 480,
     depth_min_m: 0.01,
     depth_max_m: 10,
     colorizer: {
@@ -144,15 +166,13 @@ it("loads fixed package metadata and exposes RGB plus official depth preview wit
   expect(requestMock).toHaveBeenLastCalledWith(
     expect.objectContaining({
       method: "POST",
-      path: expect.stringContaining(
-        `/data-versions/${data.data_version_id}/media/observation.images.depth/authorize`,
-      ),
+      path: expect.stringContaining("/logical/streams/depth/media/authorize"),
     }),
   );
 });
 
-it("reads joint values from the immutable package and rejects a changed content hash", async () => {
-  const { task, data } = install();
+it("reads joint values from the fixed logical snapshot and rejects a changed identity", async () => {
+  const { task, logical } = install();
   const bundle = await loadRuntimeAnnotationBundle(
     scope,
     task.task_id,
@@ -160,29 +180,27 @@ it("reads joint values from the immutable package and rejects a changed content 
   );
   let changed = false;
   requestMock.mockImplementation(async (options) => {
-    expect(options.path).toContain(
-      `/data-versions/${data.data_version_id}/steps`,
-    );
-    expect(options.query).not.toHaveProperty("version");
-    // A real package reader rejects speculative legacy column aliases.
-    expect(options.query?.columns).toEqual(["/robot/joint_states"]);
-    const start = Number(options.query?.startStep),
-      end = Number(options.query?.endStep);
+    expect(options.path).toContain("/logical/streams/joint-state/samples");
+    expect(options.query).toMatchObject({
+      snapshot_id: logical.snapshot_id,
+      snapshot_token: logical.snapshot_token,
+    });
+    const start = Number(options.query?.start),
+      end = Number(options.query?.end);
     return {
-      data: changed ? { ...data, content_hash: "e".repeat(64) } : data,
-      start_step: start,
-      end_step: end,
-      steps: Array.from({ length: end - start }, (_, offset) => ({
-        schema_version: "1",
-        rollout_id: task.rollout_id,
-        step_index: start + offset,
-        timestamp_ns: String((BigInt(start + offset) * 1_000_000_000n) / 30n),
-        modalities: { "/robot/joint_states": [1, 2] },
-        source_timestamps_ns: {},
-        time_error_ns: {},
-        valid: { "/robot/joint_states": true },
-        repeated: {},
-        sample_valid: true,
+      snapshot_id: changed ? `snapshot_${"e".repeat(64)}` : logical.snapshot_id,
+      stream_id: "joint-state",
+      start,
+      end,
+      samples: Array.from({ length: end - start }, (_, i) => ({
+        sample_id: `sample-${start + i}`,
+        sample_index: start + i,
+        timestamp_ns: String((BigInt(start + i) * 1_000_000_000n) / 30n),
+        value: [1, 2],
+        valid: true,
+        repeated: false,
+        source_timestamps_ns: [],
+        time_error_ns: "0",
       })),
     } as never;
   });
@@ -197,11 +215,23 @@ it("reads joint values from the immutable package and rejects a changed content 
     ).values?.[0],
   ).toEqual([1, 2]);
   changed = true;
-  const fresh = buildRuntimeJointAngleStream({ bundle, scope })!;
+  const fresh = buildRuntimeJointAngleStream({
+    bundle: {
+      ...bundle,
+      logical: {
+        ...bundle.logical!,
+        streams: adaptLogicalViewerStreams(
+          bundle.logical!.selection,
+          bundle.logical!.view,
+        ),
+      },
+    },
+    scope,
+  })!;
   await expect(
     fresh.windowSource!.loadWindow(window, new AbortController().signal),
   ).rejects.toMatchObject({
-    problemCode: "P08_JOINT_WINDOW_IDENTITY_MISMATCH",
+    problemCode: "LOGICAL_IDENTITY_MISMATCH",
   });
 });
 

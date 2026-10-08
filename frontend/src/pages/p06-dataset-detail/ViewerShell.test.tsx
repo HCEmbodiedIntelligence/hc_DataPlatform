@@ -49,7 +49,8 @@ vi.mock("../../features/viewer/use-episode-robot-scene", () => ({
     robotSceneUnavailableReason: "当前 Episode 未绑定机器人模型。",
   }),
 }));
-vi.mock("../../shared/scope/shell-store", () => ({
+vi.mock("../../shared/scope/shell-store", async (original) => ({
+  ...(await original<typeof import("../../shared/scope/shell-store")>()),
   useShellStore: (select: (state: object) => unknown) =>
     select({
       scope: {

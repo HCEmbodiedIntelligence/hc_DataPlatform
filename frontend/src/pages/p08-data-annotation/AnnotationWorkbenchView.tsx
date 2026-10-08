@@ -86,7 +86,7 @@ import {
   updateIntervalTag,
 } from "./tag-editing";
 import type { TagReviewCheckResult } from "./tag-validation";
-import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
+import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/joint-angle-stream";
 import "./p08.css";
 import styles from "./workbench.module.css";
 
@@ -2112,9 +2112,6 @@ export function AnnotationWorkbenchView(
     commitTagRange,
     deleteTag,
   ]);
-  const jointTopic = props.bundle.manifest?.topics.find((topic) =>
-    /(^|[/_.-])joint([/_\s.-]|$)/iu.test(topic.name),
-  );
   const jointAngleStream = useMemo<StreamDescriptor | null>(
     () =>
       props.jointAngleStream ??
@@ -2124,22 +2121,23 @@ export function AnnotationWorkbenchView(
       }),
     [props.bundle, props.jointAngleStream, props.scope],
   );
+  const jointName = jointAngleStream?.displayName;
   const visualAdapter = useMemo(
     () => ({
       ...adapter,
       ...(props.robotScene
         ? { robotScene: { ...props.robotScene, clock } }
         : {
-            robotSceneUnavailableReason: jointTopic
+            robotSceneUnavailableReason: jointName
               ? (props.robotSceneUnavailableReason ??
-                `已发现关节角数据 ${jointTopic.name}，但当前采集机器人尚未解析到已发布 URDF 绑定。请管理员完成机器人模型绑定。`)
-              : "当前数据未发现关节角 Topic。绑定已发布 URDF 并写入关节角数据后，此处会随时间轴同步显示机器人姿态。",
+                `已发现关节角数据 ${jointName}，但当前采集机器人尚未解析到已发布 URDF 绑定。请管理员完成机器人模型绑定。`)
+              : "当前固定数据没有可回放的关节状态流。",
           }),
     }),
     [
       adapter,
       clock,
-      jointTopic,
+      jointName,
       props.robotScene,
       props.robotSceneUnavailableReason,
     ],
@@ -2287,7 +2285,20 @@ export function AnnotationWorkbenchView(
       activateWorkspaceMode(target);
     })();
   };
-  const cameras = props.bundle.manifest?.cameras ?? [];
+  const cameras = props.bundle.logical
+    ? props.bundle.logical.streams
+        .filter(
+          (stream) => stream.modality === "rgb" || stream.modality === "depth",
+        )
+        .map((stream) => ({
+          camera_id: stream.id,
+          topic: stream.canonicalPath,
+          displayName: stream.displayName,
+        }))
+    : (props.bundle.manifest?.cameras ?? []).map((camera) => ({
+        ...camera,
+        displayName: camera.camera_id,
+      }));
   const reportSelection = (() => {
     if (selection) return selection;
     const selectedTags = props.tags.filter((tag) =>
@@ -2302,7 +2313,7 @@ export function AnnotationWorkbenchView(
   const reportStreamOptions = [
     ...cameras.map((camera) => ({
       value: camera.topic,
-      label: `${camera.camera_id} · ${camera.topic}`,
+      label: `${camera.displayName} · ${camera.topic}`,
     })),
     ...(props.bundle.manifest?.topics ?? []).map((topic) => ({
       value: topic.name,
@@ -2361,7 +2372,7 @@ export function AnnotationWorkbenchView(
       view={cameraView}
       cameras={cameras.map((camera) => ({
         id: camera.camera_id,
-        label: camera.camera_id,
+        label: camera.displayName,
       }))}
       visibleStreams={cameraStreams}
       onViewChange={setCameraView}
@@ -2515,9 +2526,9 @@ export function AnnotationWorkbenchView(
         adapter={visualAdapter}
         jointAngleStream={jointAngleStream}
         jointAngleUnavailableReason={
-          jointTopic
-            ? `已发现 ${jointTopic.name}，但当前固定数据窗口还没有可显示的关节角向量。`
-            : "当前数据未发现关节角 Topic。写入关节角数据后，曲线会随共享时间轴同步显示。"
+          jointName
+            ? `已发现 ${jointName}，但当前固定数据窗口还没有可显示的关节角向量。`
+            : "当前固定数据没有可显示的关节状态流。"
         }
         jointAngleFooter={
           workspaceMode === "annotation" &&

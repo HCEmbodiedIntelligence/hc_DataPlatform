@@ -283,7 +283,7 @@ function QueueItemCard(props: {
         ) : null}
         {item.transferStatus === "committed" ? (
           <span className={styles.queueCommitted}>
-            <CircleCheck size={14} aria-hidden="true" /> 已进入摄取工作流
+            <CircleCheck size={14} aria-hidden="true" /> 已提交到服务端
           </span>
         ) : null}
       </footer>
@@ -425,11 +425,11 @@ export function UploadQueuePanel(props: {
             <h3>{allUploaded ? "上传已完成" : "本批上传已结束"}</h3>
             <p>
               {allUploaded
-                ? `本批 ${totalCount} 个数据包均已提交到服务端并进入摄取工作流。`
+                ? `本批 ${totalCount} 个数据包均已提交到服务端。`
                 : `本批已上传 ${uploadedCount} 个，已取消 ${cancelledCount} 个。`}
             </p>
             <small>
-              提交记录可在“上传记录”查看；摄取完成后的数据可在“数据集”查看。
+              文件保存与处理进度可在“上传记录”查看；处理完成后的数据可在“数据集”查看。
             </small>
           </div>
           <div className={styles.queueCompletionActions}>
