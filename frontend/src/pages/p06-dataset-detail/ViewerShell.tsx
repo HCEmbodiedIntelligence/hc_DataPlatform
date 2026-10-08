@@ -31,7 +31,7 @@ import { routes } from "../../features/datasets/routing";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { PageState } from "../../shared/ui";
-import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
+import { useLogicalRobotScene } from "../../features/datasets/episodes/use-logical-robot-scene";
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
 import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
 import { reviewDataReference } from "../../features/datasets/episodes/data-reviews";
@@ -180,12 +180,12 @@ export function EpisodeViewerShell() {
     () => selectEpisodeJointStream(streams),
     [streams],
   );
-  const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
+  const { robotScene, robotSceneUnavailableReason } = useLogicalRobotScene(
+    logical.robotTarget,
+    jointAngleStream,
     capabilities.has("episode.read")
       ? (query.data?.episode.robotId ?? null)
       : null,
-    jointAngleStream,
-    scope,
     describeEpisodeRobotPreview(query.data?.episode.robotId ?? null),
   );
   useEffect(() => {

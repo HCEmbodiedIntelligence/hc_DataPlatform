@@ -54,5 +54,12 @@ export function useLogicalViewer(
         : [],
     [enabled, selection, query.data, sessionRevision, capabilityRevision],
   );
-  return { ...query, streams };
+  const robotTarget = useMemo(
+    () =>
+      enabled && selection && query.data
+        ? { selection, view: query.data }
+        : null,
+    [enabled, selection, query.data],
+  );
+  return { ...query, streams, robotTarget };
 }

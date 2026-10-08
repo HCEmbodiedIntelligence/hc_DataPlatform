@@ -80,6 +80,7 @@ export interface DataVisualizationWorkbenchAdapter {
   readonly robotScene?: RobotSceneCoreProps & {
     readonly title?: string;
     readonly canonicalPath?: string;
+    readonly sourceDescription?: string;
   };
   /** Keeps a stable robot-pose workspace when the runtime binding is unavailable. */
   readonly robotSceneUnavailableReason?: string;

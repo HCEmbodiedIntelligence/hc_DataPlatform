@@ -57,6 +57,7 @@ export interface EpisodeWorkbenchCoreProps {
   robotScene?: RobotSceneCoreProps & {
     readonly title?: string;
     readonly canonicalPath?: string;
+    readonly sourceDescription?: string;
   };
   overlays?: readonly OverlayRenderer[];
   onTimeRangeSelect?: (startNs: string, endNs: string) => void;
@@ -762,6 +763,7 @@ export function ViewerRobotPosePanel({
   const {
     title = "机器人 URDF",
     canonicalPath = "robot/model/urdf",
+    sourceDescription,
     ...sceneProps
   } = scene;
   return (
@@ -774,6 +776,7 @@ export function ViewerRobotPosePanel({
         <h3 id="robot-scene-panel-title">{title}</h3>
         <span>{canonicalPath}</span>
       </header>
+      {sourceDescription ? <p>{sourceDescription}</p> : null}
       <RobotSceneCore {...sceneProps} />
     </article>
   );
