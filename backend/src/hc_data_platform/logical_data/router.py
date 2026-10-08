@@ -7,7 +7,14 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
-from .models import LogicalMediaGrant, LogicalSampleBatch, LogicalSnapshotView, SnapshotSelection
+from .models import (
+    LogicalMediaGrant,
+    LogicalRobotAssetGrant,
+    LogicalRobotScene,
+    LogicalSampleBatch,
+    LogicalSnapshotView,
+    SnapshotSelection,
+)
 from .service import LogicalDataService
 
 router = APIRouter(
@@ -167,5 +174,62 @@ def authorize_media(
             auth=auth,
             snapshot_token=snapshot_token,
             snapshot_id=snapshot_id,
+        ),
+    )
+
+
+@router.get("/robot-scene", operation_id="getLogicalRobotScene", response_model=LogicalRobotScene)
+def getLogicalRobotScene(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    version_id: str,
+    revision_id: str,
+    auth: VerifiedAuth,
+    organization_id: Organization,
+    snapshot_token: SnapshotToken,
+    service: Reader,
+    response: Response,
+    snapshot_id: str = Query(pattern=r"^snapshot_[0-9a-f]{64}$"),
+):
+    selection = _selection(
+        auth, organization_id, project_id, region_code, dataset_id, version_id, revision_id
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _read(
+        service,
+        lambda reader: reader.robot_scene(
+            selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        ),
+    )
+
+
+@router.post(
+    "/robot-scene/assets/{asset_id}/authorize",
+    operation_id="authorizeLogicalRobotAsset",
+    response_model=LogicalRobotAssetGrant,
+)
+def authorizeLogicalRobotAsset(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    version_id: str,
+    revision_id: str,
+    asset_id: str,
+    auth: VerifiedAuth,
+    organization_id: Organization,
+    snapshot_token: SnapshotToken,
+    service: Reader,
+    response: Response,
+    snapshot_id: str = Query(pattern=r"^snapshot_[0-9a-f]{64}$"),
+):
+    selection = _selection(
+        auth, organization_id, project_id, region_code, dataset_id, version_id, revision_id
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _read(
+        service,
+        lambda reader: reader.authorize_robot_asset(
+            selection, asset_id, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
         ),
     )

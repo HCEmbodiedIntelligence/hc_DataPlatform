@@ -198,6 +198,21 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                 failures.add(
                     f"{node.lineno}: publication storage cannot access another domain's tables"
                 )
+    binding_tables = {
+        "hc_data_platform.robot_assets.repository": ("registry.robot_model_versions",),
+        "hc_data_platform.registry.repository": (
+            "registry.organization_robot_model_bindings",
+            "robotics.robot_assets",
+        ),
+    }
+    if module in binding_tables:
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and any(table in node.value.lower() for table in binding_tables[module])
+            ):
+                failures.add(f"{node.lineno}: binding must use the owned transaction query")
     if module == "hc_data_platform.dataset_registry.tag_projection":
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr.startswith("_"):

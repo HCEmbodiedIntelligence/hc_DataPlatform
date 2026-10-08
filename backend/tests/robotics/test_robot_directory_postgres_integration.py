@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from hc_data_platform.registry.binding_queries import published_model_for_binding
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
 from hc_data_platform.robotics.models import CreateRobotRequest
 
@@ -60,7 +61,9 @@ def test_postgres_deletes_an_unused_active_robot() -> None:
                 """,
                 (organization_id, robot_id, now, now),
             )
-        repository = PostgresOrganizationRobotAssetRepository(lambda: psycopg.connect(dsn))
+        repository = PostgresOrganizationRobotAssetRepository(
+            lambda: psycopg.connect(dsn), published_models=published_model_for_binding
+        )
         assert repository.delete_robot(
             organization_id=organization_id,
             robot_id=robot_id,
@@ -109,7 +112,9 @@ def test_postgres_reports_a_serial_conflict_instead_of_leaking_unique_violation(
                 """,
                 (organization_id, now, now),
             )
-        repository = PostgresOrganizationRobotAssetRepository(lambda: psycopg.connect(dsn))
+        repository = PostgresOrganizationRobotAssetRepository(
+            lambda: psycopg.connect(dsn), published_models=published_model_for_binding
+        )
         with pytest.raises(ValueError, match="serial number already exists"):
             repository.create_robot(
                 organization_id=organization_id,

@@ -358,7 +358,10 @@ def source_frames(package, root, plan, checkpoint):
 
 def write_provenance(package, root, snapshot, plan, receipts, checkpoint):
     for path in package.entries:
-        if path.startswith("hc/recording/") or path == "hc/calibration.json":
+        if path.startswith("hc/recording/") or path in {
+            "hc/calibration.json",
+            "hc/robot_scene.json",
+        }:
             copy_member(package, path, root / path, checkpoint)
         elif (
             path.startswith("hc/")
