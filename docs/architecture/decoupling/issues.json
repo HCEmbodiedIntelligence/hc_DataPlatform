@@ -66,21 +66,28 @@
       "id": "B06",
       "title": "逻辑目录接口与 Lance 物理提交绑定",
       "scope": "两分支",
-      "owner": "T5",
+      "owner": "A",
       "status": "in_progress",
       "evidence": [
-        "core.ModuleRouter is lazy so importing error/format contracts does not load FastAPI"
+        "core.ModuleRouter is lazy so importing error/format contracts does not load FastAPI",
+        "logical_data models/ports/service/router with actual runtime composition",
+        "integrations/logical_samples.py real Lance and Episode adapters",
+        "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip"
       ],
-      "remaining": "分离逻辑 Dataset/Episode 读取、提交、schema 和物理后端适配；用稳定数据版本引用与提交回执承载业务语义，历史 Lance 信息只在兼容映射中解释。"
+      "remaining": "新逻辑快照/样本 HTTP 已使用两个真实 adapter；仍需 B 迁移页面读取、接通逻辑媒体授权、继续迁移旧业务公开物理语义与下游消费者。"
     },
     {
       "id": "B07",
       "title": "业务公开契约暴露 Lance 版本语义",
       "scope": "两分支",
-      "owner": "T0 T4 T5 T7 T9",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "先制定兼容的数据版本契约，再迁移消费者；现有 API 字段和历史快照经适配兼容，不能直接重命名字段或重算已保存哈希。"
+      "owner": "A",
+      "status": "in_progress",
+      "evidence": [
+        "logical_data models/ports/service/router with actual runtime composition",
+        "integrations/logical_samples.py real Lance and Episode adapters",
+        "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip"
+      ],
+      "remaining": "新逻辑快照/样本 HTTP 已使用两个真实 adapter；仍需 B 迁移页面读取、接通逻辑媒体授权、继续迁移旧业务公开物理语义与下游消费者。"
     },
     {
       "id": "B08",

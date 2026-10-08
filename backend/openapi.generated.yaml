@@ -17892,6 +17892,168 @@ components:
       - items
       - page_info
       type: object
+    LogicalSample:
+      additionalProperties: false
+      properties:
+        repeated:
+          title: Repeated
+          type: boolean
+        sample_id:
+          title: Sample Id
+          type: string
+        sample_index:
+          minimum: 0.0
+          title: Sample Index
+          type: integer
+        source_timestamps_ns:
+          default: []
+          items:
+            type: string
+          title: Source Timestamps Ns
+          type: array
+        time_error_ns:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Time Error Ns
+        timestamp_ns:
+          anyOf:
+          - pattern: ^[0-9]+$
+            type: string
+          - type: 'null'
+          title: Timestamp Ns
+        valid:
+          title: Valid
+          type: boolean
+        value:
+          title: Value
+      required:
+      - sample_id
+      - sample_index
+      - value
+      - valid
+      - repeated
+      title: LogicalSample
+      type: object
+    LogicalSampleBatch:
+      additionalProperties: false
+      properties:
+        end:
+          minimum: 0.0
+          title: End
+          type: integer
+        samples:
+          items:
+            $ref: '#/components/schemas/LogicalSample'
+          title: Samples
+          type: array
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+        start:
+          minimum: 0.0
+          title: Start
+          type: integer
+        stream_id:
+          title: Stream Id
+          type: string
+      required:
+      - snapshot_id
+      - stream_id
+      - start
+      - end
+      - samples
+      title: LogicalSampleBatch
+      type: object
+    LogicalSnapshot:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Sha256
+          type: string
+        episode_id:
+          title: Episode Id
+          type: string
+        format:
+          const: hc-logical-snapshot/1
+          default: hc-logical-snapshot/1
+          title: Format
+          type: string
+        selection:
+          $ref: '#/components/schemas/SnapshotSelection'
+        streams:
+          items:
+            $ref: '#/components/schemas/LogicalStream'
+          title: Streams
+          type: array
+      required:
+      - selection
+      - episode_id
+      - content_sha256
+      - streams
+      title: LogicalSnapshot
+      type: object
+    LogicalSnapshotView:
+      additionalProperties: false
+      properties:
+        snapshot:
+          $ref: '#/components/schemas/LogicalSnapshot'
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+      required:
+      - snapshot_id
+      - snapshot
+      title: LogicalSnapshotView
+      type: object
+    LogicalStream:
+      additionalProperties: false
+      properties:
+        end_ns:
+          anyOf:
+          - pattern: ^[0-9]+$
+            type: string
+          - type: 'null'
+          title: End Ns
+        kind:
+          minLength: 1
+          title: Kind
+          type: string
+        name:
+          minLength: 1
+          title: Name
+          type: string
+        sample_count:
+          minimum: 0.0
+          title: Sample Count
+          type: integer
+        start_ns:
+          anyOf:
+          - pattern: ^[0-9]+$
+            type: string
+          - type: 'null'
+          title: Start Ns
+        stream_id:
+          minLength: 1
+          title: Stream Id
+          type: string
+        temporal:
+          title: Temporal
+          type: boolean
+        value_kind:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Value Kind
+      required:
+      - stream_id
+      - name
+      - kind
+      - sample_count
+      - temporal
+      title: LogicalStream
+      type: object
     LoginCommand:
       additionalProperties: false
       properties:
@@ -25517,6 +25679,42 @@ components:
       - DRAFT
       - FINALIZED
       type: string
+    SnapshotSelection:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          minLength: 1
+          title: Dataset Id
+          type: string
+        organization_id:
+          minLength: 1
+          title: Organization Id
+          type: string
+        project_id:
+          minLength: 1
+          title: Project Id
+          type: string
+        region_code:
+          minLength: 1
+          title: Region Code
+          type: string
+        revision_id:
+          minLength: 1
+          title: Revision Id
+          type: string
+        version_id:
+          minLength: 1
+          title: Version Id
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - region_code
+      - dataset_id
+      - version_id
+      - revision_id
+      title: SnapshotSelection
+      type: object
     SourceStateCommand:
       additionalProperties: false
       properties:
@@ -46192,6 +46390,169 @@ paths:
       summary: Steps
       tags:
       - episode_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical
+  : get:
+      operationId: getLogicalDataSnapshot
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalSnapshotView'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Snapshot
+      tags:
+      - logical_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/samples
+  : get:
+      operationId: getLogicalDataSamples
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: path
+        name: stream_id
+        required: true
+        schema:
+          title: Stream Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: query
+        name: snapshot_id
+        required: true
+        schema:
+          pattern: ^snapshot_[0-9a-f]{64}$
+          title: Snapshot Id
+          type: string
+      - in: query
+        name: start
+        required: true
+        schema:
+          minimum: 0
+          title: Start
+          type: integer
+      - in: query
+        name: end
+        required: true
+        schema:
+          minimum: 0
+          title: End
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalSampleBatch'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Samples
+      tags:
+      - logical_data
   /api/v1/projects/{project_id}/regions/{region_code}/device-capture-facts:
     post:
       description: Records an immutable CAPTURED or SAVED assertion from an authenticated device-agent

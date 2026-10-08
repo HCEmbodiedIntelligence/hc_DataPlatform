@@ -126,6 +126,24 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                     f"{node.lineno}: publication storage cannot access another domain's tables"
                 )
     for line, target in imports(tree, package):
+        if module in {
+            "hc_data_platform.logical_data.models",
+            "hc_data_platform.logical_data.ports",
+        } and any(
+            matches(target, prefix)
+            for prefix in (
+                "hc_data_platform.episode_store",
+                "hc_data_platform.lance_catalog",
+                "hc_data_platform.dataset_registry",
+                "hc_data_platform.integrations",
+                "hc_data_platform.runtime",
+                "pyarrow",
+                "lance",
+                "psycopg",
+                "fastapi",
+            )
+        ):
+            failures.add(f"{line}: logical snapshot contracts must not import physical adapters")
         if module == "hc_data_platform.episode_store.derivation_service" and (
             target.endswith(".PostgresDatasetIngestProjector")
             or target.endswith(".PostgresAutomaticAnnotationRepository")

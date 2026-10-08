@@ -63,6 +63,7 @@ def batch_source(services, tmp_path, request, monkeypatch):
     persistent = request.node.name in {
         "test_batch_publish_rollback_roundtrip",
         "test_batch_cli_and_retained_downloads",
+        "test_real_logical_http_reads_native_and_legacy_with_identical_contract",
     }
     root = Path("/app/.g1-artifacts/migration-batches") / run if persistent else tmp_path
     root.mkdir(parents=True, exist_ok=True)

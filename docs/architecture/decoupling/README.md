@@ -554,3 +554,24 @@ delivery_inventory 移出执行器，集合归档不再回读 delivery；加上�
 修复复验及说明。实际 runtime OpenAPI 仍为 125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206。
 
 这不代表 EpisodePackageService 大对象、目录投影内部 E09 或所有逻辑数据契约已经完成。
+
+## 逻辑快照与两个真实样本 adapter（B06/B07 进行中）
+
+logical_data.models/ports 提供纯 SnapshotSelection、LogicalSnapshot/Stream/Sample
+与 SnapshotReader。选择固定版本/修订和既有 snapshot_token；服务逐次通过
+DatasetPageService 公共授权查询，保留当前租户、权限、版本成员、token 和审计。
+样本读取额外绑定 snapshot_id，单次最多 4096，迭代默认 128 条并逐批重新授权。
+LanceSampleAdapter 与 EpisodeSampleAdapter 注册到同一精确版本 registry；媒体样本
+返回逻辑帧标识，不把 Lance 版本、package prefix、object URI 交给浏览器作选择。
+模型允许无时间样本但此批仅验证时序数据，没有声称独立图片流程完成。
+
+runtime 与 app 实际装配新逻辑路由：
+`GET /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical`
+及 `/streams/{stream_id}/samples`。scope headers/session 与旧页面一致；samples 需要
+snapshot_id、snapshot_token、start/end。完整实际 HTTP 用例读取历史版本和混合版本
+中两种存储，校验值/纳秒/子窗口/同快照、401/403/409/422 与缓存后撤权。
+测试失败先发现隔离账号缺旧 episode.read 权限，再发现容器间独立 tmpfs；修正测试
+授权和专有共享目录后完整用例通过。原失败与修复原因都保留。
+
+实际接口来自新 runtime fragment；不手写第二份协议。对应新前端调用尚待 B 接入，
+媒体 URL 授权仍走原能力，故 B06/B07 与 F05 不关闭；仅样本读取接口可供消费。

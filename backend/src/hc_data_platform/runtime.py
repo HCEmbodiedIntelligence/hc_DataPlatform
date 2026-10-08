@@ -140,6 +140,11 @@ from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
+from hc_data_platform.integrations.logical_samples import (
+    EpisodeSampleAdapter,
+    LanceSampleAdapter,
+    SampleAdapters,
+)
 from hc_data_platform.integrations.publication import postgres_publication_effects
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
@@ -160,6 +165,7 @@ from hc_data_platform.lance_catalog.router import (
 )
 from hc_data_platform.lance_catalog.service import LanceCatalogService, compute_fragment_hash
 from hc_data_platform.lerobot_imports.discovery import NativeManifestDiscovery
+from hc_data_platform.logical_data.service import LogicalDataService
 from hc_data_platform.manual_cleaning.models import (
     ManualIssueDraftMutationRecord,
     ManualIssueMutationRecord,
@@ -560,6 +566,7 @@ class RuntimeComponents:
     episode_packages: Any = None
     annotation_revision_files: Any = None
     annotation_deliveries: Any = None
+    logical_data: LogicalDataService | None = None
 
 
 @dataclass(frozen=True)
@@ -1110,6 +1117,12 @@ def build_runtime(
         robot_ingest=robot_ingest,
         robot_processing=ProcessingStore(connection_factory),
         dataset_page=dataset_page,
+        logical_data=LogicalDataService(
+            dataset_page,
+            SampleAdapters(
+                (EpisodeSampleAdapter(episode_packages.steps), LanceSampleAdapter(catalog))
+            ),
+        ),
         manual_issues=manual_issues,
         cleaning_drafts=cleaning_drafts,
         cleaning_workbench=cleaning_workbench,
