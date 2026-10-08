@@ -126,6 +126,13 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                     f"{node.lineno}: publication storage cannot access another domain's tables"
                 )
     for line, target in imports(tree, package):
+        if module in {
+            "hc_data_platform.backup.composition",
+            "hc_data_platform.backup.restore_cli",
+        } and matches(target, "hc_data_platform.backup.whole_cli"):
+            failures.add(f"{line}: backup/restore must consume shared public composition")
+        if module == "hc_data_platform.backup.composition" and target.endswith("_cli"):
+            failures.add(f"{line}: shared backup composition cannot depend on command entrypoints")
         if module == "hc_data_platform.episode_store.derivation_service" and (
             target.endswith(".PostgresDatasetIngestProjector")
             or target.endswith(".PostgresAutomaticAnnotationRepository")

@@ -274,10 +274,15 @@
       "id": "B26",
       "title": "备份命令入口相互调用私有装配函数",
       "scope": "两分支",
-      "owner": "T10",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "公共备份装配工厂与 CLI 分离，保留备份版本、签名和恢复协议；不要把合法灾备跨域访问当作业务越界一并删掉。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "backup/composition.py: BackupInfrastructure(settings) supplies repository/signing factories to backup create/verify and restore plan/execute/reconcile; no command-private imports",
+        "BackupPayloadRepository consumed by publish/verify/restore resolver; functional adapter no longer cast as S3",
+        "82 backup/architecture tests; mypy 5 source files; actual source architecture gate and Ruff",
+        "2 real service tests: signed functional repository, PostgreSQL catalog, backup verify CLI, repeated restore plan CLI against empty PG/MinIO, exact manifest tamper rejection; results/A-services/backup-composition-services-recheck.xml"
+      ],
+      "remaining": "Production Vault/KMS/disaster-recovery execution was not exercised in this isolated functional test; no restore protocol or approval policy changed."
     },
     {
       "id": "B27",

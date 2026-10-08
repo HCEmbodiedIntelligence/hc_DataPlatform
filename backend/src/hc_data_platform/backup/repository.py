@@ -360,6 +360,36 @@ class RepositoryVerifiedBackup:
     signature_version_id: str
 
 
+class BackupPayloadRepository(Protocol):
+    """Signed immutable backup capabilities shared by publish and restore."""
+
+    def preflight(self) -> None: ...
+
+    def upload_file(
+        self, backup_id: str, source: RepositoryUploadSource, *, checkpoint_path: Path
+    ) -> RepositoryStoredObject: ...
+
+    def verify_manifest(
+        self, backup_id: str, *, public_keys_by_sha256: Mapping[str, Ed25519PublicKey]
+    ) -> RepositoryVerifiedManifest: ...
+
+    def verify_backup(
+        self,
+        backup_id: str,
+        *,
+        public_keys_by_sha256: Mapping[str, Ed25519PublicKey],
+        staging_directory: Path,
+    ) -> RepositoryVerifiedBackup: ...
+
+    def restore_backup_payload(
+        self,
+        backup_id: str,
+        *,
+        public_keys_by_sha256: Mapping[str, Ed25519PublicKey],
+        staging_directory: Path,
+    ) -> RepositoryVerifiedBackup: ...
+
+
 class S3WholeBackupClient(Protocol):
     def get_bucket_versioning(self, **kwargs: object) -> Mapping[str, Any]: ...
 

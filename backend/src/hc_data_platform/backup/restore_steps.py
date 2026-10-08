@@ -36,8 +36,8 @@ from hc_data_platform.backup.postgresql import (
     TableContentDigest,
 )
 from hc_data_platform.backup.repository import (
+    BackupPayloadRepository,
     RepositoryVerifiedBackup,
-    S3LockedBackupRepository,
 )
 from hc_data_platform.backup.restore import RestorePlanRequestV1, RestorePlanV1
 from hc_data_platform.backup.restore_execution import (
@@ -66,7 +66,7 @@ class RestoreReadOnlyServicePort(Protocol):
 class RestorePayloadResolver:
     plan: RestorePlanV1
     request: RestorePlanRequestV1
-    repository: S3LockedBackupRepository
+    repository: BackupPayloadRepository
     public_keys_by_sha256: Mapping[str, Ed25519PublicKey]
     staging_directory: Path
     execution_started_at: datetime

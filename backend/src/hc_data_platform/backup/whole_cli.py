@@ -24,6 +24,7 @@ from hc_data_platform.backup.catalog import (
     BackupCatalogService,
     PostgresBackupCatalogRepository,
 )
+from hc_data_platform.backup.composition import BackupInfrastructure
 from hc_data_platform.backup.contracts import (
     BackupContractError,
     ManifestSigningPort,
@@ -48,19 +49,12 @@ from hc_data_platform.backup.postgresql import LogicalDumpArtifact, PostgresBack
 from hc_data_platform.backup.postgresql_cli import run as run_postgresql_stage
 from hc_data_platform.backup.repository import (
     BackupRepositoryError,
-    FunctionalFileBackupRepository,
-    FunctionalFileRepositoryConfig,
-    LockedRepositoryConfig,
-    S3LockedBackupRepository,
 )
 from hc_data_platform.backup.restore import RestorePlanError
 from hc_data_platform.backup.restore_execution import RestoreExecutionError
 from hc_data_platform.backup.restore_reconciliation import RestoreReconciliationError
 from hc_data_platform.backup.signing import (
-    FunctionalFileEd25519Signer,
     VaultSigningError,
-    VaultTransitEd25519Signer,
-    VaultTransitSignerConfig,
 )
 from hc_data_platform.backup.temporal import TemporalBackupError, TemporalPolicyArtifact
 from hc_data_platform.backup.temporal_cli import run as run_temporal_stage
@@ -159,32 +153,6 @@ def _integer(name: str, *, default: int, minimum: int, maximum: int) -> int:
     return value
 
 
-def _number(name: str, *, default: float, minimum: float, maximum: float) -> float:
-    try:
-        value = float(_environment(name, default=str(default)))
-    except ValueError as exc:
-        raise WholeBackupError(
-            "BACKUP_WHOLE_CONFIGURATION_INVALID",
-            "a whole-backup Job numeric setting is invalid",
-        ) from exc
-    if not minimum <= value <= maximum:
-        raise WholeBackupError(
-            "BACKUP_WHOLE_CONFIGURATION_INVALID",
-            "a whole-backup Job numeric setting is outside its bound",
-        )
-    return value
-
-
-def _boolean(name: str, *, default: bool) -> bool:
-    value = _environment(name, default="true" if default else "false").lower()
-    if value not in {"true", "false"}:
-        raise WholeBackupError(
-            "BACKUP_WHOLE_CONFIGURATION_INVALID",
-            "a whole-backup Job Boolean setting is invalid",
-        )
-    return value == "true"
-
-
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="hc-platform")
     groups = parser.add_subparsers(dest="group", required=True)
@@ -270,132 +238,6 @@ def _assert_plan_binding(plan: WholeBackupPlanV1) -> None:
             "BACKUP_WHOLE_PLAN_BINDING_MISMATCH",
             "the immutable backup plan differs from the maintenance fence",
         )
-
-
-def _runtime_profile() -> str:
-    profile = _environment("HC_BACKUP_RUNTIME_PROFILE", default="production")
-    if profile not in {"production", "compose_functional"}:
-        raise WholeBackupError(
-            "BACKUP_WHOLE_CONFIGURATION_INVALID", "the backup runtime profile is invalid"
-        )
-    return profile
-
-
-def _repository(plan: WholeBackupPlanV1) -> S3LockedBackupRepository:
-    if _runtime_profile() == "compose_functional":
-        try:
-            repository = FunctionalFileBackupRepository(
-                FunctionalFileRepositoryConfig(
-                    repository_id=plan.backup_repository.repository_id,
-                    provider=plan.backup_repository.provider,
-                    bucket_reference=plan.backup_repository.bucket_reference,
-                    kms_key_reference=plan.backup_repository.kms_key_reference,
-                    retention_until=plan.backup_repository.retention_until,
-                    cross_site_replica_reference=(
-                        plan.backup_repository.cross_site_replica_reference
-                    ),
-                    root_directory=Path(_environment("HC_BACKUP_FUNCTIONAL_REPOSITORY_DIRECTORY")),
-                    run_id=_environment("HC_BACKUP_FUNCTIONAL_RUN_ID"),
-                )
-            )
-        except ValueError as exc:
-            raise WholeBackupError(
-                "BACKUP_WHOLE_CONFIGURATION_INVALID",
-                "the functional repository configuration is invalid",
-            ) from exc
-        return cast(S3LockedBackupRepository, repository)
-    try:
-        config = LockedRepositoryConfig(
-            repository_id=plan.backup_repository.repository_id,
-            provider=plan.backup_repository.provider,
-            bucket=_environment("HC_BACKUP_REPOSITORY_BUCKET"),
-            bucket_reference=plan.backup_repository.bucket_reference,
-            prefix=_environment("HC_BACKUP_REPOSITORY_PREFIX", default="whole-platform-backups"),
-            kms_key_reference=plan.backup_repository.kms_key_reference,
-            provider_kms_key_id=_environment("HC_BACKUP_REPOSITORY_KMS_KEY_ID"),
-            provider_kms_observed_key_id=_environment("HC_BACKUP_REPOSITORY_KMS_OBSERVED_KEY_ID"),
-            provider_replica_destination=_environment("HC_BACKUP_REPOSITORY_REPLICA_DESTINATION"),
-            retention_until=plan.backup_repository.retention_until,
-            cross_site_replica_reference=(plan.backup_repository.cross_site_replica_reference),
-            multipart_threshold_bytes=_integer(
-                "HC_BACKUP_REPOSITORY_MULTIPART_THRESHOLD_BYTES",
-                default=64 * 1024 * 1024,
-                minimum=5 * 1024 * 1024,
-                maximum=5 * 1024 * 1024 * 1024,
-            ),
-            multipart_part_bytes=_integer(
-                "HC_BACKUP_REPOSITORY_MULTIPART_PART_BYTES",
-                default=64 * 1024 * 1024,
-                minimum=5 * 1024 * 1024,
-                maximum=5 * 1024 * 1024 * 1024,
-            ),
-            send_small_object_checksum=_boolean(
-                "HC_BACKUP_REPOSITORY_SEND_SMALL_OBJECT_CHECKSUM",
-                default=True,
-            ),
-        )
-    except ValueError as exc:
-        raise WholeBackupError(
-            "BACKUP_WHOLE_CONFIGURATION_INVALID",
-            "the locked backup repository configuration is invalid",
-        ) from exc
-    import boto3
-    from botocore.config import Config
-
-    endpoint = os.environ.get("HC_BACKUP_REPOSITORY_ENDPOINT")
-    if endpoint is not None and any(char in endpoint for char in ("\x00", "\r", "\n")):
-        raise WholeBackupError(
-            "BACKUP_WHOLE_CONFIGURATION_INVALID",
-            "the backup repository endpoint is invalid",
-        )
-    client = boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        region_name=_environment("HC_BACKUP_REPOSITORY_REGION", default="us-east-1"),
-        config=Config(
-            signature_version="s3v4",
-            retries={"max_attempts": 1, "mode": "standard"},
-            s3={
-                "addressing_style": _environment(
-                    "HC_BACKUP_REPOSITORY_ADDRESSING_STYLE", default="path"
-                )
-            },
-        ),
-    )
-    return S3LockedBackupRepository(client, config)
-
-
-def _signer(plan: WholeBackupPlanV1) -> ManifestSigningPort:
-    if _runtime_profile() == "compose_functional":
-        signer = FunctionalFileEd25519Signer(
-            Path(_environment("HC_BACKUP_FUNCTIONAL_SIGNING_KEY_FILE")),
-            key_reference=plan.secrets_and_kms.signing_key_reference,
-            run_id=_environment("HC_BACKUP_FUNCTIONAL_RUN_ID"),
-        )
-        return signer
-    return VaultTransitEd25519Signer(
-        VaultTransitSignerConfig(
-            endpoint_url=_environment("HC_BACKUP_SIGNER_VAULT_ENDPOINT"),
-            token=_environment("HC_BACKUP_SIGNER_VAULT_TOKEN"),
-            provider_reference=_environment("HC_BACKUP_SIGNER_PROVIDER_REFERENCE"),
-            transit_mount=_environment("HC_BACKUP_SIGNER_TRANSIT_MOUNT", default="transit"),
-            key_name=_environment("HC_BACKUP_SIGNER_KEY_NAME"),
-            key_version=_integer(
-                "HC_BACKUP_SIGNER_KEY_VERSION",
-                default=0,
-                minimum=1,
-                maximum=2**31 - 1,
-            ),
-            key_reference=plan.secrets_and_kms.signing_key_reference,
-            namespace=os.environ.get("HC_BACKUP_SIGNER_VAULT_NAMESPACE"),
-            timeout_seconds=_number(
-                "HC_BACKUP_SIGNER_TIMEOUT_SECONDS",
-                default=10,
-                minimum=0.1,
-                maximum=120,
-            ),
-        )
-    )
 
 
 def _catalog(
@@ -503,9 +345,10 @@ def _create(
         "source_aggregate_sha256": postgresql.source_evidence.aggregate_sha256,
         "server_major": postgresql.server_major,
     }
-    repository = _repository(plan)
+    infrastructure = BackupInfrastructure(os.environ)
+    repository = infrastructure.repository(plan)
     repository.preflight()
-    signer = _signer(plan)
+    signer = infrastructure.signer(plan)
     encryptor = None
     decryptor = None
     if plan.mode == "portable":
@@ -687,8 +530,9 @@ def _verify(
     staging: Path,
 ) -> Mapping[str, object]:
     plan = load_whole_backup_plan(plan_path)
-    repository = _repository(plan)
-    signer = _signer(plan)
+    infrastructure = BackupInfrastructure(os.environ)
+    repository = infrastructure.repository(plan)
+    signer = infrastructure.signer(plan)
     catalog = _catalog(plan, signer)
     staging = staging.resolve(strict=True)
     verifier_identity = _environment("HC_BACKUP_VERIFIER_IDENTITY", default=plan.verifier_identity)
