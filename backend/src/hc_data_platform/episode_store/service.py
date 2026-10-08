@@ -75,6 +75,9 @@ class EpisodePackageService:
             if legacy_catalog is not None
             else None
         )
+        from .releases import CollectionReleases
+
+        self.releases = CollectionReleases(self)
 
     def close(self):
         self.cache.close()

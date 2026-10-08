@@ -23,6 +23,7 @@ from .postgres import PackageConflict
 from .previews import EpisodePreviewGrant
 from .quality import EpisodeQualityView, read_episode_quality
 from .reader import DepthPixelValue, PackageStepWindow
+from .release_models import CollectionRelease, CollectionReleasePreflight, PublishCollectionRelease
 from .review_models import (
     EpisodeDataReview,
     EpisodeDataReviewAction,
@@ -36,6 +37,7 @@ BASE = (
     "/episodes/{episode_id}/data-versions"
 )
 VERSION = BASE + "/{data_version_id}"
+RELEASES = "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/collection-releases"
 router = APIRouter(prefix="/api/v1", tags=["episode_data"])
 router.include_router(delivery_router)
 router.include_router(derivation_router)
@@ -47,6 +49,98 @@ def configure_episode_packages(service: EpisodePackageService):
     if _service is not None and _service is not service:
         _service.close()
     _service = service
+
+
+@contextmanager
+def authorized_releases(auth, project_id, region_code, dataset_id, *, publish=False):
+    organization = current_request_context().organization_id
+    authorize_scope(
+        auth,
+        project_id,
+        "dataset_version.publish" if publish else "dataset_version.read",
+        region_code,
+        organization,
+    )
+    authorize_scope(auth, project_id, "annotation_task.read", region_code, organization)
+    if _service is None:
+        raise problem(
+            status=503,
+            code="EPISODE_PACKAGES_UNAVAILABLE",
+            title="Episode data unavailable",
+            detail="Episode package service is not configured.",
+        )
+    try:
+        yield _service.releases
+    except KeyError as exc:
+        raise problem(
+            status=404,
+            code="COLLECTION_RELEASE_NOT_FOUND",
+            title="Release not found",
+            detail="The collection release is unavailable in this scope.",
+        ) from exc
+    except PackageConflict as exc:
+        raise problem(
+            status=409,
+            code="COLLECTION_RELEASE_CONFLICT",
+            title="Release conflict",
+            detail=str(exc),
+        ) from exc
+    except PermissionError as exc:
+        raise problem(
+            status=403,
+            code="COLLECTION_RELEASE_FORBIDDEN",
+            title="Release forbidden",
+            detail="The collection is outside the authorized scope.",
+        ) from exc
+    except ValueError as exc:
+        raise problem(
+            status=422,
+            code="COLLECTION_RELEASE_INVALID",
+            title="Invalid release request",
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(RELEASES + "/preflight", response_model=CollectionReleasePreflight)
+def collection_release_preflight(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    command: PublishCollectionRelease,
+    auth: VerifiedAuth,
+    response: Response,
+):
+    with authorized_releases(auth, project_id, region_code, dataset_id, publish=True) as service:
+        response.headers["Cache-Control"] = "no-store"
+        return service.preflight(dataset_id, command)
+
+
+@router.post(RELEASES, response_model=CollectionRelease, status_code=201)
+def publish_collection_release(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    command: PublishCollectionRelease,
+    auth: VerifiedAuth,
+    response: Response,
+):
+    with authorized_releases(auth, project_id, region_code, dataset_id, publish=True) as service:
+        response.headers["Cache-Control"] = "no-store"
+        return service.publish(dataset_id, command)
+
+
+@router.get(RELEASES + "/{dataset_version}", response_model=CollectionRelease)
+def collection_release(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    dataset_version: str,
+    auth: VerifiedAuth,
+    response: Response,
+):
+    with authorized_releases(auth, project_id, region_code, dataset_id) as service:
+        response.headers["Cache-Control"] = "no-store"
+        return service.get(dataset_id, dataset_version)
 
 
 @contextmanager
