@@ -66,6 +66,19 @@ build:container 通过；后端 OpenAPI 聚合检查通过，runtime SHA256
 未完成项及真实传感器条件不在这些通过结果中。
 
 
+## 第二批本地集成
+
+`190d318b4a330740aca0e124dbd173a84ae4ecb7` 包含备份共享装配和独立 Tag
+目录投影。精确集成树执行 20 项真实 API/持久 worker/CLI/PG/MinIO 回归、
+90 项备份/架构/应用检查，均零跳过；前端生成类型核对、typecheck、架构和
+mock=off production 构建通过。前端源码与首批 1004 项 Vitest 通过版本相同。
+证据为 `results/A-services/integration-batch-two-*`；runtime SHA256 仍为
+`125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206`。
+
+独立后端 next 中已实现逻辑样本及媒体授权，由真实 Lance/Parquet 和 PG/MinIO
+读回验证，已公布契约给 B。前端消费者尚未完成，未纳入本地 main 的这两批集成，
+不把新接口存在当成前端功能完成。B 浏览器候选仍为 3df9fc78，等待剩余验收回执。
+
 ## A：Raw 录制登记事务端口（B18）
 
 连续录制拥有 VerifiedRecordingFacts / RecordingRegistrationPort 与目标表 SQL。
