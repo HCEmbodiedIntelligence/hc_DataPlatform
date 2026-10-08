@@ -391,3 +391,43 @@ FrameReader 仍属于原始录制来源适配器，没有被当作通用格式�
 完全相同，无损解码 RGB 像素一致；新公共编码器 mypy、全部相关 Ruff 和 454 文件依赖门禁通过。
 证据位于外部 results/rgb-migration-*.xml、rgb-codec-compatibility.json。
 源提交自带的历史数据演练诊断按原证据合入；本批独立验证使用合成数据，没有重新操作真实历史资产。
+
+## 可视化能力注册（F08）
+
+`features/viewer/renderer-contract.ts` 定义 ViewerRendererDescriptor、ViewerRendererRef、
+ViewerRendererRegistration、ViewerRendererContext 和窄资源端口 ViewerRendererResources。
+renderer-catalog 只选能力，不读取 session、页面、API 客户端，不加载 renderer 代码。
+注册时复制并冻结模态/schema/版本/输入声明；同 id/version 或同 id 多个默认值拒绝覆盖。
+指定引用 get(ref) 只读精确版本。路由只选显式默认版本：模态与 schema 版本一致且满足输入能力
+时才可用，优先级数值较小者优先，同优先级匹配明确降级并诊断。
+
+已有 RGB、深度、点云、关节/数值与事件视图全部通过 builtin-renderers 声明，保留原来的
+顺序、Manifest 相机槽顺序、轴卡片及关节原始曲线回退。没有注册的新模态/schema 继续显示
+unsupported；缺输入和歧义只停用对应面板。ViewerCompositionResolver 不再解释模态，门禁
+同时禁止恢复中央模态映射和 registry 对 UI/运行时装配的依赖。
+
+新模态由所属 feature 声明一个 Registration 和懒加载 Component，工作台组合为
+`createViewerRendererCatalog([...builtinViewerRenderers, newRenderer])`。
+将同一个不可变 catalog 传给 EpisodeWorkbenchCore/ViewerMediaSurface 的 rendererCatalog，
+或 DataVisualizationWorkbench 的 slots.rendererCatalog；无需修改核心工作台、时钟或
+创建另一套 viewer。原 renderPanel 插槽和 robotScene 可选性继续保留。
+模块导出 Component(props: ViewerRendererContext)，输入来自显式 stream/schema、clock；
+只有可见面板才调用 load(signal)。来源读取使用 context.signal；payload/URL/worker 等释放
+责任通过 resources 端口登记；异步读取失败通过 reportError 走公共面板错误路径。
+资源端口不依赖具体 registry 类，也不允许 renderer 关闭其他面板或共享 clock。
+授权媒体 kind 在通用 viewer 端口允许扩展，已有后端媒体 wire 的验证和权限检查仍由来源适配器负责。
+
+加载/组件初始化/异步来源错误在当前面板隔离并可重试；隐藏、切换 stream/catalog/clock、
+卸载与失败均 abort/dispose。过期 loader 不挂载组件，迟到 payload 注册立即释放。
+能力选择不会发出授权请求。真实懒加载字幕测试模块复用相同数据源与 clock，无需 robot；
+同时测试 audio media 能力的选择、不提前授权及缺输入拒绝，未宣称后端已支持新音频来源。
+
+验证证据位于外部 results/viewer-renderers-*：完整前端测试、类型检查、ESLint、46 项
+架构反例及生产构建。首次生产构建命令缺少明确的生产环境变量而被原安全检查拒绝；
+补齐 off/production/不可变验证版本及 API/SSE 根路径后按原 build:container 通过，
+没有放宽构建检查，也没有部署产物。
+这仅完成 renderer 扩展接口；逻辑数据快照、标注 target、URDF 导入和历史冻结模型仍是独立待办。
+
+F08 最终完整回归：159 个文件、976 项测试通过且无跳过，其中新增注册/生命周期/错误用例 22 项。
+完整类型、受影响 ESLint、46 项门禁与生产构建通过。当前 15 项 implemented_verified、
+5 项 in_progress、40 项 pending，全部 60 项目标仍保持 active。

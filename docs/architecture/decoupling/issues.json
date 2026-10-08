@@ -618,9 +618,17 @@
       "title": "可视化数据源与插槽可复用，模态选择仍是中央映射",
       "scope": "两分支",
       "owner": "T14",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "保留现有工作台和时钟，增加受控 renderer 注册描述（能力、schema、优先级、懒加载、清理）；未知模态继续明确降级。无需复制整套 viewer 来新增声音、文本或图像标注。"
+      "status": "implemented_verified",
+      "evidence": [
+        "features/viewer/renderer-contract.ts defines versioned renderer descriptors, exact refs, schema/input capabilities, lazy component contract and narrow ViewerRendererResources; registry never imports UI, clients or global state",
+        "createViewerRendererCatalog creates immutable registrations; duplicates/default collisions fail, exact old refs retained, unavailable inputs or ambiguous priority fail closed per panel",
+        "All existing modalities use builtin registrations; ViewerCompositionResolver delegates selection, joint-axis diagnostics/fallback and Manifest camera order preserved; unknown modalities/schema stay unsupported",
+        "EpisodeWorkbenchCore/ViewerMediaSurface and DataVisualizationWorkbench accept the same catalog; existing clock, robot optionality and renderPanel/other slots retained",
+        "Lazy extension host aborts/disposes on visibility/owner/retry/unmount/failure; late loaders never mount, late resources immediately release; loader/render/initialization/async source errors isolated with retry",
+        "Real dynamic-import caption component uses ordinary data-source/clock/resource ports without robot; audio authorization input declaration routes without authorizing during selection; backend audio ingestion not claimed",
+        "Final full frontend: 159 files / 976 tests passed without skips (maxWorkers=4), 22 added registry/extension cases, 46 architecture checks, full typecheck and affected ESLint passed; production build verified with explicit off/production/API/SSE variables"
+      ],
+      "remaining": ""
     },
     {
       "id": "F09",

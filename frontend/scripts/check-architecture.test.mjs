@@ -128,6 +128,41 @@ test("pure scoped cache keys cannot acquire active shell selection", () => {
 });
 
 for (const source of [
+  'import { useEffect } from "react";',
+  'import { getShellState } from "../../shared/scope/shell-store";',
+  'const load = () => import("./EpisodeWorkbenchCore");',
+  'import { create } from "zustand";',
+]) {
+  test(`renderer selection is independent of runtime assembly: ${source}`, () => {
+    assert.equal(
+      checkSource(
+        path.join(root, "features/viewer/renderer-catalog.ts"),
+        source,
+        root,
+      ).length,
+      1,
+    );
+  });
+}
+
+for (const source of [
+  "const kind = panels[stream.modality];",
+  'if (stream.modality === "audio") {}',
+  'const kind = panels[stream["modality"]];',
+]) {
+  test(`composition cannot restore central modality routing: ${source}`, () => {
+    assert.equal(
+      checkSource(
+        path.join(root, "features/viewer/ViewerCompositionResolver.ts"),
+        source,
+        root,
+      ).length,
+      1,
+    );
+  });
+}
+
+for (const source of [
   'import type { Search } from "../../pages/p10/query-codec";',
   'export { Search } from "../../pages/p10/query-codec";',
   'const load = () => import("../../pages/p10/query-codec");',

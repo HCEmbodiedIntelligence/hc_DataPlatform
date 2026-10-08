@@ -6,7 +6,6 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
-  RefObject,
 } from "react";
 import {
   Activity,
@@ -24,6 +23,10 @@ import { resolveViewerComposition } from "./ViewerCompositionResolver";
 import { RobotSceneCore } from "./RobotSceneCore";
 import type { RobotSceneCoreProps } from "./RobotSceneCore";
 import { ViewerResourceRegistry } from "./runtime/ViewerResourceRegistry";
+import { usePanelVisibility } from "./runtime/use-panel-visibility";
+import { RegisteredViewerPanel } from "./RegisteredViewerPanel";
+import { defaultViewerRendererCatalog } from "./builtin-renderers";
+import type { ViewerRendererCatalog } from "./renderer-catalog";
 import { attachAuthorizedMedia } from "./runtime/authorized-media";
 import { isSignedResourceExpired } from "./runtime/signed-resource";
 import {
@@ -64,6 +67,7 @@ export interface EpisodeWorkbenchCoreProps {
   timelineVariant?: ViewerTimelineVariant;
   timelineLabel?: string;
   renderPanel?: ViewerPanelRenderer;
+  rendererCatalog?: ViewerRendererCatalog;
   onResourceError?: (
     e: DomainError,
     scope: "video" | "curve" | "pointcloud" | "scene3d",
@@ -221,34 +225,6 @@ export function ViewerPlaybackControls({
       ))}
     </div>
   );
-}
-
-function usePanelVisibility(ref: RefObject<HTMLElement | null>): boolean {
-  const [intersecting, setIntersecting] = useState(
-    () => typeof IntersectionObserver === "undefined",
-  );
-  const [documentVisible, setDocumentVisible] = useState(
-    () =>
-      typeof document === "undefined" || document.visibilityState !== "hidden",
-  );
-  useEffect(() => {
-    const node = ref.current;
-    if (!node || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setIntersecting(entry?.isIntersecting ?? false),
-      { rootMargin: "120px 0px" },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [ref]);
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    const update = () =>
-      setDocumentVisible(document.visibilityState !== "hidden");
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
-  }, []);
-  return intersecting && documentVisible;
 }
 
 function mediaScope(kind: ViewerPanelSpec["kind"]): ViewerResourceScope {
@@ -1229,7 +1205,9 @@ export function ViewerJointAngleCurvePanel({
               {chart.high.toFixed(2)}
             </text>
             <text x="6" y={(chart.plot.top + chart.plot.bottom) / 2 + 4}>
-              {Array.from(new Set(series.map((item) => item.unit ?? "rad"))).join(" / ") || "rad"}
+              {Array.from(
+                new Set(series.map((item) => item.unit ?? "rad")),
+              ).join(" / ") || "rad"}
             </text>
             <text x="6" y={chart.plot.bottom + 4}>
               {chart.low.toFixed(2)}
@@ -2179,6 +2157,7 @@ export interface ViewerMediaSurfaceProps {
   readonly robotSceneUnavailableReason?: string;
   readonly overlays?: readonly OverlayRenderer[];
   readonly renderPanel?: ViewerPanelRenderer;
+  readonly rendererCatalog?: ViewerRendererCatalog;
   readonly onResourceError?: EpisodeWorkbenchCoreProps["onResourceError"];
   readonly emptyMessage?: string;
 }
@@ -2189,13 +2168,14 @@ export function ViewerMediaSurface({
   onResourceError,
   overlays,
   renderPanel,
+  rendererCatalog = defaultViewerRendererCatalog,
   robotScene,
   robotSceneUnavailableReason,
   streams,
 }: ViewerMediaSurfaceProps): JSX.Element {
   const composition = useMemo(
-    () => resolveViewerComposition(streams),
-    [streams],
+    () => resolveViewerComposition(streams, rendererCatalog),
+    [streams, rendererCatalog],
   );
   const byId = useMemo(
     () => new Map(streams.map((stream) => [stream.id, stream])),
@@ -2234,14 +2214,26 @@ export function ViewerMediaSurface({
           const streamId = panel.streamIds[0];
           const stream = streamId ? byId.get(streamId) : undefined;
           if (!stream) return null;
-          const defaultPanel = (
-            <StreamPanel
-              clock={clock}
-              onResourceError={onResourceError}
-              panel={panel}
-              stream={stream}
-            />
-          );
+          const registration = panel.renderer
+            ? rendererCatalog.get(panel.renderer)
+            : undefined;
+          const defaultPanel =
+            registration?.implementation.kind === "lazy" ? (
+              <RegisteredViewerPanel
+                clock={clock}
+                onResourceError={onResourceError}
+                panel={panel}
+                stream={stream}
+                registration={registration}
+              />
+            ) : (
+              <StreamPanel
+                clock={clock}
+                onResourceError={onResourceError}
+                panel={panel}
+                stream={stream}
+              />
+            );
           return (
             <div className="viewer-panel-slot" key={panel.panelId}>
               {renderPanel
@@ -2278,8 +2270,8 @@ export function EpisodeWorkbenchCore(
   p: EpisodeWorkbenchCoreProps,
 ): JSX.Element {
   const composition = useMemo(
-    () => resolveViewerComposition(p.streams),
-    [p.streams],
+    () => resolveViewerComposition(p.streams, p.rendererCatalog),
+    [p.streams, p.rendererCatalog],
   );
   const byId = useMemo(
     () => new Map(p.streams.map((stream) => [stream.id, stream])),
@@ -2297,6 +2289,7 @@ export function EpisodeWorkbenchCore(
         onResourceError={p.onResourceError}
         overlays={p.overlays}
         renderPanel={p.renderPanel}
+        rendererCatalog={p.rendererCatalog}
         robotScene={p.robotScene}
         streams={p.streams}
       />

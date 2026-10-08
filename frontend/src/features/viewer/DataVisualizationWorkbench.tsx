@@ -344,6 +344,7 @@ export function DataVisualizationWorkbench({
           clock={adapter.clock}
           onResourceError={adapter.onResourceError}
           renderPanel={slots?.renderPanel}
+          rendererCatalog={slots?.rendererCatalog}
           robotScene={adapter.robotScene}
           robotSceneUnavailableReason={adapter.robotSceneUnavailableReason}
           streams={adapter.cameraStreams}

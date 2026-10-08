@@ -1,32 +1,10 @@
 import type {
   ResolvedViewerComposition,
   StreamDescriptor,
-  ViewerPanelKind,
   ViewerPanelSpec,
 } from "./types";
-
-const panelKinds: Readonly<Record<string, ViewerPanelKind>> = {
-  rgb: "video",
-  depth: "depth",
-  pointcloud: "pointcloud-preview",
-  joint_state: "time-series",
-  action: "time-series",
-  force: "time-series",
-  pose: "time-series",
-  imu: "time-series",
-  tactile: "time-series",
-  event: "event-track",
-  other: "unsupported",
-};
-
-const priorities: Readonly<Record<ViewerPanelKind, number>> = {
-  video: 10,
-  depth: 20,
-  "pointcloud-preview": 30,
-  "time-series": 40,
-  "event-track": 50,
-  unsupported: 90,
-};
+import { defaultViewerRendererCatalog } from "./builtin-renderers";
+import type { ViewerRendererCatalog } from "./renderer-catalog";
 
 function availabilityState(stream: StreamDescriptor): ViewerPanelSpec["state"] {
   if (stream.availability === "media-preparing") return "pending";
@@ -38,6 +16,7 @@ function availabilityState(stream: StreamDescriptor): ViewerPanelSpec["state"] {
 
 export function resolveViewerComposition(
   streams: readonly StreamDescriptor[],
+  catalog: ViewerRendererCatalog = defaultViewerRendererCatalog,
 ): ResolvedViewerComposition {
   const panels: ViewerPanelSpec[] = [];
   const inputOrder = new Map(
@@ -47,8 +26,11 @@ export function resolveViewerComposition(
   const diagnostics: ResolvedViewerComposition["diagnostics"][number][] = [];
 
   for (const stream of streams) {
+    const selected = catalog.select(stream);
+    const registration = selected.registration;
+    const descriptor = registration?.descriptor;
     let hasDetailedJointAxes = false;
-    if (stream.modality === "joint_state") {
+    if (descriptor?.jointAxes) {
       const axes = stream.schema.axes;
       const shapeWidth = stream.schema.shape?.[0];
       const indexes = axes?.map((axis) => axis.sampleIndex) ?? [];
@@ -79,19 +61,40 @@ export function resolveViewerComposition(
       }
     }
 
-    const kind = panelKinds[stream.modality] ?? "unsupported";
+    const kind =
+      registration?.implementation.kind === "builtin"
+        ? registration.implementation.panelKind
+        : registration
+          ? "extension"
+          : "unsupported";
     if (kind === "time-series" && hasDetailedJointAxes) continue;
+    if (
+      selected.reason === "ambiguous" ||
+      selected.reason === "missing-input"
+    ) {
+      diagnostics.push({
+        code:
+          selected.reason === "ambiguous"
+            ? "RENDERER_SELECTION_AMBIGUOUS"
+            : "RENDERER_INPUT_UNAVAILABLE",
+        streamId: stream.id,
+        message:
+          selected.reason === "ambiguous"
+            ? "多个可视化能力具有相同优先级；此面板已停用，请明确能力优先级。"
+            : "此可视化能力所需的数据源不可用；其他面板仍可使用。",
+      });
+    }
     panels.push({
       panelId: `stream:${stream.id}`,
       kind,
+      renderer: descriptor
+        ? { id: descriptor.id, version: descriptor.version }
+        : undefined,
       streamIds: [stream.id],
       title: stream.displayName,
-      priority: priorities[kind],
-      minWidthPx: kind === "event-track" || kind === "time-series" ? 420 : 320,
-      aspectRatio:
-        kind === "video" || kind === "depth" || kind === "pointcloud-preview"
-          ? "16 / 9"
-          : undefined,
+      priority: descriptor?.priority ?? 90,
+      minWidthPx: descriptor?.minWidthPx ?? 320,
+      aspectRatio: descriptor?.aspectRatio,
       state: kind === "unsupported" ? "unsupported" : availabilityState(stream),
     });
   }

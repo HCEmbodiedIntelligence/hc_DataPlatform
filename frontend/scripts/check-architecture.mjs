@@ -36,6 +36,14 @@ export function checkSource(file, content, sourceRoot, options = {}) {
       return;
     }
     const specifier = value.text;
+    if (
+      relative === "features/viewer/renderer-catalog.ts" &&
+      !["./renderer-contract", "./types"].includes(specifier)
+    ) {
+      failures.add(
+        `${relative}:${line}: renderer selection must remain independent of UI, loaders and data clients: ${specifier}`,
+      );
+    }
     const explicitScopeContract =
       /^features\/(robots|robot-models)\/api\/client\.ts$/u.test(relative) ||
       relative === "shared/api/scoped-query-keys.ts";
@@ -103,6 +111,19 @@ export function checkSource(file, content, sourceRoot, options = {}) {
     }
   }
   function visit(node) {
+    if (
+      relative === "features/viewer/ViewerCompositionResolver.ts" &&
+      ((ts.isPropertyAccessExpression(node) && node.name.text === "modality") ||
+        (ts.isElementAccessExpression(node) &&
+          ts.isStringLiteralLike(node.argumentExpression) &&
+          node.argumentExpression.text === "modality"))
+    ) {
+      const line =
+        tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
+      failures.add(
+        `${relative}:${line}: composition must select renderer capabilities instead of branching on modality`,
+      );
+    }
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
       if (node.moduleSpecifier) inspect(node.moduleSpecifier, node);
     } else if (
