@@ -73,6 +73,18 @@ class FailingDirectUpload {
 }
 
 describe("native LeRobot upload contract", () => {
+  it("preserves detected processing revisions and omits the field for historical manifests", () => {
+    const selection = oneFileSelection();
+    expect(
+      buildLeRobotImportManifest(selection, {
+        ...binding,
+        processingCapabilityRevision: "server-profile/7",
+      }).processing_capability_revision,
+    ).toBe("server-profile/7");
+    expect(buildLeRobotImportManifest(selection, binding)).not.toHaveProperty(
+      "processing_capability_revision",
+    );
+  });
   beforeEach(() => {
     requestMock.mockReset();
   });

@@ -1,4 +1,5 @@
 import type { IngestScope } from "../../../entities/data-source";
+import type { components } from "../../../shared/api/generated/platform";
 import { request } from "../../../shared/api/http-client";
 import { isDomainError } from "../../../shared/api/domain-error";
 import {
@@ -17,28 +18,15 @@ const LEROBOT_PROXY_RETRY_MAX_DELAY_MS = 30_000;
 
 export interface LeRobotTargetBinding {
   readonly processingMode?: "STORE_ONLY" | "PROCESS";
+  readonly processingCapabilityRevision?: string;
   readonly datasetId: string;
   readonly collectionTaskId: string | null;
   readonly robotId: string | null;
 }
 
-interface LeRobotSourceDeclaration {
-  readonly path: string;
-  readonly size: number;
-  readonly part_count: number;
-  readonly last_modified_ms: number;
-}
-
-export interface LeRobotImportManifest {
-  readonly schema_version: "lerobot-web-import/v1";
-  readonly dataset_id: string;
-  readonly collection_task_id: string | null;
-  readonly robot_id: string | null;
-  readonly source_format: "LEROBOT_V3" | "MCAP" | "ROSBAG";
-  readonly processing_mode: "STORE_ONLY" | "PROCESS";
-  readonly info: Readonly<Record<string, unknown>>;
-  readonly files: readonly LeRobotSourceDeclaration[];
-}
+export type LeRobotImportManifest = Readonly<
+  components["schemas"]["CreateLeRobotImportV1"]
+>;
 
 interface PartAuthorization {
   readonly part_number: number;
@@ -122,6 +110,9 @@ export function buildLeRobotImportManifest(
     dataset_id: binding.datasetId,
     collection_task_id: binding.collectionTaskId,
     robot_id: binding.robotId,
+    ...(binding.processingCapabilityRevision
+      ? { processing_capability_revision: binding.processingCapabilityRevision }
+      : {}),
     source_format:
       selection.format === "lerobot"
         ? "LEROBOT_V3"
