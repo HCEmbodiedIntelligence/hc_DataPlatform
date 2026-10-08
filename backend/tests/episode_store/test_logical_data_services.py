@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from hc_data_platform.episode_store.models import DataVersionRef
 from tests.episode_store.test_collection_releases_services import release_source  # noqa: F401
 from tests.episode_store.test_commit_services import scoped
 from tests.episode_store.test_http_services import register_and_grant
@@ -14,9 +15,10 @@ from tests.episode_store.test_migration_batches_services import batch_source  # 
 
 
 @pytest.mark.integration
-def test_real_logical_http_reads_native_and_legacy_with_identical_contract(release_source):  # noqa: F811
+@pytest.mark.parametrize("batch_source", [{}, {"missing_camera": True}], indirect=True)
+def test_real_logical_http_reads_native_and_legacy_with_identical_contract(release_source, request):  # noqa: F811
     source, packages, command, _ = release_source
-    _, plan, _, _, _, _ = source
+    batches, plan, _, _, _, _ = source
     identity = plan.legacy.identity
     with (
         scoped(plan.source),
@@ -89,6 +91,34 @@ def test_real_logical_http_reads_native_and_legacy_with_identical_contract(relea
                         assert [s["value"] for s in batch["samples"]] == [
                             [float(i)] for i in range(4)
                         ]
+                    missing_camera = request.node.callspec.params["batch_source"].get(
+                        "missing_camera", False
+                    )
+                    expected_valid = [True] * 4
+                    if missing_camera and stream["name"] == "observation.images.head_rgb":
+                        expected_valid[1] = False
+                    assert [s["valid"] for s in batch["samples"]] == expected_valid
+                    if stored.get("package_binding"):
+                        binding = stored["package_binding"]
+                        ref = DataVersionRef.model_validate(binding["data"])
+                        physical = packages.steps.read_steps(
+                            ref.identity, ref.data_version_id, 1, 2
+                        )
+                    else:
+                        binding = stored.get("data_binding")
+                        if binding is not None:
+                            physical = batches.legacy.read_steps(
+                                identity.dataset_id,
+                                binding["rollout_id"],
+                                1,
+                                2,
+                                version=int(binding["lance_version"]),
+                                project_id=identity.project_id,
+                            )
+                        else:
+                            physical = None
+                    if physical is not None:
+                        assert physical.steps[0].sample_valid is not missing_camera
                     serialized = json.dumps(batch)
                     assert all(
                         key not in serialized

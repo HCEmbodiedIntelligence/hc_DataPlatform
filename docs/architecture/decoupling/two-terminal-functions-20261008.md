@@ -134,3 +134,20 @@ B013 已给出候选切换窗口：Tag 正向创建、QC、三帧 RGB-D 和官�
 通过。B011 撤权 201 尚未通过验收：辅助动作遗漏 upload.manage 的隐含发布
 能力，正在修正并复验。B014 逻辑样本把聚合有效性错误叠加到单通道，尚待
 代码修复和真实存储回归；逻辑 API 仍不在本批主线。
+
+
+## A：B014 单通道有效性和 B011 撤权复验
+
+逻辑样本 valid 现在只使用目标通道有效性。真实合成缺 RGB 相机第1帧写入
+Lance，再通过正常迁移提交 Episode Parquet；两种存储的物理 sample_valid=false
+得到验证，同时 HTTP 中关节/action 仍 valid=true，缺失相机 false；原有样本、
+子窗口、固定 snapshot、撤权和跨作用域行为保留。2 项真实读取回归和2项真实
+发布授权回归通过；90 项逻辑契约/架构检查及Ruff通过，无跳过。runtime SHA
+保持 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad。
+证据：channel-validity-{revocation,contracts}.xml、runtime-channel-validity.yaml。
+
+B011 的原201源于测试辅助动作只撤直接publish，遗漏 upload.manage 的已有
+隐含发布能力；未更改产品授权规则。辅助脚本已同时撤销两种来源、递增能力
+revision并读取有效权限。当前普通会话实际预检200→撤权后提交/预检403→
+旧固定发布200且内容未变→恢复后200；证据 browser-effective-revocation.json。
+B已收到修正动作，浏览器负例仍待复验。前端逻辑消费仍由B接续，未标完成。

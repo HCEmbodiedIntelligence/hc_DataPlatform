@@ -48,7 +48,9 @@ def _samples(stream, binding, rows):
                 sample_index=index,
                 timestamp_ns=str(row.timestamp_ns),
                 value=value,
-                valid=row.sample_valid and row.valid.get(key, False),
+                # Validity belongs to this stream. An absent camera must not
+                # invalidate a simultaneously observed joint/action sample.
+                valid=row.valid.get(key, False),
                 repeated=row.repeated.get(key, False),
                 source_timestamps_ns=tuple(str(t) for t in row.source_timestamps_ns.get(key, ())),
                 time_error_ns=str(row.time_error_ns[key])

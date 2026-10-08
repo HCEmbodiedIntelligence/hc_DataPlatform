@@ -61,7 +61,8 @@ def batch_source(services, tmp_path, request, monkeypatch):
     packages, storage = services
     run = uuid4().hex
     logical_media = getattr(request, "param", {}).get("logical_media", False)
-    persistent = logical_media or request.node.name in {
+    missing_camera = getattr(request, "param", {}).get("missing_camera", False)
+    persistent = logical_media or request.node.name.split("[")[0] in {
         "test_batch_publish_rollback_roundtrip",
         "test_batch_cli_and_retained_downloads",
         "test_real_logical_http_reads_native_and_legacy_with_identical_contract",
@@ -114,7 +115,11 @@ def batch_source(services, tmp_path, request, monkeypatch):
                     "action": [float(i)],
                     **{name: {"frame_index": i} for name in assets.videos},
                 },
-                valid={name: True for name in schema.fields},
+                sample_valid=not (missing_camera and i == 1),
+                valid={
+                    name: not (missing_camera and i == 1 and name == "observation.images.head_rgb")
+                    for name in schema.fields
+                },
                 source_timestamps_ns={"observation.images.head_depth": (i * 33_333_333,)},
                 time_error_ns={"observation.images.head_depth": 0},
             )
