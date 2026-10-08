@@ -22,6 +22,8 @@ export function createSessionScopeLease(scope: Scope, signal?: AbortSignal) {
   });
   return {
     signal: controller.signal,
+    scope: snapshot,
+    sessionRevision: captured.sessionRevision,
     release: () => {
       unsubscribe();
       release();
