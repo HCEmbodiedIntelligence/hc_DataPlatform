@@ -839,6 +839,12 @@ async def process_ingest_source(
                 )
 
             quality_data = session.quality_data
+            if request.quality.numeric_projection_revision is not None:
+                if source.lerobot is not None or request.alignment.storage_format != "lerobot_v3":
+                    raise ValueError("numeric MCAP quality revision cannot select another source")
+                quality_data = sessions.enter_context(
+                    session.numeric_quality_input(request.quality.profile)
+                )
             evaluator = _require(
                 _dependencies.quality,
                 "quality.QualityEvaluationPort",

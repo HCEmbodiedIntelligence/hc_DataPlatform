@@ -78,7 +78,6 @@ async def test_mcap_upload_temporal_package(isolated_dsn, tmp_path, monkeypatch,
         quality = QualityProfileV1(
             profile_id="mcap-package",
             required_topics=frozenset(TOPICS),
-            action={"minimum_observation_count_risk": 0, "minimum_observation_count_reject": 0},
         )
         with connect() as connection:
             connection.execute(

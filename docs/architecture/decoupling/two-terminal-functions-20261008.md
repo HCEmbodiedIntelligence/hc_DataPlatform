@@ -270,3 +270,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 新增实际 POST `lerobot-imports:capabilities`，显式组织/项目/区域和 upload.manage，返回元数据 SHA、`lerobot-native-episode/1` revision、存储/处理支持及阶段化拒绝原因。调用生产原生 profile 校验，float64 与额外特征保留，不依赖机器人型号前端白名单。只声明元数据适用性；上传 commit 仍核对原始 info 字节内容，worker 仍验证实际表格/视频/深度证据。
 
 新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。
+
+### MCAP 数值 QC 实际消费修复
+
+浏览器 A031/B039 的 /action 频率为30Hz且100%覆盖仍报 ACTION_MISSING；定位到 MCAP 只提供流统计，动作内容从未进入 QualityInput。新 Episode MCAP 计划冻结 `numeric_projection_revision=mcap-numeric-quality/1`，按 profile 的 action/joint topic 实际解码，数值事实以磁盘缓冲提供给同一 QC engine/evidence；具名关节按原名读取，不为无名向量捏造轴名。缺失、非有限、含混和非法向量保留诊断；默认 action 门槛不放宽。旧工作流缺该字段仍保持旧路径，旧报告不改写。
+
+2 项实际 MCAP/Temporal/深度包回归（移除旧夹具的 action minimum=0），111 numeric/原处理器/架构用例，27 Temporal 重放，1 文件严格 mypy、Ruff、架构、实际 OpenAPI 核验通过；HTTP契约仍3c6d4335。证据mcap-numeric-quality-{services,checks-v2,replay}.xml。首轮新测试导入拼写错误保留。候选持久worker和浏览器原RISK重处理仍待联合验收，不把这些软件检查称为浏览器完成。

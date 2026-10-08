@@ -309,6 +309,9 @@ class PostgresIngestWorkflowInputResolver:
                 ),
             ),
             quality=QualityActivityInput(
+                numeric_projection_revision="mcap-numeric-quality/1"
+                if self._package_schemas is not None
+                else None,
                 organization_id=organization_id,
                 project_id=project_id,
                 region_code=region_code,
@@ -1091,6 +1094,11 @@ class _LocalProjectionSession:
         if self._path is None:
             raise RuntimeError("local ingest projection session is not active")
         return self._path
+
+    def numeric_quality_input(self, profile):
+        from .mcap_quality import numeric_quality_input
+
+        return numeric_quality_input(self.quality_data, profile, self._messages(), self._decoder)
 
     def quality_observations(self) -> Iterator[QualityStreamObservationV1]:
         if self.package_images:

@@ -9,7 +9,7 @@ import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from .models import ActionObservation, JointObservation
+from .models import ActionObservation, JointObservation, QualityInputV1
 
 
 class SpilledObservations:
@@ -56,7 +56,7 @@ class SpilledOffsets:
 class SpilledQualityInput:
     """Context-owned input view; close only after report and evidence generation."""
 
-    def __init__(self, base):
+    def __init__(self, base: QualityInputV1) -> None:
         if base.actions or base.joints or base.modality_offsets_ns:
             raise ValueError("spilled facts require an empty numeric base")
         self.base = base
