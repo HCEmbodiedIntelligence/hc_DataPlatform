@@ -1,5 +1,9 @@
 # 数据平台解耦实施记录
 
+本轮 A/B 已按 2026-10-08 新指令恢复持续实施，原暂停记录仅为历史。
+当前逐项状态以 issues.json 为准；本地 main 第一批集成见
+[two-terminal-functions-20261008.md](two-terminal-functions-20261008.md)。
+
 ## 2026-10-08 生产调用入口修复
 
 合并后的检查发现，43 处前端引用仍经过旧身份或页面兼容入口，
@@ -575,3 +579,18 @@ snapshot_id、snapshot_token、start/end。完整实际 HTTP 用例读取历史�
 
 实际接口来自新 runtime fragment；不手写第二份协议。对应新前端调用尚待 B 接入，
 媒体 URL 授权仍走原能力，故 B06/B07 与 F05 不关闭；仅样本读取接口可供消费。
+
+
+## A：备份与恢复共享显式装配
+
+`BackupInfrastructure(settings)` 冻结传入设置，生产配置缺失时失败；只有显式
+compose_functional 使用隔离文件仓库/签名器。备份 create/verify 与恢复
+plan/execute/reconcile 均消费公共工厂，去除 restore_cli → whole_cli 私有依赖。
+发布、核验与恢复 payload resolver 消费 BackupPayloadRepository，不再把文件仓库
+伪装成 S3 类型；Object Lock/KMS/版本/签名策略和恢复批准协议保持原校验。
+
+82 项备份/架构测试、5 文件 mypy 和 Ruff/实际源码门禁通过。新增真实服务回归
+经过签名文件仓库、PostgreSQL 目录、backup verify CLI、空 PG/MinIO 目标的
+restore plan CLI（含重复计划与精确签名哈希篡改拒绝），2 passed，0 skipped。
+证据为外部 `backup-composition-services-recheck.xml`。初次挂载目录错误和负例
+异常断言错误保留在原 XML 与 failures.txt。未称真实 Vault/KMS/灾备执行已验收。

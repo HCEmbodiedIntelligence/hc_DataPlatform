@@ -53,9 +53,9 @@ from hc_data_platform.backup.objects import (
 )
 from hc_data_platform.backup.postgresql import LogicalDumpArtifact
 from hc_data_platform.backup.repository import (
+    BackupPayloadRepository,
     RepositoryStoredObject,
     RepositoryUploadSource,
-    S3LockedBackupRepository,
 )
 from hc_data_platform.backup.temporal import TemporalPolicyArtifact
 
@@ -700,7 +700,7 @@ def assemble_whole_backup(
 def publish_whole_backup(
     assembly: WholeBackupAssembly,
     *,
-    repository: S3LockedBackupRepository,
+    repository: BackupPayloadRepository,
     catalog: BackupCatalogService,
     audit: BackupCatalogAuditContext,
     repository_checkpoint_path: Path,
@@ -751,7 +751,7 @@ def verify_published_whole_backup(
     operation_id: str,
     verifier_identity: str,
     public_key: Ed25519PublicKey,
-    repository: S3LockedBackupRepository,
+    repository: BackupPayloadRepository,
     catalog: BackupCatalogService,
     audit: BackupCatalogAuditContext,
     verification_staging_directory: Path,

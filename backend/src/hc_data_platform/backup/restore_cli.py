@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from pydantic import ValidationError
 
+from hc_data_platform.backup.composition import BackupInfrastructure
 from hc_data_platform.backup.objects import (
     AgeCliDecryptor,
     AgeToolchain,
@@ -456,11 +457,9 @@ def plan(
             "the command target differs from the signed restore target document",
         )
 
-    # Imported lazily to keep the root CLI free from a module initialization cycle.
-    from hc_data_platform.backup.whole_cli import _repository, _signer
-
-    signer = _signer(backup_plan)
-    repository = _repository(backup_plan)
+    infrastructure = BackupInfrastructure(os.environ)
+    signer = infrastructure.signer(backup_plan)
+    repository = infrastructure.repository(backup_plan)
     public_bytes = signer.public_key.public_bytes(
         serialization.Encoding.Raw,
         serialization.PublicFormat.Raw,
@@ -528,11 +527,9 @@ def execute(
         now=started_at,
     )
 
-    # Imported lazily to keep the root CLI free from a module initialization cycle.
-    from hc_data_platform.backup.whole_cli import _repository, _signer
-
-    signer = _signer(backup_plan)
-    repository = _repository(backup_plan)
+    infrastructure = BackupInfrastructure(os.environ)
+    signer = infrastructure.signer(backup_plan)
+    repository = infrastructure.repository(backup_plan)
     backup_public_raw = signer.public_key.public_bytes(
         serialization.Encoding.Raw,
         serialization.PublicFormat.Raw,
@@ -706,10 +703,9 @@ def reconcile(
             "the completed restore checkpoint is unavailable",
         )
 
-    from hc_data_platform.backup.whole_cli import _repository, _signer
-
-    signer = _signer(backup_plan)
-    repository = _repository(backup_plan)
+    infrastructure = BackupInfrastructure(os.environ)
+    signer = infrastructure.signer(backup_plan)
+    repository = infrastructure.repository(backup_plan)
     backup_public_raw = signer.public_key.public_bytes(
         serialization.Encoding.Raw,
         serialization.PublicFormat.Raw,
