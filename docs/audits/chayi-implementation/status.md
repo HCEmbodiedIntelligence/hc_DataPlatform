@@ -4,9 +4,16 @@ Owner: this goal terminal; sequential implementation, no delegated agents.
 Baseline: `4933200c1e09dd1f70ecbaabcfa9c6afa404e771` on 2026-09-28.
 Execution: `/home/hc_op/workspace/hc_DataPlatform-chayi-work`, branch `feat/chayi-g1`.
 Current phase: G1 — W0–W6, W7 tooling/isolated rehearsal, W8 software acceptance.
+Current execution state (2026-10-08): goal paused by the user; only the separately
+authorized main-branch integration and its necessary checks are proceeding.
 2026-09-30 scope extension: automatically continue G2 and then G3 after each
 phase meets its completion conditions; see [goal sequence and authorization](goal-sequence.md).
 G2/G3 have not started. Older “excluded” statements below describe their historical scope.
+2026-10-08 user scope adjustment: no further historical conversion/batch migration,
+including G2; absent depth in an unrecorded modality is valid RGB-only data and
+does not block software delivery. Preserve old data/read compatibility and the
+completed rehearsal evidence. See [updated authorization](goal-sequence.md).
+Older pending historical-batch statements below describe their previous scope.
 The original three input documents and the later robot integration supplement
 were copied unchanged from the original checkout; hashes are recorded below.
 
@@ -46,6 +53,12 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 | MIG-01 | W7/G2 | Partial: historical native whole stream + shared window migration/read/rollback verified; full RGB-D/annotation/batches pending | [Historical copy](historical-native.md), [920-frame/four-camera window](historical-native-windows.md), [synthetic RGB-D batch/HTTP](migration-batches.md); G2 and full acceptance remain |
 
 ## Work log
+
+- 2026-10-08 单独授权本地主分支合并：保留现有解耦代码，新增集合业务发布
+  HTTP/服务/契约并适配 dataset_registry 发布投影；P06 按钮仍待接入。
+  合并后后端 73、前端 15、机器人 83、上传器 68 项通过，见
+  [合并记录与运行环境限制](main-merge-20261008/README.md)。整个目标仍暂停，
+  不把本次合并算作 G1/W8 完成，不执行 G2/G3、8088 数据库迁移或机器人安装。
 
 - W7 历史标注补充（2026-10-08）：冻结 Lance 132 的完整已审核历史，持久映射到
   已核验归档集合中的真实标准包，独立新草稿/提交/审核。实际 1440/1024 页面、

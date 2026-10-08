@@ -21,6 +21,33 @@ class PostgresDatasetPublicationProjection:
     def project_release(self, request: DatasetReleaseProjection) -> None:
         self._project_release(self._cursor, request)
 
+    def promote_current_release(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        release_version_id: str,
+        display_version: str,
+        version_kind: str,
+        published_at: datetime,
+        manifest_sha256: str,
+    ) -> None:
+        """Promote an already verified release in the caller's transaction."""
+        self._promote_dataset_current_release(
+            self._cursor,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            dataset_id=dataset_id,
+            release_version_id=release_version_id,
+            display_version=display_version,
+            version_kind=version_kind,
+            published_at=published_at,
+            manifest_sha256=manifest_sha256,
+        )
+
     def owner_id(
         self, *, organization_id: str, project_id: str, region_code: str, dataset_id: str
     ) -> str | None:

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="15" failures="0" errors="0" time="0.630824407">
+    <testsuite name="src/pages/p06-dataset-detail/package-media-source.test.ts" timestamp="2026-10-08T02:17:10.288Z" hostname="23d9e9ee6bbc" tests="11" failures="0" errors="0" skipped="0" time="0.027540117">
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; lazily obtains and refreshes a scoped official-depth preview grant with the explicit window" time="0.012063425">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;feature&quot;:&quot;other&quot;}" time="0.001754951">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;data&quot;:{&quot;identity&quot;:{&quot;organization_id&quot;:&quot;org-a&quot;,&quot;project_id&quot;:&quot;project-a&quot;,&quot;region_code&quot;:&quot;region-a&quot;,&quot;dataset_id&quot;:&quot;dataset_test&quot;,&quot;episode_id&quot;:&quot;episode_test&quot;,&quot;rollout_id&quot;:&quot;explicit-rollout&quot;},&quot;data_version_id&quot;:&quot;dv_other&quot;,&quot;version&quot;:3,&quot;content_hash&quot;:&quot;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&quot;,&quot;storage_format&quot;:&quot;lerobot_v3&quot;,&quot;schema_snapshot_id&quot;:&quot;schema-test&quot;,&quot;package_prefix&quot;:&quot;test/pinned/&quot;,&quot;frame_count&quot;:30}}" time="0.000961153">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;kind&quot;:&quot;rgb-video&quot;}" time="0.00070271">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;source_reused&quot;:true}" time="0.000655126">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;frame_count&quot;:31}" time="0.000624252">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;colorizer&quot;:null}" time="0.000580697">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;depth_min_m&quot;:11}" time="0.001822057">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;media_url&quot;:&quot;javascript:alert(1)&quot;}" time="0.002546803">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; rejects a mismatched or unsafe depth grant {&quot;expires_at&quot;:&quot;2020-01-01T00:00:00Z&quot;}" time="0.004068234">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/package-media-source.test.ts" name="fixed Episode RGB-D preview authorization &gt; routes both RGB and official depth through the actual viewer adapter without Lance IDs" time="0.000712756">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p06-dataset-detail/page.test.tsx" timestamp="2026-10-08T02:17:10.296Z" hostname="23d9e9ee6bbc" tests="3" failures="0" errors="0" skipped="0" time="0.594128064">
+        <testcase classname="src/pages/p06-dataset-detail/page.test.tsx" name="Dataset capacity display &gt; shows measured version capacity on the overview tab" time="0.239446373">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/page.test.tsx" name="Dataset capacity display &gt; shows measured version capacity on the episodes tab" time="0.223714948">
+        </testcase>
+        <testcase classname="src/pages/p06-dataset-detail/page.test.tsx" name="Dataset capacity display &gt; does not turn unavailable storage into zero bytes" time="0.128841648">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/datasets/api/queries.test.ts" timestamp="2026-10-08T02:17:10.297Z" hostname="23d9e9ee6bbc" tests="1" failures="0" errors="0" skipped="0" time="0.009156226">
+        <testcase classname="src/features/datasets/api/queries.test.ts" name="fixed version Episode viewer &gt; finds an Episode beyond the first 100 rows using the same snapshot" time="0.008549652">
+        </testcase>
+    </testsuite>
+</testsuites>
