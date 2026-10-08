@@ -249,3 +249,21 @@ runtime-annotation-logical.yaml。P08 页面尚待 B 消费，不关闭 F05/B06/
 后端与第五批相同，已有 B09 生产 worker 回归保持适用；runtime 契约仍5c2dc66b。
 证据 integration-batch-six-{frontend,services}.xml 与 integration-batch-six-build.log。
 URDF 浏览器导入与 R04 冻结绑定仍待验收；P08 新协议26cf62a3等待前端，不在本批。
+
+
+## A/B：第七批 P08 统一逻辑读取集成
+
+代码6b2280919e1a3706bc8444f7b924eee0b163ce45整合P08后端26cf62a3与
+前端c07cb705/b24913ad。标注bundle实际调用task/logical并复用P06样本/媒体，
+核对scope/task/固定版本/hash/count，非零时间映射成标注相对步范围；权限revision
+变化使已加载关节缓存与query流对象失效。STORE_ONLY提示明确只保存原始文件。
+1045项全量前端、后补22项权限/query回归、54门禁、类型/精确runtime生成/生产
+build通过；5项真实HTTP两存储P08/P06样本、媒体字节与撤权回归通过且零跳过。
+后端114项目录/逻辑/架构及3文件mypy已经绑定26cf62a3，此批后端无额外改动。
+证据integration-batch-seven-{services,frontend,revision}.xml及build日志。契约
+SHA256=54db54916dd9dbb9733aba1f1cc7b758bc78d4e6af5b36097faec5a8cf702417。
+
+B031通过浏览器URDF创建/更新/发布、真实WebGL画布和旧固定资产/映射读回；
+保留首轮无头浏览器不支持WebGL的失败。该证据不替代R04数据快照换绑验收。
+P08新共同候选尚待浏览器实际消费；原始深度预览协议修复和冻结模型均在独立
+工作树，不纳入本批已验证结果。
