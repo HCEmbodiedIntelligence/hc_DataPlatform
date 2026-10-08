@@ -84,6 +84,41 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
     package = module if is_package else module.rsplit(".", 1)[0]
     failures: set[str] = set()
     tree = ast.parse(source)
+    lazy_packages = {
+        "alignment",
+        "audit_projection",
+        "backup",
+        "collection_tasks",
+        "dashboard",
+        "lance_catalog",
+        "publishing",
+        "quality",
+        "verification",
+        "workflow",
+    }
+    if is_package and module.removeprefix("hc_data_platform.") in lazy_packages:
+        # TYPE_CHECKING imports remain visible to type checkers without runtime effects.
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and (
+                node.level or (node.module or "").startswith("hc_data_platform.")
+            ):
+                failures.add(f"{node.lineno}: package compatibility exports must be lazy")
+    helper_boundaries = {
+        "hc_data_platform.lance_catalog.models": ("hc_data_platform.lance_catalog.schema",),
+        "hc_data_platform.lance_catalog.schema_spec": ("hc_data_platform", "pyarrow"),
+        "hc_data_platform.lerobot_imports.capture": ("hc_data_platform.lerobot_imports.reader",),
+        "hc_data_platform.lerobot_imports.local_files": ("hc_data_platform",),
+        "hc_data_platform.continuous_recordings.openarm_raw.named": (
+            "hc_data_platform.continuous_recordings.openarm_raw.alignment",
+        ),
+        "hc_data_platform.continuous_recordings.openarm_raw.clock_diagnostics": (
+            "hc_data_platform",
+            "numpy",
+        ),
+    }
+    for line, target in imports(tree, package):
+        if any(matches(target, forbidden) for forbidden in helper_boundaries.get(module, ())):
+            failures.add(f"{line}: shared helper must not reintroduce its caller dependency")
     if module in {
         "hc_data_platform.episode_store.commit",
         "hc_data_platform.episode_store.delivery",
@@ -131,10 +166,16 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                 failures.add(f"{node.lineno}: Tag projection must consume public injected ports")
     if module == "hc_data_platform.robot_ingest.recording_bridge":
         for node in ast.walk(tree):
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) and any(
-                table in node.value.lower() for table in (
-                    "ingest.recording_uploads", "ingest.recording_upload_assets",
-                    "ingest.continuous_recordings",
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and any(
+                    table in node.value.lower()
+                    for table in (
+                        "ingest.recording_uploads",
+                        "ingest.recording_upload_assets",
+                        "ingest.continuous_recordings",
+                    )
                 )
             ):
                 failures.add(

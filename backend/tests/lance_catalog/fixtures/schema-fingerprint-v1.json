@@ -1,0 +1,53 @@
+{
+  "baseline_commit": "62555a5b803588835ee4a115d042e9fbd6ba235b",
+  "fields": {
+    "boolean": "Boolean",
+    "text": "UTF8",
+    "nested": "list<struct<x: float64, y: fixed_size_list<int16, 2>>>",
+    "duration": "duration[ns]",
+    "clock": "timestamp[us,Asia/Shanghai]",
+    "kv": "map<string,decimal128(12,3)>",
+    "fixed": "binary[32]",
+    "json": "JSON",
+    "large": "large_list<large_binary>"
+  },
+  "canonical_spec": [
+    [
+      "boolean",
+      "bool"
+    ],
+    [
+      "clock",
+      "timestamp[us,Asia/Shanghai]"
+    ],
+    [
+      "duration",
+      "duration[ns]"
+    ],
+    [
+      "fixed",
+      "binary[32]"
+    ],
+    [
+      "json",
+      "json"
+    ],
+    [
+      "kv",
+      "map<string,decimal128(12,3)>"
+    ],
+    [
+      "large",
+      "large_list<large_binary>"
+    ],
+    [
+      "nested",
+      "list<struct<x:float64,y:fixed_size_list<int16,2>>>"
+    ],
+    [
+      "text",
+      "string"
+    ]
+  ],
+  "sha256": "3d26419a3c7d3830eb6953e48f3c3a1367fa363ab9d4fee5cde5da87f33416f6"
+}

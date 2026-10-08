@@ -11,7 +11,7 @@ from hc_data_platform.episode_store.native_plan import NativeEpisodePlan, Native
 from hc_data_platform.episode_store.prepared_assets import PreparedAssets, PreparedVideo
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
-from .reader import local_file, safe_relative
+from .local_files import local_file, safe_relative
 
 
 def raw_files(raw, manifest):

@@ -97,3 +97,23 @@ mock=off production 构建通过。前端源码与首批 1004 项 Vitest 通过�
 初次漏设 active=false，仅改 revoked_at 不会撤权；补齐正常撤权状态后复验通过。
 证据为协调目录 recording-registration-{services-v2,worker-v2,checks}.xml。
 这批没有关闭工作流 DTO、Temporal 适配或私有执行上下文相关 B08/B09/B10。
+
+
+## A：B24/B25 验证检查点
+
+纯函数内部循环与 10 个包入口的隐式实现导入已拆除；生产读取仍经过实际
+Lance、LeRobot 和 OpenArm 路径。88 项契约/架构/schema 检查、64 项
+真实本地格式与读取回归、4 项旧 schema 指纹 golden、5 文件严格 mypy
+及 Ruff 通过。6 项真实 PG/MinIO/Temporal 原生/录制处理、5 项真实
+HTTP/持久 worker/下载/备份回归通过；另外 27 项 Temporal 工作流、
+取消恢复、历史重放和导出版本路由通过。所有通过用例零跳过。
+
+首次 17 项工作流测试因隔离内部网络无法下载测试服务器而失败，保留 XML；
+取得官方 v1.40.0 二进制并固定 test_server_existing_path 后全部复验通过，
+未替换工作流或活动实现。hash/来源记录与脚本位于本轮协调目录 results/test-tools
+和 workflow_tests_offline.py。错误备份测试路径导致的零收集记录也保留。
+
+后端 next runtime OpenAPI 保持 5c2dc66b 哈希；逻辑流前端尚待 B 消费，
+稳定浏览器候选继续保持 3df。B 浏览器已确认 P21 四种包与 P08 带标注包
+创建、worker、下载/官方 reader；旧迁移 seed 的 Tag 因同摘要多来源被正确拒绝，
+另建来源唯一、已审核的原生父条目（browser-tag-seed.json）待 B 点击验收。

@@ -5,6 +5,7 @@ import math
 import numpy as np
 
 from . import ALIGNMENT_VERSION
+from .clock_diagnostics import clock_reasons as clock_reasons
 from .config import config_hash
 
 
@@ -23,17 +24,6 @@ def target_count(t0, end, fps):
     while k > 0 and target_time(t0, k - 1, fps) >= end:
         k -= 1
     return k
-
-
-def clock_reasons(d):
-    reasons = []
-    if d.get("timestamp_quality") == "ros_stamped":
-        return reasons
-    if d.get("timestamp_quality") not in {"hardware_synced", "mapped", "ros_stamped"}:
-        reasons.append("timestamp_quality_insufficient")
-    if d.get("clock_uncertainty_ns") is None or not d.get("clock_evidence"):
-        reasons.append("clock_uncertainty_unavailable")
-    return reasons
 
 
 def known_bound(value):
@@ -431,7 +421,11 @@ class Aligner:
             if not left_value.get("valid", True) or not r.get("valid", True):
                 errors.append(name + ":state_invalid")
                 continue
-            if (left_value["clock_id"], left_value["clock_epoch"], left_value.get("continuity_id")) != (
+            if (
+                left_value["clock_id"],
+                left_value["clock_epoch"],
+                left_value.get("continuity_id"),
+            ) != (
                 r["clock_id"],
                 r["clock_epoch"],
                 r.get("continuity_id"),
@@ -449,7 +443,9 @@ class Aligner:
                 value = (
                     left_value["payload"][name]
                     if rule["semantics"] == "discrete"
-                    else interpolate(left_value["payload"][name], r["payload"][name], alpha, rule, gap)
+                    else interpolate(
+                        left_value["payload"][name], r["payload"][name], alpha, rule, gap
+                    )
                 )
             except ValueError as error:
                 errors.append(name + ":" + str(error))
