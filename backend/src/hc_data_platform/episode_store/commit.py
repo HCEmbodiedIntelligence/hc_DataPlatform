@@ -6,7 +6,9 @@ from contextlib import suppress
 from pathlib import Path
 from uuid import uuid4
 
-from hc_data_platform.object_storage.models import CompletedPart
+from hc_data_platform.object_storage.immutable import MultipartImmutableWriter, verify_object
+from hc_data_platform.object_storage.models import ObjectIntegrityError
+from hc_data_platform.object_storage.ports import ImmutableObjectWriter
 
 from .models import CommitReceipt, DataVersionRef, PackageInput, canonical
 from .postgres import PackageConflict, assert_scope
@@ -14,50 +16,39 @@ from .validation import package_file, validate_package
 
 
 class EpisodePackageCommitter:
-    def __init__(self, repository, storage, *, checkpoint=lambda stage: None):
+    def __init__(
+        self,
+        repository,
+        storage,
+        *,
+        checkpoint=lambda stage: None,
+        writer: ImmutableObjectWriter | None = None,
+    ):
         self.repository, self.storage, self.checkpoint = repository, storage, checkpoint
+        self.writer = writer if writer is not None else MultipartImmutableWriter(storage)
 
     def _verify_object(self, key, size, sha256):
-        metadata = self.storage.head(key)
-        if metadata is None or metadata.size != size:
-            raise PackageConflict("package object missing or wrong size")
-        digest, total = hashlib.sha256(), 0
-        for chunk in self.storage.read_chunks(key):
-            total += len(chunk)
-            if total > size:
-                raise PackageConflict("package object exceeds declared size")
-            digest.update(chunk)
-        if total != size or digest.hexdigest() != sha256:
-            raise PackageConflict(
-                "package object hash mismatch; existing objects are never overwritten"
-            )
+        try:
+            verify_object(self.storage, key, size, sha256)
+        except ObjectIntegrityError as exc:
+            raise PackageConflict(str(exc)) from exc
 
     def _put_file(self, root, prefix, entry):
         key = f"{prefix}/{entry.path}"
-        if self.storage.head(key) is None:
-            upload = self.storage.create_multipart(key)
-            try:
-                parts = []
-                with package_file(root, entry.path).open("rb") as stream:
-                    # S3 permits <=10000 parts; 8 MiB also exceeds its minimum part size.
-                    part_size = max(8 * 1024 * 1024, (entry.size + 9998) // 9999)
-                    for number, block in enumerate(iter(lambda: stream.read(part_size), b""), 1):
-                        part = self.storage.upload_part_stream(
-                            key, upload, number, io.BytesIO(block), len(block)
-                        )
-                        parts.append(CompletedPart(part_number=number, etag=part.etag))
-                self.storage.complete_multipart(key, upload, parts)
-            except BaseException:
-                with suppress(Exception):
-                    self.storage.abort_multipart(key, upload)
-                raise
-        self._verify_object(key, entry.size, entry.sha256)
+        try:
+            with package_file(root, entry.path).open("rb") as stream:
+                self.writer.write_immutable(key, stream, size=entry.size, sha256=entry.sha256)
+        except ObjectIntegrityError as exc:
+            raise PackageConflict(str(exc)) from exc
 
     def _put_json(self, key, value):
         body = canonical(value)
-        if self.storage.head(key) is None:
-            self.storage.put_json(key, value, if_none_match=True)
-        self._verify_object(key, len(body), hashlib.sha256(body).hexdigest())
+        try:
+            self.writer.write_immutable(
+                key, io.BytesIO(body), size=len(body), sha256=hashlib.sha256(body).hexdigest()
+            )
+        except ObjectIntegrityError as exc:
+            raise PackageConflict(str(exc)) from exc
 
     def commit(self, root: Path, source: PackageInput, *, activate: bool = True) -> CommitReceipt:
         """Commit verified bytes; migration batches may defer the current pointer.

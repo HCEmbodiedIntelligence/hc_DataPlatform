@@ -66,6 +66,21 @@ def test_ingest_http_dto_keeps_its_public_namespace(tmp_path: Path) -> None:
     (package / "http.py").write_text("from hc_data_platform.ingest import CompletedPart\n")
     result = subprocess.run(
         [sys.executable, str(CHECKER), "--source-root", str(tmp_path)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("consumer", ["commit", "delivery"])
+def test_episode_writers_cannot_reintroduce_multipart(tmp_path: Path, consumer: str) -> None:
+    package = tmp_path / "hc_data_platform/episode_store"
+    package.mkdir(parents=True)
+    (package / f"{consumer}.py").write_text("storage.create_multipart(key)\n")
+    result = subprocess.run(
+        [sys.executable, str(CHECKER), "--source-root", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "ImmutableObjectWriter" in result.stderr

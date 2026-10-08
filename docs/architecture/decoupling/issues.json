@@ -354,9 +354,15 @@
       "title": "服务端包提交和交付重复实现上传分片协议",
       "scope": "chayi",
       "owner": "T1 T6 T7",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "增加流式不可变对象写入能力，分片策略和重试/abort 由存储适配器负责；包提交仍负责 manifest、哈希验证及发布可见性。"
+      "status": "implemented_verified",
+      "evidence": [
+        "object_storage.ImmutableObjectWriter and MultipartImmutableWriter own bounded spool/parts/abort/conditional commit and complete SHA-256 readback",
+        "EpisodePackageService injects one writer into actual package committer and complete/collection delivery; both former multipart loops removed; architecture gate rejects reintroduction",
+        "65 storage/architecture cases passed with actual filesystem and memory adapters, including empty/multipart inputs, source truncation/hash mismatch, cancellation/response close, identical concurrent writers and lost complete response; four typed source modules pass mypy",
+        "53 distinct disposable PG/MinIO/API/persistent-worker cases covered package commit/activation/history, collection releases, complete/collection delivery and Tag HTTP. Initial run 52 passed/1 message-compatibility failure; retained original wrong-size wording and the same real corruption case passed. Original failure XML retained in diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/immutable-services.xml; successful correction immutable-integrity-recheck.xml",
+        "API/frontend/worker browser candidate remains separate until B finishes P06; this issue closes the server multipart duplication only, not B04/B05/X08 or all tea software acceptance"
+      ],
+      "remaining": ""
     },
     {
       "id": "E08",

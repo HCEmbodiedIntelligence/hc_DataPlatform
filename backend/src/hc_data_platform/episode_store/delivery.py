@@ -8,10 +8,12 @@ import time
 import zipfile
 from contextlib import suppress
 from pathlib import Path
-from tempfile import SpooledTemporaryFile, TemporaryDirectory
+from tempfile import TemporaryDirectory
 
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost, renewing_lease
-from hc_data_platform.object_storage.models import CompletedPart
+from hc_data_platform.object_storage.immutable import MultipartImmutableWriter, verify_object
+from hc_data_platform.object_storage.models import ObjectIntegrityError
+from hc_data_platform.object_storage.ports import ImmutableObjectWriter
 from hc_data_platform.security import ScopeGuard
 
 from .collection_delivery import CollectionDelivery
@@ -104,9 +106,10 @@ def archive_packages(packages, plan, destination, checkpoint, progress):
 
 
 class EpisodeDeliveryService:
-    def __init__(self, packages, repository):
+    def __init__(self, packages, repository, *, writer: ImmutableObjectWriter | None = None):
         self.packages, self.repository = packages, repository
         self.storage = packages.files.storage
+        self.writer = writer if writer is not None else MultipartImmutableWriter(self.storage)
         self.annotations = None
         self.collection = CollectionDelivery(self)
 
@@ -228,18 +231,16 @@ class EpisodeDeliveryService:
         return public_job(self.repository.command(job_id, generation, auth.subject_id, retry=retry))
 
     def _verify_artifact(self, row, checkpoint=lambda: None):
-        head = self.storage.head(row["artifact_key"])
-        if head is None or head.size != row["size_bytes"]:
-            raise PackageConflict("archive is missing or differs from its receipt")
-        count, checksum = 0, hashlib.sha256()
-        for block in self.storage.read_chunks(row["artifact_key"]):
-            checkpoint()
-            count += len(block)
-            if count > row["size_bytes"]:
-                raise PackageConflict("archive exceeds its frozen size")
-            checksum.update(block)
-        if count != row["size_bytes"] or checksum.hexdigest() != row["artifact_sha256"]:
-            raise PackageConflict("archive differs from its content hash")
+        try:
+            verify_object(
+                self.storage,
+                row["artifact_key"],
+                row["size_bytes"],
+                row["artifact_sha256"],
+                checkpoint=checkpoint,
+            )
+        except ObjectIntegrityError as exc:
+            raise PackageConflict(str(exc)) from exc
 
     def download(self, job_id, auth):
         self.authorize(auth)
@@ -327,38 +328,20 @@ class EpisodeDeliveryService:
                 self.repository.finish(row, error_code=code)
 
     def _upload(self, path, row, checkpoint):
-        key = row["artifact_key"]
-        if self.storage.head(key) is None:
-            upload = self.storage.create_multipart(key)
-            try:
-                parts, uploaded = [], 0
-                part_size = max(8 * 1024**2, (row["size_bytes"] + 9998) // 9999)
-                with path.open("rb") as source:
-                    while uploaded < row["size_bytes"]:
-                        size = min(part_size, row["size_bytes"] - uploaded)
-                        with SpooledTemporaryFile(max_size=8 * 1024**2, dir=path.parent) as part:
-                            remaining = size
-                            while remaining:
-                                checkpoint()
-                                block = source.read(min(1024**2, remaining))
-                                if not block:
-                                    raise PackageConflict("archive ended during upload")
-                                part.write(block)
-                                remaining -= len(block)
-                            part.seek(0)
-                            result = self.storage.upload_part_stream(
-                                key, upload, len(parts) + 1, part, size
-                            )
-                        parts.append(CompletedPart(part_number=len(parts) + 1, etag=result.etag))
-                        uploaded += size
-                        self.repository.leased_update(row, "uploaded_bytes=%s", (uploaded,))
-                self.repository.heartbeat(row)
-                self.storage.complete_multipart(key, upload, parts)
-            except BaseException:
-                with suppress(Exception):
-                    self.storage.abort_multipart(key, upload)
-                raise
-        self._verify_artifact(row, checkpoint)
+        try:
+            with path.open("rb") as source:
+                self.writer.write_immutable(
+                    row["artifact_key"],
+                    source,
+                    size=row["size_bytes"],
+                    sha256=row["artifact_sha256"],
+                    checkpoint=checkpoint,
+                    progress=lambda count: self.repository.leased_update(
+                        row, "uploaded_bytes=%s", (count,)
+                    ),
+                )
+        except ObjectIntegrityError as exc:
+            raise PackageConflict(str(exc)) from exc
 
 
 class EpisodeDeliveryOutboxHandler:

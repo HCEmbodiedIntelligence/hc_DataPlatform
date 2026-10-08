@@ -483,3 +483,22 @@ unsupported；缺输入和歧义只停用对应面板。ViewerCompositionResolve
 F08 最终完整回归：159 个文件、976 项测试通过且无跳过，其中新增注册/生命周期/错误用例 22 项。
 完整类型、受影响 ESLint、46 项门禁与生产构建通过。当前 15 项 implemented_verified、
 5 项 in_progress、40 项 pending，全部 60 项目标仍保持 active。
+
+## 2026-10-08 服务端不可变流写入（E07）
+
+`object_storage.ports.ImmutableObjectWriter.write_immutable(key, source, *, size, sha256,
+checkpoint=None, progress=None) -> VerifiedObject` 消费调用方持有的文件流；不关闭输入。
+`MultipartImmutableWriter` 每次最多读 1 MiB，分片超过 8 MiB 后落临时文件，
+在条件提交之前验证输入长度/摘要，提交后完整读回。已有同内容对象幂等复用，
+不同内容不覆盖；失败/取消清理本次分片，已提交对象不删除。并发胜者及丢失
+成功响应都以实际对象核验恢复。读取失败或取消显式关闭 provider 迭代器。
+
+实际 EpisodePackageService 为提交与完整/集合交付注入同一个 writer。原业务
+模块不再编排 multipart，保留回执、租约、取消、进度、延迟激活及事务职责；
+架构门禁拒绝在两个生产消费者重新引入 multipart。65 项对象/架构检查、4 文件
+mypy 通过。临时 PG/MinIO/API/持久 worker 回归覆盖 53 项：首次 52 通过，
+一项因错误措辞变化失败；恢复原 wrong-size 描述后该真实对象损坏用例通过。
+原失败 XML、修复复验 XML 和临时服务日志全部保留在本轮协调目录。
+
+范围仅为 E07；SDK 注入统一、公共导出整包 bytes 和样本批量读取等仍待实施。
+没有将原 48088 服务重启，也没有改原工作树或真实业务数据。

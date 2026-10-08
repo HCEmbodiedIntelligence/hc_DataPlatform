@@ -13,6 +13,19 @@ class ObjectMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class VerifiedObject:
+    """Receipt issued only after a complete length and SHA-256 readback."""
+
+    key: str
+    size: int
+    sha256: str
+
+
+class ObjectIntegrityError(ValueError):
+    """The source or stored object differs from the caller's frozen receipt."""
+
+
+@dataclass(frozen=True, slots=True)
 class MultipartPart:
     part_number: int
     etag: str

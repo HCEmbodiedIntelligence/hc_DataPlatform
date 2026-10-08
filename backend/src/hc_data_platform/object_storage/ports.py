@@ -7,10 +7,10 @@ iterator is exhausted or explicitly closed; callers close abandoned iterators.
 The full ObjectStoragePort is retained for existing upload applications only.
 """
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any, BinaryIO, Protocol, runtime_checkable
 
-from .models import CompletedPartReference, MultipartPart, ObjectMetadata
+from .models import CompletedPartReference, MultipartPart, ObjectMetadata, VerifiedObject
 
 
 @runtime_checkable
@@ -80,6 +80,27 @@ class MultipartObjectWriter(Protocol):
 
 class ObjectDeleter(Protocol):
     def delete_object(self, key: str) -> None: ...
+
+
+class ImmutableObjectWriter(Protocol):
+    """Consume a caller-owned stream from its current position without closing it.
+
+    Exact existing content is an idempotent success. Different content is never
+    overwritten. Failure aborts this attempt's multipart upload; published
+    objects are never deleted. Checkpoints may raise to cancel before publication.
+    Progress reports cumulative transferred bytes, including reused objects.
+    """
+
+    def write_immutable(
+        self,
+        key: str,
+        source: BinaryIO,
+        *,
+        size: int,
+        sha256: str,
+        checkpoint: Callable[[], None] | None = None,
+        progress: Callable[[int], None] | None = None,
+    ) -> VerifiedObject: ...
 
 
 class ObjectStoragePort(

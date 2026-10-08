@@ -3,6 +3,8 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from hc_data_platform.object_storage.immutable import MultipartImmutableWriter
+
 from .bundle_assets import BundleAssetsLoader
 from .catalog import EpisodeCatalogReader, PostgresLegacyEntries
 from .catalog_models import EpisodeDerivedReady
@@ -41,9 +43,12 @@ class EpisodePackageService:
             directory / "files", capacity_bytes=cache_bytes, max_object_bytes=max_object_bytes
         )
         self.files = PackageFiles(self.repository, storage, self.cache)
-        self.deliveries = EpisodeDeliveryService(self, PostgresEpisodeDeliveries(connections))
+        immutable_writer = MultipartImmutableWriter(storage)
+        self.deliveries = EpisodeDeliveryService(
+            self, PostgresEpisodeDeliveries(connections), writer=immutable_writer
+        )
         self.tag_derivations = None
-        self.committer = EpisodePackageCommitter(self.repository, storage)
+        self.committer = EpisodePackageCommitter(self.repository, storage, writer=immutable_writer)
         self.steps = ParquetStepReader(self.files)
         self.depth = PhysicalDepthReader(self.files)
         self.previews = EpisodePreviews(

@@ -84,6 +84,27 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
     package = module if is_package else module.rsplit(".", 1)[0]
     failures: set[str] = set()
     tree = ast.parse(source)
+    if module in {
+        "hc_data_platform.episode_store.commit",
+        "hc_data_platform.episode_store.delivery",
+    }:
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and (
+                    node.func.attr
+                    in {
+                        "create_multipart",
+                        "upload_part_stream",
+                        "complete_multipart",
+                        "abort_multipart",
+                    }
+                )
+            ):
+                failures.add(
+                    f"{node.lineno}: Episode publication must consume ImmutableObjectWriter"
+                )
     if module == "hc_data_platform.publishing.postgres":
         for node in ast.walk(tree):
             if (
