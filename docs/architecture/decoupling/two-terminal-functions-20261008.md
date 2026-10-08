@@ -305,3 +305,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 浏览器 A031/B039 的 /action 频率为30Hz且100%覆盖仍报 ACTION_MISSING；定位到 MCAP 只提供流统计，动作内容从未进入 QualityInput。新 Episode MCAP 计划冻结 `numeric_projection_revision=mcap-numeric-quality/1`，按 profile 的 action/joint topic 实际解码，数值事实以磁盘缓冲提供给同一 QC engine/evidence；具名关节按原名读取，不为无名向量捏造轴名。缺失、非有限、含混和非法向量保留诊断；默认 action 门槛不放宽。旧工作流缺该字段仍保持旧路径，旧报告不改写。
 
 2 项实际 MCAP/Temporal/深度包回归（移除旧夹具的 action minimum=0），111 numeric/原处理器/架构用例，27 Temporal 重放，1 文件严格 mypy、Ruff、架构、实际 OpenAPI 核验通过；HTTP契约仍3c6d4335。证据mcap-numeric-quality-{services,checks-v2,replay}.xml。首轮新测试导入拼写错误保留。候选持久worker和浏览器原RISK重处理仍待联合验收，不把这些软件检查称为浏览器完成。
+
+### 第十批联合验证：MCAP 数值质检与撤权缓存修复
+
+共同代码 `69ff7dd8842da5cd2d5afaa1b5ab864bb40a30eb` 包含 MCAP numeric QC `12bdbe9b` 和 B 撤权后授权刷新 `7bda9314`，保留第九批原生能力。6 项实际 MCAP/native HTTP/PG/MinIO/Temporal、1064 全量前端、54 架构门禁、类型/runtime 3c6d4335 生成核对和精确代码 commit 生产构建通过，零跳过。证据 integration-batch-ten-*；首条服务命令测试路径错误、前端容器无 bash 的启动失败保留，不作为测试通过。B046 撤权缓存浏览器失败须在新候选复验，旧 MCAP RISK 报告不改写。
+
+B050 已在原真实上传批次验证 Raw RGB 实际播放、深度 DOWNLOAD_ONLY 提示、下载 15318 字节及 SHA 与旧上传完全相同，原始媒体分类闭环通过。B048 历史 Lance 深度预览仍为独立缺口；B049 冻结模型 ID 正在下一检查点修复，二者不计本批完成。
