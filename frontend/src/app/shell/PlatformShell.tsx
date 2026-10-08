@@ -59,7 +59,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import type { AuthorizationSnapshot } from "../../entities/capability";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";

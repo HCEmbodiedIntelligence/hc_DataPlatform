@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { AuthorizationSnapshot } from "../../entities/capability";
-import { makeScopeKey, type Scope } from "../../entities/scope";
+import { makeScopeKey, type Scope } from "../../shared/scope/model";
 import {
   cancelActiveTransports,
   releaseScopedResources,

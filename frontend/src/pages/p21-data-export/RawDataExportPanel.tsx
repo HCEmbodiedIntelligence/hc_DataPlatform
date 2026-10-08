@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { Alert, Button, Table } from "antd";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { request } from "../../shared/api/http-client";
 import { PageState } from "../../shared/ui";
 import {

@@ -4,7 +4,7 @@ import type {
 } from "../../shared/api/generated/platform";
 import { createDomainError } from "../../shared/api/domain-error";
 import { request, requestWithResponse } from "../../shared/api/http-client";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { fetchDatasets } from "../datasets/api/queries";
 
 export type CollectionTask = components["schemas"]["CollectionTask"];

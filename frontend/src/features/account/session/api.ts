@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ActorSummary } from "../../../entities/actor";
+import type { ActorSummary } from "../../../shared/auth/contracts";
 import type { components } from "../../../shared/api/generated/platform";
 import { isSafeBearerToken, request } from "../../../shared/api/http-client";
 import { parseWire } from "../../../shared/api/validate";

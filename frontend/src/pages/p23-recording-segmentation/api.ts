@@ -1,6 +1,6 @@
 import type { components } from "../../shared/api/generated/platform";
 import { request } from "../../shared/api/http-client";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 
 export type ContinuousRecording = components["schemas"]["ContinuousRecording"];
 export type ContinuousRecordingEnvelope =

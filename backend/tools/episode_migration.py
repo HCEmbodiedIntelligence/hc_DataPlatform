@@ -53,7 +53,7 @@ def main():
             from hc_data_platform.episode_store.migration_conversion import _save
             from hc_data_platform.episode_store.migration_objects import InventoryObjectVerifier
             from hc_data_platform.episode_store.postgres import PackageConflict
-            from hc_data_platform.ingest.adapters import S3ObjectStorage
+            from hc_data_platform.object_storage.providers import S3ObjectStorage
 
             frozen = read_inventory(args.inventory)
             if frozen != result:

@@ -13,22 +13,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { RobotModel, RobotModelVersion } from "../../entities/robot-model";
 import {
+  useScopedCreateRobotModel,
+  useScopedCreateRobotModelDraft,
+  useScopedPreflightRobotModelPublish,
+  useScopedPublishRobotModelVersion,
+  useScopedReplaceRobotModelJointMappings,
+  useScopedRobotModelAssets,
+  useScopedRobotModelJointMappings,
+  useScopedRobotModels,
+  useScopedRobotModelVersion,
+  useScopedUploadRobotModelAssets,
+} from "../../features/robot-models/api/hooks";
+import {
   authorizeRobotModelAssetDownload,
   authorizeRobotModelViewerAssets,
   discardRobotModelImport,
   getRobotModelVersion,
-  useCreateRobotModel,
-  useCreateRobotModelDraft,
-  usePreflightRobotModelPublish,
-  usePublishRobotModelVersion,
-  useReplaceRobotModelJointMappings,
-  useRobotModelAssets,
-  useRobotModelJointMappings,
-  useRobotModels,
-  useRobotModelVersion,
-  useUploadRobotModelAssets,
   type RobotModelJointMapping,
-} from "../../features/robot-models/api";
+} from "../../features/robot-models/api/client";
 import {
   createLazyThreeRobotSceneLoader,
   RobotSceneCore,
@@ -162,7 +164,7 @@ export function Component() {
   const [query, setQuery] = useState(search.q ?? "");
   const [modelForm] = Form.useForm<ModelMetadataFormValues>();
 
-  const models = useRobotModels({
+  const models = useScopedRobotModels(organizationId, {
     ...(search.q ? { q: search.q } : {}),
     ...(search.after ? { after: search.after } : {}),
     ...(search.before ? { before: search.before } : {}),
@@ -174,19 +176,29 @@ export function Component() {
   const selectedModel =
     modelItems.find((model) => model.id === search.modelId) ?? modelItems[0];
   const selectedVersionId = selectedModel?.currentPublishedVersionId ?? null;
-  const currentVersion = useRobotModelVersion(selectedVersionId);
-  const currentAssets = useRobotModelAssets(selectedVersionId);
-  const currentMappings = useRobotModelJointMappings(selectedVersionId);
+  const currentVersion = useScopedRobotModelVersion(
+    organizationId,
+    selectedVersionId,
+  );
+  const currentAssets = useScopedRobotModelAssets(
+    organizationId,
+    selectedVersionId,
+  );
+  const currentMappings = useScopedRobotModelJointMappings(
+    organizationId,
+    selectedVersionId,
+  );
   const currentUrdf = currentAssets.data?.find(
     (asset) => asset.role === "URDF",
   );
 
-  const createRobotModel = useCreateRobotModel();
-  const createModelDraft = useCreateRobotModelDraft();
-  const uploadModelAssets = useUploadRobotModelAssets();
-  const replaceModelMappings = useReplaceRobotModelJointMappings();
-  const publishPreflight = usePreflightRobotModelPublish();
-  const publishVersion = usePublishRobotModelVersion();
+  const createRobotModel = useScopedCreateRobotModel(organizationId);
+  const createModelDraft = useScopedCreateRobotModelDraft(organizationId);
+  const uploadModelAssets = useScopedUploadRobotModelAssets(organizationId);
+  const replaceModelMappings =
+    useScopedReplaceRobotModelJointMappings(organizationId);
+  const publishPreflight = useScopedPreflightRobotModelPublish(organizationId);
+  const publishVersion = useScopedPublishRobotModelVersion(organizationId);
 
   const [importOpen, setImportOpen] = useState(false);
   const [importStage, setImportStage] = useState<ImportStage>("files");

@@ -5,13 +5,15 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceEditorDialog } from "./SourceEditorDialog";
+import { useScopedRobots } from "../../../features/robots/api/hooks";
+import { useScopedRobotModels } from "../../../features/robot-models/api/hooks";
 
 const { onSubmitMock } = vi.hoisted(() => ({
   onSubmitMock: vi.fn(),
 }));
 
-vi.mock("../../../features/robots/api", () => ({
-  useRobots: () => ({
+vi.mock("../../../features/robots/api/hooks", () => ({
+  useScopedRobots: vi.fn(() => ({
     data: {
       items: [
         {
@@ -24,11 +26,11 @@ vi.mock("../../../features/robots/api", () => ({
     },
     isPending: false,
     isError: false,
-  }),
+  })),
 }));
 
-vi.mock("../../../features/robot-models/api", () => ({
-  useRobotModels: () => ({
+vi.mock("../../../features/robot-models/api/hooks", () => ({
+  useScopedRobotModels: vi.fn(() => ({
     data: {
       items: [
         {
@@ -42,7 +44,7 @@ vi.mock("../../../features/robot-models/api", () => ({
     },
     isPending: false,
     isError: false,
-  }),
+  })),
 }));
 
 beforeEach(() => {
@@ -78,10 +80,32 @@ afterEach(() => {
 });
 
 describe("SourceEditorDialog robot provisioning", () => {
+  it("keeps both resource queries bound to the supplied organization across changes and removal", () => {
+    const props = {
+      open: true,
+      mode: "create" as const,
+      pending: false,
+      onClose: vi.fn(),
+      onSubmit: onSubmitMock,
+    };
+    const { rerender } = render(
+      <SourceEditorDialog {...props} organizationId="org-editor-a" />,
+    );
+    expect(useScopedRobots).toHaveBeenLastCalledWith("org-editor-a");
+    expect(useScopedRobotModels).toHaveBeenLastCalledWith("org-editor-a");
+    rerender(<SourceEditorDialog {...props} organizationId="org-editor-b" />);
+    expect(useScopedRobots).toHaveBeenLastCalledWith("org-editor-b");
+    expect(useScopedRobotModels).toHaveBeenLastCalledWith("org-editor-b");
+    rerender(<SourceEditorDialog {...props} organizationId={null} />);
+    expect(useScopedRobots).toHaveBeenLastCalledWith(null);
+    expect(useScopedRobotModels).toHaveBeenLastCalledWith(null);
+  });
+
   it("creates a robot instance draft and requires a published model", async () => {
     const user = userEvent.setup();
     render(
       <SourceEditorDialog
+        organizationId="org-source-editor"
         open
         mode="create"
         initialKind="ROBOT"
@@ -130,6 +154,7 @@ describe("SourceEditorDialog robot provisioning", () => {
     const user = userEvent.setup();
     render(
       <SourceEditorDialog
+        organizationId="org-source-editor"
         open
         mode="create"
         pending={false}

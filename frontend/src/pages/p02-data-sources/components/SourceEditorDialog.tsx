@@ -16,8 +16,8 @@ import type {
   WritableConnectorBinding,
   WritableConnectorConfiguration,
 } from "../../../features/ingest/connectors/registry";
-import { useRobotModels } from "../../../features/robot-models/api";
-import { useRobots } from "../../../features/robots/api";
+import { useScopedRobotModels } from "../../../features/robot-models/api/hooks";
+import { useScopedRobots } from "../../../features/robots/api/hooks";
 import { createZodResolver, RHFInput, RHFSelect } from "../../../shared/ui";
 import styles from "../styles.module.css";
 
@@ -417,6 +417,7 @@ function ConnectorFields({
 }
 
 export function SourceEditorDialog(props: {
+  readonly organizationId: string | null;
   readonly open: boolean;
   readonly mode: "create" | "update";
   readonly pending: boolean;
@@ -430,8 +431,8 @@ export function SourceEditorDialog(props: {
 }) {
   const canProvisionRobot = props.canProvisionRobot ?? false;
   const credentialRef = useRef<InputRef>(null);
-  const robots = useRobots();
-  const robotModels = useRobotModels();
+  const robots = useScopedRobots(props.organizationId);
+  const robotModels = useScopedRobotModels(props.organizationId);
   const form = useForm<SourceFormValues>({
     defaultValues: defaults(
       props.mode,

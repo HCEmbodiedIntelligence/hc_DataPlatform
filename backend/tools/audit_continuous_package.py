@@ -16,7 +16,7 @@ from hc_data_platform.core.context import (
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.episode_store.service import EpisodePackageService
-from hc_data_platform.ingest.adapters import S3ObjectStorage
+from hc_data_platform.object_storage.providers import S3ObjectStorage
 
 assert os.environ["HC_TEMPORAL_NAMESPACE"] == "chayi-g1"
 directory = Path(sys.argv[1])

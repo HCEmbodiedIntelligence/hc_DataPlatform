@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Tabs, Typography } from "antd";
 import { Link, useLocation } from "react-router-dom";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { annotationRoutes } from "../../features/annotation/routing";
 import { DataReviewPanel } from "./DataReviewPanel";
 import { DepthPixelPanel } from "./DepthPixelPanel";

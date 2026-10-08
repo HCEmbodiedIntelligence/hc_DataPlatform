@@ -1,4 +1,4 @@
-import type { Scope } from './scope';
+import type { Scope } from '../shared/scope/model';
 
 export const CANONICAL_AUDIT_EVENTS = [
   "access.change.rejected",
@@ -185,4 +185,3 @@ export interface AuditEvent {
   parentEventId?: string;
   jobId?: string;
 }
-

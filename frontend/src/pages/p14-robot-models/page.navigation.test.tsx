@@ -38,7 +38,7 @@ const apiFixtures = vi.hoisted(() => ({
     | undefined,
 }));
 
-vi.mock("../../features/robot-models/api", () => {
+vi.mock("../../features/robot-models/api/hooks", () => {
   const mutation = () => ({
     error: null,
     isPending: false,
@@ -46,8 +46,7 @@ vi.mock("../../features/robot-models/api", () => {
     variables: undefined,
   });
   return {
-    authorizeRobotModelAssetDownload: vi.fn(),
-    useRobotModels: () => ({
+    useScopedRobotModels: () => ({
       data: {
         items: apiFixtures.models,
         pageInfo: {
@@ -62,32 +61,32 @@ vi.mock("../../features/robot-models/api", () => {
       isPending: false,
       refetch: vi.fn(),
     }),
-    useRobotModelVersion: () => ({ data: apiFixtures.version }),
-    useRobotModelAssets: () => ({
+    useScopedRobotModelVersion: () => ({ data: apiFixtures.version }),
+    useScopedRobotModelAssets: () => ({
       data: [],
       error: null,
       isPending: false,
       refetch: vi.fn(),
     }),
-    useRobotModelBindings: () => ({
+    useScopedRobotModelBindings: () => ({
       data: [],
       error: null,
       isPending: false,
       refetch: vi.fn(),
     }),
-    useRobotModelJointMappings: () => ({
+    useScopedRobotModelJointMappings: () => ({
       data: apiFixtures.jointMappings,
       error: null,
       isPending: false,
       refetch: vi.fn(),
     }),
-    useRobotModelAssetDownload: mutation,
-    useUploadRobotModelAssets: mutation,
-    useReplaceRobotModelJointMappings: mutation,
-    useBindRobotModelVersion: mutation,
-    useLoadRobotBindingTarget: mutation,
-    usePreflightRobotModelPublish: mutation,
-    usePublishRobotModelVersion: mutation,
+    useScopedRobotModelAssetDownload: mutation,
+    useScopedUploadRobotModelAssets: mutation,
+    useScopedReplaceRobotModelJointMappings: mutation,
+    useScopedBindRobotModelVersion: mutation,
+    useScopedLoadRobotBindingTarget: mutation,
+    useScopedPreflightRobotModelPublish: mutation,
+    useScopedPublishRobotModelVersion: mutation,
   };
 });
 

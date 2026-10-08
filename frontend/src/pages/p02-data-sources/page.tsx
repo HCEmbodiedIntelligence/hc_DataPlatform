@@ -42,8 +42,11 @@ import { createMutationIntentKey } from "../../features/ingest/mutation-machine"
 import { routes } from "../../features/ingest/routing";
 import { getRobotBootstrap } from "../../features/robots/api/client";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
-import { useBindRobotModelVersion } from "../../features/robot-models/api";
-import { useCreateRobot, useRobotBootstrap } from "../../features/robots/api";
+import { useScopedBindRobotModelVersion } from "../../features/robot-models/api/hooks";
+import {
+  useScopedCreateRobot,
+  useScopedRobotBootstrap,
+} from "../../features/robots/api/hooks";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useAsyncJob } from "../../shared/jobs/use-async-job";
@@ -390,10 +393,17 @@ export default function DataSourcesPage() {
   const detail = useDataSource(scope, search.sourceId ?? null, canRead);
   const detailRobotId =
     detail.data?.binding.kind === "ROBOT" ? detail.data.binding.robotId : null;
-  const detailRobot = useRobotBootstrap(detailRobotId);
+  const detailRobot = useScopedRobotBootstrap(
+    scope?.organizationId ?? null,
+    detailRobotId,
+  );
   const createMutation = useDataSourceMutation("create");
-  const createRobotMutation = useCreateRobot();
-  const bindRobotModelMutation = useBindRobotModelVersion();
+  const createRobotMutation = useScopedCreateRobot(
+    scope?.organizationId ?? null,
+  );
+  const bindRobotModelMutation = useScopedBindRobotModelVersion(
+    scope?.organizationId ?? null,
+  );
   const updateMutation = useDataSourceMutation("update");
   const rotateMutation = useDataSourceMutation("rotate-credential");
   const stateMutation = useDataSourceMutation(
@@ -1186,6 +1196,7 @@ export default function DataSourcesPage() {
       </EntityDrawer>
 
       <SourceEditorDialog
+        organizationId={scope?.organizationId ?? null}
         open={
           search.intent === "create" &&
           canManage &&
@@ -1215,6 +1226,7 @@ export default function DataSourcesPage() {
       />
       {editorInitial?.binding ? (
         <SourceEditorDialog
+          organizationId={scope?.organizationId ?? null}
           open={editDialog}
           mode="update"
           pending={updateMutation.isPending}

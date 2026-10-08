@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { episodeDataReferenceWireSchema } from "../../features/datasets/api/episode-package-wire";
 import { request } from "../../shared/api/http-client";
 import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";

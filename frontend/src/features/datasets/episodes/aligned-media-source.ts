@@ -1,4 +1,4 @@
-import type { Scope } from "../../../entities/scope";
+import type { Scope } from "../../../shared/scope/model";
 import { authorizeAlignedMedia } from "../../aligned-media/authorize-aligned-media";
 import type { ViewerMediaSource } from "../../viewer/index";
 import { getRuntimeConfig } from "../../../shared/config/runtime";

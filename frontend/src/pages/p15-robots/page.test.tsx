@@ -23,7 +23,7 @@ const {
   preflight,
   publishVersion,
   replaceMappings,
-  useRobotModels,
+  useScopedRobotModels,
   uploadAssets,
 } = vi.hoisted(() => ({
   createModel: vi.fn(),
@@ -33,7 +33,7 @@ const {
   preflight: vi.fn(),
   publishVersion: vi.fn(),
   replaceMappings: vi.fn(),
-  useRobotModels: vi.fn(),
+  useScopedRobotModels: vi.fn(),
   uploadAssets: vi.fn(),
 }));
 
@@ -87,27 +87,39 @@ vi.mock("../../features/viewer", () => ({
   RobotSceneCore: () => <div data-testid="robot-model-preview">3D preview</div>,
 }));
 
-vi.mock("../../features/robot-models/api", () => ({
+vi.mock("../../features/robot-models/api/client", () => ({
   authorizeRobotModelAssetDownload: vi.fn(),
   authorizeRobotModelViewerAssets: vi.fn(async () => ({
     urdfUrl: "http://localhost/robot.urdf",
   })),
   discardRobotModelImport: discardImport,
   getRobotModelVersion: getVersion,
-  useRobotModels,
-  useRobotModelVersion: (versionId: string | null) => ({
+}));
+
+vi.mock("../../features/robot-models/api/hooks", () => ({
+  useScopedRobotModels,
+  useScopedRobotModelVersion: (
+    _organizationId: string | null,
+    versionId: string | null,
+  ) => ({
     data: versionId ? publishedVersion : undefined,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
   }),
-  useRobotModelAssets: (versionId: string | null) => ({
+  useScopedRobotModelAssets: (
+    _organizationId: string | null,
+    versionId: string | null,
+  ) => ({
     data: versionId ? currentAssets : undefined,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
   }),
-  useRobotModelJointMappings: (versionId: string | null) => ({
+  useScopedRobotModelJointMappings: (
+    _organizationId: string | null,
+    versionId: string | null,
+  ) => ({
     data: versionId
       ? [
           {
@@ -121,32 +133,32 @@ vi.mock("../../features/robot-models/api", () => ({
     isError: false,
     refetch: vi.fn(),
   }),
-  useCreateRobotModel: () => ({
+  useScopedCreateRobotModel: () => ({
     isPending: false,
     error: null,
     mutateAsync: createModel,
   }),
-  useCreateRobotModelDraft: () => ({
+  useScopedCreateRobotModelDraft: () => ({
     isPending: false,
     error: null,
     mutateAsync: createModelDraft,
   }),
-  useUploadRobotModelAssets: () => ({
+  useScopedUploadRobotModelAssets: () => ({
     isPending: false,
     error: null,
     mutateAsync: uploadAssets,
   }),
-  useReplaceRobotModelJointMappings: () => ({
+  useScopedReplaceRobotModelJointMappings: () => ({
     isPending: false,
     error: null,
     mutateAsync: replaceMappings,
   }),
-  usePreflightRobotModelPublish: () => ({
+  useScopedPreflightRobotModelPublish: () => ({
     isPending: false,
     error: null,
     mutateAsync: preflight,
   }),
-  usePublishRobotModelVersion: () => ({
+  useScopedPublishRobotModelVersion: () => ({
     isPending: false,
     error: null,
     mutateAsync: publishVersion,
@@ -270,7 +282,7 @@ beforeEach(() => {
     computedStyle(element),
   );
 
-  useRobotModels.mockReturnValue({
+  useScopedRobotModels.mockReturnValue({
     isPending: false,
     error: null,
     refetch: vi.fn(async () => undefined),
@@ -336,7 +348,8 @@ describe("P15 robot model asset page", () => {
     expect(
       (await screen.findAllByText("Unitree G1 Dex1")).length,
     ).toBeGreaterThan(0);
-    expect(useRobotModels).toHaveBeenCalledWith(
+    expect(useScopedRobotModels).toHaveBeenCalledWith(
+      "org-p15",
       expect.objectContaining({ limit: 20 }),
     );
     expect(screen.queryByText("在线")).not.toBeInTheDocument();

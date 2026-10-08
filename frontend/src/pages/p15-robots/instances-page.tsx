@@ -24,17 +24,17 @@ import {
 import { useMemo, useState } from "react";
 import type { Robot, RobotLifecycle } from "../../entities/robot";
 import {
-  useBindRobotModelVersion,
-  useRobotModels,
-} from "../../features/robot-models/api";
+  useScopedBindRobotModelVersion,
+  useScopedRobotModels,
+} from "../../features/robot-models/api/hooks";
 import {
-  useCreateRobot,
-  useDeleteRobot,
-  useRobotBootstrap,
-  useRobots,
-  useTransitionRobotLifecycle,
-  useUpdateRobot,
-} from "../../features/robots/api";
+  useScopedCreateRobot,
+  useScopedDeleteRobot,
+  useScopedRobotBootstrap,
+  useScopedRobots,
+  useScopedTransitionRobotLifecycle,
+  useScopedUpdateRobot,
+} from "../../features/robots/api/hooks";
 import { useScopedRobotBootstraps } from "../../features/robots/api/hooks";
 import { useCurrentOrganizationId } from "../../shared/scope/current-organization";
 import { createMutationIntentKey } from "../../features/ingest/mutation-machine";
@@ -94,20 +94,21 @@ function modelLabel(
 }
 
 export function Component() {
+  const organizationId = useCurrentOrganizationId();
   const capabilities = useCapabilities();
   const canRead = capabilities.has("robot.read");
   const canManage = capabilities.has("robot.manage");
   const canBindModel = capabilities.has("robot_model.manage");
   const [query, setQuery] = useState("");
   const [lifecycle, setLifecycle] = useState("");
-  const robots = useRobots({
+  const robots = useScopedRobots(organizationId, {
     ...(query.trim() ? { q: query.trim() } : {}),
     ...(lifecycle ? { lifecycle_status: lifecycle } : {}),
   });
-  const models = useRobotModels();
+  const models = useScopedRobotModels(organizationId);
   const items = robots.data?.items ?? [];
   const bootstraps = useScopedRobotBootstraps(
-    useCurrentOrganizationId(),
+    organizationId,
     items.map((robot) => robot.id),
   );
   const bootstrapById = new Map(
@@ -135,13 +136,13 @@ export function Component() {
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const detail = useRobotBootstrap(selectedId);
+  const detail = useScopedRobotBootstrap(organizationId, selectedId);
   const selected = detail.data ?? null;
-  const createRobot = useCreateRobot();
-  const bindModel = useBindRobotModelVersion();
-  const updateRobot = useUpdateRobot();
-  const transitionRobot = useTransitionRobotLifecycle();
-  const deleteRobot = useDeleteRobot();
+  const createRobot = useScopedCreateRobot(organizationId);
+  const bindModel = useScopedBindRobotModelVersion(organizationId);
+  const updateRobot = useScopedUpdateRobot(organizationId);
+  const transitionRobot = useScopedTransitionRobotLifecycle(organizationId);
+  const deleteRobot = useScopedDeleteRobot(organizationId);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");

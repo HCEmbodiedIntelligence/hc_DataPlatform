@@ -38,3 +38,34 @@ def test_contract_boundary_rejects_implementation_dependencies(tmp_path: Path, s
 def test_repository_migrated_boundaries() -> None:
     result = subprocess.run([sys.executable, str(CHECKER)], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("directory", ["tools", "scripts"])
+def test_real_tool_entries_cannot_bypass_canonical_imports(tmp_path: Path, directory: str) -> None:
+    backend = tmp_path / "backend"
+    (backend / "tools").mkdir(parents=True)
+    package = backend / "src/hc_data_platform"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    checker = backend / "tools/check_architecture.py"
+    checker.write_text(CHECKER.read_text())
+    tool = backend / directory / "migration.py"
+    tool.parent.mkdir(exist_ok=True)
+    tool.write_text("from hc_data_platform.ingest import S3ObjectStorage\n")
+    rejected = subprocess.run([sys.executable, str(checker)], capture_output=True, text=True)
+    assert rejected.returncode == 1
+    assert f"{directory}/migration.py:1:" in rejected.stderr
+    tool.write_text("from hc_data_platform.object_storage.providers import S3ObjectStorage\n")
+    accepted = subprocess.run([sys.executable, str(checker)], capture_output=True, text=True)
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+
+
+def test_ingest_http_dto_keeps_its_public_namespace(tmp_path: Path) -> None:
+    package = tmp_path / "hc_data_platform/consumer"
+    package.mkdir(parents=True)
+    (package / "http.py").write_text("from hc_data_platform.ingest import CompletedPart\n")
+    result = subprocess.run(
+        [sys.executable, str(CHECKER), "--source-root", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

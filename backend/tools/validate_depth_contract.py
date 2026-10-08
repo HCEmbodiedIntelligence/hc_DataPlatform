@@ -20,11 +20,11 @@ sys.path.insert(0, "/app/src")
 # Only this comparative test imports platform code; the reader-only package
 # acceptance has to run separately without /app/src or platform dependencies.
 sys.path.append("/opt/venv/lib/python3.12/site-packages")
-from hc_data_platform.publishing.depth_evidence import (  # noqa: E402
+from hc_data_platform.data_formats.depth_evidence import (  # noqa: E402
     DepthEvidenceVideo,
     read_validity,
 )
-from hc_data_platform.publishing.holobrain_depth import (  # noqa: E402
+from hc_data_platform.data_formats.holobrain_depth import (  # noqa: E402
     DEFAULT_PROFILE,
     DepthProfile,
     dequantize,

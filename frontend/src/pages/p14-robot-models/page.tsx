@@ -12,23 +12,25 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { RobotModel } from "../../entities/robot-model";
 import {
-  useRobotModelAssetDownload,
+  useScopedRobotModelAssetDownload,
+  useScopedRobotModelAssets,
+  useScopedRobotModelBindings,
+  useScopedRobotModelJointMappings,
+  useScopedRobotModels,
+  useScopedRobotModelVersion,
+  useScopedBindRobotModelVersion,
+  useScopedLoadRobotBindingTarget,
+  useScopedPreflightRobotModelPublish,
+  useScopedPublishRobotModelVersion,
+  useScopedReplaceRobotModelJointMappings,
+  useScopedUploadRobotModelAssets,
+} from "../../features/robot-models/api/hooks";
+import {
   authorizeRobotModelViewerAssets,
-  useRobotModelAssets,
-  useRobotModelBindings,
-  useRobotModelJointMappings,
-  useRobotModels,
-  useRobotModelVersion,
-  useBindRobotModelVersion,
-  useLoadRobotBindingTarget,
-  usePreflightRobotModelPublish,
-  usePublishRobotModelVersion,
-  useReplaceRobotModelJointMappings,
-  useUploadRobotModelAssets,
   type RobotModelAssetUploadInput,
   type RobotModelJointMapping,
   type RobotModelPublishPreflight,
-} from "../../features/robot-models/api";
+} from "../../features/robot-models/api/client";
 import {
   createLazyThreeRobotSceneLoader,
   RobotSceneCore,
@@ -112,21 +114,45 @@ function SummaryItem({
 }
 
 export function Component() {
+  const organizationId = useShellStore(
+    (state) =>
+      state.scope?.organizationId ??
+      state.sessionOrganizations[0]?.organizationId ??
+      state.sessionScopes[0]?.organizationId ??
+      null,
+  );
   const [params, setParams] = useSearchParams();
   const search = robotModelsQueryCodec.parse(params);
   const [query, setQuery] = useState(search.q ?? "");
-  const models = useRobotModels(search.q ? { q: search.q } : {});
-  const version = useRobotModelVersion(search.versionId ?? null);
-  const assets = useRobotModelAssets(version.data?.id ?? null);
-  const bindings = useRobotModelBindings(version.data?.id ?? null);
-  const jointMappings = useRobotModelJointMappings(version.data?.id ?? null);
-  const assetDownload = useRobotModelAssetDownload();
-  const assetUpload = useUploadRobotModelAssets();
-  const replaceJointMappings = useReplaceRobotModelJointMappings();
-  const bindRobotModelVersion = useBindRobotModelVersion();
-  const loadRobotBindingTarget = useLoadRobotBindingTarget();
-  const publishPreflight = usePreflightRobotModelPublish();
-  const publishVersion = usePublishRobotModelVersion();
+  const models = useScopedRobotModels(
+    organizationId,
+    search.q ? { q: search.q } : {},
+  );
+  const version = useScopedRobotModelVersion(
+    organizationId,
+    search.versionId ?? null,
+  );
+  const assets = useScopedRobotModelAssets(
+    organizationId,
+    version.data?.id ?? null,
+  );
+  const bindings = useScopedRobotModelBindings(
+    organizationId,
+    version.data?.id ?? null,
+  );
+  const jointMappings = useScopedRobotModelJointMappings(
+    organizationId,
+    version.data?.id ?? null,
+  );
+  const assetDownload = useScopedRobotModelAssetDownload(organizationId);
+  const assetUpload = useScopedUploadRobotModelAssets(organizationId);
+  const replaceJointMappings =
+    useScopedReplaceRobotModelJointMappings(organizationId);
+  const bindRobotModelVersion = useScopedBindRobotModelVersion(organizationId);
+  const loadRobotBindingTarget =
+    useScopedLoadRobotBindingTarget(organizationId);
+  const publishPreflight = useScopedPreflightRobotModelPublish(organizationId);
+  const publishVersion = useScopedPublishRobotModelVersion(organizationId);
   const [incompatibleReason, setIncompatibleReason] = useState<string | null>(
     null,
   );
@@ -142,13 +168,6 @@ export function Component() {
     readonly idempotencyKey: string;
   } | null>(null);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
-  const organizationId = useShellStore(
-    (state) =>
-      state.scope?.organizationId ??
-      state.sessionOrganizations[0]?.organizationId ??
-      state.sessionScopes[0]?.organizationId ??
-      null,
-  );
   const [bindingRobotId, setBindingRobotId] = useState(
     search.targetRobotId ?? "",
   );

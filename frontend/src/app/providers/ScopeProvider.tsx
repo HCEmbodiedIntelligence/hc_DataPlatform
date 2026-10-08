@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AuthorizationSnapshot } from '../../entities/capability';
-import type { Scope } from '../../entities/scope';
+import type { Scope } from '../../shared/scope/model';
 import { executeScopeSwitch, type ScopeSwitchHooks } from '../shell/scope-transaction';
 
 interface ScopeContextValue {

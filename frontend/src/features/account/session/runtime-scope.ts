@@ -1,4 +1,4 @@
-import { makeScopeKey, type Scope } from "../../../entities/scope";
+import { makeScopeKey, type Scope } from "../../../shared/scope/model";
 import {
   getShellState,
   type SessionScopeGrant,

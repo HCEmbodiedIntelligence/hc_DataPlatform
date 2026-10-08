@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 import av
 import numpy as np
 
-from hc_data_platform.publishing.holobrain_depth import DepthVideo
+from hc_data_platform.data_formats.holobrain_depth import DepthVideo
 
 
 def probe(root, shape, previous):

@@ -111,8 +111,8 @@ vi.mock("../../../features/robot-ingest/api", () => ({
   useRevokeRobotCredential: () => mutation(revokeMutate),
 }));
 
-vi.mock("../../../features/robots/api", () => ({
-  useRobots: () => ({
+vi.mock("../../../features/robots/api/hooks", () => ({
+  useScopedRobots: () => ({
     data: {
       items: [{ id: "robot-b", displayName: "采集机器人 B" }],
     },

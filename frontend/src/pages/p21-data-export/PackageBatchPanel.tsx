@@ -10,7 +10,7 @@ import {
   Select,
   Space,
 } from "antd";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { CollectionAnnotationChooser } from "./CollectionAnnotationChooser";
 import {
   commandPackageJob,

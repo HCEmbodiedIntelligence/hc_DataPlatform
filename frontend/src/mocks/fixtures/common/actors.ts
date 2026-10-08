@@ -1,4 +1,4 @@
-import type { ActorSummary } from '../../../entities/actor';
+import type { ActorSummary } from '../../../shared/auth/contracts';
 
 export const fixtureActors = Object.freeze({
   admin: {

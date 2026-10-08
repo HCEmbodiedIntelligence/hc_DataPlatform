@@ -275,10 +275,10 @@ def inspect(root, ids, connect, runtime, *, diagnose=False):
         if rows[0][2] == "READY":
             import pyarrow.parquet as pq
 
+            from hc_data_platform.data_formats.depth_evidence import file_hash
             from hc_data_platform.episode_store.download import complete_archive
             from hc_data_platform.episode_store.models import DataVersionRef
             from hc_data_platform.episode_store.validation import validate_package
-            from hc_data_platform.publishing.depth_evidence import file_hash
             from hc_data_platform.robot_ingest.processing_contract import processing_result
 
             assert len(rows) == 1 and rows[0][3] == "PASS" and rows[0][6] is None

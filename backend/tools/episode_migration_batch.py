@@ -25,13 +25,13 @@ from hc_data_platform.episode_store.migration_conversion import MigrationEpisode
 from hc_data_platform.episode_store.models import CommitReceipt
 from hc_data_platform.episode_store.postgres import PackageConflict, PostgresEpisodeStore
 from hc_data_platform.episode_store.validation import document, package_file
-from hc_data_platform.ingest.adapters import S3ObjectStorage
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
     PostgresAdvisoryDatasetLock,
     PostgresCatalogAdapter,
 )
 from hc_data_platform.lance_catalog.service import LanceCatalogService
+from hc_data_platform.object_storage.providers import S3ObjectStorage
 
 
 def load_spools(directories):

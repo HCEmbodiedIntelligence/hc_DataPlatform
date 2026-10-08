@@ -175,3 +175,50 @@ for (const source of [
     );
   });
 }
+
+for (const [owner, source] of [
+  [
+    "pages/p07-version-detail/page.tsx",
+    'import { createPublishedExport } from "./export-api";',
+  ],
+  [
+    "pages/p06-dataset-detail/page.tsx",
+    'type T = import("./episode-detail").EpisodeOverview;',
+  ],
+  [
+    "pages/p03-upload-jobs/page.tsx",
+    'const load = () => import("./formal-client");',
+  ],
+  [
+    "app/shell/example.ts",
+    'import type { Scope } from "../../entities/scope";',
+  ],
+  ["entities/example.ts", 'export type { Scope } from "./scope";'],
+  [
+    "pages/p15-robots/page.tsx",
+    'import { useRobots } from "../../features/robots/api";',
+  ],
+  [
+    "pages/p15-robots/page.tsx",
+    'const load = () => import("../../features/robot-models/api/index");',
+  ],
+]) {
+  test(`production cannot route through compatibility entries: ${owner}: ${source}`, () => {
+    assert.ok(
+      checkSource(path.join(root, owner), source, root).some((failure) =>
+        failure.includes("instead of compatibility entry"),
+      ),
+    );
+  });
+}
+
+test("new production consumers use the canonical scoped hooks and clients", () => {
+  assert.deepEqual(
+    checkSource(
+      path.join(root, "pages/p15-robots/page.tsx"),
+      'import { useScopedRobots } from "../../features/robots/api/hooks"; import { createRobot } from "../../features/robots/api/client";',
+      root,
+    ),
+    [],
+  );
+});

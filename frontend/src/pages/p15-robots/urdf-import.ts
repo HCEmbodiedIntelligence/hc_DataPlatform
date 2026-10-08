@@ -1,4 +1,4 @@
-import type { RobotModelJointMapping } from "../../features/robot-models/api";
+import type { RobotModelJointMapping } from "../../features/robot-models/api/client";
 import type { PendingRobotModelAsset } from "./model-file-selection";
 
 export interface ParsedUrdfJoint {

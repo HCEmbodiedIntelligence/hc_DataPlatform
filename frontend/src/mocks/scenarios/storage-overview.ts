@@ -1,4 +1,4 @@
-import { makeScopeKey } from '../../entities/scope';
+import { makeScopeKey } from '../../shared/scope/model';
 import { useShellStore } from '../../shared/scope/shell-store';
 import { registerScenario } from './registry';
 

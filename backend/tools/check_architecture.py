@@ -22,6 +22,15 @@ PURE_MODULES = {
     f"{OBJECTS}.artifacts",
 }
 LEGACY_STORAGE = ("hc_data_platform.ingest.ports", "hc_data_platform.ingest.adapters")
+LEGACY_STORAGE_EXPORTS = tuple(
+    f"hc_data_platform.ingest.{name}"
+    for name in (
+        "ObjectStoragePort",
+        "InMemoryObjectStorage",
+        "S3ObjectStorage",
+        "OssObjectStorage",
+    )
+)
 ADAPTER_SUPPORT = ("hc_data_platform.core.context", "hc_data_platform.core.errors")
 FORMATS = "hc_data_platform.data_formats"
 LEGACY_CODECS = tuple(
@@ -148,7 +157,7 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
             target, "hc_data_platform.workflow"
         ):
             failures.add(f"{line}: media must not depend on workflow {target}")
-        if any(matches(target, prefix) for prefix in LEGACY_STORAGE):
+        if any(matches(target, prefix) for prefix in LEGACY_STORAGE + LEGACY_STORAGE_EXPORTS):
             failures.add(f"{line}: application source must use object_storage, not {target}")
         if not matches(module, OBJECTS):
             continue
@@ -178,22 +187,33 @@ def main() -> int:
     files = sorted((root / "hc_data_platform").rglob("*.py"))
     if not files:
         parser.error("source root must contain hc_data_platform Python modules")
-    failures = []
+    sources = []
     for file in files:
         parts = file.relative_to(root).with_suffix("").parts
         is_package = parts[-1] == "__init__"
         module = ".".join(parts[:-1] if is_package else parts)
+        sources.append((file, module, is_package, file.relative_to(root)))
+    backend = Path(__file__).resolve().parents[1]
+    if root.resolve() == (backend / "src").resolve():
+        for directory in (backend / "tools", backend / "scripts"):
+            for file in sorted(directory.rglob("*.py")):
+                parts = file.relative_to(backend).with_suffix("").parts
+                sources.append((file, ".".join(parts), False, file.relative_to(backend)))
+    failures = []
+    for file, module, is_package, relative in sources:
         try:
             failures.extend(
-                f"{file.relative_to(root)}:{failure}"
+                f"{relative}:{failure}"
                 for failure in check_source(module, file.read_text(), is_package=is_package)
             )
         except (SyntaxError, ImportError, ValueError) as exc:
-            failures.append(f"{file.relative_to(root)}: unresolved source: {exc}")
+            failures.append(f"{relative}: unresolved source: {exc}")
     if failures:
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"Migrated architecture boundaries passed across {len(files)} Python source files.")
+    print(
+        f"Migrated architecture boundaries passed across {len(sources)} Python source/tool files."
+    )
     return 0
 
 

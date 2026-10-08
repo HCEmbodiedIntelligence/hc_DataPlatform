@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Progress } from "antd";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
 import {
   authorizeCompleteDelivery,

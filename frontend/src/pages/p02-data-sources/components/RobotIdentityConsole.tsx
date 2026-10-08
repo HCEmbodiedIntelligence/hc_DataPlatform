@@ -43,7 +43,7 @@ import type {
   RobotIdentity,
   RobotUploadPolicy,
 } from "../../../features/robot-ingest/model";
-import { useRobots } from "../../../features/robots/api";
+import { useScopedRobots } from "../../../features/robots/api/hooks";
 import { isDomainError } from "../../../shared/api/domain-error";
 import { routes } from "../../../features/ingest/routing";
 import { formatStorageSize } from "../../../shared/lib/metric-presentation";
@@ -221,7 +221,9 @@ export function RobotIdentityConsole({
   readonly canManage: boolean;
 }) {
   const identities = useRobotIdentities(scope, canRead);
-  const organizationRobots = useRobots({ lifecycle_status: "ACTIVE" });
+  const organizationRobots = useScopedRobots(scope?.organizationId ?? null, {
+    lifecycle_status: "ACTIVE",
+  });
   const [selectedIdentityId, setSelectedIdentityId] = useState<string | null>(
     null,
   );

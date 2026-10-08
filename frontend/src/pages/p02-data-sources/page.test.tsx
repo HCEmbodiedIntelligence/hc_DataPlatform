@@ -73,22 +73,22 @@ vi.mock("../../features/robots/api/client", () => ({
   getRobotBootstrap: vi.fn(),
 }));
 
-vi.mock("../../features/robots/api", () => ({
-  useCreateRobot: () => ({
+vi.mock("../../features/robots/api/hooks", () => ({
+  useScopedCreateRobot: () => ({
     isPending: false,
     error: null,
     mutateAsync: createRobotMutateAsync,
     reset: vi.fn(),
   }),
-  useRobotBootstrap: () => ({
+  useScopedRobotBootstrap: () => ({
     data: undefined,
     isPending: false,
     isError: false,
   }),
 }));
 
-vi.mock("../../features/robot-models/api", () => ({
-  useBindRobotModelVersion: () => ({
+vi.mock("../../features/robot-models/api/hooks", () => ({
+  useScopedBindRobotModelVersion: () => ({
     isPending: false,
     error: null,
     mutateAsync: bindModelMutateAsync,

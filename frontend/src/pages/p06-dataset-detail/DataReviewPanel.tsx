@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Typography } from "antd";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import styles from "./styles.module.css";
 import {
   loadDataReviews,

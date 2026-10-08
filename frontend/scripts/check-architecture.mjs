@@ -12,6 +12,9 @@ export function checkSource(file, content, sourceRoot, options = {}) {
   const relative = path.relative(sourceRoot, file).split(path.sep).join("/");
   const sourceLayer = relative.split("/")[0];
   const prohibitedLayers = {
+    app: [],
+    entities: [],
+    mocks: [],
     shared: ["entities", "features", "pages", "app"],
     features: ["pages", "app"],
     pages: ["app"],
@@ -71,6 +74,20 @@ export function checkSource(file, content, sourceRoot, options = {}) {
       .relative(sourceRoot, target)
       .split(path.sep)
       .join("/");
+    const compatibilityEntry =
+      /^(entities\/(scope|actor)|features\/(robots|robot-models)\/api(?:\/index)?|pages\/p07-version-detail\/export-api|pages\/p10-cleaning-drafts\/query-codec)(?:\.tsx?)?$/u.test(
+        targetRelative,
+      ) ||
+      (ts.sys.fileExists(target) &&
+        /^\s*(?:\/\/|\/\*\*?)\s*Compatibility (entry|path)\b/iu.test(
+          fs.readFileSync(target, "utf8"),
+        ));
+    if (compatibilityEntry) {
+      failures.add(
+        `${relative}:${line}: production consumers must import the owning module instead of compatibility entry ${specifier}`,
+      );
+      return;
+    }
     if (
       explicitScopeContract &&
       (/^shared\/scope\/(shell-store|current-organization|use-)/u.test(

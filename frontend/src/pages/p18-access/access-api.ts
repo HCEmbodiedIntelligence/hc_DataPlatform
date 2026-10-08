@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { createDomainError } from "../../shared/api/domain-error";
 import { request } from "../../shared/api/http-client";
 import { makeQueryKey } from "../../shared/api/query-keys";

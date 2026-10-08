@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, Input, Select, Space } from "antd";
-import type { Scope } from "../../entities/scope";
+import type { Scope } from "../../shared/scope/model";
 import { loadEpisodeOverview } from "../../features/datasets/episodes/episode-detail";
 import {
   loadCollectionAnnotationHistory,

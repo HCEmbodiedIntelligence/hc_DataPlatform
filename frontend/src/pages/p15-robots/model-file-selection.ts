@@ -1,4 +1,4 @@
-import type { RobotModelAssetUploadInput } from "../../features/robot-models/api";
+import type { RobotModelAssetUploadInput } from "../../features/robot-models/api/client";
 
 export type PendingRobotModelAsset = Omit<RobotModelAssetUploadInput, "sha256">;
 

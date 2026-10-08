@@ -7,7 +7,7 @@ import {
   sameAnnotationDataRef,
   type AnnotationPackageView,
 } from "./annotation-package";
-import type { Scope } from "../../../entities/scope";
+import type { Scope } from "../../../shared/scope/model";
 import { z } from "zod";
 import { authorizeAlignedMedia } from "../../aligned-media/authorize-aligned-media";
 import {

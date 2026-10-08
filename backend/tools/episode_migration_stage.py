@@ -27,13 +27,13 @@ from hc_data_platform.episode_store.migration_inventory import read_inventory
 from hc_data_platform.episode_store.migration_native import NativeMigrationAssets
 from hc_data_platform.episode_store.models import LegacyEpisodeRef
 from hc_data_platform.episode_store.postgres import PackageConflict, PostgresEpisodeStore
-from hc_data_platform.ingest.adapters import S3ObjectStorage
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
     PostgresAdvisoryDatasetLock,
     PostgresCatalogAdapter,
 )
 from hc_data_platform.lance_catalog.service import LanceCatalogService
+from hc_data_platform.object_storage.providers import S3ObjectStorage
 
 
 def main():
