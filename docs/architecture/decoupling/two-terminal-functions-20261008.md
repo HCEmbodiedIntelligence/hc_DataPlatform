@@ -257,3 +257,47 @@ URDF 浏览器导入与 R04 冻结绑定仍待验收；P08 新协议26cf62a3等�
 固定 logical 新增 GET robot-scene 及 POST robot-scene/assets/{asset_id}/authorize，仍按确切 snapshot_token/id 与读取权限校验，资产额外组织 robot_model.read、发布版本/清单成员/哈希约束。模型位于同组织另一项目时通过模型所有者只读组件读取，保留 PostgreSQL 内容存储与签名下载。新 FK 保留引用版本，ledger 禁止更新/删除。
 
 实际回归：6 MCAP/LeRobot 摄取用例；后补 5 项历史双存储、连续录制含 Temporal、原生绑定完整链；最终原生回归同时通过跨项目模型上传/发布/绑定、换绑旧固定读取和资产字节、4并发重试、篡改标定拒绝、普通HTTP401/403/404/409及撤权、不可变SQL拒绝、真实Tag派生后场景/标定继承。111架构/逻辑/写入检查、5新文件严格mypy、Ruff/实际OpenAPI通过。证据 frozen-scene-processing-v2.xml、frozen-scene-production-services.xml、frozen-scene-concurrent-rebinding.xml、frozen-scene-checks.xml。早期夹具授权/预检key/worker scope失败保留；R04待B新页面实际消费与浏览器换绑，不标功能完成。
+
+
+## A/B：第七批 P08 统一逻辑读取集成
+
+代码6b2280919e1a3706bc8444f7b924eee0b163ce45整合P08后端26cf62a3与
+前端c07cb705/b24913ad。标注bundle实际调用task/logical并复用P06样本/媒体，
+核对scope/task/固定版本/hash/count，非零时间映射成标注相对步范围；权限revision
+变化使已加载关节缓存与query流对象失效。STORE_ONLY提示明确只保存原始文件。
+1045项全量前端、后补22项权限/query回归、54门禁、类型/精确runtime生成/生产
+build通过；5项真实HTTP两存储P08/P06样本、媒体字节与撤权回归通过且零跳过。
+后端114项目录/逻辑/架构及3文件mypy已经绑定26cf62a3，此批后端无额外改动。
+证据integration-batch-seven-{services,frontend,revision}.xml及build日志。契约
+SHA256=54db54916dd9dbb9733aba1f1cc7b758bc78d4e6af5b36097faec5a8cf702417。
+
+B031通过浏览器URDF创建/更新/发布、真实WebGL画布和旧固定资产/映射读回；
+保留首轮无头浏览器不支持WebGL的失败。该证据不替代R04数据快照换绑验收。
+P08新共同候选尚待浏览器实际消费；原始深度预览协议修复和冻结模型均在独立
+工作树，不纳入本批已验证结果。
+
+## A/B：原始深度媒体与 R05 验收
+
+原始媒体HTTP响应增加media_kind(RGB/DEPTH/UNKNOWN)、preview_kind
+(ORIGINAL_VIDEO/DOWNLOAD_ONLY)及明确原因。源feature声明深度时只提供原文件
+下载，不把16位深度视频伪装RGB；缺声明时不从文件名猜模态。原始字节和offset
+不改写。15项上传/范围读取用例、严格mypy和架构通过；真实普通HTTP创建dataset、
+上传整套合成RGB-D、commit、分类、原文件逐字节下载和隔离/撤权1项通过。
+证据raw-media-contract-v2.xml、raw-media-services-v2.xml；首轮HTTP夹具未建
+dataset被404拒绝已保留，补正常创建后复验，无放宽产品检查。页面等待B消费。
+
+R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，1027测试
+及第六批联合检查通过。B031以普通浏览器完成首次/更新发布、真实WebGL画布、
+旧固定模型/映射读取，故R05现在可关闭；R04数据绑定冻结仍单独在实施。
+
+### 第八批联合验证：原始媒体预览适用性
+
+集成代码 `d7c306180415da1238676c52c05ec3302a402568` 包含后端 `5d59ba2e` 与 B `5dc6da66`。页面实际消费明确的 RGB/DEPTH/UNKNOWN 与 ORIGINAL_VIDEO/DOWNLOAD_ONLY，深度保留原字节下载。联合验证 1051 前端测试、54 架构门禁、类型、35356040 runtime 生成核对及精确代码 commit 生产构建通过；1 项真实普通 HTTP 上传/分类/下载/撤权通过，零跳过。证据 `integration-batch-eight-*`。浏览器此前深度 error.code=3 失败保留；新提示/禁止错误播放待共同候选浏览器复验。
+
+本轮候选 CORS 使用专用配置，58088/55174 的 localhost/127.0.0.1 精确来源放行，外部来源拒绝。B 已用原 MCAP 会话真实续传 PUT/complete/commit 成功，worker 的动作缺失 RISK 仍为待修复产品缺口；失败后 Raw 下载 SHA 与源一致。P08 原生及派生任务的 logical 样本、两路解码、编辑/提交/审核浏览器通过；旧 Lance 浏览器因原临时文件已消失失败，不冒充历史读取已通过，另准备持久合成夹具验收。
+
+### LeRobot 元数据处理能力（本轮后端待前端消费）
+
+新增实际 POST `lerobot-imports:capabilities`，显式组织/项目/区域和 upload.manage，返回元数据 SHA、`lerobot-native-episode/1` revision、存储/处理支持及阶段化拒绝原因。调用生产原生 profile 校验，float64 与额外特征保留，不依赖机器人型号前端白名单。只声明元数据适用性；上传 commit 仍核对原始 info 字节内容，worker 仍验证实际表格/视频/深度证据。
+
+新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。

@@ -6,12 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from hc_data_platform.ingest.models import CompletedPart, Identifier, PartAuthorization
 
+from .capabilities import validate_processing_selection
 from .source_profile import (
     MAX_LEROBOT_IMPORT_EPISODES,
     is_canonical_lerobot_object,
     is_lerobot_local_cache_path,
     is_lerobot_transient_path,
-    validate_processing_info,
     validate_source_info,
 )
 
@@ -76,6 +76,7 @@ class CreateLeRobotImportV1(BaseModel):
     robot_id: Identifier | None = None
     source_format: Literal["LEROBOT_V3", "MCAP", "ROSBAG"] = "LEROBOT_V3"
     processing_mode: Literal["STORE_ONLY", "PROCESS"] = "STORE_ONLY"
+    processing_capability_revision: str | None = Field(default=None, min_length=1, max_length=128)
     info: dict[str, Any] = Field(default_factory=dict)
     files: tuple[LeRobotSourceFileV1, ...] = Field(min_length=1, max_length=10_000)
 
@@ -91,7 +92,7 @@ class CreateLeRobotImportV1(BaseModel):
                 or not self.robot_id
             ):
                 raise ValueError("processing requires a LeRobot source, collection task and robot")
-            validate_processing_info(self.info)
+            validate_processing_selection(self.info, self.processing_capability_revision)
         if self.source_format != "LEROBOT_V3":
             if self.source_format == "MCAP" and not any(p.lower().endswith(".mcap") for p in paths):
                 raise ValueError("MCAP storage requires an original .mcap file")

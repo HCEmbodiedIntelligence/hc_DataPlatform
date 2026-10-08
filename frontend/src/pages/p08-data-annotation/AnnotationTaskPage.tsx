@@ -45,16 +45,20 @@ import {
 } from "./tag-draft-recovery";
 import type { TagDraftRecoveryIdentity } from "./tag-draft-recovery";
 import { annotationRoutes } from "../../features/annotation/routing";
-import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
+import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/joint-angle-stream";
+import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import styles from "./workbench.module.css";
 
 function taskQueryKey(
   scope: RuntimeAnnotationScope,
   taskId: string,
   mode: AnnotationWorkbenchMode,
+  revision: string,
 ) {
   return [
     "p08-runtime-annotation",
+    scope.organizationId,
+    revision,
     scope.projectId,
     scope.regionCode,
     taskId,
@@ -276,6 +280,7 @@ function RuntimeAnnotationTaskPage({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const capabilities = useCapabilities();
+  const scopeRevision = useScopeQueryRevision();
   const shellScope = useShellStore((state) => state.scope);
   const principal = useShellStore((state) => state.principal);
   const scope = useMemo<RuntimeAnnotationScope | null>(() => {
@@ -287,11 +292,12 @@ function RuntimeAnnotationTaskPage({
   ]);
   const canRead =
     capabilities.has("annotation_task.read") &&
-    capabilities.has("episode.read");
+    capabilities.has("episode.read") &&
+    capabilities.has("dataset_version.read");
   const query = useQuery({
     queryKey:
       scope && taskId
-        ? taskQueryKey(scope, taskId, mode)
+        ? taskQueryKey(scope, taskId, mode, scopeRevision)
         : ["p08-runtime-annotation", "disabled"],
     queryFn: ({ signal }) =>
       loadRuntimeAnnotationBundle(scope!, taskId!, mode, signal),
@@ -323,7 +329,7 @@ function RuntimeAnnotationTaskPage({
     describeEpisodeRobotPreview(bundle?.manifest?.robot_id ?? null),
   );
   const baseline = bundle
-    ? `${bundle.task.etag}:${mode === "annotation" ? (bundle.draft?.revision ?? -1) : (resolveReviewRevision(bundle)?.revision ?? -1)}`
+    ? `${scope?.organizationId}:${scope?.projectId}:${scope?.regionCode}:${scopeRevision}:${bundle.task.task_id}:${bundle.task.etag}:${mode === "annotation" ? (bundle.draft?.revision ?? -1) : (resolveReviewRevision(bundle)?.revision ?? -1)}`
     : null;
   const recoveryIdentity = useMemo<TagDraftRecoveryIdentity | null>(() => {
     if (

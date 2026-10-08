@@ -124,7 +124,12 @@ def test_four_original_video_offsets_are_read_without_loading_videos(
         "total_episodes": 2,
         "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
         "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
-        "features": {camera: {"dtype": "video"} for camera in cameras},
+        "features": {
+            cameras[0]: {"dtype": "video", "shape": [16, 16, 3]},
+            cameras[1]: {"dtype": "video", "shape": [16, 16, 1], "info": {"is_depth_map": True}},
+            cameras[2]: {"dtype": "video"},
+            cameras[3]: {"dtype": "video", "info": {"is_depth_map": False}},
+        },
     }
     rows = []
     for index in range(2):
@@ -169,6 +174,12 @@ def test_four_original_video_offsets_are_read_without_loading_videos(
     assert all(
         video.start_seconds == 3.25 and video.end_seconds == 5.25 for video in episode.videos
     )
+    assert [(v.media_kind, v.preview_kind, v.preview_reason) for v in episode.videos] == [
+        ("RGB", "ORIGINAL_VIDEO", None),
+        ("DEPTH", "DOWNLOAD_ONLY", "RAW_DEPTH_REQUIRES_COLORIZATION"),
+        ("UNKNOWN", "DOWNLOAD_ONLY", "MEDIA_KIND_UNDECLARED"),
+        ("RGB", "ORIGINAL_VIDEO", None),
+    ]
     grant = browser.grant(raw, episode.videos[0].path)
     assert f"/{raw.storage_prefix}/videos/" in grant.url
 

@@ -257,7 +257,9 @@ describe("P21 data export page", () => {
       }),
     ]);
     expect(
-      window.sessionStorage.getItem(window.sessionStorage.key(0)!),
+      window.sessionStorage.getItem(
+        `hc-data-export-tasks:${useShellStore.getState().scopeKey}`,
+      ),
     ).toContain("metadata_json");
   });
 
@@ -436,6 +438,27 @@ describe("P21 data export page", () => {
   });
 
   it("downloads original files without requiring processed or approved Episodes", async () => {
+    const store = useShellStore.getState();
+    const authorization = store.authorization!;
+    const scope = store.scope!;
+    store.setSession(
+      { actorId: "reader", displayName: "Reader", roleIds: [] },
+      "test-session",
+    );
+    store.setSessionScopes(
+      [
+        {
+          organizationId: "org_fx_01",
+          projectId: "prj_fx_01",
+          regionCodes: ["cn-shanghai"],
+          projectWide: false,
+          capabilities: [],
+        },
+      ],
+      1,
+    );
+    store.setScope(scope);
+    store.setAuthorization(authorization);
     server.use(
       http.get(
         "*/projects/:projectId/regions/:regionCode/lerobot-imports",
@@ -454,6 +477,8 @@ describe("P21 data export page", () => {
       ),
       http.get("*/lerobot-imports/:importId/files", () =>
         HttpResponse.json({
+          import_id: "raw-1",
+          offset: 0,
           files: [{ path: "meta/info.json", size: 10, sha256: "a".repeat(64) }],
           total: 1,
           episode_count: 154,
@@ -462,8 +487,9 @@ describe("P21 data export page", () => {
       ),
       http.get("*/lerobot-imports/:importId/assets:read", () =>
         HttpResponse.json({
+          path: "meta/info.json",
           url: "https://example.test/original-info.json",
-          expires_at: "2026-09-22T00:00:00Z",
+          expires_at: new Date(Date.now() + 60_000).toISOString(),
         }),
       ),
     );
@@ -796,7 +822,15 @@ describe("P21 data export page", () => {
       );
       expect(within(taskTable).getByText("Lance 数据文件")).toBeVisible();
       expect(within(taskTable).getByText("LeRobot v3")).toBeVisible();
-      expect(window.sessionStorage.length).toBe(1);
+      const storedTasks = JSON.parse(
+        window.sessionStorage.getItem(
+          `hc-data-export-tasks:${useShellStore.getState().scopeKey}`,
+        )!,
+      );
+      expect(storedTasks).toHaveLength(2);
+      expect(
+        storedTasks.map((task: { format: string }) => task.format),
+      ).toEqual(expect.arrayContaining(["lance_snapshot", "lerobot_v3"]));
 
       const downloadButtons = await screen.findAllByRole(
         "button",

@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad
+// Runtime-OpenAPI-SHA256: 3c6d4335a7e348c940c5e3b0beacb0ed8c1b8f0a4656af3078102c02e3a59599
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -216,6 +216,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/source-provenance" },
   { method: "POST", path: "/projects/{project_id}/quality-profiles" },
   { method: "GET", path: "/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/logical" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/manifest-discovery" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes" },
@@ -298,6 +299,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/collections" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports:capabilities" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry" },

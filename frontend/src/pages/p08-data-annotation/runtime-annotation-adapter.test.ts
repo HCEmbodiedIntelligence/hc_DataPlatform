@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useShellStore } from "../../shared/scope/shell-store";
+import {
+  installAnnotationSession,
+  bundleLogicalFixture,
+  logicalMediaFixture,
+} from "./testing/annotation-logical-fixture";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDomainError } from "../../shared/api/domain-error";
 import { request } from "../../shared/api/http-client";
 import {
@@ -28,7 +34,10 @@ vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 
 const requestMock = vi.mocked(request);
 
+beforeEach(() => installAnnotationSession(visualAnnotationScope));
+
 afterEach(() => {
+  useShellStore.getState().clearSensitiveState();
   vi.clearAllMocks();
   resetRuntimeConfigForTests();
 });
@@ -64,36 +73,14 @@ function installBundleResponses(
       return fixture.datasetVersion as never;
     if (options.path.endsWith("/manifest-discovery"))
       return fixture.manifest as never;
-    if (options.path === "/aligned-media/authorize")
-      return {
-        schema_version: "aligned-media-authorization/v1",
-        artifact_id: "artifact-p08",
-        artifact_key: "a".repeat(64),
-        project_id: fixture.task.project_id,
-        dataset_id: fixture.task.dataset_id,
-        rollout_id: fixture.task.rollout_id,
-        dataset_version: fixture.task.dataset_version,
-        camera_id: (options.body as { camera_id: string }).camera_id,
-        media_url: mediaUrl,
-        content_type: "video/mp4",
-        expires_at: "2026-08-18T12:00:00Z",
-        fps: 30,
-        frame_count: fixture.task.base_step_count,
-        duration_seconds: (fixture.task.base_step_count ?? 1) / 30,
-        width: 1280,
-        height: 720,
-        timeline: {
-          fps: 30,
-          frame_count: fixture.task.base_step_count,
-          first_step: 0,
-          pts_time_base_numerator: 1,
-          pts_time_base_denominator: 30,
-          start_timestamp_ns: "0",
-        },
-        alignment_version: "causal-30hz-v1",
-        profile_id: "canonical-h264-crf20-v1",
-        profile_version: "1",
-      } as never;
+    if (options.path.endsWith("/logical"))
+      return bundleLogicalFixture(fixture, visualAnnotationScope) as never;
+    if (options.path.endsWith("/media/authorize"))
+      return logicalMediaFixture(
+        bundleLogicalFixture(fixture, visualAnnotationScope),
+        decodeURIComponent(options.path.split("/streams/")[1]!.split("/")[0]!),
+        mediaUrl,
+      ) as never;
     throw new Error(`Unexpected request ${options.method} ${options.path}`);
   });
   return fixture;
@@ -389,6 +376,8 @@ describe("P08 formal runtime annotation adapter", () => {
         return fixture.schema as never;
       if (options.path.includes("/lance-versions/"))
         return fixture.datasetVersion as never;
+      if (options.path.endsWith("/logical"))
+        return bundleLogicalFixture(fixture, visualAnnotationScope) as never;
       throw new Error(`Unexpected request ${options.path}`);
     });
     const bundle = await loadRuntimeAnnotationBundle(
@@ -629,17 +618,21 @@ describe("P08 formal runtime annotation adapter", () => {
     expect(requestMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         method: "POST",
-        path: "/aligned-media/authorize",
-        body: expect.objectContaining({
-          camera_id: fixture.manifest?.cameras[0]?.topic,
-          dataset_version: fixture.task.dataset_version,
-        }),
+        path: expect.stringContaining(
+          `/logical/streams/${encodeURIComponent(fixture.manifest!.cameras[0]!.camera_id)}/media/authorize`,
+        ),
+        query: {
+          snapshot_id: bundle.logical!.view.snapshot_id,
+          snapshot_token: "fixed-task-token",
+        },
+        scope: visualAnnotationScope,
+        scopeMode: "explicit",
       }),
     );
     clock.dispose();
   });
 
-  it("constructs and authorizes all four Manifest cameras for a continuous Episode", async () => {
+  it("constructs and authorizes all four logical cameras for a continuous Episode", async () => {
     installRuntime();
     const fixture = installBundleResponses();
     const bundle = await loadRuntimeAnnotationBundle(
@@ -668,13 +661,19 @@ describe("P08 formal runtime annotation adapter", () => {
       ),
     );
     expect(cameraStreams).toHaveLength(4);
-    expect(media.every((item) => item.url.endsWith("canonical.mp4"))).toBe(true);
+    expect(media.every((item) => item.url.endsWith("canonical.mp4"))).toBe(
+      true,
+    );
     expect(
       requestMock.mock.calls
         .map(([options]) => options)
-        .filter((options) => options.path === "/aligned-media/authorize")
-        .map((options) => (options.body as { camera_id: string }).camera_id),
-    ).toEqual(fixture.manifest?.cameras.map((camera) => camera.topic));
+        .filter((options) => options.path.endsWith("/media/authorize"))
+        .map((options) =>
+          decodeURIComponent(
+            options.path.split("/streams/")[1]!.split("/")[0]!,
+          ),
+        ),
+    ).toEqual(fixture.manifest?.cameras.map((camera) => camera.camera_id));
     clock.dispose();
   });
 

@@ -15,6 +15,7 @@ export function useLogicalViewer(
   enabled: boolean,
 ) {
   const sessionRevision = useShellStore((s) => s.sessionRevision);
+  const capabilityRevision = useShellStore((s) => s.capabilityRevision);
   const selection = useMemo(
     (): LogicalSelection | null =>
       revision && snapshotToken
@@ -41,6 +42,7 @@ export function useLogicalViewer(
       "logical-snapshot",
       selection,
       sessionRevision,
+      capabilityRevision,
     ],
     enabled: enabled && selection !== null,
     queryFn: ({ signal }) => fetchLogicalSnapshot(selection!, signal),
@@ -50,7 +52,7 @@ export function useLogicalViewer(
       enabled && selection && query.data
         ? adaptLogicalViewerStreams(selection, query.data)
         : [],
-    [enabled, selection, query.data],
+    [enabled, selection, query.data, sessionRevision, capabilityRevision],
   );
   return { ...query, streams };
 }

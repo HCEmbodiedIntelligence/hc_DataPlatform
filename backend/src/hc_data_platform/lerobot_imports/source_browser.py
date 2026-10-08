@@ -7,7 +7,7 @@ import json
 import math
 from datetime import datetime, timedelta
 from threading import BoundedSemaphore
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel
 
@@ -54,6 +54,32 @@ class OriginalVideo(BaseModel):
     path: str
     start_seconds: float
     end_seconds: float
+    media_kind: Literal["RGB", "DEPTH", "UNKNOWN"]
+    preview_kind: Literal["ORIGINAL_VIDEO", "DOWNLOAD_ONLY"]
+    preview_reason: Literal["RAW_DEPTH_REQUIRES_COLORIZATION", "MEDIA_KIND_UNDECLARED"] | None = (
+        None
+    )
+
+
+def original_video_contract(feature: dict[str, Any]) -> dict[str, Any]:
+    """Use source declarations; never infer physical depth from a filename."""
+    metadata = feature.get("info")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    shape = feature.get("shape")
+    if metadata.get("is_depth_map") is True:
+        return dict(
+            media_kind="DEPTH",
+            preview_kind="DOWNLOAD_ONLY",
+            preview_reason="RAW_DEPTH_REQUIRES_COLORIZATION",
+        )
+    if metadata.get("is_depth_map") is False or (
+        isinstance(shape, list) and len(shape) == 3 and shape[-1] == 3
+    ):
+        # Original encoded video; browser codec support still applies.
+        return dict(media_kind="RGB", preview_kind="ORIGINAL_VIDEO", preview_reason=None)
+    return dict(
+        media_kind="UNKNOWN", preview_kind="DOWNLOAD_ONLY", preview_reason="MEDIA_KIND_UNDECLARED"
+    )
 
 
 class OriginalEpisode(BaseModel):
@@ -293,7 +319,13 @@ class OriginalSourceBrowser:
             ):
                 raise ValueError("original video segment is missing or has an invalid time range")
             videos.append(
-                OriginalVideo(camera_id=camera, path=path, start_seconds=start, end_seconds=end)
+                OriginalVideo(
+                    camera_id=camera,
+                    path=path,
+                    start_seconds=start,
+                    end_seconds=end,
+                    **original_video_contract(info["features"][camera]),
+                )
             )
         return OriginalEpisode(
             episode_index=episode_index,
