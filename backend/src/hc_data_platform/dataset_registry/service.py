@@ -969,6 +969,73 @@ class DatasetPageService:
             rollout_ids.update(bindings)
         return tuple(sorted(rollout_ids))
 
+    def rollout_revision(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        dataset_id: str,
+        version_id: str,
+        rollout_id: str,
+        snapshot_token: str,
+        request_id: str,
+    ) -> DatasetPageEpisodeRevisionEnvelope:
+        """Resolve exactly one fixed product revision from an authorized source identity."""
+        scope = self._authorize_episode_read(
+            auth=auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+        )
+        version = self._required_version(scope=scope, dataset_id=dataset_id, version_id=version_id)
+        projection = self._required_content_projection(
+            scope=scope, dataset_id=dataset_id, version_id=version_id
+        )
+        self._require_snapshot_token(
+            scope=scope, version=version, projection=projection, snapshot_token=snapshot_token
+        )
+        revisions = self._repository.find_rollout_revisions(
+            scope=scope, dataset_id=dataset_id, version_id=version_id, rollout_id=rollout_id
+        )
+        if len(revisions) != 1:
+            raise problem(
+                status=409,
+                code="LOGICAL_SOURCE_BINDING_UNAVAILABLE",
+                title="Logical source binding unavailable",
+                detail="The fixed version must contain exactly one revision for this source.",
+            )
+        revision = revisions[0]
+        bound = {
+            binding.rollout_id
+            for stream in revision.streams
+            for binding in (
+                stream.package_binding,
+                stream.data_binding,
+                stream.aligned_media_binding,
+            )
+            if binding is not None
+        }
+        if bound != {rollout_id}:
+            raise problem(
+                status=409,
+                code="LOGICAL_SOURCE_BINDING_UNAVAILABLE",
+                title="Logical source binding unavailable",
+                detail="The revision mixes source identities.",
+            )
+        return self.episode_revision(
+            auth=auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            revision_id=revision.revision_id,
+            snapshot_token=snapshot_token,
+            request_id=request_id,
+        )
+
     def episode_revision(
         self,
         *,

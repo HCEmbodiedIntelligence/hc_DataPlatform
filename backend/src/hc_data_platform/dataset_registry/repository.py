@@ -169,6 +169,10 @@ class DatasetPageRepository(Protocol):
         self, *, scope: DatasetPageScope, dataset_id: str, version_id: str, revision_id: str
     ) -> DatasetPageEpisodeRevision | None: ...
 
+    def find_rollout_revisions(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str, rollout_id: str
+    ) -> tuple[DatasetPageEpisodeRevision, ...]: ...
+
     def list_episode_revisions(
         self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
     ) -> tuple[DatasetPageEpisodeRevision, ...]: ...
@@ -471,6 +475,26 @@ class InMemoryDatasetPageRepository:
             return self._episode_revisions.get(
                 _revision_key(scope, dataset_id, version_id, revision_id)
             )
+
+    def find_rollout_revisions(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str, rollout_id: str
+    ) -> tuple[DatasetPageEpisodeRevision, ...]:
+        with self._lock:
+            return tuple(
+                revision
+                for revision in self.list_episode_revisions(
+                    scope=scope, dataset_id=dataset_id, version_id=version_id
+                )
+                if any(
+                    binding is not None and binding.rollout_id == rollout_id
+                    for stream in revision.streams
+                    for binding in (
+                        stream.package_binding,
+                        stream.data_binding,
+                        stream.aligned_media_binding,
+                    )
+                )
+            )[:2]
 
     def list_episode_revisions(
         self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
@@ -1039,6 +1063,34 @@ class PostgresDatasetPageRepository:
             raw = cursor.fetchone()
             return (
                 None if raw is None else _episode_revision(_row(cursor, raw)["revision_document"])
+            )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def find_rollout_revisions(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str, rollout_id: str
+    ) -> tuple[DatasetPageEpisodeRevision, ...]:
+        # Return at most two matches: callers require uniqueness, never "first wins".
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """SELECT revision_document
+                   FROM dataset_registry.dataset_version_episode_revisions
+                   WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                     AND dataset_id=%s AND version_id=%s
+                     AND EXISTS (
+                         SELECT 1 FROM jsonb_array_elements(revision_document->'streams') AS stream
+                         WHERE stream#>>'{package_binding,rollout_id}'=%s
+                            OR stream#>>'{data_binding,rollout_id}'=%s
+                            OR stream#>>'{aligned_media_binding,rollout_id}'=%s
+                     ) ORDER BY revision_id LIMIT 2""",
+                (*_version_key(scope, dataset_id, version_id), rollout_id, rollout_id, rollout_id),
+            )
+            return tuple(
+                _episode_revision(_row(cursor, row)["revision_document"])
+                for row in cursor.fetchall()
             )
         finally:
             cursor.close()
