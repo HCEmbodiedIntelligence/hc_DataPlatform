@@ -919,6 +919,54 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports:capabilities:
+    post:
+      operationId: detectLeRobotImportCapabilities
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeRobotCapabilityRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeRobotCapabilities'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Import Capabilities
+      tags:
+      - lerobot-imports
 components:
   schemas:
     NativeConfiguration:
@@ -1048,6 +1096,13 @@ components:
       title: LeRobotSourceFileV1
     CreateLeRobotImportV1:
       properties:
+        processing_capability_revision:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Processing Capability Revision
         schema_version:
           type: string
           const: lerobot-web-import/v1
@@ -1552,3 +1607,85 @@ components:
       - status
       - available
       title: EpisodeResolution
+    LeRobotCapabilityRequest:
+      additionalProperties: false
+      properties:
+        info:
+          additionalProperties: true
+          title: Info
+          type: object
+      required:
+      - info
+      title: LeRobotCapabilityRequest
+      type: object
+    LeRobotCapabilityReason:
+      additionalProperties: false
+      properties:
+        code:
+          title: Code
+          type: string
+        detail:
+          title: Detail
+          type: string
+        stage:
+          enum:
+          - STORAGE
+          - PROCESSING
+          title: Stage
+          type: string
+      required:
+      - stage
+      - code
+      - detail
+      title: LeRobotCapabilityReason
+      type: object
+    LeRobotCapabilities:
+      additionalProperties: false
+      properties:
+        capability_revision:
+          title: Capability Revision
+          type: string
+        info_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Info Sha256
+          type: string
+        output_storage_format:
+          anyOf:
+          - const: lerobot_v3
+            type: string
+          - type: 'null'
+          title: Output Storage Format
+        processing_supported:
+          title: Processing Supported
+          type: boolean
+        profile_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Profile Id
+        reasons:
+          default: []
+          items:
+            $ref: '#/components/schemas/LeRobotCapabilityReason'
+          title: Reasons
+          type: array
+        schema_version:
+          const: lerobot-capabilities/v1
+          default: lerobot-capabilities/v1
+          title: Schema Version
+          type: string
+        storage_supported:
+          title: Storage Supported
+          type: boolean
+        validation_scope:
+          const: DECLARED_METADATA
+          default: DECLARED_METADATA
+          title: Validation Scope
+          type: string
+      required:
+      - capability_revision
+      - info_sha256
+      - storage_supported
+      - processing_supported
+      title: LeRobotCapabilities
+      type: object

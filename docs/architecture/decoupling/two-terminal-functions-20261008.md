@@ -287,3 +287,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 集成代码 `d7c306180415da1238676c52c05ec3302a402568` 包含后端 `5d59ba2e` 与 B `5dc6da66`。页面实际消费明确的 RGB/DEPTH/UNKNOWN 与 ORIGINAL_VIDEO/DOWNLOAD_ONLY，深度保留原字节下载。联合验证 1051 前端测试、54 架构门禁、类型、35356040 runtime 生成核对及精确代码 commit 生产构建通过；1 项真实普通 HTTP 上传/分类/下载/撤权通过，零跳过。证据 `integration-batch-eight-*`。浏览器此前深度 error.code=3 失败保留；新提示/禁止错误播放待共同候选浏览器复验。
 
 本轮候选 CORS 使用专用配置，58088/55174 的 localhost/127.0.0.1 精确来源放行，外部来源拒绝。B 已用原 MCAP 会话真实续传 PUT/complete/commit 成功，worker 的动作缺失 RISK 仍为待修复产品缺口；失败后 Raw 下载 SHA 与源一致。P08 原生及派生任务的 logical 样本、两路解码、编辑/提交/审核浏览器通过；旧 Lance 浏览器因原临时文件已消失失败，不冒充历史读取已通过，另准备持久合成夹具验收。
+
+### LeRobot 元数据处理能力（本轮后端待前端消费）
+
+新增实际 POST `lerobot-imports:capabilities`，显式组织/项目/区域和 upload.manage，返回元数据 SHA、`lerobot-native-episode/1` revision、存储/处理支持及阶段化拒绝原因。调用生产原生 profile 校验，float64 与额外特征保留，不依赖机器人型号前端白名单。只声明元数据适用性；上传 commit 仍核对原始 info 字节内容，worker 仍验证实际表格/视频/深度证据。
+
+新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。

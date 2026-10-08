@@ -1,4 +1,4 @@
-import { supportsLeRobotProcessing } from "../processing-profile";
+import { useLeRobotCapabilities } from "../../../features/ingest/upload/lerobot-capabilities";
 import { Alert, Button, Modal, Select, Radio } from "antd";
 import {
   FileJson2,
@@ -10,7 +10,10 @@ import {
 import { useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
 import { useDatasetsQuery } from "../../../features/datasets/api/hooks";
-import { formatBytes, selectedRelativePath } from "../../../features/ingest/upload/upload-contract";
+import {
+  formatBytes,
+  selectedRelativePath,
+} from "../../../features/ingest/upload/upload-contract";
 import {
   selectionTargetFacts,
   type LocalUploadSelection,
@@ -84,12 +87,17 @@ export function UploadConfirmationDialog(props: {
   const [datasetId, setDatasetId] = useState("");
   const [collectionTaskId, setCollectionTaskId] = useState("");
   const [robotId, setRobotId] = useState("");
+  const needsCapabilities = props.selection.lerobot?.format === "lerobot";
+  const capabilities = useLeRobotCapabilities(
+    props.scope,
+    needsCapabilities ? props.selection.lerobot!.info : null,
+    props.open && props.canManage && props.online,
+  );
   const supportsProcessing =
-    props.selection.lerobot?.format === "lerobot" &&
-    supportsLeRobotProcessing(props.selection.lerobot.info);
+    needsCapabilities && capabilities.data?.processing_supported === true;
   const [processingMode, setProcessingMode] = useState<
     "PROCESS" | "STORE_ONLY"
-  >(supportsProcessing ? "PROCESS" : "STORE_ONLY");
+  >("PROCESS");
   const processing = supportsProcessing && processingMode === "PROCESS";
   const configuration = useProcessingConfiguration(
     props.scope,
@@ -107,10 +115,15 @@ export function UploadConfirmationDialog(props: {
   const blocked =
     !props.canManage ||
     !props.online ||
+    (needsCapabilities &&
+      (capabilities.isFetching ||
+        !capabilities.data?.storage_supported ||
+        capabilities.isError)) ||
     props.selection.problems.length > 0 ||
     (props.selection.units.length === 0 && !props.selection.lerobot) ||
     !lerobotBindingValid;
-  const confirm = () =>
+  const confirm = () => {
+    if (blocked) return;
     props.onConfirm(
       props.selection.lerobot
         ? {
@@ -118,9 +131,16 @@ export function UploadConfirmationDialog(props: {
             collectionTaskId: processing ? collectionTaskId : null,
             robotId: processing ? robotId : null,
             processingMode: processing ? "PROCESS" : "STORE_ONLY",
+            ...(needsCapabilities && capabilities.data
+              ? {
+                  processingCapabilityRevision:
+                    capabilities.data.capability_revision,
+                }
+              : {}),
           }
         : null,
     );
+  };
 
   return (
     <Modal
@@ -140,6 +160,45 @@ export function UploadConfirmationDialog(props: {
       }
     >
       <div className={styles.confirmDialogBody}>
+        {needsCapabilities ? (
+          capabilities.isError ? (
+            <Alert
+              type="error"
+              showIcon
+              title="无法确认文件处理能力"
+              description={capabilities.error.message}
+              action={
+                <Button onClick={() => void capabilities.refetch()}>
+                  重试能力检查
+                </Button>
+              }
+            />
+          ) : capabilities.isPending || capabilities.isFetching ? (
+            <p role="status">正在检查文件处理能力…</p>
+          ) : capabilities.data ? (
+            <Alert
+              type={capabilities.data.storage_supported ? "info" : "error"}
+              showIcon
+              title={
+                capabilities.data.processing_supported
+                  ? "支持自动处理"
+                  : capabilities.data.storage_supported
+                    ? "可保存原始文件，暂不支持自动处理"
+                    : "暂不支持保存此格式"
+              }
+              description={
+                <>
+                  <p>已检查文件描述；上传后仍需验证实际文件内容。</p>
+                  {capabilities.data.reasons.map((reason) => (
+                    <p key={`${reason.stage}:${reason.code}`}>
+                      {reason.detail}
+                    </p>
+                  ))}
+                </>
+              }
+            />
+          ) : null
+        ) : null}
         {supportsProcessing ? (
           <Radio.Group
             value={processingMode}

@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 353560406daf5c12ed1dcdbb5680bad0cd7d0a23d3eb1c1cb6f6b40cf207dc88
+// Runtime-OpenAPI-SHA256: 3c6d4335a7e348c940c5e3b0beacb0ed8c1b8f0a4656af3078102c02e3a59599
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -299,6 +299,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/collections" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports:capabilities" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry" },
