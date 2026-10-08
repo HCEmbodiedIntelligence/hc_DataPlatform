@@ -237,3 +237,15 @@ base_lance_version；目标目录负责按来源查找唯一固定 revision，�
 及旧 token 后续读取拒绝均通过。114项逻辑/目录/架构检查、3新文件严格mypy和
 Ruff通过。证据 annotation-logical-{services,checks}.xml 与运行时契约
 runtime-annotation-logical.yaml。P08 页面尚待 B 消费，不关闭 F05/B06/B07。
+
+
+## A/B：第六批 URDF 前端集成
+
+集成代码 fcbaf2d6770881511c11e826de817ac0835b0790 将 B 的 a506d1f9 合入
+8051faf2 后端基线。模型导入功能由 feature 完整拥有，保留显式组织客户端、
+会话/权限变更取消及已发布版本保护；机器人兼容预览来源移到 Episode adapter。
+1027 项前端测试、54 架构、完整类型、runtime 生成核对及精确提交生产构建通过；
+5 项真实 PG/MinIO 模型资产、发布、行锁并发和租户检查通过，全部零跳过。
+后端与第五批相同，已有 B09 生产 worker 回归保持适用；runtime 契约仍5c2dc66b。
+证据 integration-batch-six-{frontend,services}.xml 与 integration-batch-six-build.log。
+URDF 浏览器导入与 R04 冻结绑定仍待验收；P08 新协议26cf62a3等待前端，不在本批。
