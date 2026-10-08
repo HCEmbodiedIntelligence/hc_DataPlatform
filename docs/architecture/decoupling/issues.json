@@ -87,9 +87,10 @@
         "logical_data models/ports/service/router with actual runtime composition",
         "integrations/logical_samples.py real Lance and Episode adapters",
         "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip",
-        "LogicalMediaGrant: real Episode/legacy media authorized by frozen snapshot+stream, actual bytes decoded/Range/sha/audit/revocation validated; 2 HTTP service cases, 3 offset/receipt cases, 54 contract/architecture checks; B consumer pending"
+        "LogicalMediaGrant: real Episode/legacy media authorized by frozen snapshot+stream, actual bytes decoded/Range/sha/audit/revocation validated; 2 HTTP service cases, 3 offset/receipt cases, 54 contract/architecture checks; B consumer pending",
+        "A/B fourth integration 5e19013f: P06 useLogicalViewer consumes fixed logical samples/media; 15 real service cases, 92 backend checks, 1020 frontend tests, 54 frontend gates and production build passed; browser joint candidate acceptance pending"
       ],
-      "remaining": "新逻辑快照/样本 HTTP 已使用两个真实 adapter；仍需 B 迁移页面读取、接通逻辑媒体授权、继续迁移旧业务公开物理语义与下游消费者。"
+      "remaining": "P06逻辑读取已接入共同候选，待真实浏览器验收；P08/上传预览及其他下游消费者尚待迁移，不关闭整体问题。"
     },
     {
       "id": "B08",
@@ -517,9 +518,10 @@
       "owner": "T9 T5 T7",
       "status": "in_progress",
       "evidence": [
-        "Package media/data bindings and annotation runtime compatibility logic moved out of pages into owning feature adapters; unified logical data view and open format capabilities remain pending."
+        "Package media/data bindings and annotation runtime compatibility logic moved out of pages into owning feature adapters; unified logical data view and open format capabilities remain pending.",
+        "A/B fourth integration 5e19013f: P06 useLogicalViewer consumes fixed logical samples/media; 15 real service cases, 92 backend checks, 1020 frontend tests, 54 frontend gates and production build passed; browser joint candidate acceptance pending"
       ],
-      "remaining": "前端 feature 提供统一的数据版本、逻辑流和媒体授权模型，Lance/Episode wire 差异在一个适配层集中转换；后端提供稳定逻辑视图。"
+      "remaining": "P06逻辑读取已接入共同候选，待真实浏览器验收；P08/上传预览及其他下游消费者尚待迁移，不关闭整体问题。"
     },
     {
       "id": "X01",

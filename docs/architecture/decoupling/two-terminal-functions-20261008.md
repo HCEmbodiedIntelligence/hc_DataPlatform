@@ -177,3 +177,18 @@ robot-services-v2,worker-v2}.xml及runtime-processing-ports.yaml。
 
 B09仍in_progress：LeRobot的任务数据集、标签schema目标和schema候选3个
 私有静态调用尚待所属查询/规划端口迁移，不能因本批3种能力已接通就关闭。
+## A/B：第四批逻辑读取共同候选
+
+代码5e19013f006fd98b3c1be6940cfdd16ecd8302d9整合后端1d29d6bc和B的
+322ac761：P06 EpisodeViewerShell实际调用useLogicalViewer，经固定逻辑
+snapshot读取numeric samples和媒体授权；保留按通道valid，不让缺相机抹去
+有效数值。旧Lance和Episode两适配、媒体字节/解码/Range、发布撤权、Tag
+与完整包真实worker共15项服务通过；92后端检查、1020前端测试、54前端
+架构检查、完整类型、实际runtime生成核对及生产构建通过，全部零跳过。
+证据results/A-services/integration-batch-four-{runtime,contracts,frontend}.xml。
+runtime SHA保持5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad。
+
+B017/019已在实际浏览器完成有效撤权：预检200后提交403，页面清空预检
+并禁用发布；旧固定版本仍可读。原B011辅助撤权不足导致201的证据保留。
+共同候选尚待B实际点击P06逻辑链路；P08/上传预览、冻结模型、非时序入口
+尚未就绪，不将F05或全部解耦标完成。

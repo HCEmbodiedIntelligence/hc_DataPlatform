@@ -17,7 +17,14 @@ import type { EpisodeRevisionWire } from "../../features/datasets/api/wire-schem
 const state = vi.hoisted(() => ({
   data: {} as Record<string, unknown>,
   createIssue: vi.fn(),
+  fetchLogicalSnapshot: vi.fn(),
   capabilities: new Set<string>(),
+}));
+vi.mock("../../features/datasets/api/logical-data", async (original) => ({
+  ...(await original<
+    typeof import("../../features/datasets/api/logical-data")
+  >()),
+  fetchLogicalSnapshot: state.fetchLogicalSnapshot,
 }));
 vi.mock("../../features/datasets/api", () => ({
   useViewerEpisodeQuery: () => ({
@@ -116,11 +123,26 @@ beforeEach(() => {
     revision,
     episode: { ordinal: 7, robotId: null },
     bootstrap: {
+      snapshotToken: "fixed-browser-snapshot-token",
       allowedActions: [
         { action: "CREATE_ISSUE", allowed: true, blockedReasons: [] },
       ],
     },
   };
+  state.fetchLogicalSnapshot.mockResolvedValue({
+    snapshot_id: `snapshot_${"b".repeat(64)}`,
+    snapshot: {
+      streams: revision.streams.map((s) => ({
+        stream_id: s.episode_stream_id,
+        name: s.channel_path,
+        kind: s.kind,
+        sample_count: 0,
+        temporal: true,
+        start_ns: s.t_start_ns,
+        end_ns: s.t_end_ns,
+      })),
+    },
+  });
   state.createIssue.mockResolvedValue({ id: "issue_created" });
   const computed = window.getComputedStyle.bind(window);
   vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
@@ -150,7 +172,19 @@ describe("dataset Episode shared workbench", () => {
       container.querySelectorAll(".viewer-playback-controls"),
     ).toHaveLength(1);
     expect(screen.getByLabelText("机器人姿态同步视图")).toBeInTheDocument();
-    expect(screen.getByText("四路视频 · 已接入 2 / 4 路")).toBeInTheDocument();
+    expect(
+      await screen.findByText("四路视频 · 已接入 2 / 4 路"),
+    ).toBeInTheDocument();
+    expect(state.fetchLogicalSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        datasetId,
+        versionId,
+        episodeId,
+        revisionId: revision.revision_id,
+        snapshotToken: "fixed-browser-snapshot-token",
+      }),
+      expect.any(AbortSignal),
+    );
     expect(
       screen.queryByRole("button", { name: "保存标注" }),
     ).not.toBeInTheDocument();
