@@ -323,6 +323,15 @@ def write_episode(
         },
     }.items():
         write_json(root, relative, value)
+    if metadata.get("robot_scene") is not None:
+        from hc_data_platform.robotics.scene_models import FrozenRobotScene
+
+        scene = FrozenRobotScene.model_validate(metadata["robot_scene"])
+        if scene.robot_id != source.robot_id or scene.calibration != metadata.get(
+            "calibration", {"status": "unknown"}
+        ):
+            raise ValueError("robot scene differs from the frozen package source")
+        write_json(root, "hc/robot_scene.json", scene.model_dump(mode="json"))
     if metadata.get("quality_rules") is not None:
         from hc_data_platform.quality.evidence import QcRuleEvidence
         from hc_data_platform.quality.models import QcReportV1

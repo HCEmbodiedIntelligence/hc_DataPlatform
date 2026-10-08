@@ -250,6 +250,14 @@ runtime-annotation-logical.yaml。P08 页面尚待 B 消费，不关闭 F05/B06/
 证据 integration-batch-six-{frontend,services}.xml 与 integration-batch-six-build.log。
 URDF 浏览器导入与 R04 冻结绑定仍待验收；P08 新协议26cf62a3等待前端，不在本批。
 
+### R04 后端冻结模型场景（等待页面消费）
+
+新 MCAP/LeRobot/连续录制在 PACKAGE_PLANNING 经明确组件冻结 robot 绑定、发布模型版本、资产清单/映射及标定到不可变 ledger 和 `hc/robot_scene.json`；不冒充采集时观测。同源重试与换绑保持原场景和配置哈希，Tag 实际 outbox 派生继承同一文件。旧 Lance/旧 Episode 无文件返回 MISSING_HISTORICAL，不猜当前绑定。
+
+固定 logical 新增 GET robot-scene 及 POST robot-scene/assets/{asset_id}/authorize，仍按确切 snapshot_token/id 与读取权限校验，资产额外组织 robot_model.read、发布版本/清单成员/哈希约束。模型位于同组织另一项目时通过模型所有者只读组件读取，保留 PostgreSQL 内容存储与签名下载。新 FK 保留引用版本，ledger 禁止更新/删除。
+
+实际回归：6 MCAP/LeRobot 摄取用例；后补 5 项历史双存储、连续录制含 Temporal、原生绑定完整链；最终原生回归同时通过跨项目模型上传/发布/绑定、换绑旧固定读取和资产字节、4并发重试、篡改标定拒绝、普通HTTP401/403/404/409及撤权、不可变SQL拒绝、真实Tag派生后场景/标定继承。111架构/逻辑/写入检查、5新文件严格mypy、Ruff/实际OpenAPI通过。证据 frozen-scene-processing-v2.xml、frozen-scene-production-services.xml、frozen-scene-concurrent-rebinding.xml、frozen-scene-checks.xml。早期夹具授权/预检key/worker scope失败保留；R04待B新页面实际消费与浏览器换绑，不标功能完成。
+
 
 ## A/B：第七批 P08 统一逻辑读取集成
 
@@ -281,6 +289,12 @@ dataset被404拒绝已保留，补正常创建后复验，无放宽产品检查�
 R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，1027测试
 及第六批联合检查通过。B031以普通浏览器完成首次/更新发布、真实WebGL画布、
 旧固定模型/映射读取，故R05现在可关闭；R04数据绑定冻结仍单独在实施。
+
+### 第八批联合验证：原始媒体预览适用性
+
+集成代码 `d7c306180415da1238676c52c05ec3302a402568` 包含后端 `5d59ba2e` 与 B `5dc6da66`。页面实际消费明确的 RGB/DEPTH/UNKNOWN 与 ORIGINAL_VIDEO/DOWNLOAD_ONLY，深度保留原字节下载。联合验证 1051 前端测试、54 架构门禁、类型、35356040 runtime 生成核对及精确代码 commit 生产构建通过；1 项真实普通 HTTP 上传/分类/下载/撤权通过，零跳过。证据 `integration-batch-eight-*`。浏览器此前深度 error.code=3 失败保留；新提示/禁止错误播放待共同候选浏览器复验。
+
+本轮候选 CORS 使用专用配置，58088/55174 的 localhost/127.0.0.1 精确来源放行，外部来源拒绝。B 已用原 MCAP 会话真实续传 PUT/complete/commit 成功，worker 的动作缺失 RISK 仍为待修复产品缺口；失败后 Raw 下载 SHA 与源一致。P08 原生及派生任务的 logical 样本、两路解码、编辑/提交/审核浏览器通过；旧 Lance 浏览器因原临时文件已消失失败，不冒充历史读取已通过，另准备持久合成夹具验收。
 
 ### LeRobot 元数据处理能力（本轮后端待前端消费）
 

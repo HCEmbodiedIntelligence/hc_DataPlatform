@@ -7,8 +7,9 @@ from .models import LogicalSampleBatch, LogicalSnapshot, LogicalSnapshotView
 
 
 class LogicalDataService:
-    def __init__(self, revisions, adapters):
+    def __init__(self, revisions, adapters, *, scenes=None):
         self.revisions, self.adapters = revisions, adapters
+        self.scenes = scenes
 
     def _resolve(self, selection, auth, snapshot_token):
         # Public product read enforces scope, current permission, frozen version
@@ -99,3 +100,32 @@ class LogicalDataService:
                 snapshot_token=snapshot_token,
                 snapshot_id=snapshot_id,
             )
+
+    def _scene(self, selection, *, auth, snapshot_token, snapshot_id):
+        revision, snapshot = self._resolve(selection, auth, snapshot_token)
+        if snapshot.snapshot_id != snapshot_id:
+            raise problem(
+                status=409,
+                code="LOGICAL_SNAPSHOT_MISMATCH",
+                title="Snapshot differs",
+                detail="Robot replay requires the exact fixed data snapshot.",
+            )
+        if self.scenes is None:
+            raise problem(
+                status=503,
+                code="LOGICAL_SCENE_UNAVAILABLE",
+                title="Robot scene unavailable",
+                detail="The application scene reader is not configured.",
+            )
+        return revision, self.scenes.scene(revision, snapshot_id)
+
+    def robot_scene(self, selection, *, auth, snapshot_token, snapshot_id):
+        return self._scene(
+            selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        )[1]
+
+    def authorize_robot_asset(self, selection, asset_id, *, auth, snapshot_token, snapshot_id):
+        revision, view = self._scene(
+            selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        )
+        return self.scenes.authorize_asset(revision, view, asset_id, auth)

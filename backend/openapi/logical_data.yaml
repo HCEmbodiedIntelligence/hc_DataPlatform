@@ -23,6 +23,75 @@ components:
       - snapshot_token
       title: AnnotationLogicalSnapshot
       type: object
+    FrozenRobotScene:
+      additionalProperties: false
+      properties:
+        asset_manifest_sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Asset Manifest Sha256
+        assets:
+          default: []
+          items:
+            $ref: '#/components/schemas/RobotModelAsset'
+          title: Assets
+          type: array
+        binding_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Binding Id
+        calibration:
+          $ref: '#/components/schemas/JsonValue'
+        calibration_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Calibration Sha256
+          type: string
+        captured_at_stage:
+          const: PACKAGE_PLANNING
+          default: PACKAGE_PLANNING
+          title: Captured At Stage
+          type: string
+        format:
+          const: hc-robot-scene/1
+          default: hc-robot-scene/1
+          title: Format
+          type: string
+        joint_mapping_sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Joint Mapping Sha256
+        joint_mappings:
+          default: []
+          items:
+            $ref: '#/components/schemas/RobotModelJointMapping'
+          title: Joint Mappings
+          type: array
+        model_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version Id
+        robot_id:
+          title: Robot Id
+          type: string
+        status:
+          enum:
+          - FROZEN
+          - NO_MODEL_BINDING
+          title: Status
+          type: string
+      required:
+      - robot_id
+      - status
+      - calibration
+      - calibration_sha256
+      title: FrozenRobotScene
+      type: object
     LogicalMediaGrant:
       additionalProperties: false
       description: 'Playback mapping for one frozen stream, without storage dispatch fields.
@@ -112,6 +181,54 @@ components:
       - width
       - height
       title: LogicalMediaGrant
+      type: object
+    LogicalRobotAssetGrant:
+      additionalProperties: false
+      properties:
+        asset:
+          $ref: '#/components/schemas/RobotModelAsset'
+        authorization:
+          $ref: '#/components/schemas/RobotModelAssetDownloadAuthorization'
+        scene_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Scene Sha256
+          type: string
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+      required:
+      - snapshot_id
+      - scene_sha256
+      - asset
+      - authorization
+      title: LogicalRobotAssetGrant
+      type: object
+    LogicalRobotScene:
+      additionalProperties: false
+      properties:
+        provenance:
+          enum:
+          - FROZEN
+          - MISSING_HISTORICAL
+          title: Provenance
+          type: string
+        scene:
+          anyOf:
+          - $ref: '#/components/schemas/FrozenRobotScene'
+          - type: 'null'
+        scene_sha256:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Scene Sha256
+        snapshot_id:
+          title: Snapshot Id
+          type: string
+      required:
+      - snapshot_id
+      - provenance
+      title: LogicalRobotScene
       type: object
     LogicalSample:
       additionalProperties: false
@@ -431,6 +548,162 @@ paths:
       security:
       - bearerAuth: []
       summary: Snapshot
+      tags:
+      - logical_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene
+  : get:
+      operationId: getLogicalRobotScene
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: query
+        name: snapshot_id
+        required: true
+        schema:
+          pattern: ^snapshot_[0-9a-f]{64}$
+          title: Snapshot Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalRobotScene'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Getlogicalrobotscene
+      tags:
+      - logical_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene/assets/{asset_id}/authorize
+  : post:
+      operationId: authorizeLogicalRobotAsset
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: path
+        name: asset_id
+        required: true
+        schema:
+          title: Asset Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: query
+        name: snapshot_id
+        required: true
+        schema:
+          pattern: ^snapshot_[0-9a-f]{64}$
+          title: Snapshot Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogicalRobotAssetGrant'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Authorizelogicalrobotasset
       tags:
       - logical_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/media/authorize

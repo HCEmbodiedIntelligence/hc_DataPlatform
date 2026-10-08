@@ -209,6 +209,10 @@ def test_uploaded_recording_slice_qc_package_ready_recovery(
     records = PostgresContinuousRecordingRepository(repository.connections)
     packages = EpisodePackageService(repository.connections, storage, tmp_path / "packages")
     staging = S3ProjectionArtifactStore(storage._client, storage._bucket, tmp_path / "staging")
+    from hc_data_platform.registry.snapshot_queries import published_model_inputs
+    from hc_data_platform.robot_assets.binding_queries import locked_model_binding
+    from hc_data_platform.robotics.scene_snapshots import RobotSceneSnapshots
+
     processor = ContinuousEpisodeProcessingService(
         connection_factory=repository.connections,
         repository=records,
@@ -228,6 +232,11 @@ def test_uploaded_recording_slice_qc_package_ready_recovery(
             repository.connections, episode_packages=packages
         ),
         episode_packages=packages,
+        robot_scenes=RobotSceneSnapshots(
+            repository.connections,
+            binding_query=locked_model_binding,
+            model_query=published_model_inputs,
+        ),
     )
     try:
         with scoped(source):

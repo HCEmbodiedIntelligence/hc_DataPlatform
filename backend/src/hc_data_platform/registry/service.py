@@ -54,6 +54,7 @@ from .repository import (
     RobotModelAssetUploadRecord,
     RobotModelPublishPreflightRecord,
 )
+from .snapshot_queries import PublishedModelAssetReader
 
 _ASSET_PART_SIZE_BYTES = 16 * 1024**2
 _ASSET_INITIAL_PART_LIMIT = 32
@@ -70,9 +71,11 @@ class RegistryService:
         repository: RegistryRepository,
         *,
         storage: ObjectStoragePort | None = None,
+        published_assets: PublishedModelAssetReader | None = None,
         cursor_secret: str = _IN_MEMORY_PREFLIGHT_SECRET,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
+        self._published_assets = published_assets
         self._repository = repository
         self._storage = storage
         self._preflight_codec = CursorCodec(cursor_secret)
@@ -681,6 +684,62 @@ class RegistryService:
                 title="Robot model asset not found",
                 detail="The requested asset does not exist in this model version.",
             )
+        return self._authorize_asset_result(
+            auth=auth,
+            scope=scope,
+            organization_id=organization_id,
+            project_id=project_id,
+            request_id=request_id,
+            found=found,
+        )
+
+    def authorize_published_asset_download(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        version_id: str,
+        asset_id: str,
+        request_id: str,
+    ) -> RobotModelAssetDownloadAuthorization:
+        ScopeGuard.require(auth, project_id, organization_id=organization_id)
+        auth.require_organization_capability(organization_id, "robot_model.read")
+        if self._published_assets is None:
+            raise problem(
+                status=503,
+                code="PUBLISHED_MODEL_ASSETS_UNAVAILABLE",
+                title="Published model assets unavailable",
+                detail="The application has no published model content reader.",
+            )
+        found = self._published_assets.find(organization_id, version_id, asset_id)
+        if found is None:
+            raise problem(
+                status=404,
+                code="ROBOT_MODEL_ASSET_NOT_FOUND",
+                title="Published model asset not found",
+                detail="The asset does not belong to the selected published model.",
+            )
+        content_project, object_key, asset, content = found
+        return self._authorize_asset_result(
+            auth=auth,
+            scope=RegistryScope(organization_id=organization_id, project_id=project_id),
+            organization_id=organization_id,
+            project_id=content_project,
+            request_id=request_id,
+            found=(object_key, asset, content),
+        )
+
+    def _authorize_asset_result(
+        self,
+        *,
+        auth: AuthContext,
+        scope: RegistryScope,
+        organization_id: str,
+        project_id: str,
+        request_id: str,
+        found: tuple[str, RobotModelAsset, bytes | None],
+    ) -> RobotModelAssetDownloadAuthorization:
         object_key, asset, content = found
         self._persisted_asset_content(
             organization_id=organization_id,
@@ -707,7 +766,7 @@ class RegistryService:
             auth=auth,
             scope=scope,
             action="registry.robot_model_asset.download_authorized",
-            resource_id=asset_id,
+            resource_id=asset.asset_id,
             request_id=request_id,
             outcome="SUCCEEDED",
         )
