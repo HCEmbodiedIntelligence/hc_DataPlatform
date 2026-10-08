@@ -245,9 +245,14 @@ class LeRobotPipeline:
 
         return read_committed_manifest(self.storage, raw)
 
+    @staticmethod
+    def _episode_cache_key(raw: RawSource, episode_index: int) -> str:
+        return hashlib.sha256(f"{raw.content_hash}:episode:{episode_index}".encode()).hexdigest()
+
     def _localize(self, raw: RawSource, manifest: dict[str, Any], episode_index: int) -> Path:
-        # A content-addressed local cache is reconstructible from immutable Raw objects.
-        root = self.cache_root / raw.content_hash
+        # Each episode owns a reconstructible cache entry. Concurrent episodes
+        # must not evict each other's chunks or wait on one source-wide file lock.
+        root = self.cache_root / self._episode_cache_key(raw, episode_index)
         root.mkdir(parents=True, exist_ok=True)
         files = {item["path"]: item for item in manifest["files"]}
 
@@ -318,9 +323,8 @@ class LeRobotPipeline:
             from .capture import verify_completion
 
             verify_completion(root, files)
-        # Both callers hold the source's exclusive pin. Older Episodes in this
-        # same import are no longer using these local chunks, but whole-source
-        # eviction cannot remove them while this Episode holds the pin.
+        # Both callers hold this episode's exclusive pin. Whole-entry eviction
+        # cannot remove its chunks while this episode is being read.
         # Retain shared chunks and metadata; immutable object-store Raw stays intact.
         retained = required | {f"{relative}.verified-sha256" for relative in required}
         for folder in (root / "data", root / "videos"):
@@ -341,7 +345,7 @@ class LeRobotPipeline:
     def prepare(self, task: LeRobotEpisodeTaskV1) -> IngestRolloutWorkflowInput:
         raw = self.source(task)
         manifest, body = self._read_manifest(raw)
-        with self.cache.pin(raw.content_hash):
+        with self.cache.pin(self._episode_cache_key(raw, task.source.episode_index)):
             try:
                 root = self._localize(raw, manifest, task.source.episode_index)
                 return self._prepare(task, raw, body, root)
@@ -491,6 +495,7 @@ class LeRobotPipeline:
             lerobot=native_source,
         )
         return IngestRolloutWorkflowInput(
+            parallel_preparation=True,
             organization_id=task.organization_id,
             project_id=task.project_id,
             region_code=task.region_code,
@@ -561,7 +566,7 @@ class LeRobotPipeline:
         manifest, body = self._read_manifest(raw)
         if hashlib.sha256(body).hexdigest() != source.source_sha256:
             raise ValueError("native manifest hash differs from workflow input")
-        with self.cache.pin(raw.content_hash):
+        with self.cache.pin(self._episode_cache_key(raw, source.lerobot.episode_index)):
             root = self._localize(raw, manifest, source.lerobot.episode_index)
             with LeRobotAdapter().open_episode(
                 root,
@@ -710,10 +715,11 @@ class NativeEpisodeSession:
         project = hashlib.sha256(self.source.project_id.encode()).hexdigest()[:24]
         key = (
             f"derived/frame-selections/{project}/{self.source.source_sha256}/"
-            f"{self.source.rollout_id}/adaptive-2fps-v1.json"
+            f"{self.source.rollout_id}/adaptive-2fps-v2.json"
         )
         digest, size = self.staging.publish_json(key, selection)
         self._selection = FrameSelectionManifestRefV1(
+            sampling_version="adaptive-2fps-v2",
             object_key=key,
             content_sha256=digest,
             size_bytes=size,

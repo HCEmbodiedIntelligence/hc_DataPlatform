@@ -324,8 +324,9 @@ def seed_annotation(
             task_id, project_id, dataset_id, dataset_version, assignee_id,
             current_revision, state_version, status, submitted_revision, submitted_by,
             approved_revision, approved_review_id, etag, rollout_id, created_at, updated_at,
-            base_lance_version
-        ) VALUES (%s, %s, %s, 1, NULL, 0, 0, 'DRAFT', NULL, NULL, NULL, NULL, %s, %s, %s, %s, 1)
+            base_lance_version, region_code
+        ) VALUES (%s, %s, %s, 1, NULL, 0, 0, 'DRAFT', NULL, NULL, NULL, NULL, %s, %s, %s, %s, 1,
+                  current_setting('app.region_code'))
         """,
         (task_id, project_id, f"dataset-{suffix}", f"etag-{suffix}", rollout_id, at, at),
     )
@@ -338,6 +339,26 @@ def seed_annotation(
         """,
         (task_id, f"mutation-{suffix}", at),
     )
+    submission_id = f"submission-{suffix}"
+    if state in {"SUBMITTED", "APPROVED"}:
+        connection.execute(
+            """
+            INSERT INTO annotation.annotation_submissions (
+                submission_id, task_id, revision, submitted_by, base_lance_version,
+                tag_schema_id, tag_schema_version, tag_schema_hash, revision_content_hash,
+                checks, created_at, episode_version
+            )
+            SELECT %s, task_id, revision, 'author', base_lance_version,
+                   tag_schema_id, tag_schema_version, repeat('0', 64), content_hash,
+                   '{}'::jsonb, %s, 1
+            FROM annotation.annotation_revisions WHERE task_id = %s AND revision = 0
+            """,
+            (submission_id, at, task_id),
+        )
+        connection.execute(
+            "UPDATE annotation.annotation_tasks SET current_submission_id = %s WHERE task_id = %s",
+            (submission_id, task_id),
+        )
     if state == "SUBMITTED":
         connection.execute(
             """
@@ -353,10 +374,11 @@ def seed_annotation(
         connection.execute(
             """
             INSERT INTO annotation.annotation_reviews (
-                review_id, task_id, revision, reviewer_id, decision, comment, created_at
-            ) VALUES (%s, %s, 0, 'reviewer', 'APPROVE', '', %s)
+                review_id, task_id, revision, reviewer_id, decision, comment, created_at,
+                submission_id
+            ) VALUES (%s, %s, 0, 'reviewer', 'APPROVE', '', %s, %s)
             """,
-            (review_id, task_id, at),
+            (review_id, task_id, at, submission_id),
         )
         connection.execute(
             """

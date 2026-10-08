@@ -198,7 +198,7 @@ def discover_temporal_registrations(
         ALL_STORAGE_WORKFLOWS,
     )
 
-    from .activities import ALL_ACTIVITIES, create_aligned_media
+    from .activities import ALL_ACTIVITIES, create_aligned_media, prepare_aligned_media
     from .lerobot_workflow import (
         LeRobotImportWorkflow,
         prepare_lerobot_episode,
@@ -207,7 +207,7 @@ def discover_temporal_registrations(
     from .temporal_workflows import ALL_WORKFLOWS
 
     if role == "media":
-        return [], [create_aligned_media]
+        return [], [create_aligned_media, prepare_aligned_media]
 
     return [
         LeRobotImportWorkflow,
@@ -216,7 +216,11 @@ def discover_temporal_registrations(
     ], [
         prepare_lerobot_episode,
         update_lerobot_state,
-        *(registered for registered in ALL_ACTIVITIES if registered is not create_aligned_media),
+        *(
+            registered
+            for registered in ALL_ACTIVITIES
+            if registered not in (create_aligned_media, prepare_aligned_media)
+        ),
         *ALL_STORAGE_ACTIVITIES,
     ]
 
@@ -313,29 +317,48 @@ async def serve() -> None:
     )
     robot_executor = None
     if role != "media":
-        from hc_data_platform.robot_ingest.lerobot_processor import NativeLeRobotProcessor, robot_task_queue
+        from hc_data_platform.robot_ingest.lerobot_processor import (
+            NativeLeRobotProcessor,
+            robot_task_queue,
+        )
         from hc_data_platform.robot_ingest.processing_store import ProcessingStore
         from hc_data_platform.robot_ingest.processing_worker import RobotProcessingActivities
         from hc_data_platform.robot_ingest.processing_workflow import RobotIngestProcessingWorkflow
-        from hc_data_platform.robot_ingest.recording_workflow import RobotRecordingWorkflow
         from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
+        from hc_data_platform.robot_ingest.recording_workflow import RobotRecordingWorkflow
+
         from .activities import _dependencies, _require
 
         pipeline = _require(_dependencies.lerobot_pipeline, "lerobot_pipeline")
         robot_activities = RobotProcessingActivities(
-            ProcessingStore(pipeline.connections), pipeline.storage,
-            NativeLeRobotProcessor(pipeline, client, asyncio.get_running_loop(), task_queue=task_queue),
+            ProcessingStore(pipeline.connections),
+            pipeline.storage,
+            NativeLeRobotProcessor(
+                pipeline, client, asyncio.get_running_loop(), task_queue=task_queue
+            ),
         )
         robot_executor = ThreadPoolExecutor(max_workers=settings.worker_max_concurrent_activities)
-        recording_activity = RecordingOutboxHandler(pipeline.connections,pipeline.storage)
-        worker = WorkerGroup(worker, Worker(
-            client, task_queue=robot_task_queue(task_queue),
-            workflows=[RobotIngestProcessingWorkflow,RobotRecordingWorkflow], activities=[*robot_activities.activities,recording_activity.prepare,recording_activity.failed],
-            activity_executor=robot_executor,
-            max_concurrent_activities=settings.worker_max_concurrent_activities,
-            graceful_shutdown_timeout=timedelta(seconds=settings.worker_graceful_shutdown_seconds),
-            build_id=build_id, use_worker_versioning=build_id is not None,
-        ))
+        recording_activity = RecordingOutboxHandler(pipeline.connections, pipeline.storage)
+        worker = WorkerGroup(
+            worker,
+            Worker(
+                client,
+                task_queue=robot_task_queue(task_queue),
+                workflows=[RobotIngestProcessingWorkflow, RobotRecordingWorkflow],
+                activities=[
+                    *robot_activities.activities,
+                    recording_activity.prepare,
+                    recording_activity.failed,
+                ],
+                activity_executor=robot_executor,
+                max_concurrent_activities=settings.worker_max_concurrent_activities,
+                graceful_shutdown_timeout=timedelta(
+                    seconds=settings.worker_graceful_shutdown_seconds
+                ),
+                build_id=build_id,
+                use_worker_versioning=build_id is not None,
+            ),
+        )
     if role == "combined":
         media_queue = os.getenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", "hc-media-pipeline")
         if media_queue == task_queue:

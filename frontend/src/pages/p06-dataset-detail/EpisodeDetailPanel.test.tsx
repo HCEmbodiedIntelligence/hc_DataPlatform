@@ -17,13 +17,18 @@ import {
   episodeMigrationFixture,
 } from "./testing/episode-detail-fixture";
 
-vi.mock("../../features/datasets/episodes/episode-detail", async (original) => ({
-  ...(await original<typeof import("../../features/datasets/episodes/episode-detail")>()),
-  loadEpisodeOverview: vi.fn(),
-  loadEpisodeFiles: vi.fn(),
-  authorizeEpisodeFile: vi.fn(),
-  downloadAnnotationMigration: vi.fn(),
-}));
+vi.mock(
+  "../../features/datasets/episodes/episode-detail",
+  async (original) => ({
+    ...(await original<
+      typeof import("../../features/datasets/episodes/episode-detail")
+    >()),
+    loadEpisodeOverview: vi.fn(),
+    loadEpisodeFiles: vi.fn(),
+    authorizeEpisodeFile: vi.fn(),
+    downloadAnnotationMigration: vi.fn(),
+  }),
+);
 beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",

@@ -117,6 +117,8 @@ const packageStatePresentation: Readonly<
   QUALITY_RISK: { color: "warning", label: "质量风险", description: "需确认风险后才能继续发布" },
   QUALITY_REJECTED: { color: "error", label: "质检拒绝", description: "未通过质量门禁" },
   TECHNICAL_FAILED: { color: "error", label: "技术失败", description: "处理工作流失败，可修复后重试" },
+  CANCELLED: { color: "default", label: "已取消", description: "处理任务已取消，原始数据保留" },
+  RETRY_PENDING: { color: "processing", label: "等待重试", description: "处理遇到临时故障，系统将自动重试" },
   DATASET_MISMATCH: { color: "warning", label: "数据集不匹配", description: "已发布到非本任务指定的数据集" },
 };
 
@@ -371,7 +373,7 @@ export function DatasetsPage() {
     staleTime: 5_000,
     refetchInterval: (current) =>
       current.state.data?.items.some(
-        (item) => item.state === "PENDING_QC" || item.state === "PROCESSING",
+        (item) => item.state === "PENDING_QC" || item.state === "PROCESSING" || item.state === "RETRY_PENDING",
       )
         ? 5_000
         : false,

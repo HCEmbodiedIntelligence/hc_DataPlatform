@@ -11,6 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from .boundaries import BOUNDARY_CODES, BOUNDARY_QUALITY_ENGINE_VERSION
 from .models import (
     CURRENT_QUALITY_ENGINE_VERSION,
     QcFinding,
@@ -23,6 +24,15 @@ from .models import (
 from .policy import APPROVED_RISK_CODES, LEGACY_QUALITY_ENGINE_VERSION
 
 EVIDENCE_VERSION = "hc-qc-rule-evidence/1"
+_BOUNDARY_RULES = BOUNDARY_CODES | {QualityCode.NO_COMMON_WINDOW}
+_BASE_RULES = frozenset(QualityCode) - _BOUNDARY_RULES
+
+
+def evidence_rule_codes(engine_version: str):
+    # New enum members must not rewrite evidence from an archived evaluator.
+    return (
+        frozenset(QualityCode) if engine_version == BOUNDARY_QUALITY_ENGINE_VERSION else _BASE_RULES
+    )
 
 
 class RuleExecution(BaseModel):
@@ -80,7 +90,9 @@ class QcRuleEvidence(BaseModel):
     @model_validator(mode="after")
     def valid(self):
         keys = [(r.code.value, r.topic or "") for r in self.rules]
-        if keys != sorted(set(keys)) or {r.code for r in self.rules} != set(QualityCode):
+        if keys != sorted(set(keys)) or {r.code for r in self.rules} != evidence_rule_codes(
+            self.engine_version
+        ):
             raise ValueError("evidence must contain every rule with unique sorted targets")
         if self.end_ns <= self.start_ns:
             raise ValueError("invalid evidence source window")
@@ -122,6 +134,11 @@ class QcRuleEvidence(BaseModel):
                         for i in rule.report_finding_indexes
                     )
                     else "warn"
+                    if any(
+                        report.findings[i].severity.value == "warning"
+                        for i in rule.report_finding_indexes
+                    )
+                    else "info"
                 )
                 if rule.status != expected and rule.reason != "UNSUPPORTED_ENGINE_EVIDENCE":
                     raise ValueError("rule result differs from the report finding severity")
@@ -200,10 +217,13 @@ class RuleEvidenceCollector:
         known_engine = report.engine_version in {
             LEGACY_QUALITY_ENGINE_VERSION,
             CURRENT_QUALITY_ENGINE_VERSION,
+            BOUNDARY_QUALITY_ENGINE_VERSION,
         }
         active = (
             set(QualityCode)
             if report.engine_version == LEGACY_QUALITY_ENGINE_VERSION
+            else APPROVED_RISK_CODES | {QualityCode.NO_COMMON_WINDOW}
+            if report.engine_version == BOUNDARY_QUALITY_ENGINE_VERSION
             else APPROVED_RISK_CODES
         )
 
@@ -220,7 +240,11 @@ class RuleEvidenceCollector:
                     "fail"
                     if any(report.findings[i].severity.value == "error" for i in indexes)
                     else "warn"
+                    if any(report.findings[i].severity.value == "warning" for i in indexes)
+                    else "info"
                 )
+                if status == "info":
+                    reason = "INFORMATIONAL_FINDING"
             elif reason or count == 0 or count < expected:
                 status, reason = (
                     "skip",
@@ -414,6 +438,31 @@ class RuleEvidenceCollector:
             profile.complete_step.model_dump(),
             None if measured_ratio else "COMPLETE_STEP_RATIO_NOT_MEASURED",
         )
+        if report.engine_version == BOUNDARY_QUALITY_ENGINE_VERSION:
+            metrics = {metric.topic: metric for metric in report.topic_metrics}
+            for code in sorted(BOUNDARY_CODES, key=lambda item: item.value):
+                for topic in sorted(profile.required_topics) or [None]:
+                    count = metrics[topic].message_count if topic in metrics else 0
+                    add(
+                        code,
+                        topic,
+                        count,
+                        count,
+                        {"message_count": count},
+                        {"policy": "common-valid-boundaries/v1"},
+                    )
+            add(
+                C.NO_COMMON_WINDOW,
+                "__multimodal_step__",
+                1,
+                1,
+                {
+                    "has_common_frame": not report_by_target.get(
+                        (C.NO_COMMON_WINDOW, "__multimodal_step__")
+                    )
+                },
+                {"required": "non-empty common active window"},
+            )
         values = dict(
             format=EVIDENCE_VERSION,
             report_sha256=report.content_sha256,

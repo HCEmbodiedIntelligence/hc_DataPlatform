@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
 
 from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as reader
 
 
-def test_later_episode_reclaims_old_chunks_in_the_same_pinned_source(tmp_path):
+@pytest.mark.parametrize("parallel", [False, True])
+def test_episode_caches_are_independent_and_idle_entries_are_evicted(tmp_path, parallel):
     info = {
         "robot_type": "unitree_g1",
         "data_path": "data/{file_index}.parquet",
@@ -48,21 +52,46 @@ def test_later_episode_reclaims_old_chunks_in_the_same_pinned_source(tmp_path):
     )
     one_episode_bytes += 1064 + len(reader.CAMERAS) * 20_064
     pipeline = LeRobotPipeline(
-        Mock(), storage, Mock(), Mock(), tmp_path, cache_max_bytes=one_episode_bytes + 100
+        Mock(),
+        storage,
+        Mock(),
+        Mock(),
+        tmp_path,
+        cache_max_bytes=one_episode_bytes * (2 if parallel else 1) + 100,
     )
     raw = SimpleNamespace(content_hash="a" * 64, storage_prefix="raw")
-    with pipeline.cache.pin(raw.content_hash):
+    if parallel:
+        barrier = Barrier(2)
+
+        def localize(index):
+            with pipeline.cache.pin(pipeline._episode_cache_key(raw, index)):
+                barrier.wait(timeout=5)
+                path = pipeline._localize(raw, manifest, index)
+                barrier.wait(timeout=5)
+                assert (path / f"data/{index}.parquet").is_file()
+                return path
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            first, second = list(executor.map(localize, (0, 1)))
+        assert first != second
+        assert (first / "data/0.parquet").is_file()
+        assert (second / "data/1.parquet").is_file()
+        storage.delete.assert_not_called()
+        return
+    with pipeline.cache.pin(pipeline._episode_cache_key(raw, 0)):
         root = pipeline._localize(raw, manifest, 0)
-    with pipeline.cache.pin(raw.content_hash):
-        pipeline._localize(raw, manifest, 1)
-        assert not (root / "data/0.parquet").exists()
+    with pipeline.cache.pin(pipeline._episode_cache_key(raw, 1)):
+        second = pipeline._localize(raw, manifest, 1)
+        assert root != second
+        assert not root.exists()
+        root = second
         assert (root / "data/1.parquet").read_bytes() == originals["data/1.parquet"]
         assert (
             sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
             <= pipeline.cache.max_bytes
         )
     shared = f"raw/videos/{reader.CAMERAS[0].feature_key}/0.mp4"
-    assert sum(call.args[0] == shared for call in storage.read_chunks.call_args_list) == 1
+    assert sum(call.args[0] == shared for call in storage.read_chunks.call_args_list) == 2
     assert all(
         hashlib.sha256(originals[item["path"]]).hexdigest() == item["sha256"]
         for item in manifest["files"]

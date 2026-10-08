@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from typing import Any
 
@@ -46,13 +47,32 @@ class RobotIngestProcessingWorkflow:
         except ActivityError as exc:
             await self.failure(request, exc, None)
             return
-        for position, index in enumerate(indexes):
-            try:
-                await self.call("episode", {"task": request, "index": index}, processing=True)
-            except ActivityError as exc:
-                await self.failure(request, exc, index)
-            # Limit Temporal history. Discovery reuses the durable identity set,
-            # and returns only remaining PENDING/PROCESSING episodes.
-            if position == 19 and len(indexes) > 20:
+        if workflow.patched("robot-parallel-episodes-v1"):
+
+            async def episode(index: int) -> None:
+                try:
+                    await self.call("episode", {"task": request, "index": index}, processing=True)
+                except ActivityError as exc:
+                    await self.failure(request, exc, index)
+
+            window = indexes[:20]
+            for offset in range(0, len(window), task.max_concurrent_episodes):
+                await asyncio.gather(
+                    *(
+                        episode(index)
+                        for index in window[offset : offset + task.max_concurrent_episodes]
+                    )
+                )
+            if len(indexes) > len(window):
                 workflow.continue_as_new(task.model_dump())
+        else:
+            for position, index in enumerate(indexes):
+                try:
+                    await self.call("episode", {"task": request, "index": index}, processing=True)
+                except ActivityError as exc:
+                    await self.failure(request, exc, index)
+                # Limit Temporal history. Discovery reuses the durable identity set,
+                # and returns only remaining PENDING/PROCESSING episodes.
+                if position == 19 and len(indexes) > 20:
+                    workflow.continue_as_new(task.model_dump())
         await self.call("finish", {"task": request})

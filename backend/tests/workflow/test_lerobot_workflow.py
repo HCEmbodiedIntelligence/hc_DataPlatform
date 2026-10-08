@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from temporalio import activity, workflow
 from temporalio.contrib.pydantic import pydantic_data_converter
@@ -35,9 +37,15 @@ async def test_native_import_continues_and_preserves_partial_failure(
     visited: list[int] = []
     states: list[str] = []
     persisted: list[JobRecord] = []
+    active = peak = 0
 
     @activity.defn(name=PREPARE_NATIVE_EPISODE)
     async def prepare(task: LeRobotEpisodeTaskV1) -> PreparedNativeEpisode:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.03)
+        active -= 1
         visited.append(task.source.episode_index)
         if fail_first and task.source.episode_index == 0:
             raise ApplicationError("bad source", type="LEROBOT_INVALID_SOURCE", non_retryable=True)
@@ -86,7 +94,8 @@ async def test_native_import_continues_and_preserves_partial_failure(
         assert result.status is JobStatus.SUCCEEDED
         assert result.result["episode_count"] == 1
         return
-    assert visited == list(range(21))
+    assert sorted(visited) == list(range(21))
+    assert 2 <= peak <= 4
     assert states.count("RUNNING") == 2  # continue-as-new retains counts after Episode 20
     assert states[-1] == ("PARTIALLY_FAILED" if fail_first else "SUCCEEDED")
     assert result.status is (JobStatus.TECHNICAL_FAILED if fail_first else JobStatus.SUCCEEDED)
@@ -188,11 +197,14 @@ async def test_failed_episode_is_recorded_once_and_later_episodes_finish(failure
             id=f"skip-failed-{failure}",
             task_queue="native-skip-tests",
         )
-    assert visited == [0, 1, 2]
+    assert sorted(visited) == [0, 1, 2]
     assert result.result["succeeded"] == 2
     assert result.result["failed"] == 1
     assert states[-1].status == "PARTIALLY_FAILED"
-    episodes = [state for state in states if state.status.startswith("EPISODE_")]
+    episodes = sorted(
+        [state for state in states if state.status.startswith("EPISODE_")],
+        key=lambda state: state.task.source.episode_index,
+    )
     assert [state.task.source.episode_index for state in episodes] == [0, 1, 2]
     assert episodes[-1].episode_job.status is JobStatus.SUCCEEDED
     if failure == "cache":

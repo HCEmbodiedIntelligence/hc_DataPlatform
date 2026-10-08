@@ -6,11 +6,12 @@ from hc_data_platform.capabilities.registry import CapabilityDescriptor, Impleme
 
 FROZEN_MANIFEST = "frozen-manifest/v1"
 SYNCHRONIZED_STEPS = "synchronized-steps/v1"
-LEROBOT_EXPORT_REVISION = "lerobot-materialized-v4-holobrain"
+LEGACY_LEROBOT_EXPORT_REVISION = "lerobot-materialized-v4-holobrain"
+LEROBOT_EXPORT_REVISION = "lerobot-materialized-v5-boundary-trim"
 
 LEGACY_EXPORT_VERSIONS = {
     "lance_snapshot": "lance-snapshot/v1",
-    "lerobot_v3": LEROBOT_EXPORT_REVISION,
+    "lerobot_v3": LEGACY_LEROBOT_EXPORT_REVISION,
 }
 
 

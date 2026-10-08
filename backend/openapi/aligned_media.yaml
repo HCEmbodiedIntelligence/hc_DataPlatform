@@ -73,6 +73,14 @@ components:
           minLength: 1
     AlignedMediaTimelineV1:
       properties:
+        video_info:
+          type: object
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: boolean
+            - type: number
+            - type: integer
         fps:
           type: integer
           const: 30

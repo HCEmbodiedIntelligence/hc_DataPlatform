@@ -115,19 +115,52 @@ class LeRobotArchive:
         manifest: PublishedDatasetManifestV1,
         steps: Sequence[ExportStepV1],
         assets: ExportAssetsPort | None,
+        *,
+        trim_boundaries: bool = True,
     ) -> None:
-        self.manifest, self.steps, self.assets = manifest, steps, assets
+        self.manifest, self.assets = manifest, assets
         frequencies = {rollout.alignment_frequency_hz for rollout in manifest.rollouts}
         if len(frequencies) != 1:
             raise export_error(
                 "LEROBOT_FREQUENCY_MISMATCH", "All Episodes must share one frame frequency."
             )
         self.fps = frequencies.pop()
-        self.mapping = _feature_names(sorted(steps[0].modalities))
-        self.episodes = [
+        source_episodes = [
             [step for step in steps if step.rollout_id == rollout.rollout_id]
             for rollout in manifest.rollouts
         ]
+        self.episodes = []
+        self.boundary_trims = []
+        for episode in source_episodes:
+            if not trim_boundaries:
+                self.episodes.append(episode)
+                continue
+            valid = [index for index, step in enumerate(episode) if step.sample_valid]
+            if not valid:
+                raise export_error(
+                    "EXPORT_NO_COMMON_ACTIVE_WINDOW",
+                    "Episode has no complete synchronized frame; human review is required.",
+                )
+            first, last = valid[0], valid[-1] + 1
+            selected = episode[first:last]
+            self.episodes.append(selected)
+            self.boundary_trims.append(
+                {
+                    "policy": "common-valid-boundaries/v1",
+                    "leading_removed_frames": first,
+                    "trailing_removed_frames": len(episode) - last,
+                    "source_start_step": selected[0].step_index,
+                    "source_end_step": selected[-1].step_index + 1,
+                    "source_start_timestamp_ns": str(selected[0].timestamp_ns),
+                    "source_last_timestamp_ns": str(selected[-1].timestamp_ns),
+                    "interior_invalid_source_steps": [
+                        step.step_index for step in selected if not step.sample_valid
+                    ],
+                    "interior_policy": "preserve_for_human_review",
+                }
+            )
+        self.steps = tuple(step for episode in self.episodes for step in episode)
+        self.mapping = _feature_names(sorted(self.steps[0].modalities))
         self.metadata: list[dict[str, Any]] = []
         for rollout, episode in zip(manifest.rollouts, self.episodes, strict=True):
             source = episode[0].modalities.get("/metadata/source", {})
@@ -158,6 +191,7 @@ class LeRobotArchive:
                     "annotation_task_id": rollout.annotation_task_id,
                     "annotation_revision": rollout.annotation_revision,
                     "annotation_submission_id": rollout.annotation_submission_id,
+                    **({"boundary_trim": self.boundary_trims[index]} if trim_boundaries else {}),
                     **{
                         key: value
                         for key, value in metadata.items()
@@ -558,6 +592,8 @@ class LeRobotArchive:
                             .get(target, {})
                             .get("info", {})
                         )
+                        if not source_info.get("is_depth_map"):
+                            source_info = info["features"][target].get("info", {})
                         if source_info.get("is_depth_map"):
                             feature, video_stats = inspect_depth_video(
                                 path, len(selected), self.fps, source_info

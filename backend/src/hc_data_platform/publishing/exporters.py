@@ -30,7 +30,12 @@ from hc_data_platform.data_formats.arrow import parquet_bytes as _parquet_bytes 
 from hc_data_platform.data_formats.arrow import require_arrow as _require_arrow
 from hc_data_platform.data_formats.json import canonical_json_bytes
 
-from .contracts import LEROBOT_EXPORT_REVISION, ExportPresentation, step_export_descriptor
+from .contracts import (
+    LEGACY_LEROBOT_EXPORT_REVISION,
+    LEROBOT_EXPORT_REVISION,
+    ExportPresentation,
+    step_export_descriptor,
+)
 from .export_assets import ExportAssetsPort
 from .models import (
     ExportFormat,
@@ -280,13 +285,21 @@ class LeRobotV3Exporter:
 
     @property
     def descriptor(self) -> CapabilityDescriptor:
-        return step_export_descriptor(self.format.value, LEROBOT_EXPORT_REVISION)
+        return step_export_descriptor(self.format.value, self._implementation_version)
 
     def preflight(self, *, manifest: PublishedDatasetManifestV1, source: ExportSourcePort) -> int:
         return len(collect_and_validate_export_steps(manifest, source))
 
-    def __init__(self, assets: ExportAssetsPort | None = None) -> None:
+    def __init__(
+        self,
+        assets: ExportAssetsPort | None = None,
+        *,
+        implementation_version: str = LEROBOT_EXPORT_REVISION,
+    ) -> None:
+        if implementation_version not in {LEGACY_LEROBOT_EXPORT_REVISION, LEROBOT_EXPORT_REVISION}:
+            raise ValueError("unknown LeRobot exporter implementation version")
         self._assets = assets
+        self._implementation_version = implementation_version
 
     @property
     def format(self) -> ExportFormat:
@@ -300,22 +313,27 @@ class LeRobotV3Exporter:
         sink: ArtifactSinkPort,
         attempt_id: str,
     ) -> ExportResultV1:
-        from .lerobot_export import EXPORT_REVISION, LeRobotArchive
+        from .lerobot_export import LeRobotArchive
+
+        revision = self._implementation_version
 
         steps = collect_and_validate_export_steps(manifest, source)
-        archive = LeRobotArchive(manifest, steps, self._assets)
+        archive = LeRobotArchive(
+            manifest,
+            steps,
+            self._assets,
+            trim_boundaries=revision != LEGACY_LEROBOT_EXPORT_REVISION,
+        )
         # A corrected exporter must not reuse immutable artifacts or attempt
         # bytes produced by the former references-only implementation.
-        artifact_uri = _artifact_uri(
-            manifest, self.format, f"{EXPORT_REVISION}/dataset.lerobot-v3.zip"
-        )
+        artifact_uri = _artifact_uri(manifest, self.format, f"{revision}/dataset.lerobot-v3.zip")
         return _publish_validated(
             format=self.format,
             manifest=manifest,
-            steps=steps,
+            steps=archive.steps,
             sink=sink,
             attempt_id=attempt_id,
-            staging_attempt_id=f"{attempt_id}-{EXPORT_REVISION}",
+            staging_attempt_id=f"{attempt_id}-{revision}",
             artifact_uri=artifact_uri,
             media_type="application/zip",
             build=archive.build,

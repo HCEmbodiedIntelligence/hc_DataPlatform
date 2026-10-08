@@ -7,6 +7,11 @@ from hc_data_platform.core.errors import problem
 from .models import AlignedMediaEncodingProfileV1
 
 SERVER_ALIGNED_MEDIA_PROFILES: Mapping[str, AlignedMediaEncodingProfileV1] = {
+    "canonical-depth-mm-hevc-v1": AlignedMediaEncodingProfileV1(
+        profile_id="canonical-depth-mm-hevc-v1",
+        codec="hevc",
+        pixel_format="gray12le",
+    ),
     "original-video-reference-v1": AlignedMediaEncodingProfileV1(
         profile_id="original-video-reference-v1",
         codec="source",
@@ -29,7 +34,9 @@ class AlignedMediaProfileCatalog:
         unknown = sorted(set(normalized).difference(SERVER_ALIGNED_MEDIA_PROFILES))
         if unknown:
             raise ValueError(f"unknown aligned media profiles: {', '.join(unknown)}")
-        self._allowed = frozenset((*normalized, "original-video-reference-v1"))
+        self._allowed = frozenset(
+            (*normalized, "original-video-reference-v1", "canonical-depth-mm-hevc-v1")
+        )
 
     @property
     def allowed_profile_ids(self) -> frozenset[str]:

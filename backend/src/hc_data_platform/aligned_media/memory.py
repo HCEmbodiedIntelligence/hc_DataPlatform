@@ -214,6 +214,7 @@ class InMemoryAlignedMediaRepository:
                 frame_count=encoded.frame_count,
                 start_timestamp_ns=encoded.first_timestamp_ns,
                 original_source=encoded.original_source,
+                video_info=encoded.video_info,
             )
             self._artifacts[artifact_key_tuple] = artifact.model_copy(
                 update={

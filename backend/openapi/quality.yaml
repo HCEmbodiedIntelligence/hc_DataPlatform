@@ -94,7 +94,7 @@ components:
       enum: [PASS, RISK, REJECT]
     FindingSeverity:
       type: string
-      enum: [warning, error]
+      enum: [info, warning, error]
     QualityCode:
       type: string
       enum:
@@ -104,6 +104,9 @@ components:
         - QC_FREQUENCY_LOW
         - QC_GAP_EXCESSIVE
         - QC_CONSECUTIVE_FRAMES_MISSING
+        - QC_LEADING_IDLE
+        - QC_TRAILING_IDLE
+        - QC_NO_COMMON_WINDOW
         - QC_COVERAGE_LOW
         - QC_IMAGE_BLACK
         - QC_IMAGE_REPEATED

@@ -29,7 +29,9 @@ class S3ProjectionArtifactStore:
                     Bucket=self._bucket,
                     Key=key,
                     Body=body,
-                    ContentType="application/vnd.apache.arrow.file",
+                    ContentType="video/mp4"
+                    if key.endswith(".mp4")
+                    else "application/vnd.apache.arrow.file",
                     Metadata={"sha256": sha256},
                     IfNoneMatch="*",
                 )

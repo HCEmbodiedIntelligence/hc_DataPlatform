@@ -109,6 +109,7 @@ class MaterializedAssets:
             artifact.height,
             0,
             artifact.duration_seconds,
+            artifact.timeline.video_info if artifact.timeline else {},
         )
 
     def read_video(self, source: ExportVideoSource) -> Iterable[bytes]:
@@ -206,6 +207,9 @@ def export_mcap_sample(root: Path, scenario: str) -> bytes:
                 camera_id=camera.topic,
                 source_sha256=raw.sha256,
                 alignment=staging,
+                profile_id=(
+                    "canonical-depth-mm-hevc-v1" if camera.depth_unit else "canonical-h264-crf20-v1"
+                ),
             ),
         )
         for camera in raw.cameras
@@ -352,3 +356,56 @@ def test_mcap_decodes_materializes_commits_and_exports_native_lerobot(
         output = Path(destination)
         output.mkdir(parents=True, exist_ok=True)
         (output / f"mcap-{scenario}.lerobot-v3.zip").write_bytes(content)
+
+
+def test_cdr_hevc_and_metric_depth_export_keep_video_semantics(tmp_path, monkeypatch):
+    from mcap.writer import Writer
+
+    from hc_data_platform.tools.mcap_manifest import build_manifest
+    from tests.workflow.test_mcap_camera import SCHEMA, hevc_packets, message
+
+    fixtures = tmp_path / "fixtures"
+    (fixtures / "packages").mkdir(parents=True)
+    (fixtures / "manifests").mkdir()
+    path = fixtures / "packages/cdr.mcap"
+    start = 1700000000000000000
+    with path.open("wb") as output:
+        writer = Writer(output)
+        writer.start()
+        schema = writer.register_schema(SCHEMA.name, SCHEMA.encoding, SCHEMA.data)
+        color = writer.register_channel("/io_teleop/camera_head/color", "cdr", schema)
+        depth = writer.register_channel("/io_teleop/camera_head/depth", "cdr", schema)
+        for index, packet in hevc_packets(30):
+            stamp = start + index * 1000000000 // 30
+            writer.add_message(
+                color, log_time=stamp, publish_time=stamp, data=message(packet, "h265").data
+            )
+        for index in range(30):
+            stamp = start + index * 1000000000 // 30
+            pixels = np.full((24, 32), 1000 + index * 10, dtype=np.uint16)
+            output_image = io.BytesIO()
+            Image.fromarray(pixels).save(output_image, "PNG")
+            writer.add_message(
+                depth,
+                log_time=stamp,
+                publish_time=stamp,
+                data=message(output_image.getvalue(), "16UC1; png").data,
+            )
+        writer.finish()
+    raw = build_manifest(
+        path, project_id="project-a", task_id="task-a", robot_id="robot-a", depth_unit="mm"
+    )
+    (fixtures / "manifests/cdr.json").write_text(raw.model_dump_json())
+    monkeypatch.setattr(__import__(__name__, fromlist=["FIXTURES"]), "FIXTURES", fixtures)
+    content = export_mcap_sample(tmp_path / "export", "cdr")
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        info = json.loads(archive.read("meta/info.json"))
+        color_key = info["hc.feature_mapping"]["/io_teleop/camera_head/color"]
+        depth_key = info["hc.feature_mapping"]["/io_teleop/camera_head/depth"]
+        assert info["features"][color_key]["info"]["video.codec"] == "h264"
+        feature = info["features"][depth_key]
+        assert feature["shape"] == [24, 32, 1]
+        assert feature["info"]["is_depth_map"] is True
+        assert feature["info"]["video.codec"] == "hevc"
+        assert feature["info"]["video.pix_fmt"] == "gray12le"
+        assert feature["info"]["depth_unit"] == "mm"

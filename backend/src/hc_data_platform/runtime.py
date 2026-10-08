@@ -179,6 +179,10 @@ from hc_data_platform.publishing.adapters import (
     StepReaderAdapter,
 )
 from hc_data_platform.publishing.audit import PostgresExportAuditRecorder
+from hc_data_platform.publishing.contracts import (
+    LEGACY_LEROBOT_EXPORT_REVISION,
+    LEROBOT_EXPORT_REVISION,
+)
 from hc_data_platform.publishing.export_assets import PostgresExportAssets
 from hc_data_platform.publishing.exporters import LanceSnapshotExporter, LeRobotV3Exporter
 from hc_data_platform.publishing.postgres import (
@@ -905,6 +909,8 @@ def build_runtime(
         PostgresAdvisoryDatasetLock(connection_factory),
     )
 
+    from .workflow.ingest_guard import PostgresIngestCommitGuard, PostgresIngestDispatchGuard
+
     aligned_media_repository = PostgresAlignedMediaRepository(connection_factory)
     aligned_media_store = S3AlignedMediaArtifactStore(
         s3_client,
@@ -930,25 +936,21 @@ def build_runtime(
         resolved.object_store_bucket,
         Path(resolved.alignment_staging_root) / "shared",
     )
-    aligned_media_generation = (
-        AlignedMediaGenerationService(
-            frame_reader=ArrowAlignedFrameReader(shared_staging_store),
-            encoder=FFmpegMp4Encoder(
-                Path(resolved.aligned_media_staging_root),
-                profiles=aligned_media_profiles,
-                ffmpeg_threads=resolved.media_ffmpeg_threads,
-                raw_storage=object_storage,
-            ),
-            repository=aligned_media_repository,
-            store=aligned_media_store,
+    aligned_media_generation = AlignedMediaGenerationService(
+        frame_reader=ArrowAlignedFrameReader(shared_staging_store),
+        encoder=FFmpegMp4Encoder(
+            Path(resolved.aligned_media_staging_root),
             profiles=aligned_media_profiles,
-            capacity_gate=PostgresMediaCapacityGate(
-                connection_factory,
-                limit=resolved.media_global_max_concurrent_generations,
-            ),
-        )
-        if include_media
-        else None
+            ffmpeg_threads=resolved.media_ffmpeg_threads,
+            raw_storage=object_storage,
+        ),
+        repository=aligned_media_repository,
+        store=aligned_media_store,
+        profiles=aligned_media_profiles,
+        capacity_gate=PostgresMediaCapacityGate(
+            connection_factory,
+            limit=resolved.media_global_max_concurrent_generations,
+        ),
     )
     aligned_media_audit = PostgresAlignedMediaAuditRecorder(connection_factory)
     catalog_audit = PostgresLanceCatalogAuditRecorder(connection_factory)
@@ -979,7 +981,12 @@ def build_runtime(
         exporters=(
             LanceSnapshotExporter(),
             LeRobotV3Exporter(PostgresExportAssets(connection_factory, object_storage)),
+            LeRobotV3Exporter(
+                PostgresExportAssets(connection_factory, object_storage),
+                implementation_version=LEGACY_LEROBOT_EXPORT_REVISION,
+            ),
         ),
+        defaults={"lerobot_v3": LEROBOT_EXPORT_REVISION},
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
     dataset_ingest_projection = PostgresDatasetIngestProjector(
@@ -1040,6 +1047,10 @@ def build_runtime(
         catalog_fragments=ArrowCatalogFragmentAdapter(catalog_repository),
         catalog=catalog,
         aligned_media=aligned_media_generation,
+        ingest_dispatch_guard=PostgresIngestDispatchGuard(
+            connection_factory, max_active=resolved.ingest_max_active_per_dataset
+        ),
+        ingest_commit_guard=PostgresIngestCommitGuard(connection_factory),
         aligned_media_repository=aligned_media_repository,
         aligned_media_store=aligned_media_store,
         publisher=publisher,
@@ -1333,7 +1344,15 @@ def build_worker_outbox(
         catalog,
         package_schemas=EpisodeSchemas(PostgresEpisodeStore(connection_factory)),
     )
-    handler = IngestOutboxHandler(launcher, resolver)
+    from .workflow.ingest_guard import PostgresIngestDispatchGuard
+
+    handler = IngestOutboxHandler(
+        launcher,
+        resolver,
+        PostgresIngestDispatchGuard(
+            connection_factory, max_active=resolved.ingest_max_active_per_dataset
+        ),
+    )
 
     continuous_episode_resolver = PostgresContinuousEpisodeWorkflowInputResolver(
         connection_factory,

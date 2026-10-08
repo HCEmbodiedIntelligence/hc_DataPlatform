@@ -54,6 +54,7 @@ from hc_data_platform.tools.lerobot_platform_upload import build_native_source
 from hc_data_platform.workflow.activities import (
     configure_activity_dependencies,
     create_aligned_media,
+    prepare_aligned_media,
 )
 from hc_data_platform.workflow.lerobot_workflow import (
     LeRobotImportWorkflow,
@@ -248,7 +249,7 @@ async def test_real_openarm_roundtrip(isolated_dsn, tmp_path, monkeypatch, fixtu
             temporal,
             task_queue=queue,
             workflows=workflows,
-            activities=[*activities, create_aligned_media],
+            activities=[*activities, create_aligned_media, prepare_aligned_media],
             workflow_runner=UnsandboxedWorkflowRunner(),
         ):
             job = await asyncio.wait_for(

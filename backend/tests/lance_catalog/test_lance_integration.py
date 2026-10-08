@@ -27,6 +27,7 @@ from hc_data_platform.lance_catalog.router import (
 from hc_data_platform.lance_catalog.router import (
     router as lance_catalog_router,
 )
+from hc_data_platform.lance_catalog.service import CatalogVersionConflict
 from hc_data_platform.security.auth import AuthContext
 
 pytest.importorskip("pyarrow")
@@ -90,6 +91,43 @@ def _service(
     service = LanceCatalogService(adapter, selected_repository, InMemoryDatasetWriterLock())
     service.register_schema(_schema())
     return service, adapter, selected_repository
+
+
+def test_version_reservation_is_checked_under_the_storage_writer_lock(tmp_path: Path) -> None:
+    from threading import Barrier
+
+    service, adapter, _ = _service(tmp_path)
+    barrier = Barrier(2)
+
+    def commit(rollout_id: str) -> int | None:
+        manifest, steps = _fragment(_schema(), rollout_id)
+        barrier.wait()
+        try:
+            version, _ = service.commit_fragment(manifest, steps, expected_version=1)
+            return version.version
+        except CatalogVersionConflict:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(commit, ("rollout-a", "rollout-b")))
+    assert results.count(1) == 1 and results.count(None) == 1
+    # The losing writer must not leave a second immutable storage receipt.
+    assert len(adapter.list_commits(_schema())) == 1
+    assert len(service.list_versions("dataset-a")) == 1
+
+
+def test_reserved_version_recovery_reuses_original_commit_after_later_appends(
+    tmp_path: Path,
+) -> None:
+    service, adapter, _ = _service(tmp_path)
+    first = _fragment(_schema(), "rollout-first")
+    original, _ = service.commit_fragment(*first, expected_version=1)
+    service.commit_fragment(*_fragment(_schema(), "rollout-second"), expected_version=2)
+    recovered, _ = service.commit_fragment(*first, expected_version=1)
+    assert recovered == original
+    with pytest.raises(CatalogVersionConflict):
+        service.commit_fragment(*first, expected_version=3)
+    assert len(adapter.list_commits(_schema())) == 2
 
 
 @pytest.mark.integration

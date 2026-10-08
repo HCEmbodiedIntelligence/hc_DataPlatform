@@ -13,7 +13,9 @@ def native_feature_topic(feature: str) -> str:
 
 
 def camera_feature(name: str) -> bool:
-    return name.startswith(("/camera/", "camera.", "observation.images."))
+    return name.startswith(("/camera/", "camera.", "observation.images.")) or bool(
+        re.fullmatch(r"/?io_teleop/camera_[A-Za-z0-9_]+/(?:color|depth)", name)
+    )
 
 
 def feature_names(

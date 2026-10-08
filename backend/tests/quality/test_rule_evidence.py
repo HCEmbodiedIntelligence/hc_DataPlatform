@@ -29,7 +29,11 @@ def test_new_evidence_preserves_archived_report_bytes_and_records_every_rule():
     current = engine.evaluate_with_evidence(data, profile)
     assert current.report.model_dump_json() == archived.model_dump_json()
     assert current.report.content_sha256 == archived.content_sha256
-    assert {item.code for item in current.evidence.rules} == set(QualityCode)
+    assert {item.code for item in current.evidence.rules} == set(QualityCode) - {
+        QualityCode.LEADING_IDLE,
+        QualityCode.TRAILING_IDLE,
+        QualityCode.NO_COMMON_WINDOW,
+    }
     assert rule(current, QualityCode.FREQUENCY_LOW).status == "pass"
     assert rule(current, QualityCode.IMAGE_CORRUPT).status == "skip"
     assert rule(current, QualityCode.JOINT_OUT_OF_RANGE).reason == "NO_JOINT_LIMITS"
@@ -153,3 +157,47 @@ def test_evidence_wire_is_stable_across_worker_hash_seeds():
             env={**os.environ, "PYTHONHASHSEED": seed},
         )
         assert output.stdout == expected
+
+
+@pytest.mark.parametrize("streamed", [False, True])
+def test_boundary_engine_evidence_records_information_without_changing_verdict(streamed):
+    from hc_data_platform.quality.models import QualityInputV1, QualityProfileV1
+    from tests.quality.test_boundaries import timestamps
+
+    topics = {"camera": timestamps(0, 20), "action": timestamps(3, 17)}
+    data = QualityInputV1(
+        rollout_id="boundary-evidence",
+        source_sha256="a" * 64,
+        start_ns=0,
+        end_ns=20 * 10**9,
+        topic_timestamps_ns=topics,
+    )
+    profile = QualityProfileV1(
+        profile_id="boundary-evidence",
+        engine_version="be06-qc/3",
+        required_topics={"camera", "action"},
+        default_timing={
+            "target_frequency_hz": 10,
+            "minimum_frequency_hz_risk": 9,
+            "minimum_frequency_hz_reject": 0,
+        },
+        action={"minimum_observation_count_risk": 0, "minimum_observation_count_reject": 0},
+    )
+    observations = (
+        (
+            QualityStreamObservationV1(topic=topic, timestamp_ns=t)
+            for topic, stamps in topics.items()
+            for t in stamps
+        )
+        if streamed
+        else None
+    )
+    evaluation = QualityEngine().evaluate_with_evidence(data, profile, observations=observations)
+    assert evaluation.report.status.value == "PASS"
+    assert {item.code for item in evaluation.evidence.rules} == set(QualityCode)
+    for code in (QualityCode.LEADING_IDLE, QualityCode.TRAILING_IDLE):
+        boundary = rule(evaluation, code, "action")
+        assert boundary.status == "info"
+        assert boundary.participates_in_verdict is False
+        assert boundary.reason == "INFORMATIONAL_FINDING"
+    assert QcEvaluation.model_validate_json(evaluation.model_dump_json()) == evaluation

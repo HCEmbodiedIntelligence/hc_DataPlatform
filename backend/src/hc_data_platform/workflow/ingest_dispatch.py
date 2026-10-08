@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Protocol
 
 from hc_data_platform.core.events import DomainEventEnvelope
@@ -36,6 +37,10 @@ class IngestWorkflowInputResolver(Protocol):
     ) -> IngestRolloutWorkflowInput: ...
 
 
+class IngestDispatchGuard(Protocol):
+    def reserve(self, request: IngestRolloutWorkflowInput, workflow_id: str) -> None: ...
+
+
 class BlockingIngestWorkflowInputResolver:
     """Fail visibly until deployment injects a persisted ingest-plan resolver."""
 
@@ -64,9 +69,11 @@ class IngestOutboxHandler:
         self,
         launcher: TemporalWorkflowLauncher,
         resolver: IngestWorkflowInputResolver,
+        guard: IngestDispatchGuard | None = None,
     ) -> None:
         self._launcher = launcher
         self._resolver = resolver
+        self._guard = guard
 
     async def __call__(self, event: DomainEventEnvelope) -> object:
         if event.event_type != self.EVENT_TYPE:
@@ -89,10 +96,11 @@ class IngestOutboxHandler:
         )
         if persisted_workflow_id not in {expected_workflow_id, legacy_workflow_id}:
             raise ValueError("ingest workflow locator does not match event lineage")
-        terminal = self._resolver.terminal_result(event)
+        terminal = await asyncio.to_thread(self._resolver.terminal_result, event)
         if terminal is not None:
             return terminal
-        request = self._resolver.resolve(
+        request = await asyncio.to_thread(
+            self._resolver.resolve,
             project_id=event.project_id,
             region_code=region_code,
             session_id=session_id,
@@ -106,6 +114,8 @@ class IngestOutboxHandler:
             or request.rollout_id != rollout_id
         ):
             raise ValueError("resolved ingest input crosses the persisted event scope")
+        if self._guard is not None:
+            await asyncio.to_thread(self._guard.reserve, request, persisted_workflow_id)
         return await self._launcher.start(
             workflow_name=INGEST_ROLLOUT_WORKFLOW,
             workflow_input=request,

@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import Field
+
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 
@@ -26,6 +28,7 @@ class ProcessingTask(StrictModel):
     raw_source_id: str
     generation: int
     workflow_id: str
+    max_concurrent_episodes: int = Field(default=4, ge=1, le=32)
 
     @property
     def scope(self) -> tuple[str, str, str, str]:

@@ -61,6 +61,8 @@ class LanceCatalogPort(StepReaderPort, Protocol):
         self,
         manifest: AlignedFragmentManifestV1,
         steps: Sequence[StepRecord],
+        *,
+        expected_version: int | None = None,
     ) -> tuple[DatasetVersionRef, DerivedReadyV1]: ...
 
     def reconcile(

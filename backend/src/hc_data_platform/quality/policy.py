@@ -35,6 +35,13 @@ def approved_risk_findings(
 ) -> list[QcFinding]:
     result = []
     for finding in findings:
+        if finding.code in {
+            QualityCode.LEADING_IDLE,
+            QualityCode.TRAILING_IDLE,
+            QualityCode.NO_COMMON_WINDOW,
+        }:
+            result.append(finding)
+            continue
         if finding.code not in APPROVED_RISK_CODES:
             continue
         timing = profile.timing_for(finding.topic)

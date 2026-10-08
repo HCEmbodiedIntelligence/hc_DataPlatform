@@ -311,6 +311,7 @@ class PostgresAlignedMediaRepository:
             frame_count=encoded.frame_count,
             start_timestamp_ns=encoded.first_timestamp_ns,
             original_source=encoded.original_source,
+            video_info=encoded.video_info,
         )
         connection = self._connection_factory()
         cursor = connection.cursor()

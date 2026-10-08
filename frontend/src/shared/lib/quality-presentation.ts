@@ -22,8 +22,24 @@ const qualityFindings = {
     description: "相邻采样数据之间的时间间隔超过允许范围。",
   },
   QC_CONSECUTIVE_FRAMES_MISSING: {
-    title: "连续缺帧",
-    description: "连续缺失的数据帧数量超过允许范围。",
+    title: "连续缺帧 / 缺采样",
+    description:
+      "连续缺失的数据超过允许范围，需人工查看标记区间后决定处理方式；不会自动删除中间片段。",
+  },
+  QC_LEADING_IDLE: {
+    title: "开头等待段（正常操作）",
+    description:
+      "该通道尚未开始提供数据；转换时按所有必需通道的共同有效区间，同步裁掉数据和视频的开头。",
+  },
+  QC_TRAILING_IDLE: {
+    title: "结尾等待段（正常操作）",
+    description:
+      "该通道已结束提供数据；转换时按所有必需通道的共同有效区间，同步裁掉数据和视频的结尾。",
+  },
+  QC_NO_COMMON_WINDOW: {
+    title: "没有共同有效区间",
+    description:
+      "必需通道之间没有可同时保留的完整采样区间，需要人工判断，暂不转换。",
   },
   QC_COVERAGE_LOW: {
     title: "数据覆盖不足",

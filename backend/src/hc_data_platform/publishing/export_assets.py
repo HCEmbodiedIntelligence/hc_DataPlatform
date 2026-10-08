@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from hc_data_platform.aligned_media.models import AlignedMediaFrameReferenceV1
@@ -28,6 +28,7 @@ class ExportVideoSource:
     height: int
     start_seconds: float
     end_seconds: float
+    video_info: dict[str, Any] = field(default_factory=dict)
 
 
 class ExportAssetsPort(Protocol):
@@ -323,6 +324,7 @@ class PostgresExportAssets:
             int(row[3]),
             0,
             float(row[4]),
+            (row[5] or {}).get("video_info", {}),
         )
 
     def read_video(self, source: ExportVideoSource) -> Iterable[bytes]:

@@ -251,6 +251,7 @@ class FailBeforeCommitCatalog(InMemoryLanceCatalog):
         steps: Sequence[StepRecord],
         *,
         simulate_catalog_failure: bool = False,
+        expected_version: int | None = None,
     ) -> tuple[DatasetVersionRef, DerivedReadyV1]:
         self.commit_attempts += 1
         if self.commit_attempts == 1:
@@ -259,6 +260,7 @@ class FailBeforeCommitCatalog(InMemoryLanceCatalog):
             manifest,
             steps,
             simulate_catalog_failure=simulate_catalog_failure,
+            expected_version=expected_version,
         )
 
 

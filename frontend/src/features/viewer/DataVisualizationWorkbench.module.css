@@ -553,6 +553,14 @@
   border-left: 3px solid var(--hc-color-warning);
 }
 
+.finding[data-severity="info"] {
+  border-inline-start-color: var(--color-primary, #1677ff);
+}
+
+.finding[data-severity="info"] .findingTitle svg {
+  color: var(--color-primary, #1677ff);
+}
+
 .findingTitle {
   display: grid;
   min-width: 0;
