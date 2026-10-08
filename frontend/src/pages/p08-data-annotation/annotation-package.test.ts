@@ -164,6 +164,8 @@ it("reads joint values from the immutable package and rejects a changed content 
       `/data-versions/${data.data_version_id}/steps`,
     );
     expect(options.query).not.toHaveProperty("version");
+    // A real package reader rejects speculative legacy column aliases.
+    expect(options.query?.columns).toEqual(["/robot/joint_states"]);
     const start = Number(options.query?.startStep),
       end = Number(options.query?.endStep);
     return {

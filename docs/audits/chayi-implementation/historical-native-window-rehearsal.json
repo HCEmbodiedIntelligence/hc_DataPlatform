@@ -6001,7 +6001,7 @@
   "official_offline_reader": "historical-native-window-offline-reader-torchcodec.json",
   "official_rgb_video_backend": "torchcodec",
   "reader_torch_num_threads": 1,
-  "pyav_baseline_full_reader_status": "RUNNING_AT_REPORT_CREATION",
+  "pyav_baseline_full_reader_status": "PASSED",
   "source_rgb_pixels_independently_verified": true,
   "depth_streams": 0,
   "tests": {
@@ -6068,5 +6068,6 @@
     "durable_equivalent_data_mapping": "PENDING"
   },
   "real_http_and_browser_window_acceptance": "PENDING",
-  "model_depth_training_support": "NOT_VALIDATED"
+  "model_depth_training_support": "NOT_VALIDATED",
+  "pyav_official_offline_reader": "historical-native-window-offline-reader.json"
 }

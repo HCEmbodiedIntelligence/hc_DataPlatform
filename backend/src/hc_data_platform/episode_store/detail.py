@@ -284,6 +284,18 @@ def annotation_state(state, data, allowed, auth):
         has_unsubmitted_changes=task["current_submission_id"] is None
         or task["submitted_revision"] != task["current_revision"],
         revision_files=tuple(files[n] for n in sorted(files)),
+        historical_migrations=tuple(
+            {
+                **migration,
+                "download": action(
+                    auth,
+                    data,
+                    "DOWNLOAD_ANNOTATION_MIGRATION",
+                    ("annotation_task.read", "export.download"),
+                ).model_dump(mode="json"),
+            }
+            for migration in state.get("migrations", [])
+        ),
     )
 
 

@@ -55,28 +55,7 @@ def load_spools(directories):
     return plans, roots
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("prepare", "publish", "status", "rollback"))
-    for name in ("organization", "project", "region", "dataset", "output"):
-        parser.add_argument("--" + name, required=True)
-    parser.add_argument("--batch-key", help="stable operator key for prepare (1..128 characters)")
-    parser.add_argument("--batch-id", help="persisted mb_* id for publish/status/rollback")
-    parser.add_argument(
-        "--plan-dir",
-        action="append",
-        default=[],
-        help="repeat for each committed conversion checkpoint directory",
-    )
-    args = parser.parse_args()
-    if args.command == "prepare" and (not args.batch_key or not args.plan_dir):
-        parser.error("prepare requires --batch-key and --plan-dir")
-    if args.command != "prepare" and not args.batch_id:
-        parser.error("publish/status/rollback require --batch-id")
-    output = Path(args.output)
-    if output.exists() or output.is_symlink():
-        parser.error("output already exists; select a new immutable report path")
-    plans, roots = load_spools(args.plan_dir)
+def configured_batches():
     # No application environment fallbacks; the operator pins every endpoint.
     connections = psycopg_connection_factory(os.environ["HC_EPISODE_MIGRATION_DSN"])
     packages = PostgresEpisodeStore(connections)
@@ -103,6 +82,32 @@ def main():
             packages, storage, legacy=legacy, legacy_entries=PostgresLegacyEntries(packages, legacy)
         )
     )
+    return batches
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=("prepare", "publish", "status", "rollback"))
+    for name in ("organization", "project", "region", "dataset", "output"):
+        parser.add_argument("--" + name, required=True)
+    parser.add_argument("--batch-key", help="stable operator key for prepare (1..128 characters)")
+    parser.add_argument("--batch-id", help="persisted mb_* id for publish/status/rollback")
+    parser.add_argument(
+        "--plan-dir",
+        action="append",
+        default=[],
+        help="repeat for each committed conversion checkpoint directory",
+    )
+    args = parser.parse_args()
+    if args.command == "prepare" and (not args.batch_key or not args.plan_dir):
+        parser.error("prepare requires --batch-key and --plan-dir")
+    if args.command != "prepare" and not args.batch_id:
+        parser.error("publish/status/rollback require --batch-id")
+    output = Path(args.output)
+    if output.exists() or output.is_symlink():
+        parser.error("output already exists; select a new immutable report path")
+    plans, roots = load_spools(args.plan_dir)
+    batches = configured_batches()
     token = bind_request_context(
         RequestContext(
             organization_id=args.organization,

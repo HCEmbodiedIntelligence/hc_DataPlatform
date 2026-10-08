@@ -207,9 +207,12 @@ function createAnnotationJointWindowSource(input: {
   readonly frequencyHz: number;
 }): ViewerWindowSource {
   const ref = checkedAnnotationRef(input.scope, input.task);
-  let columns: readonly string[] = [
-    ...new Set(modalityCandidates(input.topicName)),
-  ];
+  // Package topics come from the pinned hc.feature_mapping. Unlike historical
+  // Lance projection, the package reader rejects unknown columns rather than
+  // silently omitting them; speculative aliases cannot be included here.
+  let columns: readonly string[] = ref
+    ? [input.topicName]
+    : [...new Set(modalityCandidates(input.topicName))];
   return {
     async loadWindow(
       viewerWindow: ViewerWindow,
@@ -325,7 +328,7 @@ function createAnnotationJointWindowSource(input: {
             continue;
           throw jointDataError(
             "P08_JOINT_MODALITY_UNBOUND",
-            `未能把 ${input.topicName} 唯一绑定到 Lance 关节角向量。`,
+            `未能把 ${input.topicName} 唯一绑定到固定数据版本的关节角向量。`,
           );
         }
         if (step.valid[resolved.key] === false) continue;

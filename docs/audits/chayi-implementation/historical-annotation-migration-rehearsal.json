@@ -1,0 +1,519 @@
+{
+  "input_kind": "existing_8088_native_history_isolated_copy",
+  "scope": [
+    "1",
+    "1",
+    "cn-beijing",
+    "dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31"
+  ],
+  "source_database_writes": false,
+  "source_object_writes": false,
+  "new_lance_writes": false,
+  "source_inventory_sha256": "432c0c9ac0ea4f051db3a370228bbc343296a1c01e43e77d31b764b5f0a3c354",
+  "mapping_id": "am_d2f8e73b112e7ae9efc2cf44ac4d5bfde02ca167cb58107c99fe61fe90b94200",
+  "status": "APPLIED",
+  "batch_id": "mb_4654fa6817704fa422e9cf4c5b210530a6840a781c5a4f8aed1934fd8d70ff10",
+  "source_task_id": "04ba1d3d-34cb-50b4-8a22-d4d332a92155",
+  "source_revision": 1,
+  "source_revision_content_hash": "4aabf62b78e252c0dc355f1d3fea9a3ab3845937f0412d13f1c42928c5d604e3",
+  "source_snapshot_sha256": "336c38883ea9a6bfb9ea1e320db9f98f3a5e2d1f7a4ee4b3a879f52064d0770c",
+  "source_data": {
+    "content_hash": "de8a46a607ca5d56224b5f924a93af1c43525e6a0523a7c64c57ee7090a3aa5a",
+    "data_version_id": "legacy_36025cc93edd016c19d6d018be115f090037480de5d5d921be768de485c4c96c",
+    "dataset_uri": "s3://hc-data-local/lance/1/dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31/native-g1-v3-30hz-v1/30hz/aligned_steps.lance",
+    "dataset_version": 132,
+    "frame_count": 920,
+    "identity": {
+      "dataset_id": "dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31",
+      "episode_id": "episode_1a14fd81258997cb16d27afdf8dde2f2",
+      "organization_id": "1",
+      "project_id": "1",
+      "region_code": "cn-beijing",
+      "rollout_id": "lerobot-111653fda01a001e-ep-000104"
+    },
+    "lance_version": 132,
+    "schema_snapshot_id": "native-g1-v3-30hz-v1",
+    "storage_format": "lance"
+  },
+  "source_status": "APPROVED",
+  "source_history_counts": {
+    "annotation_mutations": 1,
+    "annotation_operations": 0,
+    "annotation_reviews": 1,
+    "annotation_revisions": 2,
+    "annotation_submission_mutations": 1,
+    "annotation_submissions": 1
+  },
+  "tags": [
+    {
+      "annotation_id": "tag-60999cc9-0728-468e-b56f-6d3679e54b28",
+      "attributes": {},
+      "end_step": 245,
+      "label": "1",
+      "parent_annotation_id": null,
+      "path": [
+        "manual-tag-2299b22b-cbcc-4b27-b1b8-e0ac88894b96"
+      ],
+      "relations": [],
+      "start_step": 152,
+      "subject": null,
+      "tag_id": "manual-tag-2299b22b-cbcc-4b27-b1b8-e0ac88894b96"
+    },
+    {
+      "annotation_id": "tag-35848080-30d0-44af-be4a-6dfd1b45e652",
+      "attributes": {},
+      "end_step": 287,
+      "label": "2",
+      "parent_annotation_id": null,
+      "path": [
+        "manual-tag-b281c0f8-da53-4051-8861-050048d0e6d4"
+      ],
+      "relations": [],
+      "start_step": 251,
+      "subject": null,
+      "tag_id": "manual-tag-b281c0f8-da53-4051-8861-050048d0e6d4"
+    }
+  ],
+  "excluded_ranges": [],
+  "tag_identity_hierarchy_attributes_preserved": true,
+  "target_data": {
+    "content_hash": "4773f2f99b8474e6e8e27c8b0564d435ca80388ec3a320c9c1d8a1c3152be307",
+    "data_version_id": "dv_2a1d2dce71faea009074a5415ed4fe6a34c1c21e69519c60de26bbcbb7887889",
+    "frame_count": 920,
+    "identity": {
+      "dataset_id": "dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31",
+      "episode_id": "episode_1a14fd81258997cb16d27afdf8dde2f2",
+      "organization_id": "1",
+      "project_id": "1",
+      "region_code": "cn-beijing",
+      "rollout_id": "lerobot-111653fda01a001e-ep-000104"
+    },
+    "package_prefix": "episodes/id-1/id-1/id-cn-beijing/id-unknown/id-unknown/id-unknown/id-episode_1a14fd81258997cb16d27afdf8dde2f2/id-dv_2a1d2dce71faea009074a5415ed4fe6a34c1c21e69519c60de26bbcbb7887889",
+    "schema_snapshot_id": "native-g1-v3-30hz-v1",
+    "storage_format": "lerobot_v3",
+    "version": 1
+  },
+  "target_task_id": "annotation-migration-d2f8e73b112e7ae9efc2cf44ac4d5bfde02ca167cb58107c99fe61fe90b94200",
+  "collection_version_id": "cv_3d3e93e80056d1f0d0b0319c2823ec47003e99a5ac527d0674a6d44c69b69670",
+  "collection_version": 156,
+  "application": {
+    "annotation_history_rewritten": false,
+    "mapping_id": "am_d2f8e73b112e7ae9efc2cf44ac4d5bfde02ca167cb58107c99fe61fe90b94200",
+    "review_automatically_transferred": false,
+    "source_revision_content_hash": "4aabf62b78e252c0dc355f1d3fea9a3ab3845937f0412d13f1c42928c5d604e3",
+    "source_snapshot_sha256": "336c38883ea9a6bfb9ea1e320db9f98f3a5e2d1f7a4ee4b3a879f52064d0770c",
+    "target_data": {
+      "content_hash": "4773f2f99b8474e6e8e27c8b0564d435ca80388ec3a320c9c1d8a1c3152be307",
+      "data_version_id": "dv_2a1d2dce71faea009074a5415ed4fe6a34c1c21e69519c60de26bbcbb7887889",
+      "frame_count": 920,
+      "identity": {
+        "dataset_id": "dataset_aa780487-7c3c-5943-b446-7ab43b1dfb31",
+        "episode_id": "episode_1a14fd81258997cb16d27afdf8dde2f2",
+        "organization_id": "1",
+        "project_id": "1",
+        "region_code": "cn-beijing",
+        "rollout_id": "lerobot-111653fda01a001e-ep-000104"
+      },
+      "package_prefix": "episodes/id-1/id-1/id-cn-beijing/id-unknown/id-unknown/id-unknown/id-episode_1a14fd81258997cb16d27afdf8dde2f2/id-dv_2a1d2dce71faea009074a5415ed4fe6a34c1c21e69519c60de26bbcbb7887889",
+      "schema_snapshot_id": "native-g1-v3-30hz-v1",
+      "storage_format": "lerobot_v3",
+      "version": 1
+    },
+    "target_revision": 1,
+    "target_revision_content_hash": "c21623dc4ade016bb0b126f39a552fa345c401b24b3759f21796bedf3ba1f741",
+    "target_task_id": "annotation-migration-d2f8e73b112e7ae9efc2cf44ac4d5bfde02ca167cb58107c99fe61fe90b94200"
+  },
+  "retry_identical": true,
+  "new_review_automatically_transferred": false,
+  "mapping_document": {
+    "sha256": "cb0a516818d36679ca529df58cf513cdfd896840585a946596a214239419bc20",
+    "size_bytes": 10715,
+    "ordinary_http_and_browser_download": true
+  },
+  "new_workflow": {
+    "status": "APPROVED",
+    "revision": 2,
+    "revision_content_hash": "dfc672b643bf914c038bdfa13a5e9b3ec9a9cc94deb3488653b5ed887d2fcb0f",
+    "submission_id": "7c160165-9964-4915-be04-f2b7d5de8b79",
+    "approved_review_id": "0dec8122-8601-4a2b-8e82-93a09e07e140",
+    "separate_editor_and_reviewer": true,
+    "review_comment": "G1 隔离软件演练，非真人标注验收。",
+    "original_tag_bounds_and_ids_unchanged": true,
+    "edited_first_label": "1 · 隔离演练",
+    "annotation_json_sha256": "49d7110e9a700204431b54143ee7c611846e77d65ea84e1148d7e12634326f6a"
+  },
+  "annotated_delivery": {
+    "job_id": "ad_4795cc7d776de37d22be1b64d1caa204b31a4ea2799bf5c646c4bf23d1b78639",
+    "status": "READY",
+    "generation": 1,
+    "attempts": 1,
+    "artifact_sha256": "cdf7049aaf36930d3155120a43204e1b9caa69c4aa7e4264ca2cee4b3a06fbae",
+    "size_bytes": 1028885407,
+    "manifest_sha256": "b55b3f2d3942285da176b4d151ae7bf96994dbb63db5faa67ea84a95dcd7347f"
+  },
+  "outbox_execution": "only selected stored new-task envelopes, no historical queue drain",
+  "browser": {
+    "ordinary_session": true,
+    "browser": "Firefox headless / Marionette",
+    "actual_historical_input_isolated_copy": true,
+    "downloads": [
+      {
+        "name": "episode-dv_2a1d2dce71faea009074a5415ed4fe6a34c1c21e69519c60de26bbcbb7887889-r2-approved.zip",
+        "size_bytes": 1028885407,
+        "sha256": "cdf7049aaf36930d3155120a43204e1b9caa69c4aa7e4264ca2cee4b3a06fbae"
+      },
+      {
+        "name": "am_d2f8e73b112e7ae9efc2cf44ac4d5bfde02ca167cb58107c99fe61fe90b94200(1).json",
+        "size_bytes": 10715,
+        "sha256": "cb0a516818d36679ca529df58cf513cdfd896840585a946596a214239419bc20"
+      },
+      {
+        "name": "annotation-r2-approved.json",
+        "size_bytes": 3937,
+        "sha256": "49d7110e9a700204431b54143ee7c611846e77d65ea84e1148d7e12634326f6a"
+      },
+      {
+        "name": "am_d2f8e73b112e7ae9efc2cf44ac4d5bfde02ca167cb58107c99fe61fe90b94200.json",
+        "size_bytes": 10715,
+        "sha256": "cb0a516818d36679ca529df58cf513cdfd896840585a946596a214239419bc20"
+      }
+    ],
+    "archive_matches_http_receipt": true,
+    "human_acceptance": false
+  },
+  "columns": {
+    "frames": 920,
+    "all_parent_columns_equal": true,
+    "parent_columns": [
+      "hc.source_ref.observation.images.head_stereo_left",
+      "hc.source_timestamps_ns.observation.images.head_stereo_left",
+      "hc.time_error_ns.observation.images.head_stereo_left",
+      "hc.valid.observation.images.head_stereo_left",
+      "hc.repeated.observation.images.head_stereo_left",
+      "hc.source_ref.observation.images.head_stereo_right",
+      "hc.source_timestamps_ns.observation.images.head_stereo_right",
+      "hc.time_error_ns.observation.images.head_stereo_right",
+      "hc.valid.observation.images.head_stereo_right",
+      "hc.repeated.observation.images.head_stereo_right",
+      "hc.source_ref.observation.images.wrist_left",
+      "hc.source_timestamps_ns.observation.images.wrist_left",
+      "hc.time_error_ns.observation.images.wrist_left",
+      "hc.valid.observation.images.wrist_left",
+      "hc.repeated.observation.images.wrist_left",
+      "hc.source_ref.observation.images.wrist_right",
+      "hc.source_timestamps_ns.observation.images.wrist_right",
+      "hc.time_error_ns.observation.images.wrist_right",
+      "hc.valid.observation.images.wrist_right",
+      "hc.repeated.observation.images.wrist_right",
+      "action",
+      "hc.source_timestamps_ns.action",
+      "hc.time_error_ns.action",
+      "hc.valid.action",
+      "hc.repeated.action",
+      "observation.state",
+      "hc.source_timestamps_ns.observation.state",
+      "hc.time_error_ns.observation.state",
+      "hc.valid.observation.state",
+      "hc.repeated.observation.state",
+      "hc.source.metadata.source",
+      "hc.source_timestamps_ns.hc.source.metadata.source",
+      "hc.time_error_ns.hc.source.metadata.source",
+      "hc.valid.hc.source.metadata.source",
+      "hc.repeated.hc.source.metadata.source",
+      "hc.source.robot.action.base_target",
+      "hc.source_timestamps_ns.hc.source.robot.action.base_target",
+      "hc.time_error_ns.hc.source.robot.action.base_target",
+      "hc.valid.hc.source.robot.action.base_target",
+      "hc.repeated.hc.source.robot.action.base_target",
+      "hc.source.robot.base_pose",
+      "hc.source_timestamps_ns.hc.source.robot.base_pose",
+      "hc.time_error_ns.hc.source.robot.base_pose",
+      "hc.valid.hc.source.robot.base_pose",
+      "hc.repeated.hc.source.robot.base_pose",
+      "hc.source.robot.dex1.raw_command",
+      "hc.source_timestamps_ns.hc.source.robot.dex1.raw_command",
+      "hc.time_error_ns.hc.source.robot.dex1.raw_command",
+      "hc.valid.hc.source.robot.dex1.raw_command",
+      "hc.repeated.hc.source.robot.dex1.raw_command",
+      "hc.source.robot.dex1.raw_state",
+      "hc.source_timestamps_ns.hc.source.robot.dex1.raw_state",
+      "hc.time_error_ns.hc.source.robot.dex1.raw_state",
+      "hc.valid.hc.source.robot.dex1.raw_state",
+      "hc.repeated.hc.source.robot.dex1.raw_state",
+      "hc.source.robot.end_effector.action",
+      "hc.source_timestamps_ns.hc.source.robot.end_effector.action",
+      "hc.time_error_ns.hc.source.robot.end_effector.action",
+      "hc.valid.hc.source.robot.end_effector.action",
+      "hc.repeated.hc.source.robot.end_effector.action",
+      "hc.source.robot.end_effector.state",
+      "hc.source_timestamps_ns.hc.source.robot.end_effector.state",
+      "hc.time_error_ns.hc.source.robot.end_effector.state",
+      "hc.valid.hc.source.robot.end_effector.state",
+      "hc.repeated.hc.source.robot.end_effector.state",
+      "hc.source.robot.joint_states",
+      "hc.source_timestamps_ns.hc.source.robot.joint_states",
+      "hc.time_error_ns.hc.source.robot.joint_states",
+      "hc.valid.hc.source.robot.joint_states",
+      "hc.repeated.hc.source.robot.joint_states",
+      "index",
+      "frame_index",
+      "episode_index",
+      "task_index",
+      "timestamp",
+      "hc.timestamp_ns",
+      "hc.sample_valid"
+    ],
+    "additional_columns": [
+      "subtask_index",
+      "hc.annotation.excluded"
+    ],
+    "source_frames_equal": true,
+    "subtask_frame_counts": {
+      "-1": 791,
+      "0": 93,
+      "1": 36
+    },
+    "excluded_frame_count": 0,
+    "human_acceptance": false
+  },
+  "old_history": {
+    "phase": "annotation-delivered",
+    "source_inventory_sha256": "432c0c9ac0ea4f051db3a370228bbc343296a1c01e43e77d31b764b5f0a3c354",
+    "all_historical_rows_unchanged": true,
+    "original_annotation_history_unchanged": true,
+    "new_annotation_rows_restricted_to_mapping_task": true,
+    "tables": {
+      "aligned_media.artifacts": {
+        "before": 618,
+        "after": 618,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_operations": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_reviews": {
+        "before": 1,
+        "after": 2,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_revisions": {
+        "before": 156,
+        "after": 159,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_submissions": {
+        "before": 2,
+        "after": 3,
+        "all_historical_rows_unchanged": true
+      },
+      "annotation.annotation_tasks": {
+        "before": 154,
+        "after": 155,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_content_projections": {
+        "before": 155,
+        "after": 157,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_episode_revisions": {
+        "before": 12089,
+        "after": 12397,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_episodes": {
+        "before": 12089,
+        "after": 12397,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_manifest_entries": {
+        "before": 12089,
+        "after": 12397,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_review_decisions": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_review_findings": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_schema_details": {
+        "before": 155,
+        "after": 157,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_version_source_provenance": {
+        "before": 12089,
+        "after": 12397,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.dataset_versions": {
+        "before": 155,
+        "after": 157,
+        "all_historical_rows_unchanged": true
+      },
+      "dataset_registry.datasets": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.bindings": {
+        "before": 0,
+        "after": 2,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.collection_heads": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.collections": {
+        "before": 0,
+        "after": 2,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.data_reviews": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.migration_batches": {
+        "before": 0,
+        "after": 2,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.qc_evidence": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "episode_store.versions": {
+        "before": 0,
+        "after": 2,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.continuous_recordings": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.raw_source_episodes": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.raw_sources": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_episode_asset_windows": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_episode_processing": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_episode_slices": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_slice_revisions": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.recording_upload_assets": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.robot_ingest_assets": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "ingest.rollout_objects": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_dataset_versions": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_datasets": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_rollout_lineage": {
+        "before": 154,
+        "after": 154,
+        "all_historical_rows_unchanged": true
+      },
+      "public.lance_schema_snapshots": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.dataset_versions": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.export_attempts": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.publication_assets": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.published_exports": {
+        "before": 0,
+        "after": 0,
+        "all_historical_rows_unchanged": true
+      },
+      "publishing.rollout_publication_lineage": {
+        "before": 1,
+        "after": 1,
+        "all_historical_rows_unchanged": true
+      }
+    },
+    "collection_heads": [],
+    "episode_current_pointers": [
+      null,
+      null
+    ],
+    "legacy_versions_unchanged": true
+  },
+  "software_tests": {
+    "backend_unique": 28,
+    "frontend_unique": 30,
+    "failures": 0,
+    "skips": 0,
+    "final_route_recheck_counted_again": false
+  },
+  "runtime_openapi_sha256": "2df9042c561979d5eb32293536a95714e7ef1830535aba3e91478ee5e1e96a8f",
+  "depth_streams": 0,
+  "independent_depth_masks": "NOT_APPLICABLE_TO_THIS_SOURCE",
+  "sensor_provenance_independently_verified": false,
+  "human_acceptance": false,
+  "model_depth_training_support": "NOT_VALIDATED",
+  "G2_started": false,
+  "G3_started": false
+}

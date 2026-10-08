@@ -65,6 +65,25 @@ def detail_state(
                 'files',COALESCE((SELECT jsonb_agg(to_jsonb(f) ORDER BY f.revision)
                     FROM files f),'[]'::jsonb),
                 'jobs',COALESCE((SELECT jsonb_agg(to_jsonb(j)) FROM jobs j),'[]'::jsonb),
+                'migrations',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                    'mapping_id',m.mapping_id,'source_task_id',m.source_task_id,
+                    'source_revision',(m.plan->>'source_revision')::bigint,
+                    'source_revision_content_hash',m.plan->>'source_revision_content_hash',
+                    'source_data',m.plan->'source_data',
+                    'source_status',m.plan->'source_snapshot'->'task'->>'status',
+                    'source_submission_count',jsonb_array_length(
+                        m.plan->'source_snapshot'->'history'->'annotation_submissions'),
+                    'source_review_count',jsonb_array_length(
+                        m.plan->'source_snapshot'->'history'->'annotation_reviews'),
+                    'target_revision',1,
+                    'target_revision_content_hash',m.result->>'target_revision_content_hash',
+                    'document_sha256',m.document_sha256,'document_size',m.document_size,
+                    'review_automatically_transferred',false) ORDER BY m.mapping_id)
+                    FROM episode_store.annotation_migrations m JOIN task t
+                        ON m.target_task_id=t.task_id AND m.target_data=t.data_ref
+                    WHERE m.organization_id=t.organization_id AND m.project_id=t.project_id
+                      AND m.region_code=t.region_code AND m.dataset_id=t.dataset_id
+                      AND m.status='APPLIED'),'[]'::jsonb),
                 'data_review',(SELECT document FROM episode_store.data_reviews
                     WHERE organization_id=%s AND project_id=%s AND region_code=%s
                       AND data_version_id=%s ORDER BY sequence DESC LIMIT 1))""",

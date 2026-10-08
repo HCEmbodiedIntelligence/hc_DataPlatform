@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Scope } from "../../entities/scope";
 import { episodeDataReferenceWireSchema as dataWire } from "../../features/datasets/api/episode-package-wire";
 import { request } from "../../shared/api/http-client";
+import { sha256File } from "../../shared/lib/browser-crypto";
 import type { ReviewDataRef } from "./data-reviews";
 
 const digest = z.string().regex(/^[0-9a-f]{64}$/u);
@@ -59,6 +60,27 @@ const reviewed = submitted.extend({
   review_id: z.string(),
   decision: z.string(),
 });
+const migration = z.object({
+  mapping_id: z.string().regex(/^am_[0-9a-f]{64}$/u),
+  source_task_id: z.string().min(1),
+  source_revision: count,
+  source_revision_content_hash: digest,
+  source_data: dataWire.omit({ version: true, package_prefix: true }).extend({
+    storage_format: z.literal("lance"),
+    dataset_version: count.positive(),
+    dataset_uri: z.string().min(1),
+    lance_version: count.positive(),
+  }),
+  source_status: z.string(),
+  source_submission_count: count,
+  source_review_count: count,
+  target_revision: z.literal(1),
+  target_revision_content_hash: digest,
+  document_sha256: digest,
+  document_size: count.positive().max(16 * 1024 ** 2),
+  review_automatically_transferred: z.literal(false),
+  download: action,
+});
 const annotation = z.object({
   availability: z.enum([
     "AVAILABLE",
@@ -97,6 +119,7 @@ const annotation = z.object({
       })
       .passthrough(),
   ),
+  historical_migrations: z.array(migration).default([]),
 });
 const track = z
   .object({
@@ -193,6 +216,7 @@ const overview = z.object({
 export type EpisodeOverview = z.infer<typeof overview>;
 export type EpisodeFile = z.infer<typeof fileWire>;
 export type EpisodeFilePage = z.infer<typeof filePage>;
+export type EpisodeAnnotationMigration = z.infer<typeof migration>;
 export type DetailSelection = {
   annotationTaskId?: string;
   deliveryId?: string;
@@ -203,6 +227,18 @@ function same(left: ReviewDataRef, right: ReviewDataRef) {
     JSON.stringify(dataWire.parse(left)) ===
     JSON.stringify(dataWire.parse(right))
   );
+}
+function checkMigration(
+  value: EpisodeAnnotationMigration,
+  data: ReviewDataRef,
+) {
+  if (
+    JSON.stringify(value.source_data.identity) !==
+      JSON.stringify(dataWire.parse(data).identity) ||
+    value.source_data.schema_snapshot_id !== data.schema_snapshot_id ||
+    value.source_data.frame_count !== data.frame_count
+  )
+    throw new Error("历史标注映射与选定 Episode 的身份或帧数不一致。");
 }
 export function episodeEndpoint(scope: Scope, data: ReviewDataRef) {
   const id = dataWire.parse(data).identity;
@@ -288,7 +324,17 @@ export async function loadEpisodeOverview(
         ann.latest_approval !== null ||
         ann.latest_review !== null ||
         ann.revision_files.length > 0 ||
+        ann.historical_migrations.length > 0 ||
         value.deliveries.length > 0)) ||
+    new Set(ann.historical_migrations.map((m) => m.mapping_id)).size !==
+      ann.historical_migrations.length ||
+    ann.historical_migrations.some(
+      (m) =>
+        m.source_task_id === ann.task_id ||
+        m.target_revision > (ann.current_revision?.revision ?? 0) ||
+        (m.target_revision === ann.current_revision?.revision &&
+          m.target_revision_content_hash !== ann.current_revision.content_hash),
+    ) ||
     (value.subtasks.status === "SELECTED" &&
       !value.deliveries.some(
         (job) =>
@@ -304,7 +350,33 @@ export async function loadEpisodeOverview(
   )
     throw new Error("Episode 详情的数据版本、标注任务或审核身份不一致。");
   checkFiles(value.files, data);
+  ann.historical_migrations.forEach((m) => checkMigration(m, data));
   return value;
+}
+export async function downloadAnnotationMigration(
+  scope: Scope,
+  data: ReviewDataRef,
+  raw: EpisodeAnnotationMigration,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const value = migration.parse(raw);
+  checkMigration(value, data);
+  if (!value.download.allowed) throw new Error("缺少历史标注映射下载权限。");
+  const blob = await request<Blob>({
+    method: "GET",
+    path: `${episodeEndpoint(scope, data)}/annotation-migrations/${value.mapping_id}`,
+    scope,
+    signal,
+    cache: "no-store",
+    responseType: "blob",
+  });
+  if (
+    blob.size !== value.document_size ||
+    (await sha256File(blob)) !== value.document_sha256
+  )
+    throw new Error("历史标注映射文件校验失败，请刷新详情后重试。");
+  signal?.throwIfAborted();
+  return blob;
 }
 export async function loadEpisodeFiles(
   scope: Scope,

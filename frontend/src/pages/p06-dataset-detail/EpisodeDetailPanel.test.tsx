@@ -8,16 +8,21 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
 import {
   authorizeEpisodeFile,
+  downloadAnnotationMigration,
   loadEpisodeFiles,
   loadEpisodeOverview,
 } from "./episode-detail";
-import { episodeDetailFixture } from "./testing/episode-detail-fixture";
+import {
+  episodeDetailFixture,
+  episodeMigrationFixture,
+} from "./testing/episode-detail-fixture";
 
 vi.mock("./episode-detail", async (original) => ({
   ...(await original<typeof import("./episode-detail")>()),
   loadEpisodeOverview: vi.fn(),
   loadEpisodeFiles: vi.fn(),
   authorizeEpisodeFile: vi.fn(),
+  downloadAnnotationMigration: vi.fn(),
 }));
 beforeEach(() => {
   vi.stubGlobal(
@@ -28,6 +33,57 @@ beforeEach(() => {
       disconnect() {}
     },
   );
+});
+
+it("shows historical approval separately and saves verified mapping bytes", async () => {
+  const f = episodeMigrationFixture();
+  mount(true, (view) => Object.assign(view, f.view));
+  await screen.findByText("抓取演示");
+  await userEvent.click(screen.getByRole("tab", { name: "标注与审核" }));
+  expect(
+    await screen.findByText(
+      "历史审核仅作来源记录；当前版本标注需独立提交和审核。",
+    ),
+  ).toBeVisible();
+  expect(screen.getByText("尚未批准")).toBeVisible();
+  expect(screen.getByText(/来源：历史数据版本 132/)).toBeVisible();
+  const create = vi.fn().mockReturnValue("blob:verified-mapping");
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class {}, {
+      createObjectURL: create,
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  const bytes = new Blob(["{ }\n"]);
+  vi.mocked(downloadAnnotationMigration).mockResolvedValue(bytes);
+  await userEvent.click(
+    screen.getByRole("button", { name: "下载历史标注映射 JSON" }),
+  );
+  await waitFor(() => expect(click).toHaveBeenCalledOnce());
+  expect(create).toHaveBeenCalledWith(bytes);
+  expect(downloadAnnotationMigration).toHaveBeenCalledWith(
+    f.scope,
+    f.data,
+    f.mapping,
+    expect.any(AbortSignal),
+  );
+});
+
+it("disables historical mapping download without permission", async () => {
+  const f = episodeMigrationFixture();
+  f.mapping.download.allowed = false;
+  Object.assign(f.mapping.download, { denied_reason: "MISSING_CAPABILITY" });
+  mount(true, (view) => Object.assign(view, f.view));
+  await screen.findByText("抓取演示");
+  await userEvent.click(screen.getByRole("tab", { name: "标注与审核" }));
+  expect(
+    await screen.findByRole("button", { name: "下载历史标注映射 JSON" }),
+  ).toBeDisabled();
+  expect(downloadAnnotationMigration).not.toHaveBeenCalled();
 });
 afterEach(() => {
   cleanup();

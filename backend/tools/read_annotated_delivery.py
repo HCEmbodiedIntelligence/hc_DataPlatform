@@ -1,5 +1,6 @@
 """Offline official DataLoader check of a full revision-bound delivery artifact."""
 
+import argparse
 import hashlib
 import io
 import json
@@ -9,22 +10,45 @@ from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
+import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from PIL import Image
 from torch.utils.data import DataLoader
 
-root = Path(sys.argv[1])
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("root", type=Path)
+parser.add_argument("output", type=Path)
+parser.add_argument("--video-backend", choices=("pyav", "torchcodec"), default="pyav")
+parser.add_argument(
+    "--input-kind",
+    choices=("software_fixture", "existing_history_isolated_copy"),
+    default="software_fixture",
+)
+args = parser.parse_args()
+root = args.root
+assert version("lerobot") == "0.6.1"
+torch.set_num_threads(1)
+
+
+def file_hash(path):
+    value = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024**2), b""):
+            value.update(chunk)
+    return value.hexdigest()
+
+
 manifest = json.loads((root / "hc/delivery_manifest.json").read_text())
 assert manifest["format"] == "hc-annotated-episode/1"
 assert manifest["exclusion_policy"] == "mark_parent_frames"
 for entry in manifest["files"]:
-    body = (root / entry["path"]).read_bytes()
-    assert len(body) == entry["size"] and hashlib.sha256(body).hexdigest() == entry["sha256"]
+    path = root / entry["path"]
+    assert path.stat().st_size == entry["size"] and file_hash(path) == entry["sha256"]
 parent = json.loads((root / "hc/parent_manifest.json").read_text())
 unchanged = 0
 for entry in parent["files"]:
     if entry["path"].startswith(("videos/", "hc/depth/")):
-        assert hashlib.sha256((root / entry["path"]).read_bytes()).hexdigest() == entry["sha256"]
+        assert file_hash(root / entry["path"]) == entry["sha256"]
         unchanged += 1
 assert (
     hashlib.sha256((root / "hc/annotation.json").read_bytes()).hexdigest()
@@ -42,7 +66,7 @@ masks = {
     feature: pq.read_table(root / item["evidence_path"] / "validity/flags.parquet").to_pylist()
     for feature, item in modalities["depth"].items()
 }
-dataset = LeRobotDataset("local/chayi-annotated-rgbd", root=root, video_backend="pyav")
+dataset = LeRobotDataset("local/chayi-annotated-rgbd", root=root, video_backend=args.video_backend)
 seen, invalid = 0, 0
 for batch in DataLoader(dataset, batch_size=2, num_workers=0):
     indices = batch["subtask_index"].reshape(-1).tolist()
@@ -72,10 +96,15 @@ assert seen == len(dataset) == manifest["base_data"]["frame_count"]
 assert not any(name.startswith("hc_data_platform") for name in sys.modules)
 result = {
     "source": str(root),
-    "synthetic_input": True,
+    "input_kind": args.input_kind,
+    "synthetic_input": args.input_kind == "software_fixture",
+    "sensor_provenance_independently_verified": False,
+    "human_acceptance": False,
     "lerobot": version("lerobot"),
     "official_reader_and_dataloader": True,
-    "independent_hc_masks_applied": True,
+    "independent_hc_masks_applied": bool(masks),
+    "video_backend_requested": args.video_backend,
+    "depth_video_backend": "pyav" if masks else None,
     "frames": seen,
     "segments": len(segments),
     "all_tags": len(annotation["revision"]["tags"]),
@@ -90,5 +119,5 @@ result = {
     "queue_api_browser_verified": False,
     "model_depth_training_support": "NOT_VALIDATED",
 }
-Path(sys.argv[2]).write_text(json.dumps(result, indent=2) + "\n")
+args.output.write_text(json.dumps(result, indent=2) + "\n")
 print(json.dumps(result, indent=2))

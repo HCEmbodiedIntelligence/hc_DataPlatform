@@ -46,6 +46,7 @@ export function episodeDetailFixture() {
       current_approved_review_id: null,
       has_unsubmitted_changes: null,
       revision_files: [],
+      historical_migrations: [],
     },
     subtasks: {
       status: "NOT_SPECIFIED",
@@ -85,4 +86,56 @@ export function episodeDetailFixture() {
     observed_at: "2026-09-29T12:00:00Z",
   };
   return { scope, data, view };
+}
+
+export function episodeMigrationFixture() {
+  const f = episodeDetailFixture();
+  const mapping = {
+    mapping_id: `am_${"c".repeat(64)}`,
+    source_task_id: "historical-task",
+    source_revision: 2,
+    source_revision_content_hash: "d".repeat(64),
+    source_data: {
+      identity: f.data.identity,
+      storage_format: "lance" as const,
+      data_version_id: "historical-data",
+      content_hash: "e".repeat(64),
+      schema_snapshot_id: f.data.schema_snapshot_id,
+      frame_count: f.data.frame_count,
+      dataset_version: 132,
+      dataset_uri: "s3://isolated/history.lance",
+      lance_version: 132,
+    },
+    source_status: "APPROVED",
+    source_submission_count: 1,
+    source_review_count: 1,
+    target_revision: 1 as const,
+    target_revision_content_hash: "b".repeat(64),
+    document_sha256: "f".repeat(64),
+    document_size: 200,
+    review_automatically_transferred: false as const,
+    download: {
+      action: "DOWNLOAD_ANNOTATION_MIGRATION",
+      allowed: true,
+      required_capabilities: ["annotation_task.read", "export.download"],
+      denied_reason: null,
+    },
+  };
+  f.view.annotation = {
+    ...f.view.annotation,
+    availability: "AVAILABLE",
+    task_id: "new-task",
+    status: "DRAFT",
+    state_version: 1,
+    current_revision: {
+      task_id: "new-task",
+      revision: 1,
+      content_hash: mapping.target_revision_content_hash,
+      author_id: "migration-operator",
+      created_at: f.view.observed_at,
+    },
+    has_unsubmitted_changes: true,
+    historical_migrations: [mapping],
+  };
+  return { ...f, mapping };
 }

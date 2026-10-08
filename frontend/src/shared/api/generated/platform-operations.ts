@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: f9119df33557d3458d9a7375256e8359c7b01e945b76c24459f243089e550cd1
+// Runtime-OpenAPI-SHA256: 2df9042c561979d5eb32293536a95714e7ef1830535aba3e91478ee5e1e96a8f
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -267,6 +267,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/data-sources/page" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/annotation-migrations/{mapping_id}" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/data-reviews" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/data-reviews" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/depth/{feature}/{frame_index}" },

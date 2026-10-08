@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from .models import DataVersionRef, Digest, FrozenModel
+from .models import DataVersionRef, Digest, FrozenModel, LegacyEpisodeRef
 from .quality import EpisodeQualityView
 from .review_models import EpisodeDataReview
 
@@ -53,6 +53,23 @@ class EpisodeRevisionIdentity(FrozenModel):
     created_at: datetime
 
 
+class EpisodeAnnotationMigration(FrozenModel):
+    mapping_id: str = Field(pattern=r"^am_[0-9a-f]{64}$")
+    source_task_id: str
+    source_revision: int = Field(ge=0)
+    source_revision_content_hash: Digest
+    source_data: LegacyEpisodeRef
+    source_status: str
+    source_submission_count: int = Field(ge=0)
+    source_review_count: int = Field(ge=0)
+    target_revision: Literal[1] = 1
+    target_revision_content_hash: Digest
+    document_sha256: Digest
+    document_size: int = Field(ge=1, le=16 * 1024**2)
+    review_automatically_transferred: Literal[False] = False
+    download: EpisodeAction
+
+
 class EpisodeAnnotationState(FrozenModel):
     availability: Literal["AVAILABLE", "NOT_CREATED", "FORBIDDEN", "SELECTION_REQUIRED"]
     task_options: tuple[dict[str, Any], ...] = ()
@@ -68,6 +85,7 @@ class EpisodeAnnotationState(FrozenModel):
     current_approved_review_id: str | None = None
     has_unsubmitted_changes: bool | None = None
     revision_files: tuple[dict[str, Any], ...] = ()
+    historical_migrations: tuple[EpisodeAnnotationMigration, ...] = ()
 
 
 class EpisodeCameraDetail(FrozenModel):

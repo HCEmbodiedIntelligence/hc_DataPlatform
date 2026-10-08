@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="9" failures="0" errors="0" time="0.026710172">
+    <testsuite name="src/pages/p08-data-annotation/annotation-package.test.ts" timestamp="2026-09-30T07:31:47.201Z" hostname="529b77eed979" tests="3" failures="0" errors="0" skipped="0" time="0.014618183">
+        <testcase classname="src/pages/p08-data-annotation/annotation-package.test.ts" name="loads fixed package metadata and exposes RGB plus official depth preview without a Lance lookup" time="0.006994824">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-package.test.ts" name="reads joint values from the immutable package and rejects a changed content hash" time="0.00516962">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/annotation-package.test.ts" name="rejects cross-scope, mixed baselines and revisions bound to another package" time="0.001282483">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p08-data-annotation/joint-angle-stream.test.ts" timestamp="2026-09-30T07:31:47.202Z" hostname="529b77eed979" tests="6" failures="0" errors="0" skipped="0" time="0.012091989">
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; discovers a legacy joint column once and projects it in subsequent chunks" time="0.004754388">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; reads the fixed task window and resolves a real joint vector without synthesizing values" time="0.002439907">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; stays unavailable when the Manifest does not declare a joint Topic" time="0.000151382">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; exposes the nearest named joint frame for URDF playback" time="0.001301864">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; coalesces frame consumers without aborting the shared Lance chunk" time="0.000638949">
+        </testcase>
+        <testcase classname="src/pages/p08-data-annotation/joint-angle-stream.test.ts" name="P08 joint-angle Lance stream &gt; backs off a failed chunk instead of retrying on every clock tick" time="0.000963745">
+        </testcase>
+    </testsuite>
+</testsuites>

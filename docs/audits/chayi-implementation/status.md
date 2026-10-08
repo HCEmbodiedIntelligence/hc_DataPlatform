@@ -47,6 +47,14 @@ acceptance. “Pending” is not passed. Evidence is added as commands actually 
 
 ## Work log
 
+- W7 历史标注补充（2026-10-08）：冻结 Lance 132 的完整已审核历史，持久映射到
+  已核验归档集合中的真实标准包，独立新草稿/提交/审核。实际 1440/1024 页面、
+  981 MiB 完整包浏览器下载、禁网官方 reader 全部 920 帧、完整父列/视频/源帧
+  等价和全部旧行哈希核对通过；58 个独立后端/前端用例通过，见
+  [证据与限制](historical-annotation-migrations.md)。同包的官方 PyAV 全帧检查也
+  已完成。源无深度；全部批次、真实 RGB-D、P06 业务发布、W8 与真人/真机继续，
+  G1 尚未完成，G2/G3 未开始。下方“映射/PyAV 待完成”属于原阶段记录。
+
 - W7 MCAP 消息补充（2026-09-30）：官方 CDR decoder 兼容历史短 schema 名，
   明确 16 位 PNG 布局和源 profile 后保留像素；34 项定向/真实服务回归通过。
   实际历史文件 111 帧 RGB 解码，131 帧深度因源单位未声明全部拒绝，见

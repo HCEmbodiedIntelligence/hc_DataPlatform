@@ -11,12 +11,14 @@ import { CompleteDeliveryPanel } from "./CompleteDeliveryPanel";
 import type { ReviewDataRef } from "./data-reviews";
 import {
   authorizeEpisodeFile,
+  downloadAnnotationMigration,
   loadEpisodeFiles,
   loadEpisodeOverview,
   secondsFromNs,
   type DetailSelection,
   type EpisodeFile,
   type EpisodeOverview,
+  type EpisodeAnnotationMigration,
 } from "./episode-detail";
 import styles from "./EpisodeDetailPanel.module.css";
 
@@ -186,10 +188,90 @@ function EpisodeFiles({ scope, data }: { scope: Scope; data: ReviewDataRef }) {
   );
 }
 
+function HistoricalAnnotationMappings({
+  scope,
+  data,
+  mappings,
+}: {
+  scope: Scope;
+  data: ReviewDataRef;
+  mappings: EpisodeAnnotationMigration[];
+}) {
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => {
+    controller.current = new AbortController();
+    return () => controller.current?.abort();
+  }, []);
+  const download = useMutation({
+    mutationFn: async (mapping: EpisodeAnnotationMigration) => {
+      const signal = controller.current!.signal;
+      const blob = await downloadAnnotationMigration(
+        scope,
+        data,
+        mapping,
+        signal,
+      );
+      signal.throwIfAborted();
+      const url = URL.createObjectURL(blob);
+      try {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${mapping.mapping_id}.json`;
+        document.body.append(anchor);
+        anchor.click();
+        anchor.remove();
+      } finally {
+        // Give the browser time to begin consuming the object URL.
+        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+    },
+  });
+  return (
+    <section aria-label="历史标注迁移" className={styles.stack}>
+      {mappings.map((mapping) => (
+        <Card key={mapping.mapping_id} size="small" title="历史标注迁移">
+          <p>
+            来源：历史数据版本 {mapping.source_data.dataset_version} · 标注修订{" "}
+            {mapping.source_revision} ·{" "}
+            {annotationStates[mapping.source_status] ?? mapping.source_status}
+          </p>
+          <p>
+            保留 {mapping.source_submission_count} 次历史提交、{" "}
+            {mapping.source_review_count} 次历史审核，映射至当前任务的修订{" "}
+            {mapping.target_revision}。
+          </p>
+          <p>历史审核仅作来源记录；当前版本标注需独立提交和审核。</p>
+          <Button
+            disabled={!mapping.download.allowed || download.isPending}
+            loading={
+              download.isPending &&
+              download.variables?.mapping_id === mapping.mapping_id
+            }
+            onClick={() => download.mutate(mapping)}
+          >
+            下载历史标注映射 JSON
+          </Button>
+          {!mapping.download.allowed && <p>缺少标注读取或下载权限。</p>}
+          <Technical title="映射身份与文件校验" value={mapping} />
+        </Card>
+      ))}
+      {download.error && (
+        <Alert
+          type="error"
+          title="历史标注映射下载失败"
+          description={download.error.message}
+        />
+      )}
+    </section>
+  );
+}
+
 function AnnotationSummary({
+  scope,
   value,
   select,
 }: {
+  scope: Scope;
   value: EpisodeOverview;
   select: (selection: DetailSelection) => void;
 }) {
@@ -263,6 +345,13 @@ function AnnotationSummary({
         <Button onClick={() => select({})}>重新选择标注任务</Button>
       </div>
       <p>带标注下载在标注工作区选择修订和分段轨道，保留已采集深度。</p>
+      {ann.historical_migrations.length > 0 && (
+        <HistoricalAnnotationMappings
+          scope={scope}
+          data={value.data}
+          mappings={ann.historical_migrations}
+        />
+      )}
       <strong>标注 JSON 文件</strong>
       {ann.revision_files.map((file) => (
         <p key={file.revision}>
@@ -488,7 +577,11 @@ export function EpisodeDetailPanel({
                 key: "annotation",
                 label: "标注与审核",
                 children: (
-                  <AnnotationSummary value={value} select={setSelection} />
+                  <AnnotationSummary
+                    scope={scope}
+                    value={value}
+                    select={setSelection}
+                  />
                 ),
               },
               {

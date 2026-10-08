@@ -17,6 +17,7 @@ from .derivation_router import router as derivation_router
 from .detail import file_page, open_download, read_detail
 from .detail_models import EpisodeDetail, EpisodeFileGrant, EpisodeFilePage
 from .download import complete_archive
+from .migration_annotations import read_annotation_migration
 from .models import DataVersionRef
 from .postgres import PackageConflict
 from .previews import EpisodePreviewGrant
@@ -160,6 +161,43 @@ def steps(
     with authorized(auth, project_id, region_code, dataset_id, episode_id) as (service, identity):
         return service.steps.read_steps(
             identity, data_version_id, start_step, end_step, columns=columns
+        )
+
+
+@router.get(
+    VERSION + "/annotation-migrations/{mapping_id}",
+    response_class=Response,
+    responses={200: {"content": {"application/json": {"schema": {"type": "object"}}}}},
+)
+def annotation_migration_json(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    episode_id: str,
+    data_version_id: str,
+    mapping_id: str,
+    auth: VerifiedAuth,
+):
+    with authorized(auth, project_id, region_code, dataset_id, episode_id, download=True) as (
+        service,
+        identity,
+    ):
+        authorize_scope(
+            auth, project_id, "annotation_task.read", region_code, identity.organization_id
+        )
+        data = service.repository.get(identity, data_version_id).data
+        body, checksum = read_annotation_migration(
+            service.repository, service.committer.storage, data, mapping_id
+        )
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f'attachment; filename="{quote(mapping_id, safe="")}.json"',
+                "Cache-Control": "private, no-store",
+                "X-HC-SHA256": checksum,
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
 
