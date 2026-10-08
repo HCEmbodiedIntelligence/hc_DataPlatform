@@ -416,7 +416,10 @@ def test_release_database_row_is_immutable(release_source):
                 cursor.execute(sql, (command.expected_content_hash, ident.dataset_id))
 
 
-def test_real_gateway_publication_requires_ordinary_scope_and_both_capabilities(release_source):
+@pytest.mark.parametrize("inherited_publish", [False, True])
+def test_real_gateway_publication_requires_ordinary_scope_and_both_capabilities(
+    release_source, inherited_publish
+):
     source, service, command, _ = release_source
     _, plan, _, _, _, _ = source
     ident = plan.legacy.identity
@@ -432,6 +435,7 @@ def test_real_gateway_publication_requires_ordinary_scope_and_both_capabilities(
                 "dataset_version.read",
                 "dataset_version.publish",
                 "annotation_task.read",
+                *(["upload.manage"] if inherited_publish else []),
             ],
         )
         path = (
@@ -462,6 +466,24 @@ def test_real_gateway_publication_requires_ordinary_scope_and_both_capabilities(
             ).status_code
             == 403
         )
+        if inherited_publish:
+            with service.repository.transaction() as cursor:
+                cursor.execute(
+                    "UPDATE access_control.capability_grants SET active=false "
+                    "WHERE principal_id=%s AND capability_key='dataset_version.publish'",
+                    (principal,),
+                )
+            # Direct removal does not revoke the operator's inherited permission.
+            allowed = client.post(
+                path + "/preflight", json=command.model_dump(mode="json"), headers=headers
+            )
+            assert allowed.status_code == 200, allowed.text
+            with service.repository.transaction() as cursor:
+                cursor.execute(
+                    "UPDATE access_control.capability_grants SET active=false "
+                    "WHERE principal_id=%s AND capability_key='upload.manage'",
+                    (principal,),
+                )
         for capability in ("dataset_version.publish", "annotation_task.read"):
             with service.repository.transaction() as cursor:
                 cursor.execute(
@@ -473,4 +495,10 @@ def test_real_gateway_publication_requires_ordinary_scope_and_both_capabilities(
                 client.post(path, json=command.model_dump(mode="json"), headers=headers).status_code
                 == 403
             )
+            if capability == "dataset_version.publish":
+                assert (
+                    client.get(path + "/" + released["version_id"], headers=headers).json()
+                    == released
+                )
+                assert state(service, ident)[1:] == (1, 1)
         assert client.post("/api/v1/auth/session:logout", headers=headers).status_code == 204

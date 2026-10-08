@@ -1,0 +1,193 @@
+{
+  "baseline_commit": "1d29d6bc",
+  "trace": [
+    [
+      "signal",
+      "/joint",
+      0,
+      {
+        "x": 0
+      }
+    ],
+    [
+      "camera",
+      "/rgb",
+      0,
+      10.0,
+      "0000",
+      false
+    ],
+    [
+      "camera",
+      "/rgb",
+      100000000,
+      10.0,
+      "0000",
+      false
+    ],
+    [
+      "signal",
+      "/joint",
+      125000000,
+      {
+        "x": 1
+      }
+    ],
+    [
+      "camera",
+      "/rgb",
+      150000000,
+      40.0,
+      "ffff",
+      false
+    ],
+    [
+      "camera",
+      "/rgb",
+      200000000,
+      40.0,
+      "invalid",
+      true
+    ],
+    [
+      "camera",
+      "/rgb",
+      700000000,
+      null,
+      null,
+      false
+    ],
+    [
+      "signal",
+      "/text",
+      800000000,
+      "a"
+    ],
+    [
+      "signal",
+      "/text",
+      900000000,
+      "b"
+    ],
+    [
+      "camera",
+      "/rgb",
+      1300000000,
+      null,
+      null,
+      false
+    ]
+  ],
+  "results": {
+    "3": {
+      "schema_version": 1,
+      "sampling_version": "adaptive-2fps-v2",
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "camera_set": [
+        "/rgb"
+      ],
+      "source_frame_count": 6,
+      "groups": [
+        {
+          "timestamp_ns": 0,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "robot-state-change",
+            "uniform-2fps"
+          ]
+        },
+        {
+          "timestamp_ns": 100000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "robot-state-change"
+          ]
+        },
+        {
+          "timestamp_ns": 150000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "event-refinement",
+            "luma-change",
+            "perceptual-change"
+          ]
+        }
+      ]
+    },
+    "10000": {
+      "schema_version": 1,
+      "sampling_version": "adaptive-2fps-v2",
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "camera_set": [
+        "/rgb"
+      ],
+      "source_frame_count": 6,
+      "groups": [
+        {
+          "timestamp_ns": 0,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "robot-state-change",
+            "uniform-2fps"
+          ]
+        },
+        {
+          "timestamp_ns": 100000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "robot-state-change"
+          ]
+        },
+        {
+          "timestamp_ns": 150000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "event-refinement",
+            "luma-change",
+            "perceptual-change"
+          ]
+        },
+        {
+          "timestamp_ns": 200000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "corrupt-frame-boundary",
+            "event-refinement"
+          ]
+        },
+        {
+          "timestamp_ns": 700000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "uniform-2fps"
+          ]
+        },
+        {
+          "timestamp_ns": 1300000000,
+          "camera_set": [
+            "/rgb"
+          ],
+          "reasons": [
+            "uniform-2fps"
+          ]
+        }
+      ]
+    }
+  }
+}

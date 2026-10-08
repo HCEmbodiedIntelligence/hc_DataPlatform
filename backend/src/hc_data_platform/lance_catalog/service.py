@@ -26,9 +26,8 @@ from .ports import CatalogRepositoryPort, DatasetWriterLockPort, LanceStoragePor
 from .schema import (
     LanceDependencyError,
     compile_arrow_schema,
-    compute_schema_fingerprint,
-    validate_schema_fields,
 )
+from .schema_spec import compute_schema_fingerprint, validate_schema_fields
 
 DatasetKey = tuple[str, str]
 ScopedIdempotencyKey = tuple[str, str, str, str, str]

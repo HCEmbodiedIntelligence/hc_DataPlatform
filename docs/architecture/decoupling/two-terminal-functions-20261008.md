@@ -66,6 +66,19 @@ build:container 通过；后端 OpenAPI 聚合检查通过，runtime SHA256
 未完成项及真实传感器条件不在这些通过结果中。
 
 
+## 第二批本地集成
+
+`190d318b4a330740aca0e124dbd173a84ae4ecb7` 包含备份共享装配和独立 Tag
+目录投影。精确集成树执行 20 项真实 API/持久 worker/CLI/PG/MinIO 回归、
+90 项备份/架构/应用检查，均零跳过；前端生成类型核对、typecheck、架构和
+mock=off production 构建通过。前端源码与首批 1004 项 Vitest 通过版本相同。
+证据为 `results/A-services/integration-batch-two-*`；runtime SHA256 仍为
+`125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206`。
+
+独立后端 next 中已实现逻辑样本及媒体授权，由真实 Lance/Parquet 和 PG/MinIO
+读回验证，已公布契约给 B。前端消费者尚未完成，未纳入本地 main 的这两批集成，
+不把新接口存在当成前端功能完成。B 浏览器候选仍为 3df9fc78，等待剩余验收回执。
+
 ## A：Raw 录制登记事务端口（B18）
 
 连续录制拥有 VerifiedRecordingFacts / RecordingRegistrationPort 与目标表 SQL。
@@ -84,3 +97,127 @@ build:container 通过；后端 OpenAPI 聚合检查通过，runtime SHA256
 初次漏设 active=false，仅改 revoked_at 不会撤权；补齐正常撤权状态后复验通过。
 证据为协调目录 recording-registration-{services-v2,worker-v2,checks}.xml。
 这批没有关闭工作流 DTO、Temporal 适配或私有执行上下文相关 B08/B09/B10。
+
+
+## A：B24/B25 验证检查点
+
+纯函数内部循环与 10 个包入口的隐式实现导入已拆除；生产读取仍经过实际
+Lance、LeRobot 和 OpenArm 路径。88 项契约/架构/schema 检查、64 项
+真实本地格式与读取回归、4 项旧 schema 指纹 golden、5 文件严格 mypy
+及 Ruff 通过。6 项真实 PG/MinIO/Temporal 原生/录制处理、5 项真实
+HTTP/持久 worker/下载/备份回归通过；另外 27 项 Temporal 工作流、
+取消恢复、历史重放和导出版本路由通过。所有通过用例零跳过。
+
+首次 17 项工作流测试因隔离内部网络无法下载测试服务器而失败，保留 XML；
+取得官方 v1.40.0 二进制并固定 test_server_existing_path 后全部复验通过，
+未替换工作流或活动实现。hash/来源记录与脚本位于本轮协调目录 results/test-tools
+和 workflow_tests_offline.py。错误备份测试路径导致的零收集记录也保留。
+
+后端 next runtime OpenAPI 保持 5c2dc66b 哈希；逻辑流前端尚待 B 消费，
+稳定浏览器候选继续保持 3df。B 浏览器已确认 P21 四种包与 P08 带标注包
+创建、worker、下载/官方 reader；旧迁移 seed 的 Tag 因同摘要多来源被正确拒绝，
+另建来源唯一、已审核的原生父条目（browser-tag-seed.json）待 B 点击验收。
+
+
+## A：第三批本地集成验收
+
+代码 c69c4743b66b439aed72d8dcf3f22c82e8fa1f81 整合录制登记 B18、纯辅助
+函数 B24 和包入口 B25。14 项真实服务回归（6 项 API/worker/下载/备份，
+8 项登记/旧派生固定/原生处理）及 93 项契约/架构检查通过，无跳过。前端
+实际 runtime 生成检查、完整类型、54 架构检查及生产构建通过；前端源码
+与此前 1004 Vitest 通过版本一致。协议 SHA256 保持 125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206。
+证据：协调目录 results/A-services/integration-batch-three-{runtime,processing,contracts}.xml
+及 runtime-integration-batch-three.yaml。前端两次命令准备失败（缺 uv、只读
+/app）已修正为读取实际 runtime 契约并在 /verify 构建，最终全部通过。
+
+B013 已给出候选切换窗口：Tag 正向创建、QC、三帧 RGB-D 和官方 reader
+通过。B011 撤权 201 尚未通过验收：辅助动作遗漏 upload.manage 的隐含发布
+能力，正在修正并复验。B014 逻辑样本把聚合有效性错误叠加到单通道，尚待
+代码修复和真实存储回归；逻辑 API 仍不在本批主线。
+
+
+## A：B014 单通道有效性和 B011 撤权复验
+
+逻辑样本 valid 现在只使用目标通道有效性。真实合成缺 RGB 相机第1帧写入
+Lance，再通过正常迁移提交 Episode Parquet；两种存储的物理 sample_valid=false
+得到验证，同时 HTTP 中关节/action 仍 valid=true，缺失相机 false；原有样本、
+子窗口、固定 snapshot、撤权和跨作用域行为保留。2 项真实读取回归和2项真实
+发布授权回归通过；90 项逻辑契约/架构检查及Ruff通过，无跳过。runtime SHA
+保持 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad。
+证据：channel-validity-{revocation,contracts}.xml、runtime-channel-validity.yaml。
+
+B011 的原201源于测试辅助动作只撤直接publish，遗漏 upload.manage 的已有
+隐含发布能力；未更改产品授权规则。辅助脚本已同时撤销两种来源、递增能力
+revision并读取有效权限。当前普通会话实际预检200→撤权后提交/预检403→
+旧固定发布200且内容未变→恢复后200；证据 browser-effective-revocation.json。
+B已收到修正动作，浏览器负例仍待复验。前端逻辑消费仍由B接续，未标完成。
+
+
+## A：处理器公共采样、元数据与执行上下文（B09 第一批）
+
+annotation 拥有 FrameSelectionSamplerPort / FrameSelectionSampler，ingest 拥有
+不依赖工作流DTO的 AlignmentMetadataBuilder；runtime 显式注入 MCAP 与原生
+LeRobot 消费者，短期投影会话继续传递同一工厂。旧adaptive-2fps-v2输出以
+1d29d6bc实际算法冻结golden，包含真实相机时间、事件加密、图像变化和上限。
+core.ExecutionScope由机器人处理和录制活动消费；worker注入独立的
+ActivityExecutionScope维护tenant上下文、日志关联和写入围栏。API专用录制
+handler若被误用来执行活动会明确拒绝。旧工作流函数保留兼容包装。
+
+116项不同基础/架构/摄取回归最终通过；新增上下文测试最初错误地预期已有
+请求上下文，修正夹具后3项复验通过。6项真实MCAP/原生处理、6项机器人
+基础设施回归（其中3项明确使用receipt doubles验证重试/原子性）和1项生产
+worker登记→HTTP/对象读回通过。4文件严格mypy、Ruff、架构及实际OpenAPI
+检查通过，runtime哈希仍5c2dc66b。
+
+原始失败保留：机器人测试缺专用DSN/G0环境跳过6项，补只读夹具后零跳过；
+首次worker装配误把采样参数传给连续录制resolver，实际启动报错，修复后
+生产worker复验通过；只读缓存导致mypy内部错误/Ruff写缓存失败，改用/tmp
+后同一检查通过。证据processing-ports-{checks,scope-recheck,services,
+robot-services-v2,worker-v2}.xml及runtime-processing-ports.yaml。
+
+B09仍in_progress：LeRobot的任务数据集、标签schema目标和schema候选3个
+私有静态调用尚待所属查询/规划端口迁移，不能因本批3种能力已接通就关闭。
+## A/B：第四批逻辑读取共同候选
+
+代码5e19013f006fd98b3c1be6940cfdd16ecd8302d9整合后端1d29d6bc和B的
+322ac761：P06 EpisodeViewerShell实际调用useLogicalViewer，经固定逻辑
+snapshot读取numeric samples和媒体授权；保留按通道valid，不让缺相机抹去
+有效数值。旧Lance和Episode两适配、媒体字节/解码/Range、发布撤权、Tag
+与完整包真实worker共15项服务通过；92后端检查、1020前端测试、54前端
+架构检查、完整类型、实际runtime生成核对及生产构建通过，全部零跳过。
+证据results/A-services/integration-batch-four-{runtime,contracts,frontend}.xml。
+runtime SHA保持5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad。
+
+B017/019已在实际浏览器完成有效撤权：预检200后提交403，页面清空预检
+并禁用发布；旧固定版本仍可读。原B011辅助撤权不足导致201的证据保留。
+共同候选尚待B实际点击P06逻辑链路；P08/上传预览、冻结模型、非时序入口
+尚未就绪，不将F05或全部解耦标完成。
+
+
+## A：B09 剩余私有规划调用已迁移
+
+collection_tasks.ingest_queries 拥有任务数据集查询，annotation.ingest_queries
+拥有已绑定的标签schema目标查询；均接收调用者cursor与显式组织范围，不
+自行打开连接或提交。ingest.schema_planning拥有纯schema候选构造。
+runtime向MCAP resolver和LeRobotPipeline显式注入三个公共端口，原生处理器
+不再导入workflow.ingest_plan或调用任何工作流私有函数。错误类移到纯规划
+错误模块并保留历史名称/code；旧workflow静态入口仅保留兼容，不由业务调用。
+
+105项基础/架构与纯导入检查、6项真实MCAP/原生RGB-D处理、1项真实生产
+worker登记和HTTP读回、27项Temporal取消/重试/历史重放全部通过且零跳过；
+4个新增文件严格mypy、Ruff、架构检查及OpenAPI通过，runtime仍5c2dc66b。
+首次版本回放命令误写publishing测试目录导致零收集，修正为workflow目录后
+27项通过，保留失败记录。证据ingest-planning-{checks,services,worker,
+workflows-v2}.xml。B09现在可关闭；B08的DTO依赖、B10启动适配、B14其他
+业务查询/配置和B15运行时算法仍待继续，未随本批一起标完成。
+
+
+## A：第五批本地集成
+
+75334d92继承第四批共同候选并整合B09两批提交（210a27b3、75334d92）。
+实际MCAP/原生与生产worker测试均运行此后端源码；最终7项真实服务、27项
+Temporal回放、105项基础/架构检查及前批执行上下文/采样golden回归通过。
+前端源码与第四批1020测试/54门禁/生产构建通过版本逐字相同，runtime OpenAPI
+亦保持同一5c2dc66b，与当前生成客户端一致。候选58088保持91f555df，供B
+验收逻辑读取消费，不在其浏览器操作期间改挂载。全部60项保留：27已验证、
+7进行中、26待实施。

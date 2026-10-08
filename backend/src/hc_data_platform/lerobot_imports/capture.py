@@ -23,7 +23,7 @@ def verify_completion(
     root: Path, descriptors: dict[str, dict[str, Any]] | None = None
 ) -> dict[str, Any]:
     """Compare a sealed package to local bytes or the verified committed Raw inventory."""
-    from .reader import local_file, safe_relative
+    from .local_files import local_file, safe_relative
 
     if root.name.startswith(".export-") or (root / "FAILED.json").exists():
         raise ValueError("OPENARM_EXPORT_INCOMPLETE")
@@ -91,7 +91,7 @@ def read_capture_episode(
 def _read_capture_episode(
     root: Path, info: dict[str, Any], metadata: dict[str, Any], rows: list[dict[str, Any]]
 ):
-    from .reader import local_file
+    from .local_files import local_file
 
     context = json.loads(local_file(root, "capture-context.json").read_text())
     marker = json.loads(local_file(root, "export-complete.json").read_text())

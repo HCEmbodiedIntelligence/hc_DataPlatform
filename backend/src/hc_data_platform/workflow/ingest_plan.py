@@ -9,7 +9,7 @@ import json
 import math
 import os
 import tempfile
-from collections import defaultdict, deque
+from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import closing, suppress
 from datetime import datetime, timedelta, timezone
@@ -18,18 +18,30 @@ from pathlib import Path
 from typing import IO, Any, cast
 
 from PIL import Image, ImageStat, UnidentifiedImageError
-from pydantic import TypeAdapter, ValidationError
 
 from hc_data_platform.alignment.models import (
     AlignmentInputV1,
     AlignmentProfileV1,
-    ModalityKind,
-    ModalityStreamV1,
     TimedSampleV1,
 )
+from hc_data_platform.annotation.ingest_queries import (
+    DatasetSchemaTargetsQuery,
+    dataset_schema_targets,
+)
+from hc_data_platform.annotation.sampling import (
+    FrameSelectionSampler,
+    FrameSelectionSamplerPort,
+    SamplerFactory,
+)
+from hc_data_platform.collection_tasks.ingest_queries import TaskDatasetQuery, task_dataset
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.dataset_registry.models import DatasetId
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
+from hc_data_platform.ingest.projection_metadata import (
+    AlignmentMetadataBuilder,
+    build_alignment_metadata,
+)
+from hc_data_platform.ingest.projection_metadata import datetime_ns as _datetime_ns
+from hc_data_platform.ingest.schema_planning import DatasetSchemaBuilder, build_dataset_schema
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import StagedArtifactStore
@@ -62,8 +74,6 @@ from .models import (
     VerificationActivityInput,
 )
 
-_DATASET_ID_ADAPTER = TypeAdapter(DatasetId)
-
 
 class PostgresIngestWorkflowInputResolver:
     """Build a bounded workflow input from exact, tenant-scoped persisted facts.
@@ -86,6 +96,11 @@ class PostgresIngestWorkflowInputResolver:
         projection_staging_root: Path = Path("/tmp/hc-data/projection-staging"),
         projection_ttl: timedelta = timedelta(hours=24),
         package_schemas: Any = None,
+        task_datasets: TaskDatasetQuery = task_dataset,
+        schema_targets: DatasetSchemaTargetsQuery = dataset_schema_targets,
+        schema_builder: DatasetSchemaBuilder = build_dataset_schema,
+        sampler_factory: SamplerFactory = FrameSelectionSampler,
+        metadata_builder: AlignmentMetadataBuilder = build_alignment_metadata,
     ) -> None:
         if maximum_messages < 1:
             raise ValueError("maximum_messages must be positive")
@@ -98,6 +113,11 @@ class PostgresIngestWorkflowInputResolver:
         self._projection_staging_root = projection_staging_root.resolve()
         self._projection_ttl = projection_ttl
         self._package_schemas = package_schemas
+        self._task_datasets = task_datasets
+        self._schema_targets = schema_targets
+        self._schema_builder = schema_builder
+        self._sampler_factory = sampler_factory
+        self._metadata_builder = metadata_builder
 
     def terminal_result(self, event):
         """Validate the durable trigger before launch or terminal redelivery."""
@@ -214,14 +234,15 @@ class PostgresIngestWorkflowInputResolver:
                     manifest_fingerprint=manifest_fingerprint,
                 )
                 profile = self._quality_profile(cursor, project_id, preflight)
-                dataset_id = self._task_dataset(
+                dataset_id = self._task_datasets(
                     cursor,
                     organization_id=organization_id,
                     project_id=project_id,
                     collection_task_id=preflight.manifest.task_id,
                 )
-                schema_snapshot_ids = self._dataset_schema_targets(
+                schema_snapshot_ids = self._schema_targets(
                     cursor,
+                    organization_id=organization_id,
                     project_id=project_id,
                     storage_region_code=region_code,
                     dataset_id=dataset_id,
@@ -324,10 +345,14 @@ class PostgresIngestWorkflowInputResolver:
             maximum_messages=self._maximum_messages,
             staging_root=self._projection_staging_root,
             artifact_store=self._projection_store,
+            sampler_factory=self._sampler_factory,
+            metadata_builder=self._metadata_builder,
         )
 
     def project_alignment_metadata(self, source: IngestProjectionSourceV1) -> AlignmentInputV1:
-        return _alignment_metadata(source, self._reload_projection_source(source))
+        return self._metadata_builder(
+            source.rollout_id, source.source_sha256, self._reload_projection_source(source)
+        )
 
     def validate_package_source(self, source: IngestProjectionSourceV1, plan: Any) -> None:
         from hc_data_platform.episode_store.models import digest
@@ -403,7 +428,7 @@ class PostgresIngestWorkflowInputResolver:
         if source.materialization is None:
             raise _blocked("streaming alignment requires a materialized projection")
         expected_topics = tuple(sorted(preflight.manifest.actual_topics))
-        metadata = _alignment_metadata(source, preflight)
+        metadata = self._metadata_builder(source.rollout_id, source.source_sha256, preflight)
         return metadata, self._iter_materialized_alignment(source, expected_topics)
 
     def _iter_materialized_alignment(
@@ -577,58 +602,6 @@ class PostgresIngestWorkflowInputResolver:
             )
         return candidates[0]
 
-    @staticmethod
-    def _task_dataset(
-        cursor: Any,
-        *,
-        organization_id: str,
-        project_id: str,
-        collection_task_id: str,
-    ) -> str:
-        cursor.execute(
-            """
-            SELECT dataset_id
-            FROM collection_tasks.collection_tasks
-            WHERE organization_id = %s AND project_id = %s
-              AND collection_task_id = %s
-            """,
-            (organization_id, project_id, collection_task_id),
-        )
-        raw = cursor.fetchone()
-        if raw is None:
-            raise _blocked("the Manifest task must reference one collection task in the project")
-        dataset_id = str(raw[0])
-        try:
-            _DATASET_ID_ADAPTER.validate_python(dataset_id)
-        except ValidationError as exc:
-            raise _blocked("the collection task has an invalid Dataset identity") from exc
-        return dataset_id
-
-    @staticmethod
-    def _dataset_schema_targets(
-        cursor: Any,
-        *,
-        project_id: str,
-        storage_region_code: str,
-        dataset_id: str,
-    ) -> tuple[str, ...]:
-        cursor.execute(
-            """
-            SELECT dataset_schema_snapshot_id
-            FROM annotation.tag_schema_bindings
-            WHERE project_id = %s AND region_code = %s AND task_kind = 'TAGGING'
-              AND dataset_id = %s AND organization_id = %s
-            ORDER BY dataset_schema_snapshot_id
-            """,
-            (
-                project_id,
-                storage_region_code,
-                dataset_id,
-                current_request_context().organization_id,
-            ),
-        )
-        return tuple(str(row[0]) for row in cursor.fetchall())
-
     def _select_dataset_schema(
         self,
         *,
@@ -640,7 +613,7 @@ class PostgresIngestWorkflowInputResolver:
     ) -> tuple[str, str, DatasetSchemaSnapshot]:
         compatible: list[tuple[str, DatasetSchemaSnapshot]] = []
         for schema_snapshot_id in schema_snapshot_ids:
-            candidate = self._dataset_schema_candidate(
+            candidate = self._schema_builder(
                 project_id=project_id,
                 dataset_id=dataset_id,
                 schema_snapshot_id=schema_snapshot_id,
@@ -663,27 +636,22 @@ class PostgresIngestWorkflowInputResolver:
             raise _blocked("the compatible dataset schema could not be registered") from exc
         return dataset_id, schema_snapshot_id, candidate
 
+    _task_dataset = staticmethod(task_dataset)
+    _dataset_schema_candidate = staticmethod(build_dataset_schema)
+
     @staticmethod
-    def _dataset_schema_candidate(
-        *,
-        project_id: str,
-        dataset_id: str,
-        schema_snapshot_id: str,
-        preflight: ManifestPreflightResultV1,
-        profile: QualityProfileV1,
-    ) -> DatasetSchemaSnapshot:
-        frequency_hz = profile.default_timing.target_frequency_hz
-        if not 1 <= frequency_hz <= 1000:
-            raise _blocked("the quality profile frequency cannot be used for alignment")
-        # Camera rows carry compact aligned-media frame references. Raw JPEG bytes
-        # remain only in short-lived alignment staging and are never committed to Lance.
-        fields = {topic: "json" for topic in preflight.manifest.actual_topics}
-        return DatasetSchemaSnapshot.create(
+    def _dataset_schema_targets(
+        cursor: Any, *, project_id: str, storage_region_code: str, dataset_id: str
+    ) -> tuple[str, ...]:
+        organization_id = current_request_context().organization_id
+        if organization_id is None:
+            raise _blocked("schema targets require an organization scope")
+        return dataset_schema_targets(
+            cursor,
+            organization_id=organization_id,
             project_id=project_id,
+            storage_region_code=storage_region_code,
             dataset_id=dataset_id,
-            schema_snapshot_id=schema_snapshot_id,
-            frequency_hz=float(frequency_hz),
-            fields=fields,
         )
 
     def _materialize_mcap(
@@ -706,7 +674,7 @@ class PostgresIngestWorkflowInputResolver:
         os.close(descriptor)
         temporary = Path(temporary_name)
         writer = _ArrowProjectionWriter(temporary, source_sha256=source.source_sha256)
-        sampler = _FrameSelectionSampler()
+        sampler = self._sampler_factory()
         camera_topics = {camera.topic for camera in preflight.manifest.cameras}
         last_alignment_timestamp: dict[str, int] = {}
         decoded_path = temporary.with_suffix(".decoded.sqlite3")
@@ -836,6 +804,8 @@ class _LocalProjectionSession:
         maximum_messages: int,
         staging_root: Path,
         artifact_store: StagedArtifactStore | None,
+        sampler_factory: SamplerFactory = FrameSelectionSampler,
+        metadata_builder: AlignmentMetadataBuilder = build_alignment_metadata,
     ) -> None:
         self.source = source
         self.preflight = preflight
@@ -846,7 +816,8 @@ class _LocalProjectionSession:
             end_ns=_datetime_ns(preflight.manifest.end_time),
             topic_timestamps_ns={},
         )
-        self.alignment_data = _alignment_metadata(source, preflight)
+        self.alignment_data = metadata_builder(source.rollout_id, source.source_sha256, preflight)
+        self._sampler_factory = sampler_factory
         self._storage = storage
         self._decoder = decoder
         self._maximum_messages = maximum_messages
@@ -990,7 +961,7 @@ class _LocalProjectionSession:
         self._validate_topic_inventory(seen_topics, topic_counts)
 
     def _package_alignment_samples(self) -> Iterator[tuple[str, TimedSampleV1]]:
-        sampler = _FrameSelectionSampler()
+        sampler = self._sampler_factory()
         camera_topics = {camera.topic for camera in self.preflight.manifest.cameras}
         seen_topics: set[str] = set()
         topic_counts: dict[str, int] = defaultdict(int)
@@ -1073,7 +1044,7 @@ class _LocalProjectionSession:
 
     def _publish_frame_selection(
         self,
-        sampler: _FrameSelectionSampler,
+        sampler: FrameSelectionSamplerPort,
         camera_topics: set[str],
     ) -> FrameSelectionManifestRefV1:
         if self._artifact_store is None:
@@ -1139,7 +1110,7 @@ class _LocalProjectionSession:
         if self.package_images:
             yield from self._package_alignment_samples()
             return
-        sampler = _FrameSelectionSampler()
+        sampler = self._sampler_factory()
         camera_topics = {camera.topic for camera in self.preflight.manifest.cameras}
         last_alignment_timestamp: dict[str, int] = {}
         for row in self._decoded_rows():
@@ -1181,35 +1152,6 @@ class _LocalProjectionSession:
                 raise
             self._decoded_path = path
         yield from read_projection(self._decoded_path, include_images=include_images)
-
-
-def _alignment_metadata(
-    source: IngestProjectionSourceV1,
-    preflight: ManifestPreflightResultV1,
-) -> AlignmentInputV1:
-    camera_topics = {camera.topic for camera in preflight.manifest.cameras}
-    expected_topics = tuple(sorted(preflight.manifest.actual_topics))
-    return AlignmentInputV1(
-        rollout_id=source.rollout_id,
-        source_sha256=source.source_sha256,
-        attempt_id=f"automatic-{source.source_sha256[:24]}",
-        start_ns=_datetime_ns(preflight.manifest.start_time),
-        end_ns=_datetime_ns(preflight.manifest.end_time),
-        streams={
-            topic: ModalityStreamV1(
-                kind=_modality_kind(topic, camera_topics),
-                samples=(),
-            )
-            for topic in expected_topics
-        },
-    )
-
-
-def _datetime_ns(value: datetime) -> int:
-    utc = value.astimezone(timezone.utc)
-    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-    delta = utc - epoch
-    return (delta.days * 86_400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1000
 
 
 class _ArrowProjectionWriter:
@@ -1356,114 +1298,6 @@ def _projection_sample_rows(
                     None if raw_value is None else bytes(raw_value),
                     None if raw_image is None else bytes(raw_image),
                 )
-
-
-class _FrameSelectionSampler:
-    """Decode-free candidate selection after the one ingest image decode."""
-
-    _UNIFORM_INTERVAL_NS = 500_000_000
-    _REFINEMENT_NS = 500_000_000
-    _MAX_GROUPS = 10_000
-
-    def __init__(self) -> None:
-        self.source_frame_count = 0
-        self._last_uniform: dict[str, int] = {}
-        self._last_luma: dict[str, float] = {}
-        self._last_hash: dict[str, str] = {}
-        self._last_signal: dict[str, str] = {}
-        self._recent_camera: dict[str, deque[int]] = defaultdict(deque)
-        self._refine_until = -1
-        self._groups: dict[int, set[str]] = {}
-
-    def observe_camera(
-        self,
-        topic: str,
-        timestamp_ns: int,
-        *,
-        luma_mean: float | None,
-        perceptual_hash: str | None,
-        corrupt: bool,
-    ) -> None:
-        self.source_frame_count += 1
-        recent = self._recent_camera[topic]
-        recent.append(timestamp_ns)
-        while recent and recent[0] < timestamp_ns - self._REFINEMENT_NS:
-            recent.popleft()
-        last_uniform = self._last_uniform.get(topic)
-        if last_uniform is None or timestamp_ns - last_uniform >= self._UNIFORM_INTERVAL_NS:
-            self._select(timestamp_ns, "uniform-2fps")
-            self._last_uniform[topic] = timestamp_ns
-        previous_luma = self._last_luma.get(topic)
-        if (
-            luma_mean is not None
-            and previous_luma is not None
-            and abs(luma_mean - previous_luma) >= 18
-        ):
-            self._select(timestamp_ns, "luma-change")
-        if luma_mean is not None:
-            self._last_luma[topic] = luma_mean
-        previous_hash = self._last_hash.get(topic)
-        if (
-            perceptual_hash is not None
-            and previous_hash is not None
-            and _hex_hamming(perceptual_hash, previous_hash) >= 12
-        ):
-            self._select(timestamp_ns, "perceptual-change")
-        if perceptual_hash is not None:
-            self._last_hash[topic] = perceptual_hash
-        if timestamp_ns <= self._refine_until:
-            self._select(timestamp_ns, "event-refinement")
-        if corrupt:
-            self._select(timestamp_ns, "corrupt-frame-boundary")
-
-    def observe_signal(self, topic: str, timestamp_ns: int, value: object) -> None:
-        normalized = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        prior = self._last_signal.get(topic)
-        self._last_signal[topic] = normalized
-        lowered = topic.lower()
-        if (
-            prior is None
-            or prior == normalized
-            or not any(marker in lowered for marker in ("action", "joint", "command", "event"))
-        ):
-            return
-        # Signals trigger denser sampling of real camera timestamps. Selecting
-        # signal timestamps themselves invents image groups when joints run faster
-        # than cameras, and can violate selected_group_count <= source_frame_count.
-        for recent in self._recent_camera.values():
-            for camera_timestamp in recent:
-                self._select(camera_timestamp, "robot-state-change")
-        self._refine_until = max(self._refine_until, timestamp_ns + self._REFINEMENT_NS)
-
-    def manifest(self, *, source_sha256: str, camera_topics: tuple[str, ...]) -> dict[str, object]:
-        groups = [
-            {
-                "timestamp_ns": timestamp_ns,
-                "camera_set": list(camera_topics),
-                "reasons": sorted(reasons),
-            }
-            for timestamp_ns, reasons in sorted(self._groups.items())
-        ]
-        return {
-            "schema_version": 1,
-            "sampling_version": "adaptive-2fps-v2",
-            "source_sha256": source_sha256,
-            "camera_set": list(camera_topics),
-            "source_frame_count": self.source_frame_count,
-            "groups": groups,
-        }
-
-    def _select(self, timestamp_ns: int, reason: str) -> None:
-        if timestamp_ns not in self._groups and len(self._groups) >= self._MAX_GROUPS:
-            return
-        self._groups.setdefault(timestamp_ns, set()).add(reason)
-
-
-def _hex_hamming(left: str, right: str) -> int:
-    try:
-        return (int(left, 16) ^ int(right, 16)).bit_count()
-    except ValueError:
-        return 0
 
 
 def _file_sha256(path: Path) -> str:
@@ -1636,16 +1470,15 @@ def _decode_image_projection(
     )
 
 
-def _modality_kind(topic: str, camera_topics: set[str]) -> ModalityKind:
-    if topic in camera_topics:
-        return ModalityKind.IMAGE
-    lowered = topic.lower()
-    if "action" in lowered or "command" in lowered:
-        return ModalityKind.ACTION
-    if "point" in lowered or "lidar" in lowered:
-        return ModalityKind.POINT_CLOUD
-    return ModalityKind.DISCRETE
-
-
 def _blocked(detail: str) -> IngestWorkflowPlanBlocked:
     return IngestWorkflowPlanBlocked(detail)
+
+
+# Compatibility for old callers; production paths consume owned helpers above.
+_FrameSelectionSampler = FrameSelectionSampler
+
+
+def _alignment_metadata(
+    source: IngestProjectionSourceV1, preflight: ManifestPreflightResultV1
+) -> AlignmentInputV1:
+    return build_alignment_metadata(source.rollout_id, source.source_sha256, preflight)

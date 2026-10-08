@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from hc_data_platform.lance_catalog import (
@@ -10,6 +13,24 @@ from hc_data_platform.lance_catalog import (
 )
 
 pytest.importorskip("pyarrow")
+
+
+def test_schema_fingerprint_matches_pre_decoupling_bytes() -> None:
+    archived = json.loads(
+        (Path(__file__).parent / "fixtures/schema-fingerprint-v1.json").read_text()
+    )
+    assert compute_schema_fingerprint(archived["fields"]) == archived["sha256"]
+    snapshot = DatasetSchemaSnapshot.create(
+        project_id="p",
+        dataset_id="d",
+        schema_snapshot_id="s",
+        frequency_hz=30,
+        fields=archived["fields"],
+    )
+    assert (
+        compile_arrow_schema(snapshot).metadata[b"hc.schema.fingerprint"].decode()
+        == archived["sha256"]
+    )
 
 
 def test_schema_compilation_is_stable_and_order_independent() -> None:

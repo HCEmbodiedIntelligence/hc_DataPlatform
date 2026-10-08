@@ -40,7 +40,7 @@ class DatasetSchemaSnapshot(BaseModel):
     ) -> DatasetSchemaSnapshot:
         """Create a snapshot with its deterministic compiled-schema fingerprint."""
 
-        from .schema import compute_schema_fingerprint
+        from .schema_spec import compute_schema_fingerprint
 
         return cls(
             project_id=project_id,

@@ -17,6 +17,7 @@ from hc_data_platform.core.context import (
     reset_request_context,
 )
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.core.execution import ExecutionScope
 from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .models import QualityStatus
@@ -56,8 +57,11 @@ class RobotProcessingActivities:
         store: ProcessingStore,
         storage: ObjectChunks,
         processor: CommittedLeRobotProcessor | None = None,
+        *,
+        execution_scope: ExecutionScope,
     ) -> None:
         self.store, self.storage = store, storage
+        self.execution_scope = execution_scope
         self.processor = processor if processor is not None else ProcessorUnavailable()
 
     @property
@@ -66,10 +70,8 @@ class RobotProcessingActivities:
 
     @contextmanager
     def scope(self, request: dict[str, Any]):
-        from hc_data_platform.workflow.activities import _worker_scope
-
         task = ProcessingTask.model_validate(request["task"])
-        with _worker_scope(
+        with self.execution_scope(
             task.project_id,
             task.region_code,
             task.raw_source_id,

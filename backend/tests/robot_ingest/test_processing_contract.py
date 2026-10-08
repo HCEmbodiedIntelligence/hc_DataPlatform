@@ -266,12 +266,15 @@ def test_unexpected_worker_exception_does_not_leak_signed_urls():
     from temporalio.testing import ActivityEnvironment
 
     from hc_data_platform.robot_ingest.processing_worker import RobotProcessingActivities
+    from hc_data_platform.workflow.execution import ActivityExecutionScope
 
     class BrokenStore:
         def load(self, task):
             raise RuntimeError("https://store/private?X-Amz-Signature=secret")
 
-    activities = RobotProcessingActivities(BrokenStore(), None)
+    activities = RobotProcessingActivities(
+        BrokenStore(), None, execution_scope=ActivityExecutionScope(None)
+    )
     request = {
         "task": dict(
             organization_id="org",

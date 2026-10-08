@@ -87,9 +87,10 @@
         "logical_data models/ports/service/router with actual runtime composition",
         "integrations/logical_samples.py real Lance and Episode adapters",
         "tests/episode_store/test_logical_data_services.py: actual scoped HTTP against mixed immutable versions, subwindows, revocation; zero skip",
-        "LogicalMediaGrant: real Episode/legacy media authorized by frozen snapshot+stream, actual bytes decoded/Range/sha/audit/revocation validated; 2 HTTP service cases, 3 offset/receipt cases, 54 contract/architecture checks; B consumer pending"
+        "LogicalMediaGrant: real Episode/legacy media authorized by frozen snapshot+stream, actual bytes decoded/Range/sha/audit/revocation validated; 2 HTTP service cases, 3 offset/receipt cases, 54 contract/architecture checks; B consumer pending",
+        "A/B fourth integration 5e19013f: P06 useLogicalViewer consumes fixed logical samples/media; 15 real service cases, 92 backend checks, 1020 frontend tests, 54 frontend gates and production build passed; browser joint candidate acceptance pending"
       ],
-      "remaining": "新逻辑快照/样本 HTTP 已使用两个真实 adapter；仍需 B 迁移页面读取、接通逻辑媒体授权、继续迁移旧业务公开物理语义与下游消费者。"
+      "remaining": "P06逻辑读取已接入共同候选，待真实浏览器验收；P08/上传预览及其他下游消费者尚待迁移，不关闭整体问题。"
     },
     {
       "id": "B08",
@@ -105,9 +106,16 @@
       "title": "业务处理器调用工作流私有实现",
       "scope": "两分支",
       "owner": "T2 T3",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "将通用采样/对齐元数据运算及执行上下文变成有明确输入输出的公共能力；工作流层注入这些能力。"
+      "status": "implemented_verified",
+      "evidence": [
+        "annotation.sampling.FrameSelectionSamplerPort + ingest.projection_metadata.AlignmentMetadataBuilder explicitly injected into runtime MCAP/native processing; frozen pre-change adaptive-v2 golden preserved",
+        "core.execution.ExecutionScope injected into robot/recording activities; workflow ActivityExecutionScope owns tenant context, correlation and maintenance fence",
+        "116 distinct contract/regression cases pass after one fixture correction; 6 real MCAP/native service cases, 6 robot processing infrastructure cases (3 explicitly named receipt-double cases), 1 runtime worker HTTP registration pass; mypy 4 files, Ruff and architecture pass",
+        "Remaining task dataset and tag-schema binding SQL now owned by collection_tasks/annotation ingest_queries; pure schema builder owned by ingest/schema_planning; resolver/native pipeline consume explicit runtime-injected public query and planning protocols",
+        "No processor calls private workflow helpers or imports ingest_plan; compatibility helpers remain only in workflow; mutation gate rejects old imports and private attribute calls",
+        "105 contracts/architecture, 6 real MCAP/native service cases, 1 production worker registration/HTTP roundtrip and 27 Temporal replay/retry/cancellation cases passed; 4 added files strict mypy; runtime OpenAPI unchanged 5c2dc66b"
+      ],
+      "remaining": ""
     },
     {
       "id": "B10",
@@ -269,19 +277,31 @@
       "id": "B24",
       "title": "模型和底层工具内部仍存在小型循环",
       "scope": "两分支",
-      "owner": "T3 T5",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "分别抽出 schema 指纹、路径/本地文件读取、时间诊断纯函数；以实际调用关系验收单向依赖。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "Pure schema_spec, local_files and clock_diagnostics consumed by original production readers; 10 extracted computation ASTs unchanged; pre-change schema fingerprint/Arrow metadata golden preserved",
+        "10 package compatibility APIs now lazy; explicit models/ports imports tested in 16 isolated processes with database/Arrow/NumPy/HTTP/Temporal SDK imports prohibited; 8 forbidden import mutations rejected",
+        "88 architecture/schema/contract checks, 64 real local Lance/Parquet/OpenArm/format regressions, 4 schema golden cases; 5 strict mypy modules and Ruff",
+        "6 PostgreSQL/MinIO/Temporal native/recording processing cases; 5 real API/runtime worker/download/backup cases; 27 Temporal time-skipping/history/export-version cases after supplying official offline test executable, all zero skip; original download failures retained",
+        "runtime-contract-helpers.yaml SHA256 unchanged at 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad"
+      ],
+      "remaining": ""
     },
     {
       "id": "B25",
       "title": "包入口同时导出契约和具体实现扩大隐式导入面",
       "scope": "两分支",
-      "owner": "T5 T0",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "建立清晰的 contracts/public API 与 adapters 入口；维持旧入口兼容，同时增加导入副作用验证。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "Pure schema_spec, local_files and clock_diagnostics consumed by original production readers; 10 extracted computation ASTs unchanged; pre-change schema fingerprint/Arrow metadata golden preserved",
+        "10 package compatibility APIs now lazy; explicit models/ports imports tested in 16 isolated processes with database/Arrow/NumPy/HTTP/Temporal SDK imports prohibited; 8 forbidden import mutations rejected",
+        "88 architecture/schema/contract checks, 64 real local Lance/Parquet/OpenArm/format regressions, 4 schema golden cases; 5 strict mypy modules and Ruff",
+        "6 PostgreSQL/MinIO/Temporal native/recording processing cases; 5 real API/runtime worker/download/backup cases; 27 Temporal time-skipping/history/export-version cases after supplying official offline test executable, all zero skip; original download failures retained",
+        "runtime-contract-helpers.yaml SHA256 unchanged at 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad"
+      ],
+      "remaining": ""
     },
     {
       "id": "B26",
@@ -501,9 +521,10 @@
       "owner": "T9 T5 T7",
       "status": "in_progress",
       "evidence": [
-        "Package media/data bindings and annotation runtime compatibility logic moved out of pages into owning feature adapters; unified logical data view and open format capabilities remain pending."
+        "Package media/data bindings and annotation runtime compatibility logic moved out of pages into owning feature adapters; unified logical data view and open format capabilities remain pending.",
+        "A/B fourth integration 5e19013f: P06 useLogicalViewer consumes fixed logical samples/media; 15 real service cases, 92 backend checks, 1020 frontend tests, 54 frontend gates and production build passed; browser joint candidate acceptance pending"
       ],
-      "remaining": "前端 feature 提供统一的数据版本、逻辑流和媒体授权模型，Lance/Episode wire 差异在一个适配层集中转换；后端提供稳定逻辑视图。"
+      "remaining": "P06逻辑读取已接入共同候选，待真实浏览器验收；P08/上传预览及其他下游消费者尚待迁移，不关闭整体问题。"
     },
     {
       "id": "X01",

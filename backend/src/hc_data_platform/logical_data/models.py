@@ -66,6 +66,7 @@ class LogicalSnapshotView(FrozenModel):
 
 
 class LogicalSample(FrozenModel):
+    # valid belongs to this stream, never to the multi-channel frame aggregate.
     sample_id: str
     sample_index: int = Field(ge=0)
     timestamp_ns: str | None = Field(default=None, pattern=r"^[0-9]+$")
