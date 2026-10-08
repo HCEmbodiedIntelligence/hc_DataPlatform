@@ -173,6 +173,12 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                     "b" * 64,
                 ),
             )
+        scene_fixture = None
+        if condition == "complete":
+            from tests.robotics_scene_fixture import scene_setup
+
+            scene_fixture = scene_setup(runtime, actor, org, project, connect)
+            robot_id = scene_fixture[0]
         schema_id = "b-labels-" + suffix
         schema = runtime.annotation.create_tag_schema_version(
             project_id=project,
@@ -416,6 +422,10 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 (org, import_id),
             )
         package = runtime.episode_packages.files.open(data.identity, data.data_version_id)
+        assert scene_fixture is not None
+        from tests.robotics_scene_fixture import assert_frozen_scene
+
+        assert_frozen_scene(runtime, package, scene_fixture, actor, connect)
         from hc_data_platform.episode_store.download import complete_archive
         from hc_data_platform.episode_store.validation import validate_package
         from hc_data_platform.publishing.depth_evidence import file_hash
@@ -510,6 +520,45 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
         # READY retry reuses the package and never creates another collection.
         assert runtime.activities.lerobot_pipeline.episode_ready(discovered.plan.episode_tasks[0])
         assert runtime.episode_packages.collections.get(dataset).version == 1
+        if scene_fixture:
+            from hc_data_platform.episode_store.derivation_jobs import RequestTagEpisode
+            from hc_data_platform.episode_store.derivation_service import TagDerivationOutboxHandler
+            from tests.episode_store.test_tag_jobs_services import event_for
+
+            derivations = runtime.episode_packages.tag_derivations
+            derivation_auth = replace(
+                actor,
+                capabilities=actor.capabilities
+                | frozenset({"dataset_version.read", "episode.read", "upload.manage"}),
+            )
+            revision_files = derivations.annotations.files
+            state = revision_files.status(annotation_id, revision.revision, derivation_auth)
+            revision_files.generate(
+                annotation_id,
+                revision.revision,
+                state.generation,
+                state.revision_content_hash,
+                derivation_auth,
+            )
+            derived = derivations.request(
+                annotation_id,
+                RequestTagEpisode(revision=revision.revision, annotation_id="result"),
+                "frozen-scene-child",
+                derivation_auth,
+            )
+            from tests.episode_store.test_commit_services import scoped
+
+            with scoped(data):
+                await TagDerivationOutboxHandler(derivations)(event_for(derivations, derived))
+            ready_child = derivations.status(annotation_id, derived.job_id, derivation_auth)
+            assert ready_child.status == "READY", ready_child
+            child_ref = ready_child.committed_data
+            child = runtime.episode_packages.files.open(
+                child_ref.identity, child_ref.data_version_id
+            )
+            assert child.document("hc/robot_scene.json") == package.document("hc/robot_scene.json")
+            assert child.document("hc/calibration.json") == package.document("hc/calibration.json")
+            assert child_ref.identity != package.receipt.data.identity
         evidence = {
             "source": "synthetic RGB-D, 6 frames, 25 Hz",
             "status": job.status.value,

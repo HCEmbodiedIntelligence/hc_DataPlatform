@@ -665,9 +665,10 @@
       "title": "回放辅助函数按实例当前绑定查模型，缺少冻结的模型输入",
       "scope": "两分支",
       "owner": "T13 T14 T5",
-      "status": "pending",
+      "status": "in_progress",
       "evidence": [],
-      "remaining": "优先从数据快照取得 robot_model_version、joint_mapping/calibration 引用与哈希；历史数据缺失时标明“当前绑定兼容预览”，不把当前值当历史事实。绑定变化前后验证同一数据快照得到相同模型资产。"
+      "remaining": "优先从数据快照取得 robot_model_version、joint_mapping/calibration 引用与哈希；历史数据缺失时标明“当前绑定兼容预览”，不把当前值当历史事实。绑定变化前后验证同一数据快照得到相同模型资产。",
+      "implementation_notes": "Backend immutable processing-time model/asset/mapping/calibration snapshot and authorized logical reads verified; frontend/browser consumption pending."
     },
     {
       "id": "R05",

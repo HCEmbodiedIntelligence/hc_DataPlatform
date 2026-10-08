@@ -62,6 +62,18 @@ def test_real_logical_http_reads_native_and_legacy_with_identical_contract(relea
                 assert result.status_code == 200, result.text
                 assert result.headers["cache-control"] == "no-store"
                 view = result.json()
+                scene = client.get(
+                    path + "/robot-scene",
+                    headers=headers,
+                    params={**params, "snapshot_id": view["snapshot_id"]},
+                )
+                assert scene.status_code == 200, scene.text
+                assert scene.json() == dict(
+                    snapshot_id=view["snapshot_id"],
+                    provenance="MISSING_HISTORICAL",
+                    scene=None,
+                    scene_sha256=None,
+                )
                 descriptor = view["snapshot"]
                 assert descriptor["episode_id"] == revision["episode_id"]
                 assert descriptor["content_sha256"] == revision["content_sha256"]

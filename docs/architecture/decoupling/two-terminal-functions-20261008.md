@@ -249,3 +249,11 @@ runtime-annotation-logical.yaml。P08 页面尚待 B 消费，不关闭 F05/B06/
 后端与第五批相同，已有 B09 生产 worker 回归保持适用；runtime 契约仍5c2dc66b。
 证据 integration-batch-six-{frontend,services}.xml 与 integration-batch-six-build.log。
 URDF 浏览器导入与 R04 冻结绑定仍待验收；P08 新协议26cf62a3等待前端，不在本批。
+
+### R04 后端冻结模型场景（等待页面消费）
+
+新 MCAP/LeRobot/连续录制在 PACKAGE_PLANNING 经明确组件冻结 robot 绑定、发布模型版本、资产清单/映射及标定到不可变 ledger 和 `hc/robot_scene.json`；不冒充采集时观测。同源重试与换绑保持原场景和配置哈希，Tag 实际 outbox 派生继承同一文件。旧 Lance/旧 Episode 无文件返回 MISSING_HISTORICAL，不猜当前绑定。
+
+固定 logical 新增 GET robot-scene 及 POST robot-scene/assets/{asset_id}/authorize，仍按确切 snapshot_token/id 与读取权限校验，资产额外组织 robot_model.read、发布版本/清单成员/哈希约束。模型位于同组织另一项目时通过模型所有者只读组件读取，保留 PostgreSQL 内容存储与签名下载。新 FK 保留引用版本，ledger 禁止更新/删除。
+
+实际回归：6 MCAP/LeRobot 摄取用例；后补 5 项历史双存储、连续录制含 Temporal、原生绑定完整链；最终原生回归同时通过跨项目模型上传/发布/绑定、换绑旧固定读取和资产字节、4并发重试、篡改标定拒绝、普通HTTP401/403/404/409及撤权、不可变SQL拒绝、真实Tag派生后场景/标定继承。111架构/逻辑/写入检查、5新文件严格mypy、Ruff/实际OpenAPI通过。证据 frozen-scene-processing-v2.xml、frozen-scene-production-services.xml、frozen-scene-concurrent-rebinding.xml、frozen-scene-checks.xml。早期夹具授权/预检key/worker scope失败保留；R04待B新页面实际消费与浏览器换绑，不标功能完成。

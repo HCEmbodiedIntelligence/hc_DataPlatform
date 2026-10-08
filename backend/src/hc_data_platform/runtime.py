@@ -156,6 +156,7 @@ from hc_data_platform.integrations.logical_samples import (
     LanceSampleAdapter,
     SampleAdapters,
 )
+from hc_data_platform.integrations.logical_scene import LogicalSceneReader
 from hc_data_platform.integrations.publication import postgres_publication_effects
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
@@ -220,6 +221,11 @@ from hc_data_platform.registry.filesystem_storage import FilesystemRobotModelSto
 from hc_data_platform.registry.repository import PostgresRegistryRepository
 from hc_data_platform.registry.router import configure_registry
 from hc_data_platform.registry.service import RegistryService
+from hc_data_platform.registry.snapshot_queries import (
+    PublishedModelAssetReader,
+    published_model_inputs,
+)
+from hc_data_platform.robot_assets.binding_queries import locked_model_binding
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
 from hc_data_platform.robot_assets.router import configure_organization_robot_assets
 from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
@@ -228,6 +234,7 @@ from hc_data_platform.robot_ingest.processing_store import ProcessingStore
 from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
 from hc_data_platform.robot_ingest.router import configure_robot_ingest
 from hc_data_platform.robot_ingest.service import RobotIngestService
+from hc_data_platform.robotics.scene_snapshots import RobotSceneSnapshots
 from hc_data_platform.security.abuse import PostgresAbuseProtection, policy_from_settings
 from hc_data_platform.security.access_postgres import PostgresAccessRepository
 from hc_data_platform.security.access_service import AccessService
@@ -832,6 +839,7 @@ def build_runtime(
     )
     registry = RegistryService(
         PostgresRegistryRepository(connection_factory),
+        published_assets=PublishedModelAssetReader(connection_factory),
         storage=FilesystemRobotModelStorage(
             resolved.robot_model_asset_root,
             signing_secret=resolved.cursor_secret,
@@ -1025,6 +1033,9 @@ def build_runtime(
         defaults={"lerobot_v3": LEROBOT_EXPORT_REVISION},
     )
     export_audit = PostgresExportAuditRecorder(connection_factory)
+    robot_scenes = RobotSceneSnapshots(
+        connection_factory, binding_query=locked_model_binding, model_query=published_model_inputs
+    )
     dataset_ingest_projection = PostgresDatasetIngestProjector(
         connection_factory,
         native_manifest_parser=ObjectStorageManifestParser(object_storage),
@@ -1062,6 +1073,7 @@ def build_runtime(
         media_repository=aligned_media_repository,
         dataset_projection=dataset_ingest_projection,
         episode_packages=episode_packages,
+        robot_scenes=robot_scenes,
     )
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
@@ -1115,6 +1127,7 @@ def build_runtime(
         continuous_episode_processing=continuous_episode_processing,
         lerobot_pipeline=lerobot_pipeline,
         episode_packages=episode_packages,
+        robot_scenes=robot_scenes,
     )
     logical_data = LogicalDataService(
         dataset_page,
@@ -1124,6 +1137,7 @@ def build_runtime(
                 LanceSampleAdapter(catalog, aligned_media, aligned_media_audit),
             )
         ),
+        scenes=LogicalSceneReader(episode_packages.files, registry),
     )
     return RuntimeComponents(
         access=access,

@@ -674,6 +674,7 @@ class ContinuousEpisodeProcessingService:
         ffprobe_binary: str = "ffprobe",
         process_timeout_seconds: float = 3_600,
         episode_packages: Any = None,
+        robot_scenes: Any = None,
     ) -> None:
         self._connection_factory = connection_factory
         self._repository = repository
@@ -692,6 +693,7 @@ class ContinuousEpisodeProcessingService:
         self._ffprobe = ffprobe_binary
         self._timeout = process_timeout_seconds
         self._episode_packages = episode_packages
+        self._robot_scenes = robot_scenes
 
     def update_state(
         self, request: ContinuousEpisodeStateActivityInput
@@ -985,6 +987,9 @@ class ContinuousEpisodeProcessingService:
             plan = freeze_plan(
                 request, alignment_request, manifest, staging, upload, paths, quality
             )
+            if self._robot_scenes is None:
+                raise RuntimeError("robot scene snapshot port is not configured")
+            plan = self._robot_scenes.freeze_package(plan)
             return ContinuousEpisodeAlignmentActivityOutput(
                 alignment=alignment_request,
                 staged_manifest=manifest,

@@ -9,6 +9,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from hc_data_platform.registry.models import RobotModelAsset, RobotModelAssetDownloadAuthorization
+from hc_data_platform.robotics.scene_models import FrozenRobotScene
+
 
 class FrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -121,3 +124,28 @@ class LogicalMediaGrant(FrozenModel):
     depth_min_m: float | None = None
     depth_max_m: float | None = None
     colorizer: dict[str, Any] | None = None
+
+
+class LogicalRobotScene(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    snapshot_id: str
+    provenance: Literal["FROZEN", "MISSING_HISTORICAL"]
+    scene_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    scene: FrozenRobotScene | None = None
+
+    @model_validator(mode="after")
+    def validate_scene(self) -> LogicalRobotScene:
+        if self.provenance == "MISSING_HISTORICAL":
+            if self.scene is not None or self.scene_sha256 is not None:
+                raise ValueError("historical absence cannot claim frozen provenance")
+        elif self.scene is None or self.scene.content_sha256 != self.scene_sha256:
+            raise ValueError("frozen scene digest mismatch")
+        return self
+
+
+class LogicalRobotAssetGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    snapshot_id: str
+    scene_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    asset: RobotModelAsset
+    authorization: RobotModelAssetDownloadAuthorization

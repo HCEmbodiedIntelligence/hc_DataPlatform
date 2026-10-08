@@ -427,6 +427,7 @@ class ActivityDependencies:
     continuous_episode_processing: ContinuousEpisodeProcessingPort | None = None
     lerobot_pipeline: Any | None = None
     episode_packages: Any | None = None
+    robot_scenes: Any | None = None
 
 
 class WorkflowPortNotConfigured(RuntimeError):
@@ -984,6 +985,9 @@ async def process_ingest_source(
                         quality_report,
                         quality_evidence=quality_evidence,
                     )
+                native_plan = _require(
+                    _dependencies.robot_scenes, "robotics.scene_snapshots"
+                ).freeze_package(native_plan)
             else:
                 catalog = _require(_dependencies.catalog, "lance_catalog.LanceCatalogPort")
                 expected_version = _ingest_dataset_version(
