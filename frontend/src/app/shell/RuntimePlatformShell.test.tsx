@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -10,6 +10,7 @@ import * as authApi from "../../features/account/session/api";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { ProviderHarness } from "../providers";
 import { RuntimePlatformShell } from "./RuntimePlatformShell";
+import { RouteCapabilityGuard } from "../router/RouteCapabilityGuard";
 
 const scope = {
   organizationId: "runtime-shell-organization",
@@ -68,6 +69,95 @@ function renderAuthenticatedShell() {
 }
 
 describe("RuntimePlatformShell", () => {
+  it("removes an already rendered protected viewer while refreshing denied capabilities", async () => {
+    installAuthenticatedSession();
+    useShellStore
+      .getState()
+      .setAuthorization({
+        scopeKey: makeScopeKey(scope),
+        roleVersion: "1",
+        capabilities: ["dataset_version.read"],
+        fetchedAt: new Date().toISOString(),
+      });
+    let resolveBootstrap!: (value: authApi.SessionBootstrap) => void;
+    const bootstrap = vi
+      .spyOn(authApi, "getSessionBootstrap")
+      .mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveBootstrap = resolve;
+          }),
+      );
+    render(
+      <ProviderHarness>
+        <MemoryRouter initialEntries={["/viewer"]}>
+          <Routes>
+            <Route element={<RuntimePlatformShell pageAvailability={{}} />}>
+              <Route
+                element={
+                  <RouteCapabilityGuard
+                    requiredCapabilities={["dataset_version.read"]}
+                  />
+                }
+              >
+                <Route path="viewer" element={<h1>已缓存的关节样本</h1>} />
+              </Route>
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </ProviderHarness>,
+    );
+    expect(
+      await screen.findByRole("heading", { name: "已缓存的关节样本" }),
+    ).toBeVisible();
+    act(() => {
+      const store = useShellStore.getState();
+      store.invalidateAuthorization(
+        store.sessionToken!,
+        store.sessionRevision,
+        store.capabilityRevision,
+      );
+    });
+    await waitFor(() => expect(bootstrap).toHaveBeenCalledOnce());
+    expect(
+      screen.queryByRole("heading", { name: "已缓存的关节样本" }),
+    ).toBeNull();
+    await act(async () =>
+      resolveBootstrap({
+        principal: {
+          principal_id: "runtime-shell-user",
+          username: "runtime-shell-user",
+          display_name: "Runtime Shell User",
+          status: "ACTIVE",
+          created_at: "2026-08-24T00:00:00Z",
+        },
+        available_scopes: [
+          {
+            organization_id: scope.organizationId,
+            project_id: scope.projectId,
+            region_codes: [scope.regionCode],
+            project_wide: false,
+            capabilities: [],
+          },
+        ],
+        platform_capabilities: [],
+        capability_revision: 2,
+      }),
+    );
+    expect(
+      await screen.findByText(
+        "当前授权状态不允许读取此页面；页面未发起领域请求。",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("heading", { name: "已缓存的关节样本" }),
+    ).toBeNull();
+    expect(useShellStore.getState().sessionToken).toBe(
+      "hcs_runtime-shell-session",
+    );
+    expect(useShellStore.getState().capabilityRevision).toBe(2);
+    expect(bootstrap).toHaveBeenCalledOnce();
+  });
   beforeEach(() => {
     Object.defineProperty(globalThis, "ResizeObserver", {
       configurable: true,

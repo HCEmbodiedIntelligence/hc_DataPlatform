@@ -552,6 +552,20 @@ export async function requestWithResponse<T>(
         response.headers,
       );
       if (
+        response.status === 403 &&
+        error.problemCode === "CAPABILITY_REQUIRED" &&
+        !publicScoped &&
+        !sessionScoped &&
+        opts.bearerToken === undefined &&
+        bearerToken
+      ) {
+        getShellState().invalidateAuthorization(
+          bearerToken,
+          shell.sessionRevision,
+          shell.capabilityRevision,
+        );
+      }
+      if (
         response.status === 401 &&
         !publicScoped &&
         opts.bearerToken === undefined &&

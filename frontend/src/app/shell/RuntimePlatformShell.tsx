@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { getSessionBootstrap, logoutSession } from "../../features/account/session/api";
+import {
+  getSessionBootstrap,
+  logoutSession,
+} from "../../features/account/session/api";
 import { authErrorMessage } from "../../features/account/session/error-messages";
 import {
   installSessionBootstrap,
@@ -18,6 +21,7 @@ export function RuntimePlatformShell({
   readonly pageAvailability: PageAvailability;
 }) {
   const sessionToken = useShellStore((state) => state.sessionToken);
+  const sessionRevision = useShellStore((state) => state.sessionRevision);
   const sessionExpired = useShellStore((state) => state.sessionExpired);
   const sessionScopes = useShellStore((state) => state.sessionScopes);
   const sessionOrganizations = useShellStore(
@@ -70,7 +74,16 @@ export function RuntimePlatformShell({
     const controller = new AbortController();
     setAuthorizationLoading();
     void getSessionBootstrap({ signal: controller.signal })
-      .then(installSessionBootstrap)
+      .then((bootstrap) => {
+        const current = useShellStore.getState();
+        if (
+          controller.signal.aborted ||
+          current.sessionToken !== sessionToken ||
+          current.sessionRevision !== sessionRevision
+        )
+          return;
+        installSessionBootstrap(bootstrap);
+      })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return;
         if (isDomainError(reason) && reason.httpStatus === 401) {
@@ -84,6 +97,7 @@ export function RuntimePlatformShell({
   }, [
     bootstrapLoaded,
     sessionToken,
+    sessionRevision,
     navigate,
     setAuthorizationFailed,
     setAuthorizationLoading,

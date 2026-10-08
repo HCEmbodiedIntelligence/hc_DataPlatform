@@ -49,6 +49,33 @@ function explicitRequest(scope: Scope = activeScope, signal?: AbortSignal) {
 }
 
 describe("explicit workspace HTTP requests", () => {
+  it.each(["CAPABILITY_REQUIRED", "DATA_POLICY_DENIED"])(
+    "refreshes authorization only for explicit capability denial: %s",
+    async (code) => {
+      const original = useShellStore.getState();
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ code, detail: "Denied" }), {
+              status: 403,
+              headers: { "Content-Type": "application/json" },
+            }),
+          ),
+      );
+      await expect(explicitRequest()).rejects.toMatchObject({
+        httpStatus: 403,
+        problemCode: code,
+      });
+      const next = useShellStore.getState();
+      expect(next.sessionToken).toBe(original.sessionToken);
+      expect(next.bootstrapLoaded).toBe(code !== "CAPABILITY_REQUIRED");
+      expect(next.sessionRevision).toBe(
+        original.sessionRevision + (code === "CAPABILITY_REQUIRED" ? 1 : 0),
+      );
+    },
+  );
   beforeEach(() => {
     configureTestRuntime();
     installExplicitGrants();
