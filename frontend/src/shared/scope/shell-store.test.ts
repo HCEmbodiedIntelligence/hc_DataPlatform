@@ -10,6 +10,46 @@ afterEach(() => {
 });
 
 describe("shell principal updates", () => {
+  it("quarantines authorization and cached identities while preserving login and selection", () => {
+    const store = useShellStore.getState();
+    const scope = { organizationId: "org", projectId: "project" };
+    const grants = [
+      {
+        ...scope,
+        regionCodes: [],
+        projectWide: true,
+        capabilities: ["dataset_version.read"],
+      },
+    ];
+    store.setSession(
+      { actorId: "reader", displayName: "Reader", roleIds: [] },
+      "reader-token",
+    );
+    store.setScope(scope);
+    store.setSessionScopes(grants, 7);
+    const revision = useShellStore.getState().sessionRevision;
+    store.invalidateAuthorization("reader-token", revision, 7);
+    const next = useShellStore.getState();
+    expect(next).toMatchObject({
+      sessionToken: "reader-token",
+      scope,
+      sessionRevision: revision + 1,
+      bootstrapLoaded: false,
+      authorizationLoading: true,
+      authorization: null,
+      sessionScopes: [],
+      capabilityRevision: null,
+    });
+    store.setSessionScopes(grants, 7);
+    store.invalidateAuthorization("reader-token", revision + 1, 7);
+    expect(useShellStore.getState().bootstrapLoaded).toBe(true);
+    expect(useShellStore.getState().sessionRevision).toBe(revision + 1);
+    store.setSessionScopes(grants, 8);
+    store.invalidateAuthorization("reader-token", revision, 7);
+    expect(useShellStore.getState().capabilityRevision).toBe(8);
+    store.invalidateAuthorization("older-token", revision + 1, 8);
+    expect(useShellStore.getState().capabilityRevision).toBe(8);
+  });
   it("marks only the current bearer session as expired and removes persisted credentials", () => {
     const store = useShellStore.getState();
     store.setSession(

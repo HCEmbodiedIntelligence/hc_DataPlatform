@@ -21,6 +21,12 @@ interface ShellState {
   bootstrapLoaded: boolean;
   platformCapabilities: readonly string[];
   capabilityRevision: number | null;
+  lastAuthorizationRefreshRevision: number | null;
+  invalidateAuthorization: (
+    expectedToken: string,
+    expectedSessionRevision: number,
+    expectedCapabilityRevision: number | null,
+  ) => void;
   setSession: (principal: ActorSummary | null, token: string | null) => void;
   expireSession: (expectedToken: string) => void;
   updatePrincipal: (principal: ActorSummary) => void;
@@ -76,6 +82,38 @@ export const useShellStore = create<ShellState>((set) => ({
   bootstrapLoaded: false,
   platformCapabilities: [],
   capabilityRevision: null,
+  lastAuthorizationRefreshRevision: null,
+  invalidateAuthorization: (
+    expectedToken,
+    expectedSessionRevision,
+    expectedCapabilityRevision,
+  ) =>
+    set((state) => {
+      if (
+        !expectedToken ||
+        state.sessionToken !== expectedToken ||
+        state.sessionRevision !== expectedSessionRevision ||
+        state.capabilityRevision !== expectedCapabilityRevision ||
+        expectedCapabilityRevision === null ||
+        !state.bootstrapLoaded ||
+        state.lastAuthorizationRefreshRevision === expectedCapabilityRevision
+      )
+        return state;
+      // A confirmed capability denial makes the cached authorization untrusted.
+      // Keep the login and selected scope; the existing shell reloads bootstrap.
+      return {
+        sessionRevision: state.sessionRevision + 1,
+        lastAuthorizationRefreshRevision: expectedCapabilityRevision,
+        authorization: null,
+        authorizationLoading: true,
+        authorizationFailed: false,
+        bootstrapLoaded: false,
+        sessionScopes: [],
+        sessionOrganizations: [],
+        platformCapabilities: [],
+        capabilityRevision: null,
+      };
+    }),
   setSession: (principal, sessionToken) =>
     set((state) => {
       const keepScope =
@@ -99,6 +137,7 @@ export const useShellStore = create<ShellState>((set) => ({
         bootstrapLoaded: false,
         platformCapabilities: [],
         capabilityRevision: null,
+        lastAuthorizationRefreshRevision: null,
       };
     }),
   expireSession: (expectedToken) =>
@@ -110,6 +149,7 @@ export const useShellStore = create<ShellState>((set) => ({
         sessionToken: null,
         sessionRevision: state.sessionRevision + 1,
         sessionExpired: true,
+        lastAuthorizationRefreshRevision: null,
         scope: null,
         scopeKey: UNSCOPED_KEY,
         scopeChanging: false,
