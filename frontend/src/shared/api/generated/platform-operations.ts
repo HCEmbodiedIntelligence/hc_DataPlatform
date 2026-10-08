@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 125732c98e2578f581e198ef81c338c892e34ef54dccc089c8d165e62f375206
+// Runtime-OpenAPI-SHA256: 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -284,6 +284,9 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/overview" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/quality" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/steps" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/media/authorize" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/samples" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/device-capture-facts" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries" },
