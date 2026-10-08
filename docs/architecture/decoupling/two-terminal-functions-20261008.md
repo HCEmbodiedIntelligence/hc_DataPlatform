@@ -221,3 +221,19 @@ Temporal回放、105项基础/架构检查及前批执行上下文/采样golden�
 亦保持同一5c2dc66b，与当前生成客户端一致。候选58088保持91f555df，供B
 验收逻辑读取消费，不在其浏览器操作期间改挂载。全部60项保留：27已验证、
 7进行中、26待实施。
+
+
+## A：P08 任务到固定逻辑快照
+
+新增 GET /api/v1/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/logical，
+经普通账号 annotation_task.read、dataset_version.read、episode.read 授权，返回
+AnnotationLogicalSnapshot（task_id、snapshot_token、snapshot_id、snapshot）。
+Episode 任务按冻结 collection version 与完整 DataVersionRef 核对，旧 Lance 任务按
+base_lance_version；目标目录负责按来源查找唯一固定 revision，缺失、歧义、混合
+来源或窗口不符均拒绝，不读 latest，不把物理定位选择交给前端。app 实例显式装配。
+
+两项真实 HTTP/PG/MinIO 回归分别读取旧 Lance 和新 Episode 的全部4样本及两路
+媒体字节，标注修订变化后数据快照保持一致；未登录、跨组织、任务/数据权限撤销
+及旧 token 后续读取拒绝均通过。114项逻辑/目录/架构检查、3新文件严格mypy和
+Ruff通过。证据 annotation-logical-{services,checks}.xml 与运行时契约
+runtime-annotation-logical.yaml。P08 页面尚待 B 消费，不关闭 F05/B06/B07。

@@ -150,6 +150,7 @@ from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.schema_planning import build_dataset_schema
 from hc_data_platform.ingest.service import UploadSessionService
+from hc_data_platform.integrations.annotation_logical import AnnotationLogicalService
 from hc_data_platform.integrations.logical_samples import (
     EpisodeSampleAdapter,
     LanceSampleAdapter,
@@ -583,6 +584,7 @@ class RuntimeComponents:
     annotation_revision_files: Any = None
     annotation_deliveries: Any = None
     logical_data: LogicalDataService | None = None
+    annotation_logical: AnnotationLogicalService | None = None
 
 
 @dataclass(frozen=True)
@@ -1114,6 +1116,15 @@ def build_runtime(
         lerobot_pipeline=lerobot_pipeline,
         episode_packages=episode_packages,
     )
+    logical_data = LogicalDataService(
+        dataset_page,
+        SampleAdapters(
+            (
+                EpisodeSampleAdapter(episode_packages.steps, episode_packages.previews),
+                LanceSampleAdapter(catalog, aligned_media, aligned_media_audit),
+            )
+        ),
+    )
     return RuntimeComponents(
         access=access,
         admin_accounts=admin_accounts,
@@ -1143,14 +1154,9 @@ def build_runtime(
         robot_ingest=robot_ingest,
         robot_processing=ProcessingStore(connection_factory),
         dataset_page=dataset_page,
-        logical_data=LogicalDataService(
-            dataset_page,
-            SampleAdapters(
-                (
-                    EpisodeSampleAdapter(episode_packages.steps, episode_packages.previews),
-                    LanceSampleAdapter(catalog, aligned_media, aligned_media_audit),
-                )
-            ),
+        logical_data=logical_data,
+        annotation_logical=AnnotationLogicalService(
+            annotation, episode_packages.collections, dataset_page, logical_data
         ),
         manual_issues=manual_issues,
         cleaning_drafts=cleaning_drafts,

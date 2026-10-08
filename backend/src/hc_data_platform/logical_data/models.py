@@ -65,6 +65,11 @@ class LogicalSnapshotView(FrozenModel):
     snapshot: LogicalSnapshot
 
 
+class AnnotationLogicalSnapshot(LogicalSnapshotView):
+    task_id: str
+    snapshot_token: str = Field(min_length=16, max_length=2048)
+
+
 class LogicalSample(FrozenModel):
     # valid belongs to this stream, never to the multi-channel frame aggregate.
     sample_id: str
