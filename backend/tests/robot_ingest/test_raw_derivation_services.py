@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 
+from hc_data_platform.continuous_recordings.registration import PostgresRecordingRegistration
 from hc_data_platform.core.context import (
     RequestContext,
     bind_request_context,
@@ -243,7 +244,9 @@ def test_registered_derivation_survives_newer_receipt_concurrent_retry_and_missi
             raw_recording.checked_receipt(
                 corrupted, upload, marker, command, originals, "openarm-raw-platform/3"
             )
-    handler = RecordingOutboxHandler(repository.connections, storage)
+    handler = RecordingOutboxHandler(
+        repository.connections, storage, registrations=PostgresRecordingRegistration()
+    )
     with monkeypatch.context() as patch:
         patch.setattr(raw_recording, "prepare", forbidden)
         handler.adopt(event)

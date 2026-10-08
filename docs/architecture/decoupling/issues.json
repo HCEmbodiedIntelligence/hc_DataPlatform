@@ -182,10 +182,14 @@
       "id": "B18",
       "title": "机器人录制桥接依赖另一个模块的私有 SQL 序列化",
       "scope": "两分支",
-      "owner": "T3",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "为连续录制提供接受已验证 Raw 事实的登记端口；跨表原子性通过明确 UnitOfWork/事务适配器保留，不拆成可能半成功的多次调用。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "continuous_recordings.registration owns verified Raw registration; API/worker explicitly inject PostgresRecordingRegistration; caller cursor enlists target rows and source completion in one transaction",
+        "4 real PostgreSQL/MinIO/Temporal cases: atomic rollback, immutable asset/owner rejection, concurrency, pinned old receipt, slicing/QC/package and replay; 1 runtime API/outbox/worker case with exact object readback, scope and current revocation; zero skip",
+        "62 architecture/recording checks, strict mypy registration module, Ruff; runtime OpenAPI unchanged at 5c2dc66bfaf284d77163c1b0532a9ec1ad403ad07f44def0f0906274cda643ad; original failed isolation/revocation fixture runs retained"
+      ],
+      "remaining": ""
     },
     {
       "id": "B19",

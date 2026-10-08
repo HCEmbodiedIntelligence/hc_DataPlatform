@@ -78,3 +78,21 @@ mock=off production 构建通过。前端源码与首批 1004 项 Vitest 通过�
 独立后端 next 中已实现逻辑样本及媒体授权，由真实 Lance/Parquet 和 PG/MinIO
 读回验证，已公布契约给 B。前端消费者尚未完成，未纳入本地 main 的这两批集成，
 不把新接口存在当成前端功能完成。B 浏览器候选仍为 3df9fc78，等待剩余验收回执。
+## A：Raw 录制登记事务端口（B18）
+
+连续录制拥有 VerifiedRecordingFacts / RecordingRegistrationPort 与目标表 SQL。
+机器人桥接和 runtime/worker 显式消费端口，调用方传入同一个事务 cursor；
+录制、资产和源任务完成一起提交或回滚。不同上传争用同一录制通过事务锁串行化，
+已登记资产的物理对象、摘要和归属不可被重试改写。原始上传与派生产物仍复用，
+未经人工切片不会伪造 Episode。源任务查询通过目标模块公共读取方法获取录制状态。
+
+4 项真实 PostgreSQL/MinIO/Temporal 回归和 1 项真实 runtime API/outbox/worker
+回归通过，覆盖故障回滚、并发重试、旧收据固定、切片/QC/提交、重放、所有对象
+字节读回、作用域与撤权。62 项架构/录制基础检查、Ruff、登记模块严格 mypy
+通过，实际 runtime OpenAPI 保持逻辑媒体检查点哈希。
+
+原失败保留：独占故障注入用例错误地同时启动自动 outbox worker，导致抢占；
+改用用例专有 Temporal worker 后 4 项通过，另设生产 worker 闭环。新撤权夹具
+初次漏设 active=false，仅改 revoked_at 不会撤权；补齐正常撤权状态后复验通过。
+证据为协调目录 recording-registration-{services-v2,worker-v2,checks}.xml。
+这批没有关闭工作流 DTO、Temporal 适配或私有执行上下文相关 B08/B09/B10。

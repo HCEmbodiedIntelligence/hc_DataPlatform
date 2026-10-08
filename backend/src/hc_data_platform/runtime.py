@@ -100,6 +100,7 @@ from hc_data_platform.continuous_recordings.processing import (
     PostgresContinuousEpisodeManifestDiscovery,
     PostgresContinuousEpisodeWorkflowInputResolver,
 )
+from hc_data_platform.continuous_recordings.registration import PostgresRecordingRegistration
 from hc_data_platform.continuous_recordings.repository import (
     PostgresContinuousRecordingRepository,
 )
@@ -1460,6 +1461,7 @@ def build_worker_outbox(
                 object_storage,
                 temporal_client,
                 robot_task_queue(os.getenv("HC_TEMPORAL_TASK_QUEUE", DEFAULT_TASK_QUEUE)),
+                registrations=PostgresRecordingRegistration(),
             ),
             EVENT_TYPE: RobotProcessingOutboxHandler(
                 temporal_client,
