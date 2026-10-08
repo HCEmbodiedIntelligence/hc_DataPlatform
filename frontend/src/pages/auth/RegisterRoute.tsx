@@ -6,8 +6,8 @@ import {
   getPublicAuthConfiguration,
   registerAccount,
   type PasswordPolicyView,
-} from "./api";
-import { authErrorMessage } from "./error-messages";
+} from "../../features/account/session/api";
+import { authErrorMessage } from "../../features/account/session/error-messages";
 import { RegisterPanel, type RegistrationValues } from "./RegisterPanel";
 
 export function RegisterRoute() {

@@ -1,15 +1,26 @@
-import type { RouteObject } from "react-router-dom";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export type CollectionTaskRouteObject = PageRoute;
 
-type CollectionTaskRouteObject = RouteObject & {
-  readonly requiredCapabilities: readonly string[];
-};
-
-export const collectionTaskRoutes = [
+export const collectionTaskRoutes: PageRoute[] = [
   {
     path: "/collection-tasks",
     requiredCapabilities: ["upload.read"],
-    lazy: async () => ({
-      Component: (await import("./page")).default,
-    }),
+    navigation: {
+      label: "采集任务",
+      groupId: "ingest",
+      order: 10,
+      visibility: "discoverable",
+    },
+    lazy: async () => ({ Component: (await import("./page")).default }),
   },
-] satisfies readonly CollectionTaskRouteObject[];
+];
+
+export const page = definePage({
+  id: "P20",
+  enabled: true,
+  routes: collectionTaskRoutes,
+});
+export default collectionTaskRoutes;

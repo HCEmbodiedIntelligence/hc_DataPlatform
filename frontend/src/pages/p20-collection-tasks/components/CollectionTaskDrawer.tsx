@@ -27,7 +27,7 @@ import type {
   AssignableDataset,
   CollectionTask,
   CreateCollectionTask,
-} from "../api";
+} from "../../../features/collection-tasks/api";
 import styles from "../styles.module.css";
 
 interface TaskFormValues {

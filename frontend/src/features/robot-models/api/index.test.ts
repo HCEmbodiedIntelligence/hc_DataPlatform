@@ -45,6 +45,18 @@ beforeEach(() => {
       "p14-session-token",
     );
   useShellStore.getState().setScope(scope);
+  useShellStore.getState().setSessionScopes(
+    [
+      {
+        organizationId: scope.organizationId,
+        projectId: scope.projectId,
+        regionCodes: [scope.regionCode],
+        projectWide: false,
+        capabilities: [],
+      },
+    ],
+    1,
+  );
 });
 
 afterEach(() => {
@@ -195,7 +207,7 @@ describe("P14 robot model asset client", () => {
     const headers = new Headers(init.headers);
     expect(headers.get("Authorization")).toBe("Bearer p14-session-token");
     expect(headers.get("X-Organization-Id")).toBe(scope.organizationId);
-    expect(headers.get("X-Project-Id")).toBe(scope.projectId);
+    expect(headers.get("X-Project-Id")).toBeNull();
   });
 
   it("obtains a fresh download grant without accepting physical object locators", async () => {
@@ -300,79 +312,106 @@ describe("P14 robot model asset client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps multipart grants out of its result and completes the file with the returned ETag", async () => {
-    const createEnvelope = {
-      data: {
-        upload_id: "upload-1",
-        version_id: "version-1",
-        status: "UPLOADING",
-        files: [
-          {
-            relative_path: "xr-01.urdf",
-            role: "URDF",
-            media_type: "application/xml",
-            size_bytes: 8,
-            sha256: "c".repeat(64),
-            status: "UPLOADING",
-            part_size_bytes: 16 * 1024 * 1024,
-            total_parts: 1,
-            part_authorizations: [
-              {
-                part_number: 1,
-                url: "https://object.example.test/short-lived-part-grant",
-                expires_at: "2026-08-19T11:15:00Z",
-              },
-            ],
-          },
-        ],
-        created_at: "2026-08-19T11:00:00Z",
-        updated_at: "2026-08-19T11:00:00Z",
-        completed_at: null,
-      },
-      scope: {
-        organization_id: scope.organizationId,
-        project_id: scope.projectId,
-      },
-      request_id: "p14-assets-upload",
-    };
-    const completedEnvelope = {
-      ...createEnvelope,
-      data: {
-        ...createEnvelope.data,
-        status: "COMPLETED",
-        files: createEnvelope.data.files.map((file) => ({
-          ...file,
+  it.each(["complete", "new-session", "owner-cancel"] as const)(
+    "keeps asset transfer scoped across every request: %s",
+    async (mode) => {
+      const owner = new AbortController();
+      const createEnvelope = {
+        data: {
+          upload_id: "upload-1",
+          version_id: "version-1",
+          status: "UPLOADING",
+          files: [
+            {
+              relative_path: "xr-01.urdf",
+              role: "URDF",
+              media_type: "application/xml",
+              size_bytes: 8,
+              sha256: "c".repeat(64),
+              status: "UPLOADING",
+              part_size_bytes: 16 * 1024 * 1024,
+              total_parts: 1,
+              part_authorizations: [
+                {
+                  part_number: 1,
+                  url: "https://object.example.test/short-lived-part-grant",
+                  expires_at: "2026-08-19T11:15:00Z",
+                },
+              ],
+            },
+          ],
+          created_at: "2026-08-19T11:00:00Z",
+          updated_at: "2026-08-19T11:00:00Z",
+          completed_at: null,
+        },
+        scope: {
+          organization_id: scope.organizationId,
+          project_id: scope.projectId,
+        },
+        request_id: "p14-assets-upload",
+      };
+      const completedEnvelope = {
+        ...createEnvelope,
+        data: {
+          ...createEnvelope.data,
           status: "COMPLETED",
-          part_authorizations: [],
-        })),
-        completed_at: "2026-08-19T11:01:00Z",
-      },
-    };
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input === "https://object.example.test/short-lived-part-grant") {
-        expect(init).toMatchObject({
-          method: "PUT",
-          cache: "no-store",
-          credentials: "omit",
-        });
-        return new Response(null, {
-          status: 200,
-          headers: { ETag: '"part-etag"' },
-        });
-      }
-      if (input.endsWith("/upload-sessions"))
-        return jsonResponse(createEnvelope);
-      if (input.endsWith(":complete-file"))
-        return jsonResponse(completedEnvelope);
-      throw new Error(`unexpected request ${input}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    const file = new File(["robot-v1"], "xr-01.urdf", {
-      type: "application/xml",
-    });
+          files: createEnvelope.data.files.map((file) => ({
+            ...file,
+            status: "COMPLETED",
+            part_authorizations: [],
+          })),
+          completed_at: "2026-08-19T11:01:00Z",
+        },
+      };
+      const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+        if (input === "https://object.example.test/short-lived-part-grant") {
+          expect(init).toMatchObject({
+            method: "PUT",
+            cache: "no-store",
+            credentials: "omit",
+          });
+          if (mode === "new-session") {
+            useShellStore
+              .getState()
+              .setSession(
+                { actorId: "new", displayName: "new", roleIds: [] },
+                "new-token",
+              );
+            useShellStore
+              .getState()
+              .setSessionScopes(
+                [
+                  {
+                    organizationId: scope.organizationId,
+                    projectId: scope.projectId,
+                    regionCodes: [scope.regionCode],
+                    projectWide: false,
+                    capabilities: [],
+                  },
+                ],
+                1,
+              );
+          } else if (mode === "owner-cancel") {
+            owner.abort();
+          }
+          if (mode !== "complete") expect(init?.signal?.aborted).toBe(true);
+          return new Response(null, {
+            status: 200,
+            headers: { ETag: '"part-etag"' },
+          });
+        }
+        if (input.endsWith("/upload-sessions"))
+          return jsonResponse(createEnvelope);
+        if (input.endsWith(":complete-file"))
+          return jsonResponse(completedEnvelope);
+        throw new Error(`unexpected request ${input}`);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const file = new File(["robot-v1"], "xr-01.urdf", {
+        type: "application/xml",
+      });
 
-    await expect(
-      uploadRobotModelAssets(
+      const transfer = uploadRobotModelAssets(
         scope.organizationId,
         "version-1",
         [
@@ -385,22 +424,35 @@ describe("P14 robot model asset client", () => {
           },
         ],
         "p14-upload-key",
-      ),
-    ).resolves.toBe("upload-1");
+        owner.signal,
+      );
+      if (mode !== "complete") {
+        await expect(transfer).rejects.toMatchObject({
+          code: "NETWORK_ERROR",
+          retryable: false,
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(
+          fetchMock.mock.calls.some(([url]) => url.endsWith(":complete-file")),
+        ).toBe(false);
+        return;
+      }
+      await expect(transfer).resolves.toBe("upload-1");
 
-    const completeCall = fetchMock.mock.calls.find(([url]) =>
-      String(url).endsWith(":complete-file"),
-    );
-    expect(JSON.parse(String((completeCall?.[1] as RequestInit).body))).toEqual(
-      {
+      const completeCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).endsWith(":complete-file"),
+      );
+      expect(
+        JSON.parse(String((completeCall?.[1] as RequestInit).body)),
+      ).toEqual({
         relative_path: "xr-01.urdf",
         parts: [{ part_number: 1, etag: "part-etag" }],
-      },
-    );
-    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
-      "multipart_upload_id",
-    );
-  });
+      });
+      expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
+        "multipart_upload_id",
+      );
+    },
+  );
 
   it("uses the version-scoped mapping and publish-preflight contracts without invented fields", async () => {
     const mappingResponse = {

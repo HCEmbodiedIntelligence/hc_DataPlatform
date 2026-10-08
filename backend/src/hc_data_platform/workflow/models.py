@@ -6,7 +6,14 @@ from typing import Any, Literal
 from urllib.parse import quote, unquote
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from hc_data_platform.aligned_media.models import (
     AlignedMediaArtifactV1,
@@ -25,6 +32,7 @@ from hc_data_platform.annotation.models import (
     TagSchemaStatus,
     TagSchemaVersion,
 )
+from hc_data_platform.capabilities.registry import VERSION_PATTERN
 from hc_data_platform.continuous_recordings.asset_models import (
     EpisodeProcessing,
     EpisodeProcessingStatus,
@@ -49,7 +57,7 @@ from hc_data_platform.lance_catalog.models import (
 from hc_data_platform.lance_catalog.models import DatasetVersionRef, DerivedReadyV1, StepRecord
 from hc_data_platform.lerobot_imports.orchestration import LeRobotEpisodeSourceRefV1
 from hc_data_platform.publishing.models import (
-    ExportFormat,
+    ExportFormatKey,
     ExportResultV1,
     PublishDatasetRequestV1,
     PublishedDatasetManifestV1,
@@ -800,11 +808,24 @@ class PublishActivityOutput(BaseModel):
     manifest: PublishedDatasetManifestV1
 
 
-class ExportActivityInput(BaseModel):
+class ExportImplementationInput(BaseModel):
+    implementation_version: str | None = Field(default=None, pattern=VERSION_PATTERN)
+
+    @model_serializer(mode="wrap")
+    def omit_unfrozen_legacy_version(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        if self.implementation_version is None:
+            document.pop("implementation_version", None)
+        return document
+
+
+class ExportActivityInput(ExportImplementationInput):
     model_config = ConfigDict(frozen=True)
 
     manifest: PublishedDatasetManifestV1
-    format: ExportFormat
+    format: ExportFormatKey
     attempt_id: str = Field(min_length=1)
 
 
@@ -814,13 +835,13 @@ class ExportActivityOutput(BaseModel):
     result: ExportResultV1
 
 
-class ExportPreflightActivityInput(BaseModel):
+class ExportPreflightActivityInput(ExportImplementationInput):
     """Validate immutable source facts before export materialization."""
 
     model_config = ConfigDict(frozen=True)
 
     manifest: PublishedDatasetManifestV1
-    format: ExportFormat
+    format: ExportFormatKey
 
 
 class ExportPreflightActivityOutput(BaseModel):
@@ -980,11 +1001,11 @@ class PublishDatasetWorkflowInput(BaseModel):
     request: PublishDatasetRequestV1
 
 
-class ExportWorkflowInput(BaseModel):
+class ExportWorkflowInput(ExportImplementationInput):
     model_config = ConfigDict(frozen=True)
 
     manifest: PublishedDatasetManifestV1
-    format: ExportFormat
+    format: ExportFormatKey
     attempt_id: str = Field(min_length=1)
     selection: dict[str, Any] | None = None
 

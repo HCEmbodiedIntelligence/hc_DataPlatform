@@ -19,6 +19,7 @@
     "build": "tsc -b && vite build",
     "build:container": "node scripts/assert-production-env.mjs && tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
+    "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
     "gen:api": "node scripts/generate-api-client.mjs",
     "verify:visual-baseline": "node scripts/verify-visual-baseline.mjs"
   },

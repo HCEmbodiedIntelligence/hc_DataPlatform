@@ -3,7 +3,7 @@ import type { IngestScope } from "../../../entities/data-source";
 import { useRobotUploadEpisodes } from "../../../features/robot-ingest/api";
 import type { RobotUploadSummary } from "../../../features/robot-ingest/model";
 import { formatStorageSize } from "../../../shared/lib/metric-presentation";
-import styles from "../styles.module.css";
+import styles from "../../../features/ingest/upload/upload.module.css";
 
 function date(value: string): string {
   const parsed = new Date(value);

@@ -13,9 +13,9 @@ import pyarrow.parquet as pq
 from PIL import Image
 from pydantic import Field
 
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile, dequantize
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, VIDEO_PATH
 from hc_data_platform.lance_catalog.models import StepRecord
-from hc_data_platform.publishing.holobrain_depth import DepthProfile, dequantize
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, VIDEO_PATH
 
 from .models import DataVersionRef, EpisodeIdentity, FrozenModel
 from .realsense_colorizer import RealSenseColorizer, display_profile

@@ -10,9 +10,9 @@ from fractions import Fraction
 
 import av
 
-from hc_data_platform.continuous_recordings.openarm_raw.video import TrainingVideo
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.export_video import inspect_video
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
+from hc_data_platform.data_formats.video import inspect_video
 
 from .models import digest
 from .postgres import PackageConflict
@@ -60,7 +60,9 @@ def prepare_rgb_selection(media, frame_indexes, target_fps, destination):
         ):
             raise PackageConflict("historical RGB source grid/shape/count differs")
         whole = indexes == tuple(range(count)) and fps == target_rate
-        writer = None if whole else TrainingVideo(destination, target_fps, shape, lossless_rgb=True)
+        writer = (
+            None if whole else RgbVideoWriter(destination, target_fps, shape, lossless_rgb=True)
+        )
         original_codec = stream.codec_context.name
         try:
             if indexes[0]:

@@ -1,13 +1,19 @@
-import type { QueryClient } from '@tanstack/react-query';
-import type { AuthorizationSnapshot } from '../../entities/capability';
-import { makeScopeKey, type Scope } from '../../entities/scope';
-import { cancelActiveTransports, releaseScopedResources } from '../../shared/api/transport-lifecycle';
-import { useJobCenterStore } from '../../shared/jobs/job-center-store';
-import { getShellState, useShellStore } from '../../shared/scope/shell-store';
+import type { QueryClient } from "@tanstack/react-query";
+import type { AuthorizationSnapshot } from "../../entities/capability";
+import { makeScopeKey, type Scope } from "../../entities/scope";
+import {
+  cancelActiveTransports,
+  releaseScopedResources,
+} from "../../shared/api/transport-lifecycle";
+import { useJobCenterStore } from "../../shared/jobs/job-center-store";
+import { getShellState, useShellStore } from "../../shared/scope/shell-store";
 
 export interface ScopeSwitchHooks {
   clearPageState?: () => void | Promise<void>;
-  reloadNavigation?: (scope: Scope, signal: AbortSignal) => void | Promise<void>;
+  reloadNavigation?: (
+    scope: Scope,
+    signal: AbortSignal,
+  ) => void | Promise<void>;
   resolveLegalPath?: (snapshot: AuthorizationSnapshot) => string | null;
   navigate?: (path: string) => void;
 }
@@ -15,7 +21,10 @@ export interface ScopeSwitchHooks {
 export async function executeScopeSwitch(
   queryClient: QueryClient,
   nextScope: Scope,
-  loadAuthorization: (scope: Scope, signal: AbortSignal) => Promise<AuthorizationSnapshot>,
+  loadAuthorization: (
+    scope: Scope,
+    signal: AbortSignal,
+  ) => Promise<AuthorizationSnapshot>,
   hooks: ScopeSwitchHooks = {},
 ): Promise<void> {
   const oldScopeKey = getShellState().scopeKey;
@@ -27,7 +36,9 @@ export async function executeScopeSwitch(
   try {
     // 2. Cancel old-scope HTTP requests, Query work and SSE subscriptions.
     await queryClient.cancelQueries({
-      predicate: (query) => query.queryKey[1] === oldScopeKey,
+      predicate: (query) =>
+        query.queryKey[1] === oldScopeKey &&
+        query.meta?.scopeBinding !== "explicit",
     });
     await cancelActiveTransports();
 
@@ -37,8 +48,12 @@ export async function executeScopeSwitch(
     // 4. Clear in-memory selection and sensitive temporary state.
     await hooks.clearPageState?.();
     useJobCenterStore.getState().clear();
-    useShellStore.getState().clearSensitiveState();
-    queryClient.removeQueries({ predicate: (query) => query.queryKey[1] === oldScopeKey });
+    useShellStore.getState().clearActiveScopeState();
+    queryClient.removeQueries({
+      predicate: (query) =>
+        query.queryKey[1] === oldScopeKey &&
+        query.meta?.scopeBinding !== "explicit",
+    });
 
     // 5. Install the new scope and refetch authorization and navigation facts.
     useShellStore.getState().setScope(nextScope);
@@ -47,7 +62,8 @@ export async function executeScopeSwitch(
       loadAuthorization(nextScope, transaction.signal),
       hooks.reloadNavigation?.(nextScope, transaction.signal),
     ]);
-    if (snapshot.scopeKey !== makeScopeKey(nextScope)) throw new Error('Authorization scope mismatch');
+    if (snapshot.scopeKey !== makeScopeKey(nextScope))
+      throw new Error("Authorization scope mismatch");
     useShellStore.getState().setAuthorization(snapshot);
 
     // 6. Load only a route that is legal under the new authorization snapshot.

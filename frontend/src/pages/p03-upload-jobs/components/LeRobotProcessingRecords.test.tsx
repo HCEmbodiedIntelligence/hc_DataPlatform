@@ -11,10 +11,10 @@ import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { request } from "../../../shared/api/http-client";
-import { LeRobotProcessingRecords } from "./LeRobotProcessingRecords";
+import { LeRobotProcessingRecords } from "../../../features/ingest/processing/components/LeRobotProcessingRecords";
 
 vi.mock("../../../shared/api/http-client", () => ({ request: vi.fn() }));
-vi.mock("./ProcessingLabels", () => ({
+vi.mock("../../../features/ingest/processing/components/ProcessingLabels", () => ({
   useProcessingConfiguration: () => ({}),
   ProcessingLabels: () => null,
 }));

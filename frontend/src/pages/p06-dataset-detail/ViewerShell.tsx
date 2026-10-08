@@ -33,7 +33,7 @@ import { PageState } from "../../shared/ui";
 import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
 import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
-import { reviewDataReference } from "./data-reviews";
+import { reviewDataReference } from "../../features/datasets/episodes/data-reviews";
 import {
   adaptP06ViewerStreams,
   selectEpisodeJointStream,

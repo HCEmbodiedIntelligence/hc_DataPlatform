@@ -12,13 +12,13 @@ import {
 import type {
   FolderBatchProgress,
   UploadQueueItem,
-} from "../upload-queue-store";
+} from "../../../features/ingest/upload/upload-queue-store";
 import {
   formatBytes,
   formatDuration,
   type UploadProblemCopy,
-} from "../upload-contract";
-import styles from "../styles.module.css";
+} from "../../../features/ingest/upload/upload-contract";
+import styles from "../../../features/ingest/upload/upload.module.css";
 
 const queueStatusTagStyle = {
   backgroundColor: "var(--hc-color-surface)",

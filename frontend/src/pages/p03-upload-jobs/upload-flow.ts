@@ -1,5 +1,5 @@
 import type { IngestScope } from "../../entities/data-source";
-import type { ManifestPreflight, UploadManifest } from "./formal-client";
+import type { ManifestPreflight, UploadManifest } from "../../features/ingest/upload/formal-client";
 import type { BrowserSelectionMode } from "./components/UploadMethodPanel";
 import {
   discoverFolderUploadBundles,
@@ -13,7 +13,7 @@ import {
   selectedRelativePath,
   validateObjectStorageUri,
   type LeRobotFolderSelection,
-} from "./upload-contract";
+} from "../../features/ingest/upload/upload-contract";
 
 export type UploadFlowPhase =
   | "idle"

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Descriptions, Progress, Space, Typography } from "antd";
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { dataUploadRoutes } from "../../app/shell/navigation-routes";
+import { dataUploadRoutes } from "../../shared/routing/navigation-routes";
 import type { IngestScope } from "../../entities/data-source";
 import type { AutoQualityProblem } from "../../features/cleaning/api";
 import { request } from "../../shared/api/http-client";
@@ -13,8 +13,8 @@ import {
 import {
   nativeRoot,
   type NativeProgress,
-} from "../p03-upload-jobs/lerobot-processing";
-import { getFormalRolloutQuality } from "../p04-upload-detail/formal-detail-client";
+} from "../../features/ingest/processing/lerobot-processing";
+import { getFormalRolloutQuality } from "../../features/ingest/detail/client";
 
 const runningStatuses = new Set(["PENDING", "RUNNING"]);
 const retryableStatuses = new Set(["FAILED", "PARTIALLY_FAILED", "CANCELLED"]);

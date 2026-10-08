@@ -23,13 +23,13 @@ from uuid import uuid4
 from hc_data_platform.core.context import retain_current_writer_permit
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec
-from hc_data_platform.ingest.models import CompletedPart
-from hc_data_platform.ingest.ports import (
+from hc_data_platform.object_storage.checksums import crc64_ecma
+from hc_data_platform.object_storage.models import (
+    CompletedPartReference,
     MultipartPart,
     ObjectMetadata,
-    crc64_ecma,
-    validate_completion_parts,
 )
+from hc_data_platform.object_storage.validation import validate_completion_parts
 
 _UPLOAD_TOKEN_KIND = "robot-model-asset-upload/v1"
 _DOWNLOAD_TOKEN_KIND = "robot-model-asset-download/v1"
@@ -183,7 +183,7 @@ class FilesystemRobotModelStorage:
         self,
         key: str,
         upload_id: str,
-        parts: Sequence[CompletedPart],
+        parts: Sequence[CompletedPartReference],
     ) -> ObjectMetadata:
         with self._lock:
             actual = self.list_parts(key, upload_id)

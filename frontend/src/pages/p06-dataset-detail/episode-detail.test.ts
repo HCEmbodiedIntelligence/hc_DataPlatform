@@ -8,7 +8,7 @@ import {
   loadEpisodeFiles,
   loadEpisodeOverview,
   secondsFromNs,
-} from "./episode-detail";
+} from "../../features/datasets/episodes/episode-detail";
 import {
   episodeDetailFixture,
   episodeMigrationFixture,

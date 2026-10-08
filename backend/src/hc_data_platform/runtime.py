@@ -131,7 +131,6 @@ from hc_data_platform.dataset_registry.models import (
 from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
 from hc_data_platform.dataset_registry.router import configure_dataset_page
 from hc_data_platform.dataset_registry.service import DatasetPageService
-from hc_data_platform.ingest.adapters import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.ingest.device_facts import (
     DeviceCaptureFactService,
     PostgresDeviceCaptureFactRepository,
@@ -141,6 +140,7 @@ from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
+from hc_data_platform.integrations.publication import postgres_publication_effects
 from hc_data_platform.lance_catalog.adapters import (
     LanceAdapter,
     PostgresAdvisoryDatasetLock,
@@ -167,6 +167,8 @@ from hc_data_platform.manual_cleaning.models import (
 from hc_data_platform.manual_cleaning.repository import PostgresManualIssueRepository
 from hc_data_platform.manual_cleaning.router import configure_manual_issues
 from hc_data_platform.manual_cleaning.service import ManualIssueService
+from hc_data_platform.object_storage.artifact_adapters import S3ProjectionArtifactStore
+from hc_data_platform.object_storage.providers import OssObjectStorage, S3ObjectStorage
 from hc_data_platform.platform_ops.maintenance import (
     MaintenanceWriteGate,
     PostgresMaintenanceRepository,
@@ -265,10 +267,7 @@ from hc_data_platform.workflow.models import (
 )
 from hc_data_platform.workflow.outbox_worker import local_project_scopes
 from hc_data_platform.workflow.postgres import PostgresWorkflowJobRepository
-from hc_data_platform.workflow.projection_store import (
-    S3ProjectionArtifactStore,
-    S3ProjectionStagingSweeper,
-)
+from hc_data_platform.workflow.projection_store import S3ProjectionStagingSweeper
 from hc_data_platform.workflow.service import TemporalWorkflowLauncher
 from hc_data_platform.workflow.worker import DEFAULT_TASK_QUEUE
 
@@ -969,7 +968,9 @@ def build_runtime(
             annotations=annotation,
             catalog=catalog,
         ),
-        repository=PostgresPublishedManifestRepository(connection_factory),
+        repository=PostgresPublishedManifestRepository(
+            connection_factory, side_effects=postgres_publication_effects
+        ),
         artifact_sink=artifact_sink,
     )
     exporter = ExportCoordinator(

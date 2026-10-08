@@ -8,8 +8,8 @@ from typing import BinaryIO, cast
 
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
-from hc_data_platform.ingest.models import CompletedPart, PartAuthorization, utc_now
-from hc_data_platform.ingest.ports import MultipartPart, ObjectStoragePort
+from hc_data_platform.ingest.models import CompletedPart as WireCompletedPart
+from hc_data_platform.ingest.models import PartAuthorization, utc_now
 from hc_data_platform.ingest.raw_sources import (
     CommittedRawSourceGraph,
     InMemoryRawSourceRepository,
@@ -22,6 +22,8 @@ from hc_data_platform.ingest.raw_sources import (
     RawSourceProcessingStatus,
     RawSourceRepositoryPort,
 )
+from hc_data_platform.object_storage.models import CompletedPart, MultipartPart
+from hc_data_platform.object_storage.ports import ObjectReader, ObjectStoragePort
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.workflow.models import workflow_id
@@ -421,7 +423,10 @@ class LeRobotWebUploadService:
         return LeRobotAssetCompletedV1(
             path=command.path,
             size=metadata.size,
-            parts=completed_parts,
+            parts=tuple(
+                WireCompletedPart(part_number=part.part_number, etag=part.etag)
+                for part in completed_parts
+            ),
         )
 
     def commit(
@@ -836,7 +841,7 @@ def _stable_import_id(
     return hashlib.sha256(body).hexdigest()[:32]
 
 
-def read_bounded(storage: ObjectStoragePort, key: str, limit: int) -> bytes:
+def read_bounded(storage: ObjectReader, key: str, limit: int) -> bytes:
     """Reject oversized metadata before allocating its complete contents."""
     metadata = storage.head(key)
     if metadata is None:

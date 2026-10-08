@@ -25,7 +25,7 @@ from hc_data_platform.ingest.cli import (
     _json_request,
     _raise_for_status,
 )
-from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.object_storage.checksums import crc64_ecma
 
 DEFAULT_PART_SIZE = 32 * 1024**2
 MAX_MULTIPART_PARTS = 10_000

@@ -3,7 +3,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import type {
   RuntimeAnnotationHistory,
   RuntimeAnnotationScope,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   authorizeAnnotationDelivery,
   commandAnnotationDelivery,
@@ -11,7 +11,7 @@ import {
   listAnnotationDeliveries,
   type DeliveryJob,
   type DeliveryRequest,
-} from "./annotation-deliveries";
+} from "../../features/annotation/runtime/annotation-deliveries";
 import styles from "./workbench.module.css";
 
 const phases = {

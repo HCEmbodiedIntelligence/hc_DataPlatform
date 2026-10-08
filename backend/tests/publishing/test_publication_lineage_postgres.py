@@ -33,6 +33,7 @@ from hc_data_platform.publishing.models import (  # noqa: E402
 from hc_data_platform.publishing.postgres import (  # noqa: E402
     PostgresPublishedManifestRepository,
 )
+from hc_data_platform.publishing.transactions import publication_only  # noqa: E402
 from hc_data_platform.security.auth import AuthContext  # noqa: E402
 from hc_data_platform.security.capabilities import CAPABILITY_DASHBOARD_READ  # noqa: E402
 
@@ -322,7 +323,9 @@ def test_forward_publication_writes_atomic_idempotent_exact_region_lineage(
         dataset_version="1",
         rollout_ids=rollout_ids,
     )
-    repository = PostgresPublishedManifestRepository(psycopg_connection_factory(dsn))
+    repository = PostgresPublishedManifestRepository(
+        psycopg_connection_factory(dsn), side_effects=publication_only
+    )
     with request_context(project_id):
         first = repository.create_immutable(candidate)
         replay = repository.create_immutable(candidate)
@@ -368,7 +371,9 @@ def test_concurrent_publication_has_one_immutable_winner_and_matching_lineage(
     )
 
     def publish(candidate: PublishedDatasetManifestV1) -> tuple[str, str]:
-        repository = PostgresPublishedManifestRepository(psycopg_connection_factory(dsn))
+        repository = PostgresPublishedManifestRepository(
+            psycopg_connection_factory(dsn), side_effects=publication_only
+        )
         try:
             with request_context(project_id):
                 saved = repository.create_immutable(candidate)
@@ -411,7 +416,9 @@ def test_unresolved_forward_rollout_rolls_back_dataset_and_lineage(
         dataset_version="1",
         rollout_ids=("not-in-ingest",),
     )
-    repository = PostgresPublishedManifestRepository(psycopg_connection_factory(dsn))
+    repository = PostgresPublishedManifestRepository(
+        psycopg_connection_factory(dsn), side_effects=publication_only
+    )
     with request_context(project_id), pytest.raises(ProblemException) as captured:
         repository.create_immutable(candidate)
     assert captured.value.problem.code == "PUBLICATION_REGION_LINEAGE_UNRESOLVED"

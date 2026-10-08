@@ -3,7 +3,7 @@ import { buildTagSchemaIndex, evaluateAnnotationTags } from "./tag-validation";
 import type {
   RuntimeAnnotationTag,
   RuntimeTagSchemaVersion,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   createVisualAnnotationBundle,
   visualSchema,

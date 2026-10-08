@@ -18,7 +18,7 @@ import { DataTable } from "../../../shared/ui/data/DataTable";
 import { useCompactLayout } from "../../../shared/ui/layout/responsive";
 import { PageState } from "../../../shared/ui/state/PageState";
 import { StatusTag } from "../../../shared/ui/state/StatusTag";
-import type { CollectionTask, CollectionTaskProgress } from "../api";
+import type { CollectionTask, CollectionTaskProgress } from "../../../features/collection-tasks/api";
 import styles from "../styles.module.css";
 
 export interface TaskProgressState {

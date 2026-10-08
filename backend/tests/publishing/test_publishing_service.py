@@ -687,10 +687,10 @@ def test_openapi_fragment_has_resolved_export_and_publication_schemas() -> None:
         operation = document["paths"][f"{export_path}{suffix}"][method]
         assert operation["operationId"] == operation_id
     assert "ExportResultV1" not in schemas
-    assert schemas["ExportDatasetRequestV1"]["properties"]["format"]["enum"] == [
-        "lance_snapshot",
-        "lerobot_v3",
-    ]
+    assert schemas["ExportDatasetRequestV1"]["properties"]["format"] == {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+    }
 
 
 def test_runtime_export_job_contract_has_no_direct_result_or_501_response() -> None:
@@ -701,6 +701,7 @@ def test_runtime_export_job_contract_has_no_direct_result_or_501_response() -> N
     )
     root = "/api/v1/datasets/{dataset_id}/versions/{dataset_version}/exports"
     expected = {
+        "/api/v1/datasets/export-formats": ("get", "getExportFormats", "200"),
         root: ("post", "exportPublishedDatasetVersion", "202"),
         f"{root}/{{job_id}}": ("get", "getPublishedDatasetExportJob", "200"),
         f"{root}/{{job_id}}:cancel": ("post", "cancelPublishedDatasetExportJob", "200"),

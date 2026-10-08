@@ -16,11 +16,11 @@ from uuid import uuid4
 
 from pydantic import Field
 
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.feature_names import camera_feature, feature_names
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, VIDEO_PATH
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot, StepRecord
 from hc_data_platform.lance_catalog.service import compute_fragment_hash
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.feature_names import camera_feature
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, VIDEO_PATH, _feature_names
 
 from .commit import EpisodePackageCommitter
 from .models import Digest, FrozenModel, LegacyEpisodeRef, PackageInput, canonical, digest
@@ -36,7 +36,7 @@ METADATA_FIELDS = {"task", "robot_type", "source", "modalities", "calibration", 
 def _features(first, metadata, videos):
     if set(metadata) - METADATA_FIELDS:
         raise ValueError("migration metadata cannot inherit quality/review decisions")
-    mapping = _feature_names(sorted(first.modalities), camera_topics=metadata.get("camera_topics"))
+    mapping = feature_names(sorted(first.modalities), camera_topics=metadata.get("camera_topics"))
     expected_cameras = {
         target
         for name, target in mapping.items()

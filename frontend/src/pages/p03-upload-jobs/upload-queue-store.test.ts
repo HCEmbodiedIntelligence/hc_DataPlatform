@@ -6,7 +6,7 @@ import type {
   ManifestPreflight,
   PartAuthorization,
   UploadPart,
-} from "./formal-client";
+} from "../../features/ingest/upload/formal-client";
 
 const formal = vi.hoisted(() => ({
   cancel: vi.fn(),
@@ -26,8 +26,8 @@ const formal = vi.hoisted(() => ({
 
 const leRobot = vi.hoisted(() => ({ upload: vi.fn() }));
 
-vi.mock("./formal-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./formal-client")>();
+vi.mock("../../features/ingest/upload/formal-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../features/ingest/upload/formal-client")>();
   return {
     ...actual,
     cancelFormalUpload: formal.cancel,
@@ -46,8 +46,8 @@ vi.mock("./formal-client", async (importOriginal) => {
   };
 });
 
-vi.mock("./lerobot-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./lerobot-client")>();
+vi.mock("../../features/ingest/upload/lerobot-client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../features/ingest/upload/lerobot-client")>();
   return { ...actual, uploadNativeLeRobot: leRobot.upload };
 });
 
@@ -61,16 +61,16 @@ import {
   partTransferTimeoutMs,
   resetUploadQueueStoreForTests,
   useUploadQueueStore,
-} from "./upload-queue-store";
+} from "../../features/ingest/upload/upload-queue-store";
 import {
   MAX_PACKAGE_BYTES,
   MIN_MULTIPART_BYTES,
   planUploadParts,
-} from "./upload-contract";
+} from "../../features/ingest/upload/upload-contract";
 import {
   LeRobotUploadFailure,
   type LeRobotUploadProgress,
-} from "./lerobot-client";
+} from "../../features/ingest/upload/lerobot-client";
 
 const scope = {
   organizationId: "org-e05",

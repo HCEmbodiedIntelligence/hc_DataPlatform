@@ -18,14 +18,15 @@ from mcap.reader import make_reader
 from mcap.writer import CompressionType, Writer
 
 from hc_data_platform import recording_fields as public
-from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo
-from hc_data_platform.publishing.depth_source import profile_hash, require_depth_source
+from hc_data_platform.data_formats.depth_evidence import DepthEvidenceVideo
+from hc_data_platform.data_formats.depth_source import profile_hash, require_depth_source
+from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 
 from .alignment import Aligner, target_count, target_time
 from .buffers import TimeCache
 from .config import config_hash, validate
 from .models import Sample
-from .video import FrameReader, TrainingVideo
+from .video import FrameReader
 
 VERSION = "openarm-raw-platform/4"
 
@@ -312,7 +313,7 @@ def prepare(root, destination, command, progress=lambda: None):
                     for camera in profile["cameras"]:
                         ident = camera["id"]
                         if ident not in videos:
-                            videos[ident] = TrainingVideo(
+                            videos[ident] = RgbVideoWriter(
                                 destination / f"videos/{ident}.mp4",
                                 fps,
                                 (camera["height"], camera["width"], 3),

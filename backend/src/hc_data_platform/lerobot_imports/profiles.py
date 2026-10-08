@@ -7,10 +7,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from hc_data_platform.data_formats.feature_names import native_feature_topic
 from hc_data_platform.recording_fields import AXES, SCHEMA
 from hc_data_platform.tools import hf_unitree_g1_to_mcap as g1
-
-from .feature_names import native_feature_topic
 
 SOURCE_TOPIC = "/metadata/source"
 OPENARM_AXES = tuple(

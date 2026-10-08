@@ -17,15 +17,15 @@ import {
   createRuntimeAutoAnnotationJob,
   getRuntimeAutoAnnotationJob,
   loadRuntimeAutoAnnotationCapability,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import { RuntimeAutoAnnotationPanel } from "./RuntimeAutoAnnotationPanel";
 import {
   createVisualAnnotationBundle,
   visualAnnotationScope,
 } from "./testing/annotation-fixture";
-import type { RuntimeAutoAnnotationJob } from "./runtime-annotation-adapter";
+import type { RuntimeAutoAnnotationJob } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
-vi.mock("./runtime-annotation-adapter", () => ({
+vi.mock("../../features/annotation/runtime/runtime-annotation-adapter", () => ({
   applyRuntimeAutoAnnotationJob: vi.fn(),
   cancelRuntimeAutoAnnotationJob: vi.fn(),
   createRuntimeAutoAnnotationJob: vi.fn(),

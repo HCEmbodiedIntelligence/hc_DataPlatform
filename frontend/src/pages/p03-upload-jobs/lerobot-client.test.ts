@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDomainError } from "../../shared/api/domain-error";
-import type { LeRobotFolderSelection } from "./upload-contract";
+import type { LeRobotFolderSelection } from "../../features/ingest/upload/upload-contract";
 import {
   buildLeRobotImportManifest,
   LEROBOT_MULTIPART_BYTES,
@@ -11,7 +11,7 @@ import {
   uploadNativeLeRobot,
   type LeRobotImportAccepted,
   type LeRobotUploadProgress,
-} from "./lerobot-client";
+} from "../../features/ingest/upload/lerobot-client";
 
 const { requestMock } = vi.hoisted(() => ({ requestMock: vi.fn() }));
 

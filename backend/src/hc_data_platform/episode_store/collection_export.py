@@ -16,9 +16,9 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.lerobot_export import DATA_PATH, EPISODES_PATH, VIDEO_PATH
-from hc_data_platform.publishing.lerobot_format import make_task_table
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.lerobot_format import make_task_table
+from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
 from .annotated_delivery import write_annotated_delivery
 from .models import FileEntry, canonical, digest

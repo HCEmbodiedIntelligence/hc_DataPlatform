@@ -6,7 +6,7 @@ from uuid import uuid4
 import pyarrow.parquet as pq
 
 from hc_data_platform.annotation.delivery_models import AnnotationDeliveryPlan
-from hc_data_platform.publishing.lerobot_export import VIDEO_PATH
+from hc_data_platform.data_formats.lerobot_layout import VIDEO_PATH
 
 from .detail_models import (
     EpisodeAction,

@@ -2,14 +2,14 @@ import { useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Progress } from "antd";
 import type { Scope } from "../../entities/scope";
-import type { ReviewDataRef } from "./data-reviews";
+import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
 import {
   authorizeCompleteDelivery,
   commandCompleteDelivery,
   listCompleteDeliveries,
   requestCompleteDelivery,
   type CompleteDeliveryJob,
-} from "./complete-deliveries";
+} from "../../features/datasets/episodes/complete-deliveries";
 import styles from "./EpisodeDetailPanel.module.css";
 
 const phases = {

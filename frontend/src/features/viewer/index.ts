@@ -13,3 +13,6 @@ export * from "./joint-frame-source";
 export * from "./RawDiagnosticWorkbench";
 export * from "./SynchronizedEpisodeWorkbench";
 export * from "./use-playback-clock";
+export * from "./renderer-contract";
+export * from "./renderer-catalog";
+export * from "./builtin-renderers";

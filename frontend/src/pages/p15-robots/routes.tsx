@@ -1,9 +1,27 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
 
-export const routes: RouteObject[] = [
-  { path: "/settings/robots", lazy: () => import("./page") },
-  { path: "/settings/robot-instances", lazy: () => import("./instances-page") },
+export const routes: PageRoute[] = [
+  {
+    path: "/settings/robots",
+    requiredCapabilities: ["robot.read"],
+    navigationOwnerPageId: "P14",
+    lazy: () => import("./page"),
+  },
+  {
+    path: "/settings/robot-instances",
+    requiredCapabilities: ["robot.read"],
+    navigation: {
+      label: "机器人实例",
+      groupId: "governance",
+      order: 40,
+      visibility: "authorized",
+    },
+    lazy: () => import("./instances-page"),
+  },
 ];
-registerPageRoutes("P15", routes);
+
+export const page = definePage({ id: "P15", enabled: true, routes: routes });
 export default routes;

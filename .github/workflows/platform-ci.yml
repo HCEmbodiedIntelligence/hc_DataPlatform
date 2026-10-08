@@ -27,6 +27,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
+      - run: pnpm check:architecture
       - name: Production bundle safety gate
         env:
           VITE_API_BASE_URL: /api/v1
@@ -65,6 +66,7 @@ jobs:
       - run: uv run ruff format --check src tests
       - run: uv run ruff check src tests
       - run: uv run mypy src
+      - run: uv run python tools/check_architecture.py
       - run: uv run pytest --cov=hc_data_platform --cov-report=term-missing
       - run: uv run python -m hc_data_platform.core.openapi --check
       - name: OpenAPI target compatibility

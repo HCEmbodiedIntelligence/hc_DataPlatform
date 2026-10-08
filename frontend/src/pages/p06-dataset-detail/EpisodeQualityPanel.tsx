@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Collapse, Tag, Typography } from "antd";
 import type { Scope } from "../../entities/scope";
-import type { ReviewDataRef } from "./data-reviews";
+import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
 import {
   loadEpisodeQuality,
   qualityReasonLabels,

@@ -5,7 +5,7 @@ import {
   commandCompleteDelivery,
   listCompleteDeliveries,
   requestCompleteDelivery,
-} from "./complete-deliveries";
+} from "../../features/datasets/episodes/complete-deliveries";
 import { completeDeliveryFixture } from "./testing/complete-delivery-fixture";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));

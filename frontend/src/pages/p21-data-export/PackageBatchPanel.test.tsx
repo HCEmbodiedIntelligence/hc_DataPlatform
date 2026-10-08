@@ -9,10 +9,10 @@ import {
   createPackageBatch,
   listPackageJobs,
   loadPackageCandidates,
-} from "./package-deliveries";
+} from "../../features/exports/package-deliveries";
 import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 
-vi.mock("./package-deliveries", () => ({
+vi.mock("../../features/exports/package-deliveries", () => ({
   createPackageBatch: vi.fn(),
   listPackageJobs: vi.fn(),
   loadPackageCandidates: vi.fn(),

@@ -17,8 +17,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.ingest.raw_sources import RawSource
+from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .orchestration import LeRobotImportPlanV1, build_import_plan
 from .reader import episode_metadata, safe_relative
@@ -60,9 +60,7 @@ def normalize_committed_manifest(raw: RawSource, assets: list[dict[str, Any]]) -
     }
 
 
-def read_committed_manifest(
-    storage: ObjectStoragePort, raw: RawSource
-) -> tuple[dict[str, Any], bytes]:
+def read_committed_manifest(storage: ObjectChunks, raw: RawSource) -> tuple[dict[str, Any], bytes]:
     """Return a native read view plus the ORIGINAL bytes used for lineage hashes."""
     body = b"".join(storage.read_chunks(raw.manifest_key))
     manifest = json.loads(body)
@@ -72,37 +70,62 @@ def read_committed_manifest(
         upload = RobotIngestUpload.model_validate(manifest["upload"])
         target = upload.target
         if (
-            (target.organization_id, target.project_id, target.region_code,
-             target.dataset_id, target.collection_task_id, upload.authenticated_robot_id)
-            != (raw.organization_id, raw.project_id, raw.region_code,
-                raw.dataset_id, raw.collection_task_id, raw.robot_id)
+            (
+                target.organization_id,
+                target.project_id,
+                target.region_code,
+                target.dataset_id,
+                target.collection_task_id,
+                upload.authenticated_robot_id,
+            )
+            != (
+                raw.organization_id,
+                raw.project_id,
+                raw.region_code,
+                raw.dataset_id,
+                raw.collection_task_id,
+                raw.robot_id,
+            )
             or upload.upload_id != raw.upload_id
             or upload.total_bytes != raw.total_bytes
-            or any(a.state.value != "COMPLETED" or
-                   (a.actual_size_bytes, a.actual_sha256, a.actual_crc64) !=
-                   (a.expected_size_bytes, a.expected_sha256, a.expected_crc64)
-                   for a in upload.assets)
+            or any(
+                a.state.value != "COMPLETED"
+                or (a.actual_size_bytes, a.actual_sha256, a.actual_crc64)
+                != (a.expected_size_bytes, a.expected_sha256, a.expected_crc64)
+                for a in upload.assets
+            )
         ):
             raise ValueError("LEROBOT_COMMITTED_IDENTITY")
-        digest = hashlib.sha256("\n".join(
-            f"{a.asset_id}\0{a.expected_sha256}\0{a.expected_size_bytes}"
-            for a in upload.assets
-        ).encode()).hexdigest()
+        digest = hashlib.sha256(
+            "\n".join(
+                f"{a.asset_id}\0{a.expected_sha256}\0{a.expected_size_bytes}" for a in upload.assets
+            ).encode()
+        ).hexdigest()
         if digest != raw.content_hash:
             raise ValueError("LEROBOT_MANIFEST_CHANGED")
-        manifest = normalize_committed_manifest(raw, [
-            {"path": a.path, "object_key": a.object_key, "size": a.expected_size_bytes,
-             "sha256": a.expected_sha256, "crc64": a.expected_crc64}
-            for a in upload.assets
-        ])
+        manifest = normalize_committed_manifest(
+            raw,
+            [
+                {
+                    "path": a.path,
+                    "object_key": a.object_key,
+                    "size": a.expected_size_bytes,
+                    "sha256": a.expected_sha256,
+                    "crc64": a.expected_crc64,
+                }
+                for a in upload.assets
+            ],
+        )
         manifest["robot_upload_id"] = upload.upload_id
-    if (manifest.get("content_hash") != raw.content_hash or
-            manifest.get("source_prefix") != raw.storage_prefix):
+    if (
+        manifest.get("content_hash") != raw.content_hash
+        or manifest.get("source_prefix") != raw.storage_prefix
+    ):
         raise ValueError("LEROBOT_MANIFEST_CHANGED")
     return manifest, body
 
 
-def discover_committed_source(storage: ObjectStoragePort, raw: RawSource) -> DiscoveredLeRobotV1:
+def discover_committed_source(storage: ObjectChunks, raw: RawSource) -> DiscoveredLeRobotV1:
     context = current_request_context()
     if (
         (context.organization_id, context.project_id, context.region_code)
@@ -150,8 +173,8 @@ def discover_committed_source(storage: ObjectStoragePort, raw: RawSource) -> Dis
             verify_completion(root, descriptors)
             capture = json.loads(context_file.read_text())
             if manifest.get("robot_upload_id") and (
-                capture["robot_id"] != raw.robot_id or
-                capture["collection_task_id"] != raw.collection_task_id
+                capture["robot_id"] != raw.robot_id
+                or capture["collection_task_id"] != raw.collection_task_id
             ):
                 raise ValueError("OPENARM_CAPTURE_IDENTITY_MISMATCH")
             sources = capture["episodes"]

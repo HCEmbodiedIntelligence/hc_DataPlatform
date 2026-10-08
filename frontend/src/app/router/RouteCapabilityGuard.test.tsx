@@ -42,6 +42,23 @@ afterEach(() => {
 });
 
 describe("RouteCapabilityGuard", () => {
+  it("rejects an unknown permission even for a platform administrator", () => {
+    useShellStore.setState({
+      scope: null,
+      scopeKey: makeScopeKey({ organizationId: "unscoped" }),
+      authorization: null,
+      authorizationLoading: false,
+      authorizationFailed: false,
+      bootstrapLoaded: true,
+      platformCapabilities: ["platform.admin", "unknown.read"],
+    });
+
+    renderGuard(["unknown.read"]);
+
+    expect(screen.getByText("无权访问")).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "数据集页面" })).toBeNull();
+  });
+
   it("opens ordinary pages for a bootstrapped personal account without tenant scope", () => {
     useShellStore.setState({
       scope: null,

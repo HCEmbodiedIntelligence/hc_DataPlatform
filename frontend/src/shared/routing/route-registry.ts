@@ -9,32 +9,7 @@ export interface RegisteredRoute {
 
 export type PageRouteRegistration = unknown;
 
-const canonicalPatterns = new Set<string>([
-  "/dashboard",
-  "/ingest/sources",
-  "/ingest/uploads/new",
-  "/ingest/uploads/records",
-  "/ingest/uploads/:uploadId",
-  "/datasets",
-  "/datasets/:datasetId",
-  "/datasets/:datasetId/versions/:versionId",
-  "/datasets/:datasetId/versions/:versionId/episodes/:episodeId/view",
-  "/annotations/annotate",
-  "/annotations/revisions",
-  "/annotations/tag-review",
-  "/annotations/tasks/:taskId",
-  "/manual/issues",
-  "/storage/overview",
-  "/storage/lifecycle",
-  "/settings/robot-models",
-  "/settings/robots",
-  "/settings/robot-instances",
-  "/settings/calibrations",
-  "/exports",
-  "/settings/access",
-  "/settings/audit",
-  "/settings/platform-operations",
-]);
+const canonicalPatterns = new Set<string>();
 
 const pageRoutes = new Map<string, Set<string>>();
 
@@ -73,6 +48,20 @@ export function registerPageRoutes(
   for (const path of registrationPaths(routes)) paths.add(path);
   pageRoutes.set(pageId, paths);
   for (const path of paths) canonicalPatterns.add(path);
+}
+
+/** Install a complete application catalog, removing paths disabled since the last load. */
+export function replaceRegisteredPageRoutes(
+  registrations: readonly { pageId: string; routes: PageRouteRegistration }[],
+): void {
+  const replacement = registrations.map(({ pageId, routes }) => ({
+    pageId,
+    paths: registrationPaths(routes),
+  }));
+  pageRoutes.clear();
+  canonicalPatterns.clear();
+  for (const { pageId, paths } of replacement)
+    registerPageRoutes(pageId, paths);
 }
 
 export function safeReturnTo(raw: unknown): string | null {

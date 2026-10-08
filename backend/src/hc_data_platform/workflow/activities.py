@@ -74,6 +74,7 @@ from hc_data_platform.lance_catalog.service import (
     SchemaIncompatibleError,
 )
 from hc_data_platform.lerobot_imports.cache import SourceCacheLimitExceeded
+from hc_data_platform.object_storage.artifacts import StagedArtifactStore
 from hc_data_platform.platform_control.maintenance_contract import MaintenanceContractError
 from hc_data_platform.platform_ops.maintenance import (
     EnvironmentId,
@@ -81,11 +82,13 @@ from hc_data_platform.platform_ops.maintenance import (
     SafeActorId,
     writer_permit_scope,
 )
+from hc_data_platform.publishing.contracts import LEGACY_EXPORT_VERSIONS
 from hc_data_platform.publishing.models import (
-    ExportFormat,
+    ExportFormatKey,
     ExportResultV1,
     PublishDatasetRequestV1,
     PublishedDatasetManifestV1,
+    export_format_key,
 )
 from hc_data_platform.quality.models import (
     QcReportV1,
@@ -101,7 +104,6 @@ from hc_data_platform.verification.ports import (
     RawVerificationPort,
     ReadableBinaryStream,
 )
-from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePort
 
 from .models import (
     AlignedBundleCommitActivityInput,
@@ -290,14 +292,16 @@ class DatasetExportPort(Protocol):
         self,
         manifest: PublishedDatasetManifestV1,
         *,
-        format: ExportFormat,
+        format: ExportFormatKey,
+        implementation_version: str | None = None,
     ) -> int: ...
 
     def export(
         self,
         manifest: PublishedDatasetManifestV1,
         *,
-        format: ExportFormat,
+        format: ExportFormatKey,
+        implementation_version: str | None = None,
         attempt_id: str,
     ) -> ExportResultV1: ...
 
@@ -384,7 +388,7 @@ class ActivityDependencies:
     ingest_projection: IngestProjectionPort | None = None
     dataset_ingest_projection: DatasetIngestProjectionPort | None = None
     fragment_writers: FragmentWriterFactoryPort | None = None
-    alignment_staging: ProjectionArtifactStorePort | None = None
+    alignment_staging: StagedArtifactStore | None = None
     alignment_staging_ttl: timedelta = timedelta(hours=24)
     catalog_fragments: CatalogFragmentAdapterPort | None = None
     catalog: LanceCatalogPort | None = None
@@ -1212,7 +1216,7 @@ def _publish_alignment_staging(
 ) -> AlignmentStagingArtifactV1:
     store = _require(
         _dependencies.alignment_staging,
-        "workflow.ProjectionArtifactStorePort",
+        "object_storage.StagedArtifactStore",
     )
     parsed = urlparse(manifest.staging_uri)
     if parsed.scheme != "file" or parsed.netloc not in {"", "localhost"}:
@@ -1530,7 +1534,7 @@ async def commit_aligned_bundle(
                 )
             store = _require(
                 _dependencies.alignment_staging,
-                "workflow.ProjectionArtifactStorePort",
+                "object_storage.StagedArtifactStore",
             )
             adapter = _require(
                 _dependencies.catalog_fragments,
@@ -1826,7 +1830,7 @@ async def cleanup_alignment_staging(
     def cleanup() -> AlignmentStagingCleanupActivityOutput:
         store = _require(
             _dependencies.alignment_staging,
-            "workflow.ProjectionArtifactStorePort",
+            "object_storage.StagedArtifactStore",
         )
         for shard in request.staging.camera_shards.values():
             store.delete(shard.object_key)
@@ -1859,6 +1863,17 @@ async def publish_dataset(request: PublishActivityInput) -> PublishActivityOutpu
     return PublishActivityOutput(manifest=manifest)
 
 
+def _export_implementation_version(format: ExportFormatKey, version: str | None) -> str:
+    frozen = version or LEGACY_EXPORT_VERSIONS.get(export_format_key(format))
+    if frozen is None:
+        raise ApplicationError(
+            "export implementation version is missing",
+            type="EXPORT_IMPLEMENTATION_UNAVAILABLE",
+            non_retryable=True,
+        )
+    return frozen
+
+
 @activity.defn(name=EXPORT_DATASET_ACTIVITY)
 async def export_dataset(request: ExportActivityInput) -> ExportActivityOutput:
     manifest = request.manifest
@@ -1873,6 +1888,9 @@ async def export_dataset(request: ExportActivityInput) -> ExportActivityOutput:
                 manifest,
                 format=request.format,
                 attempt_id=request.attempt_id,
+                implementation_version=_export_implementation_version(
+                    request.format, request.implementation_version
+                ),
             ),
         )
     return ExportActivityOutput(result=result)
@@ -1891,7 +1909,11 @@ async def preflight_export(
         row_count = await _invoke(
             "export_preflight",
             lambda: _require(_dependencies.exporter, "publishing.ExportCoordinator").preflight(
-                manifest, format=request.format
+                manifest,
+                format=request.format,
+                implementation_version=_export_implementation_version(
+                    request.format, request.implementation_version
+                ),
             ),
         )
     return ExportPreflightActivityOutput(row_count=row_count)

@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { getSessionBootstrap, logoutSession } from "../../pages/auth/api";
-import { authErrorMessage } from "../../pages/auth/error-messages";
+import { getSessionBootstrap, logoutSession } from "../../features/account/session/api";
+import { authErrorMessage } from "../../features/account/session/error-messages";
 import {
   installSessionBootstrap,
   loadRuntimeAuthorization,
-} from "../../pages/auth/runtime-scope";
+} from "../../features/account/session/runtime-scope";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { useToast } from "../providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import type { PageAvailability } from "./navigation-manifest";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
 

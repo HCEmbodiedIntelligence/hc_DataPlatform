@@ -1,25 +1,17 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export type CleaningDraftsRoute = PageRoute;
 
-type CleaningDraftsRoute = RouteObject & {
-  readonly navigationOwnerPageId: "P08";
-  readonly navigationOwnerGroupId: "annotation";
-  readonly requiredCapabilities: readonly ["cleaning.read"];
-  readonly hiddenFromNavigation: true;
-};
-
-export const routes: CleaningDraftsRoute[] = [
+export const routes: PageRoute[] = [
   {
     path: "/manual/drafts",
-    navigationOwnerPageId: "P08",
-    navigationOwnerGroupId: "annotation",
     requiredCapabilities: ["cleaning.read"],
-    hiddenFromNavigation: true,
-    lazy: async () => ({
-      Component: (await import("./page")).default,
-    }),
+    navigationOwnerPageId: "P08",
+    lazy: async () => ({ Component: (await import("./page")).default }),
   },
 ];
 
-registerPageRoutes("P10", routes);
+export const page = definePage({ id: "P10", enabled: true, routes: routes });
 export default routes;

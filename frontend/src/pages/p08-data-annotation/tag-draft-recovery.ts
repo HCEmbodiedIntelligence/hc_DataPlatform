@@ -1,4 +1,4 @@
-import type { RuntimeAnnotationTag } from "./runtime-annotation-adapter";
+import type { RuntimeAnnotationTag } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 const PREFIX = "hc:p08:tag-recovery:v2:";
 const TTL_MS = 2 * 60 * 60 * 1000;

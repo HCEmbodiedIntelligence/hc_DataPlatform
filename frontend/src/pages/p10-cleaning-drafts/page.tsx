@@ -40,7 +40,7 @@ import {
 import {
   cleaningDraftsQueryCodec,
   type CleaningDraftsSearch,
-} from "./query-codec";
+} from "../../features/cleaning/query-codec";
 import styles from "./styles.module.css";
 
 const scopeTabs: readonly { value: CleaningDraftScope; label: string }[] = [

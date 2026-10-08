@@ -1,7 +1,6 @@
-"""Reversible native-feature identities without importing processing services."""
+"""Compatibility imports; implementation is owned by data_formats."""
 
-NATIVE_FEATURE_PREFIX = "/lerobot/features/"
-
-
-def native_feature_topic(feature: str) -> str:
-    return NATIVE_FEATURE_PREFIX + feature.encode("utf-8").hex()
+from hc_data_platform.data_formats.feature_names import (
+    NATIVE_FEATURE_PREFIX as NATIVE_FEATURE_PREFIX,
+)
+from hc_data_platform.data_formats.feature_names import native_feature_topic as native_feature_topic

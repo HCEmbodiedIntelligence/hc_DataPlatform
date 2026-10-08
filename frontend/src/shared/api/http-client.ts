@@ -1,7 +1,8 @@
 import { getRuntimeConfig } from "../config/runtime";
-import { makeScopeKey, type Scope } from "../../entities/scope";
+import { makeScopeKey, type Scope } from "../scope/model";
 import { camelToSnake } from "../lib/case-convert";
-import { getShellState } from "../scope/shell-store";
+import { getShellState, useShellStore } from "../scope/shell-store";
+import { hasSessionScopeAccess } from "../scope/session-access";
 import {
   createDomainError,
   domainErrorCodeForStatus,
@@ -38,15 +39,15 @@ export type RequestOptions = {
    * sends neither bearer nor tenant headers. Both remain independent from a
    * concurrent project-scope switch.
    */
-  scopeMode?: "active" | "organization" | "session" | "public";
+  scopeMode?: "active" | "explicit" | "organization" | "session" | "public";
   /**
    * Use one not-yet-installed opaque session for bootstrap or cleanup. This is
    * accepted only in session mode and overrides the shell token.
    */
   bearerToken?: string;
   /**
-   * Bind a scoped request to one immutable scope snapshot. When supplied,
-   * both request headers and the post-response scope guard use this value.
+   * Bind a request to a scope snapshot. Active mode follows UI selection;
+   * explicit mode requires session grants and survives UI scope switches.
    */
   scope?: Scope;
   /**
@@ -339,12 +340,27 @@ function assertRuntimeOperation(method: RequestMethod, path: string): void {
 }
 
 export async function request<T>(opts: RequestOptions): Promise<T> {
+  return (await requestWithResponse<T>(opts)).data;
+}
+
+export interface HttpResponse<T> {
+  readonly data: T;
+  readonly status: number;
+  readonly headers: Headers;
+}
+
+/** Use the same transport and guards when an endpoint also returns ETag or other headers. */
+export async function requestWithResponse<T>(
+  opts: RequestOptions,
+): Promise<HttpResponse<T>> {
   const config = getRuntimeConfig();
   const shell = getShellState();
   const sessionScoped = opts.scopeMode === "session";
   const publicScoped = opts.scopeMode === "public";
   const organizationScoped = opts.scopeMode === "organization";
-  const activeScoped = !sessionScoped && !publicScoped && !organizationScoped;
+  const explicitScoped = opts.scopeMode === "explicit";
+  const activeScoped =
+    !sessionScoped && !publicScoped && !organizationScoped && !explicitScoped;
   if (opts.body !== undefined && opts.binaryBody !== undefined) {
     throw new TypeError(
       "JSON and binary request bodies are mutually exclusive",
@@ -360,8 +376,23 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       );
     }
   }
-  if (!activeScoped && !organizationScoped && opts.scope !== undefined) {
+  if (
+    !activeScoped &&
+    !organizationScoped &&
+    !explicitScoped &&
+    opts.scope !== undefined
+  ) {
     throw new TypeError("Unscoped requests cannot bind a project scope");
+  }
+  if (
+    explicitScoped &&
+    (!opts.scope?.organizationId ||
+      (opts.scope.regionCode !== undefined &&
+        opts.scope.projectId === undefined))
+  ) {
+    throw new TypeError(
+      "Explicit requests require an organization and a project for any region",
+    );
   }
   if (
     organizationScoped &&
@@ -396,8 +427,11 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       "作用域切换期间禁止提交写请求",
     );
   }
-  const requestScope =
-    activeScoped || organizationScoped ? (opts.scope ?? shell.scope) : null;
+  const requestScope = explicitScoped
+    ? Object.freeze({ ...opts.scope! })
+    : activeScoped || organizationScoped
+      ? (opts.scope ?? shell.scope)
+      : null;
   const requestScopeKey =
     requestScope === null ? shell.scopeKey : makeScopeKey(requestScope);
   if (
@@ -412,6 +446,23 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       "Request scope no longer matches the active scope",
     );
   }
+  function assertExplicitAccess(): void {
+    if (!explicitScoped) return;
+    const current = getShellState();
+    if (
+      current.sessionRevision !== shell.sessionRevision ||
+      current.sessionToken !== shell.sessionToken
+    ) {
+      throw scopeTransitionError("SESSION_CHANGED", "请求所属登录会话已失效");
+    }
+    if (!hasSessionScopeAccess(current, requestScope)) {
+      throw scopeTransitionError(
+        "SCOPE_NOT_GRANTED",
+        "当前会话未授权此请求的作用域",
+      );
+    }
+  }
+  assertExplicitAccess();
   assertRuntimeOperation(opts.method, opts.path);
   const headers = new Headers({
     Accept: "application/json",
@@ -439,7 +490,25 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
   const { controller, release } = createManagedAbortController(opts.signal, {
     cancelOnScopeChange: activeScoped || organizationScoped,
   });
+  const unsubscribe = explicitScoped
+    ? useShellStore.subscribe((state) => {
+        if (
+          state.sessionRevision !== shell.sessionRevision ||
+          state.sessionToken !== shell.sessionToken ||
+          !hasSessionScopeAccess(state, requestScope)
+        ) {
+          controller.abort("session-or-grant-changed");
+        }
+      })
+    : undefined;
+  function assertExplicitResponse(): void {
+    assertExplicitAccess();
+    if (explicitScoped && controller.signal.aborted) {
+      throw new DOMException("Request aborted", "AbortError");
+    }
+  }
   try {
+    assertExplicitResponse();
     const response = await globalThis.fetch(
       `${joinUrl(config.apiBaseUrl, opts.path)}${buildQuery(opts.query)}`,
       {
@@ -451,6 +520,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
         ...(opts.binaryBody === undefined ? {} : { body: opts.binaryBody }),
       },
     );
+    assertExplicitResponse();
     if (activeScoped && getShellState().scopeKey !== requestScopeKey) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
     }
@@ -464,6 +534,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       response.ok && opts.responseType === "blob"
         ? await response.blob()
         : await readJson(response);
+    assertExplicitResponse();
     // A large download can finish after the user changes the selected tenant.
     if (activeScoped && getShellState().scopeKey !== requestScopeKey) {
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属作用域已失效");
@@ -490,9 +561,14 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       }
       throw error;
     }
-    return raw as T;
+    return {
+      data: raw as T,
+      status: response.status,
+      headers: response.headers,
+    };
   } catch (error) {
     if (isDomainError(error)) throw error;
+    assertExplicitAccess();
     throw createDomainError({
       code: "NETWORK_ERROR",
       message: controller.signal.aborted ? "请求已取消" : "网络连接失败",
@@ -504,6 +580,7 @@ export async function request<T>(opts: RequestOptions): Promise<T> {
       httpStatus: null,
     });
   } finally {
+    unsubscribe?.();
     release();
   }
 }

@@ -3,12 +3,12 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Tabs, Typography } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import type { Scope } from "../../entities/scope";
-import { annotationRoutes } from "../p08-data-annotation/routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import { DataReviewPanel } from "./DataReviewPanel";
 import { DepthPixelPanel } from "./DepthPixelPanel";
 import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
 import { CompleteDeliveryPanel } from "./CompleteDeliveryPanel";
-import type { ReviewDataRef } from "./data-reviews";
+import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
 import {
   authorizeEpisodeFile,
   downloadAnnotationMigration,
@@ -19,7 +19,7 @@ import {
   type EpisodeFile,
   type EpisodeOverview,
   type EpisodeAnnotationMigration,
-} from "./episode-detail";
+} from "../../features/datasets/episodes/episode-detail";
 import styles from "./EpisodeDetailPanel.module.css";
 
 const reviews = { NOT_REVIEWED: "未审核", APPROVED: "通过", RETURNED: "退回" };

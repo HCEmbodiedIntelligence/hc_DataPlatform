@@ -5,9 +5,9 @@ import { episodeDataReferenceWireSchema } from "../../features/datasets/api/epis
 import {
   buildRuntimeCameraStreams,
   loadRuntimeAnnotationBundle,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
-import { checkedAnnotationRef } from "./annotation-package";
+import { checkedAnnotationRef } from "../../features/annotation/runtime/annotation-package";
 import {
   createVisualAnnotationBundle,
   visualAnnotationScope as scope,

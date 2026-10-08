@@ -8,12 +8,12 @@ from tempfile import TemporaryDirectory
 import av
 import numpy as np
 
-from hc_data_platform.continuous_recordings.openarm_raw.video import TrainingVideo
+from hc_data_platform.data_formats.depth_evidence import DepthEvidenceVideo, file_hash
+from hc_data_platform.data_formats.depth_source import profile_hash
+from hc_data_platform.data_formats.feature_names import feature_names
+from hc_data_platform.data_formats.holobrain_depth import DEFAULT_PROFILE, ENCODER_PROFILE
+from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
-from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo, file_hash
-from hc_data_platform.publishing.depth_source import profile_hash
-from hc_data_platform.publishing.feature_names import feature_names
-from hc_data_platform.publishing.holobrain_depth import DEFAULT_PROFILE, ENCODER_PROFILE
 
 from .bundle_models import FrozenObject
 from .mcap_images import CameraFrame
@@ -161,7 +161,7 @@ def prepared_mcap_assets(plan, steps, attempt_id):
                         require_source_profile=True,
                     )
                     if contract.kind == "depth"
-                    else TrainingVideo(directory / "video.mp4", fps, contract.shape)
+                    else RgbVideoWriter(directory / "video.mp4", fps, contract.shape)
                 )
                 writers[feature] = writer
                 pending.append(writer)

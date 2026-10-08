@@ -1,4 +1,4 @@
-import type { RuntimeAnnotationTag } from "./runtime-annotation-adapter";
+import type { RuntimeAnnotationTag } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 type IntervalRange = Pick<RuntimeAnnotationTag, "start_step" | "end_step"> &
   Partial<Pick<RuntimeAnnotationTag, "annotation_id">>;

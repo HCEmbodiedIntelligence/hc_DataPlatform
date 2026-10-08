@@ -4,7 +4,7 @@ import { request } from "../../shared/api/http-client";
 import type {
   RuntimeAnnotationRevision,
   RuntimeAnnotationScope,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 export type RevisionFile = components["schemas"]["AnnotationRevisionFile"];
 const digest = z.string().regex(/^[0-9a-f]{64}$/u);

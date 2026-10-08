@@ -1,0 +1,117 @@
+export const CANONICAL_CAPABILITIES = [
+  "access.manage",
+  "access.read",
+  "annotation.edit",
+  "annotation.review",
+  "annotation.save",
+  "annotation.submit",
+  "annotation_draft.edit",
+  "annotation_set.read",
+  "annotation_task.assign",
+  "annotation_task.claim",
+  "annotation_task.create",
+  "annotation_task.read",
+  "annotation_task.rebase",
+  "audit.export",
+  "audit.read",
+  "calibration.create",
+  "calibration.publish",
+  "calibration.read",
+  "calibration.validate",
+  "cleaning.create",
+  "cleaning.edit",
+  "cleaning.preview",
+  "cleaning.read",
+  "cleaning.submit",
+  "data_schema.create",
+  "data_schema.import",
+  "data_schema.publish",
+  "data_schema.read",
+  "data_schema.validate",
+  "dataset.create",
+  "dataset.read",
+  "dataset_version.download_manifest",
+  "dataset_version.download_raw",
+  "dataset_version.publish",
+  "dataset_version.read",
+  "dataset_version.review",
+  "episode.read",
+  "export.create",
+  "export.download",
+  "export.read",
+  "ingest.import",
+  "ingest_source.manage",
+  "ingest_source.read",
+  "manual_issue.create",
+  "manual_issue.read",
+  "manual_issue.resolve",
+  "manual_issue.triage",
+  "robot.create",
+  "robot.disable",
+  "robot.read",
+  "robot.update",
+  "robot_component.change_mount",
+  "robot_component.create",
+  "robot_component.disable",
+  "robot_component.update",
+  "robot_model.create",
+  "robot_model.disable",
+  "robot_model.publish",
+  "robot_model.read",
+  "robot_model.validate",
+  "robot_model_binding.manage",
+  "robot_model_binding.read",
+  "storage.cost.read",
+  "storage.inventory.refresh",
+  "storage.lifecycle.execute",
+  "storage.lifecycle.manage",
+  "storage.lifecycle.approve",
+  "storage.lifecycle.read",
+  "storage.lifecycle.simulate",
+  "storage.multipart.abort",
+  "storage.multipart.read",
+  "storage.object.read",
+  "storage.object.manage",
+  "storage.overview.read",
+  "storage.restore.read",
+  "storage.restore.request",
+  "upload.manage",
+  "upload.read",
+] as const;
+
+export type Capability = (typeof CANONICAL_CAPABILITIES)[number];
+
+const capabilitySet: ReadonlySet<string> = new Set(CANONICAL_CAPABILITIES);
+
+export function isCapability(value: unknown): value is Capability {
+  return typeof value === "string" && capabilitySet.has(value);
+}
+
+// Global grants are separate from the project-role capability bundles.
+export const PLATFORM_CAPABILITIES = [
+  "platform.admin",
+  "platform.account.read",
+  "platform.account.manage",
+  "platform.account_security.manage",
+  "platform.operations.read",
+  "platform.maintenance.operate",
+  "platform.release.operate",
+  "platform.maintenance.verify",
+  "platform.break_glass",
+] as const;
+
+export type RegisteredCapability =
+  | Capability
+  | (typeof PLATFORM_CAPABILITIES)[number];
+const platformCapabilitySet: ReadonlySet<string> = new Set(
+  PLATFORM_CAPABILITIES,
+);
+
+export function isRegisteredCapability(
+  value: unknown,
+): value is RegisteredCapability {
+  return (
+    isCapability(value) ||
+    (typeof value === "string" && platformCapabilitySet.has(value))
+  );
+}

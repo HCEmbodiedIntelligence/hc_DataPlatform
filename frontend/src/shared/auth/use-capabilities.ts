@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
-import { CANONICAL_CAPABILITIES } from "../../entities/capability";
-import type { ScopeKey } from "../../entities/scope";
+import { CANONICAL_CAPABILITIES } from "./capabilities";
+import type { ScopeKey } from "../scope/model";
 import { useShellStore } from "../scope/shell-store";
 
 const PLATFORM_ADMIN_CAPABILITY = "platform.admin";

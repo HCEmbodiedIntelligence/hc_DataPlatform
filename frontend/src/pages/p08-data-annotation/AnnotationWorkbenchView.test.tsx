@@ -31,7 +31,7 @@ import type {
   RuntimeAnnotationBundle,
   RuntimeAnnotationTag,
   RuntimeReviewDecision,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type { TagReviewCheckResult } from "./tag-validation";
 import {
   createVisualAnnotationBundle,

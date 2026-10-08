@@ -10,10 +10,10 @@ import {
   commandCompleteDelivery,
   listCompleteDeliveries,
   requestCompleteDelivery,
-} from "./complete-deliveries";
+} from "../../features/datasets/episodes/complete-deliveries";
 import { completeDeliveryFixture } from "./testing/complete-delivery-fixture";
 
-vi.mock("./complete-deliveries", () => ({
+vi.mock("../../features/datasets/episodes/complete-deliveries", () => ({
   authorizeCompleteDelivery: vi.fn(),
   commandCompleteDelivery: vi.fn(),
   listCompleteDeliveries: vi.fn(),

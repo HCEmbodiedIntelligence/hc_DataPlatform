@@ -1,5 +1,5 @@
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
-import { LeRobotProcessingRecords } from "../p03-upload-jobs/components/LeRobotProcessingRecords";
+import { LeRobotProcessingRecords } from "../../features/ingest/processing/components/LeRobotProcessingRecords";
 import { Alert, Button, Card, Input, Modal, Tabs, Typography } from "antd";
 import { Eye, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -46,7 +46,7 @@ import {
   EpisodeTable,
   SourceTable,
   VersionTable,
-} from "./components/DatasetDetailTables";
+} from "../../features/datasets/components/DatasetTables";
 import datasetDetailQueryCodec, {
   type DatasetDetailSearch,
 } from "./query-codec";
@@ -54,7 +54,7 @@ import {
   episodeInclusionLabel,
   episodeReviewPresentation,
   episodeSuccessPresentation,
-} from "./episode-presentation";
+} from "../../features/datasets/episodes/episode-presentation";
 import styles from "./styles.module.css";
 
 const invalidDataset = "dataset_invalid" as DatasetId;

@@ -17,7 +17,7 @@ from hc_data_platform.core.context import (
     reset_request_context,
 )
 from hc_data_platform.core.events import DomainEventEnvelope
-from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .models import QualityStatus
 from .processing_contract import (
@@ -54,7 +54,7 @@ class RobotProcessingActivities:
     def __init__(
         self,
         store: ProcessingStore,
-        storage: ObjectStoragePort,
+        storage: ObjectChunks,
         processor: CommittedLeRobotProcessor | None = None,
     ) -> None:
         self.store, self.storage = store, storage

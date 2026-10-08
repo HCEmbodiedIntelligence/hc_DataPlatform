@@ -62,7 +62,7 @@ def source_timestamp(row, cfg):
 
 
 def _depth_scale(source):
-    from .publishing.depth_source import validate_profile
+    from .data_formats.depth_source import validate_profile
 
     if source.get("depth_source") is not None:
         try:

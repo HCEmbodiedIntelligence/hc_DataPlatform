@@ -3,7 +3,7 @@ import type {
   RuntimeAnnotationTask,
   RuntimeReviewCheckKind,
   RuntimeTagSchemaVersion,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 export interface TagSchemaTreeRow {
   readonly node: RuntimeTagSchemaVersion["document"]["nodes"][number];

@@ -1,0 +1,43 @@
+.identity {
+  display: grid;
+  min-width: 0;
+  gap: var(--hc-space-1, 4px);
+  text-align: start;
+}
+.identityButton {
+  width: 100%;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  white-space: normal;
+}
+.identity code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tableCellStack {
+  display: grid;
+  min-width: 0;
+  width: max-content;
+  max-width: 11rem;
+  gap: var(--hc-space-1, 4px);
+  align-content: start;
+}
+.tableCellStack code,
+.tableCellStack strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tableCellStack :global(.ant-tag) {
+  width: max-content;
+  max-width: 100%;
+  margin: 0;
+  white-space: nowrap;
+}
+.qualityCell {
+  width: 100%;
+  max-width: none;
+}

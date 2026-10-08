@@ -1,4 +1,4 @@
-import type { DataReview, DataReviewPage } from "../data-reviews";
+import type { DataReview, DataReviewPage } from "../../../features/datasets/episodes/data-reviews";
 import { deliveryFixture } from "../../p08-data-annotation/testing/delivery-fixture";
 
 export function dataReviewFixture() {

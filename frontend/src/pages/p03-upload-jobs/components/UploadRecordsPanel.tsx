@@ -3,9 +3,9 @@ import type { ColumnsType } from "antd/es/table";
 import { RefreshCw, Search } from "lucide-react";
 import { Link } from "react-router-dom";
 import { routes } from "../../../features/ingest/routing";
-import type { FormalUploadSession, UploadStatus } from "../formal-client";
-import { formatBytes, type UploadProblemCopy } from "../upload-contract";
-import styles from "../styles.module.css";
+import type { FormalUploadSession, UploadStatus } from "../../../features/ingest/upload/formal-client";
+import { formatBytes, type UploadProblemCopy } from "../../../features/ingest/upload/upload-contract";
+import styles from "../../../features/ingest/upload/upload.module.css";
 
 const statusLabels: Readonly<Record<UploadStatus, string>> = {
   REGISTERED: "已登记",

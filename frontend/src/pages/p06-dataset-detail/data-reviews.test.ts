@@ -4,7 +4,7 @@ import {
   loadDataReviews,
   recordDataReview,
   reviewDataReference,
-} from "./data-reviews";
+} from "../../features/datasets/episodes/data-reviews";
 import { dataReviewFixture } from "./testing/data-review-fixture";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));

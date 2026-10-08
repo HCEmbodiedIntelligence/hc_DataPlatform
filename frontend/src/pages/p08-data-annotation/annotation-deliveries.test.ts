@@ -3,7 +3,7 @@ import { request } from "../../shared/api/http-client";
 import {
   authorizeAnnotationDelivery,
   listAnnotationDeliveries,
-} from "./annotation-deliveries";
+} from "../../features/annotation/runtime/annotation-deliveries";
 import { deliveryFixture } from "./testing/delivery-fixture";
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 afterEach(() => vi.resetAllMocks());

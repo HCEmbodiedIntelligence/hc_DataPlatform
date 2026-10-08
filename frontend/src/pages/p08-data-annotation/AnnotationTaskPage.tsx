@@ -29,21 +29,21 @@ import {
   resolveReviewRevision,
   resolveReviewSubmission,
   runtimeAnnotationScopeFromShell,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
   AnnotationWorkbenchMode,
   RuntimeAnnotationBundle,
   RuntimeAnnotationScope,
   RuntimeAnnotationTag,
   RuntimeReviewDecision,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   clearTagDraftRecovery,
   loadTagDraftRecovery,
   saveTagDraftRecovery,
 } from "./tag-draft-recovery";
 import type { TagDraftRecoveryIdentity } from "./tag-draft-recovery";
-import { annotationRoutes } from "./routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import { buildRuntimeJointAngleStream } from "./joint-angle-stream";
 import styles from "./workbench.module.css";
 

@@ -38,18 +38,18 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { useToast } from "../../app/providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import type { DatasetId } from "../../entities/dataset";
 import type { DatasetVersionId } from "../../entities/dataset-version";
 import type { EpisodeId } from "../../entities/episode";
 import { routes as datasetRoutes } from "../../features/datasets/routing";
 import {
-  authorizeRobotModelViewerAssets,
-  useRobotModelAssets,
-  useRobotModelJointMappings,
-  useRobotModelVersion,
-} from "../../features/robot-models/api";
-import { useRobotBootstrap } from "../../features/robots/api";
+  useScopedRobotModelAssets,
+  useScopedRobotModelJointMappings,
+  useScopedRobotModelVersion,
+} from "../../features/robot-models/api/hooks";
+import { authorizeRobotModelViewerAssets } from "../../features/robot-models/api/client";
+import { useScopedRobotBootstrap } from "../../features/robots/api/hooks";
 import {
   buildJointFrameSource,
   createLazyThreeRobotSceneLoader,
@@ -63,7 +63,7 @@ import { StandardPageScaffold } from "../../shared/ui/layout/StandardPageScaffol
 import { PageState } from "../../shared/ui/state/PageState";
 import { StatusTag } from "../../shared/ui/state/StatusTag";
 import { WorkflowQueuePage } from "../../shared/ui/workflow/WorkflowQueuePage";
-import { annotationRoutes } from "../p08-data-annotation/routes";
+import { annotationRoutes } from "../../features/annotation/routing";
 import {
   recordingGateway,
   type ContinuousRecording,
@@ -511,12 +511,24 @@ function RecordingSegmentationPage({
       ),
     [processing.data?.items],
   );
-  const robotBootstrap = useRobotBootstrap(recording?.robot_id ?? null);
+  const robotBootstrap = useScopedRobotBootstrap(
+    scope?.organizationId ?? null,
+    recording?.robot_id ?? null,
+  );
   const boundVersionId =
     robotBootstrap.data?.effectiveModelBinding?.robotModelVersionId ?? null;
-  const robotModelVersion = useRobotModelVersion(boundVersionId);
-  const robotModelAssets = useRobotModelAssets(boundVersionId);
-  const robotJointMappings = useRobotModelJointMappings(boundVersionId);
+  const robotModelVersion = useScopedRobotModelVersion(
+    scope?.organizationId ?? null,
+    boundVersionId,
+  );
+  const robotModelAssets = useScopedRobotModelAssets(
+    scope?.organizationId ?? null,
+    boundVersionId,
+  );
+  const robotJointMappings = useScopedRobotModelJointMappings(
+    scope?.organizationId ?? null,
+    boundVersionId,
+  );
   const rawJointStream = useMemo(
     () =>
       recording &&

@@ -1,19 +1,25 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
+export type AccessRoute = PageRoute;
+// P18 owns its OR boundary: project access.read OR global platform.account.read.
+// Both query families remain disabled until their corresponding grant is available.
 
-type AccessRoute = RouteObject & {
-  readonly requiredCapabilities?: readonly string[];
-};
-
-export const routes: AccessRoute[] = [
+export const routes: PageRoute[] = [
   {
     path: "/settings/access",
-    lazy: () => import("./page"),
-    // P18 is an OR boundary: exact project access.read OR global platform.account.read.
-    // The page owns that split and keeps both query families disabled without either grant.
     requiredCapabilities: [],
+    navigation: {
+      label: "账户与权限",
+      groupId: "security",
+      order: 10,
+      visibility: "authorized",
+      capability: "access.read",
+    },
+    lazy: () => import("./page"),
   },
 ];
 
-registerPageRoutes("P18", routes);
+export const page = definePage({ id: "P18", enabled: true, routes: routes });
 export default routes;

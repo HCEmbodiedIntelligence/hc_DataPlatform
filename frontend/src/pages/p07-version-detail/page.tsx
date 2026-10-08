@@ -1,3 +1,5 @@
+import { downloadExport as triggerExportDownload } from "../../features/exports/download";
+import { useExportFormats } from "../../features/exports/use-export-formats";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Card, Modal, Tabs, Typography } from "antd";
@@ -174,17 +176,6 @@ function formText(form: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-function triggerExportDownload(url: string): void {
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "data-export.zip";
-  anchor.rel = "noreferrer";
-  anchor.style.display = "none";
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-}
-
 export function VersionDetailPage() {
   const raw = useParams();
   const location = useLocation();
@@ -282,8 +273,8 @@ export function VersionDetailPage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [compareTo, setCompareTo] = useState("");
   const [checksPreparedAt, setChecksPreparedAt] = useState<string | null>(null);
-  const [exportFormat, setExportFormat] =
-    useState<PublishedExportFormat>("lance_snapshot");
+  const [exportFormatSelection, setExportFormat] =
+    useState<PublishedExportFormat | null>(null);
   const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
   const [historyEpisodeId, setHistoryEpisodeId] = useState<EpisodeId | null>(
     null,
@@ -340,6 +331,18 @@ export function VersionDetailPage() {
   };
   const canExport =
     capabilities.has("dataset_version.publish") && Boolean(scope?.projectId);
+  const formats = useExportFormats(
+    scopeKey,
+    scope?.projectId,
+    valid && search.tab === "exports" && canExport,
+  );
+  const availableFormats = (formats.data ?? []).filter(
+    (item) => item.available,
+  );
+  const selectedFormat =
+    availableFormats.find((item) => item.format === exportFormatSelection) ??
+    availableFormats[0];
+  const exportFormat = selectedFormat?.format ?? "";
   const exportJob = useQuery({
     queryKey: [
       "published-export",
@@ -368,12 +371,17 @@ export function VersionDetailPage() {
         : false,
   });
   const startExport = useMutation({
-    mutationFn: (format: PublishedExportFormat) =>
-      createPublishedExport({
+    mutationFn: (format: PublishedExportFormat) => {
+      const option = availableFormats.find((item) => item.format === format);
+      if (!formats.isSuccess || !option)
+        throw new Error("请选择当前可用的导出格式。");
+      return createPublishedExport({
         ...exportTarget,
         format,
+        implementationVersion: option.implementation_version,
         idempotencyKey: idempotencyKey("published-export"),
-      }),
+      });
+    },
     onSuccess: (created) => {
       setDownloadFeedback(null);
       queryClient.setQueryData(
@@ -414,9 +422,9 @@ export function VersionDetailPage() {
     mutationFn: (jobId: string) =>
       authorizePublishedExportDownload({ ...exportTarget, jobId }),
     onSuccess: (authorization) => {
-      triggerExportDownload(authorization.download_url);
+      triggerExportDownload(authorization);
       setDownloadFeedback(
-        `ZIP 压缩包已开始下载，短期授权过期时间：${new Date(authorization.expires_at).toLocaleString()}。`,
+        `文件已开始下载，短期授权过期时间：${new Date(authorization.expires_at).toLocaleString()}。`,
       );
     },
   });
@@ -551,8 +559,12 @@ export function VersionDetailPage() {
           const firstType = result.finding_catalog.finding_types[0];
           setSelectedRevisionId(firstTarget?.output_revision_id ?? "");
           setSelectedStreamId(firstStream?.episode_stream_id ?? "");
-          setStartSeconds(nanosecondsToSecondsInput(firstStream?.t_start_ns ?? "0"));
-          setEndSeconds(nanosecondsToSecondsInput(firstStream?.t_end_ns ?? "1"));
+          setStartSeconds(
+            nanosecondsToSecondsInput(firstStream?.t_start_ns ?? "0"),
+          );
+          setEndSeconds(
+            nanosecondsToSecondsInput(firstStream?.t_end_ns ?? "1"),
+          );
           setFindingType(firstType?.code ?? "");
           setSeverity(
             firstType?.allowed_severities[0] ??
@@ -1261,20 +1273,40 @@ export function VersionDetailPage() {
                     <select
                       aria-label="导出格式"
                       value={exportFormat}
-                      disabled={!canExport || startExport.isPending}
+                      disabled={
+                        !canExport ||
+                        !formats.isSuccess ||
+                        !selectedFormat ||
+                        startExport.isPending
+                      }
                       onChange={(event) =>
                         setExportFormat(
                           event.target.value as PublishedExportFormat,
                         )
                       }
                     >
-                      <option value="lance_snapshot">Lance 数据文件</option>
-                      <option value="lerobot_v3">LeRobot v3</option>
+                      {!selectedFormat ? (
+                        <option value="">请选择可用格式</option>
+                      ) : null}
+                      {(formats.data ?? []).map((item) => (
+                        <option
+                          key={item.format}
+                          value={item.format}
+                          disabled={!item.available}
+                        >
+                          {item.display_name}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <Button
                     type="primary"
-                    disabled={!canExport || startExport.isPending}
+                    disabled={
+                      !canExport ||
+                      !formats.isSuccess ||
+                      !selectedFormat ||
+                      startExport.isPending
+                    }
                     loading={startExport.isPending}
                     onClick={() => startExport.mutate(exportFormat)}
                   >
@@ -1289,6 +1321,19 @@ export function VersionDetailPage() {
                   state="forbidden"
                   message="需要当前项目的数据集发布权限才能创建、查询或下载导出。"
                 />
+              ) : null}
+              {canExport && formats.isPending ? (
+                <RegionState state="first-loading" title="正在读取导出格式" />
+              ) : null}
+              {canExport && formats.isError ? (
+                <RegionState
+                  state="partial-error"
+                  message="无法读取导出格式。"
+                  onRetry={() => void formats.refetch()}
+                />
+              ) : null}
+              {formats.isSuccess && availableFormats.length === 0 ? (
+                <RegionState state="empty" message="当前没有可用的导出格式。" />
               ) : null}
               {startExport.isError ? (
                 <MutationError
@@ -1407,7 +1452,7 @@ export function VersionDetailPage() {
                       >
                         {downloadExport.isPending
                           ? "正在申请下载授权…"
-                          : "下载导出压缩包"}
+                          : "下载导出文件"}
                       </Button>
                     )}
                   </div>
@@ -1647,8 +1692,12 @@ export function VersionDetailPage() {
                     : undefined;
                 setSelectedRevisionId(event.target.value);
                 setSelectedStreamId(nextStream?.episode_stream_id ?? "");
-                setStartSeconds(nanosecondsToSecondsInput(nextStream?.t_start_ns ?? "0"));
-                setEndSeconds(nanosecondsToSecondsInput(nextStream?.t_end_ns ?? "1"));
+                setStartSeconds(
+                  nanosecondsToSecondsInput(nextStream?.t_start_ns ?? "0"),
+                );
+                setEndSeconds(
+                  nanosecondsToSecondsInput(nextStream?.t_end_ns ?? "1"),
+                );
               }}
             >
               <option value="">请选择固定 Revision</option>
@@ -1671,8 +1720,12 @@ export function VersionDetailPage() {
                   (item) => item.episode_stream_id === event.target.value,
                 );
                 setSelectedStreamId(event.target.value);
-                setStartSeconds(nanosecondsToSecondsInput(nextStream?.t_start_ns ?? "0"));
-                setEndSeconds(nanosecondsToSecondsInput(nextStream?.t_end_ns ?? "1"));
+                setStartSeconds(
+                  nanosecondsToSecondsInput(nextStream?.t_start_ns ?? "0"),
+                );
+                setEndSeconds(
+                  nanosecondsToSecondsInput(nextStream?.t_end_ns ?? "1"),
+                );
               }}
             >
               <option value="">请选择稳定 Stream</option>

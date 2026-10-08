@@ -4,12 +4,12 @@ import hashlib
 import json
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.episode_store.bundle_models import FrozenObject
 from hc_data_platform.episode_store.models import EpisodeIdentity, FileEntry, PackageInput
 from hc_data_platform.episode_store.native_plan import NativeEpisodePlan, NativeFile, NativeVideo
 from hc_data_platform.episode_store.prepared_assets import PreparedAssets, PreparedVideo
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
-from hc_data_platform.publishing.feature_names import feature_names
 
 from .reader import local_file, safe_relative
 

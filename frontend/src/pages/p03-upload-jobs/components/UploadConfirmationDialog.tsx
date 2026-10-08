@@ -10,18 +10,18 @@ import {
 import { useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
 import { useDatasetsQuery } from "../../../features/datasets/api/hooks";
-import { formatBytes, selectedRelativePath } from "../upload-contract";
+import { formatBytes, selectedRelativePath } from "../../../features/ingest/upload/upload-contract";
 import {
   selectionTargetFacts,
   type LocalUploadSelection,
 } from "../upload-flow";
-import type { LeRobotTargetBinding } from "../lerobot-client";
-import styles from "../styles.module.css";
-import { ProcessingTargetFields } from "./ProcessingTargetFields";
+import type { LeRobotTargetBinding } from "../../../features/ingest/upload/lerobot-client";
+import styles from "../../../features/ingest/upload/upload.module.css";
+import { ProcessingTargetFields } from "../../../features/ingest/processing/components/ProcessingTargetFields";
 import {
   ProcessingLabels,
   useProcessingConfiguration,
-} from "./ProcessingLabels";
+} from "../../../features/ingest/processing/components/ProcessingLabels";
 
 function joined(values: readonly string[]): string {
   if (values.length === 0) return "未识别";

@@ -1,5 +1,5 @@
-const hiddenPageIds: ReadonlySet<string> = new Set(["P16"]);
+import { pageCatalog } from "./router/page-catalog";
 
 export function isPageHidden(pageId: string): boolean {
-  return hiddenPageIds.has(pageId);
+  return pageCatalog.availability[pageId] !== true;
 }

@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlparse
 
 from PIL import Image, ImageDraw
 
-from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .models import (
     AlignedMediaEncodingProfileV1,
@@ -52,7 +52,7 @@ class FFmpegMp4Encoder:
         max_frame_bytes: int = 64 * 1024 * 1024,
         ffmpeg_threads: int = 2,
         process_timeout_seconds: float = 3_600,
-        raw_storage: ObjectStoragePort | None = None,
+        raw_storage: ObjectChunks | None = None,
     ) -> None:
         if max_frame_bytes < 1 or ffmpeg_threads < 1 or process_timeout_seconds <= 0:
             raise ValueError("aligned media encoder limits must be positive")

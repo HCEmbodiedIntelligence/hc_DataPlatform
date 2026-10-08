@@ -13,13 +13,13 @@ from pydantic import BaseModel
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.models import utc_now
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.ingest.raw_sources import (
     RawSource,
     RawSourceFormat,
     RawSourceRepositoryPort,
     RawSourceStatus,
 )
+from hc_data_platform.object_storage.ports import BrowsableObjectReader
 
 from .service import read_bounded
 
@@ -67,7 +67,7 @@ class OriginalEpisode(BaseModel):
 class _RangeReader(io.RawIOBase):
     """Seekable Parquet input; no whole-shard download or persistent cache."""
 
-    def __init__(self, storage: ObjectStoragePort, key: str, size: int) -> None:
+    def __init__(self, storage: BrowsableObjectReader, key: str, size: int) -> None:
         super().__init__()
         self.storage, self.key, self.size, self.position = storage, key, size, 0
 
@@ -104,7 +104,7 @@ class _RangeReader(io.RawIOBase):
 
 
 class OriginalSourceBrowser:
-    def __init__(self, storage: ObjectStoragePort, repository: RawSourceRepositoryPort) -> None:
+    def __init__(self, storage: BrowsableObjectReader, repository: RawSourceRepositoryPort) -> None:
         self.storage, self.repository = storage, repository
 
     def source(

@@ -41,13 +41,14 @@ from hc_data_platform.ingest.models import (
     ManifestDiscoveryV1,
     ManifestTopicV1,
 )
-from hc_data_platform.ingest.ports import ObjectStoragePort
 from hc_data_platform.lance_catalog.models import (
     DatasetSchemaSnapshot,
     DatasetVersionRef,
     DerivedReadyV1,
 )
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
+from hc_data_platform.object_storage.artifacts import ArtifactWorkspace
+from hc_data_platform.object_storage.ports import ObjectStoragePort
 from hc_data_platform.quality.models import (
     QualityInputV1,
     QualityStatus,
@@ -68,7 +69,6 @@ from hc_data_platform.workflow.models import (
     ContinuousEpisodeStateActivityOutput,
     ContinuousEpisodeWorkflowInput,
 )
-from hc_data_platform.workflow.projection_store import ProjectionArtifactStorePort
 
 from .asset_models import (
     EpisodeProcessingStatus,
@@ -664,7 +664,7 @@ class ContinuousEpisodeProcessingService:
         quality: QualityEvaluationPort,
         alignment: AlignmentPort,
         fragment_writers: FragmentWriterFactoryPort,
-        staging: ProjectionArtifactStorePort,
+        staging: ArtifactWorkspace,
         staging_ttl: timedelta,
         catalog_fragments: CatalogFragmentAdapterPort,
         catalog: LanceCatalogPort,

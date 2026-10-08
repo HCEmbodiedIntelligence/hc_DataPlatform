@@ -1,4 +1,4 @@
-import { annotationDataLabel } from "./annotation-package";
+import { annotationDataLabel } from "../../features/annotation/runtime/annotation-package";
 import {
   useCallback,
   useEffect,
@@ -70,14 +70,14 @@ import {
   resolveReviewSubmission,
   stepToTimelineNs,
   timelineNsToStep,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
   AnnotationWorkbenchMode,
   RuntimeAnnotationBundle,
   RuntimeAnnotationScope,
   RuntimeAnnotationTag,
   RuntimeReviewDecision,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 import { buildTagSchemaIndex, evaluateAnnotationTags } from "./tag-validation";
 import {
   findIntervalParent,

@@ -64,7 +64,7 @@ import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { useScope } from "../providers/ScopeProvider";
-import { useToast } from "../providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import {
   filterNavigationManifest,
   navigationManifest,
@@ -81,7 +81,7 @@ import {
   getPlatformObjectStoreLocation,
   type PlatformObjectStoreLocation,
 } from "../../features/platform-operations/api";
-import { useUploadQueueStore } from "../../pages/p03-upload-jobs/upload-queue-store";
+import { useUploadQueueStore } from "../../features/ingest/upload/upload-queue-store";
 
 const { Content, Header, Sider } = Layout;
 const DatasetContextSelector = lazy(() => import("./DatasetContextSelector"));

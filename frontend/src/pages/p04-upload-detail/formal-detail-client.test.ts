@@ -14,7 +14,7 @@ import {
   resolveFormalUploadAlignedMediaTarget,
   resolveFormalUploadViewerTarget,
   type FormalUploadSession,
-} from "./formal-detail-client";
+} from "../../features/ingest/detail/client";
 
 const scope: IngestScope = {
   organizationId: "org-a",

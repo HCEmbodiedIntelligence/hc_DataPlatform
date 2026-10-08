@@ -72,7 +72,8 @@ export interface ViewerWindowSource {
 export interface AuthorizedMediaDescriptor {
   readonly url: string;
   readonly expiresAt: string;
-  readonly kind: "rgb-video" | "depth-preview";
+  /** Source/schema declares content; extension renderers can authorize audio or images too. */
+  readonly kind: "rgb-video" | "depth-preview" | (string & {});
   readonly revoke?: () => void;
   readonly mediaStartSeconds?: number;
   readonly mediaEndSeconds?: number;
@@ -134,7 +135,7 @@ export interface OverlayRenderer {
   ): void | (() => void) | { dispose(): void };
 }
 
-export type ViewerPanelKind =
+export type ViewerBuiltinPanelKind =
   | "video"
   | "depth"
   | "pointcloud-preview"
@@ -142,9 +143,12 @@ export type ViewerPanelKind =
   | "event-track"
   | "unsupported";
 
+export type ViewerPanelKind = ViewerBuiltinPanelKind | "extension";
+
 export interface ViewerPanelSpec {
   readonly panelId: string;
   readonly kind: ViewerPanelKind;
+  readonly renderer?: { readonly id: string; readonly version: string };
   readonly streamIds: readonly string[];
   readonly title: string;
   readonly priority: number;

@@ -1,9 +1,34 @@
 """Project verified soft Episodes into the common rollout publication relation."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 from hc_data_platform.core.errors import problem
 
+if TYPE_CHECKING:
+    from psycopg import Cursor
 
-def materialize_rollout(cursor, *, project_id, dataset_id, rollout_id, source_sha256):
+
+class PostgresRecordingPublicationLineage:
+    def __init__(self, cursor: Cursor[Any]) -> None:
+        self._cursor = cursor
+
+    def prepare_rollout(
+        self, *, project_id: str, dataset_id: str, rollout_id: str, source_sha256: str
+    ) -> None:
+        materialize_rollout(
+            self._cursor,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            rollout_id=rollout_id,
+            source_sha256=source_sha256,
+        )
+
+
+def materialize_rollout(
+    cursor: Cursor[Any], *, project_id: str, dataset_id: str, rollout_id: str, source_sha256: str
+) -> None:
     cursor.execute(
         """SELECT recording.organization_id,recording.region_code,recording.collection_job_id,
                             recording.robot_id,recording.recording_id,episode.created_at
@@ -36,6 +61,7 @@ def materialize_rollout(cursor, *, project_id, dataset_id, rollout_id, source_sh
             status=409,
             code="CONTINUOUS_ROLLOUT_LINEAGE_AMBIGUOUS",
             title="Ambiguous recording lineage",
+            detail="More than one verified recording source matches this rollout.",
         )
     organization, region, job, robot, recording, created = rows[0]
     cursor.execute(
@@ -52,6 +78,7 @@ def materialize_rollout(cursor, *, project_id, dataset_id, rollout_id, source_sh
             status=409,
             code="CONTINUOUS_COLLECTION_JOB_MISSING",
             title="Recording collection job is unavailable",
+            detail="The recording collection job is missing or belongs to another robot.",
         )
     cursor.execute(
         """SELECT region_code,collection_job_id,robot_id,source_sha256 FROM ingest.rollouts
@@ -62,7 +89,10 @@ def materialize_rollout(cursor, *, project_id, dataset_id, rollout_id, source_sh
     if existing:
         if tuple(existing) != (region, job, robot, source_sha256):
             raise problem(
-                status=409, code="CONTINUOUS_ROLLOUT_IMMUTABLE", title="Rollout lineage conflicts"
+                status=409,
+                code="CONTINUOUS_ROLLOUT_IMMUTABLE",
+                title="Rollout lineage conflicts",
+                detail="The existing rollout has a different frozen source identity.",
             )
         return
     cursor.execute(
@@ -70,7 +100,9 @@ def materialize_rollout(cursor, *, project_id, dataset_id, rollout_id, source_sh
         WHERE organization_id=%s AND project_id=%s AND collection_job_id=%s""",
         (organization, project_id, job),
     )
-    sequence = cursor.fetchone()[0]
+    sequence_row = cursor.fetchone()
+    assert sequence_row is not None, "sequence aggregate must return one row"
+    sequence = sequence_row[0]
     cursor.execute(
         """INSERT INTO ingest.rollouts
         (organization_id,project_id,region_code,collection_job_id,rollout_id,sequence_no,robot_id,

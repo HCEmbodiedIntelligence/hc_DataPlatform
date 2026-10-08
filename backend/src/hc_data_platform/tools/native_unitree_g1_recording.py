@@ -33,7 +33,7 @@ from hc_data_platform.continuous_recordings.asset_models import (
     RecordingConfigurationV1,
 )
 from hc_data_platform.ingest.cli import DEFAULT_PART_SIZE, effective_part_size
-from hc_data_platform.ingest.ports import crc64_ecma
+from hc_data_platform.object_storage.checksums import crc64_ecma
 
 from .hf_unitree_g1_to_mcap import (
     ACTION_SCHEMA,

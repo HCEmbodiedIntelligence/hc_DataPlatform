@@ -1,0 +1,653 @@
+{
+  "source_head": "f9a0804ebd7f5b897acc795a24ce8ca9e69afc5a",
+  "source_repo": "/home/hc_op/workspace/hc_DataPlatform-chayi-work",
+  "branch": "codex/platform-decoupling-20260930",
+  "objective_status": "active",
+  "issues": [
+    {
+      "id": "B01",
+      "title": "通用对象存储契约归属于上传模块",
+      "scope": "两分支",
+      "owner": "T1",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/object_storage/",
+        "backend/tests/object_storage/test_capabilities.py",
+        "backend/tests/architecture/test_object_boundaries.py",
+        "114 selected regression tests passed"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B02",
+      "title": "存储接口文件同时承载实现和校验算法",
+      "scope": "两分支",
+      "owner": "T1",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/object_storage/",
+        "backend/tests/object_storage/test_capabilities.py",
+        "backend/tests/architecture/test_object_boundaries.py",
+        "114 selected regression tests passed"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B03",
+      "title": "只读消费者被迫依赖上传和写入能力",
+      "scope": "两分支",
+      "owner": "T1 T4 T6",
+      "status": "in_progress",
+      "evidence": [
+        "Narrow read interfaces consumed by manifests, media, exports and native sources",
+        "Focused object-storage AST gate in both backend CI workflows"
+      ],
+      "remaining": "按读取、范围读取、下载授权、写入、multipart 能力拆分小接口；消费者只依赖用到的能力，不建立万能 StorageService。"
+    },
+    {
+      "id": "B04",
+      "title": "对象存储 SDK 适配在多个模块重复实现",
+      "scope": "两分支",
+      "owner": "T1 T4 T5 T10",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "统一对象操作与条件写入/流关闭/错误语义的适配；各领域保留自身端口。备份版本号和 Object Lock 等专属能力另设扩展接口。"
+    },
+    {
+      "id": "B05",
+      "title": "运行时把原始 SDK 客户端作为跨模块公共依赖",
+      "scope": "两分支",
+      "owner": "T0 T1",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "运行时工厂返回明确的存储能力集合；厂商选择及凭据组装留在基础设施层，消费模块不拿裸客户端。"
+    },
+    {
+      "id": "B06",
+      "title": "逻辑目录接口与 Lance 物理提交绑定",
+      "scope": "两分支",
+      "owner": "T5",
+      "status": "in_progress",
+      "evidence": [
+        "core.ModuleRouter is lazy so importing error/format contracts does not load FastAPI"
+      ],
+      "remaining": "分离逻辑 Dataset/Episode 读取、提交、schema 和物理后端适配；用稳定数据版本引用与提交回执承载业务语义，历史 Lance 信息只在兼容映射中解释。"
+    },
+    {
+      "id": "B07",
+      "title": "业务公开契约暴露 Lance 版本语义",
+      "scope": "两分支",
+      "owner": "T0 T4 T5 T7 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "先制定兼容的数据版本契约，再迁移消费者；现有 API 字段和历史快照经适配兼容，不能直接重命名字段或重算已保存哈希。"
+    },
+    {
+      "id": "B08",
+      "title": "业务模块反向依赖工作流 DTO 和标识规则",
+      "scope": "两分支",
+      "owner": "T2 T3 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "业务事实/命令/结果和任务身份规则下沉到稳定契约；Temporal Activity/Workflow 输入由编排层适配。领域对象不携带调度器实现。"
+    },
+    {
+      "id": "B09",
+      "title": "业务处理器调用工作流私有实现",
+      "scope": "两分支",
+      "owner": "T2 T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将通用采样/对齐元数据运算及执行上下文变成有明确输入输出的公共能力；工作流层注入这些能力。"
+    },
+    {
+      "id": "B10",
+      "title": "业务分发器依赖具体 Temporal 启动器",
+      "scope": "两分支",
+      "owner": "T2 T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "定义任务启动/查询端口，把 Temporal 编码和队列命名移到编排适配器；配置常量不从 worker 入口回流。"
+    },
+    {
+      "id": "B11",
+      "title": "媒体读取依赖编排层的 staging 端口",
+      "scope": "两分支",
+      "owner": "T1 T2 T4",
+      "status": "implemented_verified",
+      "evidence": [
+        "object_storage.artifacts splits read, publish and cleanup capabilities; all production consumers migrated",
+        "Arrow media reads with file-only adapter; local/S3 failure cleanup tests",
+        "46 artifact/media/processing tests and 7 real Temporal test-server workflow tests passed; mypy 4 files"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B12",
+      "title": "模块通过别人的路由获取服务",
+      "scope": "两分支",
+      "owner": "T0 T2 T3 T4 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "通过应用级依赖容器或显式构造参数注入端口；路由只做 HTTP 转换与授权，禁止跨模块 router 导入。"
+    },
+    {
+      "id": "B13",
+      "title": "路由全局单例和隐式内存回退形成装配时序依赖",
+      "scope": "两分支",
+      "owner": "T0",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "依赖以应用实例为作用域；生产构造必须完整且失败可见，测试显式提供内存实现。"
+    },
+    {
+      "id": "B14",
+      "title": "业务函数自行读取配置并打开数据库",
+      "scope": "两分支",
+      "owner": "T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将任务/机器人/数据集/标注规则查询作为用例端口注入；数据库连接生命周期归装配和仓储适配器。"
+    },
+    {
+      "id": "B15",
+      "title": "运行时入口同时承载数据算法与依赖装配",
+      "scope": "两分支",
+      "owner": "T0 T2 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "算法移动到对应适配器模块；bootstrap 只组装，API/worker 使用同一显式组件工厂，入口间仅共享配置契约。"
+    },
+    {
+      "id": "B16",
+      "title": "服务端 LeRobot 核心逻辑反向复用命令行转换工具",
+      "scope": "两分支",
+      "owner": "T3 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "提取独立 LeRobot 格式读取与数据转换库，CLI 和服务端共同依赖它；CLI 参数、上传传输和路径约定留在 tools。"
+    },
+    {
+      "id": "B17",
+      "title": "导入处理器创建其他领域的具体 PostgreSQL 仓储",
+      "scope": "两分支",
+      "owner": "T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "由装配层注入原始数据、处理状态、质量查询和目录提交端口；处理器不借用另一个服务的连接工厂。"
+    },
+    {
+      "id": "B18",
+      "title": "机器人录制桥接依赖另一个模块的私有 SQL 序列化",
+      "scope": "两分支",
+      "owner": "T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "为连续录制提供接受已验证 Raw 事实的登记端口；跨表原子性通过明确 UnitOfWork/事务适配器保留，不拆成可能半成功的多次调用。"
+    },
+    {
+      "id": "B19",
+      "title": "发布仓储直接写数据集目录内部表",
+      "scope": "两分支",
+      "owner": "T4 T5",
+      "status": "implemented_verified",
+      "evidence": [
+        "Real PostgreSQL run: three publication-lineage tests fail because PostgresPublishedManifestRepository directly calls continuous_recordings.lineage on legacy-only schema; export-migration-service-validation.xml. Separate transactional integration port required.",
+        "publishing.postgres delegates three phases to PublicationSideEffects; dataset_registry owns DatasetReleaseProjection/Port and SQL; security owns AccountNotificationWriter and SQL; continuous_recordings owns source preparation",
+        "runtime injects integrations.publication.postgres_publication_effects, binding all participants to one cursor/transaction; publication-only composition must be selected explicitly",
+        "9 real PostgreSQL tests passed: previous three isolated lineage failures recovered, directory and notification idempotence, child projection rollback and retry for every participant phase",
+        "172 domain/API/architecture tests passed; 9 source files pass mypy; formal/runtime OpenAPI unchanged; AST gate prohibits foreign table strings and direct concrete participant dependencies"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B20",
+      "title": "跨领域 SQL 读取让内部表成为事实接口",
+      "scope": "两分支",
+      "owner": "T4 T5 T10",
+      "status": "in_progress",
+      "evidence": [
+        "Publication manifest adapter no longer reads dataset/account tables. Cross-domain catalog readiness, source binding SQL and other modules remain to migrate."
+      ],
+      "remaining": "为稳定投影或查询服务声明所有权与版本；区分正常聚合读取和越界写入。不要把所有 JOIN 机械改成远程 RPC。"
+    },
+    {
+      "id": "B21",
+      "title": "导出服务和格式实现存在内部循环",
+      "scope": "两分支",
+      "owner": "T4",
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
+        "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
+        "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged",
+        "Source ce580918 shared native RGB windows/legacy ROS fixes integrated; new consumers use neutral data_formats.RgbVideoWriter, depth_evidence and video inspectors; old TrainingVideo facade retains identity. 178 unit checks, 57 unique real PostgreSQL/MinIO cases including isolated Temporal workflow/replay/retry pass across retained runs, no skipped tests; 4 real RGB encoder cases match source bytes/clocks exactly."
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B22",
+      "title": "连续录制与导出元数据相互依赖",
+      "scope": "两分支",
+      "owner": "T3 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "源快照读取由来源适配器提供，错误值独立；导出只消费冻结后的来源元数据契约。"
+    },
+    {
+      "id": "B23",
+      "title": "通用深度编码能力放在发布模块导致下层反向引用",
+      "scope": "两分支",
+      "owner": "T4",
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
+        "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
+        "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged",
+        "Source ce580918 shared native RGB windows/legacy ROS fixes integrated; new consumers use neutral data_formats.RgbVideoWriter, depth_evidence and video inspectors; old TrainingVideo facade retains identity. 178 unit checks, 57 unique real PostgreSQL/MinIO cases including isolated Temporal workflow/replay/retry pass across retained runs, no skipped tests; 4 real RGB encoder cases match source bytes/clocks exactly."
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "B24",
+      "title": "模型和底层工具内部仍存在小型循环",
+      "scope": "两分支",
+      "owner": "T3 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分别抽出 schema 指纹、路径/本地文件读取、时间诊断纯函数；以实际调用关系验收单向依赖。"
+    },
+    {
+      "id": "B25",
+      "title": "包入口同时导出契约和具体实现扩大隐式导入面",
+      "scope": "两分支",
+      "owner": "T5 T0",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "建立清晰的 contracts/public API 与 adapters 入口；维持旧入口兼容，同时增加导入副作用验证。"
+    },
+    {
+      "id": "B26",
+      "title": "备份命令入口相互调用私有装配函数",
+      "scope": "两分支",
+      "owner": "T10",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "公共备份装配工厂与 CLI 分离，保留备份版本、签名和恢复协议；不要把合法灾备跨域访问当作业务越界一并删掉。"
+    },
+    {
+      "id": "B27",
+      "title": "缺少可执行的模块边界约束",
+      "scope": "两分支",
+      "owner": "T0",
+      "status": "in_progress",
+      "evidence": [
+        "Narrow read interfaces consumed by manifests, media, exports and native sources",
+        "Focused object-storage AST gate in both backend CI workflows"
+      ],
+      "remaining": "增加 AST/导入图边界门禁和小型替换后端契约测试；对获准装配、类型引用、迁移/备份和历史基线明确例外。"
+    },
+    {
+      "id": "E01",
+      "title": "Episode 存储读写直接依赖导出格式及私有转换函数",
+      "scope": "chayi",
+      "owner": "T4 T6",
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats owns JSON, Arrow, LeRobot layout/names/tasks and RGB/depth codecs; production consumers migrated",
+        "Episode source has no publishing imports; archive builder no longer imports exporter implementation",
+        "192 tests passed; 18 source files mypy; OpenAPI unchanged; runtime isolation and AST boundary tests",
+        "Byte-for-byte comparison against 308dd949: archive and 8 members, depth video/codes/profile, serializers and task metadata unchanged",
+        "Source ce580918 shared native RGB windows/legacy ROS fixes integrated; new consumers use neutral data_formats.RgbVideoWriter, depth_evidence and video inspectors; old TrainingVideo facade retains identity. 178 unit checks, 57 unique real PostgreSQL/MinIO cases including isolated Temporal workflow/replay/retry pass across retained runs, no skipped tests; 4 real RGB encoder cases match source bytes/clocks exactly."
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "E02",
+      "title": "存储模块模型渗透到标注和摄取的公开契约",
+      "scope": "chayi",
+      "owner": "T0 T3 T5 T6 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "把稳定身份、版本、哈希、schema 和逻辑模态引用放到独立数据契约；物理布局由后端定位器解释，历史 wire 数据通过兼容适配读取。"
+    },
+    {
+      "id": "E03",
+      "title": "EpisodePackageService 集中组装存储预览目录和交付",
+      "scope": "chayi",
+      "owner": "T6 T7 T0",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "拆分数据包提交、查询、预览、目录发布、交付端口，由 bootstrap 组装；使用明确的窄接口替代整个服务对象。"
+    },
+    {
+      "id": "E04",
+      "title": "领域错误和作用域校验定义在 PostgreSQL 实现中",
+      "scope": "chayi",
+      "owner": "T6 T7 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "错误类型和授权作用域契约独立；Postgres 只实现持久化，不提供领域基础规则。"
+    },
+    {
+      "id": "E05",
+      "title": "交付和派生模块调用标注服务私有方法",
+      "scope": "chayi",
+      "owner": "T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "标注模块提供冻结选区与授权快照的公共端口；交付和派生只获得稳定的快照输入及数据包读取接口。"
+    },
+    {
+      "id": "E06",
+      "title": "Tag 派生服务直接创建目录投影和自动标注仓储",
+      "scope": "chayi",
+      "owner": "T7 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "把派生用例作为显式编排器，注入提交/目录投影/质量/标注端口；错误恢复顺序和 durable receipt 由用例协议定义。"
+    },
+    {
+      "id": "E07",
+      "title": "服务端包提交和交付重复实现上传分片协议",
+      "scope": "chayi",
+      "owner": "T1 T6 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "增加流式不可变对象写入能力，分片策略和重试/abort 由存储适配器负责；包提交仍负责 manifest、哈希验证及发布可见性。"
+    },
+    {
+      "id": "E08",
+      "title": "Episode 内部多组循环依赖和全局服务回读",
+      "scope": "chayi",
+      "owner": "T6 T7",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "scope/交付 inventory 纯能力独立；父子路由通过同一个注入依赖获得服务，不从彼此文件回读全局变量。"
+    },
+    {
+      "id": "E09",
+      "title": "目录 Tag 投影循环依赖并穿透服务内部组件",
+      "scope": "chayi",
+      "owner": "T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "投影输入数据和纯构造器独立；通过 Episode/Collection 查询端口获取冻结事实，投影器只负责目录投影事务。"
+    },
+    {
+      "id": "F01",
+      "title": "shared 基础层反向依赖 entities",
+      "scope": "两分支",
+      "owner": "T8",
+      "status": "implemented_verified",
+      "evidence": [
+        "shared/scope/model owns Scope/ScopeKey; shared/auth/contracts owns ActorSummary/AuthorizationSnapshot",
+        "shared/auth/capabilities owns canonical authorization vocabulary; entity role bundles remain in entities",
+        "Shared production consumers migrated; old entity imports reexport the same identities",
+        "47 scope/auth/HTTP tests, 8 architecture tests, typecheck, ESLint and production container build passed"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "F02",
+      "title": "清洗 feature 从页面获取查询契约",
+      "scope": "两分支",
+      "owner": "T9",
+      "status": "implemented_verified",
+      "evidence": [
+        "CleaningDraftsSearch, query codec and projections are owned by features/cleaning/query-codec.ts; feature query hooks and P10 consume that definition",
+        "Old page import path re-exports the same declarations for compatibility; existing codec tests still use it",
+        "Frontend AST gate rejects feature imports, type imports, re-exports and dynamic imports from pages; 11 gate tests passed",
+        "6 existing cleaning query/routing/command tests, full TypeScript check and affected-file ESLint passed"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "F03",
+      "title": "页面反向依赖应用装配并与路由表形成循环",
+      "scope": "两分支",
+      "owner": "T8 T9",
+      "status": "implemented_verified",
+      "evidence": [
+        "shared/routing/page-descriptor.ts defines validated page contracts; app automatically derives lazy routes, navigation, availability and safe return URLs from all page declarations",
+        "No production page imports app; Toast shared context and annotation feature URL/query builders replace reverse dependencies, with compatibility reexports",
+        "18 TS AST boundary tests passed; 297 frontend regression cases passed; 28 affected route cases rechecked after catalog replacement; full typecheck, 62-file ESLint and production build passed",
+        "Real MemoryRouter extension page requires one declaration; navigation and access agree, unauthorized component never runs; unknown permissions fail closed including platform admin; disabled paths removed when catalog replaced"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "F04",
+      "title": "多个业务页面直接复用另一页面的接口和组件",
+      "scope": "两分支",
+      "owner": "T9",
+      "status": "implemented_verified",
+      "evidence": [
+        "32 reusable capability files assigned to ingest upload/processing/browser/detail, dataset episode/media/delivery/table, annotation runtime, exports, collection-tasks, account/session and shared workspace styling; all production consumers migrated",
+        "No production page-to-page imports remain, including dynamic components, types, CSS and route aliases; shell uses feature-owned upload/session interfaces; legacy TS paths reexport canonical identities",
+        "UploadDetailView receives uploadId/pathname/returnTo; P04 and problem diagnostic compose the same view through their own route adapters; dataset tables have independent styles and typed props",
+        "24 AST architecture tests passed; full TypeScript check, 172-file ESLint and production build passed",
+        "Full frontend suite: 153 files / 920 tests passed without skip; initial 2 failures also reproduced at 88bfc33b, then corrected real-route fixture setup and Drawer-managed focus assertion while preserving keyboard/focus lifecycle checks; all logs retained"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "F05",
+      "title": "Episode 物理格式兼容逻辑进一步扩散到前端页面",
+      "scope": "chayi",
+      "owner": "T9 T5 T7",
+      "status": "in_progress",
+      "evidence": [
+        "Package media/data bindings and annotation runtime compatibility logic moved out of pages into owning feature adapters; unified logical data view and open format capabilities remain pending."
+      ],
+      "remaining": "前端 feature 提供统一的数据版本、逻辑流和媒体授权模型，Lance/Episode wire 差异在一个适配层集中转换；后端提供稳定逻辑视图。"
+    },
+    {
+      "id": "X01",
+      "title": "格式注册只覆盖机器人接入，尚未贯通上传和处理路由",
+      "scope": "两分支",
+      "owner": "T3 T2 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "区分传输方式、容器格式、编码、逻辑 schema、处理能力和存储布局；注册表返回版本化能力描述，重复注册报错或显式版本选择。任务冻结实际选中适配器，不靠文件名或 worker 中的连续 if 路由。"
+    },
+    {
+      "id": "X02",
+      "title": "消息解码可注册，但原始校验契约仍偏向 MCAP/topic",
+      "scope": "两分支",
+      "owner": "T11 T3",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "保留解码器扩展点，另设容器验证器选择和公共完整性报告；格式特有证据放版本化扩展。缺失检查能力必须报告 unsupported/skip，不能视作通过。"
+    },
+    {
+      "id": "X03",
+      "title": "质检可以换整套引擎，但新增检测规则仍要改中央实现",
+      "scope": "两分支",
+      "owner": "T11",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "建立规则描述、版本、输入能力、适用条件及 batch/stream 执行契约；规则发现、执行、报告汇总和判定策略分离。先让现有规则通过同一注册方式工作，保留确定性结果。"
+    },
+    {
+      "id": "X04",
+      "title": "QC 历史证据校验依赖当前代码中的全部规则枚举",
+      "scope": "chayi",
+      "owner": "T11",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "按证据/引擎版本冻结 required rule set，新增规则使用新版本；旧 bytes、哈希与旧集合保持不变，并验证旧证据在新代码中仍可读取。"
+    },
+    {
+      "id": "X05",
+      "title": "对齐接口存在，但模态和策略枚举限制新数据形态",
+      "scope": "两分支",
+      "owner": "T11 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分离时序对齐与普通样本集合；对齐策略声明支持的模态/schema，保留 Arrow 作为具体 staging adapter。不要为非时序数据伪造时间戳或关节。"
+    },
+    {
+      "id": "X06",
+      "title": "标注提供方可扩展，标注对象仍以 step 区间为核心",
+      "scope": "两分支",
+      "owner": "T7 T9",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "以版本化 target selector 表达 sample/time interval/region/text span，保留现有 interval 适配；提供方声明支持的任务和输出 schema，审核、渲染、导出共同消费该契约。新增能力分期实施，不改变已有区间语义。"
+    },
+    {
+      "id": "X07",
+      "title": "导出有接口但格式选择与输入假设仍集中",
+      "scope": "两分支",
+      "owner": "T4 T9",
+      "status": "implemented_verified",
+      "evidence": [
+        "capabilities.registry provides explicit default, exact version selection, duplicate and missing-input rejection",
+        "Both production and reference exporters declare descriptors and own preflight; coordinator does not collect steps",
+        "108 publishing/registry/boundary tests passed; focused final 50 tests and 8-file mypy passed",
+        "ExportFormatKey accepts validated extension IDs; authenticated export-formats endpoint exposes registered defaults and missing input capabilities",
+        "ExportWorkflowInput and job result retain exact implementation version; retries keep it; old unversioned jobs map explicitly to historical versions",
+        "Third metadata_json exporter passes create/query/retry/download and tenant denial tests without changing core format enum or reading synchronized steps",
+        "P07/P21 use shared format discovery and MIME-aware downloads; 19 frontend tests, typecheck, ESLint and production build passed",
+        "131 backend regression tests passed; 8 external-service tests pending separate run; Temporal version tests 5 passed, baseline-history replay/wire tests 4 passed, legacy commit/export execution 1 passed",
+        "8 publishing/registry files pass mypy; workflow baseline/current both have identical 36 pre-existing errors; byte comparison matches prior LeRobot/depth/JSON artifacts",
+        "Separate disposable PostgreSQL/MinIO run: 23 migration/export-audit/object/notification tests passed, no skips; 3 old publication lineage fixture failures remain recorded under B19/B20"
+      ],
+      "remaining": "X07 的发布版本导出链已验证。流式产物/大规模样本读取归 X08；无本体通用来源归 X09；独立训练消费者归 X10，均未因本项完成而关闭。"
+    },
+    {
+      "id": "X08",
+      "title": "部分导出接口要求整包 bytes 和整段 steps，扩展训练数据量成本高",
+      "scope": "两分支",
+      "owner": "T4 T1 T12",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "支持流/文件句柄/分片迭代和不可变提交回执，明确定长、校验和关闭责任；训练读取按样本批次/分片消费版本引用，不要求先把所有数据导成一个内存压缩包。"
+    },
+    {
+      "id": "X09",
+      "title": "无本体数据已有只存入口，但完整处理链仍强制机器人语义",
+      "scope": "两分支",
+      "owner": "T0 T3 T5 T7 T9 T11",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "通用来源/样本/schema 与可选 embodiment 分开；机器人任务专门校验 robot/model/calibration。无本体能力用真实视频或图片样本端到端证明，禁止创建假 robot、零 action 或虚构关节来通过校验。"
+    },
+    {
+      "id": "X10",
+      "title": "训练扩展尚缺独立契约，不能直接复用当前发布门槛代替",
+      "scope": "未来能力缺口",
+      "owner": "T12 T0 T4",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "训练作为冻结数据快照的独立消费者：TrainingDatasetSpec、样本读取、TrainerBackend、任务状态/取消/恢复、模型和指标产物；按任务能力选择发布/质量策略，不移除当前审核门槛。先用 fake backend 验证边界，实际训练平台选型另行实施。"
+    },
+    {
+      "id": "R01",
+      "title": "机器人模型元数据、内容存储和上传完成协议集中在 RegistryService",
+      "scope": "两分支",
+      "owner": "T13 T1",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "分离模型元数据仓储、AssetContentReader/Writer、上传会话及旧资源迁移适配。当前 PostgreSQL 持久内容是已有选择，不强行迁到对象存储；两种实现通过相同窄接口验证。"
+    },
+    {
+      "id": "R02",
+      "title": "URDF 解析与发布策略没有独立模型格式接口",
+      "scope": "两分支",
+      "owner": "T13 T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "提取版本化 ModelDefinitionValidator/模型资源清单和结构化诊断，URDF 作为默认适配器；前端保留快速预览但以后端发布结论为准。覆盖 resource path/package URI、关节映射、资源哈希及格式能力，不假定前端检查等于服务端验证。"
+    },
+    {
+      "id": "R03",
+      "title": "实例绑定与模型注册的事务边界没有显式领域契约",
+      "scope": "两分支",
+      "owner": "T13",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "明确模型版本查询、实例绑定历史的所有权；以已发布模型快照/绑定事务端口表达协作，保留现有单事务、ETag、幂等和组织作用域。不要拆成两个非原子的 HTTP 调用。"
+    },
+    {
+      "id": "R04",
+      "title": "回放辅助函数按实例当前绑定查模型，缺少冻结的模型输入",
+      "scope": "两分支",
+      "owner": "T13 T14 T5",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "优先从数据快照取得 robot_model_version、joint_mapping/calibration 引用与哈希；历史数据缺失时标明“当前绑定兼容预览”，不把当前值当历史事实。绑定变化前后验证同一数据快照得到相同模型资产。"
+    },
+    {
+      "id": "R05",
+      "title": "URDF 导入用例仍在页面，通用 viewer 带具体机器人特判",
+      "scope": "两分支",
+      "owner": "T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "将导入状态机和模型资源处理放到机器人 feature，页面负责组合；兼容预览 provenance/availability 由数据适配器描述，不靠 viewer 的 robot_id 常量判断。"
+    },
+    {
+      "id": "F06",
+      "title": "生成 API 类型与手写运行时校验并存，扩展需同步多份事实",
+      "scope": "两分支",
+      "owner": "T0 T8 T9 T14",
+      "status": "pending",
+      "evidence": [],
+      "remaining": "统一契约来源和按领域的 wire adapter；保留有价值的运行时验证，并用生成或契约样例检查重复 schema。只在边界解释 snake_case、历史字段和 UNKNOWN，页面不自己解释物理存储。"
+    },
+    {
+      "id": "F07",
+      "title": "页面可自动发现，但导航和权限元数据仍分散",
+      "scope": "两分支",
+      "owner": "T8",
+      "status": "implemented_verified",
+      "evidence": [
+        "shared/routing/page-descriptor.ts defines validated page contracts; app automatically derives lazy routes, navigation, availability and safe return URLs from all page declarations",
+        "No production page imports app; Toast shared context and annotation feature URL/query builders replace reverse dependencies, with compatibility reexports",
+        "18 TS AST boundary tests passed; 297 frontend regression cases passed; 28 affected route cases rechecked after catalog replacement; full typecheck, 62-file ESLint and production build passed",
+        "Real MemoryRouter extension page requires one declaration; navigation and access agree, unauthorized component never runs; unknown permissions fail closed including platform admin; disabled paths removed when catalog replaced"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "F08",
+      "title": "可视化数据源与插槽可复用，模态选择仍是中央映射",
+      "scope": "两分支",
+      "owner": "T14",
+      "status": "implemented_verified",
+      "evidence": [
+        "features/viewer/renderer-contract.ts defines versioned renderer descriptors, exact refs, schema/input capabilities, lazy component contract and narrow ViewerRendererResources; registry never imports UI, clients or global state",
+        "createViewerRendererCatalog creates immutable registrations; duplicates/default collisions fail, exact old refs retained, unavailable inputs or ambiguous priority fail closed per panel",
+        "All existing modalities use builtin registrations; ViewerCompositionResolver delegates selection, joint-axis diagnostics/fallback and Manifest camera order preserved; unknown modalities/schema stay unsupported",
+        "EpisodeWorkbenchCore/ViewerMediaSurface and DataVisualizationWorkbench accept the same catalog; existing clock, robot optionality and renderPanel/other slots retained",
+        "Lazy extension host aborts/disposes on visibility/owner/retry/unmount/failure; late loaders never mount, late resources immediately release; loader/render/initialization/async source errors isolated with retry",
+        "Real dynamic-import caption component uses ordinary data-source/clock/resource ports without robot; audio authorization input declaration routes without authorizing during selection; backend audio ingestion not claimed",
+        "Final full frontend: 159 files / 976 tests passed without skips (maxWorkers=4), 22 added registry/extension cases, 46 architecture checks, full typecheck and affected ESLint passed; production build verified with explicit off/production/API/SSE variables"
+      ],
+      "remaining": ""
+    },
+    {
+      "id": "F09",
+      "title": "部分 feature 同时承担 API 与全局作用域选择",
+      "scope": "两分支",
+      "owner": "T8 T9 T14",
+      "status": "implemented_verified",
+      "evidence": [
+        "frontend/src/features/{robots,robot-models}/api/client.ts: explicit organization clients; api/hooks.ts: scoped query/mutation hooks; legacy session adapters isolated in api/index.ts",
+        "frontend/src/features/viewer/use-episode-robot-scene.ts and P23 replay use their supplied organization; P15 batch bootstrap cache includes organization",
+        "frontend/src/shared/api/scoped-query-keys.ts, use-scoped-query.ts, use-scoped-mutation.ts: immutable explicit scope keys, session identity/revision separation, frozen mutation scope and authorization-revision invalidation",
+        "frontend/src/shared/api/http-client.ts and session-scope-lease.ts: explicit grants, session/owner cancellation and post-body guards; URDF multipart operation cannot use a replacement session",
+        "frontend/src/app/shell/scope-transaction.ts: preserve session grants and independent queries during selection switches; active-mode and logout behavior retained",
+        "39 architecture tests and production dependency gate; complete TypeScript, changed-source ESLint and production build",
+        "Full frontend: 157 files / 954 tests (maxWorkers=4) passed without skip; two-organization scene, revocation, cache isolation, queued/rendered callback and multipart cancellation tests",
+        "16 actual backend registry/robot HTTP and contract tests passed, including production request-context binding with organization-only client headers; missing organization/project grants or capability still denied"
+      ],
+      "remaining": ""
+    }
+  ],
+  "integrated_source_head": "ce58091890c7d190cdd007d3767d91d8989f0bc3"
+}

@@ -15,6 +15,10 @@ from tempfile import TemporaryDirectory
 import av
 
 from hc_data_platform import recording_fields
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.feature_names import feature_names
+from hc_data_platform.data_formats.holobrain_depth import ENCODER_PROFILE
+from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 from hc_data_platform.episode_store.bundle_models import FrozenObject
 from hc_data_platform.episode_store.depth_window import VERSION as WINDOW_VERSION
 from hc_data_platform.episode_store.depth_window import prepare_depth_window
@@ -28,13 +32,9 @@ from hc_data_platform.episode_store.recording_plan import (
 )
 from hc_data_platform.episode_store.validation import parquet_rows
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.feature_names import feature_names
-from hc_data_platform.publishing.holobrain_depth import ENCODER_PROFILE
 
 from .asset_models import RecordingAsset, RecordingAssetRole, RecordingUpload
 from .openarm_grid import frame_at, frame_time
-from .openarm_raw.video import TrainingVideo
 
 VERSION = "continuous-episode-package/1"
 
@@ -461,7 +461,7 @@ def prepare_rgb_window(media, window, destination):
         writer = (
             None
             if whole
-            else TrainingVideo(destination, window.frequency_hz, media.feature["shape"])
+            else RgbVideoWriter(destination, window.frequency_hz, media.feature["shape"])
         )
         index = 0
         try:

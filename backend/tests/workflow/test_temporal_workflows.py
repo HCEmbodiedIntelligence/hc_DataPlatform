@@ -788,9 +788,11 @@ class StaticExporter:
         manifest: PublishedDatasetManifestV1,
         *,
         format: ExportFormat,
+        implementation_version: str | None = None,
     ) -> int:
         assert current_request_context().project_id == manifest.project_id
         assert format is ExportFormat.LANCE_SNAPSHOT
+        assert implementation_version == "lance-snapshot/v1"
         return 0
 
     def export(
@@ -799,8 +801,10 @@ class StaticExporter:
         *,
         format: ExportFormat,
         attempt_id: str,
+        implementation_version: str | None = None,
     ) -> ExportResultV1:
         assert current_request_context().project_id == manifest.project_id
+        assert implementation_version == "lance-snapshot/v1"
         return ExportResultV1(
             format=format,
             project_id=manifest.project_id,

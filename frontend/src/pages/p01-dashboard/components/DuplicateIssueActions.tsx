@@ -8,7 +8,7 @@ import type {
 import type { components } from "../../../shared/api/generated/platform";
 import { request } from "../../../shared/api/http-client";
 import { useCapabilities } from "../../../shared/auth/use-capabilities";
-import { nativeRoot } from "../../p03-upload-jobs/lerobot-processing";
+import { nativeRoot } from "../../../features/ingest/processing/lerobot-processing";
 
 type Resolution = components["schemas"]["EpisodeResolution"];
 type Action = "REPROCESS" | "DISCARD";

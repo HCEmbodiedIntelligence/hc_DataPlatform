@@ -7,6 +7,7 @@ import type {
   ViewerTimelineTrack,
 } from "./EpisodeWorkbenchCore";
 import type { DomainError, StreamDescriptor } from "./types";
+import type { ViewerRendererCatalog } from "./renderer-catalog";
 
 export type DataVisualizationWorkbenchMode =
   | "raw-diagnostic"
@@ -138,4 +139,6 @@ export interface DataVisualizationWorkbenchSlots {
   ) => ReactNode;
   /** Render overlays or deterministic test surfaces while retaining one clock and grid. */
   readonly renderPanel?: ViewerPanelRenderer;
+  /** Viewer-local capabilities; omitted catalogs retain all existing rendering policies. */
+  readonly rendererCatalog?: ViewerRendererCatalog;
 }

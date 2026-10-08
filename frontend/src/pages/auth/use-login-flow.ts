@@ -10,9 +10,9 @@ import {
   getSessionBootstrap,
   logoutSession,
   toActorSummary,
-} from "./api";
-import { authErrorMessage } from "./error-messages";
-import { installSessionBootstrap } from "./runtime-scope";
+} from "../../features/account/session/api";
+import { authErrorMessage } from "../../features/account/session/error-messages";
+import { installSessionBootstrap } from "../../features/account/session/runtime-scope";
 
 export interface LoginValues {
   readonly username: string;

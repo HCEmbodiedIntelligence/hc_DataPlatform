@@ -8,7 +8,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
 from fastapi import APIRouter, Header, Response
+from pydantic import TypeAdapter
 
+from hc_data_platform.capabilities.registry import ImplementationRef
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
@@ -24,6 +26,7 @@ from hc_data_platform.workflow.router import get_launcher
 from hc_data_platform.workflow.service import InMemoryWorkflowLauncher, TemporalWorkflowLauncher
 
 from .audit import ExportAuditRecorder, ExportDownloadAuditEvent, InMemoryExportAuditRecorder
+from .contracts import LEGACY_EXPORT_VERSIONS
 from .memory import (
     InMemoryAnnotationSnapshot,
     InMemoryArtifactSink,
@@ -36,7 +39,8 @@ from .models import (
     ExportDataStage,
     ExportDownloadAuthorizationV1,
     ExportEligibilityV1,
-    ExportFormat,
+    ExportFormatCatalogV1,
+    ExportFormatKey,
     ExportJobProgressV1,
     ExportJobResultV1,
     ExportJobStatus,
@@ -45,6 +49,7 @@ from .models import (
     PublishDatasetRequestV1,
     PublishedDatasetManifestV1,
     PublishPreflightReportV1,
+    export_format_key,
 )
 from .service import DatasetPublisher, ExportCoordinator, select_export_rollouts
 
@@ -103,23 +108,28 @@ async def _resolve(value: _T | Awaitable[_T]) -> _T:
 
 def _selected_attempt(
     manifest: PublishedDatasetManifestV1,
-    export_format: ExportFormat,
+    export_format: ExportFormatKey,
     idempotency_key: str,
 ) -> str:
     """Never put a caller-supplied idempotency value in Temporal/resource IDs."""
 
     return hashlib.sha256(
-        f"{manifest.content_hash}:{export_format.value}:{idempotency_key}".encode()
+        f"{manifest.content_hash}:{export_format_key(export_format)}:{idempotency_key}".encode()
     ).hexdigest()[:32]
 
 
 def _resource_id(
     manifest: PublishedDatasetManifestV1,
-    export_format: ExportFormat,
+    export_format: ExportFormatKey,
     attempt_id: str,
 ) -> str:
     return "/".join(
-        (manifest.dataset_id, manifest.dataset_version, export_format.value, attempt_id)
+        (
+            manifest.dataset_id,
+            manifest.dataset_version,
+            export_format_key(export_format),
+            attempt_id,
+        )
     )
 
 
@@ -215,7 +225,7 @@ def _export_job(
     if len(parts) != 2:
         raise _export_job_not_found()
     try:
-        export_format = ExportFormat(parts[0])
+        export_format: ExportFormatKey = TypeAdapter(ExportFormatKey).validate_python(parts[0])
     except ValueError as exc:
         raise _export_job_not_found() from exc
     status = {
@@ -232,7 +242,7 @@ def _export_job(
         result.project_id != record.project_id
         or result.dataset_id != dataset_id
         or result.dataset_version != dataset_version
-        or result.format is not export_format
+        or result.format != export_format
         or result.attempt_id != parts[1]
     ):
         raise problem(
@@ -288,10 +298,17 @@ def _export_progress(record: JobRecord) -> ExportJobProgressV1:
 async def _launch_export(
     manifest: PublishedDatasetManifestV1,
     *,
-    export_format: ExportFormat,
+    export_format: ExportFormatKey,
     attempt_id: str,
     selection: dict[str, Any] | None = None,
+    implementation_version: str | None = None,
 ) -> JobRecord:
+    implementation = _export_coordinator.implementation(export_format, implementation_version)
+    frozen = {
+        "export_implementation": {"key": implementation.key, "version": implementation.version}
+    }
+    if selection is not None:
+        frozen["export_selection"] = selection
     resource_id = _resource_id(manifest, export_format, attempt_id)
     identifier = workflow_id(WorkflowKind.EXPORT, manifest.project_id, resource_id)
     launcher = get_launcher()
@@ -303,6 +320,7 @@ async def _launch_export(
                 format=export_format,
                 attempt_id=attempt_id,
                 selection=selection,
+                implementation_version=implementation.version,
             ),
             workflow_id=identifier,
             job_type=EXPORT_WORKFLOW,
@@ -316,15 +334,30 @@ async def _launch_export(
         job_type=EXPORT_WORKFLOW,
         project_id=manifest.project_id,
         resource_id=resource_id,
-        **({"initial_result": {"export_selection": selection}} if selection else {}),
+        initial_result=frozen,
         runner=lambda: {
             "export": _export_coordinator.export(
                 manifest,
                 format=export_format,
                 attempt_id=attempt_id,
+                implementation_version=implementation.version,
             ).model_dump(mode="json")
         },
     )
+
+
+@router.get(
+    "/export-formats",
+    operation_id="getExportFormats",
+    response_model=ExportFormatCatalogV1,
+    responses={200: {"headers": _NO_STORE_HEADERS}},
+)
+def get_export_formats(
+    project_id: str, auth: VerifiedAuth, response: Response
+) -> ExportFormatCatalogV1:
+    authorize_scope(auth, project_id, "export.read")
+    response.headers["Cache-Control"] = "no-store"
+    return _export_coordinator.formats()
 
 
 @router.get(
@@ -532,7 +565,11 @@ async def export_dataset_version(
     if selection is not None:
         attempt_id = f"episodes-{attempt_id}"
     job = await _launch_export(
-        manifest, export_format=request.format, attempt_id=attempt_id, selection=selection
+        manifest,
+        export_format=request.format,
+        attempt_id=attempt_id,
+        selection=selection,
+        implementation_version=request.implementation_version,
     )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Location"] = (
@@ -654,8 +691,35 @@ async def retry_export_job(
                 title="Export selection changed",
                 detail="The frozen export selection is invalid.",
             )
+    ref = (existing.result or {}).get("export_implementation")
+    if ref is None:
+        version = LEGACY_EXPORT_VERSIONS.get(export_format_key(previous.format))
+        if version is None:
+            raise problem(
+                status=409,
+                code="EXPORT_IMPLEMENTATION_UNAVAILABLE",
+                title="Export implementation is unavailable",
+                detail="The original job has no frozen implementation version.",
+            )
+    else:
+        if not isinstance(ref, dict) or ref.get("key") != export_format_key(previous.format):
+            raise problem(
+                status=409,
+                code="EXPORT_IMPLEMENTATION_CHANGED",
+                title="Export implementation changed",
+                detail="The frozen implementation does not match the original format.",
+            )
+        try:
+            version = ImplementationRef(ref["key"], ref["version"]).version
+        except (KeyError, TypeError, ValueError) as exc:
+            raise problem(
+                status=409,
+                code="EXPORT_IMPLEMENTATION_CHANGED",
+                title="Export implementation changed",
+                detail="The frozen implementation identity is invalid.",
+            ) from exc
     retry_attempt = hashlib.sha256(
-        f"{manifest.content_hash}:{previous.format.value}:retry:{idempotency_key}".encode()
+        f"{manifest.content_hash}:{export_format_key(previous.format)}:retry:{idempotency_key}".encode()
     ).hexdigest()[:32]
     if selection is not None:
         retry_attempt = f"episodes-{retry_attempt}"
@@ -664,6 +728,7 @@ async def retry_export_job(
         export_format=previous.format,
         attempt_id=retry_attempt,
         selection=selection,
+        implementation_version=version,
     )
     response.headers["Cache-Control"] = "no-store"
     response.headers["Location"] = (
@@ -721,7 +786,7 @@ async def authorize_export_download(
             job_id=job_id,
             dataset_id=dataset_id,
             dataset_version=dataset_version,
-            export_format=export_job.format.value,
+            export_format=export_format_key(export_job.format),
             artifact_content_hash=internal_result.artifact_content_hash,
         )
     )

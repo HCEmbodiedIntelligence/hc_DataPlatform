@@ -11,7 +11,7 @@ from typing import Literal, Protocol
 from pydantic import Field, model_validator
 
 from hc_data_platform.episode_store.models import CommitReceipt
-from hc_data_platform.ingest.ports import ObjectStoragePort
+from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .models import QualityStatus, RobotIngestUpload, StrictModel
 
@@ -69,7 +69,7 @@ class EpisodeReceipt(StrictModel):
 @dataclass(frozen=True)
 class CommittedSource:
     upload: RobotIngestUpload
-    storage: ObjectStoragePort
+    storage: ObjectChunks
 
     def read(self, path: str) -> bytes:
         return b"".join(self.read_chunks(path))

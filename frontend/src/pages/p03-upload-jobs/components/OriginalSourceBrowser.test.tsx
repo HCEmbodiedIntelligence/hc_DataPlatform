@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { OriginalEpisodePlayer } from "./OriginalSourceBrowser";
+import { OriginalEpisodePlayer } from "../../../features/ingest/browser/OriginalSourceBrowser";
 
 vi.mock("../../../shared/api/http-client", () => ({
   request: vi.fn(async ({ query }: { query: { path: string } }) => ({

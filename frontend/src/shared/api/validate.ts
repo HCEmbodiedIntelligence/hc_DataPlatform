@@ -59,3 +59,28 @@ export function parseWire<T>(
     httpStatus: null,
   });
 }
+
+/** Validate tenant identity as well as schema shape before a response reaches a workspace cache. */
+export function parseOrganizationWire<
+  T extends { scope: { organization_id: string } },
+>(
+  schema: ZodType<T>,
+  raw: unknown,
+  ctx: WireParseContext,
+  organizationId: string,
+): T {
+  const wire = parseWire(schema, raw, ctx);
+  if (wire.scope.organization_id !== organizationId) {
+    throw createDomainError({
+      code: "CONTRACT_MISMATCH",
+      message: "服务端响应的组织与请求不匹配",
+      fieldErrors: [],
+      operationErrors: [],
+      blockedReasons: [],
+      requestId: ctx.requestId ?? null,
+      retryable: false,
+      httpStatus: null,
+    });
+  }
+  return wire;
+}

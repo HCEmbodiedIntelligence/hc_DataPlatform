@@ -1,6 +1,6 @@
 import { completeDeliveryFixture } from "../../p06-dataset-detail/testing/complete-delivery-fixture";
 import { deliveryFixture } from "../../p08-data-annotation/testing/delivery-fixture";
-import type { PackageJob } from "../package-deliveries";
+import type { PackageJob } from "../../../features/exports/package-deliveries";
 
 export function packageDeliveryFixture(annotated = false) {
   const base = completeDeliveryFixture(),

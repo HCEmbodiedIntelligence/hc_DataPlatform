@@ -5,11 +5,11 @@ import { isEpisodeId } from "../../entities/episode";
 import { episodeDataReferenceWireSchema } from "../../features/datasets/api/episode-package-wire";
 import type { components } from "../../shared/api/generated/platform";
 import { request } from "../../shared/api/http-client";
-import { sameAnnotationDataRef } from "./annotation-package";
+import { sameAnnotationDataRef } from "../../features/annotation/runtime/annotation-package";
 import type {
   RuntimeAnnotationHistory,
   RuntimeAnnotationScope,
-} from "./runtime-annotation-adapter";
+} from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 export type TagEpisodeRequest = components["schemas"]["RequestTagEpisode"];
 const digest = z.string().regex(/^[0-9a-f]{64}$/u);

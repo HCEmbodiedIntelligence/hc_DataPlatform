@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import AbstractContextManager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -249,7 +250,15 @@ def test_frame_reader_downloads_camera_shard_instead_of_full_alignment(
         ),
     )
 
-    frames = tuple(ArrowAlignedFrameReader(store).read_camera_frames(request))
+    class ReadOnlyFiles:
+        def local_file(
+            self, key: str, *, expected_sha256: str, expected_size: int
+        ) -> AbstractContextManager[Path]:
+            return store.local_file(
+                key, expected_sha256=expected_sha256, expected_size=expected_size
+            )
+
+    frames = tuple(ArrowAlignedFrameReader(ReadOnlyFiles()).read_camera_frames(request))
 
     assert len(frames) == 1
     assert frames[0].image == b"front-jpeg"

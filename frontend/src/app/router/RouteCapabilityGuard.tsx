@@ -1,21 +1,22 @@
-import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Outlet } from 'react-router-dom';
-import { cancelActiveTransports } from '../../shared/api/transport-lifecycle';
-import { useCapabilities } from '../../shared/auth/use-capabilities';
-import { useShellStore } from '../../shared/scope/shell-store';
-import { ForbiddenPanel } from '../../shared/ui/ForbiddenPanel';
-import { SkeletonBlock } from '../../shared/ui/SkeletonBlock';
+import { useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Outlet } from "react-router-dom";
+import { cancelActiveTransports } from "../../shared/api/transport-lifecycle";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { isRegisteredCapability } from "../../shared/auth/capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
+import { ForbiddenPanel } from "../../shared/ui/ForbiddenPanel";
+import { SkeletonBlock } from "../../shared/ui/SkeletonBlock";
 
 const UNSCOPED_PAGE_CAPABILITIES = new Set([
-  'annotation_task.read',
-  'cleaning.read',
-  'dataset.read',
-  'dataset_version.read',
-  'episode.read',
-  'ingest_source.read',
-  'manual_issue.read',
-  'upload.read',
+  "annotation_task.read",
+  "cleaning.read",
+  "dataset.read",
+  "dataset_version.read",
+  "episode.read",
+  "ingest_source.read",
+  "manual_issue.read",
+  "upload.read",
 ]);
 
 export function RouteCapabilityGuard({
@@ -33,7 +34,10 @@ export function RouteCapabilityGuard({
   );
   const queryClient = useQueryClient();
   const requiresAuthorization = requiredCapabilities.length > 0;
-  const allowed = requiredCapabilities.every(authorization.has);
+  const allowed = requiredCapabilities.every(
+    (capability) =>
+      isRegisteredCapability(capability) && authorization.has(capability),
+  );
   const unscopedPageAllowed =
     unscopedAccount &&
     requiredCapabilities.every((capability) =>
@@ -46,8 +50,16 @@ export function RouteCapabilityGuard({
 
   useEffect(() => {
     if (!blocked) return;
-    void queryClient.cancelQueries({ predicate: (query) => query.queryKey[1] === scopeKey });
-    queryClient.removeQueries({ predicate: (query) => query.queryKey[1] === scopeKey });
+    void queryClient.cancelQueries({
+      predicate: (query) =>
+        query.queryKey[1] === scopeKey &&
+        query.meta?.scopeBinding !== "explicit",
+    });
+    queryClient.removeQueries({
+      predicate: (query) =>
+        query.queryKey[1] === scopeKey &&
+        query.meta?.scopeBinding !== "explicit",
+    });
     void cancelActiveTransports();
   }, [blocked, queryClient, scopeKey]);
 
@@ -55,7 +67,9 @@ export function RouteCapabilityGuard({
     return <SkeletonBlock width="100%" height={180} label="正在验证页面权限" />;
   }
   if (blocked) {
-    return <ForbiddenPanel description="当前授权状态不允许读取此页面；页面未发起领域请求。" />;
+    return (
+      <ForbiddenPanel description="当前授权状态不允许读取此页面；页面未发起领域请求。" />
+    );
   }
   return <Outlet />;
 }

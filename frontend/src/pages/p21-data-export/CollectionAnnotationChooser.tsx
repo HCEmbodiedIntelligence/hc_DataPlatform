@@ -2,12 +2,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, Input, Select, Space } from "antd";
 import type { Scope } from "../../entities/scope";
-import { loadEpisodeOverview } from "../p06-dataset-detail/episode-detail";
+import { loadEpisodeOverview } from "../../features/datasets/episodes/episode-detail";
 import {
   loadCollectionAnnotationHistory,
   type AnnotationSelection,
   type PackageData,
-} from "./package-deliveries";
+} from "../../features/exports/package-deliveries";
 
 export function CollectionAnnotationChooser({
   scope,

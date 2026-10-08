@@ -5,7 +5,7 @@ import { CalendarClock, KeyRound, ShieldCheck, UserRound } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { z } from "zod";
-import { useToast } from "../../app/providers/ToastProvider";
+import { useToast } from "../../shared/ui/ToastProvider";
 import {
   accountSettingsKeys,
   changeOwnAccountPassword,

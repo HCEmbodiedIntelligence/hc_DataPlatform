@@ -5,10 +5,10 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { DataReviewPanel } from "./DataReviewPanel";
-import { loadDataReviews, recordDataReview } from "./data-reviews";
+import { loadDataReviews, recordDataReview } from "../../features/datasets/episodes/data-reviews";
 import { dataReviewFixture } from "./testing/data-review-fixture";
 
-vi.mock("./data-reviews", () => ({
+vi.mock("../../features/datasets/episodes/data-reviews", () => ({
   loadDataReviews: vi.fn(),
   recordDataReview: vi.fn(),
 }));

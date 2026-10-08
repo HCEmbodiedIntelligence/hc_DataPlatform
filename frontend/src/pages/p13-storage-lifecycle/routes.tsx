@@ -1,15 +1,21 @@
-import type { RouteObject } from "react-router-dom";
-import { registerPageRoutes } from "../../shared/routing/route-registry";
+import {
+  definePage,
+  type PageRoute,
+} from "../../shared/routing/page-descriptor";
 
-export const routes: RouteObject[] = [
+export const routes: PageRoute[] = [
   {
     path: "/storage/lifecycle",
-    lazy: async () => {
-      const module = await import("./page");
-      return { Component: module.LifecyclePage };
+    requiredCapabilities: ["storage.lifecycle.read"],
+    navigation: {
+      label: "生命周期",
+      groupId: "governance",
+      order: 20,
+      visibility: "authorized",
     },
+    lazy: async () => ({ Component: (await import("./page")).LifecyclePage }),
   },
 ];
 
-registerPageRoutes("P13", routes);
+export const page = definePage({ id: "P13", enabled: true, routes: routes });
 export default routes;

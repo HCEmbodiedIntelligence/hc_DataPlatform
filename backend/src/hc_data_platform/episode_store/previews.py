@@ -21,9 +21,9 @@ from pydantic import Field
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
-from hc_data_platform.publishing.depth_evidence import file_hash
-from hc_data_platform.publishing.holobrain_depth import DepthProfile, dequantize
-from hc_data_platform.publishing.lerobot_export import VIDEO_PATH
+from hc_data_platform.data_formats.depth_evidence import file_hash
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile, dequantize
+from hc_data_platform.data_formats.lerobot_layout import VIDEO_PATH
 
 from .models import DataVersionRef, Digest, FileEntry, FrozenModel, canonical, digest
 from .postgres import PackageConflict, assert_scope
@@ -310,9 +310,7 @@ class EpisodePreviews:
         )
 
     @staticmethod
-    def _encode(
-        source, stream, output, frame_count, fps, width, height, *, masks, profile
-    ):
+    def _encode(source, stream, output, frame_count, fps, width, height, *, masks, profile):
         rate, began, count = Fraction(str(fps)), time.monotonic(), 0
         with (
             ExitStack() as resources,
