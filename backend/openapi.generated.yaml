@@ -20490,9 +20490,30 @@ components:
         end_seconds:
           title: End Seconds
           type: number
+        media_kind:
+          enum:
+          - RGB
+          - DEPTH
+          - UNKNOWN
+          title: Media Kind
+          type: string
         path:
           title: Path
           type: string
+        preview_kind:
+          enum:
+          - ORIGINAL_VIDEO
+          - DOWNLOAD_ONLY
+          title: Preview Kind
+          type: string
+        preview_reason:
+          anyOf:
+          - enum:
+            - RAW_DEPTH_REQUIRES_COLORIZATION
+            - MEDIA_KIND_UNDECLARED
+            type: string
+          - type: 'null'
+          title: Preview Reason
         start_seconds:
           title: Start Seconds
           type: number
@@ -20501,6 +20522,8 @@ components:
       - path
       - start_seconds
       - end_seconds
+      - media_kind
+      - preview_kind
       title: OriginalVideo
       type: object
     OriginalVideoReferenceV1:

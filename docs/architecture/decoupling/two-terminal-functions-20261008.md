@@ -249,3 +249,18 @@ runtime-annotation-logical.yaml。P08 页面尚待 B 消费，不关闭 F05/B06/
 后端与第五批相同，已有 B09 生产 worker 回归保持适用；runtime 契约仍5c2dc66b。
 证据 integration-batch-six-{frontend,services}.xml 与 integration-batch-six-build.log。
 URDF 浏览器导入与 R04 冻结绑定仍待验收；P08 新协议26cf62a3等待前端，不在本批。
+
+
+## A/B：原始深度媒体与 R05 验收
+
+原始媒体HTTP响应增加media_kind(RGB/DEPTH/UNKNOWN)、preview_kind
+(ORIGINAL_VIDEO/DOWNLOAD_ONLY)及明确原因。源feature声明深度时只提供原文件
+下载，不把16位深度视频伪装RGB；缺声明时不从文件名猜模态。原始字节和offset
+不改写。15项上传/范围读取用例、严格mypy和架构通过；真实普通HTTP创建dataset、
+上传整套合成RGB-D、commit、分类、原文件逐字节下载和隔离/撤权1项通过。
+证据raw-media-contract-v2.xml、raw-media-services-v2.xml；首轮HTTP夹具未建
+dataset被404拒绝已保留，补正常创建后复验，无放宽产品检查。页面等待B消费。
+
+R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，1027测试
+及第六批联合检查通过。B031以普通浏览器完成首次/更新发布、真实WebGL画布、
+旧固定模型/映射读取，故R05现在可关闭；R04数据绑定冻结仍单独在实施。

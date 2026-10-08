@@ -1424,24 +1424,47 @@ components:
     OriginalVideo:
       properties:
         camera_id:
-          type: string
           title: Camera Id
-        path:
           type: string
-          title: Path
-        start_seconds:
-          type: number
-          title: Start Seconds
         end_seconds:
-          type: number
           title: End Seconds
-      type: object
+          type: number
+        media_kind:
+          enum:
+          - RGB
+          - DEPTH
+          - UNKNOWN
+          title: Media Kind
+          type: string
+        path:
+          title: Path
+          type: string
+        preview_kind:
+          enum:
+          - ORIGINAL_VIDEO
+          - DOWNLOAD_ONLY
+          title: Preview Kind
+          type: string
+        preview_reason:
+          anyOf:
+          - enum:
+            - RAW_DEPTH_REQUIRES_COLORIZATION
+            - MEDIA_KIND_UNDECLARED
+            type: string
+          - type: 'null'
+          title: Preview Reason
+        start_seconds:
+          title: Start Seconds
+          type: number
       required:
       - camera_id
       - path
       - start_seconds
       - end_seconds
+      - media_kind
+      - preview_kind
       title: OriginalVideo
+      type: object
     StartStoredProcessing:
       properties:
         collection_task_id:
