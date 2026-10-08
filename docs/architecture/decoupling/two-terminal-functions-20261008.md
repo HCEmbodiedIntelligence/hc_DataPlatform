@@ -267,3 +267,17 @@ B031通过浏览器URDF创建/更新/发布、真实WebGL画布和旧固定资�
 保留首轮无头浏览器不支持WebGL的失败。该证据不替代R04数据快照换绑验收。
 P08新共同候选尚待浏览器实际消费；原始深度预览协议修复和冻结模型均在独立
 工作树，不纳入本批已验证结果。
+
+## A/B：原始深度媒体与 R05 验收
+
+原始媒体HTTP响应增加media_kind(RGB/DEPTH/UNKNOWN)、preview_kind
+(ORIGINAL_VIDEO/DOWNLOAD_ONLY)及明确原因。源feature声明深度时只提供原文件
+下载，不把16位深度视频伪装RGB；缺声明时不从文件名猜模态。原始字节和offset
+不改写。15项上传/范围读取用例、严格mypy和架构通过；真实普通HTTP创建dataset、
+上传整套合成RGB-D、commit、分类、原文件逐字节下载和隔离/撤权1项通过。
+证据raw-media-contract-v2.xml、raw-media-services-v2.xml；首轮HTTP夹具未建
+dataset被404拒绝已保留，补正常创建后复验，无放宽产品检查。页面等待B消费。
+
+R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，1027测试
+及第六批联合检查通过。B031以普通浏览器完成首次/更新发布、真实WebGL画布、
+旧固定模型/映射读取，故R05现在可关闭；R04数据绑定冻结仍单独在实施。
