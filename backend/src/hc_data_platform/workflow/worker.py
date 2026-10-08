@@ -11,6 +11,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
 
+from hc_data_platform.continuous_recordings.registration import PostgresRecordingRegistration
 from hc_data_platform.core.config import Settings, get_settings, require_durable_runtime
 from hc_data_platform.core.structured_logging import (
     StructuredLogIdentity,
@@ -338,7 +339,9 @@ async def serve() -> None:
             ),
         )
         robot_executor = ThreadPoolExecutor(max_workers=settings.worker_max_concurrent_activities)
-        recording_activity = RecordingOutboxHandler(pipeline.connections, pipeline.storage)
+        recording_activity = RecordingOutboxHandler(
+            pipeline.connections, pipeline.storage, registrations=PostgresRecordingRegistration()
+        )
         worker = WorkerGroup(
             worker,
             Worker(

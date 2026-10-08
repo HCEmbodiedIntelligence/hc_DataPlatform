@@ -129,7 +129,23 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
                 failures.add(f"{node.lineno}: Tag projection must consume public injected ports")
+    if module == "hc_data_platform.robot_ingest.recording_bridge":
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and any(
+                table in node.value.lower() for table in (
+                    "ingest.recording_uploads", "ingest.recording_upload_assets",
+                    "ingest.continuous_recordings",
+                )
+            ):
+                failures.add(
+                    f"{node.lineno}: Raw bridge must enlist the recording registration port"
+                )
     for line, target in imports(tree, package):
+        if module == "hc_data_platform.robot_ingest.recording_bridge" and target in {
+            "hc_data_platform.continuous_recordings.asset_repository._asset_values",
+            "hc_data_platform.continuous_recordings.repository._recording_values",
+        }:
+            failures.add(f"{line}: Raw bridge cannot consume recording repository private codecs")
         if module in {
             "hc_data_platform.dataset_registry.tag_projection",
             "hc_data_platform.dataset_registry.projection_writer",

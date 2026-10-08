@@ -64,3 +64,23 @@ build:container 通过；后端 OpenAPI 聚合检查通过，runtime SHA256
 浏览器证据在 `evidence/B/p06-*`；58088 当前仍固定于 `3df9fc78`，与本地
 集成树明确区分，不将本地合并视为运行版本升级。剩余浏览器验收、60 项中的
 未完成项及真实传感器条件不在这些通过结果中。
+
+
+## A：Raw 录制登记事务端口（B18）
+
+连续录制拥有 VerifiedRecordingFacts / RecordingRegistrationPort 与目标表 SQL。
+机器人桥接和 runtime/worker 显式消费端口，调用方传入同一个事务 cursor；
+录制、资产和源任务完成一起提交或回滚。不同上传争用同一录制通过事务锁串行化，
+已登记资产的物理对象、摘要和归属不可被重试改写。原始上传与派生产物仍复用，
+未经人工切片不会伪造 Episode。源任务查询通过目标模块公共读取方法获取录制状态。
+
+4 项真实 PostgreSQL/MinIO/Temporal 回归和 1 项真实 runtime API/outbox/worker
+回归通过，覆盖故障回滚、并发重试、旧收据固定、切片/QC/提交、重放、所有对象
+字节读回、作用域与撤权。62 项架构/录制基础检查、Ruff、登记模块严格 mypy
+通过，实际 runtime OpenAPI 保持逻辑媒体检查点哈希。
+
+原失败保留：独占故障注入用例错误地同时启动自动 outbox worker，导致抢占；
+改用用例专有 Temporal worker 后 4 项通过，另设生产 worker 闭环。新撤权夹具
+初次漏设 active=false，仅改 revoked_at 不会撤权；补齐正常撤权状态后复验通过。
+证据为协调目录 recording-registration-{services-v2,worker-v2,checks}.xml。
+这批没有关闭工作流 DTO、Temporal 适配或私有执行上下文相关 B08/B09/B10。

@@ -625,3 +625,23 @@ Tag 自己的事务中。摄取与迁移也消费同一个目录 SQL 所有者�
 OpenAPI 字节保持逻辑媒体检查点的哈希。原失败保留：旧夹具 _stable_id 兼容
 导入漏出、故障注入点仍指向已迁走的 _put_schema；修正导入与注入落点后复验
 全部 43 项，无删除故障测试或放宽校验。B08/E02/E03 的其余边界仍待实施。
+
+
+## A：Raw 录制登记事务端口（B18）
+
+连续录制拥有 VerifiedRecordingFacts / RecordingRegistrationPort 与目标表 SQL。
+机器人桥接和 runtime/worker 显式消费端口，调用方传入同一个事务 cursor；
+录制、资产和源任务完成一起提交或回滚。不同上传争用同一录制通过事务锁串行化，
+已登记资产的物理对象、摘要和归属不可被重试改写。原始上传与派生产物仍复用，
+未经人工切片不会伪造 Episode。源任务查询通过目标模块公共读取方法获取录制状态。
+
+4 项真实 PostgreSQL/MinIO/Temporal 回归和 1 项真实 runtime API/outbox/worker
+回归通过，覆盖故障回滚、并发重试、旧收据固定、切片/QC/提交、重放、所有对象
+字节读回、作用域与撤权。62 项架构/录制基础检查、Ruff、登记模块严格 mypy
+通过，实际 runtime OpenAPI 保持逻辑媒体检查点哈希。
+
+原失败保留：独占故障注入用例错误地同时启动自动 outbox worker，导致抢占；
+改用用例专有 Temporal worker 后 4 项通过，另设生产 worker 闭环。新撤权夹具
+初次漏设 active=false，仅改 revoked_at 不会撤权；补齐正常撤权状态后复验通过。
+证据为协调目录 recording-registration-{services-v2,worker-v2,checks}.xml。
+这批没有关闭工作流 DTO、Temporal 适配或私有执行上下文相关 B08/B09/B10。

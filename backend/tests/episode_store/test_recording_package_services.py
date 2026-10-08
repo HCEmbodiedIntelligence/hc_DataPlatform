@@ -37,6 +37,7 @@ from hc_data_platform.continuous_recordings.processing import (
     ContinuousEpisodeProcessingService,
     PostgresContinuousEpisodeWorkflowInputResolver,
 )
+from hc_data_platform.continuous_recordings.registration import PostgresRecordingRegistration
 from hc_data_platform.continuous_recordings.repository import PostgresContinuousRecordingRepository
 from hc_data_platform.continuous_recordings.service import ContinuousRecordingService
 from hc_data_platform.core.events import DomainEventEnvelope
@@ -230,7 +231,9 @@ def test_uploaded_recording_slice_qc_package_ready_recovery(
     )
     try:
         with scoped(source):
-            RecordingOutboxHandler(repository.connections, storage).adopt(event)
+            RecordingOutboxHandler(
+                repository.connections, storage, registrations=PostgresRecordingRegistration()
+            ).adopt(event)
             forbid_quantization(monkeypatch)
             record = records.get(scope, original_command.recording_id)
             assert record is not None

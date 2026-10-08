@@ -16,13 +16,15 @@ from temporalio.common import WorkflowIDReusePolicy
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
 from hc_data_platform.continuous_recordings.asset_models import RecordingAsset, RecordingUpload
-from hc_data_platform.continuous_recordings.asset_repository import _asset_values
 from hc_data_platform.continuous_recordings.models import (
-    ContinuousRecording,
     RecordingScope,
-    recording_duration_ns,
 )
-from hc_data_platform.continuous_recordings.repository import _recording_values
+from hc_data_platform.continuous_recordings.registration import (
+    PostgresRecordingRegistration,
+    RecordingRegistrationConflict,
+    RecordingRegistrationPort,
+    VerifiedRecordingFacts,
+)
 from hc_data_platform.core.context import (
     RequestContext,
     bind_request_context,
@@ -103,8 +105,17 @@ def recording_upload_id(upload_id):
 class RecordingOutboxHandler:
     EVENT_TYPE = EVENT_TYPE
 
-    def __init__(self, connections, storage, client=None, task_queue=None):
+    def __init__(
+        self,
+        connections,
+        storage,
+        client=None,
+        task_queue=None,
+        *,
+        registrations: RecordingRegistrationPort,
+    ):
         self.connections, self.storage = connections, storage
+        self.registrations = registrations
         self.client, self.task_queue = client, task_queue
 
     async def __call__(self, event):
@@ -261,14 +272,13 @@ class RecordingOutboxHandler:
 
                 # Replaying an already registered recording must preserve its
                 # committed derivation even when the running encoder has changed.
-                cursor.execute(
-                    """SELECT upload_document FROM ingest.recording_uploads
-                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                      AND upload_id=%s""",
-                    (*scope, recording_upload_id(upload.upload_id)),
+                pinned = self.registrations.find_upload(
+                    cursor,
+                    RecordingScope(
+                        organization_id=scope[0], project_id=scope[1], region_code=scope[2]
+                    ),
+                    recording_upload_id(upload.upload_id),
                 )
-                prior_upload = cursor.fetchone()
-                pinned = RecordingUpload.model_validate(prior_upload[0]) if prior_upload else None
                 if pinned and (
                     pinned.status.value != "COMMITTED"
                     or (
@@ -282,13 +292,9 @@ class RecordingOutboxHandler:
                     raise RecordingBridgeError("existing recording receipt differs from its scope")
                 pinned_objects = None
                 if pinned:
-                    cursor.execute(
-                        """SELECT asset_path,object_key FROM ingest.recording_upload_assets
-                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                          AND upload_id=%s""",
-                        (*scope, pinned.upload_id),
+                    pinned_objects = self.registrations.object_keys(
+                        cursor, pinned.scope, pinned.upload_id
                     )
-                    pinned_objects = dict(cursor.fetchall())
                 command, assets = materialize(
                     self.storage,
                     upload,
@@ -317,30 +323,6 @@ class RecordingOutboxHandler:
                 created_at=now,
                 updated_at=now,
             )
-            cursor.execute(
-                """SELECT manifest_sha256 FROM ingest.recording_uploads
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND upload_id=%s""",
-                (*scope, uid),
-            )
-            existing = cursor.fetchone()
-            if existing and existing[0] != recorded.manifest_sha256:
-                raise RecordingBridgeError("immutable recording identity conflict")
-            cursor.execute(
-                """INSERT INTO ingest.recording_uploads
-                (organization_id,project_id,region_code,upload_id,recording_id,manifest_sha256,status,upload_document,created_by,created_at,updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,'COMMITTED',%s::jsonb,%s,%s,%s)
-                ON CONFLICT (organization_id,project_id,region_code,upload_id) DO NOTHING""",
-                (
-                    *scope,
-                    uid,
-                    command.recording_id,
-                    recorded.manifest_sha256,
-                    recorded.model_dump_json(),
-                    recorded.created_by,
-                    now,
-                    now,
-                ),
-            )
             projected = []
             for declared in command.assets:
                 actual = assets[declared.path]
@@ -356,67 +338,12 @@ class RecordingOutboxHandler:
                     committed_at=now,
                 )
                 projected.append(asset)
-                cursor.execute(
-                    """INSERT INTO ingest.recording_upload_assets
-                    (organization_id,project_id,region_code,upload_id,asset_id,asset_path,role,camera_id,media_type,
-                     expected_size,expected_sha256,expected_crc64,object_key,multipart_upload_id,status,object_etag,committed_at,asset_document)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
-                    ON CONFLICT (organization_id,project_id,region_code,upload_id,asset_id)
-                    DO NOTHING""",
-                    (
-                        *_asset_values(asset)[:-1],
-                        asset.object_etag,
-                        asset.committed_at,
-                        asset.model_dump_json(),
-                    ),
+            try:
+                self.registrations.register(
+                    cursor, VerifiedRecordingFacts(recorded, tuple(projected))
                 )
-            recording = ContinuousRecording(
-                schema_version="continuous-recording/v2",
-                scope=target,
-                recording_id=command.recording_id,
-                recording_upload_id=uid,
-                rollout_id=command.rollout_id,
-                data_package_id=command.data_package_id,
-                collection_task_id=command.collection_task_id,
-                collection_job_id=command.collection_job_id,
-                robot_id=command.robot_id,
-                device_id=command.device_id,
-                capture_started_at=command.capture_started_at,
-                capture_ended_at=command.capture_ended_at,
-                duration_ns=recording_duration_ns(
-                    command.capture_started_at, command.capture_ended_at
-                ),
-                source_sha256=canonical_hash(
-                    [{"asset_id": str(a.asset_id), "sha256": a.manifest.sha256} for a in projected]
-                ),
-                manifest_fingerprint=recorded.manifest_sha256,
-                video_asset_count=len(command.recording_config.cameras),
-                etag='"v1"',
-                created_at=now,
-                updated_at=now,
-            )
-            cursor.execute(
-                """SELECT recording_upload_id FROM ingest.continuous_recordings
-                WHERE organization_id=%s
-                AND project_id=%s
-                AND region_code=%s
-                AND recording_id=%s""",
-                (*scope, recording.recording_id),
-            )
-            prior = cursor.fetchone()
-            if prior and str(prior[0]) != str(uid):
-                raise RecordingBridgeError("recording owned by another upload")
-            cursor.execute(
-                """INSERT INTO ingest.continuous_recordings
-                (organization_id,project_id,region_code,recording_id,upload_session_id,recording_upload_id,
-                 rollout_id,data_package_id,collection_task_id,collection_job_id,robot_id,device_id,
-                 capture_started_at,capture_ended_at,duration_ns,source_sha256,manifest_fingerprint,video_asset_count,
-                 status,current_revision,finalized_revision,resource_version,recording_document,created_at,updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                %s,%s,%s::jsonb,%s,%s)
-                ON CONFLICT (organization_id,project_id,region_code,recording_id) DO NOTHING""",
-                _recording_values(recording),
-            )
+            except RecordingRegistrationConflict as exc:
+                raise RecordingBridgeError(str(exc)) from exc
             cursor.execute(
                 """UPDATE ingest.raw_ingest_jobs
                 SET status='SUCCEEDED',last_error_code=NULL,updated_at=clock_timestamp()
@@ -437,20 +364,15 @@ def result(connections, upload):
         connections() as connection,
         connection.cursor() as cursor,
     ):
-        cursor.execute(
-            """SELECT recording_id,status FROM ingest.continuous_recordings
-            WHERE organization_id=%s
-            AND project_id=%s
-            AND region_code=%s
-            AND recording_upload_id=%s""",
-            (
-                upload.target.organization_id,
-                upload.target.project_id,
-                upload.target.region_code,
-                recording_upload_id(upload.upload_id),
+        row = PostgresRecordingRegistration.state_for_upload(
+            cursor,
+            RecordingScope(
+                organization_id=upload.target.organization_id,
+                project_id=upload.target.project_id,
+                region_code=upload.target.region_code,
             ),
+            recording_upload_id(upload.upload_id),
         )
-        row = cursor.fetchone()
         cursor.execute(
             """SELECT last_error_code,publish_attempts FROM core.outbox_events
             WHERE organization_id=%s AND project_id=%s AND region_code=%s AND event_id=%s""",
