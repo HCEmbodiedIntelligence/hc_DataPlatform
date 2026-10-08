@@ -6,6 +6,9 @@ import asyncio
 from typing import Protocol
 
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.ingest.planning_errors import (
+    IngestWorkflowPlanBlocked as IngestWorkflowPlanBlocked,
+)
 
 from .models import (
     IngestRolloutWorkflowInput,
@@ -15,10 +18,6 @@ from .models import (
 )
 from .names import INGEST_ROLLOUT_WORKFLOW
 from .service import TemporalWorkflowLauncher
-
-
-class IngestWorkflowPlanBlocked(RuntimeError):
-    code = "INGEST_WORKFLOW_PLAN_BLOCKED"
 
 
 class IngestWorkflowInputResolver(Protocol):

@@ -13,7 +13,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from hc_data_platform.alignment.models import AlignmentInputV1, AlignmentProfileV1, TimedSampleV1
+from hc_data_platform.annotation.ingest_queries import (
+    DatasetSchemaTargetsQuery,
+    dataset_schema_targets,
+)
 from hc_data_platform.annotation.sampling import FrameSelectionSampler, SamplerFactory
+from hc_data_platform.collection_tasks.ingest_queries import TaskDatasetQuery, task_dataset
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser, preflight_manifest
 from hc_data_platform.ingest.models import (
@@ -29,6 +34,7 @@ from hc_data_platform.ingest.projection_metadata import (
     build_alignment_metadata,
 )
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository, RawSource
+from hc_data_platform.ingest.schema_planning import DatasetSchemaBuilder, build_dataset_schema
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import ArtifactWorkspace
 from hc_data_platform.object_storage.checksums import crc64_ecma
@@ -40,7 +46,6 @@ from hc_data_platform.verification.models import (
     TopicInventoryV1,
     VerificationStatus,
 )
-from hc_data_platform.workflow.ingest_plan import PostgresIngestWorkflowInputResolver
 from hc_data_platform.workflow.models import (
     AlignmentActivityInput,
     FrameSelectionManifestRefV1,
@@ -75,6 +80,9 @@ class LeRobotPipeline:
         cache_ttl_hours: int = 24,
         quality_profile_factory: Callable[[NativeProfile, int], QualityProfileV1] = quality_profile,
         episode_packages=None,
+        task_datasets: TaskDatasetQuery = task_dataset,
+        schema_targets: DatasetSchemaTargetsQuery = dataset_schema_targets,
+        schema_builder: DatasetSchemaBuilder = build_dataset_schema,
         sampler_factory: SamplerFactory = FrameSelectionSampler,
         metadata_builder: AlignmentMetadataBuilder = build_alignment_metadata,
     ) -> None:
@@ -85,6 +93,9 @@ class LeRobotPipeline:
         self.storage = storage
         self.catalog = catalog
         self.episode_packages = episode_packages
+        self.task_datasets = task_datasets
+        self.schema_targets = schema_targets
+        self.schema_builder = schema_builder
         self.staging = staging
         self.cache_root = cache_root
         self.cache = SourceCache(
@@ -449,7 +460,7 @@ class LeRobotPipeline:
         )
         profile = self.quality_profile_factory(native_profile, int(episode.fps))
         with self.connections() as connection, connection.cursor() as cursor:
-            dataset = PostgresIngestWorkflowInputResolver._task_dataset(
+            dataset = self.task_datasets(
                 cursor,
                 organization_id=task.organization_id,
                 project_id=task.project_id,
@@ -457,8 +468,9 @@ class LeRobotPipeline:
             )
             if dataset != task.dataset_id:
                 raise ValueError("native collection task Dataset changed")
-            targets = PostgresIngestWorkflowInputResolver._dataset_schema_targets(
+            targets = self.schema_targets(
                 cursor,
+                organization_id=task.organization_id,
                 project_id=task.project_id,
                 storage_region_code=task.region_code,
                 dataset_id=dataset,
@@ -468,7 +480,7 @@ class LeRobotPipeline:
                 "请先在标签体系中发布并绑定当前数据集的标注 Schema，再重试处理。"
             )
         schema_id = targets[0]
-        snapshot = PostgresIngestWorkflowInputResolver._dataset_schema_candidate(
+        snapshot = self.schema_builder(
             project_id=task.project_id,
             dataset_id=dataset,
             schema_snapshot_id=schema_id,

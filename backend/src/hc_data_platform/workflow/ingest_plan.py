@@ -18,26 +18,30 @@ from pathlib import Path
 from typing import IO, Any, cast
 
 from PIL import Image, ImageStat, UnidentifiedImageError
-from pydantic import TypeAdapter, ValidationError
 
 from hc_data_platform.alignment.models import (
     AlignmentInputV1,
     AlignmentProfileV1,
     TimedSampleV1,
 )
+from hc_data_platform.annotation.ingest_queries import (
+    DatasetSchemaTargetsQuery,
+    dataset_schema_targets,
+)
 from hc_data_platform.annotation.sampling import (
     FrameSelectionSampler,
     FrameSelectionSamplerPort,
     SamplerFactory,
 )
+from hc_data_platform.collection_tasks.ingest_queries import TaskDatasetQuery, task_dataset
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.dataset_registry.models import DatasetId
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.ingest.projection_metadata import (
     AlignmentMetadataBuilder,
     build_alignment_metadata,
 )
 from hc_data_platform.ingest.projection_metadata import datetime_ns as _datetime_ns
+from hc_data_platform.ingest.schema_planning import DatasetSchemaBuilder, build_dataset_schema
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import StagedArtifactStore
@@ -70,8 +74,6 @@ from .models import (
     VerificationActivityInput,
 )
 
-_DATASET_ID_ADAPTER = TypeAdapter(DatasetId)
-
 
 class PostgresIngestWorkflowInputResolver:
     """Build a bounded workflow input from exact, tenant-scoped persisted facts.
@@ -94,6 +96,9 @@ class PostgresIngestWorkflowInputResolver:
         projection_staging_root: Path = Path("/tmp/hc-data/projection-staging"),
         projection_ttl: timedelta = timedelta(hours=24),
         package_schemas: Any = None,
+        task_datasets: TaskDatasetQuery = task_dataset,
+        schema_targets: DatasetSchemaTargetsQuery = dataset_schema_targets,
+        schema_builder: DatasetSchemaBuilder = build_dataset_schema,
         sampler_factory: SamplerFactory = FrameSelectionSampler,
         metadata_builder: AlignmentMetadataBuilder = build_alignment_metadata,
     ) -> None:
@@ -108,6 +113,9 @@ class PostgresIngestWorkflowInputResolver:
         self._projection_staging_root = projection_staging_root.resolve()
         self._projection_ttl = projection_ttl
         self._package_schemas = package_schemas
+        self._task_datasets = task_datasets
+        self._schema_targets = schema_targets
+        self._schema_builder = schema_builder
         self._sampler_factory = sampler_factory
         self._metadata_builder = metadata_builder
 
@@ -226,14 +234,15 @@ class PostgresIngestWorkflowInputResolver:
                     manifest_fingerprint=manifest_fingerprint,
                 )
                 profile = self._quality_profile(cursor, project_id, preflight)
-                dataset_id = self._task_dataset(
+                dataset_id = self._task_datasets(
                     cursor,
                     organization_id=organization_id,
                     project_id=project_id,
                     collection_task_id=preflight.manifest.task_id,
                 )
-                schema_snapshot_ids = self._dataset_schema_targets(
+                schema_snapshot_ids = self._schema_targets(
                     cursor,
+                    organization_id=organization_id,
                     project_id=project_id,
                     storage_region_code=region_code,
                     dataset_id=dataset_id,
@@ -593,58 +602,6 @@ class PostgresIngestWorkflowInputResolver:
             )
         return candidates[0]
 
-    @staticmethod
-    def _task_dataset(
-        cursor: Any,
-        *,
-        organization_id: str,
-        project_id: str,
-        collection_task_id: str,
-    ) -> str:
-        cursor.execute(
-            """
-            SELECT dataset_id
-            FROM collection_tasks.collection_tasks
-            WHERE organization_id = %s AND project_id = %s
-              AND collection_task_id = %s
-            """,
-            (organization_id, project_id, collection_task_id),
-        )
-        raw = cursor.fetchone()
-        if raw is None:
-            raise _blocked("the Manifest task must reference one collection task in the project")
-        dataset_id = str(raw[0])
-        try:
-            _DATASET_ID_ADAPTER.validate_python(dataset_id)
-        except ValidationError as exc:
-            raise _blocked("the collection task has an invalid Dataset identity") from exc
-        return dataset_id
-
-    @staticmethod
-    def _dataset_schema_targets(
-        cursor: Any,
-        *,
-        project_id: str,
-        storage_region_code: str,
-        dataset_id: str,
-    ) -> tuple[str, ...]:
-        cursor.execute(
-            """
-            SELECT dataset_schema_snapshot_id
-            FROM annotation.tag_schema_bindings
-            WHERE project_id = %s AND region_code = %s AND task_kind = 'TAGGING'
-              AND dataset_id = %s AND organization_id = %s
-            ORDER BY dataset_schema_snapshot_id
-            """,
-            (
-                project_id,
-                storage_region_code,
-                dataset_id,
-                current_request_context().organization_id,
-            ),
-        )
-        return tuple(str(row[0]) for row in cursor.fetchall())
-
     def _select_dataset_schema(
         self,
         *,
@@ -656,7 +613,7 @@ class PostgresIngestWorkflowInputResolver:
     ) -> tuple[str, str, DatasetSchemaSnapshot]:
         compatible: list[tuple[str, DatasetSchemaSnapshot]] = []
         for schema_snapshot_id in schema_snapshot_ids:
-            candidate = self._dataset_schema_candidate(
+            candidate = self._schema_builder(
                 project_id=project_id,
                 dataset_id=dataset_id,
                 schema_snapshot_id=schema_snapshot_id,
@@ -679,27 +636,22 @@ class PostgresIngestWorkflowInputResolver:
             raise _blocked("the compatible dataset schema could not be registered") from exc
         return dataset_id, schema_snapshot_id, candidate
 
+    _task_dataset = staticmethod(task_dataset)
+    _dataset_schema_candidate = staticmethod(build_dataset_schema)
+
     @staticmethod
-    def _dataset_schema_candidate(
-        *,
-        project_id: str,
-        dataset_id: str,
-        schema_snapshot_id: str,
-        preflight: ManifestPreflightResultV1,
-        profile: QualityProfileV1,
-    ) -> DatasetSchemaSnapshot:
-        frequency_hz = profile.default_timing.target_frequency_hz
-        if not 1 <= frequency_hz <= 1000:
-            raise _blocked("the quality profile frequency cannot be used for alignment")
-        # Camera rows carry compact aligned-media frame references. Raw JPEG bytes
-        # remain only in short-lived alignment staging and are never committed to Lance.
-        fields = {topic: "json" for topic in preflight.manifest.actual_topics}
-        return DatasetSchemaSnapshot.create(
+    def _dataset_schema_targets(
+        cursor: Any, *, project_id: str, storage_region_code: str, dataset_id: str
+    ) -> tuple[str, ...]:
+        organization_id = current_request_context().organization_id
+        if organization_id is None:
+            raise _blocked("schema targets require an organization scope")
+        return dataset_schema_targets(
+            cursor,
+            organization_id=organization_id,
             project_id=project_id,
+            storage_region_code=storage_region_code,
             dataset_id=dataset_id,
-            schema_snapshot_id=schema_snapshot_id,
-            frequency_hz=float(frequency_hz),
-            fields=fields,
         )
 
     def _materialize_mcap(

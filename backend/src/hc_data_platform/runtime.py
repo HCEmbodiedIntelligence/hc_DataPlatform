@@ -63,6 +63,9 @@ from hc_data_platform.annotation.frame_selection_lifecycle import (
     FrameSelectionLifecycleCollector,
     PostgresFrameSelectionLifecycleRepository,
 )
+from hc_data_platform.annotation.ingest_queries import (
+    dataset_schema_targets,
+)
 from hc_data_platform.annotation.postgres import PostgresAnnotationRepository
 from hc_data_platform.annotation.router import configure_annotation
 from hc_data_platform.annotation.sampling import FrameSelectionSampler
@@ -89,6 +92,7 @@ from hc_data_platform.cleaning_workbench.models import (
 from hc_data_platform.cleaning_workbench.repository import PostgresCleaningWorkbenchRepository
 from hc_data_platform.cleaning_workbench.router import configure_cleaning_workbench
 from hc_data_platform.cleaning_workbench.service import CleaningWorkbenchService
+from hc_data_platform.collection_tasks.ingest_queries import task_dataset
 from hc_data_platform.collection_tasks.models import CollectionTaskRecord
 from hc_data_platform.collection_tasks.postgres import PostgresCollectionTaskRepository
 from hc_data_platform.collection_tasks.router import configure_collection_tasks
@@ -144,6 +148,7 @@ from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.projection_metadata import build_alignment_metadata
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
+from hc_data_platform.ingest.schema_planning import build_dataset_schema
 from hc_data_platform.ingest.service import UploadSessionService
 from hc_data_platform.integrations.logical_samples import (
     EpisodeSampleAdapter,
@@ -1031,6 +1036,9 @@ def build_runtime(
         catalog,
         shared_staging_store,
         Path(resolved.alignment_staging_root) / "lerobot-cache",
+        task_datasets=task_dataset,
+        schema_targets=dataset_schema_targets,
+        schema_builder=build_dataset_schema,
         sampler_factory=FrameSelectionSampler,
         metadata_builder=build_alignment_metadata,
         cache_max_bytes=resolved.lerobot_cache_max_bytes,
@@ -1069,6 +1077,9 @@ def build_runtime(
             projection_store=shared_staging_store,
             projection_staging_root=(Path(resolved.alignment_staging_root) / "raw-localization"),
             projection_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
+            task_datasets=task_dataset,
+            schema_targets=dataset_schema_targets,
+            schema_builder=build_dataset_schema,
             sampler_factory=FrameSelectionSampler,
             metadata_builder=build_alignment_metadata,
             package_schemas=episode_packages.schemas,
@@ -1380,6 +1391,9 @@ def build_worker_outbox(
         connection_factory,
         ChunkedObjectStorageReader(object_storage),
         catalog,
+        task_datasets=task_dataset,
+        schema_targets=dataset_schema_targets,
+        schema_builder=build_dataset_schema,
         sampler_factory=FrameSelectionSampler,
         metadata_builder=build_alignment_metadata,
         package_schemas=EpisodeSchemas(PostgresEpisodeStore(connection_factory)),

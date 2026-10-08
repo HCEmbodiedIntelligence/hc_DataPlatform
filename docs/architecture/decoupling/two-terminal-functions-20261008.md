@@ -192,3 +192,21 @@ B017/019已在实际浏览器完成有效撤权：预检200后提交403，页面
 并禁用发布；旧固定版本仍可读。原B011辅助撤权不足导致201的证据保留。
 共同候选尚待B实际点击P06逻辑链路；P08/上传预览、冻结模型、非时序入口
 尚未就绪，不将F05或全部解耦标完成。
+
+
+## A：B09 剩余私有规划调用已迁移
+
+collection_tasks.ingest_queries 拥有任务数据集查询，annotation.ingest_queries
+拥有已绑定的标签schema目标查询；均接收调用者cursor与显式组织范围，不
+自行打开连接或提交。ingest.schema_planning拥有纯schema候选构造。
+runtime向MCAP resolver和LeRobotPipeline显式注入三个公共端口，原生处理器
+不再导入workflow.ingest_plan或调用任何工作流私有函数。错误类移到纯规划
+错误模块并保留历史名称/code；旧workflow静态入口仅保留兼容，不由业务调用。
+
+105项基础/架构与纯导入检查、6项真实MCAP/原生RGB-D处理、1项真实生产
+worker登记和HTTP读回、27项Temporal取消/重试/历史重放全部通过且零跳过；
+4个新增文件严格mypy、Ruff、架构检查及OpenAPI通过，runtime仍5c2dc66b。
+首次版本回放命令误写publishing测试目录导致零收集，修正为workflow目录后
+27项通过，保留失败记录。证据ingest-planning-{checks,services,worker,
+workflows-v2}.xml。B09现在可关闭；B08的DTO依赖、B10启动适配、B14其他
+业务查询/配置和B15运行时算法仍待继续，未随本批一起标完成。

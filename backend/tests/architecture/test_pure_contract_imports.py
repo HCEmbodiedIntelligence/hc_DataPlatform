@@ -13,6 +13,9 @@ import pytest
     [
         ("annotation.sampling", "FrameSelectionSampler"),
         ("ingest.projection_metadata", "build_alignment_metadata"),
+        ("ingest.schema_planning", "build_dataset_schema"),
+        ("collection_tasks.ingest_queries", "TaskDatasetQuery"),
+        ("annotation.ingest_queries", "DatasetSchemaTargetsQuery"),
         ("core.execution", "ExecutionScope"),
         ("lance_catalog", "DatasetSchemaSnapshot"),
         ("lance_catalog", "StepReaderPort"),
@@ -79,6 +82,14 @@ if symbol == 'DatasetSchemaSnapshot':
             "from hc_data_platform.workflow.ingest_plan import _FrameSelectionSampler",
         ),
         ("annotation/sampling.py", "import temporalio"),
+        ("annotation/ingest_queries.py", "import hc_data_platform.workflow.ingest_plan"),
+        ("collection_tasks/ingest_queries.py", "import hc_data_platform.workflow.ingest_plan"),
+        (
+            "lerobot_imports/pipeline.py",
+            "from hc_data_platform.workflow.ingest_plan import "
+            "PostgresIngestWorkflowInputResolver\n"
+            "PostgresIngestWorkflowInputResolver._task_dataset(None)",
+        ),
         (
             "ingest/projection_metadata.py",
             "from hc_data_platform.workflow.models import IngestProjectionSourceV1",

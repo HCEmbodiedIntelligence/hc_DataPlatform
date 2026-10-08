@@ -120,6 +120,10 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
         "hc_data_platform.annotation.sampling",
         "hc_data_platform.ingest.projection_metadata",
         "hc_data_platform.core.execution",
+        "hc_data_platform.ingest.schema_planning",
+        "hc_data_platform.ingest.planning_errors",
+        "hc_data_platform.collection_tasks.ingest_queries",
+        "hc_data_platform.annotation.ingest_queries",
     }
     for line, target in imports(tree, package):
         if module in pure_processing and any(
@@ -139,6 +143,17 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
             and target.rsplit(".", 1)[-1].startswith("_")
         ):
             failures.add(f"{line}: processor must not import workflow private helpers")
+    if module.startswith(("hc_data_platform.robot_ingest.", "hc_data_platform.lerobot_imports.")):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "_worker_scope",
+                "_FrameSelectionSampler",
+                "_alignment_metadata",
+                "_task_dataset",
+                "_dataset_schema_targets",
+                "_dataset_schema_candidate",
+            }:
+                failures.add(f"{node.lineno}: processor must not call private workflow helpers")
     for line, target in imports(tree, package):
         if any(matches(target, forbidden) for forbidden in helper_boundaries.get(module, ())):
             failures.add(f"{line}: shared helper must not reintroduce its caller dependency")
