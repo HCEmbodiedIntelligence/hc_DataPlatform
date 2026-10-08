@@ -110,7 +110,7 @@ def test_logical_media_http_both_stores_decode_range_and_revoke(release_source):
                         ).status_code
                         == 403
                     )
-                    if kind == "episode" and stream["kind"] == "DEPTH":
+                    if stream["kind"] == "DEPTH":
                         assert grant["kind"] == "depth-preview" and grant["colorizer"] is not None
                         assert (grant["depth_min_m"], grant["depth_max_m"]) == (0.01, 10)
                     last_endpoint = endpoint
@@ -130,3 +130,53 @@ def test_logical_media_http_both_stores_decode_range_and_revoke(release_source):
                 "aligned_media.authorized",
             }
         assert client.post(last_endpoint, headers=headers, params=params).status_code == 403
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("batch_source", [{"logical_media": True}], indirect=True)
+def test_legacy_raw_depth_without_verified_conversion_is_not_browser_video(batch_source):  # noqa: F811
+    batches, plans, _, _, _ = batch_source
+    source = plans[0].source
+    ident = source.identity
+    with (
+        scoped(source),
+        httpx.Client(base_url="http://gateway:8080", timeout=45, trust_env=False) as client,
+    ):
+        _, headers = register_and_grant(
+            client,
+            batches.packages,
+            ident,
+            capabilities=["dataset_version.read", "episode.read"],
+        )
+        root = f"/api/v1/projects/{ident.project_id}/datasets/{ident.dataset_id}"
+        response = client.get(root + "/versions/version_lance_2/bootstrap", headers=headers)
+        assert response.status_code == 200, response.text
+        token = response.json()["data"]["snapshot_token"]
+        with batches.packages.transaction() as cursor:
+            cursor.execute(
+                """SELECT revision_document FROM dataset_registry.dataset_version_episode_revisions
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s
+                  AND version_id='version_lance_2' AND episode_id=%s""",
+                (*ident.key,),
+            )
+            revision = cursor.fetchone()[0]
+        path = (
+            f"/api/v1/projects/{ident.project_id}/regions/{ident.region_code}"
+            f"/datasets/{ident.dataset_id}/versions/version_lance_2"
+            f"/episode-revisions/{revision['revision_id']}/logical"
+        )
+        view = client.get(path, headers=headers, params={"snapshot_token": token})
+        assert view.status_code == 200, view.text
+        params = {"snapshot_token": token, "snapshot_id": view.json()["snapshot_id"]}
+        depth = next(s for s in revision["streams"] if s["kind"] == "DEPTH")
+        endpoint = path + f"/streams/{depth['episode_stream_id']}/media/authorize"
+        response = client.post(endpoint, headers=headers, params=params)
+        assert response.status_code == 425, response.text
+        assert response.json()["code"] == "LEGACY_DEPTH_PREVIEW_NOT_READY"
+        assert "media_url" not in response.json()
+        with batches.packages.transaction() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM episode_store.migration_batches WHERE organization_id=%s",
+                (ident.organization_id,),
+            )
+            assert cursor.fetchone()[0] == 0  # No implicit migration during an authorized read.

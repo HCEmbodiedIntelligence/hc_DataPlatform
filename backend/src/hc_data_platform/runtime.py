@@ -136,9 +136,11 @@ from hc_data_platform.dataset_registry.models import (
 )
 from hc_data_platform.dataset_registry.projection_writer import DatasetProjectionWriter
 from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
+from hc_data_platform.dataset_registry.revision_proof import revision_row_hash
 from hc_data_platform.dataset_registry.router import configure_dataset_page
 from hc_data_platform.dataset_registry.service import DatasetPageService
 from hc_data_platform.dataset_registry.tag_projection import PostgresTagProjector
+from hc_data_platform.episode_store.legacy_previews import LegacyConversionPreviews
 from hc_data_platform.ingest.device_facts import (
     DeviceCaptureFactService,
     PostgresDeviceCaptureFactRepository,
@@ -1121,7 +1123,17 @@ def build_runtime(
         SampleAdapters(
             (
                 EpisodeSampleAdapter(episode_packages.steps, episode_packages.previews),
-                LanceSampleAdapter(catalog, aligned_media, aligned_media_audit),
+                LanceSampleAdapter(
+                    catalog,
+                    aligned_media,
+                    aligned_media_audit,
+                    depth_previews=LegacyConversionPreviews(
+                        episode_packages.repository,
+                        episode_packages.files,
+                        episode_packages.previews,
+                        revision_row_hash,
+                    ),
+                ),
             )
         ),
     )

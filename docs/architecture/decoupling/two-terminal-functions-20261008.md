@@ -311,3 +311,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 共同代码 `69ff7dd8842da5cd2d5afaa1b5ab864bb40a30eb` 包含 MCAP numeric QC `12bdbe9b` 和 B 撤权后授权刷新 `7bda9314`，保留第九批原生能力。6 项实际 MCAP/native HTTP/PG/MinIO/Temporal、1064 全量前端、54 架构门禁、类型/runtime 3c6d4335 生成核对和精确代码 commit 生产构建通过，零跳过。证据 integration-batch-ten-*；首条服务命令测试路径错误、前端容器无 bash 的启动失败保留，不作为测试通过。B046 撤权缓存浏览器失败须在新候选复验，旧 MCAP RISK 报告不改写。
 
 B050 已在原真实上传批次验证 Raw RGB 实际播放、深度 DOWNLOAD_ONLY 提示、下载 15318 字节及 SHA 与旧上传完全相同，原始媒体分类闭环通过。B048 历史 Lance 深度预览仍为独立缺口；B049 冻结模型 ID 正在下一检查点修复，二者不计本批完成。
+
+### B048 历史 Lance 深度固定预览
+
+Lance 适配器不再把深度原文件声明为video。对已存在且已发布/回退保留的迁移，按原dataset revision完整行哈希查唯一转换计划，并重新核对固定包、迁移源等价报告、通道到feature映射，读取现成官方Colorizer预览。原Lance样本/原视频/原hash/版本指针不改，不自动执行迁移或编码。尚无可信已发布转换预览的历史深度明确425 LEGACY_DEPTH_PREVIEW_NOT_READY；这是受限兼容，不宣称所有未迁移深度均能回放。
+
+2项真实HTTP/PG/MinIO通过：两种存储RGB/depth实际解码、SHA/Range/401/403/409/撤权，以及无转换时425且没有新迁移；107逻辑/架构检查、1文件mypy、Ruff、架构/OpenAPI通过，契约仍3c6d4335。首轮旧SimpleNamespace测试缺正式kind已补真实RGB字段，失败证据保留。证据legacy-depth-preview-{services-v2,checks-v2}.xml。候选原持久Lance浏览器复验待部署，不以HTTP成功替代浏览器。
