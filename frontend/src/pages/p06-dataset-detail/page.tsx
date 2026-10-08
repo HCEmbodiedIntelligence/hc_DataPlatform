@@ -898,7 +898,7 @@ export function DatasetDetailPage() {
                         <strong>{episodes.data.items.length} 条</strong>
                       </div>
                       <div>
-                        <span>固定工作快照</span>
+                        <span>固定数据版本</span>
                         <code title={chosenVersionId}>{chosenVersionId}</code>
                       </div>
                     </section>

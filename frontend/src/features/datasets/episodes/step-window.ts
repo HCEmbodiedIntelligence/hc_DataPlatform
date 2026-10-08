@@ -192,39 +192,58 @@ export function decodeStepRecords(
       true,
     );
 
+  return decodeTemporalValues(
+    records.map((record) => ({
+      timestampNs: record.timestamp_ns,
+      value: record.modalities[binding.modality_key],
+      valid: record.valid[binding.modality_key] !== false,
+    })),
+    binding.value_kind,
+  );
+}
+
+/** Decode domain samples; no physical storage binding or fabricated time axis. */
+export function decodeTemporalValues(
+  samples: readonly {
+    readonly timestampNs: string;
+    readonly value: unknown;
+    readonly valid: boolean;
+  }[],
+  valueKind: StepValueBinding["value_kind"],
+): ViewerWindowPayload {
   const timestampsNs: string[] = [];
   const values: (readonly number[])[] = [];
   let series: readonly ViewerSeriesDescriptor[] | undefined;
   const pointFrames: ViewerPointFrame[] = [];
   const events: ViewerEventSample[] = [];
-  for (const record of records) {
-    const value = record.modalities[binding.modality_key];
+  for (const sample of samples) {
+    const value = sample.value;
     // sample_valid is the aggregate row flag: one missing camera can make it
     // false even when this numeric channel is valid.  Decode by the
     // channel-specific validity bit and omit only that channel's gaps.
-    if (record.valid[binding.modality_key] === false) continue;
-    timestampsNs.push(record.timestamp_ns);
-    if (binding.value_kind === "POINTCLOUD_XYZ") {
+    if (!sample.valid) continue;
+    timestampsNs.push(sample.timestampNs);
+    if (valueKind === "POINTCLOUD_XYZ") {
       const points = xyzPoints(value);
       if (points === null)
         throw datasetDataError(
           "P06_POINTCLOUD_VALUE_INVALID",
           "点云样本不符合已声明的 XYZ 数据格式。",
         );
-      pointFrames.push({ timestampNs: record.timestamp_ns, points });
+      pointFrames.push({ timestampNs: sample.timestampNs, points });
       continue;
     }
-    if (binding.value_kind === "EVENT") {
+    if (valueKind === "EVENT") {
       const label = eventLabel(value);
       if (label === null)
         throw datasetDataError(
           "P06_EVENT_VALUE_INVALID",
           "事件样本不包含可显示的事件值。",
         );
-      events.push({ timestampNs: record.timestamp_ns, label });
+      events.push({ timestampNs: sample.timestampNs, label });
       continue;
     }
-    const vector = numericVector(value, binding.value_kind);
+    const vector = numericVector(value, valueKind);
     if (vector === null)
       throw datasetDataError(
         "P06_NUMERIC_VALUE_INVALID",

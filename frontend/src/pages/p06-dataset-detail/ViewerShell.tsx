@@ -34,10 +34,8 @@ import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-sc
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
 import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
 import { reviewDataReference } from "../../features/datasets/episodes/data-reviews";
-import {
-  adaptP06ViewerStreams,
-  selectEpisodeJointStream,
-} from "./viewer-stream-adapter";
+import { selectEpisodeJointStream } from "../../features/datasets/episodes/logical-viewer";
+import { useLogicalViewer } from "../../features/datasets/episodes/use-logical-viewer";
 import styles from "./styles.module.css";
 
 const invalidDataset = "dataset_invalid" as DatasetId;
@@ -160,10 +158,12 @@ export function EpisodeViewerShell() {
     }
   }, [revision, selection]);
 
-  const streams = useMemo(
-    () => (revision ? adaptP06ViewerStreams(revision, datasetId) : []),
-    [datasetId, revision],
+  const logical = useLogicalViewer(
+    revision,
+    query.data?.bootstrap.snapshotToken,
+    capabilities.has("episode.read"),
   );
+  const streams = logical.streams;
   const cameras = useMemo(
     () =>
       streams.filter(
@@ -312,6 +312,24 @@ export function EpisodeViewerShell() {
       data-page-kind="episode-viewer"
       data-navigation-owner-page-id="P06"
     >
+      {logical.isPending && <Alert type="info" title="正在读取固定数据快照…" />}
+      {logical.error && (
+        <Alert
+          type="error"
+          title="固定数据读取失败"
+          description={logical.error.message}
+          action={
+            <Button onClick={() => void logical.refetch()}>重新读取</Button>
+          }
+        />
+      )}
+      {logical.data?.snapshot.streams.some((stream) => !stream.temporal) && (
+        <Alert
+          type="info"
+          title="此快照包含独立样本"
+          description="独立样本没有时间轴，不能在同步回放中显示。"
+        />
+      )}
       <SynchronizedEpisodeWorkbench
         adapter={{
           id: `episode-${episodeId}`,
