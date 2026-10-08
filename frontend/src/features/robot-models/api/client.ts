@@ -103,6 +103,11 @@ const assetDownloadWireSchema = z
   })
   .strict();
 
+export {
+  assetSchema as robotModelAssetWire,
+  assetDownloadWireSchema as robotModelAssetAuthorizationWire,
+};
+
 const assetPartAuthorizationWireSchema = z
   .object({
     part_number: z.number().int().min(1).max(10_000),

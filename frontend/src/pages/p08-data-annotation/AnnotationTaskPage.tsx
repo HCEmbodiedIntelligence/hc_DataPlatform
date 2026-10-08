@@ -13,7 +13,7 @@ import {
   createPlaybackClock,
   DataVisualizationWorkbench,
 } from "../../features/viewer";
-import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
+import { useLogicalRobotScene } from "../../features/datasets/episodes/use-logical-robot-scene";
 import { AnnotationWorkbenchView } from "./AnnotationWorkbenchView";
 import type {
   AnnotationWorkbenchPermissions,
@@ -322,10 +322,10 @@ function RuntimeAnnotationTaskPage({
       bundle && scope ? buildRuntimeJointAngleStream({ bundle, scope }) : null,
     [bundle, scope],
   );
-  const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
-    bundle?.manifest?.robot_id ?? null,
+  const { robotScene, robotSceneUnavailableReason } = useLogicalRobotScene(
+    canRead ? (bundle?.logical ?? null) : null,
     jointAngleStream,
-    scope,
+    bundle?.manifest?.robot_id ?? null,
     describeEpisodeRobotPreview(bundle?.manifest?.robot_id ?? null),
   );
   const baseline = bundle

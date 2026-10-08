@@ -106,7 +106,7 @@ const mediaWire = z.object({
 function mismatch(message: string): never {
   throw datasetDataError("LOGICAL_IDENTITY_MISMATCH", message);
 }
-function endpoint(selection: LogicalSelection) {
+export function logicalDataEndpoint(selection: LogicalSelection) {
   const { scope, datasetId, versionId, revisionId } = selection;
   if (
     !scope.organizationId ||
@@ -118,6 +118,7 @@ function endpoint(selection: LogicalSelection) {
   const part = encodeURIComponent;
   return `/projects/${part(scope.projectId)}/regions/${part(scope.regionCode)}/datasets/${part(datasetId)}/versions/${part(versionId)}/episode-revisions/${part(revisionId)}/logical`;
 }
+const endpoint = logicalDataEndpoint;
 export async function fetchLogicalSnapshot(
   selection: LogicalSelection,
   signal: AbortSignal,

@@ -44,8 +44,8 @@ vi.mock("../../features/cleaning/routing", async (original) => ({
   ...(await original<typeof import("../../features/cleaning/routing")>()),
   createManualIssueCommand: state.createIssue,
 }));
-vi.mock("../../features/viewer/use-episode-robot-scene", () => ({
-  useEpisodeRobotScene: () => ({
+vi.mock("../../features/datasets/episodes/use-logical-robot-scene", () => ({
+  useLogicalRobotScene: () => ({
     robotSceneUnavailableReason: "当前 Episode 未绑定机器人模型。",
   }),
 }));
