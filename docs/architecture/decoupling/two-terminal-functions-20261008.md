@@ -264,3 +264,9 @@ dataset被404拒绝已保留，补正常创建后复验，无放宽产品检查�
 R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，1027测试
 及第六批联合检查通过。B031以普通浏览器完成首次/更新发布、真实WebGL画布、
 旧固定模型/映射读取，故R05现在可关闭；R04数据绑定冻结仍单独在实施。
+
+### LeRobot 元数据处理能力（本轮后端待前端消费）
+
+新增实际 POST `lerobot-imports:capabilities`，显式组织/项目/区域和 upload.manage，返回元数据 SHA、`lerobot-native-episode/1` revision、存储/处理支持及阶段化拒绝原因。调用生产原生 profile 校验，float64 与额外特征保留，不依赖机器人型号前端白名单。只声明元数据适用性；上传 commit 仍核对原始 info 字节内容，worker 仍验证实际表格/视频/深度证据。
+
+新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。

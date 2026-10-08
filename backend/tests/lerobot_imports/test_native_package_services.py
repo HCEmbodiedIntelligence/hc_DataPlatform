@@ -221,6 +221,10 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
             root, dataset_id=dataset, collection_task_id=task_id, robot_id=robot_id
         )
         manifest = source.manifest.model_dump(mode="json")
+        detection = client.post(base + ":capabilities", json={"info": manifest["info"]})
+        assert detection.status_code == 200, detection.text
+        assert detection.json()["processing_supported"] is True
+        manifest["processing_capability_revision"] = detection.json()["capability_revision"]
         result = client.post(base, json=manifest)
         assert result.status_code == 201, result.text
         grant = result.json()

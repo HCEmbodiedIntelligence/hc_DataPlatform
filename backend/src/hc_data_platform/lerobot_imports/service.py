@@ -541,6 +541,12 @@ class LeRobotWebUploadService:
             "resolved_revision": dataset_digest[:40],
             "episode_count": command.manifest.episode_count,
         }
+        if command.manifest.processing_mode == "PROCESS":
+            from .capabilities import NATIVE_PROCESSING_REVISION
+
+            raw_manifest["processing_capability_revision"] = (
+                command.manifest.processing_capability_revision or NATIVE_PROCESSING_REVISION
+            )
         # Raw source objects are immutable and byte-identical to the browser files.
         # Platform metadata is stored beside, never inside, the original source tree.
         self._storage.put_json(f"{root}/manifest.json", raw_manifest, if_none_match=False)
@@ -810,6 +816,9 @@ def _raw_content_digest(files: list[dict[str, object]], source_format: str = "LE
 
 def _canonical_manifest(manifest: CreateLeRobotImportV1) -> dict[str, object]:
     document = manifest.model_dump(mode="json")
+    # Preserve historical upload identity and in-flight session comparisons.
+    if manifest.processing_capability_revision is None:
+        document.pop("processing_capability_revision")
     files = document.get("files")
     if not isinstance(files, list):
         raise RuntimeError("validated LeRobot manifest files are unavailable")
