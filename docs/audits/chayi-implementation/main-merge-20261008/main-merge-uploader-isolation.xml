@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="1.281" timestamp="2026-10-08T10:13:19.869660+08:00" hostname="hcopenarm"><testcase classname="tests.test_isolation" name="test_install_and_upload_without_platform_files" time="1.273" /></testsuite></testsuites>

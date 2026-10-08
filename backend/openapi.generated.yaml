@@ -7331,6 +7331,130 @@ components:
       - data
       title: CollectionEpisodeSelection
       type: object
+    CollectionRelease:
+      additionalProperties: false
+      properties:
+        collection_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Collection Manifest Sha256
+          type: string
+        collection_version_id:
+          title: Collection Version Id
+          type: string
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Hash
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset_id:
+          title: Dataset Id
+          type: string
+        dataset_version:
+          title: Dataset Version
+          type: string
+        document_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Document Sha256
+          type: string
+        document_size:
+          exclusiveMinimum: 0.0
+          maximum: 67108864.0
+          title: Document Size
+          type: integer
+        eligible_episode_ids:
+          items:
+            type: string
+          minItems: 1
+          title: Eligible Episode Ids
+          type: array
+        excluded_episodes:
+          items:
+            $ref: '#/components/schemas/CollectionReleaseExclusion'
+          title: Excluded Episodes
+          type: array
+        format:
+          const: hc-collection-release/1
+          default: hc-collection-release/1
+          title: Format
+          type: string
+        version_id:
+          pattern: ^version_release_[0-9a-f]{32}$
+          title: Version Id
+          type: string
+      required:
+      - dataset_id
+      - dataset_version
+      - version_id
+      - collection_version_id
+      - collection_manifest_sha256
+      - content_hash
+      - document_sha256
+      - document_size
+      - eligible_episode_ids
+      - excluded_episodes
+      - created_at
+      title: CollectionRelease
+      type: object
+    CollectionReleaseExclusion:
+      additionalProperties: false
+      properties:
+        episode_id:
+          title: Episode Id
+          type: string
+        reason:
+          enum:
+          - ANNOTATION_NOT_APPROVED
+          - ANNOTATION_TASK_SELECTION_REQUIRED
+          title: Reason
+          type: string
+      required:
+      - episode_id
+      - reason
+      title: CollectionReleaseExclusion
+      type: object
+    CollectionReleasePreflight:
+      additionalProperties: false
+      properties:
+        collection_manifest_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Collection Manifest Sha256
+          type: string
+        collection_version_id:
+          title: Collection Version Id
+          type: string
+        content_hash:
+          pattern: ^[0-9a-f]{64}$
+          title: Content Hash
+          type: string
+        dataset_id:
+          title: Dataset Id
+          type: string
+        dataset_version:
+          title: Dataset Version
+          type: string
+        eligible_episode_ids:
+          items:
+            type: string
+          title: Eligible Episode Ids
+          type: array
+        excluded_episodes:
+          items:
+            $ref: '#/components/schemas/CollectionReleaseExclusion'
+          title: Excluded Episodes
+          type: array
+      required:
+      - dataset_id
+      - dataset_version
+      - collection_version_id
+      - collection_manifest_sha256
+      - content_hash
+      - eligible_episode_ids
+      - excluded_episodes
+      title: CollectionReleasePreflight
+      type: object
     CollectionTarget:
       additionalProperties: false
       properties:
@@ -21687,6 +21811,36 @@ components:
           type: string
       required:
       - status
+      type: object
+    PublishCollectionRelease:
+      additionalProperties: false
+      properties:
+        annotation_tasks:
+          additionalProperties:
+            type: string
+          maxProperties: 10000
+          title: Annotation Tasks
+          type: object
+        collection_version_id:
+          pattern: ^cv_[0-9a-f]{64}$
+          title: Collection Version Id
+          type: string
+        dataset_version:
+          maxLength: 64
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$
+          title: Dataset Version
+          type: string
+        expected_content_hash:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Expected Content Hash
+      required:
+      - dataset_version
+      - collection_version_id
+      title: PublishCollectionRelease
       type: object
     PublishDatasetRequestV1:
       additionalProperties: false
@@ -44821,6 +44975,144 @@ paths:
       summary: Test Data Source Connection
       tags:
       - data-sources
+  /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/collection-releases:
+    post:
+      operationId: publishCollectionRelease
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishCollectionRelease'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRelease'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Publish Collection Release
+      tags:
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/collection-releases/preflight:
+    post:
+      operationId: collectionReleasePreflight
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishCollectionRelease'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionReleasePreflight'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Collection Release Preflight
+      tags:
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/collection-releases/{dataset_version}:
+    get:
+      operationId: collectionRelease
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: dataset_version
+        required: true
+        schema:
+          title: Dataset Version
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionRelease'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Collection Release
+      tags:
+      - episode_data
   /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions:
     get:
       operationId: versions

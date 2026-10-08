@@ -4,9 +4,16 @@ Owner: this goal terminal; sequential implementation, no delegated agents.
 Baseline: `4933200c1e09dd1f70ecbaabcfa9c6afa404e771` on 2026-09-28.
 Execution: `/home/hc_op/workspace/hc_DataPlatform-chayi-work`, branch `feat/chayi-g1`.
 Current phase: G1 — W0–W6, W7 tooling/isolated rehearsal, W8 software acceptance.
+Current execution state (2026-10-08): goal paused by the user; only the separately
+authorized main-branch integration and its necessary checks are proceeding.
 2026-09-30 scope extension: automatically continue G2 and then G3 after each
 phase meets its completion conditions; see [goal sequence and authorization](goal-sequence.md).
 G2/G3 have not started. Older “excluded” statements below describe their historical scope.
+2026-10-08 user scope adjustment: no further historical conversion/batch migration,
+including G2; absent depth in an unrecorded modality is valid RGB-only data and
+does not block software delivery. Preserve old data/read compatibility and the
+completed rehearsal evidence. See [updated authorization](goal-sequence.md).
+Older pending historical-batch statements below describe their previous scope.
 The original three input documents and the later robot integration supplement
 were copied unchanged from the original checkout; hashes are recorded below.
 
