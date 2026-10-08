@@ -204,7 +204,11 @@ class CollectionReleases:
 
     @staticmethod
     def request_identity(command):
-        return command.model_dump(mode="json", exclude={"expected_content_hash"})
+        request = command.model_dump(mode="json", exclude={"expected_content_hash"})
+        # Preserve retries of releases created before explicit Episode selection.
+        if request["episode_ids"] is None:
+            del request["episode_ids"]
+        return request
 
     def _get(self, cursor, scope, name, *, by_version_id=False):
         column = "version_id" if by_version_id else "dataset_version"
@@ -279,12 +283,16 @@ class CollectionReleases:
         source = CollectionSnapshot.model_validate(
             collection.model_dump(mode="json", include=set(CollectionSnapshot.model_fields))
         )
-        if set(command.annotation_tasks) - {d.identity.episode_id for d in source.episodes}:
+        episode_ids = {d.identity.episode_id for d in source.episodes}
+        if command.episode_ids is not None and set(command.episode_ids) - episode_ids:
+            raise ValueError("Episode selection contains an Episode outside this collection")
+        if set(command.annotation_tasks) - episode_ids:
             raise ValueError(
                 "annotation task selection contains an Episode outside this collection"
             )
         rows = read_projection(cursor, scope, collection.version_id, lock=True)
         members, excluded = [], []
+        task_options = {}
         for data in sorted(source.episodes, key=lambda d: d.identity.episode_id):
             cursor.execute(
                 """SELECT task_id FROM annotation.annotation_tasks
@@ -292,7 +300,7 @@ class CollectionReleases:
                   AND rollout_id=%s AND status='APPROVED' AND approved_revision=current_revision
                   AND ((%s::jsonb IS NOT NULL AND data_ref=%s::jsonb)
                     OR (%s::jsonb IS NULL AND data_ref IS NULL AND base_lance_version=%s))
-                ORDER BY task_id LIMIT 101 FOR SHARE""",
+                ORDER BY task_id FOR SHARE""",
                 (
                     *scope,
                     data.identity.rollout_id,
@@ -303,6 +311,13 @@ class CollectionReleases:
                 ),
             )
             tasks = [r[0] for r in cursor.fetchall()]
+            task_options[data.identity.episode_id] = tuple(tasks)
+            if (
+                command.episode_ids is not None
+                and data.identity.episode_id not in command.episode_ids
+            ):
+                excluded.append({"episode_id": data.identity.episode_id, "reason": "NOT_SELECTED"})
+                continue
             selected = command.annotation_tasks.get(data.identity.episode_id)
             if selected is not None:
                 if selected not in tasks:
@@ -403,19 +418,20 @@ class CollectionReleases:
         }
         if len(canonical(content)) > MAX_BYTES:
             raise ValueError("release frozen content exceeds explicit byte limit")
-        return content, rows
+        return content, rows, task_options
 
     def preflight(self, dataset_id, command):
         command = PublishCollectionRelease.model_validate(command.model_dump(mode="json"))
         scope = collection_scope(dataset_id)
         with self.repository.transaction() as cursor:
-            content, _ = self._freeze(cursor, scope, command)
+            content, _, task_options = self._freeze(cursor, scope, command)
         return CollectionReleasePreflight(
             dataset_id=dataset_id,
             dataset_version=command.dataset_version,
             collection_version_id=command.collection_version_id,
             collection_manifest_sha256=digest(content["source_collection"]),
             content_hash=digest(content),
+            annotation_task_options=task_options,
             eligible_episode_ids=tuple(
                 m["data"]["identity"]["episode_id"] for m in content["members"]
             ),
@@ -443,7 +459,7 @@ class CollectionReleases:
                         "business release name is already frozen for different content"
                     )
                 return existing[2]
-            content, rows = self._freeze(cursor, scope, command)
+            content, rows, _ = self._freeze(cursor, scope, command)
             if not content["members"] or digest(content) != command.expected_content_hash:
                 raise PackageConflict(
                     "release has no approved Episodes or preflight content changed"

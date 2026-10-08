@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .models import Digest, FrozenModel
 
@@ -14,12 +14,22 @@ class PublishCollectionRelease(FrozenModel):
     )
     collection_version_id: str = Field(pattern=r"^cv_[0-9a-f]{64}$")
     annotation_tasks: dict[str, str] = Field(default_factory=dict, max_length=10000)
+    episode_ids: tuple[str, ...] | None = Field(default=None, max_length=10000)
     expected_content_hash: Digest | None = None
+
+    @field_validator("episode_ids")
+    @classmethod
+    def unique_episode_selection(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is not None:
+            if len(set(value)) != len(value) or any(not item for item in value):
+                raise ValueError("Episode selection must contain unique nonempty identities")
+            return tuple(sorted(value))
+        return value
 
 
 class CollectionReleaseExclusion(FrozenModel):
     episode_id: str
-    reason: Literal["ANNOTATION_NOT_APPROVED", "ANNOTATION_TASK_SELECTION_REQUIRED"]
+    reason: Literal["ANNOTATION_NOT_APPROVED", "ANNOTATION_TASK_SELECTION_REQUIRED", "NOT_SELECTED"]
 
 
 class CollectionReleasePreflight(FrozenModel):
@@ -28,6 +38,7 @@ class CollectionReleasePreflight(FrozenModel):
     collection_version_id: str
     collection_manifest_sha256: Digest
     content_hash: Digest
+    annotation_task_options: dict[str, tuple[str, ...]]
     eligible_episode_ids: tuple[str, ...]
     excluded_episodes: tuple[CollectionReleaseExclusion, ...]
 

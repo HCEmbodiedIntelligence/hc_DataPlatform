@@ -157,6 +157,77 @@ def test_release_freezes_complete_annotation_and_exact_package_without_lance(rel
         original_unchanged(source)
 
 
+def test_explicit_selection_and_options_freeze_only_selected_approved_members(release_source):
+    source, service, command, task_id = release_source
+    _, plan, _, _, _, _ = source
+    ident = plan.source.identity
+    command = command.model_copy(update={"episode_ids": (ident.episode_id,)})
+    with scoped(plan.source):
+        before = state(service, ident)
+        preflight = service.releases.preflight(ident.dataset_id, command)
+        assert preflight.annotation_task_options[ident.episode_id] == (task_id,)
+        assert preflight.eligible_episode_ids == (ident.episode_id,)
+        assert len(preflight.excluded_episodes) == 1
+        assert preflight.excluded_episodes[0].reason == "NOT_SELECTED"
+        assert state(service, ident) == before
+        confirmed = command.model_copy(update={"expected_content_hash": preflight.content_hash})
+        released = service.releases.publish(ident.dataset_id, confirmed)
+        assert released.eligible_episode_ids == (ident.episode_id,)
+        assert service.releases.publish(ident.dataset_id, confirmed) == released
+        assert service.releases.get(ident.dataset_id, released.version_id) == released
+        with pytest.raises(PackageConflict):
+            service.releases.publish(
+                ident.dataset_id, confirmed.model_copy(update={"episode_ids": None})
+            )
+
+
+def test_empty_unknown_and_changed_selections_cannot_publish(release_source):
+    source, service, command, _ = release_source
+    _, plan, _, _, _, _ = source
+    ident = plan.source.identity
+    with scoped(plan.source):
+        before = state(service, ident)
+        with pytest.raises(ValueError, match="outside this collection"):
+            service.releases.preflight(
+                ident.dataset_id, command.model_copy(update={"episode_ids": ("foreign",)})
+            )
+        preflight = service.releases.preflight(ident.dataset_id, command)
+        empty = command.model_copy(update={"episode_ids": ()})
+        empty_preflight = service.releases.preflight(ident.dataset_id, empty)
+        assert empty_preflight.eligible_episode_ids == ()
+        assert all(e.reason == "NOT_SELECTED" for e in empty_preflight.excluded_episodes)
+        for content_hash in (preflight.content_hash, empty_preflight.content_hash):
+            with pytest.raises(PackageConflict):
+                service.releases.publish(
+                    ident.dataset_id,
+                    empty.model_copy(update={"expected_content_hash": content_hash}),
+                )
+        assert state(service, ident) == before
+
+
+def test_unselected_tasks_stay_discoverable_for_reselection(release_source):
+    source, service, command, task_id = release_source
+    _, plan, _, _, _, _ = source
+    ident = plan.source.identity
+    with scoped(plan.source):
+        preflight = service.releases.preflight(
+            ident.dataset_id, command.model_copy(update={"episode_ids": ()})
+        )
+        assert preflight.annotation_task_options[ident.episode_id] == (task_id,)
+        selected = command.model_copy(
+            update={
+                "episode_ids": (ident.episode_id,),
+                "annotation_tasks": {ident.episode_id: task_id},
+            }
+        )
+        preflight = service.releases.preflight(ident.dataset_id, selected)
+        released = service.releases.publish(
+            ident.dataset_id,
+            selected.model_copy(update={"expected_content_hash": preflight.content_hash}),
+        )
+        assert released.eligible_episode_ids == (ident.episode_id,)
+
+
 @pytest.mark.parametrize(
     "stage", ["release_object_verified", "release_projection_written", "release_before_commit"]
 )

@@ -7416,6 +7416,7 @@ components:
           enum:
           - ANNOTATION_NOT_APPROVED
           - ANNOTATION_TASK_SELECTION_REQUIRED
+          - NOT_SELECTED
           title: Reason
           type: string
       required:
@@ -7426,6 +7427,13 @@ components:
     CollectionReleasePreflight:
       additionalProperties: false
       properties:
+        annotation_task_options:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          title: Annotation Task Options
+          type: object
         collection_manifest_sha256:
           pattern: ^[0-9a-f]{64}$
           title: Collection Manifest Sha256
@@ -7459,6 +7467,7 @@ components:
       - collection_version_id
       - collection_manifest_sha256
       - content_hash
+      - annotation_task_options
       - eligible_episode_ids
       - excluded_episodes
       title: CollectionReleasePreflight
@@ -21889,6 +21898,14 @@ components:
           pattern: ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$
           title: Dataset Version
           type: string
+        episode_ids:
+          anyOf:
+          - items:
+              type: string
+            maxItems: 10000
+            type: array
+          - type: 'null'
+          title: Episode Ids
         expected_content_hash:
           anyOf:
           - pattern: ^[0-9a-f]{64}$
