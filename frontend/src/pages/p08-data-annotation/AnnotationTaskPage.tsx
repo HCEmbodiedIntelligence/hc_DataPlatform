@@ -1,3 +1,4 @@
+import { describeEpisodeRobotPreview } from "../../features/datasets/episodes/robot-preview-provenance";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -319,6 +320,7 @@ function RuntimeAnnotationTaskPage({
     bundle?.manifest?.robot_id ?? null,
     jointAngleStream,
     scope,
+    describeEpisodeRobotPreview(bundle?.manifest?.robot_id ?? null),
   );
   const baseline = bundle
     ? `${bundle.task.etag}:${mode === "annotation" ? (bundle.draft?.revision ?? -1) : (resolveReviewRevision(bundle)?.revision ?? -1)}`

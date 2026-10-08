@@ -9,16 +9,21 @@ import { useScopedRobotBootstrap } from "../robots/api/hooks";
 import { createLazyThreeRobotSceneLoader } from "./lazy-three-loader";
 import { buildJointFrameSource } from "./joint-frame-source";
 import type { StreamDescriptor } from "./types";
+import {
+  currentBindingPreview,
+  type RobotSceneProvenance,
+} from "./robot-scene-provenance";
 
 export function useEpisodeRobotScene(
   manifestRobotId: string | null,
   jointAngleStream: StreamDescriptor | null,
   scope: { readonly organizationId: string } | null,
+  provenance: RobotSceneProvenance = currentBindingPreview,
 ) {
   const organizationId = scope?.organizationId ?? null;
   const robotBootstrap = useScopedRobotBootstrap(
     organizationId,
-    manifestRobotId,
+    provenance.availability === "available" ? manifestRobotId : null,
   );
   const boundVersionId =
     robotBootstrap.data?.effectiveModelBinding?.robotModelVersionId ?? null;
@@ -61,6 +66,7 @@ export function useEpisodeRobotScene(
   const robotScene = useMemo(() => {
     if (
       !scope ||
+      provenance.availability !== "available" ||
       !robotModelVersion.data ||
       robotModelVersion.data.lifecycle !== "PUBLISHED" ||
       !urdfAsset ||
@@ -80,13 +86,8 @@ export function useEpisodeRobotScene(
     const requiredJoints = (robotJointMappings.data ?? []).map(
       (mapping) => mapping.source_joint_name,
     );
-    const isCompatibilityPreview =
-      manifestRobotId === "droid-franka" &&
-      robotModelVersion.data.versionLabel === "DROID-open-assets-v1";
     return {
-      title: isCompatibilityPreview
-        ? "兼容性机器人模型（非源数据 URDF）"
-        : "机器人 URDF",
+      title: provenance.title,
       modelRef: { modelId, modelVersion },
       jointMapping,
       jointFrameSource,
@@ -110,11 +111,12 @@ export function useEpisodeRobotScene(
     robotJointMappings.isError,
     robotModelAssets.data,
     robotModelVersion.data,
-    manifestRobotId,
+    provenance,
     scope,
     urdfAsset,
   ]);
   const robotSceneUnavailableReason = useMemo(() => {
+    if (provenance.availability === "unavailable") return provenance.reason;
     if (!jointAngleStream)
       return "当前数据未发现关节角 Topic；写入关节角数据后才能同步机器人姿态。";
     if (!manifestRobotId)
@@ -130,7 +132,7 @@ export function useEpisodeRobotScene(
     if (robotModelVersion.isError || robotModelAssets.isError)
       return "模型绑定已存在，但固定版本或 URDF 资产加载失败。";
     if (robotModelVersion.data?.lifecycle !== "PUBLISHED")
-      return "当前机器人绑定的模型版本尚未发布，已阻止加载非固定 3D 事实。";
+      return "当前机器人绑定的模型版本尚未发布，暂时无法预览。";
     if (!urdfAsset)
       return "当前已发布模型没有可用的 URDF 资产。请在机器人管理中创建更新草稿并导入 URDF。";
     if (robotJointMappings.isPending) return "正在加载关节映射…";
@@ -138,6 +140,7 @@ export function useEpisodeRobotScene(
     return undefined;
   }, [
     boundVersionId,
+    provenance,
     jointAngleStream,
     manifestRobotId,
     robotBootstrap.isError,

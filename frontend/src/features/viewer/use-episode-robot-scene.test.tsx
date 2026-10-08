@@ -180,6 +180,24 @@ afterEach(() => {
 });
 
 describe("explicit organization replay", () => {
+  it("uses adapter provenance and never loads an unavailable model reference", () => {
+    const { result } = renderHook(
+      () =>
+        useEpisodeRobotScene("legacy-placeholder", stream, scopes[0]!, {
+          kind: "current-binding-compatibility",
+          title: "机器人模型预览",
+          availability: "unavailable",
+          reason: "没有冻结或兼容模型引用",
+        }),
+      { wrapper },
+    );
+    expect(result.current.robotScene).toBeUndefined();
+    expect(result.current.robotSceneUnavailableReason).toBe(
+      "没有冻结或兼容模型引用",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("loads equal robot/version IDs in two workspaces without touching the active scope", async () => {
     const { result } = renderHook(
       () => ({

@@ -296,12 +296,14 @@ export async function discardRobotModelImport(
   organizationId: string,
   versionId: string,
   fallbackVersionId?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   await request<void>({
     method: "DELETE",
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(versionId)}:discard-import`,
     scopeMode: "explicit",
     scope: { organizationId },
+    ...(signal ? { signal } : {}),
     query: fallbackVersionId
       ? { fallback_version_id: fallbackVersionId }
       : undefined,
@@ -320,12 +322,14 @@ export interface CreateRobotModelIntent {
 export async function createRobotModel(
   organizationId: string,
   intent: CreateRobotModelIntent,
+  signal?: AbortSignal,
 ): Promise<RobotModelVersion> {
   const raw = await request<unknown>({
     method: "POST",
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-models`,
     scopeMode: "explicit",
     scope: { organizationId },
+    ...(signal ? { signal } : {}),
     body: {
       manufacturer: intent.manufacturer,
       model_code: intent.modelCode,
@@ -357,12 +361,14 @@ export interface CreateRobotModelDraftIntent {
 export async function createRobotModelDraft(
   organizationId: string,
   intent: CreateRobotModelDraftIntent,
+  signal?: AbortSignal,
 ): Promise<RobotModelVersion> {
   const raw = await request<unknown>({
     method: "POST",
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(intent.sourceVersionId)}:create-draft`,
     scopeMode: "explicit",
     scope: { organizationId },
+    ...(signal ? { signal } : {}),
     body: {
       version_label: intent.versionLabel,
       update_scope: intent.updateScope,
@@ -873,12 +879,14 @@ export interface RobotModelPublishPreflightIntent {
 export async function preflightRobotModelPublish(
   organizationId: string,
   intent: RobotModelPublishPreflightIntent,
+  signal?: AbortSignal,
 ): Promise<RobotModelPublishPreflight> {
   const raw = await request<unknown>({
     method: "POST",
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(intent.versionId)}:preflight-publish`,
     scopeMode: "explicit",
     scope: { organizationId },
+    ...(signal ? { signal } : {}),
     ifMatch: intent.etag,
     idempotencyKey: intent.idempotencyKey,
     cache: "no-store",
@@ -936,6 +944,7 @@ export async function listRobotModels(
 export async function replaceRobotModelJointMappings(
   organizationId: string,
   intent: ReplaceRobotModelJointMappingsIntent,
+  signal?: AbortSignal,
 ): Promise<RobotModelVersion> {
   const body = {
     mappings: [...intent.mappings],
@@ -945,6 +954,7 @@ export async function replaceRobotModelJointMappings(
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(intent.versionId)}/joint-mappings`,
     scopeMode: "explicit",
     scope: { organizationId },
+    ...(signal ? { signal } : {}),
     body,
     ifMatch: intent.etag,
     idempotencyKey: intent.idempotencyKey,
@@ -963,6 +973,7 @@ export async function replaceRobotModelJointMappings(
 export async function publishRobotModelVersion(
   organizationId: string,
   intent: RobotModelDangerousIntent,
+  signal?: AbortSignal,
 ): Promise<RobotModelVersion> {
   const body = {
     preflight_token: intent.preflightToken,
@@ -972,6 +983,7 @@ export async function publishRobotModelVersion(
     path: `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(intent.versionId)}:publish`,
     scopeMode: "explicit",
     scope: { organizationId },
+    ...(signal ? { signal } : {}),
     body,
     idempotencyKey: intent.idempotencyKey,
     ifMatch: intent.etag,

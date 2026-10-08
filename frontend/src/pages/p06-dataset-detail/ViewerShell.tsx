@@ -1,3 +1,4 @@
+import { describeEpisodeRobotPreview } from "../../features/datasets/episodes/robot-preview-provenance";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Alert, Button, Card, Drawer, Modal, Typography } from "antd";
@@ -185,6 +186,7 @@ export function EpisodeViewerShell() {
       : null,
     jointAngleStream,
     scope,
+    describeEpisodeRobotPreview(query.data?.episode.robotId ?? null),
   );
   useEffect(() => {
     setCameraView("__quad__");
