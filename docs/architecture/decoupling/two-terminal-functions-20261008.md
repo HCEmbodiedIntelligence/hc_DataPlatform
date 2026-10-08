@@ -293,3 +293,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 新增实际 POST `lerobot-imports:capabilities`，显式组织/项目/区域和 upload.manage，返回元数据 SHA、`lerobot-native-episode/1` revision、存储/处理支持及阶段化拒绝原因。调用生产原生 profile 校验，float64 与额外特征保留，不依赖机器人型号前端白名单。只声明元数据适用性；上传 commit 仍核对原始 info 字节内容，worker 仍验证实际表格/视频/深度证据。
 
 新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。
+
+### 第九批联合验证：P03 消费后端处理能力
+
+集成代码 `1a9c8e892a79f3ab096af55d131ede0b954f0d5f` 含53a6fb52后端与ecf89fa2页面。P03正式POST capabilities，按返回结果展示处理模式并把revision带入上传/commit；float64不再由页面名单拒绝。1060全量、8项P09独立复验、54门禁、类型/3c6d4335 runtime生成/精确生产build、2实际HTTP/PG/MinIO/Temporal通过，零跳过。首轮P09动画可见性失败保留，未改页面或断言；单worker全量复验通过。证据integration-batch-nine-*。
+
+后台MCAP numeric QC修复与R04冻结场景未包含本批，另有检查点等待共同消费。B046发现撤权后已加载numeric缓存仍可见，服务端媒体/overview均403；B正在修权限刷新，尚未关闭此浏览器负例。
