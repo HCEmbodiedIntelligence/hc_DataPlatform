@@ -3,8 +3,13 @@
 from typing import Literal
 
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.quality.evidence import QcEvaluation, QcRuleEvidence, RuleExecution
-from hc_data_platform.quality.models import QcReportV1, QualityCode
+from hc_data_platform.quality.evidence import (
+    QcEvaluation,
+    QcRuleEvidence,
+    RuleExecution,
+    evidence_rule_codes,
+)
+from hc_data_platform.quality.models import QcReportV1
 
 from .errors import PackageConflict
 from .models import DataVersionRef, FrozenModel
@@ -62,7 +67,11 @@ def read_episode_quality(package):
             # Findings are observed historical failures/warnings. Every other
             # rule is unknown, regardless of the report's overall PASS status.
             rules = []
-            for code in QualityCode:
+            known = evidence_rule_codes(report.engine_version if report else "be06-qc/2")
+            # Retain any recorded finding without inventing execution for rules
+            # added after this report's engine was published.
+            recorded = {finding.code for finding in report.findings} if report else set()
+            for code in known | recorded:
                 topics = (
                     sorted({f.topic for f in report.findings if f.code == code}) if report else []
                 )

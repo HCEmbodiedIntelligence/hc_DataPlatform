@@ -491,10 +491,16 @@
       "id": "X04",
       "title": "QC 历史证据校验依赖当前代码中的全部规则枚举",
       "scope": "chayi",
-      "owner": "T11",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "按证据/引擎版本冻结 required rule set，新增规则使用新版本；旧 bytes、哈希与旧集合保持不变，并验证旧证据在新代码中仍可读取。"
+      "owner": "A",
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/quality/rule_sets.py",
+        "backend/tests/quality/fixtures/archived-be06-qc-{1,2,3}.json",
+        "backend/tests/quality/test_archived_rule_sets.py",
+        "35 QC unit/contract tests and 7 actual PG/MinIO/API/persistent-worker tests passed, zero skips",
+        "coordination results/A-services/qc-rule-set-services.xml"
+      ],
+      "remaining": ""
     },
     {
       "id": "X05",

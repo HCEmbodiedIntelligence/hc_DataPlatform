@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
+from hc_data_platform.capabilities.registry import ImplementationUnavailable
+
 from .boundaries import BOUNDARY_CODES, BOUNDARY_QUALITY_ENGINE_VERSION
 from .models import (
     CURRENT_QUALITY_ENGINE_VERSION,
@@ -22,17 +24,18 @@ from .models import (
     canonical_json_bytes,
 )
 from .policy import APPROVED_RISK_CODES, LEGACY_QUALITY_ENGINE_VERSION
-
-EVIDENCE_VERSION = "hc-qc-rule-evidence/1"
-_BOUNDARY_RULES = BOUNDARY_CODES | {QualityCode.NO_COMMON_WINDOW}
-_BASE_RULES = frozenset(QualityCode) - _BOUNDARY_RULES
+from .rule_sets import BASE_RULE_CODES, BUILTIN_EVIDENCE_RULE_SETS, EVIDENCE_VERSION
 
 
-def evidence_rule_codes(engine_version: str):
-    # New enum members must not rewrite evidence from an archived evaluator.
-    return (
-        frozenset(QualityCode) if engine_version == BOUNDARY_QUALITY_ENGINE_VERSION else _BASE_RULES
-    )
+def evidence_rule_codes(engine_version: str) -> frozenset[QualityCode]:
+    try:
+        codes = BUILTIN_EVIDENCE_RULE_SETS.required(EVIDENCE_VERSION, engine_version)
+    except ImplementationUnavailable:
+        # v1 historically recorded unsupported engines using the original 17
+        # rules, all explicitly marked unsupported by the collector. Preserve
+        # those old bytes; this does not select an executable engine fallback.
+        codes = BASE_RULE_CODES
+    return frozenset(QualityCode(code) for code in codes)
 
 
 class RuleExecution(BaseModel):
@@ -220,7 +223,7 @@ class RuleEvidenceCollector:
             BOUNDARY_QUALITY_ENGINE_VERSION,
         }
         active = (
-            set(QualityCode)
+            evidence_rule_codes(report.engine_version)
             if report.engine_version == LEGACY_QUALITY_ENGINE_VERSION
             else APPROVED_RISK_CODES | {QualityCode.NO_COMMON_WINDOW}
             if report.engine_version == BOUNDARY_QUALITY_ENGINE_VERSION

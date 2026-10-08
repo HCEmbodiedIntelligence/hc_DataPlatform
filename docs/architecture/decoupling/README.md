@@ -518,3 +518,16 @@ create_app 绑定并拥有关闭职责，构造另一个 app 不再替换或关�
 3 个新模块 mypy、全部修改 Python Ruff 通过。实际 runtime OpenAPI 字节/哈希
 与 12c5a744 完全相同。初次门禁发现三个迁移 CLI 的旧错误导入，已迁移并复验；
 首次失败 XML 仍保留。OpenAPI 检查容器使用独立可写暂存路径，未改生产校验。
+
+## 历史 QC 规则集合冻结（X04）
+
+qc-evidence.v1 注册 be06-qc/1、/2 的 17 条历史规则与 /3 的 20 条规则，
+不再通过当前 QualityCode 枚举确定旧证据 required set。新 evidence/engine
+必须显式注册版本；未知历史 engine 仍保留原来的 unsupported/skip 证据语义，
+不把它路由到任意新引擎。固定版本 QC 页面也只显示该版本规则及实际已有 finding。
+
+改动前从稳定候选 3df9fc78 冻结的三个 JSON/哈希作为 golden；扩展当前枚举后
+旧 JSON 原样验证，原引擎重跑字节、报告和证据哈希完全一致。35 项规则/契约
+测试、7 项真实 PG/MinIO/API/持久 worker 测试、Ruff 和新模块 mypy 通过；
+服务包含固定版本 HTTP、旧缺失证据、租户隔离与 Tag 独立 QC。证据位于协调目录
+qc-archived-rule-sets.xml、qc-rule-set-services.xml。X03 单规则执行插件机制仍待做。
