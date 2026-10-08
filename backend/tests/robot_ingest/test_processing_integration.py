@@ -50,6 +50,7 @@ from hc_data_platform.robot_ingest.router import configure_robot_ingest, router
 from hc_data_platform.robot_ingest.service import RobotIngestService
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.outbox import OutboxDispatcher, PostgresOutboxDeliveryRepository
+from hc_data_platform.workflow.execution import ActivityExecutionScope
 from hc_data_platform.workflow.outbox_worker import serve_outbox
 
 DSN = os.environ.get("ROBOT_INGEST_POSTGRES_DSN")
@@ -272,7 +273,9 @@ async def test_real_raw_outbox_temporal_missing_b_and_recovery(system, monkeypat
     task, doc = store.read(upload)
     assert task and doc.phase == "PENDING"
     assert api.post(root + ":commit", headers=headers).json()["resumed"]
-    client = await Client.connect("temporal:7233")
+    client = await Client.connect(
+        "temporal:7233", namespace=os.getenv("HC_TEMPORAL_NAMESPACE", "default")
+    )
     queue = "robot-c-test-" + uuid4().hex
     outbox = PostgresOutboxDeliveryRepository(store.connections)
     handler = RobotProcessingOutboxHandler(client, store, task_queue=queue)
@@ -324,7 +327,9 @@ async def test_real_raw_outbox_temporal_missing_b_and_recovery(system, monkeypat
             await asyncio.sleep(0.1)
         else:
             pytest.fail("workflow did not durably schedule discovery")
-    activities = RobotProcessingActivities(store, storage)
+    activities = RobotProcessingActivities(
+        store, storage, execution_scope=ActivityExecutionScope(None)
+    )
     with ThreadPoolExecutor(max_workers=4) as executor:
         async with Worker(
             client,
@@ -381,7 +386,9 @@ async def test_real_raw_outbox_temporal_missing_b_and_recovery(system, monkeypat
             client,
             task_queue=queue,
             workflows=[RobotIngestProcessingWorkflow],
-            activities=RobotProcessingActivities(store, storage).activities,
+            activities=RobotProcessingActivities(
+                store, storage, execution_scope=ActivityExecutionScope(None)
+            ).activities,
             activity_executor=executor,
         ):
             await asyncio.wait_for(client.get_workflow_handle(next_task.workflow_id).result(), 45)
@@ -504,7 +511,9 @@ def test_orchestration_receipt_double_partial_retry_atomicity(system, quality, m
     upload, root = commit(system)
     task, _ = store.read(upload)
     processor = ReceiptDouble(quality)
-    activities = RobotProcessingActivities(store, storage, processor)
+    activities = RobotProcessingActivities(
+        store, storage, processor, execution_scope=ActivityExecutionScope(None)
+    )
     env = ActivityEnvironment()
     assert env.run(activities.discover, {"task": task.model_dump()}) == [0, 1]
     env.run(activities.episode, {"task": task.model_dump(), "index": 0})

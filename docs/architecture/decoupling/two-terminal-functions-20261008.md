@@ -151,3 +151,29 @@ B011 的原201源于测试辅助动作只撤直接publish，遗漏 upload.manage
 revision并读取有效权限。当前普通会话实际预检200→撤权后提交/预检403→
 旧固定发布200且内容未变→恢复后200；证据 browser-effective-revocation.json。
 B已收到修正动作，浏览器负例仍待复验。前端逻辑消费仍由B接续，未标完成。
+
+
+## A：处理器公共采样、元数据与执行上下文（B09 第一批）
+
+annotation 拥有 FrameSelectionSamplerPort / FrameSelectionSampler，ingest 拥有
+不依赖工作流DTO的 AlignmentMetadataBuilder；runtime 显式注入 MCAP 与原生
+LeRobot 消费者，短期投影会话继续传递同一工厂。旧adaptive-2fps-v2输出以
+1d29d6bc实际算法冻结golden，包含真实相机时间、事件加密、图像变化和上限。
+core.ExecutionScope由机器人处理和录制活动消费；worker注入独立的
+ActivityExecutionScope维护tenant上下文、日志关联和写入围栏。API专用录制
+handler若被误用来执行活动会明确拒绝。旧工作流函数保留兼容包装。
+
+116项不同基础/架构/摄取回归最终通过；新增上下文测试最初错误地预期已有
+请求上下文，修正夹具后3项复验通过。6项真实MCAP/原生处理、6项机器人
+基础设施回归（其中3项明确使用receipt doubles验证重试/原子性）和1项生产
+worker登记→HTTP/对象读回通过。4文件严格mypy、Ruff、架构及实际OpenAPI
+检查通过，runtime哈希仍5c2dc66b。
+
+原始失败保留：机器人测试缺专用DSN/G0环境跳过6项，补只读夹具后零跳过；
+首次worker装配误把采样参数传给连续录制resolver，实际启动报错，修复后
+生产worker复验通过；只读缓存导致mypy内部错误/Ruff写缓存失败，改用/tmp
+后同一检查通过。证据processing-ports-{checks,scope-recheck,services,
+robot-services-v2,worker-v2}.xml及runtime-processing-ports.yaml。
+
+B09仍in_progress：LeRobot的任务数据集、标签schema目标和schema候选3个
+私有静态调用尚待所属查询/规划端口迁移，不能因本批3种能力已接通就关闭。

@@ -45,11 +45,6 @@ from hc_data_platform.annotation.automation import (
     AutomaticAnnotationRequest,
 )
 from hc_data_platform.annotation.models import AnnotationTask
-from hc_data_platform.core.context import (
-    RequestContext,
-    bind_request_context,
-    reset_request_context,
-)
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.observability import (
     LANCE_COMMITS,
@@ -58,10 +53,7 @@ from hc_data_platform.core.observability import (
     locator_workflow_id,
 )
 from hc_data_platform.core.structured_logging import (
-    LogCorrelation,
-    bind_log_correlation,
     log_event,
-    reset_log_correlation,
 )
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
 from hc_data_platform.ingest.manifest import ManifestParserPort
@@ -107,6 +99,7 @@ from hc_data_platform.verification.ports import (
     ReadableBinaryStream,
 )
 
+from .execution import ActivityExecutionScope
 from .ingest_guard import (
     IngestCommitPending,
     IngestDatasetBusy,
@@ -487,56 +480,20 @@ def _require(value: _T | None, name: str) -> _T:
     return value
 
 
-@contextmanager
 def _worker_scope(
     project_id: str | None,
     region_code: str | None,
     resource_id: str,
     *,
     organization_id: str | None = None,
-) -> Iterator[None]:
-    resource_digest = hashlib.sha256(resource_id.encode()).hexdigest()[:24]
-    writer_id = f"activity:{_maintenance_instance_id}:{resource_digest}"
-    try:
-        workflow_id = activity.info().workflow_id
-    except RuntimeError:
-        workflow_id = None
-    request_id = (
-        locator_workflow_id("activity", project_id, resource_id) if project_id is not None else None
-    )
-    correlation_token = bind_log_correlation(
-        LogCorrelation(
-            request_id=request_id,
-            operation_id=workflow_id,
-            workflow_id=workflow_id,
-        )
-    )
-    try:
-        with writer_permit_scope(
-            _maintenance_gate,
-            environment_id=_maintenance_environment_id,
-            writer_id=writer_id,
-            writer_kind="temporal_activity",
-        ):
-            if project_id is None:
-                yield
-                return
-            token = bind_request_context(
-                RequestContext(
-                    organization_id=organization_id,
-                    project_id=project_id,
-                    region_code=region_code,
-                    subject_id="hc-data-worker",
-                    request_id=request_id or "activity",
-                    service_identity=True,
-                )
-            )
-            try:
-                yield
-            finally:
-                reset_request_context(token)
-    finally:
-        reset_log_correlation(correlation_token)
+) -> AbstractContextManager[None]:
+    # Historical activity functions retain their configured boundary. New adapters
+    # receive an independent ExecutionScope instance from worker composition.
+    return ActivityExecutionScope(
+        _maintenance_gate,
+        _maintenance_environment_id,
+        _maintenance_instance_id,
+    )(project_id, region_code, resource_id, organization_id=organization_id)
 
 
 @contextmanager

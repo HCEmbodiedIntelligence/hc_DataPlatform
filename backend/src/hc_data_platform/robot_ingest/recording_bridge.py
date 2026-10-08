@@ -31,6 +31,7 @@ from hc_data_platform.core.context import (
     reset_request_context,
 )
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.core.execution import ExecutionScope
 from hc_data_platform.security.audit import canonical_hash
 
 from .models import RobotIngestUpload
@@ -113,9 +114,11 @@ class RecordingOutboxHandler:
         task_queue=None,
         *,
         registrations: RecordingRegistrationPort,
+        execution_scope: ExecutionScope | None = None,
     ):
         self.connections, self.storage = connections, storage
         self.registrations = registrations
+        self.execution_scope = execution_scope
         self.client, self.task_queue = client, task_queue
 
     async def __call__(self, event):
@@ -133,10 +136,11 @@ class RecordingOutboxHandler:
 
     @activity.defn(name="robot.recording.prepare")
     def prepare(self, value):
-        from hc_data_platform.workflow.activities import _worker_scope
+        if self.execution_scope is None:
+            raise RuntimeError("recording activity execution scope is not configured")
 
         event = DomainEventEnvelope.model_validate(value)
-        with _worker_scope(
+        with self.execution_scope(
             event.project_id,
             event.region_code,
             event.aggregate_id,
@@ -146,11 +150,12 @@ class RecordingOutboxHandler:
 
     @activity.defn(name="robot.recording.failed")
     def failed(self, value):
-        from hc_data_platform.workflow.activities import _worker_scope
+        if self.execution_scope is None:
+            raise RuntimeError("recording activity execution scope is not configured")
 
         event = DomainEventEnvelope.model_validate(value)
         with (
-            _worker_scope(
+            self.execution_scope(
                 event.project_id,
                 event.region_code,
                 event.aggregate_id,

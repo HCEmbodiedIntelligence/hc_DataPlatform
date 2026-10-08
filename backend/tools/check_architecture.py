@@ -116,6 +116,29 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
             "numpy",
         ),
     }
+    pure_processing = {
+        "hc_data_platform.annotation.sampling",
+        "hc_data_platform.ingest.projection_metadata",
+        "hc_data_platform.core.execution",
+    }
+    for line, target in imports(tree, package):
+        if module in pure_processing and any(
+            matches(target, prefix)
+            for prefix in (
+                "hc_data_platform.workflow",
+                "hc_data_platform.runtime",
+                "temporalio",
+            )
+        ):
+            failures.add(f"{line}: processing helper must not depend on task execution")
+        if (
+            module.startswith(
+                ("hc_data_platform.robot_ingest.", "hc_data_platform.lerobot_imports.")
+            )
+            and target.startswith("hc_data_platform.workflow.")
+            and target.rsplit(".", 1)[-1].startswith("_")
+        ):
+            failures.add(f"{line}: processor must not import workflow private helpers")
     for line, target in imports(tree, package):
         if any(matches(target, forbidden) for forbidden in helper_boundaries.get(module, ())):
             failures.add(f"{line}: shared helper must not reintroduce its caller dependency")

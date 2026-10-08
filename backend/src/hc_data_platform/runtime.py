@@ -65,6 +65,7 @@ from hc_data_platform.annotation.frame_selection_lifecycle import (
 )
 from hc_data_platform.annotation.postgres import PostgresAnnotationRepository
 from hc_data_platform.annotation.router import configure_annotation
+from hc_data_platform.annotation.sampling import FrameSelectionSampler
 from hc_data_platform.annotation.service import AnnotationService
 from hc_data_platform.audit_projection.governance import (
     AuditExportOutboxHandler,
@@ -140,6 +141,7 @@ from hc_data_platform.ingest.device_facts import (
 )
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser
 from hc_data_platform.ingest.postgres import PostgresIngestPersistence
+from hc_data_platform.ingest.projection_metadata import build_alignment_metadata
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.ingest.router import configure_device_capture_facts, configure_ingest_service
 from hc_data_platform.ingest.service import UploadSessionService
@@ -1029,6 +1031,8 @@ def build_runtime(
         catalog,
         shared_staging_store,
         Path(resolved.alignment_staging_root) / "lerobot-cache",
+        sampler_factory=FrameSelectionSampler,
+        metadata_builder=build_alignment_metadata,
         cache_max_bytes=resolved.lerobot_cache_max_bytes,
         cache_ttl_hours=resolved.lerobot_cache_ttl_hours,
         episode_packages=episode_packages,
@@ -1065,6 +1069,8 @@ def build_runtime(
             projection_store=shared_staging_store,
             projection_staging_root=(Path(resolved.alignment_staging_root) / "raw-localization"),
             projection_ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
+            sampler_factory=FrameSelectionSampler,
+            metadata_builder=build_alignment_metadata,
             package_schemas=episode_packages.schemas,
         ),
         dataset_ingest_projection=dataset_ingest_projection,
@@ -1374,6 +1380,8 @@ def build_worker_outbox(
         connection_factory,
         ChunkedObjectStorageReader(object_storage),
         catalog,
+        sampler_factory=FrameSelectionSampler,
+        metadata_builder=build_alignment_metadata,
         package_schemas=EpisodeSchemas(PostgresEpisodeStore(connection_factory)),
     )
     from .workflow.ingest_guard import PostgresIngestDispatchGuard

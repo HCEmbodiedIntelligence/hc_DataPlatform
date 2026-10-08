@@ -11,6 +11,9 @@ import pytest
 @pytest.mark.parametrize(
     "module,symbol",
     [
+        ("annotation.sampling", "FrameSelectionSampler"),
+        ("ingest.projection_metadata", "build_alignment_metadata"),
+        ("core.execution", "ExecutionScope"),
         ("lance_catalog", "DatasetSchemaSnapshot"),
         ("lance_catalog", "StepReaderPort"),
         ("lance_catalog", "compute_schema_fingerprint"),
@@ -67,6 +70,19 @@ if symbol == 'DatasetSchemaSnapshot':
         ("continuous_recordings/openarm_raw/clock_diagnostics.py", "import numpy"),
         ("lance_catalog/__init__.py", "from .adapters import LanceAdapter"),
         ("backup/__init__.py", "from .whole import WholeBackupPlanV1"),
+        (
+            "robot_ingest/processing_worker.py",
+            "from hc_data_platform.workflow.activities import _worker_scope",
+        ),
+        (
+            "lerobot_imports/pipeline.py",
+            "from hc_data_platform.workflow.ingest_plan import _FrameSelectionSampler",
+        ),
+        ("annotation/sampling.py", "import temporalio"),
+        (
+            "ingest/projection_metadata.py",
+            "from hc_data_platform.workflow.models import IngestProjectionSourceV1",
+        ),
     ],
 )
 def test_architecture_rejects_restored_import_side_effects(tmp_path, module, source):

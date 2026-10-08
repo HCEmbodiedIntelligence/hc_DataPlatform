@@ -268,6 +268,7 @@ async def serve() -> None:
         )
     _load_dependency_factory(role=role)
     from .activities import configure_activity_maintenance
+    from .execution import ActivityExecutionScope
 
     persistent_platform_control = settings.environment in {"staging", "production"}
     maintenance_gate = (
@@ -284,6 +285,9 @@ async def serve() -> None:
         maintenance_gate,
         environment_id=settings.platform_environment_id,
         instance_id=str(instance_identity.instance_id),
+    )
+    execution_scope = ActivityExecutionScope(
+        maintenance_gate, settings.platform_environment_id, str(instance_identity.instance_id)
     )
     workflows, activities = discover_temporal_registrations(role)
     if not activities:
@@ -337,10 +341,14 @@ async def serve() -> None:
             NativeLeRobotProcessor(
                 pipeline, client, asyncio.get_running_loop(), task_queue=task_queue
             ),
+            execution_scope=execution_scope,
         )
         robot_executor = ThreadPoolExecutor(max_workers=settings.worker_max_concurrent_activities)
         recording_activity = RecordingOutboxHandler(
-            pipeline.connections, pipeline.storage, registrations=PostgresRecordingRegistration()
+            pipeline.connections,
+            pipeline.storage,
+            registrations=PostgresRecordingRegistration(),
+            execution_scope=execution_scope,
         )
         worker = WorkerGroup(
             worker,
