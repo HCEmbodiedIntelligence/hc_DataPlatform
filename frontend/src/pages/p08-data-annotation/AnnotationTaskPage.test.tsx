@@ -39,6 +39,8 @@ vi.mock("../../shared/scope/shell-store", () => ({
     selector({
       principal: { actorId: "visual-annotator" },
       scope: visualAnnotationScope,
+      sessionRevision: 1,
+      capabilityRevision: 1,
     }),
 }));
 
@@ -91,6 +93,8 @@ function renderReview(bundle: RuntimeAnnotationBundle) {
   queryClient.setQueryData(
     [
       "p08-runtime-annotation",
+      visualAnnotationScope.organizationId,
+      "session:1:capabilities:1",
       visualAnnotationScope.projectId,
       visualAnnotationScope.regionCode,
       bundle.task.task_id,
@@ -119,6 +123,7 @@ beforeEach(() => {
   for (const capability of [
     "annotation_task.read",
     "episode.read",
+    "dataset_version.read",
     "annotation.review",
   ])
     grantedCapabilities.add(capability);

@@ -1,5 +1,9 @@
 import { createDatasetPackageMediaSource } from "../../datasets/episodes/package-media-source";
 import {
+  loadAnnotationLogicalData,
+  type AnnotationLogicalData,
+} from "./logical-data";
+import {
   annotationDataLabel,
   checkedAnnotationRef,
   loadAnnotationPackage,
@@ -124,6 +128,8 @@ export function runtimeAnnotationScopeFromShell(
 }
 
 export interface RuntimeAnnotationBundle {
+  /** Always present in runtime-loaded bundles; omitted only by legacy visual fixtures. */
+  readonly logical?: AnnotationLogicalData;
   readonly task: RuntimeAnnotationTask;
   readonly datasetVersion: RuntimeDatasetVersion;
   readonly draft: RuntimeAnnotationDraft | null;
@@ -506,7 +512,7 @@ export async function loadRuntimeAnnotationBundle(
       manifest: null,
       manifestIssue: asDomainError(error, "数据清单加载失败。"),
     }));
-  const [draft, history, schema, manifestResult, datasetVersion] =
+  const [draft, history, schema, manifestResult, datasetVersion, logical] =
     await Promise.all([
       mode === "annotation"
         ? getRuntimeAnnotationDraftOrNull(scope, taskId, signal)
@@ -515,6 +521,7 @@ export async function loadRuntimeAnnotationBundle(
       getRuntimeTagSchema(scope, task, signal),
       manifestPromise,
       getRuntimeDatasetVersion(scope, task, signal),
+      loadAnnotationLogicalData(scope, task, signal),
     ]);
   if (
     history.task.task_id !== task.task_id ||
@@ -546,6 +553,7 @@ export async function loadRuntimeAnnotationBundle(
   }
   return {
     task,
+    logical,
     datasetVersion,
     draft,
     history,
@@ -1271,17 +1279,21 @@ export function buildRuntimeCameraStreams(input: {
 }): readonly StreamDescriptor[] {
   const { bundle } = input;
   const frequencyHz = normalizeStepRateHz(bundle.datasetVersion.frequency_hz);
-  const allCameras = bundle.manifest?.cameras ?? [];
+  const allStreams = bundle.logical
+    ? bundle.logical.streams.filter(
+        (stream) => stream.modality === "rgb" || stream.modality === "depth",
+      )
+    : (bundle.manifest?.cameras ?? []).map((camera) =>
+        streamForCamera(input.scope, bundle.task, camera, frequencyHz),
+      );
   const cameras = input.selectedCameraId
-    ? allCameras
-        .filter((camera) => camera.camera_id === input.selectedCameraId)
+    ? allStreams
+        .filter((camera) => camera.id === input.selectedCameraId)
         .slice(0, 1)
     : input.cameraLimit
-      ? allCameras.slice(0, input.cameraLimit)
-      : allCameras;
-  const cameraStreams = cameras.map((camera) =>
-    streamForCamera(input.scope, bundle.task, camera, frequencyHz),
-  );
+      ? allStreams.slice(0, input.cameraLimit)
+      : allStreams;
+  const cameraStreams = cameras;
   const slotCount = Math.max(cameraStreams.length, input.cameraSlotCount ?? 0);
   const paddedCameraStreams = [
     ...cameraStreams,

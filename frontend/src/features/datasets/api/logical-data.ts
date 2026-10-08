@@ -48,7 +48,7 @@ const streamWire = z
         message: "Logical stream time domain is inconsistent",
       });
   }) satisfies z.ZodType<LogicalStream>;
-const snapshotWire = z.object({
+export const logicalSnapshotWire = z.object({
   snapshot_id: snapshotId,
   snapshot: z.object({
     format: z.literal("hc-logical-snapshot/1"),
@@ -132,7 +132,7 @@ export async function fetchLogicalSnapshot(
     cache: "no-store",
     query: { snapshot_token: selection.snapshotToken },
   });
-  const view = parseWire(snapshotWire, raw, { endpoint: path });
+  const view = parseWire(logicalSnapshotWire, raw, { endpoint: path });
   const actual = view.snapshot.selection;
   if (
     actual.organization_id !== selection.scope.organizationId ||

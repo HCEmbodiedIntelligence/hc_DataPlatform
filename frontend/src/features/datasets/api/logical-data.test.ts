@@ -126,18 +126,54 @@ describe("frozen logical data consumer", () => {
     ).rejects.toBeDefined();
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it.each(["revoke", "new-session", "capability-revision"])(
+    "quarantines already cached joint samples after %s",
+    async (kind) => {
+      const fetcher = vi.fn().mockResolvedValue(response(batch()));
+      vi.stubGlobal("fetch", fetcher);
+      const source = adaptLogicalViewerStreams(selection, view)[0]!
+        .windowSource!;
+      const window = { startNs: "1000000000", endNs: "1100000000", lod: 1 };
+      expect((await source.loadWindow(window, signal())).values).toEqual([
+        [0],
+        [2],
+      ]);
+      if (kind === "revoke") useShellStore.getState().setSessionScopes([], 2);
+      else if (kind === "new-session")
+        useShellStore
+          .getState()
+          .setSession(
+            { actorId: "new-reader", displayName: "New reader", roleIds: [] },
+            "new-token",
+          );
+      else
+        useShellStore
+          .getState()
+          .setSessionScopes(
+            [
+              {
+                ...scope,
+                regionCodes: [scope.regionCode],
+                projectWide: false,
+                capabilities: [],
+              },
+            ],
+            2,
+          );
+      await expect(source.loadWindow(window, signal())).rejects.toBeDefined();
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
   it("propagates a server permission refusal without trying a historical endpoint", async () => {
-    const fetcher = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            code: "FORBIDDEN",
-            detail: "Scope grant withdrawn",
-          }),
-          { status: 403, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "FORBIDDEN",
+          detail: "Scope grant withdrawn",
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+    );
     vi.stubGlobal("fetch", fetcher);
     await expect(
       fetchLogicalSnapshot(selection, signal()),

@@ -4,6 +4,7 @@ import type {
   ViewerWindowSource,
 } from "../../viewer";
 import { bufferJointWindows } from "../../viewer/buffered-joint-window-source";
+import { getShellState } from "../../../shared/scope/shell-store";
 import { createSessionScopeLease } from "../../../shared/api/session-scope-lease";
 import {
   authorizeLogicalMedia,
@@ -97,6 +98,24 @@ export function adaptLogicalViewerStreams(
   selection: LogicalSelection,
   view: LogicalSnapshot,
 ): readonly StreamDescriptor[] {
+  const session = getShellState();
+  // Check before cache access as well as transport: a retained viewer must not
+  // expose already buffered samples after logout, revocation or reauthorization.
+  const assertAuthorization = () => {
+    const current = getShellState();
+    if (
+      current.sessionRevision !== session.sessionRevision ||
+      current.capabilityRevision !== session.capabilityRevision
+    )
+      throw new DOMException(
+        "Logical viewer authorization changed",
+        "AbortError",
+      );
+  };
+  const leaseFor = (signal: AbortSignal) => {
+    assertAuthorization();
+    return createSessionScopeLease(selection.scope, signal);
+  };
   return view.snapshot.streams.flatMap((stream): StreamDescriptor[] => {
     // Independent samples need a sample navigator; never invent timestamps for the timeline.
     if (!stream.temporal || stream.start_ns == null || stream.end_ns == null)
@@ -117,21 +136,34 @@ export function adaptLogicalViewerStreams(
           )
         : null;
     const authorize = async (signal: AbortSignal) => {
-      const grant = await authorizeLogicalMedia(
-        selection,
-        view,
-        stream,
-        signal,
-      );
-      return {
-        url: grant.media_url,
-        expiresAt: grant.expires_at,
-        kind: grant.kind === "video" ? "rgb-video" : "depth-preview",
-        mediaStartSeconds: grant.media_start_seconds,
-        mediaEndSeconds:
-          grant.media_start_seconds + grant.sample_count / grant.sample_rate_hz,
-      };
+      const lease = leaseFor(signal);
+      try {
+        lease.signal.throwIfAborted();
+        const grant = await authorizeLogicalMedia(
+          selection,
+          view,
+          stream,
+          lease.signal,
+        );
+        lease.signal.throwIfAborted();
+        assertAuthorization();
+        return {
+          url: grant.media_url,
+          expiresAt: grant.expires_at,
+          kind: grant.kind === "video" ? "rgb-video" : "depth-preview",
+          mediaStartSeconds: grant.media_start_seconds,
+          mediaEndSeconds:
+            grant.media_start_seconds +
+            grant.sample_count / grant.sample_rate_hz,
+        };
+      } finally {
+        lease.release();
+      }
     };
+    const buffered =
+      source && modality === "joint_state"
+        ? bufferJointWindows(source, stream.start_ns, stream.end_ns)
+        : source;
     return [
       {
         id: stream.stream_id,
@@ -158,10 +190,23 @@ export function adaptLogicalViewerStreams(
               : "当前查看器尚不支持此数据流的展示方式，原始数据仍保留。",
         ...(source
           ? {
-              windowSource:
-                modality === "joint_state"
-                  ? bufferJointWindows(source, stream.start_ns, stream.end_ns)
-                  : source,
+              windowSource: {
+                async loadWindow(window, signal) {
+                  const lease = leaseFor(signal);
+                  try {
+                    lease.signal.throwIfAborted();
+                    const payload = await buffered!.loadWindow(
+                      window,
+                      lease.signal,
+                    );
+                    lease.signal.throwIfAborted();
+                    assertAuthorization();
+                    return payload;
+                  } finally {
+                    lease.release();
+                  }
+                },
+              },
             }
           : {}),
         ...(media && available
