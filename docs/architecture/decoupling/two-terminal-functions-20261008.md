@@ -299,3 +299,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 集成代码 `1a9c8e892a79f3ab096af55d131ede0b954f0d5f` 含53a6fb52后端与ecf89fa2页面。P03正式POST capabilities，按返回结果展示处理模式并把revision带入上传/commit；float64不再由页面名单拒绝。1060全量、8项P09独立复验、54门禁、类型/3c6d4335 runtime生成/精确生产build、2实际HTTP/PG/MinIO/Temporal通过，零跳过。首轮P09动画可见性失败保留，未改页面或断言；单worker全量复验通过。证据integration-batch-nine-*。
 
 后台MCAP numeric QC修复与R04冻结场景未包含本批，另有检查点等待共同消费。B046发现撤权后已加载numeric缓存仍可见，服务端媒体/overview均403；B正在修权限刷新，尚未关闭此浏览器负例。
+
+### MCAP 数值 QC 实际消费修复
+
+浏览器 A031/B039 的 /action 频率为30Hz且100%覆盖仍报 ACTION_MISSING；定位到 MCAP 只提供流统计，动作内容从未进入 QualityInput。新 Episode MCAP 计划冻结 `numeric_projection_revision=mcap-numeric-quality/1`，按 profile 的 action/joint topic 实际解码，数值事实以磁盘缓冲提供给同一 QC engine/evidence；具名关节按原名读取，不为无名向量捏造轴名。缺失、非有限、含混和非法向量保留诊断；默认 action 门槛不放宽。旧工作流缺该字段仍保持旧路径，旧报告不改写。
+
+2 项实际 MCAP/Temporal/深度包回归（移除旧夹具的 action minimum=0），111 numeric/原处理器/架构用例，27 Temporal 重放，1 文件严格 mypy、Ruff、架构、实际 OpenAPI 核验通过；HTTP契约仍3c6d4335。证据mcap-numeric-quality-{services,checks-v2,replay}.xml。首轮新测试导入拼写错误保留。候选持久worker和浏览器原RISK重处理仍待联合验收，不把这些软件检查称为浏览器完成。

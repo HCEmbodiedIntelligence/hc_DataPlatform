@@ -323,6 +323,9 @@ class ProjectionCleanupActivityOutput(BaseModel):
 class QualityActivityInput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    # Absent historical tasks retain their original projection semantics.
+    numeric_projection_revision: Literal["mcap-numeric-quality/1"] | None = None
+
     organization_id: str = Field(min_length=1)
     project_id: str = Field(min_length=1)
     region_code: str = Field(min_length=1)
