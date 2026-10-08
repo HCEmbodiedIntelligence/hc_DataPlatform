@@ -20,8 +20,9 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.ingest.raw_sources import RawSource
 from hc_data_platform.object_storage.ports import ObjectChunks
 
+from .local_files import safe_relative
 from .orchestration import LeRobotImportPlanV1, build_import_plan
-from .reader import episode_metadata, safe_relative
+from .reader import episode_metadata
 from .source_profile import validate_processing_info
 
 

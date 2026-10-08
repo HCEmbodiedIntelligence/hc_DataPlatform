@@ -6,6 +6,8 @@ channel as commands and invalidations. Bare JointState has no such evidence.
 
 import math
 
+from .clock_diagnostics import clock_reasons
+
 
 def action_at(documents, axes, target, epoch, observed=None):
     values, valid, stamps, evidence = [], [], [], []
@@ -108,8 +110,6 @@ def state_at(documents, axes, target, epoch, max_gap_ns):
 def aligned(samples, target, source, alignment, epoch):
     documents = [s.data() for s in samples]
     if alignment["strict"]:
-        from .alignment import clock_reasons
-
         for document in documents:
             if clock_reasons(document):
                 document["valid"] = False

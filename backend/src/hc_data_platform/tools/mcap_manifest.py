@@ -15,7 +15,7 @@ from hc_data_platform.ingest.manifest import parse_manifest_bytes
 from hc_data_platform.ingest.models import RolloutManifestV1
 from hc_data_platform.object_storage.checksums import crc64_ecma
 from hc_data_platform.quality.models import QualityProfileV1, TopicTimingProfileV1
-from hc_data_platform.verification import McapRos2DecoderProbe
+from hc_data_platform.verification.ports import McapRos2DecoderProbe
 
 
 def checksums(path: Path) -> tuple[int, str, int]:

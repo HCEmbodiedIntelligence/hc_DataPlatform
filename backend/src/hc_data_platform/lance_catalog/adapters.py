@@ -32,9 +32,9 @@ from .models import (
 from .schema import (
     JSON_MODALITIES_METADATA_KEY,
     LanceDependencyError,
-    canonical_schema_spec,
     compile_arrow_schema,
 )
+from .schema_spec import canonical_schema_spec
 from .service import (
     CatalogConflictError,
     DatasetReconciliationRequired,

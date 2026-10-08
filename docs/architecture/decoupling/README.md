@@ -608,3 +608,19 @@ Tag 自己的事务中。摄取与迁移也消费同一个目录 SQL 所有者�
 初次漏设 active=false，仅改 revoked_at 不会撤权；补齐正常撤权状态后复验通过。
 证据为协调目录 recording-registration-{services-v2,worker-v2,checks}.xml。
 这批没有关闭工作流 DTO、Temporal 适配或私有执行上下文相关 B08/B09/B10。
+
+
+## A：纯契约入口与内部共享函数（B24/B25）
+
+Lance 的 schema_spec 独立拥有逻辑类型语法和 hc-arrow-schema/v1 指纹；
+模型创建、Arrow 编译、Episode 计划和 schema 登记都消费同一实现。LeRobot
+路径及本地文件校验归 local_files，capture 不再回读 reader；OpenArm 时钟
+证据诊断归 clock_diagnostics，named 与 alignment 单向消费。旧函数导入保留
+兼容名称，生产消费者已迁到实际归属。
+
+10 个包入口改为惰性兼容导出，models/ports 的导入不会顺带加载服务或 SDK。
+显式实现仍在原 adapters/engine/service 模块；不是创建空接口替代消费者。
+16 个独立进程导入实验屏蔽 PostgreSQL、Arrow/Lance、NumPy、FastAPI、Temporal
+等依赖，公共契约仍可用；8 个注入反例验证门禁拒绝恢复循环或 eager 导入。
+指纹 golden 来自改动前 62555a5b 的实际函数，复杂嵌套类型和 Arrow metadata
+与旧哈希保持一致。最终验证数字和提交见本轮功能矩阵及协调目录证据。

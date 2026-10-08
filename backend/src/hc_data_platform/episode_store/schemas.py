@@ -3,7 +3,7 @@
 import math
 
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
-from hc_data_platform.lance_catalog.schema import compute_schema_fingerprint
+from hc_data_platform.lance_catalog.schema_spec import compute_schema_fingerprint
 
 from .errors import PackageConflict
 from .models import canonical, digest
