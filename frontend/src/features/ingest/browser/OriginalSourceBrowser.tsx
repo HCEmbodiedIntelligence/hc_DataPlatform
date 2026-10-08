@@ -2,41 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, InputNumber, Space, Spin, Table } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
-import { request } from "../../../shared/api/http-client";
+import { useScopeQueryRevision } from "../../../shared/api/use-scoped-query";
+import {
+  getOriginalFiles,
+  getOriginalEpisode,
+  authorizeOriginalFile,
+  originalPreviewReason,
+  type OriginalFile,
+  type OriginalEpisode,
+} from "./original-source-api";
 import { createPlaybackClock } from "../../viewer/PlaybackClock";
 import { DataVisualizationWorkbench } from "../../viewer/DataVisualizationWorkbench";
 import type { StreamDescriptor } from "../../viewer/types";
-import { nativeRoot } from "../processing/lerobot-processing";
 import { formatBytes } from "../upload/upload-contract";
 import styles from "./OriginalSourceBrowser.module.css";
-
-interface OriginalFile {
-  path: string;
-  size: number;
-  sha256: string;
-}
-interface FilePage {
-  files: OriginalFile[];
-  total: number;
-  episode_count: number;
-  source_format: string;
-}
-interface Episode {
-  episode_index: number;
-  frame_count: number;
-  fps: number;
-  duration_ns: string;
-  videos: {
-    camera_id: string;
-    path: string;
-    start_seconds: number;
-    end_seconds: number;
-  }[];
-}
-interface FileGrant {
-  url: string;
-  expires_at: string;
-}
 
 export function OriginalEpisodePlayer({
   scope,
@@ -45,7 +24,7 @@ export function OriginalEpisodePlayer({
 }: {
   scope: IngestScope;
   importId: string;
-  episode: Episode;
+  episode: OriginalEpisode;
 }) {
   const clock = useMemo(
     () => createPlaybackClock({ startNs: "0", endNs: episode.duration_ns }),
@@ -64,56 +43,77 @@ export function OriginalEpisodePlayer({
   }, [clock]);
   const streams = useMemo<StreamDescriptor[]>(
     () =>
-      episode.videos.map((video) => {
-        const authorize = async (signal: AbortSignal) => {
-          const grant = await request<FileGrant>({
-            method: "GET",
-            scope,
-            signal,
-            path: `${nativeRoot(scope)}/${encodeURIComponent(importId)}/assets:read`,
-            query: { path: video.path },
-          });
-          return {
-            url: grant.url,
-            expiresAt: grant.expires_at,
-            kind: "rgb-video" as const,
+      episode.videos
+        .filter(
+          (video) =>
+            video.preview_kind === "ORIGINAL_VIDEO" &&
+            video.media_kind === "RGB",
+        )
+        .map((video) => {
+          const authorize = async (signal: AbortSignal) => {
+            const grant = await authorizeOriginalFile(
+              scope,
+              importId,
+              video.path,
+              false,
+              signal,
+            );
+            return {
+              url: grant.url,
+              expiresAt: grant.expires_at,
+              kind: "rgb-video" as const,
+            };
           };
-        };
-        return {
-          id: video.camera_id,
-          canonicalPath: video.camera_id,
-          displayName: video.camera_id,
-          modality: "rgb",
-          schema: { id: "original-video", version: "1" },
-          rateHz: episode.fps,
-          startNs: "0",
-          endNs: episode.duration_ns,
-          availability: "ready",
-          mediaStartSeconds: video.start_seconds,
-          mediaEndSeconds: video.end_seconds,
-          mediaSource: { authorize, refresh: authorize },
-        };
-      }),
+          return {
+            id: video.camera_id,
+            canonicalPath: video.camera_id,
+            displayName: video.camera_id,
+            modality: "rgb",
+            schema: { id: "original-video", version: "1" },
+            rateHz: episode.fps,
+            startNs: "0",
+            endNs: episode.duration_ns,
+            availability: "ready",
+            mediaStartSeconds: video.start_seconds,
+            mediaEndSeconds: video.end_seconds,
+            mediaSource: { authorize, refresh: authorize },
+          };
+        }),
     [episode, importId, scope],
   );
   return (
-    <DataVisualizationWorkbench
-      layout="preview"
-      adapter={{
-        id: `original-${importId}-${episode.episode_index}`,
-        mode: "raw-diagnostic",
-        title: `原始视频 · Episode ${episode.episode_index}`,
-        description: `${episode.frame_count} 帧 · ${episode.fps} FPS`,
-        readOnly: true,
-        clock,
-        cameraStreams: streams,
-        collectionItems: [],
-        findings: [],
-        actions: [],
-        timelineLabel: "原始视频时间轴",
-        timelineTracks: [],
-      }}
-    />
+    <>
+      {episode.videos
+        .filter((video) => video.preview_kind === "DOWNLOAD_ONLY")
+        .map((video) => (
+          <Alert
+            key={video.camera_id}
+            type="info"
+            showIcon
+            title={video.camera_id}
+            description={originalPreviewReason(video)}
+          />
+        ))}
+      {streams.length > 0 ? (
+        <DataVisualizationWorkbench
+          layout="preview"
+          adapter={{
+            id: `original-${importId}-${episode.episode_index}`,
+            mode: "raw-diagnostic",
+            title: `原始视频 · Episode ${episode.episode_index}`,
+            description: `${episode.frame_count} 帧 · ${episode.fps} FPS`,
+            readOnly: true,
+            clock,
+            cameraStreams: streams,
+            collectionItems: [],
+            findings: [],
+            actions: [],
+            timelineLabel: "原始视频时间轴",
+            timelineTracks: [],
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -133,9 +133,10 @@ export default function OriginalSourceBrowser({
   const [offset, setOffset] = useState(0);
   const [episodeIndex, setEpisodeIndex] = useState(initialEpisodeIndex);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const base = `${nativeRoot(scope)}/${encodeURIComponent(importId)}`;
+  const revision = useScopeQueryRevision();
   const identity = [
     "original-source",
+    revision,
     scope.organizationId,
     scope.projectId,
     scope.regionCode,
@@ -143,14 +144,7 @@ export default function OriginalSourceBrowser({
   ];
   const files = useQuery({
     queryKey: [...identity, "files", offset],
-    queryFn: ({ signal }) =>
-      request<FilePage>({
-        method: "GET",
-        path: `${base}/files`,
-        scope,
-        signal,
-        query: { offset, limit: 50 },
-      }),
+    queryFn: ({ signal }) => getOriginalFiles(scope, importId, offset, signal),
     retry: false,
     staleTime: 60_000,
   });
@@ -161,24 +155,19 @@ export default function OriginalSourceBrowser({
       (files.data?.episode_count ?? 0) > 0 &&
       files.data?.source_format === "LEROBOT_V3",
     queryFn: ({ signal }) =>
-      request<Episode>({
-        method: "GET",
-        scope,
-        signal,
-        path: `${base}/episodes/${episodeIndex}`,
-      }),
+      getOriginalEpisode(scope, importId, episodeIndex, signal),
     retry: false,
     staleTime: 60_000,
   });
   const download = async (file: OriginalFile) => {
     setDownloadError(null);
     try {
-      const grant = await request<FileGrant>({
-        method: "GET",
-        path: `${base}/assets:read`,
+      const grant = await authorizeOriginalFile(
         scope,
-        query: { path: file.path, download: true },
-      });
+        importId,
+        file.path,
+        true,
+      );
       const link = document.createElement("a");
       link.href = grant.url;
       link.download = file.path.split("/").at(-1) ?? file.path;
