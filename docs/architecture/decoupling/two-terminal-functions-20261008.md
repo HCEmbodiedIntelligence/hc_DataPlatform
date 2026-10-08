@@ -303,3 +303,9 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。
 
 R04/B049 补齐固定 `model_id`，从发布版本的 `robot_model_id` 原值冻结，不由robot/version猜测；NO_MODEL_BINDING仍为null。实际普通HTTP读取/跨项目资产/换绑/4并发重试/Tag继承完整服务1通过，3文件mypy及OpenAPI生成通过。首轮数据库列名误用model_id导致实际worker失败的证据 frozen-scene-model-id-services.xml 保留，改成真实robot_model_id后v2通过，未放宽验证。runtime-frozen-robot-scene-model-id.yaml SHA256=40ce3f4fde3e763a50b8b39ac3dfb1a057581569ed891d80139d1aea51c21b13。此检查点仍待B消费，不关闭R04。
+
+### R03：模型与实例绑定事务边界
+
+绑定用例显式消费PublishedModelForBinding/PublishedModelIdentity，版本检查归registry且在调用者事务FOR SHARE；模型撤回消费robot_assets拥有的绑定历史查询，包含已被替换的历史绑定。runtime在API/worker工厂共同注入，构造缺依赖直接失败；实例仓储不读模型版本表，模型仓储不直接读实例/绑定表，新AST门禁拒绝回归。历史表名保留，不新建非原子HTTP协作。
+
+真实PG四并发相同幂等key返回同绑定，旧ETag拒绝，写入绑定/指针/回执后的故障使三者同时回滚；模型行锁实际阻止并发FOR UPDATE，失败原key可以正常重试，跨组织模型拒绝且已替换绑定仍阻止误删。7既有模型/机器人PG、1完整native HTTP/冻结场景、1新增事务用例通过，101架构/API检查、3新文件mypy、Ruff/OpenAPI通过。新增事务fixture前几轮错误身份/非规范fingerprint导致失败保留，未放宽产品校验。证据model-binding-{transaction-services-v4,native-services,boundary-checks}.xml；R03实现已验证，尚待总集成，R04浏览器仍待验。

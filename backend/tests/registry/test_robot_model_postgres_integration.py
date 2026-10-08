@@ -35,6 +35,7 @@ from hc_data_platform.registry.models import (
 )
 from hc_data_platform.registry.repository import ConnectionFactory, PostgresRegistryRepository
 from hc_data_platform.registry.service import RegistryService
+from hc_data_platform.robot_assets.binding_queries import model_has_binding_history
 from hc_data_platform.security.auth import AuthContext
 
 psycopg = pytest.importorskip("psycopg")
@@ -287,7 +288,9 @@ def _auth(
 
 def _service(dsn: str) -> RegistryService:
     return RegistryService(
-        PostgresRegistryRepository(psycopg_connection_factory(_app_dsn(dsn))),
+        PostgresRegistryRepository(
+            psycopg_connection_factory(_app_dsn(dsn)), binding_usage=model_has_binding_history
+        ),
         clock=lambda: datetime(2026, 8, 19, 12, tzinfo=timezone.utc),
     )
 
@@ -296,7 +299,7 @@ class _BarrierPostgresRegistryRepository(PostgresRegistryRepository):
     """Synchronize contenders immediately before the real write transaction."""
 
     def __init__(self, connection_factory: ConnectionFactory, *, replace_gate: Barrier) -> None:
-        super().__init__(connection_factory)
+        super().__init__(connection_factory, binding_usage=model_has_binding_history)
         self._replace_gate = replace_gate
 
     def replace_robot_model_joint_mappings(
@@ -409,7 +412,10 @@ def test_postgres_registry_asset_ledger_is_project_scoped_and_manifested(
 ) -> None:
     storage = InMemoryObjectStorage()
     service = RegistryService(
-        PostgresRegistryRepository(psycopg_connection_factory(_app_dsn(postgres_dsn))),
+        PostgresRegistryRepository(
+            psycopg_connection_factory(_app_dsn(postgres_dsn)),
+            binding_usage=model_has_binding_history,
+        ),
         storage=storage,
         clock=lambda: datetime(2026, 8, 19, 12, tzinfo=timezone.utc),
     )
@@ -776,7 +782,10 @@ def test_postgres_discard_rolls_back_an_unbound_import_publication(
     postgres_dsn: str,
 ) -> None:
     service = RegistryService(
-        PostgresRegistryRepository(psycopg_connection_factory(_app_dsn(postgres_dsn))),
+        PostgresRegistryRepository(
+            psycopg_connection_factory(_app_dsn(postgres_dsn)),
+            binding_usage=model_has_binding_history,
+        ),
         storage=InMemoryObjectStorage(),
         clock=lambda: datetime(2026, 8, 19, 13, tzinfo=timezone.utc),
     )

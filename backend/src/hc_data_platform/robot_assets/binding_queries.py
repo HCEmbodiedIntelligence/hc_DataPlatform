@@ -3,6 +3,24 @@
 from typing import Any
 
 
+def model_has_binding_history(cursor: Any, organization_id: str, version_id: str) -> bool:
+    """Instance-owned retention fact, including superseded historical bindings."""
+    cursor.execute(
+        """SELECT EXISTS (
+            SELECT 1 FROM registry.organization_robot_model_bindings
+            WHERE organization_id=%s AND version_id=%s
+            UNION ALL
+            SELECT 1 FROM robotics.robot_assets
+            WHERE organization_id=%s AND robot_model_version_id=%s
+        )""",
+        (organization_id, version_id, organization_id, version_id),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError("instance binding usage query returned no result")
+    return bool(row[0])
+
+
 def locked_model_binding(
     cursor: Any, organization_id: str, robot_id: str
 ) -> tuple[str, str] | None:
