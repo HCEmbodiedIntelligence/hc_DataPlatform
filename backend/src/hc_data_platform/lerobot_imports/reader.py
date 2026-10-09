@@ -11,7 +11,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from hc_data_platform.tools import hf_unitree_g1_to_mcap as g1
+from hc_data_platform.data_formats import lerobot_g1 as g1
 
 from .local_files import format_path as format_path
 from .local_files import local_file as local_file
@@ -104,12 +104,13 @@ def read_episode(
     )
     profile = profile_for_info(info, preserve_features=preserve_features)
     if profile.legacy_g1:
-        layout = g1.acquire_source(
-            repository="platform-raw/lerobot",
-            revision="committed",
-            episode_index=index,
-            cache_root=root,
-            source_root=root,
+        layout = g1.read_source(
+            index,
+            lambda relative: local_file(root, relative),
+            metadata_files=[
+                local_file(root, path.relative_to(root).as_posix())
+                for path in sorted((root / "meta/episodes").glob("chunk-*/*.parquet"))
+            ],
         )
         episode = g1.load_episode_data(layout.data_file, index, float(info["fps"]))
         if layout.episode_metadata["length"] != episode.frame_count:

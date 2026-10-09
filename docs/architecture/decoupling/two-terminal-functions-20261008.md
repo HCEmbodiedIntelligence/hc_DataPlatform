@@ -350,3 +350,9 @@ B063-B067的新MCAP回归只证明自动QC PASS与Raw原字节下载。实际pro
 新MCAP计划固定mcap-episode-package/2及mcap-numeric-vector/1，按冻结QC profile选择action/joint信号，规范化value/position等字段为float64向量；未提供轴名时保留unknown，含混、非有限或不能精确表示的整数拒绝。原解码消息（含header/velocity/effort）逐帧流式保存在hc/recording/mcap_numeric.jsonl，文件纳入不可变清单；原Raw字节不变。processor/1历史计划仍生成原string内容，不用新语义改旧版本。
 
 3项真实HTTP/PG/MinIO/Temporal分别验证新数值包、缺深度单位失败、历史processor/1；新包30行action/state Parquet double逐值与源一致，普通HTTP logical实际JOINT_STATE/ACTION+VECTOR且30样本读回，故不是只改kind标签。127格式/状态/架构检查、19状态/router检查、27工作流执行/重放、2文件mypy/Ruff/OpenAPI通过。证据mcap-episode-numeric-services-v4.xml、mcap-numeric-package-checks-v2.xml、mcap-numeric-package-replay-v2.xml。前几轮测试授权/响应路径/Path读取错误和禁网测试服务器下载失败均保留；实际生产校验未放宽。P04消费者与持久浏览器新尝试待B接入，原string包不可变且不宣称已修其历史内容。
+
+### B16：LeRobot 格式读取脱离 CLI
+
+data_formats/lerobot_g1拥有G1来源布局、camera/topic/29关节定义、Parquet与数字切片。服务reader/adapter/profiles/source_profile实际依赖该库；CLI只选择本地或固定远程版本/下载/缓存路径，注入文件解析能力后使用同一读取实现，保留旧导入别名。AST门禁拒绝服务反向导入CLI（含静态/相对/动态导入），冷启动服务导入不加载转换CLI。
+
+21项CLI实际四相机MCAP输出、原生适配、上传与并发缓存检查，102架构检查、1库文件严格mypy及Ruff/OpenAPI通过。4项既有RGB-D实际HTTP/PG/MinIO/Temporal正负用例通过；另增G1原生真实上传→Temporal/QC→四路RGB包→29具名关节/action双精度逐值读回→四原视频哈希一致且各6帧真实解码→独立标注提交审核→READY重试与父子历史重放通过。G1只含RGB，不伪造深度或Dex1标定。证据lerobot-library-checks.xml、lerobot-library-architecture.xml、lerobot-library-services.xml及lerobot-library-g1-services-v3.xml。首轮G1夹具缺dataset offsets、次轮错误期待RGB重编码的失败保留；补真实offset后明确断言0次编码和原文件字节复用，不改产品校验。
