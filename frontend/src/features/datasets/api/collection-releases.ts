@@ -1,45 +1,34 @@
-import { z } from "zod";
 import { request } from "../../../shared/api/http-client";
 import type { components } from "../../../shared/api/generated/platform";
+import {
+  CollectionReleasePreflightWire,
+  CollectionReleaseWire,
+} from "../../../shared/api/generated/platform-wires";
 import type { Scope } from "../../../shared/scope/model";
 import { createSessionScopeLease } from "../../../shared/api/session-scope-lease";
 import { parseWire } from "../../../shared/api/validate";
 
-const digest = z.string().regex(/^[0-9a-f]{64}$/u);
-const id = z.string().min(1);
-const exclusion = z.object({
-  episode_id: id,
-  reason: z.enum([
-    "ANNOTATION_NOT_APPROVED",
-    "ANNOTATION_TASK_SELECTION_REQUIRED",
-    "NOT_SELECTED",
-  ]),
-});
-const shared = {
-  dataset_id: id,
-  dataset_version: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u),
-  collection_version_id: z.string().regex(/^cv_[0-9a-f]{64}$/u),
-  collection_manifest_sha256: digest,
-  content_hash: digest,
-  eligible_episode_ids: z.array(id),
-  excluded_episodes: z.array(exclusion),
-};
-const preflightWire = z.object({
-  ...shared,
-  annotation_task_options: z.record(id, z.array(id)),
-}) satisfies z.ZodType<components["schemas"]["CollectionReleasePreflight"]>;
-const releaseWire = z.object({
-  ...shared,
-  format: z.literal("hc-collection-release/1"),
-  version_id: z.string().regex(/^version_release_[0-9a-f]{32}$/u),
-  document_sha256: digest,
-  document_size: z
-    .number()
-    .int()
-    .positive()
-    .max(64 * 1024 ** 2),
-  created_at: z.iso.datetime({ offset: true }),
-}) satisfies z.ZodType<components["schemas"]["CollectionRelease"]>;
+// Identity constraints are domain rules. Wire fields, enums, hashes and limits
+// come from the production contract; cross-receipt checks remain below.
+function validReleaseIdentity(
+  value: CollectionReleasePreflight | CollectionRelease,
+) {
+  return (
+    Boolean(value.dataset_id) &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(value.dataset_version) &&
+    /^cv_[0-9a-f]{64}$/u.test(value.collection_version_id) &&
+    value.eligible_episode_ids.every(Boolean) &&
+    value.excluded_episodes.every((item) => Boolean(item.episode_id))
+  );
+}
+const preflightWire = CollectionReleasePreflightWire.refine(
+  validReleaseIdentity,
+).refine((value) =>
+  Object.entries(value.annotation_task_options).every(
+    ([id, tasks]) => Boolean(id) && tasks.every(Boolean),
+  ),
+);
+const releaseWire = CollectionReleaseWire.refine(validReleaseIdentity);
 
 export type CollectionReleaseCommand =
   components["schemas"]["PublishCollectionRelease"];

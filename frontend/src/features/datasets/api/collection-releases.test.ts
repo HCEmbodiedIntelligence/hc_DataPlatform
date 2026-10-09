@@ -67,19 +67,17 @@ function login() {
       "release-session",
     );
   useShellStore.getState().setScope(scope);
-  useShellStore
-    .getState()
-    .setSessionScopes(
-      [
-        {
-          ...scope,
-          regionCodes: [scope.regionCode],
-          projectWide: false,
-          capabilities: [],
-        },
-      ],
-      1,
-    );
+  useShellStore.getState().setSessionScopes(
+    [
+      {
+        ...scope,
+        regionCodes: [scope.regionCode],
+        projectWide: false,
+        capabilities: [],
+      },
+    ],
+    1,
+  );
 }
 beforeEach(() => {
   configureRuntime({
@@ -162,6 +160,26 @@ it("reads historical receipts without requiring newly introduced selection metad
     await loadCollectionRelease(scope, "dataset-1", release.version_id),
   ).toEqual(release);
 });
+it.each([
+  { document_size: 64 * 1024 ** 2 + 1 },
+  { document_size: 0 },
+  { document_size: 1.5 },
+  { eligible_episode_ids: [] },
+  { format: undefined },
+  { excluded_episodes: [{ episode_id: "episode-2", reason: "UNKNOWN" }] },
+])(
+  "rejects malformed fixed receipts through generated runtime constraints: %j",
+  async (changes) => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(response({ ...release, ...changes }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(
+      loadCollectionRelease(scope, "dataset-1", release.version_id),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  },
+);
 it("checks the immutable readback against the write receipt", async () => {
   vi.stubGlobal(
     "fetch",
