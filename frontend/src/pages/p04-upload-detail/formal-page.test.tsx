@@ -17,13 +17,22 @@ import type { FormalUploadDetail } from "../../features/ingest/detail/client";
 import FormalUploadDetailPage from "./formal-page";
 import RawDiagnosticRoute from "../p09-manual-issues/raw-diagnostic-route";
 
-const { loadDetailMock, loadRawMediaMock, loadWorkflowMock } = vi.hoisted(
-  () => ({
-    loadDetailMock: vi.fn(),
-    loadRawMediaMock: vi.fn(),
-    loadWorkflowMock: vi.fn(),
-  }),
-);
+const {
+  loadDetailMock,
+  loadRawMediaMock,
+  loadWorkflowMock,
+  loadLogicalMock,
+  access,
+} = vi.hoisted(() => ({
+  loadDetailMock: vi.fn(),
+  loadRawMediaMock: vi.fn(),
+  loadWorkflowMock: vi.fn(),
+  loadLogicalMock: vi.fn(),
+  access: { allowed: true },
+}));
+vi.mock("../../features/ingest/detail/logical-preview", () => ({
+  loadUploadLogicalPreview: loadLogicalMock,
+}));
 
 vi.mock("../../features/ingest/use-ingest-scope", () => ({
   useIngestScope: () => ({
@@ -35,7 +44,7 @@ vi.mock("../../features/ingest/use-ingest-scope", () => ({
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
   useCapabilities: () => ({
-    has: (capability: string) => capability === "upload.read",
+    has: (capability: string) => access.allowed && capability === "upload.read",
     loading: false,
     failed: false,
   }),
@@ -279,6 +288,7 @@ function renderPage(path = "/ingest/uploads/session-a?from=pending#quality") {
 }
 
 beforeEach(() => {
+  access.allowed = true;
   loadDetailMock.mockResolvedValue(detailFixture("PASS", 4));
   loadWorkflowMock.mockResolvedValue(workflowFixture("SUCCEEDED"));
   loadRawMediaMock.mockResolvedValue({
@@ -298,6 +308,88 @@ afterEach(() => {
 });
 
 describe("P04 formal upload detail page", () => {
+  it("shows forbidden without issuing requests when upload reading is denied", async () => {
+    access.allowed = false;
+    renderPage();
+    expect(
+      await screen.findByText("当前会话没有读取上传记录的 capability。"),
+    ).toBeVisible();
+    expect(loadDetailMock).not.toHaveBeenCalled();
+    expect(loadWorkflowMock).not.toHaveBeenCalled();
+    expect(loadRawMediaMock).not.toHaveBeenCalled();
+    expect(loadLogicalMock).not.toHaveBeenCalled();
+  });
+  it("uses Episode logical media in P04 and links its fixed viewer and annotation task", async () => {
+    const workflow = {
+      ...workflowFixture("SUCCEEDED"),
+      aligned_media: null,
+      viewer: {
+        schema_version: "dataset-ingest-viewer-target/v1",
+        dataset_id: "dataset_native_a",
+        version_id: "version_cv_a",
+        episode_id: "episode_native_a",
+        revision_id: "revision_native_a",
+      },
+      episode: {
+        schema_version: "upload-episode-target/v1",
+        project_id: "project-a",
+        region_code: "cn-test",
+        dataset_id: "dataset_native_a",
+        episode_id: "episode_native_a",
+        rollout_id: "rollout-a",
+        data_version_id: "dv_a",
+        content_hash: "a".repeat(64),
+        annotation_task_id: "annotation-native",
+        fps: 25,
+        frame_count: 6,
+      },
+    };
+    loadWorkflowMock.mockResolvedValue(workflow);
+    loadLogicalMock.mockRejectedValue(new Error("preview unavailable"));
+    renderPage();
+    expect(await screen.findByText("处理完成 · 6 帧 · 25 Hz")).toBeVisible();
+    await waitFor(() => expect(loadLogicalMock).toHaveBeenCalled());
+    expect(
+      await screen.findByRole("button", { name: /重\s*试/u }),
+    ).toBeVisible();
+    expect(screen.getByLabelText("Raw 诊断测试适配器")).toHaveAttribute(
+      "data-ready-count",
+      "0",
+    );
+    loadLogicalMock.mockResolvedValue({
+      streams: [
+        {
+          id: "rgb",
+          canonicalPath: "/sensors/camera_1/image",
+          modality: "rgb",
+          availability: "ready",
+          mediaSource: { authorize: vi.fn() },
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: /重\s*试/u }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Raw 诊断测试适配器")).toHaveAttribute(
+        "data-ready-count",
+        "1",
+      ),
+    );
+    expect(loadLogicalMock).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: "org-a" }),
+      workflow,
+      expect.any(AbortSignal),
+    );
+    expect(
+      screen.getByRole("link", { name: "打开完整数据视图" }),
+    ).toHaveAttribute(
+      "href",
+      "/datasets/dataset_native_a/versions/version_cv_a/episodes/episode_native_a/view",
+    );
+    expect(screen.getByRole("link", { name: "打开标注任务" })).toHaveAttribute(
+      "href",
+      "/annotations/tasks/annotation-native",
+    );
+  });
   it("shows a common trim window while normal boundaries remain PASS", async () => {
     const detail = detailFixture("PASS", 2);
     if (!detail.quality) throw new Error("quality fixture missing");

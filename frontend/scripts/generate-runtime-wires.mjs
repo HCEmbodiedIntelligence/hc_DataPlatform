@@ -4,6 +4,7 @@ const responseRoots = [
   "CollectionReleasePreflight",
   "CollectionRelease",
   "LeRobotCapabilities",
+  "UploadProcessingStatusV1",
 ];
 const annotations = [
   "title",
@@ -108,11 +109,14 @@ export function renderRuntimeWires(
           ["type", ...scalar, "minLength", "maxLength", "pattern", "format"],
           location,
         );
-        if (schema.format && schema.format !== "date-time")
+        if (schema.format && !["date-time", "uuid"].includes(schema.format))
           fail(location, `unsupported format ${schema.format}`);
-        result = schema.format
-          ? "z.iso.datetime({ offset: true })"
-          : "z.string()";
+        result =
+          schema.format === "uuid"
+            ? "z.string().uuid()"
+            : schema.format === "date-time"
+              ? "z.iso.datetime({ offset: true })"
+              : "z.string()";
         if (schema.minLength !== undefined)
           result += `.min(${schema.minLength})`;
         if (schema.maxLength !== undefined)

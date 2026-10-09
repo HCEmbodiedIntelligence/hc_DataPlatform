@@ -111,6 +111,19 @@ interface UploadRuntime {
   initialAuthorizations: readonly PartAuthorization[];
 }
 
+/** A definitive create rejection has no session to cancel or resume. Network
+ * failures remain resumable: absence of a response does not prove non-creation. */
+export function canDiscardRejectedLeRobot(item: UploadQueueItem): boolean {
+  return (
+    item.sourceType === "LEROBOT_NATIVE" &&
+    item.transferStatus === "failed" &&
+    item.failureCode === "LEROBOT_IMPORT_MANIFEST_CHANGED" &&
+    item.sessionId === null &&
+    item.uploadedBytes === 0 &&
+    item.completedParts === 0
+  );
+}
+
 interface LeRobotUploadRuntime {
   readonly scope: IngestScope;
   readonly selection: LeRobotFolderSelection;
@@ -1715,7 +1728,20 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
   },
   cancel: async (itemId) => {
     const item = get().items.find((candidate) => candidate.id === itemId);
-    if (item?.sourceType === "LEROBOT_NATIVE") return;
+    if (item?.sourceType === "LEROBOT_NATIVE") {
+      const native = leRobotRuntimeByItem.get(itemId);
+      if (
+        canDiscardRejectedLeRobot(item) &&
+        !native?.resume &&
+        !native?.controller
+      ) {
+        leRobotRuntimeByItem.delete(itemId);
+        set((state) => ({
+          items: state.items.filter((current) => current.id !== itemId),
+        }));
+      }
+      return;
+    }
     const runtime = runtimeByItem.get(itemId);
     if (!runtime || !item?.sessionId) return;
     runtime.intent = "cancel";

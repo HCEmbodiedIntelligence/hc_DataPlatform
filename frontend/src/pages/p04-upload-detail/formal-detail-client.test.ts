@@ -113,6 +113,19 @@ beforeEach(() => {
       "session-token",
     );
   useShellStore.getState().setScope(scope);
+  useShellStore
+    .getState()
+    .setSessionScopes(
+      [
+        {
+          ...scope,
+          regionCodes: [scope.regionCode],
+          projectWide: false,
+          capabilities: ["upload.read"],
+        },
+      ],
+      1,
+    );
 });
 
 afterEach(() => {
@@ -362,3 +375,78 @@ describe("P04 formal upload detail client", () => {
     ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
   });
 });
+
+const episodeProcessing = {
+  schema_version: "upload-processing-status/v1",
+  session_id: session.session_id,
+  rollout_id: session.rollout_id,
+  workflow_id: session.workflow.workflow_id,
+  status: "SUCCEEDED",
+  stage: "ready",
+  attempt: 1,
+  aligned_media: null,
+  error_code: null,
+  updated_at: "2026-10-09T00:00:00Z",
+  viewer: {
+    schema_version: "dataset-ingest-viewer-target/v1",
+    dataset_id: "dataset_episode_a",
+    version_id: "version_cv_a",
+    episode_id: "episode_native_a",
+    revision_id: "revision_native_a",
+  },
+  episode: {
+    schema_version: "upload-episode-target/v1",
+    project_id: scope.projectId,
+    region_code: scope.regionCode,
+    dataset_id: "dataset_episode_a",
+    episode_id: "episode_native_a",
+    rollout_id: session.rollout_id,
+    data_version_id: "dv_a",
+    content_hash: "a".repeat(64),
+    annotation_task_id: "task-native",
+    fps: 25,
+    frame_count: 6,
+  },
+};
+it("accepts a non-Lance successful target and its own frame rate", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(episodeProcessing)));
+  const loaded = await getFormalUploadProcessingStatus(scope, session);
+  expect(loaded.episode).toMatchObject({ fps: 25, frame_count: 6 });
+  expect(resolveFormalUploadAlignedMediaTarget(session, loaded)).toBeNull();
+  expect(resolveFormalUploadViewerTarget(session, loaded)).toMatchObject({
+    versionId: "version_cv_a",
+    episodeId: "episode_native_a",
+  });
+});
+it.each([
+  { status: "RUNNING" },
+  { viewer: null },
+  { episode: null },
+  { episode: { ...episodeProcessing.episode, region_code: "other" } },
+  { episode: { ...episodeProcessing.episode, episode_id: "episode_other" } },
+  { episode: { ...episodeProcessing.episode, frame_count: 0 } },
+  {
+    aligned_media: {
+      schema_version: "upload-aligned-media-target/v1",
+      project_id: scope.projectId,
+      dataset_id: "dataset_episode_a",
+      rollout_id: session.rollout_id,
+      dataset_version: 1,
+      annotation_task_id: "old-task",
+      fps: 30,
+      start_step: 0,
+      end_step: 6,
+    },
+  },
+])(
+  "rejects inconsistent or ambiguous Episode processing targets %j",
+  async (changes) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ ...episodeProcessing, ...changes })),
+    );
+    await expect(
+      getFormalUploadProcessingStatus(scope, session),
+    ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+  },
+);
