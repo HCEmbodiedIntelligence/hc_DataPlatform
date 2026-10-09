@@ -14,6 +14,8 @@ import type { RuntimeManifestDiscoveryProjection } from "../../viewer/raw-diagno
 import type { StreamDescriptor } from "../../viewer/types";
 import { isDomainError } from "../../../shared/api/domain-error";
 import { useCapabilities } from "../../../shared/auth/use-capabilities";
+import { useScopeQueryRevision } from "../../../shared/api/use-scoped-query";
+import { loadUploadLogicalPreview } from "./logical-preview";
 import {
   formatEffectiveDuration,
   formatStorageSize,
@@ -201,9 +203,19 @@ function rawCameraStreams(
   scope: NonNullable<ReturnType<typeof useIngestScope>>,
   workflow: FormalUploadProcessingStatus | undefined,
   mediaTarget: FormalUploadAlignedMediaTarget | null | undefined,
+  logicalStreams: readonly StreamDescriptor[] | undefined,
 ): Readonly<Record<string, StreamDescriptor>> {
   const streams: Record<string, StreamDescriptor> = {};
   for (const camera of manifest.cameras) {
+    if (workflow?.episode) {
+      const logical = logicalStreams?.find(
+        (stream) => stream.canonicalPath === camera.topic && stream.mediaSource,
+      );
+      if (logical) {
+        streams[camera.topic] = logical;
+        continue;
+      }
+    }
     const modality = camera.encoding?.toLowerCase().includes("depth")
       ? "depth"
       : "rgb";
@@ -211,7 +223,8 @@ function rawCameraStreams(
     const mediaPending =
       !workflow ||
       workflow.status === "PENDING" ||
-      workflow.status === "RUNNING";
+      workflow.status === "RUNNING" ||
+      (Boolean(workflow.episode) && !logicalStreams);
     streams[camera.topic] = {
       id: `raw-mcap:${camera.camera_id}`,
       canonicalPath: camera.topic,
@@ -234,11 +247,11 @@ function rawCameraStreams(
           ? "media-preparing"
           : "missing",
       accessibleSummary: mediaReady
-        ? `${camera.camera_id} 已完成 canonical MP4 与 Lance 引用提交；面板可见时只签发读取地址。`
+        ? `${camera.camera_id} 已生成固定视频；面板可见时取得授权读取地址。`
         : mediaPending
-          ? `${camera.camera_id} 正在完成校验、30Hz 对齐、MP4 编码和 Lance 提交。`
+          ? `${camera.camera_id} 正在处理或加载固定预览。`
           : rawSourceAvailable
-            ? `${camera.camera_id} 的 Raw MCAP 仍可下载，但本次工作流未生成可播放的 Lance 版本。`
+            ? `${camera.camera_id} 的原始 MCAP 仍可下载，当前没有可播放的处理结果。`
             : `${camera.camera_id} 尚无可用的 Raw 证据源或可播放版本。`,
       ...(mediaTarget
         ? {
@@ -307,7 +320,7 @@ function ProcessingMediaState({
       </output>
     );
   }
-  if (mediaTarget) {
+  if (mediaTarget || workflow.episode) {
     const viewerPath = viewerTarget
       ? datasetRoutes.episodeViewer.build({
           datasetId: viewerTarget.datasetId,
@@ -318,8 +331,9 @@ function ProcessingMediaState({
     return (
       <div className={styles.processingState} role="status" aria-live="polite">
         <span>
-          Canonical MP4 与 Lance 引用已提交 · 数据集版本{" "}
-          {mediaTarget.datasetVersion}
+          {workflow.episode
+            ? `处理完成 · ${workflow.episode.frame_count} 帧 · ${workflow.episode.fps} Hz`
+            : `Canonical MP4 与 Lance 引用已提交 · 数据集版本 ${mediaTarget!.datasetVersion}`}
         </span>
         {viewerPath ? (
           <Link className={styles.viewerLink} to={viewerPath}>
@@ -329,7 +343,9 @@ function ProcessingMediaState({
         <Link
           className={styles.viewerLink}
           to={annotationRoutes.task.build({
-            taskId: mediaTarget.annotationTaskId,
+            taskId:
+              workflow.episode?.annotation_task_id ??
+              mediaTarget!.annotationTaskId,
           })}
         >
           打开标注任务
@@ -438,6 +454,21 @@ function UploadDiagnostic({
   readonly problemDataContext?: boolean;
   readonly showContextBar?: boolean;
 }) {
+  const authorizationRevision = useScopeQueryRevision();
+  const logical = useQuery({
+    queryKey: [
+      "ingest",
+      "logical-preview",
+      scope,
+      workflowMedia.job,
+      authorizationRevision,
+    ],
+    enabled: Boolean(workflowMedia.job?.episode),
+    queryFn: ({ signal }) =>
+      loadUploadLogicalPreview(scope, workflowMedia.job!, signal),
+    staleTime: 0,
+    retry: false,
+  });
   const bounds = useMemo(
     () => diagnosticBounds(detail.quality),
     [detail.quality.end_ns, detail.quality.start_ns],
@@ -465,6 +496,7 @@ function UploadDiagnostic({
         scope,
         workflowMedia.job,
         workflowMedia.target,
+        logical.isError ? [] : logical.data?.streams,
       ),
     [
       clock,
@@ -474,6 +506,8 @@ function UploadDiagnostic({
       scope,
       workflowMedia.job,
       workflowMedia.target,
+      logical.data,
+      logical.isError,
     ],
   );
 
@@ -509,6 +543,14 @@ function UploadDiagnostic({
         onRefresh={workflowMedia.onRefresh}
       />
       <BoundaryTrimSummary quality={detail.quality} />
+      {logical.isError ? (
+        <PageState
+          state={pageStateFromError(logical.error)}
+          label="固定数据预览"
+          description={problemDescription(logical.error)}
+          onRetry={() => void logical.refetch()}
+        />
+      ) : null}
       <RawDiagnosticWorkbench
         id={`upload-diagnostic:${detail.session.session_id ?? detail.session.rollout_id}`}
         title="Raw 诊断"
@@ -841,9 +883,12 @@ export default function UploadDetailView({
     ],
   );
   const capabilities = useCapabilities();
+  const authorizationRevision = useScopeQueryRevision();
   const detail = useQuery<FormalUploadDetail>({
     queryKey: [
       "p04-formal-upload-detail",
+      scope?.organizationId,
+      authorizationRevision,
       scope?.projectId,
       scope?.regionCode,
       stableId,
@@ -861,12 +906,15 @@ export default function UploadDetailView({
   const rawMedia = useQuery({
     queryKey: [
       "p04-raw-media-source",
+      scope?.organizationId,
+      authorizationRevision,
       scope?.projectId,
       scope?.regionCode,
       rawMediaSessionId,
     ],
     enabled:
       Boolean(scope) &&
+      capabilities.has("upload.read") &&
       detail.data?.session.status === "RAW_COMMITTED" &&
       Boolean(rawMediaSessionId),
     staleTime: 0,
@@ -882,12 +930,15 @@ export default function UploadDetailView({
   const workflow = useQuery({
     queryKey: [
       "p04-ingest-workflow",
+      authorizationRevision,
       scope?.organizationId,
       scope?.projectId,
       scope?.regionCode,
       workflowId,
     ],
-    enabled: Boolean(scope && workflowSession && workflowId),
+    enabled: Boolean(
+      scope && workflowSession && workflowId && capabilities.has("upload.read"),
+    ),
     staleTime: 0,
     queryFn: async ({ signal }) => {
       if (!scope || !workflowSession || !workflowId) {
@@ -933,7 +984,7 @@ export default function UploadDetailView({
       </main>
     );
   }
-  if (capabilities.loading || detail.isPending) {
+  if (capabilities.loading) {
     return (
       <main className={styles.statePage}>
         <PageState state="loading" label="上传详情" layout="workbench" />
@@ -948,6 +999,13 @@ export default function UploadDetailView({
           label="上传详情"
           description="当前会话没有读取上传记录的 capability。"
         />
+      </main>
+    );
+  }
+  if (detail.isPending) {
+    return (
+      <main className={styles.statePage}>
+        <PageState state="loading" label="上传详情" layout="workbench" />
       </main>
     );
   }

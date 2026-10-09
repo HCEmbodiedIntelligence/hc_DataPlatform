@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 40ce3f4fde3e763a50b8b39ac3dfb1a057581569ed891d80139d1aea51c21b13
+// Runtime-OpenAPI-SHA256: 673be7512560adc8821da28e259b3bf8f1bc766f17aab4f330d9cd5ea9529d0a
 // Response projections: unknown object fields are stripped; defaults are not filled.
 import { z } from "zod";
 import type { components } from "./platform";
@@ -65,3 +65,120 @@ export const LeRobotCapabilitiesWire = z.object({
   storage_supported: z.boolean(),
   validation_scope: z.string().pipe(z.literal("DECLARED_METADATA")),
 }) satisfies z.ZodType<components["schemas"]["LeRobotCapabilities"]>;
+export const UploadAlignedMediaTargetV1Wire = z.object({
+  annotation_task_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  dataset_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  dataset_version: z.number().int().min(1),
+  end_step: z.number().int().gt(0),
+  fps: z.number().int().pipe(z.literal(30)),
+  project_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  rollout_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  schema_version: z.string().pipe(z.literal("upload-aligned-media-target/v1")),
+  start_step: z.number().int().min(0),
+}) satisfies z.ZodType<components["schemas"]["UploadAlignedMediaTargetV1"]>;
+export const UploadEpisodeTargetV1Wire = z.object({
+  annotation_task_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  content_hash: z.string().regex(new RegExp("^[a-f0-9]{64}$", "u")),
+  data_version_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  dataset_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  episode_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  fps: z.number().gt(0),
+  frame_count: z.number().int().gt(0),
+  project_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  region_code: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  rollout_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  schema_version: z.string().pipe(z.literal("upload-episode-target/v1")),
+}) satisfies z.ZodType<components["schemas"]["UploadEpisodeTargetV1"]>;
+export const UploadProcessingStateWire = z
+  .string()
+  .pipe(
+    z.literal([
+      "PENDING",
+      "RUNNING",
+      "SUCCEEDED",
+      "TECHNICAL_FAILED",
+      "QUALITY_RISK",
+      "QUALITY_REJECTED",
+      "CANCELLED",
+    ]),
+  ) satisfies z.ZodType<components["schemas"]["UploadProcessingState"]>;
+export const DatasetIngestViewerTargetWire = z.object({
+  dataset_id: z
+    .string()
+    .regex(new RegExp("^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$", "u")),
+  episode_id: z
+    .string()
+    .regex(new RegExp("^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$", "u")),
+  revision_id: z
+    .string()
+    .regex(new RegExp("^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$", "u")),
+  schema_version: z.string().pipe(z.literal("dataset-ingest-viewer-target/v1")),
+  version_id: z
+    .string()
+    .regex(new RegExp("^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$", "u")),
+}) satisfies z.ZodType<components["schemas"]["DatasetIngestViewerTarget"]>;
+export const UploadProcessingStatusV1Wire = z.object({
+  aligned_media: z.union([UploadAlignedMediaTargetV1Wire, z.null()]),
+  attempt: z.number().int().min(0),
+  episode: z.union([UploadEpisodeTargetV1Wire, z.null()]).optional(),
+  error_code: z.union([
+    z.string().max(128).regex(new RegExp("^[A-Z0-9_]+$", "u")),
+    z.null(),
+  ]),
+  rollout_id: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(new RegExp("^[A-Za-z0-9._-]+$", "u")),
+  schema_version: z.string().pipe(z.literal("upload-processing-status/v1")),
+  session_id: z.string().uuid(),
+  stage: z.string().min(1).max(128),
+  status: UploadProcessingStateWire,
+  updated_at: z.iso.datetime({ offset: true }),
+  viewer: z.union([DatasetIngestViewerTargetWire, z.null()]),
+  workflow_id: z.string().min(1),
+}) satisfies z.ZodType<components["schemas"]["UploadProcessingStatusV1"]>;

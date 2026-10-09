@@ -9,9 +9,10 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import type {
-  FolderBatchProgress,
-  UploadQueueItem,
+import {
+  canDiscardRejectedLeRobot,
+  type FolderBatchProgress,
+  type UploadQueueItem,
 } from "../../../features/ingest/upload/upload-queue-store";
 import {
   formatBytes,
@@ -207,6 +208,15 @@ function QueueItemCard(props: {
       ) : null}
 
       <footer>
+        {canDiscardRejectedLeRobot(item) ? (
+          <Button
+            size="small"
+            disabled={!props.canManage}
+            onClick={props.onCancel}
+          >
+            移除并重新选择
+          </Button>
+        ) : null}
         {item.transferStatus === "uploading" ? (
           <Button
             size="small"
@@ -225,7 +235,9 @@ function QueueItemCard(props: {
           >
             继续传输
           </Button>
-        ) : item.transferStatus === "failed" && isLeRobot ? (
+        ) : item.transferStatus === "failed" &&
+          isLeRobot &&
+          !canDiscardRejectedLeRobot(item) ? (
           <Button
             size="small"
             icon={<RotateCcw aria-hidden="true" size={13} />}

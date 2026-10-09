@@ -118,7 +118,7 @@ test("date-time offsets remain checked", async () => {
 for (const invalid of [
   { type: "object", unevaluatedProperties: false },
   { type: "array", items: { type: "string" }, uniqueItems: true },
-  { type: "string", format: "uuid" },
+  { type: "string", format: "unsupported-format" },
   { oneOf: [{ type: "null" }, { type: "string" }] },
   { $ref: "https://example.invalid/schema" },
   { $ref: "#/components/schemas/Missing" },
@@ -148,4 +148,13 @@ components:
   );
   assert.match(output, /Runtime-OpenAPI-SHA256: contract-hash/u);
   assert.match(output, /z.literal\(\["PASS", "SKIP"\]\)/u);
+});
+
+test("UUID response fields validate their declared format", async () => {
+  const wire = await load({ Receipt: { type: "string", format: "uuid" } });
+  assert.equal(
+    wire.safeParse("c00a88bb-af61-59ce-8274-b05eb2b231c3").success,
+    true,
+  );
+  assert.equal(wire.safeParse("annotation-native").success, false);
 });

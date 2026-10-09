@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDomainError } from "../../shared/api/domain-error";
 import type {
   FormalUploadSession,
   ManifestPreflight,
@@ -26,30 +27,42 @@ const formal = vi.hoisted(() => ({
 
 const leRobot = vi.hoisted(() => ({ upload: vi.fn() }));
 
-vi.mock("../../features/ingest/upload/formal-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../features/ingest/upload/formal-client")>();
-  return {
-    ...actual,
-    cancelFormalUpload: formal.cancel,
-    commitFormalManifest: formal.commit,
-    completeFormalUpload: formal.complete,
-    createFormalUploadSession: formal.create,
-    getFormalUploadManifest: formal.getManifest,
-    getFormalUploadSession: formal.getSession,
-    listFormalUploadParts: formal.listParts,
-    listFormalUploadSessions: formal.listSessions,
-    pauseFormalUpload: formal.pause,
-    preflightUploadManifest: formal.preflight,
-    renewFormalUploadParts: formal.renew,
-    resumeFormalUpload: formal.resume,
-    retryFormalUploadParts: formal.retryParts,
-  };
-});
+vi.mock(
+  "../../features/ingest/upload/formal-client",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../features/ingest/upload/formal-client")
+      >();
+    return {
+      ...actual,
+      cancelFormalUpload: formal.cancel,
+      commitFormalManifest: formal.commit,
+      completeFormalUpload: formal.complete,
+      createFormalUploadSession: formal.create,
+      getFormalUploadManifest: formal.getManifest,
+      getFormalUploadSession: formal.getSession,
+      listFormalUploadParts: formal.listParts,
+      listFormalUploadSessions: formal.listSessions,
+      pauseFormalUpload: formal.pause,
+      preflightUploadManifest: formal.preflight,
+      renewFormalUploadParts: formal.renew,
+      resumeFormalUpload: formal.resume,
+      retryFormalUploadParts: formal.retryParts,
+    };
+  },
+);
 
-vi.mock("../../features/ingest/upload/lerobot-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../features/ingest/upload/lerobot-client")>();
-  return { ...actual, uploadNativeLeRobot: leRobot.upload };
-});
+vi.mock(
+  "../../features/ingest/upload/lerobot-client",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../features/ingest/upload/lerobot-client")
+      >();
+    return { ...actual, uploadNativeLeRobot: leRobot.upload };
+  },
+);
 
 import {
   MAX_CONCURRENT_PART_UPLOADS,
@@ -1301,3 +1314,58 @@ describe("P03 resumable upload queue", () => {
     });
   });
 });
+
+it.each(["definitive-rejection", "unknown-network", "existing-session"])(
+  "only discards a definitively rejected native create: %s",
+  async (kind) => {
+    const rejection = createDomainError({
+      code: "VERSION_CONFLICT",
+      problemCode: "LEROBOT_IMPORT_MANIFEST_CHANGED",
+      message: "manifest conflict",
+      retryable: false,
+      httpStatus: 409,
+      fieldErrors: [],
+      operationErrors: [],
+      blockedReasons: [],
+      requestId: "test-rejection",
+    });
+    leRobot.upload.mockImplementation(
+      (_scope, _selection, _binding, _onProgress, _resume, options) => {
+        if (kind === "existing-session")
+          options.onSession({
+            importId: "a".repeat(32),
+            assets: [],
+            transferMode: "proxy",
+          });
+        return Promise.reject(
+          kind === "unknown-network" ? new Error("Network failed") : rejection,
+        );
+      },
+    );
+    const source = new File(["raw"], "file.parquet");
+    await useUploadQueueStore.getState().startLeRobot({
+      scope,
+      selection: {
+        format: "lerobot",
+        version: "v3.0",
+        robotType: "unitree_g1",
+        rootDirectory: "source",
+        info: { total_episodes: 1 },
+        episodeCount: 1,
+        sourceFiles: [{ file: source, path: "data/file.parquet" }],
+        sourceBytes: source.size,
+      },
+      binding: {
+        datasetId: "dataset-a",
+        collectionTaskId: "task-a",
+        robotId: "robot-a",
+      },
+    });
+    const item = useUploadQueueStore.getState().items[0]!;
+    await useUploadQueueStore.getState().cancel(item.id);
+    expect(formal.cancel).not.toHaveBeenCalled();
+    expect(useUploadQueueStore.getState().items).toHaveLength(
+      kind === "definitive-rejection" ? 0 : 1,
+    );
+  },
+);

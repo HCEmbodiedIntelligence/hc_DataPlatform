@@ -61,17 +61,23 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
   }),
 }));
 
-vi.mock("../../features/ingest/upload/formal-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../features/ingest/upload/formal-client")>();
-  return {
-    ...actual,
-    createFormalUploadSession: createSessionMock,
-    listFormalUploadSessions: listSessionsMock,
-    preflightUploadManifest: preflightMock,
-    getFormalUploadManifest: vi.fn(),
-    listFormalUploadParts: vi.fn(),
-  };
-});
+vi.mock(
+  "../../features/ingest/upload/formal-client",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../features/ingest/upload/formal-client")
+      >();
+    return {
+      ...actual,
+      createFormalUploadSession: createSessionMock,
+      listFormalUploadSessions: listSessionsMock,
+      preflightUploadManifest: preflightMock,
+      getFormalUploadManifest: vi.fn(),
+      listFormalUploadParts: vi.fn(),
+    };
+  },
+);
 
 vi.mock("../../features/datasets/api/hooks", () => ({
   useDatasetsQuery: () => ({
@@ -80,10 +86,15 @@ vi.mock("../../features/datasets/api/hooks", () => ({
     isError: false,
   }),
 }));
-vi.mock("../../features/ingest/upload/lerobot-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../features/ingest/upload/lerobot-client")>()),
-  uploadNativeLeRobot: nativeUploadMock,
-}));
+vi.mock(
+  "../../features/ingest/upload/lerobot-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("../../features/ingest/upload/lerobot-client")
+    >()),
+    uploadNativeLeRobot: nativeUploadMock,
+  }),
+);
 
 function renderPage(path = "/ingest/uploads/new") {
   const client = new QueryClient({
@@ -317,8 +328,6 @@ describe("P03 serial data upload page", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
-
-
   it("disables confirmation without upload.manage but allows local inspection", async () => {
     grantedCapabilities.delete("upload.manage");
     const user = userEvent.setup();
@@ -332,7 +341,6 @@ describe("P03 serial data upload page", () => {
     expect(preflightMock).not.toHaveBeenCalled();
     expect(createSessionMock).not.toHaveBeenCalled();
   });
-
 
   it("accepts an MCAP without a platform Manifest", async () => {
     const user = userEvent.setup();
@@ -768,4 +776,44 @@ describe("P03 upload method form semantics", () => {
     expect(document.querySelector("#object-storage-uri")).toBeNull();
     expect(document.querySelector("#object-upload-manifest")).toBeNull();
   });
+});
+
+it("lets the user remove a rejected native create and select a new target without reloading", async () => {
+  useUploadQueueStore.setState({
+    scopeKey: "org-e05/project-e05/cn-shanghai",
+    items: [
+      {
+        id: "rejected-native",
+        scopeKey: "org-e05/project-e05/cn-shanghai",
+        sessionId: null,
+        sourceType: "LEROBOT_NATIVE",
+        fileName: "native",
+        dataPackageId: "dataset-a",
+        totalBytes: 10,
+        uploadedBytes: 0,
+        completedParts: 0,
+        totalParts: 1,
+        speedBytesPerSecond: null,
+        remainingSeconds: null,
+        transferStatus: "failed",
+        serverStatus: null,
+        failedParts: [],
+        failedPartTransfers: [],
+        failureCode: "LEROBOT_IMPORT_MANIFEST_CHANGED",
+        failureMessage: "manifest conflict",
+        requestId: "req-409",
+        createdAt: "2026-10-09T00:00:00Z",
+      },
+    ],
+  });
+  const user = userEvent.setup();
+  const { container } = renderPage();
+  await user.click(
+    await screen.findByRole("button", { name: "移除并重新选择" }),
+  );
+  await waitFor(() =>
+    expect(container.querySelector("#browser-upload-folder")).not.toBeNull(),
+  );
+  expect(useUploadQueueStore.getState().items).toEqual([]);
+  expect(nativeUploadMock).not.toHaveBeenCalled();
 });

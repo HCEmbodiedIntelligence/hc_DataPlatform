@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { UploadProcessingStatusV1Wire } from "../../../shared/api/generated/platform-wires";
 import type { DatasetId } from "../../../entities/dataset";
 import type { DatasetVersionId } from "../../../entities/dataset-version";
 import type { IngestScope } from "../../../entities/data-source";
@@ -35,71 +35,23 @@ export interface FormalUploadDetail {
   readonly quality: FormalQcReport | null;
 }
 
-const uploadAlignedMediaTargetSchema = z
-  .object({
-    schema_version: z.literal("upload-aligned-media-target/v1"),
-    project_id: z.string().min(1),
-    dataset_id: z.string().min(1),
-    rollout_id: z.string().min(1),
-    dataset_version: z.number().int().positive(),
-    annotation_task_id: z.string().min(1),
-    fps: z.literal(30),
-    start_step: z.number().int().nonnegative(),
-    end_step: z.number().int().positive(),
-  })
-  .strict()
-  .refine((target) => target.end_step > target.start_step, {
-    message: "aligned media step window must be non-empty",
-  });
-
-const uploadViewerTargetSchema = z
-  .object({
-    schema_version: z.literal("dataset-ingest-viewer-target/v1"),
-    dataset_id: z.string().regex(/^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/u),
-    version_id: z.string().regex(/^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/u),
-    episode_id: z.string().regex(/^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/u),
-    revision_id: z.string().regex(/^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/u),
-  })
-  .strict();
-
-const uploadProcessingStatusSchema = z
-  .object({
-    schema_version: z.literal("upload-processing-status/v1"),
-    session_id: z.string().uuid(),
-    rollout_id: z.string().min(1),
-    workflow_id: z.string().min(1),
-    status: z.enum([
-      "PENDING",
-      "RUNNING",
-      "SUCCEEDED",
-      "TECHNICAL_FAILED",
-      "QUALITY_RISK",
-      "QUALITY_REJECTED",
-      "CANCELLED",
-    ]),
-    stage: z.string().min(1).max(128),
-    attempt: z.number().int().nonnegative(),
-    aligned_media: uploadAlignedMediaTargetSchema.nullable(),
-    viewer: uploadViewerTargetSchema.nullable(),
-    error_code: z
-      .string()
-      .regex(/^[A-Z0-9_]+$/u)
-      .max(128)
-      .nullable(),
-    updated_at: z.string().datetime({ offset: true }),
-  })
-  .strict()
-  .refine(
-    (processing) =>
-      (processing.status === "SUCCEEDED") ===
-        (processing.aligned_media !== null) &&
-      (processing.status === "SUCCEEDED") === (processing.viewer !== null) &&
-      (processing.aligned_media === null ||
-        processing.viewer === null ||
-        (processing.aligned_media.dataset_id === processing.viewer.dataset_id &&
-          processing.viewer.version_id ===
-            `version_lance_${processing.aligned_media.dataset_version}`)),
-    { message: "successful upload targets must share one Dataset version" },
+const uploadProcessingStatusSchema =
+  UploadProcessingStatusV1Wire.strict().refine(
+    (processing) => {
+      const media = processing.aligned_media;
+      const episode = processing.episode;
+      const viewer = processing.viewer;
+      if (processing.status !== "SUCCEEDED")
+        return !media && !episode && !viewer;
+      if (!viewer || Boolean(media) === Boolean(episode)) return false;
+      return media
+        ? media.end_step > media.start_step &&
+            media.dataset_id === viewer.dataset_id &&
+            viewer.version_id === `version_lance_${media.dataset_version}`
+        : episode?.dataset_id === viewer.dataset_id &&
+            episode.episode_id === viewer.episode_id;
+    },
+    { message: "successful upload must have one matching fixed data target" },
   );
 
 export interface FormalUploadAlignedMediaTarget {
@@ -186,6 +138,7 @@ export function getFormalUploadSessionDetail(
     method: "GET",
     path: sessionPath(scope, sessionId),
     scope,
+    scopeMode: "explicit",
     signal,
   });
 }
@@ -199,6 +152,7 @@ export function getFormalUploadManifestDetail(
     method: "GET",
     path: `${sessionPath(scope, sessionId)}/manifest`,
     scope,
+    scopeMode: "explicit",
     signal,
   });
 }
@@ -212,6 +166,7 @@ export function getFormalRolloutQuality(
     method: "GET",
     path: `${resourceRoot(scope)}/rollouts/${encodeURIComponent(rolloutId)}/quality`,
     scope,
+    scopeMode: "explicit",
     signal,
   });
 }
@@ -225,6 +180,7 @@ export function getFormalUploadRawMedia(
     method: "GET",
     path: `${sessionPath(scope, sessionId)}/raw-media`,
     scope,
+    scopeMode: "explicit",
     signal,
   });
 }
@@ -246,6 +202,7 @@ export async function getFormalUploadProcessingStatus(
     method: "GET",
     path: endpoint,
     scope,
+    scopeMode: "explicit",
     signal,
     cache: "no-store",
   });
@@ -254,6 +211,10 @@ export async function getFormalUploadProcessingStatus(
     processing.session_id !== session.session_id ||
     processing.workflow_id !== locator.workflow_id ||
     processing.rollout_id !== session.rollout_id ||
+    (processing.episode != null &&
+      (processing.episode.project_id !== scope.projectId ||
+        processing.episode.region_code !== scope.regionCode ||
+        processing.episode.rollout_id !== session.rollout_id)) ||
     (processing.aligned_media !== null &&
       (processing.aligned_media.project_id !== session.project_id ||
         processing.aligned_media.rollout_id !== session.rollout_id))
@@ -285,12 +246,25 @@ export function resolveFormalUploadViewerTarget(
 ): FormalUploadViewerTarget | null {
   const viewer = processing.viewer;
   const media = processing.aligned_media;
-  if (!viewer || !media) return null;
+  if (!viewer) return null;
+  if (processing.episode) {
+    const episode = processing.episode;
+    if (
+      media ||
+      episode.project_id !== session.project_id ||
+      episode.region_code !== session.region_code ||
+      episode.rollout_id !== session.rollout_id ||
+      episode.dataset_id !== viewer.dataset_id ||
+      episode.episode_id !== viewer.episode_id
+    )
+      throw contractMismatch("上传 Episode 视图与当前会话不匹配。");
+  } else if (!media) return null;
   if (
-    media.project_id !== session.project_id ||
-    media.rollout_id !== session.rollout_id ||
-    viewer.dataset_id !== media.dataset_id ||
-    viewer.version_id !== `version_lance_${media.dataset_version}`
+    media &&
+    (media.project_id !== session.project_id ||
+      media.rollout_id !== session.rollout_id ||
+      viewer.dataset_id !== media.dataset_id ||
+      viewer.version_id !== `version_lance_${media.dataset_version}`)
   ) {
     throw contractMismatch("上传数据视图与当前上传会话不匹配。");
   }
@@ -317,26 +291,32 @@ export async function loadFormalUploadDetail(
     sessionId,
     signal,
   );
-  const session = await getFormalUploadSessionDetail(scope, sessionId, signal);
-  assertSessionIdentity(session, scope, sessionId);
-
-  const qualityPromise = getFormalRolloutQuality(
+  const sessionAndQuality = getFormalUploadSessionDetail(
     scope,
-    session.rollout_id,
+    sessionId,
     signal,
-  ).catch((error: unknown) => {
-    if (
-      isDomainError(error) &&
-      error.code === "NOT_FOUND" &&
-      error.problemCode === "QUALITY_REPORT_NOT_FOUND"
-    ) {
-      return null;
-    }
-    throw error;
+  ).then(async (session) => {
+    assertSessionIdentity(session, scope, sessionId);
+    const quality = await getFormalRolloutQuality(
+      scope,
+      session.rollout_id,
+      signal,
+    ).catch((error: unknown) => {
+      if (
+        isDomainError(error) &&
+        error.code === "NOT_FOUND" &&
+        error.problemCode === "QUALITY_REPORT_NOT_FOUND"
+      )
+        return null;
+      throw error;
+    });
+    return { session, quality };
   });
-  const [manifest, quality] = await Promise.all([
+  // Observe both operations immediately, including rejection of the parallel
+  // manifest read when the session is rejected or authorization is revoked.
+  const [manifest, { session, quality }] = await Promise.all([
     manifestPromise,
-    qualityPromise,
+    sessionAndQuality,
   ]);
   assertManifestIdentity(manifest, session);
   if (quality) assertQualityIdentity(quality, session);
