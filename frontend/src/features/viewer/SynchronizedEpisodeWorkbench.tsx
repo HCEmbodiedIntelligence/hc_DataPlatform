@@ -1,4 +1,10 @@
-import { useCallback, useId, type HTMLAttributes, type ReactNode } from "react";
+import {
+  useCallback,
+  useId,
+  useState,
+  type HTMLAttributes,
+  type ReactNode,
+} from "react";
 import { DataVisualizationWorkbench } from "./DataVisualizationWorkbench";
 import {
   ViewerJointAngleCurvePanel,
@@ -9,6 +15,7 @@ import type {
   DataVisualizationWorkbenchSlots,
 } from "./workbench-contract";
 import type { DomainError, StreamDescriptor } from "./types";
+import { resolveViewerComposition } from "./ViewerCompositionResolver";
 import styles from "./SynchronizedEpisodeWorkbench.module.css";
 
 /** The same media, pose, curves and timeline surface for viewing and annotation. */
@@ -16,6 +23,7 @@ export function SynchronizedEpisodeWorkbench({
   adapter,
   slots,
   jointAngleStream,
+  numericStreams = [],
   jointAngleUnavailableReason,
   jointAngleFooter,
   synchronized = true,
@@ -25,10 +33,30 @@ export function SynchronizedEpisodeWorkbench({
   readonly adapter: DataVisualizationWorkbenchAdapter;
   readonly slots?: DataVisualizationWorkbenchSlots;
   readonly jointAngleStream: StreamDescriptor | null;
+  readonly numericStreams?: readonly StreamDescriptor[];
   readonly jointAngleUnavailableReason?: string;
   readonly jointAngleFooter?: ReactNode;
   readonly synchronized?: boolean;
 }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const numericIds = new Set(
+    resolveViewerComposition(numericStreams)
+      .panels.filter((panel) => panel.kind === "time-series")
+      .flatMap((panel) => panel.streamIds),
+  );
+  const available = [
+    ...(jointAngleStream ? [jointAngleStream] : []),
+    ...numericStreams.filter((stream) => numericIds.has(stream.id)),
+  ].filter(
+    (stream, index, all) =>
+      stream.windowSource &&
+      all.findIndex((other) => other.id === stream.id) === index,
+  );
+  const selected =
+    available.find((stream) => stream.id === selectedId) ??
+    jointAngleStream ??
+    available[0] ??
+    null;
   const onResourceError = adapter.onResourceError;
   const onCurveError = useCallback(
     (error: DomainError) => onResourceError?.(error, "curve"),
@@ -70,10 +98,31 @@ export function SynchronizedEpisodeWorkbench({
           ),
           actionDock: () => (
             <div className={styles.jointAngleDock}>
+              {available.length > 1 ? (
+                <label className={styles.numericStreamSelector}>
+                  数值通道
+                  <select
+                    aria-label="数值通道"
+                    value={selected?.id ?? ""}
+                    onChange={(event) => setSelectedId(event.target.value)}
+                  >
+                    {available.map((stream) => (
+                      <option key={stream.id} value={stream.id}>
+                        {stream.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <ViewerJointAngleCurvePanel
+                key={`${adapter.id}:${selected?.id ?? "missing"}`}
                 clock={adapter.clock}
-                stream={jointAngleStream}
-                unavailableReason={jointAngleUnavailableReason}
+                stream={selected}
+                unavailableReason={
+                  selected === jointAngleStream
+                    ? jointAngleUnavailableReason
+                    : undefined
+                }
                 onResourceError={onCurveError}
               />
               {jointAngleFooter}

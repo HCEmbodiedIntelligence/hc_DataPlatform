@@ -2525,6 +2525,7 @@ export function AnnotationWorkbenchView(
         synchronized={synchronizedWorkspace}
         adapter={visualAdapter}
         jointAngleStream={jointAngleStream}
+        numericStreams={props.bundle.logical?.streams}
         jointAngleUnavailableReason={
           jointName
             ? `已发现 ${jointName}，但当前固定数据窗口还没有可显示的关节角向量。`

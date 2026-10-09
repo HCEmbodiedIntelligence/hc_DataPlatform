@@ -834,10 +834,6 @@ function smoothJointPath(points: readonly { x: number; y: number }[]): string {
   return path;
 }
 
-function secondsLabel(ns: string): string {
-  return `${(Number(BigInt(ns)) / 1_000_000_000).toFixed(1)}s`;
-}
-
 export function ViewerJointAngleCurvePanel({
   clock,
   stream,
@@ -849,6 +845,16 @@ export function ViewerJointAngleCurvePanel({
   readonly unavailableReason?: string;
   readonly onResourceError?: (error: DomainError) => void;
 }): JSX.Element {
+  const isJoint = !stream || stream.modality === "joint_state";
+  const title = isJoint
+    ? "关节位置变化"
+    : stream.modality === "action"
+      ? "动作指令变化"
+      : "数值变化";
+  const subject = isJoint ? "关节角" : "数值";
+  const defaultUnit = stream?.schema.unit ?? "";
+  const elapsed = (ns: string) =>
+    formatElapsedNs(BigInt(ns), BigInt(clock.startNs));
   const [retryKey, setRetryKey] = useState(0);
   const cursorNs = useClockText(clock, 10);
   const [windowState, setWindowState] = useState<JointCurveWindowState>({
@@ -1132,32 +1138,32 @@ export function ViewerJointAngleCurvePanel({
       <header>
         <span>
           <Activity aria-hidden="true" size={15} />
-          <strong id="joint-angle-curves-title">关节位置变化</strong>
+          <strong id="joint-angle-curves-title">{title}</strong>
         </span>
         <small>
-          {secondsLabel(cursorNs)} · {stream?.canonicalPath ?? "共享时间轴"}
+          {elapsed(cursorNs)} · {stream?.canonicalPath ?? "共享时间轴"}
         </small>
       </header>
       {unavailable ? (
         <div className="viewer-joint-curves__empty" role="status">
           <Activity aria-hidden="true" size={24} />
-          <strong>关节曲线暂不可用</strong>
+          <strong>{isJoint ? "关节曲线暂不可用" : "数值曲线暂不可用"}</strong>
           <span>
             {unavailableReason ??
               stream?.accessibleSummary ??
-              "当前任务未发现可读取的关节角 Topic。"}
+              "当前任务未发现可读取的数值流。"}
           </span>
         </div>
       ) : windowState.status === "loading" ? (
         <div className="viewer-joint-curves__empty" role="status">
           <span className="viewer-joint-curves__loading" aria-hidden="true" />
-          <strong>正在读取关节角</strong>
+          <strong>正在读取{subject}</strong>
           <span>从固定数据快照加载当前光标附近的真实样本。</span>
         </div>
       ) : windowState.status === "error" ? (
         <div className="viewer-joint-curves__empty" role="alert">
           <Activity aria-hidden="true" size={24} />
-          <strong>关节角读取失败</strong>
+          <strong>{subject}读取失败</strong>
           <span>{windowState.error?.message ?? "请稍后重试。"}</span>
           {windowState.error?.retryable ? (
             <button type="button" onClick={() => setRetryKey((key) => key + 1)}>
@@ -1169,7 +1175,7 @@ export function ViewerJointAngleCurvePanel({
       ) : chart ? (
         <div className="viewer-joint-curves__body">
           <svg
-            aria-label={`关节角时间序列，共 ${chart.dimension} 个关节，单位弧度，当前时间 ${secondsLabel(cursorNs)}`}
+            aria-label={`${subject}时间序列，共 ${chart.dimension} 个${isJoint ? "关节" : "维度"}，当前时间 ${elapsed(cursorNs)}`}
             className="viewer-joint-curves__chart"
             role="img"
             viewBox="0 0 606 216"
@@ -1209,17 +1215,17 @@ export function ViewerJointAngleCurvePanel({
             </text>
             <text x="6" y={(chart.plot.top + chart.plot.bottom) / 2 + 4}>
               {Array.from(
-                new Set(series.map((item) => item.unit ?? "rad")),
-              ).join(" / ") || "rad"}
+                new Set(series.map((item) => item.unit ?? defaultUnit)),
+              ).join(" / ") || "单位未声明"}
             </text>
             <text x="6" y={chart.plot.bottom + 4}>
               {chart.low.toFixed(2)}
             </text>
             <text x={chart.plot.left} y="207">
-              {secondsLabel(windowState.startNs)}
+              {elapsed(windowState.startNs)}
             </text>
             <text x={chart.plot.right} y="207" textAnchor="end">
-              {secondsLabel(windowState.endNs)}
+              {elapsed(windowState.endNs)}
             </text>
             {chart.paths.map((path, index) => (
               <path
@@ -1269,7 +1275,7 @@ export function ViewerJointAngleCurvePanel({
           </svg>
           <div
             className="viewer-joint-curves__legend"
-            aria-label="关节角图例和当前值"
+            aria-label={`${subject}图例和当前值`}
           >
             {Array.from({ length: chart.dimension }, (_, index) => (
               <span key={series[index]?.id ?? `joint-${index + 1}`}>
@@ -1281,12 +1287,18 @@ export function ViewerJointAngleCurvePanel({
                       jointCurveColors[index % jointCurveColors.length],
                   }}
                 />
-                <b title={series[index]?.displayName ?? `J${index + 1}`}>
-                  {series[index]?.displayName ?? `J${index + 1}`}
+                <b
+                  title={
+                    series[index]?.displayName ??
+                    `${isJoint ? "J" : "D"}${index + 1}`
+                  }
+                >
+                  {series[index]?.displayName ??
+                    `${isJoint ? "J" : "D"}${index + 1}`}
                 </b>
                 <code>
                   {typeof currentValues[index] === "number"
-                    ? `${currentValues[index]!.toFixed(2)} ${series[index]?.unit ?? "rad"}`
+                    ? `${currentValues[index]!.toFixed(2)} ${series[index]?.unit ?? defaultUnit}`
                     : "—"}
                 </code>
               </span>
@@ -1302,7 +1314,7 @@ export function ViewerJointAngleCurvePanel({
         <div className="viewer-joint-curves__empty" role="status">
           <Activity aria-hidden="true" size={24} />
           <strong>当前窗口没有数值样本</strong>
-          <span>拖动共享光标后将重新读取附近的关节角窗口。</span>
+          <span>拖动共享光标后将重新读取附近的数值窗口。</span>
         </div>
       )}
     </article>

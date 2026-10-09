@@ -354,6 +354,7 @@ export function EpisodeViewerShell() {
           onTimeRangeSelect: (start, end) => setSelection({ start, end }),
         }}
         jointAngleStream={jointAngleStream}
+        numericStreams={streams}
         jointAngleUnavailableReason="当前 Episode 未提供可读取的关节角数据。"
         slots={{
           workspaceToolbar: () => (

@@ -260,7 +260,7 @@ function ActionDock({
       })}
       <p className={styles.actionBoundary}>
         <LockKeyhole aria-hidden="true" size={14} />
-        无人工 PASS；进入 Lance 只能由新的可审计自动结果决定。
+        自动质检结果不能人工改写；后续处理依据可审计的自动结果。
       </p>
       <p className={styles.srAnnouncement} aria-live="polite">
         {announcement}
