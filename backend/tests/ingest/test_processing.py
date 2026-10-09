@@ -116,6 +116,7 @@ def test_success_projects_only_the_lineage_checked_media_target() -> None:
         "status": "SUCCEEDED",
         "stage": "completed",
         "attempt": 2,
+        "episode": None,
         "aligned_media": {
             "schema_version": "upload-aligned-media-target/v1",
             "project_id": "project-a",
@@ -166,3 +167,74 @@ def test_processing_projection_fails_closed_on_cross_upload_facts(
 
     assert raised.value.problem.status == 500
     assert raised.value.problem.code == expected_code
+
+
+def _episode_job():
+    from hc_data_platform.episode_store.catalog_models import EpisodeDerivedReady
+    from hc_data_platform.episode_store.models import DataVersionRef, EpisodeIdentity
+
+    job = _job()
+    legacy = job.result["derived"]
+    data = DataVersionRef(
+        identity=EpisodeIdentity(
+            organization_id="org-a",
+            project_id="project-a",
+            region_code="cn-test",
+            dataset_id=legacy["dataset_id"],
+            episode_id="episode_ingest_a",
+            rollout_id="rollout-a",
+        ),
+        data_version_id="dv_" + "1" * 64,
+        version=1,
+        content_hash="2" * 64,
+        schema_snapshot_id="schema-a",
+        package_prefix="private/path",
+        frame_count=300,
+    )
+    derived = EpisodeDerivedReady(
+        **{k: v for k, v in legacy.items() if k != "lance_version"},
+        data=data,
+        collection_version_id="cv_" + "3" * 64,
+    )
+    return job.model_copy(
+        update={
+            "result": {
+                **job.result,
+                "derived": derived.model_dump(mode="json"),
+                "alignment": {"frequency_hz": 25},
+                "viewer_target": {
+                    **job.result["viewer_target"],
+                    "version_id": "version_" + derived.collection_version_id,
+                },
+            }
+        }
+    )
+
+
+def test_episode_status_uses_fixed_viewer_and_actual_frequency_without_storage_locators():
+    result = project_upload_processing_status(_session(), _episode_job())
+    assert result.aligned_media is None
+    assert result.episode.fps == 25 and result.episode.frame_count == 300
+    assert result.episode.annotation_task_id == "annotation-a"
+    assert result.episode.content_hash == "2" * 64
+    assert result.viewer.version_id == "version_cv_" + "3" * 64
+    assert "private/path" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("region_code", "other"),
+        ("episode_id", "episode_other"),
+        ("project_id", "other"),
+        ("rollout_id", "other"),
+    ],
+)
+def test_episode_status_rejects_inconsistent_identity(field, value):
+    import copy
+
+    job = _episode_job()
+    result = copy.deepcopy(job.result)
+    result["derived"]["data"]["identity"][field] = value
+    with pytest.raises(ProblemException):
+        project_upload_processing_status(_session(), job.model_copy(update={"result": result}))

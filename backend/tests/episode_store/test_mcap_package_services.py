@@ -40,8 +40,10 @@ from tests.episode_store.test_recording_package_services import ForbiddenLegacy
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing_units", [False, True])
-async def test_mcap_upload_temporal_package(isolated_dsn, tmp_path, monkeypatch, missing_units):
+@pytest.mark.parametrize("missing_units,legacy", [(False, False), (True, False), (False, True)])
+async def test_mcap_upload_temporal_package(
+    isolated_dsn, tmp_path, monkeypatch, missing_units, legacy
+):
     assert os.environ["HC_TEMPORAL_NAMESPACE"] == "chayi-g1"
     suffix = uuid4().hex
     org, project, region = "mcap-" + suffix, "mcap-project-" + suffix, "cn-test"
@@ -142,6 +144,26 @@ async def test_mcap_upload_temporal_package(isolated_dsn, tmp_path, monkeypatch,
         event = DomainEventEnvelope.model_validate(row[0])
         resolver = runtime.activities.ingest_projection
         resolver._catalog = ForbiddenLegacy()
+        if legacy:
+            original_resolve = resolver.resolve
+
+            def historical_plan(**kwargs):
+                current = original_resolve(**kwargs)
+                return current.model_copy(
+                    update={
+                        "alignment": current.alignment.model_copy(
+                            update={
+                                "profile": current.alignment.profile.model_copy(
+                                    update={
+                                        "converter_version": "mcap-episode-package/1",
+                                    }
+                                ),
+                            }
+                        )
+                    }
+                )
+
+            monkeypatch.setattr(resolver, "resolve", historical_plan)
         request = resolver.resolve(
             project_id=project,
             region_code=region,
@@ -244,6 +266,95 @@ async def test_mcap_upload_temporal_package(isolated_dsn, tmp_path, monkeypatch,
             root = Path(os.environ["HC_G1_WRITER_EVIDENCE_ROOT"]) / "mcap-package" / org
             root.mkdir(parents=True)
             package = runtime.episode_packages.files.open(source.identity, source.data_version_id)
+            info = package.document("meta/info.json")
+            import pyarrow.parquet as pq
+
+            from hc_data_platform.data_formats.lerobot_layout import DATA_PATH
+
+            with package.file(DATA_PATH) as file:
+                table = pq.read_table(file, columns=["action", "observation.state"])
+            for feature in ("action", "observation.state"):
+                assert info["features"][feature]["dtype"] == ("string" if legacy else "float64")
+            if not legacy:
+                assert info["features"]["action"]["shape"] == [2]
+                assert info["features"]["observation.state"]["names"] is None
+                rows = table.to_pylist()
+                assert [r["action"] for r in rows] == [[i / 100, i / 200] for i in range(30)]
+                assert [r["observation.state"] for r in rows] == [
+                    [i / 100, -i / 100] for i in range(30)
+                ]
+                with package.file("hc/recording/mcap_numeric.jsonl") as file:
+                    originals = [json.loads(line) for line in file.read_text().splitlines()]
+                assert originals[12]["messages"]["/joint_states"] == {"position": [0.12, -0.12]}
+                assert originals[12]["messages"]["/action"] == {"value": [0.12, 0.06]}
+
+            import httpx
+
+            from tests.episode_store.test_http_services import register_and_grant
+
+            with httpx.Client(base_url="http://gateway:8080", timeout=45, trust_env=False) as http:
+                _, headers = register_and_grant(
+                    http,
+                    runtime.episode_packages.repository,
+                    source.identity,
+                    capabilities=["upload.manage", "dataset_version.read", "episode.read"],
+                )
+                base = f"/api/v1/projects/{project}/regions/{region}"
+                status_path = base + f"/upload-sessions/{upload.session_id}/processing"
+                status = http.get(status_path, headers=headers)
+                assert status.status_code == 200, status.text
+                result = status.json()
+                assert result["aligned_media"] is None and result["status"] == "SUCCEEDED"
+                assert result["episode"]["data_version_id"] == ready.data.data_version_id
+                assert result["episode"]["content_hash"] == ready.data.content_hash
+                assert result["episode"]["fps"] == 30
+                assert result["episode"]["frame_count"] == 30
+                assert "package_prefix" not in status.text
+                assert http.get(status_path).status_code == 401
+                assert (
+                    http.get(
+                        status_path, headers={**headers, "X-Organization-Id": "foreign"}
+                    ).status_code
+                    == 403
+                )
+                viewer = result["viewer"]
+                bootstrap = http.get(
+                    f"/api/v1/projects/{project}/datasets/{dataset}/versions/{viewer['version_id']}/bootstrap",
+                    headers=headers,
+                )
+                assert bootstrap.status_code == 200, bootstrap.text
+                params = {"snapshot_token": bootstrap.json()["data"]["snapshot_token"]}
+                logical_path = (
+                    base
+                    + f"/datasets/{dataset}/versions/{viewer['version_id']}"
+                    + f"/episode-revisions/{viewer['revision_id']}/logical"
+                )
+                logical = http.get(logical_path, params=params, headers=headers)
+                assert logical.status_code == 200, logical.text
+                streams = {s["name"]: s for s in logical.json()["snapshot"]["streams"]}
+                for topic, kind in [("/joint_states", "JOINT_STATE"), ("/action", "ACTION")]:
+                    stream = streams[topic]
+                    assert stream["kind"] == ("EVENT" if legacy else kind)
+                    assert stream["value_kind"] == ("EVENT" if legacy else "VECTOR")
+                    samples = http.get(
+                        logical_path + f"/streams/{stream['stream_id']}/samples",
+                        headers=headers,
+                        params={
+                            **params,
+                            "snapshot_id": logical.json()["snapshot_id"],
+                            "start": 0,
+                            "end": 30,
+                        },
+                    )
+                    assert samples.status_code == 200, samples.text
+                    if not legacy:
+                        expected = [
+                            [i / 100, -i / 100] if topic == "/joint_states" else [i / 100, i / 200]
+                            for i in range(30)
+                        ]
+                        assert [
+                            row["value"]["values"] for row in samples.json()["samples"]
+                        ] == expected
             from hc_data_platform.episode_store.quality import read_episode_quality
 
             qc = read_episode_quality(package)

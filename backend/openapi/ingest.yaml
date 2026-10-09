@@ -745,6 +745,22 @@ components:
         revision_id:
           type: string
           pattern: "^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"
+    UploadEpisodeTargetV1:
+      type: object
+      additionalProperties: false
+      required: [project_id, region_code, dataset_id, episode_id, rollout_id, data_version_id, content_hash, annotation_task_id, fps, frame_count]
+      properties:
+        schema_version: {type: string, const: upload-episode-target/v1, default: upload-episode-target/v1}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+        dataset_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        episode_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_version_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        content_hash: {type: string, pattern: "^[a-f0-9]{64}$"}
+        annotation_task_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        fps: {type: number, exclusiveMinimum: 0}
+        frame_count: {type: integer, exclusiveMinimum: 0}
     UploadProcessingStatusV1:
       type: object
       additionalProperties: false
@@ -761,6 +777,11 @@ components:
           oneOf:
             - {$ref: "#/components/schemas/UploadAlignedMediaTargetV1"}
             - {type: "null"}
+        episode:
+          anyOf:
+            - {$ref: "#/components/schemas/UploadEpisodeTargetV1"}
+            - {type: "null"}
+          default: null
         viewer:
           oneOf:
             - {$ref: "#/components/schemas/DatasetIngestViewerTarget"}

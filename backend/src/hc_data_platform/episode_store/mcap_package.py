@@ -12,16 +12,18 @@ from hc_data_platform.data_formats.depth_evidence import DepthEvidenceVideo, fil
 from hc_data_platform.data_formats.depth_source import profile_hash
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.data_formats.holobrain_depth import DEFAULT_PROFILE, ENCODER_PROFILE
+from hc_data_platform.data_formats.mcap_numeric import REVISION, normalize_vector
 from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
 from .bundle_models import FrozenObject
 from .mcap_images import CameraFrame
 from .mcap_plan import McapEpisodePlan
-from .models import EpisodeIdentity, FileEntry, PackageInput, digest
+from .models import EpisodeIdentity, FileEntry, PackageInput, canonical, digest
 from .prepared_assets import PreparedAssets, PreparedVideo
 
-VERSION = "mcap-episode-package/1"
+VERSION = "mcap-episode-package/2"
+LEGACY_VERSION = "mcap-episode-package/1"
 
 
 def encoding_configuration():
@@ -34,8 +36,25 @@ def encoding_configuration():
     }
 
 
-def freeze_mcap_plan(session, request, manifest, staging, quality, *, quality_evidence=None):
+def freeze_mcap_plan(
+    session, request, manifest, staging, quality, *, quality_evidence=None, numeric_profile=None
+):
     source, original = session.source, session.preflight.manifest
+    version = request.profile.converter_version
+    if version not in {VERSION, LEGACY_VERSION}:
+        raise ValueError("unsupported MCAP package processor version")
+    numeric = {}
+    if version == VERSION:
+        if numeric_profile is None:
+            raise ValueError("MCAP numeric package requires its frozen signal profile")
+        numeric = {
+            "revision": REVISION,
+            "topics": sorted(
+                set((numeric_profile.action.topic, numeric_profile.joint_topic))
+                & set(original.actual_topics)
+            ),
+            "source_file": "hc/recording/mcap_numeric.jsonl",
+        }
     topics = {camera.topic for camera in original.cameras}
     if set(session.camera_contracts) != topics:
         raise ValueError("MCAP package lacks a decoded contract for every camera")
@@ -59,7 +78,7 @@ def freeze_mcap_plan(session, request, manifest, staging, quality, *, quality_ev
         input=PackageInput(
             identity=identity,
             source_sha256=source.source_sha256,
-            processor_version=VERSION,
+            processor_version=version,
             configuration_sha256="0" * 64,
             schema_snapshot_id=request.schema_snapshot_id,
             required_features=tuple(sorted(mapping.values())),
@@ -78,6 +97,7 @@ def freeze_mcap_plan(session, request, manifest, staging, quality, *, quality_ev
         metadata={
             "task": original.task_id,
             "camera_topics": sorted(topics),
+            **({"numeric_projection": numeric} if numeric else {}),
             "quality": quality.model_dump(mode="json"),
             **(
                 {"quality_rules": quality_evidence.model_dump(mode="json")}
@@ -87,6 +107,7 @@ def freeze_mcap_plan(session, request, manifest, staging, quality, *, quality_ev
             "calibration": {"status": "UNKNOWN", "reason": "no validated calibration binding"},
             "source": {
                 "format": "mcap",
+                **({"numeric_projection": numeric} if numeric else {}),
                 "session_id": source.session_id,
                 "manifest_fingerprint": source.manifest_fingerprint,
                 "original_manifest": original.model_dump(mode="json"),
@@ -148,6 +169,11 @@ def prepared_mcap_assets(plan, steps, attempt_id):
     with TemporaryDirectory(prefix="mcap-episode-media-") as temporary:
         root = Path(temporary)
         writers, pending = {}, []
+        numeric = plan.metadata.get("numeric_projection")
+        provenance = None
+        if numeric:
+            provenance = root / numeric["source_file"]
+            provenance.parent.mkdir(parents=True)
         try:
             for feature, contract in plan.cameras.items():
                 directory = root / digest(feature)
@@ -166,7 +192,31 @@ def prepared_mcap_assets(plan, steps, attempt_id):
                 writers[feature] = writer
                 pending.append(writer)
             count = 0
-            for step in steps:
+
+            def traced_steps():
+                if provenance is None:
+                    yield from steps
+                    return
+                with provenance.open("wb") as trace:
+                    for step in steps:
+                        originals = {topic: step.modalities[topic] for topic in numeric["topics"]}
+                        # Validate before writing any final package. Preserve header,
+                        # velocity/effort and all other original decoded fields.
+                        for value in originals.values():
+                            normalize_vector(value)
+                        trace.write(
+                            canonical(
+                                {
+                                    "frame_index": step.step_index,
+                                    "timestamp_ns": step.timestamp_ns,
+                                    "messages": originals,
+                                }
+                            )
+                            + b"\n"
+                        )
+                        yield step
+
+            for step in traced_steps():
                 if (
                     step.step_index != count
                     or count >= plan.frame_count
@@ -249,12 +299,26 @@ def prepared_mcap_assets(plan, steps, attempt_id):
                 evidence if entries else None,
                 entries,
             )
-        yield PreparedAssets(plan.input.identity, attempt_id, videos)
+        auxiliary = (
+            ()
+            if provenance is None
+            else (
+                FileEntry(
+                    path=numeric["source_file"],
+                    size=provenance.stat().st_size,
+                    sha256=file_hash(provenance),
+                    media_type="application/x-ndjson",
+                ),
+            )
+        )
+        yield PreparedAssets(plan.input.identity, attempt_id, videos, root, auxiliary)
 
 
 def mcap_steps(plan, steps):
     for step in steps:
         values = dict(step.modalities)
+        for topic in plan.metadata.get("numeric_projection", {}).get("topics", ()):
+            values[topic] = normalize_vector(values[topic])
         for topic, feature in plan.feature_mapping.items():
             frame = frame_for(step, topic, plan.cameras[feature])
             values[topic] = {

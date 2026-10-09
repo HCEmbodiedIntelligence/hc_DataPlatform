@@ -79,6 +79,23 @@ class McapEpisodePlan(FrozenModel):
         start, end = clock.get("start_ns"), clock.get("end_ns")
         if type(start) is not int or type(end) is not int or not 0 <= start < end:
             raise ValueError("MCAP package requires its exact declared time window")
+        numeric = self.metadata.get("numeric_projection")
+        if source.processor_version == "mcap-episode-package/2":
+            if (
+                not isinstance(numeric, dict)
+                or set(numeric) != {"revision", "topics", "source_file"}
+                or numeric["revision"] != "mcap-numeric-vector/1"
+                or numeric["source_file"] != "hc/recording/mcap_numeric.jsonl"
+                or not isinstance(numeric["topics"], list)
+                or any(not isinstance(topic, str) for topic in numeric["topics"])
+                or numeric["topics"] != sorted(set(numeric["topics"]))
+                or not set(numeric["topics"]).issubset(
+                    set(schema.fields) - set(self.feature_mapping)
+                )
+            ):
+                raise ValueError("MCAP numeric projection lacks a fixed compatible contract")
+        elif source.processor_version != "mcap-episode-package/1" or numeric is not None:
+            raise ValueError("unsupported MCAP package processor or numeric revision")
         if (
             source.configuration_sha256 != self.configuration_sha256
             or schema.project_id != source.identity.project_id

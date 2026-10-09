@@ -342,3 +342,11 @@ R04/B049 补齐固定 `model_id`，从发布版本的 `robot_model_id` 原值冻
 B054在1c57227d已用填充缓存的浏览器实证读权限撤销后403触发授权刷新、旧曲线与视频卸载、恢复成功。B060原float64文件真实PROCESS→worker/QC PASS→P06/P08→标注r1提交审核→完整ZIP及官方reader/DataLoader读回通过。B058另逐值核对归档Parquet为double并保留约1e-12差异；官方reader输出float32 tensor，不能表述为float64训练精度验收。
 
 B063-B067的新MCAP回归只证明自动QC PASS与Raw原字节下载。实际processing接口500且产物action/state为string，是仍在修复的状态投影和数值归一化缺口；原失败包、旧RISK及证据保留，不计MCAP完整正向闭环。
+
+### B063–B067：MCAP 成功目标与数值包修复（等待 P04 联合消费）
+
+上传processing响应保留历史aligned_media，新增互斥episode目标和固定viewer；Episode目标包含真实频率/帧数/数据版本/内容哈希/标注任务，不泄露存储路径。校验上传源SHA、rollout、项目、区域、集合与Episode身份，旧Lance语义不改。实际普通HTTP status200→bootstrap→logical→samples通过，未登录与跨组织拒绝。
+
+新MCAP计划固定mcap-episode-package/2及mcap-numeric-vector/1，按冻结QC profile选择action/joint信号，规范化value/position等字段为float64向量；未提供轴名时保留unknown，含混、非有限或不能精确表示的整数拒绝。原解码消息（含header/velocity/effort）逐帧流式保存在hc/recording/mcap_numeric.jsonl，文件纳入不可变清单；原Raw字节不变。processor/1历史计划仍生成原string内容，不用新语义改旧版本。
+
+3项真实HTTP/PG/MinIO/Temporal分别验证新数值包、缺深度单位失败、历史processor/1；新包30行action/state Parquet double逐值与源一致，普通HTTP logical实际JOINT_STATE/ACTION+VECTOR且30样本读回，故不是只改kind标签。127格式/状态/架构检查、19状态/router检查、27工作流执行/重放、2文件mypy/Ruff/OpenAPI通过。证据mcap-episode-numeric-services-v4.xml、mcap-numeric-package-checks-v2.xml、mcap-numeric-package-replay-v2.xml。前几轮测试授权/响应路径/Path读取错误和禁网测试服务器下载失败均保留；实际生产校验未放宽。P04消费者与持久浏览器新尝试待B接入，原string包不可变且不宣称已修其历史内容。
