@@ -332,3 +332,13 @@ R04/B049 补齐固定 `model_id`，从发布版本的 `robot_model_id` 原值冻
 绑定用例显式消费PublishedModelForBinding/PublishedModelIdentity，版本检查归registry且在调用者事务FOR SHARE；模型撤回消费robot_assets拥有的绑定历史查询，包含已被替换的历史绑定。runtime在API/worker工厂共同注入，构造缺依赖直接失败；实例仓储不读模型版本表，模型仓储不直接读实例/绑定表，新AST门禁拒绝回归。历史表名保留，不新建非原子HTTP协作。
 
 真实PG四并发相同幂等key返回同绑定，旧ETag拒绝，写入绑定/指针/回执后的故障使三者同时回滚；模型行锁实际阻止并发FOR UPDATE，失败原key可以正常重试，跨组织模型拒绝且已替换绑定仍阻止误删。7既有模型/机器人PG、1完整native HTTP/冻结场景、1新增事务用例通过，101架构/API检查、3新文件mypy、Ruff/OpenAPI通过。新增事务fixture前几轮错误身份/非规范fingerprint导致失败保留，未放宽产品校验。证据model-binding-{transaction-services-v4,native-services,boundary-checks}.xml；R03实现已验证，尚待总集成，R04浏览器仍待验。
+
+### 第十一批联合验证：固定场景消费者与历史深度
+
+共同代码 `b49a93e782ea060694ee572e18d6c34b3124e932` 整合B055/d3efcab6固定场景页面、R03事务边界、R04真实model_id及B048历史深度固定预览。P06/P08先读取logical/robot-scene；FROZEN资产按固定scene授权，只有MISSING_HISTORICAL才允许显式当前绑定兼容，NO_MODEL_BINDING/失败/撤权不回退。标注为处理规划时固定；未知标定格式不声称已应用到姿态。
+
+1082前端全量、54架构门禁、类型、40ce3f4f运行时契约生成核对、精确代码提交生产构建、10项真实HTTP/PG/MinIO/Temporal联合用例通过，零跳过。证据integration-batch-eleven-*、runtime-batch-eleven.yaml。此批服务统计为10项，以XML为准。R04浏览器换绑与原持久Lance深度仍待统一候选实测，故R04未关闭。
+
+B054在1c57227d已用填充缓存的浏览器实证读权限撤销后403触发授权刷新、旧曲线与视频卸载、恢复成功。B060原float64文件真实PROCESS→worker/QC PASS→P06/P08→标注r1提交审核→完整ZIP及官方reader/DataLoader读回通过。B058另逐值核对归档Parquet为double并保留约1e-12差异；官方reader输出float32 tensor，不能表述为float64训练精度验收。
+
+B063-B067的新MCAP回归只证明自动QC PASS与Raw原字节下载。实际processing接口500且产物action/state为string，是仍在修复的状态投影和数值归一化缺口；原失败包、旧RISK及证据保留，不计MCAP完整正向闭环。
