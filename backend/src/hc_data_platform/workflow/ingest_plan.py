@@ -272,7 +272,7 @@ class PostgresIngestWorkflowInputResolver:
         frequency_hz = int(snapshot.frequency_hz)
         alignment_profile = AlignmentProfileV1(
             profile_id=f"dataset-schema:{snapshot.schema_snapshot_id}",
-            converter_version="mcap-episode-package/1"
+            converter_version="mcap-episode-package/2"
             if self._package_schemas is not None
             else "mcap-source-reference/1",
             frequency_hz=frequency_hz,

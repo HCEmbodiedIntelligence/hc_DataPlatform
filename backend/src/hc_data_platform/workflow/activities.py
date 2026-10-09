@@ -979,6 +979,7 @@ async def process_ingest_source(
                         staging,
                         quality_report,
                         quality_evidence=quality_evidence,
+                        numeric_profile=request.quality.profile,
                     )
                 else:
                     from hc_data_platform.lerobot_imports.package import freeze_native_plan
