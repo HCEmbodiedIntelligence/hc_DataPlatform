@@ -67,6 +67,13 @@ it.each([
   { ...supported, profile_id: null },
   { ...supported, info_sha256: "invalid" },
   { ...supported, validation_scope: "ALL_FILES_VERIFIED" },
+  { ...supported, schema_version: undefined },
+  { ...supported, reasons: undefined },
+  { ...supported, capability_revision: "" },
+  {
+    ...supported,
+    reasons: [{ stage: "UNKNOWN", code: "X", detail: "future" }],
+  },
 ])(
   "rejects a contradictory or malformed capability response",
   async (response) => {

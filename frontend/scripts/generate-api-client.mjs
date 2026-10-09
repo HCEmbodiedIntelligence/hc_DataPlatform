@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { access, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { generateRuntimeWires } from "./generate-runtime-wires.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, "..");
@@ -10,12 +11,16 @@ const repositoryRoot = path.resolve(frontendRoot, "..");
 const backendRoot = path.join(repositoryRoot, "backend");
 const aggregateContractPath = path.join(backendRoot, "openapi.generated.yaml");
 const runtimeFileIndex = process.argv.indexOf("--runtime-contract");
-const suppliedRuntime = runtimeFileIndex < 0 ? null : process.argv[runtimeFileIndex + 1];
-if (runtimeFileIndex >= 0 && !suppliedRuntime) throw new Error("--runtime-contract requires a path");
-const runtimeContractPath = suppliedRuntime ? path.resolve(suppliedRuntime) : path.join(
-  frontendRoot,
-  "src/shared/api/generated/.runtime-openapi.tmp.yaml",
-);
+const suppliedRuntime =
+  runtimeFileIndex < 0 ? null : process.argv[runtimeFileIndex + 1];
+if (runtimeFileIndex >= 0 && !suppliedRuntime)
+  throw new Error("--runtime-contract requires a path");
+const runtimeContractPath = suppliedRuntime
+  ? path.resolve(suppliedRuntime)
+  : path.join(
+      frontendRoot,
+      "src/shared/api/generated/.runtime-openapi.tmp.yaml",
+    );
 const outputPath = path.join(
   frontendRoot,
   "src/shared/api/generated/platform.ts",
@@ -33,6 +38,14 @@ const temporaryOperationsPath = path.join(
   "src/shared/api/generated/.platform-operations.tmp.ts",
 );
 const checkOnly = process.argv.slice(2).includes("--check");
+const wiresOutputPath = path.join(
+  frontendRoot,
+  "src/shared/api/generated/platform-wires.ts",
+);
+const temporaryWiresPath = path.join(
+  frontendRoot,
+  "src/shared/api/generated/.platform-wires.tmp.ts",
+);
 
 export function runtimeOperations(contract) {
   const operations = new Map();
@@ -167,9 +180,10 @@ export async function main() {
         backendRoot,
       );
       if (!exportResult.ok) {
-        throw new Error(`runtime OpenAPI export failed: ${exportResult.reason}`);
+        throw new Error(
+          `runtime OpenAPI export failed: ${exportResult.reason}`,
+        );
       }
-
     }
     const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
     const generateResult = await runProcess(
@@ -211,15 +225,25 @@ export async function main() {
       runtimeSha256,
     );
     await writeFile(temporaryOperationsPath, expectedOperations, "utf8");
+    const expectedWires = await generateRuntimeWires(
+      runtimeContract.toString("utf8"),
+      runtimeSha256,
+    );
+    await writeFile(temporaryWiresPath, expectedWires, "utf8");
 
     if (checkOnly) {
-      const [current, currentOperations] = await Promise.all([
+      const [current, currentOperations, currentWires] = await Promise.all([
         readFile(outputPath, "utf8").catch(() => ""),
         readFile(operationsOutputPath, "utf8").catch(() => ""),
+        readFile(wiresOutputPath, "utf8").catch(() => ""),
       ]);
-      if (current !== expected || currentOperations !== expectedOperations) {
+      if (
+        current !== expected ||
+        currentOperations !== expectedOperations ||
+        currentWires !== expectedWires
+      ) {
         process.stderr.write(
-          "[gen:api] drift: generated runtime API types or operation gate are not reproducible\n",
+          "[gen:api] drift: generated runtime API types, operation gate or response wires are not reproducible\n",
         );
         process.exitCode = 1;
       } else {
@@ -231,6 +255,7 @@ export async function main() {
       await Promise.all([
         rename(temporaryPath, outputPath),
         rename(temporaryOperationsPath, operationsOutputPath),
+        rename(temporaryWiresPath, wiresOutputPath),
       ]);
       process.stdout.write(
         `[gen:api] generated platform.ts (runtime ${runtimeSha256})\n`,
@@ -239,6 +264,7 @@ export async function main() {
   } finally {
     await rm(temporaryPath, { force: true });
     await rm(temporaryOperationsPath, { force: true });
+    await rm(temporaryWiresPath, { force: true });
     if (!suppliedRuntime) await rm(runtimeContractPath, { force: true });
   }
 }

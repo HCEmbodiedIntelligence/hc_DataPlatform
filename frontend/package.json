@@ -21,6 +21,7 @@
     "typecheck": "tsc -b --pretty false",
     "check:architecture": "node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs",
     "gen:api": "node scripts/generate-api-client.mjs",
+    "check:api": "node --test scripts/generate-*.test.mjs",
     "verify:visual-baseline": "node scripts/verify-visual-baseline.mjs"
   },
   "dependencies": {

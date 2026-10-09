@@ -1,6 +1,6 @@
-import { z } from "zod";
 import type { IngestScope } from "../../../entities/data-source";
 import type { components } from "../../../shared/api/generated/platform";
+import { LeRobotCapabilitiesWire } from "../../../shared/api/generated/platform-wires";
 import { request } from "../../../shared/api/http-client";
 import { createSessionScopeLease } from "../../../shared/api/session-scope-lease";
 import { parseWire } from "../../../shared/api/validate";
@@ -10,31 +10,18 @@ import { nativeRoot } from "../processing/lerobot-processing";
 
 type Schemas = components["schemas"];
 export type LeRobotCapabilities = Schemas["LeRobotCapabilities"];
-const capabilitiesWire = z
-  .object({
-    schema_version: z.literal("lerobot-capabilities/v1"),
-    capability_revision: z.string().min(1),
-    info_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
-    validation_scope: z.literal("DECLARED_METADATA"),
-    storage_supported: z.boolean(),
-    processing_supported: z.boolean(),
-    profile_id: z.string().min(1).nullish(),
-    output_storage_format: z.literal("lerobot_v3").nullish(),
-    reasons: z.array(
-      z.object({
-        stage: z.enum(["STORAGE", "PROCESSING"]),
-        code: z.string().min(1),
-        detail: z.string(),
-      }),
-    ),
-  })
-  .refine(
-    (value) =>
-      !value.processing_supported ||
-      (value.storage_supported &&
-        Boolean(value.profile_id) &&
-        value.output_storage_format === "lerobot_v3"),
-  ) satisfies z.ZodType<LeRobotCapabilities>;
+const capabilitiesWire = LeRobotCapabilitiesWire.refine(
+  (value) =>
+    Boolean(value.capability_revision) &&
+    (value.profile_id == null || Boolean(value.profile_id)) &&
+    value.reasons.every((reason) => Boolean(reason.code)),
+).refine(
+  (value) =>
+    !value.processing_supported ||
+    (value.storage_supported &&
+      Boolean(value.profile_id) &&
+      value.output_storage_format === "lerobot_v3"),
+);
 
 export async function detectLeRobotCapabilities(
   scope: IngestScope,
