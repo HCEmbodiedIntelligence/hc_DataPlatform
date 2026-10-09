@@ -5,7 +5,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from hc_data_platform.tools import hf_unitree_g1_to_mcap as converter
+from hc_data_platform.data_formats import lerobot_g1 as converter
 
 _CANONICAL_DATA = re.compile(r"^data/chunk-\d{3}/file-\d{3}\.parquet$")
 _CANONICAL_EPISODES = re.compile(r"^meta/episodes/chunk-\d{3}/file-\d{3}\.parquet$")

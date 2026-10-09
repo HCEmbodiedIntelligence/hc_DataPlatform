@@ -342,3 +342,9 @@ R04/B049 补齐固定 `model_id`，从发布版本的 `robot_model_id` 原值冻
 B054在1c57227d已用填充缓存的浏览器实证读权限撤销后403触发授权刷新、旧曲线与视频卸载、恢复成功。B060原float64文件真实PROCESS→worker/QC PASS→P06/P08→标注r1提交审核→完整ZIP及官方reader/DataLoader读回通过。B058另逐值核对归档Parquet为double并保留约1e-12差异；官方reader输出float32 tensor，不能表述为float64训练精度验收。
 
 B063-B067的新MCAP回归只证明自动QC PASS与Raw原字节下载。实际processing接口500且产物action/state为string，是仍在修复的状态投影和数值归一化缺口；原失败包、旧RISK及证据保留，不计MCAP完整正向闭环。
+
+### B16：LeRobot 格式读取脱离 CLI
+
+data_formats/lerobot_g1拥有G1来源布局、camera/topic/29关节定义、Parquet与数字切片。服务reader/adapter/profiles/source_profile实际依赖该库；CLI只选择本地或固定远程版本/下载/缓存路径，注入文件解析能力后使用同一读取实现，保留旧导入别名。AST门禁拒绝服务反向导入CLI（含静态/相对/动态导入），冷启动服务导入不加载转换CLI。
+
+21项CLI实际四相机MCAP输出、原生适配、上传与并发缓存检查，102架构检查、1库文件严格mypy及Ruff/OpenAPI通过。4项既有RGB-D实际HTTP/PG/MinIO/Temporal正负用例通过；另增G1原生真实上传→Temporal/QC→四路RGB包→29具名关节/action双精度逐值读回→四原视频哈希一致且各6帧真实解码→独立标注提交审核→READY重试与父子历史重放通过。G1只含RGB，不伪造深度或Dex1标定。证据lerobot-library-checks.xml、lerobot-library-architecture.xml、lerobot-library-services.xml及lerobot-library-g1-services-v3.xml。首轮G1夹具缺dataset offsets、次轮错误期待RGB重编码的失败保留；补真实offset后明确断言0次编码和原文件字节复用，不改产品校验。

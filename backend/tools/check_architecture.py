@@ -126,6 +126,10 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
         "hc_data_platform.annotation.ingest_queries",
     }
     for line, target in imports(tree, package):
+        if module.startswith("hc_data_platform.lerobot_imports.") and (
+            matches(target, "hc_data_platform.tools") or target == "<dynamic-import>"
+        ):
+            failures.add(f"{line}: LeRobot services must consume the shared format reader, not CLI")
         if module in pure_processing and any(
             matches(target, prefix)
             for prefix in (

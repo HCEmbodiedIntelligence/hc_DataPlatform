@@ -36,6 +36,17 @@ CHECKER = Path(__file__).resolve().parents[2] / "tools/check_architecture.py"
         ("continuous_recordings.package", "from ..publishing.depth_evidence import file_hash"),
         ("publishing.lerobot_export", "def build():\n    from .exporters import _lerobot_value"),
         ("publishing.service", "from .exporters import LeRobotV3Exporter"),
+        ("lerobot_imports.reader", "from ..tools import hf_unitree_g1_to_mcap"),
+        (
+            "lerobot_imports.profiles",
+            "from hc_data_platform.tools.hf_unitree_g1_to_mcap import CAMERAS",
+        ),
+        (
+            "lerobot_imports.adapter",
+            "import importlib\n"
+            "importlib.import_module('hc_data_platform.tools.hf_unitree_g1_to_mcap')",
+        ),
+        ("lerobot_imports.source_profile", "import importlib\nimportlib.import_module(target)"),
     ],
 )
 def test_format_reverse_dependencies_are_rejected(tmp_path: Path, module: str, source: str) -> None:
@@ -48,3 +59,17 @@ def test_format_reverse_dependencies_are_rejected(tmp_path: Path, module: str, s
         text=True,
     )
     assert result.returncode == 1, result.stdout + result.stderr
+
+
+def test_server_lerobot_import_does_not_load_cli():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import hc_data_platform.lerobot_imports.reader; "
+            "assert 'hc_data_platform.tools.hf_unitree_g1_to_mcap' not in sys.modules",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

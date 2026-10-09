@@ -182,9 +182,13 @@
       "title": "服务端 LeRobot 核心逻辑反向复用命令行转换工具",
       "scope": "两分支",
       "owner": "T3 T4",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "提取独立 LeRobot 格式读取与数据转换库，CLI 和服务端共同依赖它；CLI 参数、上传传输和路径约定留在 tools。"
+      "status": "implemented_verified",
+      "evidence": [
+        "data_formats/lerobot_g1 owns shared layout and numeric decoding; LeRobot reader/adapter/profiles/source_profile consume it; CLI only localizes/downloads and re-exports compatibility names.",
+        "CLI MCAP four-camera output and 21 source/upload/cache checks passed; 102 architecture tests include reverse import rejection and fresh server import without CLI.",
+        "Actual runtime upload -> Temporal -> G1 four RGB Episode -> 29 named joint/action float64 columns -> all four videos byte-identical and decoded6frames -> independent annotation review and retry passed; 4 RGB-D positive/negative service regressions retained. Evidence diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-library-{checks,architecture,services}.xml and lerobot-library-g1-services-v3.xml."
+      ],
+      "remaining": "None for B16 shared format/CLI boundary. Pending total integration; does not close processor persistence/whole-batch streaming issues."
     },
     {
       "id": "B17",

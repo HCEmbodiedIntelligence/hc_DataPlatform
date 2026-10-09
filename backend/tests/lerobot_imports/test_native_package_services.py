@@ -72,7 +72,7 @@ def isolated_dsn():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "condition", ["complete", "missing-mask", "profile-mismatch", "frame-mismatch"]
+    "condition", ["complete", "missing-mask", "profile-mismatch", "frame-mismatch", "legacy-g1"]
 )
 async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch, condition):
     if os.getenv("OPENARM_REAL_INFRA") != "1":
@@ -82,7 +82,12 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
     dataset = "dataset_task_" + hashlib.sha256(suffix.encode()).hexdigest()[:32]
     queue = "openarm-b-test-" + suffix
     monkeypatch.setenv("HC_MEDIA_TEMPORAL_TASK_QUEUE", queue)
-    root = make_native_rgbd(tmp_path / "source")
+    if condition == "legacy-g1":
+        from .g1_package_fixture import make_native_g1
+
+        root = make_native_g1(tmp_path / "source")
+    else:
+        root = make_native_rgbd(tmp_path / "source")
     if condition == "missing-mask":
         (root / "hc/depth/head/validity/flags.parquet").unlink()
     elif condition == "profile-mismatch":
@@ -319,7 +324,7 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 ),
                 timeout=180,
             )
-            if condition != "complete":
+            if condition not in {"complete", "legacy-g1"}:
                 assert job.status.value == "TECHNICAL_FAILED", job.model_dump()
                 assert job.error_code == (
                     "LEROBOT_DEPTH_EVIDENCE_REQUIRED"
@@ -384,7 +389,9 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 )
                 return
             assert job.status.value == "SUCCEEDED", job.model_dump()
-            assert len(projection_attempts) == 2 and len(preview_encodes) == 2
+            assert len(projection_attempts) == 2
+            # The four legacy G1 H264 RGB sources are reused byte-for-byte.
+            assert len(preview_encodes) == (0 if condition == "legacy-g1" else 2)
             history = await temporal.get_workflow_handle(job.workflow_id).fetch_history()
             child_ids = [
                 e.child_workflow_execution_started_event_attributes.workflow_execution.workflow_id
@@ -426,10 +433,11 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 (org, import_id),
             )
         package = runtime.episode_packages.files.open(data.identity, data.data_version_id)
-        assert scene_fixture is not None
-        from tests.robotics_scene_fixture import assert_frozen_scene
+        if condition == "complete":
+            assert scene_fixture is not None
+            from tests.robotics_scene_fixture import assert_frozen_scene
 
-        assert_frozen_scene(runtime, package, scene_fixture, actor, connect)
+            assert_frozen_scene(runtime, package, scene_fixture, actor, connect)
         from hc_data_platform.episode_store.download import complete_archive
         from hc_data_platform.episode_store.validation import validate_package
         from hc_data_platform.publishing.depth_evidence import file_hash
@@ -441,13 +449,37 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 archive.extractall(output)
             downloaded = output / "episode"
             validate_package(downloaded, package.manifest.input)
-            for key in ("head_rgb", "head_depth"):
+            from hc_data_platform.data_formats.lerobot_g1 import CAMERAS, G1_JOINT_NAMES
+
+            cameras = (
+                [c.camera_id for c in CAMERAS]
+                if condition == "legacy-g1"
+                else ["head_rgb", "head_depth"]
+            )
+            for key in cameras:
                 relative = f"videos/observation.images.{key}/chunk-000/file-000.mp4"
                 assert file_hash(downloaded / relative) == file_hash(root / relative)
+                if condition == "legacy-g1":
+                    import av
+
+                    with av.open(str(downloaded / relative)) as video:
+                        frames = list(video.decode(video=0))
+                    assert len(frames) == 6 and (frames[0].width, frames[0].height) == (32, 24)
             values = pq.read_table(downloaded / "data").to_pylist()
             original = pq.read_table(root / "data").to_pylist()
-            for key in ("action", "observation.state", "observation.extra.matrix"):
-                assert [r[key] for r in values] == [r[key] for r in original]
+            if condition == "legacy-g1":
+                for feature, source_key in [
+                    ("observation.state", "observation.state.robot_q_current"),
+                    ("action", "action.robot_q_desired"),
+                ]:
+                    assert [r[feature] for r in values] == [r[source_key][7:] for r in original]
+                    info = package.document("meta/info.json")
+                    assert info["features"][feature]["names"] == list(G1_JOINT_NAMES)
+                    assert info["features"][feature]["dtype"] == "float64"
+                assert package.manifest.input.required_depth_features == ()
+            else:
+                for key in ("action", "observation.state", "observation.extra.matrix"):
+                    assert [r[key] for r in values] == [r[key] for r in original]
             for entry in package.manifest.files:
                 assert file_hash(downloaded / entry.path) == entry.sha256
             from hc_data_platform.episode_store.quality import read_episode_quality
@@ -564,7 +596,9 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
             assert child.document("hc/calibration.json") == package.document("hc/calibration.json")
             assert child_ref.identity != package.receipt.data.identity
         evidence = {
-            "source": "synthetic RGB-D, 6 frames, 25 Hz",
+            "source": "synthetic legacy G1 four RGB, 6 frames, 30 Hz"
+            if condition == "legacy-g1"
+            else "synthetic RGB-D, 6 frames, 25 Hz",
             "status": job.status.value,
             "workflow_id": job.workflow_id,
             "data": data.model_dump(mode="json"),
@@ -581,7 +615,12 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
         }
         target = Path(os.getenv("HC_G1_WRITER_EVIDENCE_ROOT", str(tmp_path)))
         target.mkdir(parents=True, exist_ok=True)
-        (target / "native-package-roundtrip.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        report_name = (
+            "native-package-roundtrip-g1.json"
+            if condition == "legacy-g1"
+            else "native-package-roundtrip.json"
+        )
+        (target / report_name).write_text(json.dumps(evidence, indent=2) + "\n")
         (target / "native-package-parent-history.json").write_text(history.to_json())
         (target / "native-package-child-history.json").write_text(child_history.to_json())
     finally:
