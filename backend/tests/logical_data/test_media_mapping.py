@@ -81,7 +81,7 @@ def test_historical_video_keeps_original_offset_and_rejects_changed_receipt(firs
     )
     revision, stream = (
         N(scope=scope, dataset_id="dataset"),
-        N(aligned_media_binding=binding, episode_stream_id="rgb"),
+        N(aligned_media_binding=binding, episode_stream_id="rgb", kind="RGB"),
     )
     token = bind_request_context(
         RequestContext(organization_id="org", project_id="project", region_code="region")

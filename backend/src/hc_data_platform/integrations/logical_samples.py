@@ -8,6 +8,7 @@ from hc_data_platform.capabilities.registry import (
     VersionedRegistry,
 )
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.core.errors import problem
 from hc_data_platform.logical_data.models import LogicalMediaGrant, LogicalSample, LogicalStream
 from hc_data_platform.security.http import authorize_scope
 
@@ -121,8 +122,9 @@ class EpisodeSampleAdapter:
 class LanceSampleAdapter:
     ref = ImplementationRef("lance.logical-samples", "1")
 
-    def __init__(self, reader, media, audit):
+    def __init__(self, reader, media, audit, *, depth_previews=None):
         self.reader, self.media, self.audit = reader, media, audit
+        self.depth_previews = depth_previews
 
     @staticmethod
     def matches(stream):
@@ -199,6 +201,31 @@ class LanceSampleAdapter:
                 grant_expires_at=grant.expires_at,
             )
         )
+        if stream.kind == "DEPTH":
+            if self.depth_previews is None:
+                raise problem(
+                    status=503,
+                    code="LEGACY_DEPTH_PREVIEW_UNAVAILABLE",
+                    title="Historical depth preview unavailable",
+                    detail="The application depth preview reader is not configured.",
+                )
+            preview = self.depth_previews.authorize(revision, stream, actor_id=auth.subject_id)
+            return LogicalMediaGrant(
+                snapshot_id=snapshot_id,
+                stream_id=stream.episode_stream_id,
+                kind="depth-preview",
+                media_url=preview.media_url,
+                expires_at=preview.expires_at,
+                sample_count=binding.end_step - binding.start_step,
+                sample_rate_hz=preview.fps,
+                media_start_seconds=binding.start_step / preview.fps,
+                width=preview.width,
+                height=preview.height,
+                media_sha256=preview.media_sha256,
+                depth_min_m=preview.depth_min_m,
+                depth_max_m=preview.depth_max_m,
+                colorizer=preview.colorizer,
+            )
         return LogicalMediaGrant(
             snapshot_id=snapshot_id,
             stream_id=stream.episode_stream_id,

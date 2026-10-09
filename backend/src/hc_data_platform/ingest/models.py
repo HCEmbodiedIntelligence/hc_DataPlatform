@@ -663,6 +663,24 @@ class UploadAlignedMediaTargetV1(BaseModel):
         return self
 
 
+class UploadEpisodeTargetV1(BaseModel):
+    """Immutable Episode facts; the viewer target resolves its logical streams."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["upload-episode-target/v1"] = "upload-episode-target/v1"
+    project_id: Identifier
+    region_code: Identifier
+    dataset_id: Identifier
+    episode_id: Identifier
+    rollout_id: Identifier
+    data_version_id: Identifier
+    content_hash: Sha256
+    annotation_task_id: Identifier
+    fps: float = Field(gt=0, allow_inf_nan=False)
+    frame_count: int = Field(gt=0)
+
+
 class UploadProcessingStatusV1(BaseModel):
     """Uploader-safe processing projection; never exposes a raw Workflow result."""
 
@@ -676,14 +694,16 @@ class UploadProcessingStatusV1(BaseModel):
     stage: str = Field(min_length=1, max_length=128)
     attempt: int = Field(ge=0)
     aligned_media: UploadAlignedMediaTargetV1 | None
+    episode: UploadEpisodeTargetV1 | None = None
     viewer: DatasetIngestViewerTarget | None
     error_code: str | None = Field(max_length=128, pattern=r"^[A-Z0-9_]+$")
     updated_at: datetime
 
     @model_validator(mode="after")
     def aligned_media_matches_state(self) -> UploadProcessingStatusV1:
-        if (self.status is UploadProcessingState.SUCCEEDED) != (self.aligned_media is not None):
-            raise ValueError("only a successful upload may expose aligned media")
+        targets = int(self.aligned_media is not None) + int(self.episode is not None)
+        if targets != int(self.status is UploadProcessingState.SUCCEEDED):
+            raise ValueError("successful uploads require exactly one media target")
         if (self.status is UploadProcessingState.SUCCEEDED) != (self.viewer is not None):
             raise ValueError("only a successful upload may expose a viewer target")
         if self.aligned_media is not None and self.aligned_media.rollout_id != self.rollout_id:
@@ -697,6 +717,14 @@ class UploadProcessingStatusV1(BaseModel):
             )
         ):
             raise ValueError("media and viewer targets must identify the same Dataset version")
+        if self.episode is not None and (
+            self.episode.rollout_id != self.rollout_id
+            or self.viewer is None
+            or self.episode.dataset_id != self.viewer.dataset_id
+            or self.episode.episode_id != self.viewer.episode_id
+            or not self.viewer.version_id.startswith("version_cv_")
+        ):
+            raise ValueError("Episode and viewer targets must identify the same data")
         return self
 
 

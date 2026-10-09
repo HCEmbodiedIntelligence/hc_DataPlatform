@@ -302,4 +302,51 @@ R05由B的a506d1f9完成feature导入状态机及Episode来源adapter迁移，10
 
 新 PROCESS 上传冻结 processing_capability_revision 到 Raw manifest，worker 从固定源读取并校验该 revision；未知 revision 拒绝。旧上传缺省字段不进入历史规范化 manifest，原有会话身份不变。17 上传/能力用例、94 架构用例、2 真实 HTTP/PG/MinIO/Temporal 用例零跳过；实际普通账号检测 float64、未登录/跨组织/撤权拒绝、native 完整包读回通过。证据 diagnostics/platform-decoupling-two-terminals-20261008/results/A-services/lerobot-capabilities-{checks,architecture,services}.xml。前端尚未消费，B03/X01 等整体问题不因新增操作关闭。
 
+### 第九批联合验证：P03 消费后端处理能力
+
+集成代码 `1a9c8e892a79f3ab096af55d131ede0b954f0d5f` 含53a6fb52后端与ecf89fa2页面。P03正式POST capabilities，按返回结果展示处理模式并把revision带入上传/commit；float64不再由页面名单拒绝。1060全量、8项P09独立复验、54门禁、类型/3c6d4335 runtime生成/精确生产build、2实际HTTP/PG/MinIO/Temporal通过，零跳过。首轮P09动画可见性失败保留，未改页面或断言；单worker全量复验通过。证据integration-batch-nine-*。
+
+后台MCAP numeric QC修复与R04冻结场景未包含本批，另有检查点等待共同消费。B046发现撤权后已加载numeric缓存仍可见，服务端媒体/overview均403；B正在修权限刷新，尚未关闭此浏览器负例。
+
+### MCAP 数值 QC 实际消费修复
+
+浏览器 A031/B039 的 /action 频率为30Hz且100%覆盖仍报 ACTION_MISSING；定位到 MCAP 只提供流统计，动作内容从未进入 QualityInput。新 Episode MCAP 计划冻结 `numeric_projection_revision=mcap-numeric-quality/1`，按 profile 的 action/joint topic 实际解码，数值事实以磁盘缓冲提供给同一 QC engine/evidence；具名关节按原名读取，不为无名向量捏造轴名。缺失、非有限、含混和非法向量保留诊断；默认 action 门槛不放宽。旧工作流缺该字段仍保持旧路径，旧报告不改写。
+
+2 项实际 MCAP/Temporal/深度包回归（移除旧夹具的 action minimum=0），111 numeric/原处理器/架构用例，27 Temporal 重放，1 文件严格 mypy、Ruff、架构、实际 OpenAPI 核验通过；HTTP契约仍3c6d4335。证据mcap-numeric-quality-{services,checks-v2,replay}.xml。首轮新测试导入拼写错误保留。候选持久worker和浏览器原RISK重处理仍待联合验收，不把这些软件检查称为浏览器完成。
+
+### 第十批联合验证：MCAP 数值质检与撤权缓存修复
+
+共同代码 `69ff7dd8842da5cd2d5afaa1b5ab864bb40a30eb` 包含 MCAP numeric QC `12bdbe9b` 和 B 撤权后授权刷新 `7bda9314`，保留第九批原生能力。6 项实际 MCAP/native HTTP/PG/MinIO/Temporal、1064 全量前端、54 架构门禁、类型/runtime 3c6d4335 生成核对和精确代码 commit 生产构建通过，零跳过。证据 integration-batch-ten-*；首条服务命令测试路径错误、前端容器无 bash 的启动失败保留，不作为测试通过。B046 撤权缓存浏览器失败须在新候选复验，旧 MCAP RISK 报告不改写。
+
+B050 已在原真实上传批次验证 Raw RGB 实际播放、深度 DOWNLOAD_ONLY 提示、下载 15318 字节及 SHA 与旧上传完全相同，原始媒体分类闭环通过。B048 历史 Lance 深度预览仍为独立缺口；B049 冻结模型 ID 正在下一检查点修复，二者不计本批完成。
+
+### B048 历史 Lance 深度固定预览
+
+Lance 适配器不再把深度原文件声明为video。对已存在且已发布/回退保留的迁移，按原dataset revision完整行哈希查唯一转换计划，并重新核对固定包、迁移源等价报告、通道到feature映射，读取现成官方Colorizer预览。原Lance样本/原视频/原hash/版本指针不改，不自动执行迁移或编码。尚无可信已发布转换预览的历史深度明确425 LEGACY_DEPTH_PREVIEW_NOT_READY；这是受限兼容，不宣称所有未迁移深度均能回放。
+
+2项真实HTTP/PG/MinIO通过：两种存储RGB/depth实际解码、SHA/Range/401/403/409/撤权，以及无转换时425且没有新迁移；107逻辑/架构检查、1文件mypy、Ruff、架构/OpenAPI通过，契约仍3c6d4335。首轮旧SimpleNamespace测试缺正式kind已补真实RGB字段，失败证据保留。证据legacy-depth-preview-{services-v2,checks-v2}.xml。候选原持久Lance浏览器复验待部署，不以HTTP成功替代浏览器。
 R04/B049 补齐固定 `model_id`，从发布版本的 `robot_model_id` 原值冻结，不由robot/version猜测；NO_MODEL_BINDING仍为null。实际普通HTTP读取/跨项目资产/换绑/4并发重试/Tag继承完整服务1通过，3文件mypy及OpenAPI生成通过。首轮数据库列名误用model_id导致实际worker失败的证据 frozen-scene-model-id-services.xml 保留，改成真实robot_model_id后v2通过，未放宽验证。runtime-frozen-robot-scene-model-id.yaml SHA256=40ce3f4fde3e763a50b8b39ac3dfb1a057581569ed891d80139d1aea51c21b13。此检查点仍待B消费，不关闭R04。
+
+### R03：模型与实例绑定事务边界
+
+绑定用例显式消费PublishedModelForBinding/PublishedModelIdentity，版本检查归registry且在调用者事务FOR SHARE；模型撤回消费robot_assets拥有的绑定历史查询，包含已被替换的历史绑定。runtime在API/worker工厂共同注入，构造缺依赖直接失败；实例仓储不读模型版本表，模型仓储不直接读实例/绑定表，新AST门禁拒绝回归。历史表名保留，不新建非原子HTTP协作。
+
+真实PG四并发相同幂等key返回同绑定，旧ETag拒绝，写入绑定/指针/回执后的故障使三者同时回滚；模型行锁实际阻止并发FOR UPDATE，失败原key可以正常重试，跨组织模型拒绝且已替换绑定仍阻止误删。7既有模型/机器人PG、1完整native HTTP/冻结场景、1新增事务用例通过，101架构/API检查、3新文件mypy、Ruff/OpenAPI通过。新增事务fixture前几轮错误身份/非规范fingerprint导致失败保留，未放宽产品校验。证据model-binding-{transaction-services-v4,native-services,boundary-checks}.xml；R03实现已验证，尚待总集成，R04浏览器仍待验。
+
+### 第十一批联合验证：固定场景消费者与历史深度
+
+共同代码 `b49a93e782ea060694ee572e18d6c34b3124e932` 整合B055/d3efcab6固定场景页面、R03事务边界、R04真实model_id及B048历史深度固定预览。P06/P08先读取logical/robot-scene；FROZEN资产按固定scene授权，只有MISSING_HISTORICAL才允许显式当前绑定兼容，NO_MODEL_BINDING/失败/撤权不回退。标注为处理规划时固定；未知标定格式不声称已应用到姿态。
+
+1082前端全量、54架构门禁、类型、40ce3f4f运行时契约生成核对、精确代码提交生产构建、10项真实HTTP/PG/MinIO/Temporal联合用例通过，零跳过。证据integration-batch-eleven-*、runtime-batch-eleven.yaml。此批服务统计为10项，以XML为准。R04浏览器换绑与原持久Lance深度仍待统一候选实测，故R04未关闭。
+
+B054在1c57227d已用填充缓存的浏览器实证读权限撤销后403触发授权刷新、旧曲线与视频卸载、恢复成功。B060原float64文件真实PROCESS→worker/QC PASS→P06/P08→标注r1提交审核→完整ZIP及官方reader/DataLoader读回通过。B058另逐值核对归档Parquet为double并保留约1e-12差异；官方reader输出float32 tensor，不能表述为float64训练精度验收。
+
+B063-B067的新MCAP回归只证明自动QC PASS与Raw原字节下载。实际processing接口500且产物action/state为string，是仍在修复的状态投影和数值归一化缺口；原失败包、旧RISK及证据保留，不计MCAP完整正向闭环。
+
+### B063–B067：MCAP 成功目标与数值包修复（等待 P04 联合消费）
+
+上传processing响应保留历史aligned_media，新增互斥episode目标和固定viewer；Episode目标包含真实频率/帧数/数据版本/内容哈希/标注任务，不泄露存储路径。校验上传源SHA、rollout、项目、区域、集合与Episode身份，旧Lance语义不改。实际普通HTTP status200→bootstrap→logical→samples通过，未登录与跨组织拒绝。
+
+新MCAP计划固定mcap-episode-package/2及mcap-numeric-vector/1，按冻结QC profile选择action/joint信号，规范化value/position等字段为float64向量；未提供轴名时保留unknown，含混、非有限或不能精确表示的整数拒绝。原解码消息（含header/velocity/effort）逐帧流式保存在hc/recording/mcap_numeric.jsonl，文件纳入不可变清单；原Raw字节不变。processor/1历史计划仍生成原string内容，不用新语义改旧版本。
+
+3项真实HTTP/PG/MinIO/Temporal分别验证新数值包、缺深度单位失败、历史processor/1；新包30行action/state Parquet double逐值与源一致，普通HTTP logical实际JOINT_STATE/ACTION+VECTOR且30样本读回，故不是只改kind标签。127格式/状态/架构检查、19状态/router检查、27工作流执行/重放、2文件mypy/Ruff/OpenAPI通过。证据mcap-episode-numeric-services-v4.xml、mcap-numeric-package-checks-v2.xml、mcap-numeric-package-replay-v2.xml。前几轮测试授权/响应路径/Path读取错误和禁网测试服务器下载失败均保留；实际生产校验未放宽。P04消费者与持久浏览器新尝试待B接入，原string包不可变且不宣称已修其历史内容。

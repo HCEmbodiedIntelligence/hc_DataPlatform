@@ -1062,8 +1062,14 @@ def _publish_preflight(row: Mapping[str, object]) -> RobotModelPublishPreflightR
 class PostgresRegistryRepository:
     """RLS-compatible PostgreSQL repository for P14 registry reads and audit facts."""
 
-    def __init__(self, connection_factory: ConnectionFactory) -> None:
+    def __init__(
+        self,
+        connection_factory: ConnectionFactory,
+        *,
+        binding_usage: Callable[[Any, str, str], bool],
+    ) -> None:
         self._connection_factory = connection_factory
+        self._binding_usage = binding_usage
 
     def has_organization_project(self, *, organization_id: str, project_id: str) -> bool:
         connection = self._connection_factory()
@@ -2263,22 +2269,7 @@ class PostgresRegistryRepository:
                 if cursor.fetchone() is None:
                     raise ValueError("robot model fallback version is invalid")
 
-            cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1
-                      FROM registry.organization_robot_model_bindings
-                     WHERE organization_id = %s AND version_id = %s
-                    UNION ALL
-                    SELECT 1
-                      FROM robotics.robot_assets
-                     WHERE organization_id = %s AND robot_model_version_id = %s
-                ) AS in_use
-                """,
-                (organization_id, version_id, organization_id, version_id),
-            )
-            raw_usage = cursor.fetchone()
-            if raw_usage is None or bool(_row(cursor, raw_usage)["in_use"]):
+            if self._binding_usage(cursor, organization_id, version_id):
                 raise ValueError("robot model import is in use")
 
             cursor.execute(

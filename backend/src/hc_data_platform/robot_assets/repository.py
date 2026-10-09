@@ -7,6 +7,7 @@ from threading import RLock
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from hc_data_platform.registry.binding_contract import PublishedModelForBinding
 from hc_data_platform.robotics.models import (
     COMPONENT_LIFECYCLE_TRANSITIONS,
     Connectivity,
@@ -438,8 +439,14 @@ class InMemoryOrganizationRobotAssetRepository:
 
 
 class PostgresOrganizationRobotAssetRepository:
-    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        connection_factory: Callable[[], Any],
+        *,
+        published_models: PublishedModelForBinding,
+    ) -> None:
         self._connection_factory = connection_factory
+        self._published_models = published_models
 
     @staticmethod
     def _row(cursor: Any, raw: Any) -> Mapping[str, Any]:
@@ -1070,19 +1077,9 @@ class PostgresOrganizationRobotAssetRepository:
                 return OrganizationRobotModelBinding.model_validate(replay)
             if current.etag != expected_robot_etag:
                 raise ValueError("robot etag does not match")
-            cursor.execute(
-                """
-                SELECT lifecycle
-                  FROM registry.robot_model_versions
-                 WHERE organization_id = %s AND version_id = %s
-                """,
-                (organization_id, version_id),
-            )
-            raw_version = cursor.fetchone()
-            if raw_version is None:
-                raise KeyError(version_id)
-            if str(self._row(cursor, raw_version)["lifecycle"]) != "PUBLISHED":
-                raise ValueError("robot model version is not published")
+            model = self._published_models(cursor, organization_id, version_id)
+            if (model.organization_id, model.version_id) != (organization_id, version_id):
+                raise ValueError("published model provider returned another scope or version")
             cursor.execute(
                 """
                 UPDATE registry.organization_robot_model_bindings

@@ -656,9 +656,17 @@
       "title": "实例绑定与模型注册的事务边界没有显式领域契约",
       "scope": "两分支",
       "owner": "T13",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "明确模型版本查询、实例绑定历史的所有权；以已发布模型快照/绑定事务端口表达协作，保留现有单事务、ETag、幂等和组织作用域。不要拆成两个非原子的 HTTP 调用。"
+      "status": "implemented_verified",
+      "evidence": [
+        "backend/src/hc_data_platform/registry/binding_contract.py",
+        "backend/src/hc_data_platform/registry/binding_queries.py",
+        "backend/src/hc_data_platform/robot_assets/binding_queries.py",
+        "runtime injects published_models and binding_usage; no model-table SQL in instance repository or binding-table SQL in model repository",
+        "Real PG concurrent binding replay, stale ETag, post-write failure rollback, model row lock, historical binding retention and organization rejection",
+        "9 distinct real services: 7 existing model/robot PostgreSQL, 1 full native/HTTP/frozen scene, 1 binding transaction; 101 architecture/API checks and 3 typed files"
+      ],
+      "remaining": "",
+      "implementation_notes": "历史registry命名的绑定表由robot_assets拥有；查询共享调用者事务，不拆为HTTP。构造参数必填，无隐式生产回退。数据库端FOR SHARE防止验证后删除竞态；既有ETag/幂等/审计/绑定历史同事务保持。"
     },
     {
       "id": "R04",
