@@ -116,6 +116,33 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
             "numpy",
         ),
     }
+    native_processors = {
+        "hc_data_platform.lerobot_imports.pipeline",
+        "hc_data_platform.robot_ingest.lerobot_processor",
+    }
+    if module in native_processors:
+        for line, target in imports(tree, package):
+            if (
+                target == "<dynamic-import>"
+                or target.startswith("psycopg")
+                or any(
+                    part.startswith("Postgres")
+                    or part
+                    in {"postgres", "dbapi", "state_store", "planning_queries", "repository"}
+                    for part in target.split(".")
+                )
+            ):
+                failures.add(f"{line}: native processors must consume injected owner ports")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in {
+                "connections",
+                "connection_factory",
+                "cursor",
+                "execute",
+            }:
+                failures.add(
+                    f"{node.lineno}: native processors must not borrow persistence connections"
+                )
     pure_processing = {
         "hc_data_platform.annotation.sampling",
         "hc_data_platform.ingest.projection_metadata",

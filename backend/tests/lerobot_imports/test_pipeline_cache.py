@@ -52,11 +52,17 @@ def test_episode_caches_are_independent_and_idle_entries_are_evicted(tmp_path, p
     )
     one_episode_bytes += 1064 + len(reader.CAMERAS) * 20_064
     pipeline = LeRobotPipeline(
-        Mock(),
         storage,
         Mock(),
         Mock(),
         tmp_path,
+        raw_sources=Mock(),
+        state=Mock(),
+        registrations=Mock(),
+        planning=Mock(),
+        quality_profiles=Mock(),
+        native_schemas=Mock(),
+        native_catalog=Mock(),
         cache_max_bytes=one_episode_bytes * (2 if parallel else 1) + 100,
     )
     raw = SimpleNamespace(content_hash="a" * 64, storage_prefix="raw")

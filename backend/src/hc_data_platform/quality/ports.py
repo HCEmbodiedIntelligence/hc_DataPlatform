@@ -121,3 +121,17 @@ class FakeQualityProfileStore:
         self, project_id: str, profile_id: str, profile_version: int
     ) -> QualityProfileV1 | None:
         return self.profiles.get((project_id, profile_id, profile_version))
+
+
+class QualityProfileWriter(Protocol):
+    def put_profile(self, project_id: str, profile: QualityProfileV1) -> None: ...
+
+
+class QualityReportReader(Protocol):
+    def get_report(
+        self,
+        *,
+        project_id: str,
+        region_code: str,
+        rollout_id: str,
+    ) -> QcReportV1 | None: ...

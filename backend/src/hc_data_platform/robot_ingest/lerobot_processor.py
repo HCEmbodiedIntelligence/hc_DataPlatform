@@ -8,7 +8,6 @@ recover a receipt after an explicit processing retry changes the attempt ID.
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 from concurrent.futures import TimeoutError
 from typing import Any
@@ -23,11 +22,14 @@ from hc_data_platform.episode_store.catalog_models import (
     EpisodeDerivedReady,
     validate_commit_pair,
 )
+from hc_data_platform.episode_store.ingest_ports import PublishedPackageReceipts
+from hc_data_platform.ingest.raw_sources import RawSourceRepositoryPort
 from hc_data_platform.lerobot_imports.committed import discover_committed_source
 from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
-from hc_data_platform.quality.postgres import PostgresQualityRepository
+from hc_data_platform.quality.ports import QualityReportReader
 from hc_data_platform.workflow.models import JobRecord
 from hc_data_platform.workflow.names import INGEST_ROLLOUT_WORKFLOW
+from hc_data_platform.workflow.result_queries import TerminalWorkflowResults
 
 from .processing_contract import CommittedSource, EpisodeReceipt, ProcessingFailure, SourceEpisode
 
@@ -44,13 +46,21 @@ class NativeLeRobotProcessor:
         loop: asyncio.AbstractEventLoop,
         *,
         task_queue: str,
+        raw_sources: RawSourceRepositoryPort,
+        quality_reports: QualityReportReader,
+        workflow_results: TerminalWorkflowResults,
+        publication_receipts: PublishedPackageReceipts,
     ) -> None:
         self.pipeline, self.client, self.loop = pipeline, client, loop
         self.task_queue = task_queue
+        self.raw_sources = raw_sources
+        self.quality_reports = quality_reports
+        self.workflow_results = workflow_results
+        self.publication_receipts = publication_receipts
 
     def _discover(self, source: CommittedSource):
         u = source.upload
-        raw = self.pipeline.raw.get_source(
+        raw = self.raw_sources.get_source(
             organization_id=u.target.organization_id,
             project_id=u.target.project_id,
             region_code=u.target.region_code,
@@ -78,7 +88,7 @@ class NativeLeRobotProcessor:
     def _receipt(
         self, task: Any, episode_id: str, metadata: dict, status: str, result: dict
     ) -> EpisodeReceipt:
-        report = PostgresQualityRepository(self.pipeline.connections).get_report(
+        report = self.quality_reports.get_report(
             project_id=task.project_id, region_code=task.region_code, rollout_id=episode_id
         )
         if (
@@ -114,15 +124,7 @@ class NativeLeRobotProcessor:
                     or derived.get("lance_version") is not None
                 ):
                     raise ValueError("robot package scope mismatch")
-                service = self.pipeline.episode_packages
-                if service is None:
-                    raise ValueError("Episode package service is not configured")
-                package_receipt = service.repository.get(data.identity, data.data_version_id)
-                published = service.catalog.version_snapshot(
-                    task.dataset_id, version=ready.dataset_version, project_id=task.project_id
-                )
-                if package_receipt.data != data or published != collection:
-                    raise ValueError("robot publication differs from durable receipt")
+                package_receipt = self.publication_receipts.published_receipt(data, collection)
             except (ValueError, KeyError, PermissionError):
                 raise ProcessingFailure(
                     "ROBOT_PUBLICATION_RECEIPT_INCOMPLETE", retryable=True
@@ -157,17 +159,14 @@ class NativeLeRobotProcessor:
         )
         # A publication may have finished while C's receipt transaction failed.
         # Read only a terminal real ingest job for this immutable rollout identity.
-        with self.pipeline.connections() as connection:
-            row = connection.execute(
-                """SELECT status,result FROM workflow.jobs
-                WHERE organization_id=%s AND project_id=%s AND resource_id=%s
-                  AND job_type=%s AND status IN ('SUCCEEDED','QUALITY_RISK','QUALITY_REJECTED')
-                ORDER BY updated_at DESC LIMIT 1""",
-                (task.organization_id, task.project_id, episode_id, INGEST_ROLLOUT_WORKFLOW),
-            ).fetchone()
-        if row:
-            result = json.loads(row[1]) if isinstance(row[1], str) else row[1]
-            return self._receipt(task, episode_id, metadata, row[0], result)
+        terminal = self.workflow_results.latest_terminal(
+            organization_id=task.organization_id,
+            project_id=task.project_id,
+            resource_id=episode_id,
+            job_type=INGEST_ROLLOUT_WORKFLOW,
+        )
+        if terminal is not None:
+            return self._receipt(task, episode_id, metadata, terminal.status, terminal.result)
         try:
             request = self.pipeline.prepare(task)
         except ProblemException as exc:

@@ -553,6 +553,54 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
             revision=revision.revision,
             if_match=submitted.etag,
         )
+        # The runtime robot processor recovers the same immutable publication
+        # through injected QC/workflow/package query ports, without pipeline SQL.
+        from hc_data_platform.robot_ingest.processing_contract import ProcessingFailure
+        from hc_data_platform.workflow.names import INGEST_ROLLOUT_WORKFLOW
+
+        components = runtime.activities.robot_worker
+        assert components is not None
+        processor = components.native_processor(
+            temporal,
+            asyncio.get_running_loop(),
+            task_queue=queue,
+        )
+        recovered = processor.workflow_results.latest_terminal(
+            organization_id=org,
+            project_id=project,
+            resource_id=episode.episode_id,
+            job_type=INGEST_ROLLOUT_WORKFLOW,
+        )
+        assert recovered is not None and recovered.status == "SUCCEEDED"
+        recovered_receipt = processor._receipt(
+            discovered.plan.episode_tasks[0],
+            episode.episode_id,
+            discovered.episodes[0],
+            recovered.status,
+            recovered.result,
+        )
+        assert recovered_receipt.package_receipt.data == data
+        assert recovered_receipt.quality_status == "PASS"
+        assert recovered_receipt.sample_count == episode.frame_count
+        with pytest.raises(ProcessingFailure, match="ROBOT_QC_RECEIPT_MISSING"):
+            processor._receipt(
+                discovered.plan.episode_tasks[0],
+                episode.episode_id,
+                discovered.episodes[0],
+                recovered.status,
+                {**recovered.result, "quality": {"content_sha256": "0" * 64}},
+            )
+        with pytest.raises(ProcessingFailure, match="ROBOT_PUBLICATION_RECEIPT_INCOMPLETE"):
+            processor._receipt(
+                discovered.plan.episode_tasks[0].model_copy(
+                    update={"dataset_id": "foreign-dataset"}
+                ),
+                episode.episode_id,
+                discovered.episodes[0],
+                recovered.status,
+                recovered.result,
+            )
+
         # READY retry reuses the package and never creates another collection.
         assert runtime.activities.lerobot_pipeline.episode_ready(discovered.plan.episode_tasks[0])
         assert runtime.episode_packages.collections.get(dataset).version == 1

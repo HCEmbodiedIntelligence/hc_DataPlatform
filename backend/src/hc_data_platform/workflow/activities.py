@@ -91,6 +91,7 @@ from hc_data_platform.quality.models import (
     QualityStreamObservationV1,
 )
 from hc_data_platform.quality.ports import QualityEvaluationPort
+from hc_data_platform.robot_ingest.worker_components import RobotWorkerComponents
 from hc_data_platform.storage.temporal import LifecycleBatchExecutor
 from hc_data_platform.verification.models import RawVerificationReportV1, VerificationStatus
 from hc_data_platform.verification.ports import (
@@ -425,6 +426,7 @@ class ActivityDependencies:
     storage_lifecycle: LifecycleBatchExecutor | None = None
     workflow_jobs: WorkflowJobPersistencePort | None = None
     continuous_episode_processing: ContinuousEpisodeProcessingPort | None = None
+    robot_worker: RobotWorkerComponents | None = None
     lerobot_pipeline: Any | None = None
     episode_packages: Any | None = None
     robot_scenes: Any | None = None

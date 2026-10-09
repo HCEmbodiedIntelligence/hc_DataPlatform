@@ -169,7 +169,9 @@ def test_decision_is_scoped_idempotent_and_preserves_shared_raw(conflict, action
     task = workflow_input.task
     assert task.source.processing_attempt_id == str(command.request_id)
     pipeline = object.__new__(LeRobotPipeline)
-    pipeline.connections = connect
+    from hc_data_platform.lerobot_imports.state_store import PostgresNativeProcessingState
+
+    pipeline.state = PostgresNativeProcessingState(connect)
     pipeline.source = lambda task: None
     pipeline.update_state(NativeStateUpdate(task=task, status="RUNNING"))
     assert resolutions.get_resolution(*scope, 1).status == "RUNNING"

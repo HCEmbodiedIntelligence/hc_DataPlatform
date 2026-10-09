@@ -1049,22 +1049,41 @@ def build_runtime(
         native_manifest_parser=ObjectStorageManifestParser(object_storage),
         episode_packages=episode_packages,
     )
+    from functools import partial
+
+    from hc_data_platform.episode_store.publication_receipts import EpisodePublicationReceipts
     from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
+    from hc_data_platform.lerobot_imports.planning_queries import PostgresNativePlanningQuery
+    from hc_data_platform.lerobot_imports.state_store import PostgresNativeProcessingState
+    from hc_data_platform.robot_ingest.lerobot_processor import NativeLeRobotProcessor
+    from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
+    from hc_data_platform.robot_ingest.worker_components import RobotWorkerComponents
+    from hc_data_platform.workflow.result_queries import PostgresTerminalWorkflowResults
+
+    native_raw_sources = PostgresRawSourceRepository(connection_factory)
+    robot_processing = ProcessingStore(connection_factory)
 
     lerobot_pipeline = LeRobotPipeline(
-        connection_factory,
         object_storage,
         catalog,
         shared_staging_store,
         Path(resolved.alignment_staging_root) / "lerobot-cache",
-        task_datasets=task_dataset,
-        schema_targets=dataset_schema_targets,
+        raw_sources=native_raw_sources,
+        state=PostgresNativeProcessingState(connection_factory),
+        registrations=PostgresIngestPersistence(connection_factory),
+        planning=PostgresNativePlanningQuery(
+            connection_factory,
+            task_datasets=task_dataset,
+            schema_targets=dataset_schema_targets,
+        ),
+        quality_profiles=quality_repository,
         schema_builder=build_dataset_schema,
         sampler_factory=FrameSelectionSampler,
         metadata_builder=build_alignment_metadata,
         cache_max_bytes=resolved.lerobot_cache_max_bytes,
         cache_ttl_hours=resolved.lerobot_cache_ttl_hours,
-        episode_packages=episode_packages,
+        native_schemas=episode_packages.schemas,
+        native_catalog=episode_packages.catalog,
     )
     continuous_episode_processing = ContinuousEpisodeProcessingService(
         connection_factory=connection_factory,
@@ -1134,6 +1153,26 @@ def build_runtime(
         workflow_jobs=PostgresWorkflowJobRepository(connection_factory),
         continuous_episode_processing=continuous_episode_processing,
         lerobot_pipeline=lerobot_pipeline,
+        robot_worker=RobotWorkerComponents(
+            processing=robot_processing,
+            storage=object_storage,
+            native_processor=partial(
+                NativeLeRobotProcessor,
+                lerobot_pipeline,
+                raw_sources=native_raw_sources,
+                quality_reports=quality_repository,
+                workflow_results=PostgresTerminalWorkflowResults(connection_factory),
+                publication_receipts=EpisodePublicationReceipts(
+                    episode_packages.repository, episode_packages.catalog
+                ),
+            ),
+            recording_activity=partial(
+                RecordingOutboxHandler,
+                connection_factory,
+                object_storage,
+                registrations=PostgresRecordingRegistration(),
+            ),
+        ),
         episode_packages=episode_packages,
         robot_scenes=robot_scenes,
     )
@@ -1184,7 +1223,7 @@ def build_runtime(
         data_schemas=data_schemas,
         data_sources=data_sources,
         robot_ingest=robot_ingest,
-        robot_processing=ProcessingStore(connection_factory),
+        robot_processing=robot_processing,
         dataset_page=dataset_page,
         logical_data=logical_data,
         annotation_logical=AnnotationLogicalService(

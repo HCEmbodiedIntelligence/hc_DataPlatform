@@ -11,7 +11,6 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
 
-from hc_data_platform.continuous_recordings.registration import PostgresRecordingRegistration
 from hc_data_platform.core.config import Settings, get_settings, require_durable_runtime
 from hc_data_platform.core.structured_logging import (
     StructuredLogIdentity,
@@ -322,34 +321,22 @@ async def serve() -> None:
     )
     robot_executor = None
     if role != "media":
-        from hc_data_platform.robot_ingest.lerobot_processor import (
-            NativeLeRobotProcessor,
-            robot_task_queue,
-        )
-        from hc_data_platform.robot_ingest.processing_store import ProcessingStore
+        from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
         from hc_data_platform.robot_ingest.processing_worker import RobotProcessingActivities
         from hc_data_platform.robot_ingest.processing_workflow import RobotIngestProcessingWorkflow
-        from hc_data_platform.robot_ingest.recording_bridge import RecordingOutboxHandler
         from hc_data_platform.robot_ingest.recording_workflow import RobotRecordingWorkflow
 
         from .activities import _dependencies, _require
 
-        pipeline = _require(_dependencies.lerobot_pipeline, "lerobot_pipeline")
+        components = _require(_dependencies.robot_worker, "robot_worker")
         robot_activities = RobotProcessingActivities(
-            ProcessingStore(pipeline.connections),
-            pipeline.storage,
-            NativeLeRobotProcessor(
-                pipeline, client, asyncio.get_running_loop(), task_queue=task_queue
-            ),
+            components.processing,
+            components.storage,
+            components.native_processor(client, asyncio.get_running_loop(), task_queue=task_queue),
             execution_scope=execution_scope,
         )
         robot_executor = ThreadPoolExecutor(max_workers=settings.worker_max_concurrent_activities)
-        recording_activity = RecordingOutboxHandler(
-            pipeline.connections,
-            pipeline.storage,
-            registrations=PostgresRecordingRegistration(),
-            execution_scope=execution_scope,
-        )
+        recording_activity = components.recording_activity(execution_scope=execution_scope)
         worker = WorkerGroup(
             worker,
             Worker(

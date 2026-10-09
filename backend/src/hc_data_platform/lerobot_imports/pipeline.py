@@ -13,13 +13,9 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from hc_data_platform.alignment.models import AlignmentInputV1, AlignmentProfileV1, TimedSampleV1
-from hc_data_platform.annotation.ingest_queries import (
-    DatasetSchemaTargetsQuery,
-    dataset_schema_targets,
-)
 from hc_data_platform.annotation.sampling import FrameSelectionSampler, SamplerFactory
-from hc_data_platform.collection_tasks.ingest_queries import TaskDatasetQuery, task_dataset
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.episode_store.ingest_ports import NativeSampleCatalog, NativeSchemaRegistry
 from hc_data_platform.ingest.manifest import ObjectStorageManifestParser, preflight_manifest
 from hc_data_platform.ingest.models import (
     CollectionJob,
@@ -28,19 +24,18 @@ from hc_data_platform.ingest.models import (
     RolloutManifestV1,
     RolloutStatus,
 )
-from hc_data_platform.ingest.postgres import PostgresIngestPersistence
 from hc_data_platform.ingest.projection_metadata import (
     AlignmentMetadataBuilder,
     build_alignment_metadata,
 )
-from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository, RawSource
+from hc_data_platform.ingest.raw_sources import RawSource, RawSourceRepositoryPort
 from hc_data_platform.ingest.schema_planning import DatasetSchemaBuilder, build_dataset_schema
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import ArtifactWorkspace
 from hc_data_platform.object_storage.checksums import crc64_ecma
 from hc_data_platform.object_storage.ports import JsonObjectStore
 from hc_data_platform.quality.models import QualityProfileV1, QualityStreamObservationV1
-from hc_data_platform.quality.postgres import PostgresQualityRepository
+from hc_data_platform.quality.ports import QualityProfileWriter
 from hc_data_platform.verification.models import (
     RawVerificationReportV1,
     TopicInventoryV1,
@@ -59,6 +54,12 @@ from hc_data_platform.workflow.models import (
 from .adapter import EpisodeStream, LeRobotAdapter
 from .cache import SourceCache
 from .orchestration import LeRobotEpisodeTaskV1
+from .pipeline_ports import (
+    NativePlanningQuery,
+    NativeProcessingState,
+    NativeStateChange,
+    SourceRolloutRegistration,
+)
 from .profiles import NativeProfile, quality_profile
 from .reader import read_episode, required_episode_files
 
@@ -70,18 +71,21 @@ class NativeImportBlocked(RuntimeError):
 class LeRobotPipeline:
     def __init__(
         self,
-        connection_factory: Callable[[], Any],
         storage: JsonObjectStore,
         catalog: LanceCatalogPort,
         staging: ArtifactWorkspace,
         cache_root: Path,
         *,
+        raw_sources: RawSourceRepositoryPort,
+        state: NativeProcessingState,
+        registrations: SourceRolloutRegistration,
+        planning: NativePlanningQuery,
+        quality_profiles: QualityProfileWriter,
         cache_max_bytes: int = 5 * 1024**3,
         cache_ttl_hours: int = 24,
         quality_profile_factory: Callable[[NativeProfile, int], QualityProfileV1] = quality_profile,
-        episode_packages=None,
-        task_datasets: TaskDatasetQuery = task_dataset,
-        schema_targets: DatasetSchemaTargetsQuery = dataset_schema_targets,
+        native_schemas: NativeSchemaRegistry,
+        native_catalog: NativeSampleCatalog,
         schema_builder: DatasetSchemaBuilder = build_dataset_schema,
         sampler_factory: SamplerFactory = FrameSelectionSampler,
         metadata_builder: AlignmentMetadataBuilder = build_alignment_metadata,
@@ -89,144 +93,39 @@ class LeRobotPipeline:
         self.quality_profile_factory = quality_profile_factory
         self.sampler_factory = sampler_factory
         self.metadata_builder = metadata_builder
-        self.connections = connection_factory
+        self.state = state
+        self.registrations = registrations
+        self.planning = planning
+        self.quality_profiles = quality_profiles
         self.storage = storage
         self.catalog = catalog
-        self.episode_packages = episode_packages
-        self.task_datasets = task_datasets
-        self.schema_targets = schema_targets
+        self.native_schemas = native_schemas
+        self.native_catalog = native_catalog
         self.schema_builder = schema_builder
         self.staging = staging
         self.cache_root = cache_root
         self.cache = SourceCache(
             cache_root, max_bytes=cache_max_bytes, ttl_seconds=cache_ttl_hours * 3600
         )
-        self.raw = PostgresRawSourceRepository(connection_factory)
+        self.raw = raw_sources
 
     def episode_ready(self, task: LeRobotEpisodeTaskV1) -> bool:
         self.source(task)
-        with self.connections() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """SELECT status FROM ingest.raw_source_episodes
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                  AND raw_source_id=%s AND source_episode_index=%s""",
-                (
-                    task.organization_id,
-                    task.project_id,
-                    task.region_code,
-                    task.source.raw_upload_id,
-                    task.source.episode_index,
-                ),
-            )
-            row = cursor.fetchone()
-            return row is not None and row[0] in {"READY", "DISCARDED"}
+        return self.state.episode_ready(task)
 
     def update_state(self, update: Any) -> None:
-        task = update.task
-        self.source(task)
-        import re
-
-        error = (
-            None
-            if update.error_code is None
-            else re.sub(r"[^A-Z0-9_]", "_", update.error_code.upper())[:128]
+        self.source(update.task)
+        job = update.episode_job
+        result = {} if job is None or job.result is None else job.result
+        self.state.update_state(
+            NativeStateChange(
+                task=update.task,
+                status=update.status,
+                error_code=update.error_code,
+                ready=job is not None and job.status.value == "SUCCEEDED",
+                derived=result.get("derived") or {},
+            )
         )
-        scope = (task.organization_id, task.project_id, task.region_code, task.source.raw_upload_id)
-        with self.connections() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                """SELECT job_id FROM ingest.raw_ingest_jobs
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                  AND raw_source_id=%s FOR UPDATE""",
-                scope,
-            )
-            resolution_id = task.source.processing_attempt_id
-            if resolution_id:
-                # Ignore obsolete activity deliveries after a newer user decision.
-                cursor.execute(
-                    """SELECT resolution_id FROM ingest.episode_resolutions
-                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                      AND raw_source_id=%s AND episode_id=(
-                        SELECT episode_id FROM ingest.raw_source_episodes
-                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                          AND raw_source_id=%s AND source_episode_index=%s)
-                    ORDER BY created_at DESC LIMIT 1""",
-                    (*scope, *scope, task.source.episode_index),
-                )
-                latest = cursor.fetchone()
-                if latest is None or latest[0] != resolution_id:
-                    return
-            if update.status.startswith("EPISODE_"):
-                job = update.episode_job
-                ready = job is not None and job.status.value == "SUCCEEDED"
-                result = {} if job is None or job.result is None else job.result
-                derived = result.get("derived") or {}
-                cursor.execute(
-                    """UPDATE ingest.raw_source_episodes
-                    SET status=%s, frame_count=%s, dataset_version=%s, lance_version=%s,
-                    data_ref=%s::jsonb,
-                    updated_at=clock_timestamp()
-                    WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                      AND raw_source_id=%s AND source_episode_index=%s""",
-                    (
-                        "READY" if ready else "FAILED",
-                        derived.get("step_count"),
-                        derived.get("dataset_version"),
-                        derived.get("lance_version"),
-                        json.dumps(derived["data"]) if derived.get("data") is not None else None,
-                        *scope,
-                        task.source.episode_index,
-                    ),
-                )
-                return
-            cursor.execute(
-                """UPDATE ingest.raw_ingest_jobs
-                SET status=%s, last_error_code=%s, updated_at=clock_timestamp()
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                AND raw_source_id=%s""",
-                (update.status, error, *scope),
-            )
-            source_status = {
-                "RUNNING": "PROCESSING",
-                "SUCCEEDED": "READY",
-                "PARTIALLY_FAILED": "PARTIALLY_FAILED",
-                "FAILED": "FAILED",
-                "CANCELLED": "FAILED",
-            }[update.status]
-            cursor.execute(
-                """UPDATE ingest.raw_sources SET processing_status=%s, updated_at=clock_timestamp()
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                AND raw_source_id=%s""",
-                (source_status, *scope),
-            )
-            if resolution_id:
-                if update.status in {"FAILED", "PARTIALLY_FAILED", "CANCELLED"}:
-                    cursor.execute(
-                        """UPDATE ingest.raw_source_episodes SET status='FAILED',
-                        updated_at=clock_timestamp()
-                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
-                          AND raw_source_id=%s AND source_episode_index=%s
-                          AND status IN ('PENDING', 'PROCESSING')""",
-                        (*scope, task.source.episode_index),
-                    )
-                cursor.execute(
-                    """UPDATE ingest.episode_resolutions SET status=%s, error_code=%s,
-                    updated_at=clock_timestamp() WHERE resolution_id=%s
-                    AND organization_id=%s AND project_id=%s AND region_code=%s""",
-                    (
-                        "RUNNING"
-                        if update.status == "RUNNING"
-                        else "SUCCEEDED"
-                        if update.status == "SUCCEEDED"
-                        else "FAILED",
-                        error,
-                        resolution_id,
-                        *scope[:3],
-                    ),
-                )
-            if update.status not in {"RUNNING", "CANCELLED"}:
-                from .resolutions import refresh_import_state
-
-                refresh_import_state(cursor, scope)
 
     def source(self, task: LeRobotEpisodeTaskV1) -> RawSource:
         ctx = current_request_context()
@@ -442,7 +341,7 @@ class LeRobotPipeline:
             processing_mode="NATIVE_LEROBOT",
         )
         preflight = preflight_manifest(package)
-        PostgresIngestPersistence(self.connections).register_source_rollout(
+        self.registrations.register_source_rollout(
             CollectionJob(
                 project_id=task.project_id,
                 region_code=task.region_code,
@@ -466,22 +365,9 @@ class LeRobotPipeline:
             ),
         )
         profile = self.quality_profile_factory(native_profile, int(episode.fps))
-        with self.connections() as connection, connection.cursor() as cursor:
-            dataset = self.task_datasets(
-                cursor,
-                organization_id=task.organization_id,
-                project_id=task.project_id,
-                collection_task_id=task.collection_task_id,
-            )
-            if dataset != task.dataset_id:
-                raise ValueError("native collection task Dataset changed")
-            targets = self.schema_targets(
-                cursor,
-                organization_id=task.organization_id,
-                project_id=task.project_id,
-                storage_region_code=task.region_code,
-                dataset_id=dataset,
-            )
+        dataset, targets = self.planning.targets(task)
+        if dataset != task.dataset_id:
+            raise ValueError("native collection task Dataset changed")
         if len(set(targets)) != 1:
             raise NativeImportBlocked(
                 "请先在标签体系中发布并绑定当前数据集的标注 Schema，再重试处理。"
@@ -495,12 +381,10 @@ class LeRobotPipeline:
             profile=profile,
         )
         if task.storage_format == "lerobot_v3":
-            if self.episode_packages is None:
-                raise RuntimeError("native Episode package service is not configured")
-            self.episode_packages.schemas.register_schema(snapshot)
+            self.native_schemas.register_schema(snapshot)
         else:
             self.catalog.register_schema(snapshot)
-        PostgresQualityRepository(self.connections).put_profile(task.project_id, profile)
+        self.quality_profiles.put_profile(task.project_id, profile)
         manifest_key = (
             f"derived/lerobot-imports/{task.organization_id}/{dataset}/"
             f"{raw.raw_source_id}/episodes/{task.source.episode_index:06d}-manifest.json"
@@ -639,7 +523,7 @@ class LeRobotPipeline:
         )
         # Streaming alignment metadata deliberately carries no sample bodies. Read
         # one committed row to retain the real numeric/event types in the viewer.
-        catalog = self.episode_packages.catalog if storage_format == "lerobot_v3" else self.catalog
+        catalog = self.native_catalog if storage_format == "lerobot_v3" else self.catalog
         window = catalog.read_steps(
             dataset_id,
             source.rollout_id,

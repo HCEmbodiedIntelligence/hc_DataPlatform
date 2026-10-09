@@ -42,7 +42,19 @@ def test_native_committed_values_preserve_numeric_viewer_types(tmp_path: Path) -
         end_step=1,
         steps=(StepRecord(rollout_id="rollout", step_index=0, timestamp_ns=0, modalities=values),),
     )
-    pipeline = LeRobotPipeline(Mock(), Mock(), catalog, Mock(), tmp_path)
+    pipeline = LeRobotPipeline(
+        Mock(),
+        catalog,
+        Mock(),
+        tmp_path,
+        raw_sources=Mock(),
+        state=Mock(),
+        registrations=Mock(),
+        planning=Mock(),
+        quality_profiles=Mock(),
+        native_schemas=Mock(),
+        native_catalog=Mock(),
+    )
     start = datetime(1970, 1, 1, tzinfo=timezone.utc)
     preflight = SimpleNamespace(
         manifest=SimpleNamespace(

@@ -195,9 +195,14 @@
       "title": "导入处理器创建其他领域的具体 PostgreSQL 仓储",
       "scope": "两分支",
       "owner": "T3",
-      "status": "pending",
-      "evidence": [],
-      "remaining": "由装配层注入原始数据、处理状态、质量查询和目录提交端口；处理器不借用另一个服务的连接工厂。"
+      "status": "implemented_verified",
+      "evidence": [
+        "LeRobotPipeline receives Raw/state/registration/planning/quality/schema/sample ports; NativeLeRobotProcessor receives QC, terminal job and published receipt queries. Neither opens connections or constructs PostgreSQL repositories.",
+        "Runtime explicitly assembles RobotWorkerComponents; worker consumes configured factories and never borrows pipeline.connections. Historical Temporal payloads and activity names unchanged.",
+        "12 actual PG/MinIO/Temporal services pass, including RGB-D and legacy G1 publication receipt recovery, bad QC/wrong dataset rejection, stale attempt rejection, four parallel deliveries and rollback of state/resolution/aggregate writes. Standalone real worker recording/HTTP service passes. Evidence native-ports-services-v2.xml and native-ports-worker-services.xml.",
+        "113 architecture/cache/projection checks and six strict typed ports/adapters pass; runtime OpenAPI remains 673be751."
+      ],
+      "remaining": "None for B17 persistence dependency boundary. Pending joint candidate integration; B14/B15 broader query/bootstrap/global dependencies remain open."
     },
     {
       "id": "B18",
@@ -677,10 +682,14 @@
       "title": "回放辅助函数按实例当前绑定查模型，缺少冻结的模型输入",
       "scope": "两分支",
       "owner": "T13 T14 T5",
-      "status": "in_progress",
-      "evidence": [],
-      "remaining": "优先从数据快照取得 robot_model_version、joint_mapping/calibration 引用与哈希；历史数据缺失时标明“当前绑定兼容预览”，不把当前值当历史事实。绑定变化前后验证同一数据快照得到相同模型资产。",
-      "implementation_notes": "Backend immutable processing-time model/asset/mapping/calibration snapshot and authorized logical reads verified; frontend/browser consumption pending."
+      "status": "implemented_verified",
+      "evidence": [
+        "Immutable PACKAGE_PLANNING scene includes actual model_id/version, fixed mappings/calibration and hashes; actual service tests cover concurrent retries, foreign scope, revocation, corruption and Tag inheritance.",
+        "B075 actual ordinary browser created a separate synthetic collection task, uploaded original native files, waited for real worker/QC PASS, and displayed P06 fixed scene with software WebGL and RGB-D.",
+        "After normal binding switch to second version and full refresh, P06 and P08 retained identical first version, scene_sha256 c78fac5a0ef65be2aa63108ee50d372482f4b66ad9bd6bb14f374a302ee8fb6a and asset hash e5fe5dc488382d22623e84c75e173e4eea8143d59782743ad9d66a9f1f35793c. Binding restored with normal history. diagnostics/platform-decoupling-two-terminals-20261008/evidence/B/r04-fixed-scene-rebind-validation.json."
+      ],
+      "remaining": "None for R04 processing-time frozen scene. Synthetic software validation; no physical robot acceptance or undefined calibration transform is claimed.",
+      "implementation_notes": "B055 actual P06/P08 fixed-scene consumers and B075 browser rebind verified on candidate 637d6ef6; legacy missing scene retains explicit compatibility provenance."
     },
     {
       "id": "R05",
