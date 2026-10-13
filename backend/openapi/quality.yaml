@@ -119,46 +119,129 @@ components:
         - QC_MODALITY_OFFSET
         - QC_COMPLETE_STEP_RATIO_LOW
     AutoQualityProblemV1:
-      type: object
-      additionalProperties: false
-      required:
-        - id
-        - rollout_id
-        - status
-        - severity
-        - start_ns
-        - end_ns
-        - message
-        - finding_count
-        - finding_codes
-        - topics
-        - report_sha256
-        - updated_at
       properties:
-        schema_version: {type: string, const: auto-quality-problem/v1, default: auto-quality-problem/v1}
-        id: {type: string, pattern: '^qc_[0-9a-f]{32}$'}
-        source: {type: string, const: AUTO_QC, default: AUTO_QC}
-        session_id: {type: [string, "null"], minLength: 1, maxLength: 256, default: null}
-        source_import_id: {type: [string, "null"], minLength: 1, maxLength: 256, default: null}
-        source_episode_index: {type: [integer, "null"], minimum: 0, default: null}
-        rollout_id: {type: string, minLength: 1, maxLength: 256}
-        data_package_id: {type: [string, "null"], minLength: 1, maxLength: 256, default: null}
-        status: {type: string, enum: [RISK, REJECT]}
-        severity: {type: string, enum: [HIGH, CRITICAL]}
-        start_ns: {type: string, pattern: '^(?:0|[1-9][0-9]*)$'}
-        end_ns: {type: string, pattern: '^[1-9][0-9]*$'}
-        message: {type: string, minLength: 1, maxLength: 1000}
-        finding_count: {type: integer, minimum: 1}
+        schema_version:
+          type: string
+          const: auto-quality-problem/v1
+          title: Schema Version
+          default: auto-quality-problem/v1
+        id:
+          type: string
+          pattern: ^qc_[0-9a-f]{32}$
+          title: Id
+        source:
+          type: string
+          const: AUTO_QC
+          title: Source
+          default: AUTO_QC
+        session_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Session Id
+        source_import_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Source Import Id
+        source_episode_index:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Source Episode Index
+        recording_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Id
+        recording_episode_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Episode Id
+        rollout_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Rollout Id
+        data_package_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Data Package Id
+        status:
+          type: string
+          enum:
+          - RISK
+          - REJECT
+          title: Status
+        severity:
+          type: string
+          enum:
+          - HIGH
+          - CRITICAL
+          title: Severity
+        start_ns:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: Start Ns
+        end_ns:
+          type: string
+          pattern: ^[1-9][0-9]*$
+          title: End Ns
+        message:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Message
+        finding_count:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Finding Count
         finding_codes:
+          items:
+            type: string
           type: array
           minItems: 1
-          items: {$ref: "#/components/schemas/QualityCode"}
+          title: Finding Codes
         topics:
+          items:
+            type: string
           type: array
           minItems: 1
-          items: {type: string}
-        report_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
-        updated_at: {type: string, format: date-time}
+          title: Topics
+        report_sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Report Sha256
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      additionalProperties: false
+      type: object
+      required:
+      - id
+      - rollout_id
+      - status
+      - severity
+      - start_ns
+      - end_ns
+      - message
+      - finding_count
+      - finding_codes
+      - topics
+      - report_sha256
+      - updated_at
+      title: AutoQualityProblemV1
+      description: Latest failed automatic-QC result projected for the unified issue center.
     AutoQualityProblemListV1:
       type: object
       additionalProperties: false
@@ -193,7 +276,7 @@ components:
         - maximum_backward_timestamps_reject
       properties:
         target_frequency_hz: {type: number, exclusiveMinimum: 0, maximum: 1000, default: 30}
-        minimum_frequency_hz_risk: {type: number, minimum: 0, default: 28.5}
+        minimum_frequency_hz_risk: {type: number, minimum: 0, default: 27.0}
         minimum_frequency_hz_reject: {type: number, minimum: 0, default: 22.5}
         minimum_coverage_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0.98}
         minimum_coverage_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.8}

@@ -31,7 +31,7 @@ paths:
       requestBody: {$ref: "#/components/requestBodies/RegistrationCommandBody"}
       responses:
         "201":
-          description: The ACTIVE empty account was created and can log in immediately.
+          description: Account created. The first registered account is the platform admin.
           headers:
             Cache-Control: {$ref: "#/components/headers/AccessNoStore"}
           content:

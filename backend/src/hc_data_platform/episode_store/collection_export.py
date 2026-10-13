@@ -45,6 +45,7 @@ class CollectionSource:
     annotation_file: object = None
     track: object = None
     review_document: object = None
+    camera_calibration: object = None
 
     def __post_init__(self):
         if (self.annotation_file is None) != (self.track is None):
@@ -134,6 +135,7 @@ def contract(info):
         "hc.feature_mapping",
         "hc.structured_features",
         "hc.source_shapes",
+        "hc.training_policy",
     )
     result = {key: copy.deepcopy(info.get(key)) for key in fields}
     # JSON may spell the same frequency as 30 or 30.0 across ingress writers.
@@ -280,6 +282,14 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
                     annotated,
                     checkpoint,
                 )
+            calibration_path = f"hc/episodes/{index:06d}/hc/camera_calibration.json"
+            if selection.camera_calibration is not None:
+                write_json(
+                    root, calibration_path, selection.camera_calibration.model_dump(mode="json")
+                )
+                member["camera_calibration"] = calibration_path
+            else:
+                member["camera_calibration"] = None
             members.append(member)
             episodes.append(episode)
             subtask_rows.extend(segments)
@@ -307,6 +317,23 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
             "hc.package_version": PROCESSOR,
             "hc.collection": "hc/collection.json",
         }
+    )
+    info["hc.camera_calibration"] = "meta/camera_calibration.json"
+    write_json(
+        root,
+        "meta/camera_calibration.json",
+        {
+            "format": "hc-collection-camera-calibration/1",
+            "episodes": [
+                {
+                    "episode_index": index,
+                    "path": member["camera_calibration"],
+                    "status": "CONFIGURED" if member["camera_calibration"] else "UNCONFIGURED",
+                }
+                for index, member in enumerate(members)
+            ],
+            "scope": "static parameters; not per-frame observations",
+        },
     )
     (root / EPISODES_PATH).parent.mkdir(parents=True, exist_ok=True)
     # Arrow otherwise infers only the first row's keys, losing later measured
@@ -525,7 +552,7 @@ def write_member(
             "chunk_index": index // 1000,
             "file_index": index % 1000,
             "from_timestamp": 0.0,
-            "to_timestamp": seen / info["fps"],
+            "to_timestamp": local_info.get("hc.media_frame_count", seen) / info["fps"],
         }.items():
             episode[f"videos/{feature}/{key}"] = value
     for feature, values in statistics.items():

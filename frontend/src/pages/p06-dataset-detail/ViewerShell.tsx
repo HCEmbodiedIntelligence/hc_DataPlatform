@@ -92,6 +92,7 @@ export function EpisodeViewerShell() {
   );
   const [issueOpen, setIssueOpen] = useState(false);
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
+  const [dataInfoTab, setDataInfoTab] = useState("playback");
   const [cameraView, setCameraView] = useState("__quad__");
   const [issueIntentKey, setIssueIntentKey] = useState("");
   const [issueType, setIssueType] = useState<
@@ -377,9 +378,26 @@ export function EpisodeViewerShell() {
               visibleStreams={cameraStreams}
               onViewChange={setCameraView}
             >
-              <Button size="small" onClick={() => setDataInfoOpen(true)}>
+              <Button
+                size="small"
+                onClick={() => {
+                  setDataInfoTab("playback");
+                  setDataInfoOpen(true);
+                }}
+              >
                 数据信息
               </Button>
+              {capabilities.has("upload.read") && reviewTarget.data && (
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setDataInfoTab("original-files");
+                    setDataInfoOpen(true);
+                  }}
+                >
+                  原始文件
+                </Button>
+              )}
             </CameraViewToolbar>
           ),
           timelineTools: () => (
@@ -487,13 +505,15 @@ export function EpisodeViewerShell() {
         )}
         {dataInfoOpen && reviewTarget.data && scope && (
           <EpisodeDetailPanel
-            key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}`}
+            key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${reviewTarget.data.data_version_id}:${dataInfoTab}`}
+            initialTab={dataInfoTab}
             scope={scope}
             data={reviewTarget.data}
             canRead={capabilities.has("dataset_version.read")}
             canReview={capabilities.has("dataset_version.review")}
             canDownload={capabilities.has("export.download")}
             canCreate={capabilities.has("export.create")}
+            canReadOriginal={capabilities.has("upload.read")}
             returnToPlayback={() => setDataInfoOpen(false)}
           />
         )}

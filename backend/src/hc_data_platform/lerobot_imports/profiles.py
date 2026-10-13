@@ -168,7 +168,7 @@ def quality_profile(profile: NativeProfile, fps: int):
     if profile.legacy_g1:
         return QualityProfileV1(
             profile_id="native-g1-v3-30hz-v1",
-            profile_version=4,
+            profile_version=5,
             engine_version="be06-qc/3",
             required_topics=frozenset(profile.topics),
             default_timing={"target_frequency_hz": 30},
@@ -177,14 +177,14 @@ def quality_profile(profile: NativeProfile, fps: int):
         )
     return QualityProfileV1(
         profile_id=f"{profile.profile_id}-{fps}hz-v1",
-        profile_version=2,
+        profile_version=3,
         engine_version="be06-qc/3",
         required_topics=frozenset(profile.topics),
         joint_topic=profile.joint_topic,
         action={"topic": profile.action_topic},
         default_timing={
             "target_frequency_hz": fps,
-            "minimum_frequency_hz_risk": fps * 0.95,
+            "minimum_frequency_hz_risk": 27.0 if fps == 30 else fps * 0.95,
             "minimum_frequency_hz_reject": fps * 0.75,
         },
     )

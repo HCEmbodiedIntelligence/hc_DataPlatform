@@ -76,7 +76,6 @@ import styles from "./PlatformShell.module.css";
 import { ShellLoadingPage } from "./ShellLoadingPage";
 import { datasetContextKind } from "./dataset-context";
 import { useUnreadNotificationCount } from "../../features/notifications/api";
-import { getReleaseIdentityIfConfigured } from "../../shared/config/release-identity";
 import {
   getPlatformObjectStoreLocation,
   type PlatformObjectStoreLocation,
@@ -170,29 +169,6 @@ function BrandMark() {
     <span className={styles.brandMark}>
       <img alt="杭叉集团" height="62" src={hangchaLogo} width="106" />
     </span>
-  );
-}
-
-function ReleaseStamp({ mobile = false }: Readonly<{ mobile?: boolean }>) {
-  const identity = getReleaseIdentityIfConfigured();
-  if (identity === null) return null;
-  const manifest =
-    identity.release_manifest_digest === "unreleased"
-      ? "unreleased"
-      : `${identity.release_manifest_digest.slice(0, 15)}…`;
-  return (
-    <div
-      aria-label={`运行版本 ${identity.release_id}，发布清单 ${identity.release_manifest_digest}`}
-      className={`${styles.releaseStamp} ${mobile ? styles.releaseStampMobile : ""}`}
-      title={`${identity.release_id}\n${identity.release_manifest_digest}`}
-    >
-      <span aria-hidden="true" className={styles.releaseStampRail} />
-      <span className={styles.releaseStampCopy}>
-        <span>运行版本</span>
-        <strong>{identity.release_id}</strong>
-        <code>清单 {manifest}</code>
-      </span>
-    </div>
   );
 }
 
@@ -426,6 +402,7 @@ function storageLocationKey(location: PlatformObjectStoreLocation): string {
 }
 
 function storageLocationLabel(location: PlatformObjectStoreLocation): string {
+  if (location.local_path) return `本机存储 · ${location.local_path}`;
   let endpoint = location.public_endpoint;
   try {
     endpoint = new URL(location.public_endpoint).host;
@@ -972,11 +949,11 @@ export function PlatformShell({
           <Sider
             className={styles.sider}
             collapsed={shellNavigationCollapsed}
-            collapsedWidth={64}
+            collapsedWidth={56}
             data-navigation-collapsed={shellNavigationCollapsed || undefined}
             theme="light"
             trigger={null}
-            width={218}
+            width="var(--hc-shell-navigation-width)"
           >
             <NavigationMenu
               collapsed={shellNavigationCollapsed}
@@ -984,7 +961,6 @@ export function PlatformShell({
               label={shellNavigationCollapsed ? "折叠主导航" : "主导航"}
               manifest={visibleManifest}
             />
-            {!shellNavigationCollapsed ? <ReleaseStamp /> : null}
             <Button
               aria-label={shellNavigationCollapsed ? "展开导航" : "折叠导航"}
               aria-controls="platform-primary-navigation"
@@ -1070,7 +1046,6 @@ export function PlatformShell({
           manifest={visibleManifest}
           onNavigate={closeMobileNavigation}
         />
-        <ReleaseStamp mobile />
       </Drawer>
 
       <Drawer

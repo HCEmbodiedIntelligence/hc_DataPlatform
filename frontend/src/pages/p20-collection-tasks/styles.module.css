@@ -798,3 +798,6 @@
     transition: none;
   }
 }
+
+.captureCounts { display: grid; gap: 3px; color: var(--hc-color-text-secondary); font-size: 12px; }
+.captureCounts b { color: var(--hc-color-text); font-size: 17px; }

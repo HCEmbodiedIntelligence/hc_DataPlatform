@@ -52,7 +52,7 @@
   border-inline-end: 1px solid var(--hc-color-border) !important;
   border-radius: 0 !important;
   color: var(--hc-color-text) !important;
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.02em;
   transition:
@@ -70,9 +70,9 @@
 
 .brandMark {
   display: inline-grid;
-  width: 70px;
+  width: 60px;
   height: 41px;
-  flex: 0 0 70px;
+  flex: 0 0 60px;
   place-items: center;
 }
 
@@ -370,32 +370,32 @@
 .navigation {
   height: calc(100% - 48px);
   overflow: hidden auto;
-  padding: 12px 10px 20px;
+  padding: 8px 6px 12px;
   scrollbar-width: thin;
 }
 
 .sider[data-navigation-collapsed="true"] .navigation {
-  padding-inline: 8px;
+  padding-inline: 4px;
 }
 
 .navigation :global(.ant-menu) {
   border-inline-end: 0 !important;
   background: transparent;
   color: var(--hc-color-text);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .navigation :global(.ant-menu-item) {
   position: relative;
-  min-height: 38px;
-  height: 38px;
+  min-height: 34px;
+  height: 34px;
   margin: 2px 0;
   border-radius: 8px;
-  line-height: 38px;
+  line-height: 34px;
 }
 
 .navigation :global(.ant-menu-item-group-title) {
-  padding: 13px 12px 5px;
+  padding: 9px 10px 3px;
   color: var(--hc-color-text-muted);
   font-size: 12px;
   font-weight: 650;
@@ -487,7 +487,7 @@
 .collapseNavigation {
   position: absolute;
   bottom: 16px;
-  left: 20px;
+  left: 12px;
   width: 36px;
   height: 32px;
   border: 1px solid var(--hc-color-border);
@@ -501,67 +501,6 @@
     box-shadow 150ms ease;
 }
 
-.releaseStamp {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  display: grid;
-  width: 142px;
-  min-height: 38px;
-  grid-template-columns: 3px minmax(0, 1fr);
-  overflow: hidden;
-  border: 1px solid var(--hc-color-border-subtle);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--hc-color-surface-muted) 82%, white);
-  color: var(--hc-color-text-muted);
-}
-
-.releaseStampRail {
-  background: linear-gradient(
-    180deg,
-    var(--hc-color-primary) 0%,
-    var(--hc-color-signal) 100%
-  );
-}
-
-.releaseStampCopy {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
-  padding: 5px 7px 4px;
-  font-size: 9px;
-  letter-spacing: 0.055em;
-  line-height: 1.15;
-  text-transform: uppercase;
-}
-
-.releaseStampCopy strong,
-.releaseStampCopy code {
-  overflow: hidden;
-  color: var(--hc-color-text);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 9px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  text-overflow: ellipsis;
-  text-transform: none;
-  white-space: nowrap;
-}
-
-.releaseStampCopy code {
-  color: var(--hc-color-text-muted);
-  font-size: 8px;
-  font-weight: 500;
-}
-
-.releaseStampMobile {
-  position: relative;
-  right: auto;
-  bottom: auto;
-  width: 100%;
-  margin-top: 18px;
-}
-
 .collapseNavigation:hover {
   border-color: var(--hc-color-primary) !important;
   background: var(--hc-color-surface-tint) !important;
@@ -570,7 +509,7 @@
 
 .sider[data-navigation-collapsed="true"] .collapseNavigation {
   bottom: 16px;
-  left: 14px;
+  left: 10px;
   width: 36px;
   height: 32px;
   border-radius: 8px !important;

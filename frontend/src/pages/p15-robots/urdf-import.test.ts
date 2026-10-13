@@ -137,3 +137,24 @@ describe("robot URDF import", () => {
     ).rejects.toThrow("URDF_XML_INVALID");
   });
 });
+
+it("maps a coupled gripper with one recorded axis and preserves its mimic", async () => {
+  const xml = `<robot name="gripper"><link name="base"/><link name="finger"/>
+    <joint name="drive" type="prismatic"/><joint name="follower" type="prismatic"><mimic joint="drive"/></joint></robot>`;
+  const parsed = await parseRobotModelAssets([
+    asset(xml, "gripper.urdf", "URDF", "application/xml"),
+  ]);
+  expect(parsed.actuatedJointNames).toEqual(["drive"]);
+  expect(parsed.joints).toHaveLength(2);
+  expect(parsed.mappings).toHaveLength(1);
+  await expect(
+    parseRobotModelAssets([
+      asset(
+        xml.replace('joint="drive"', 'joint="follower"'),
+        "bad.urdf",
+        "URDF",
+        "application/xml",
+      ),
+    ]),
+  ).rejects.toThrow("URDF_MIMIC_INVALID");
+});

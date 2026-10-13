@@ -28,6 +28,7 @@ from .asset_models import (
     AuthorizeRecordingAssetPartsCommand,
     CompleteRecordingAssetCommand,
     CreateRecordingUploadCommand,
+    EpisodeProcessing,
     EpisodeProcessingPage,
     EpisodeVideoSource,
     EpisodeVideoSourceEnvelope,
@@ -45,6 +46,7 @@ from .asset_models import (
     RecordingUploadStatus,
     RecordingVideoSource,
     RecordingVideoSourceEnvelope,
+    RetryEpisodeCommand,
     SensorTimestampMode,
 )
 from .asset_repository import (
@@ -68,6 +70,7 @@ from .models import (
     absolute_recording_time,
     recording_duration_ns,
 )
+from .previews import is_depth, read_preview
 from .raw_sensor import (
     DecodedSensorSample,
     RangeReadableObjectStorage,
@@ -87,6 +90,38 @@ class MutationResult:
 
 
 class ContinuousRecordingService:
+    def retry_episode(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        recording_id: str,
+        episode_id: str,
+        command: RetryEpisodeCommand,
+        actor_id: str,
+        request_id: str,
+        discard: bool = False,
+    ) -> EpisodeProcessing:
+        scope = self._authorize(
+            auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            capabilities=("upload.manage",),
+        )
+        self._require_recording(scope, recording_id)
+        return self._repository.retry_episode(
+            scope,
+            recording_id,
+            episode_id,
+            command,
+            actor_id=actor_id,
+            request_id=request_id,
+            discard=discard,
+        )
+
     def __init__(
         self,
         repository: ContinuousRecordingRepository,
@@ -772,7 +807,11 @@ class ContinuousRecordingService:
         )
         self._require_recording(scope, recording_id)
         items = self._repository.list_episode_processing(scope, recording_id)
-        return EpisodeProcessingPage(items=items, total=len(items))
+        return EpisodeProcessingPage(
+            items=items,
+            total=len(items),
+            qc_reports=self._repository.list_episode_qc(scope, recording_id),
+        )
 
     def authorize_episode_videos(
         self,
@@ -820,21 +859,22 @@ class ContinuousRecordingService:
             self._upload_not_found()
         cameras = {camera.camera_id: camera for camera in upload.command.recording_config.cameras}
         expires_at = utc_now() + timedelta(seconds=self._preview_ttl)
+        assets = asset_repository.list_assets(scope, recording.recording_upload_id)
         sources = tuple(
             EpisodeVideoSource(
                 recording_id=recording_id,
                 episode_id=episode.episode_id,
                 asset_id=asset.asset_id,
                 camera_id=asset.manifest.camera_id or "missing-camera",
-                media_type=asset.manifest.media_type,
-                source_url=self._storage.presign_read(asset.object_key, self._preview_ttl),
+                **self._video_media(
+                    upload, asset, assets, cameras[asset.manifest.camera_id or ""], episode=True
+                ),
                 start_offset_ns=episode.start_offset_ns,
                 end_offset_ns=episode.end_offset_ns,
                 fps=cameras[asset.manifest.camera_id or ""].fps,
-                codec=cameras[asset.manifest.camera_id or ""].codec,
                 expires_at=expires_at,
             )
-            for asset in asset_repository.list_assets(scope, recording.recording_upload_id)
+            for asset in assets
             if asset.manifest.role is RecordingAssetRole.RAW_VIDEO
             and asset.status is RecordingAssetStatus.COMMITTED
         )
@@ -878,19 +918,18 @@ class ContinuousRecordingService:
             self._upload_not_found()
         cameras = {camera.camera_id: camera for camera in upload.command.recording_config.cameras}
         expires_at = utc_now() + timedelta(seconds=self._preview_ttl)
+        assets = asset_repository.list_assets(scope, recording.recording_upload_id)
         sources = tuple(
             RecordingVideoSource(
                 recording_id=recording_id,
                 asset_id=asset.asset_id,
                 camera_id=asset.manifest.camera_id or "missing-camera",
-                media_type=asset.manifest.media_type,
-                source_url=self._storage.presign_read(asset.object_key, self._preview_ttl),
+                **self._video_media(upload, asset, assets, cameras[asset.manifest.camera_id or ""]),
                 duration_ns=recording.duration_ns,
                 fps=cameras[asset.manifest.camera_id or ""].fps,
-                codec=cameras[asset.manifest.camera_id or ""].codec,
                 expires_at=expires_at,
             )
-            for asset in asset_repository.list_assets(scope, recording.recording_upload_id)
+            for asset in assets
             if asset.manifest.role is RecordingAssetRole.RAW_VIDEO
             and asset.status is RecordingAssetStatus.COMMITTED
         )
@@ -902,6 +941,22 @@ class ContinuousRecordingService:
                 detail="No committed original video can be authorized for this recording.",
             )
         return RecordingVideoSourceEnvelope(sources=sources)
+
+    def _video_media(self, upload, asset, assets, camera, *, episode=False):
+        depth = is_depth(camera)
+        preview = read_preview(self._storage, upload, asset, assets) if depth else None
+        return {
+            "modality": "depth" if depth else "rgb",
+            "preview_status": "UNAVAILABLE" if depth and not preview else "READY",
+            "media_type": "video/mp4" if preview else asset.manifest.media_type,
+            "source_url": self._storage.presign_read(
+                preview or asset.object_key, self._preview_ttl
+            ),
+            "codec": "h264" if preview else camera.codec,
+            "materialization": ("DEPTH_PREVIEW_TIME_WINDOW" if episode else "DEPTH_PREVIEW")
+            if preview
+            else ("ORIGINAL_VIDEO_TIME_WINDOW" if episode else "ORIGINAL_RECORDING"),
+        }
 
     def read_recording_sensor_window(
         self,

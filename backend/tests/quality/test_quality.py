@@ -48,6 +48,7 @@ def _profile(**updates: object) -> QualityProfileV1:
         "profile_version": 7,
         # Retain regression coverage for immutable reports made before policy v2.
         "engine_version": "be06-qc/1",
+        "default_timing": TopicTimingProfileV1(minimum_frequency_hz_risk=28.5),
         "required_topics": {"/camera/front"},
     }
     values.update(updates)

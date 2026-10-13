@@ -9,6 +9,7 @@ import hashlib
 import json
 import sqlite3
 import struct
+from itertools import chain, pairwise
 from contextlib import closing, suppress
 from pathlib import Path
 
@@ -24,11 +25,15 @@ from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 
 from .alignment import Aligner, target_count, target_time
 from .buffers import TimeCache
+from .camera_rules import depth_reference
 from .config import config_hash, validate
 from .models import Sample
+from .recorded_actions import apply_recorded_targets
+from .primary_timeline import uses_primary_timeline, frame_identity
+from .export_timeline import export_rows
 from .video import FrameReader
 
-VERSION = "openarm-raw-platform/4"
+VERSION = "openarm-raw-platform/11"
 
 
 def canonical(value):
@@ -46,6 +51,8 @@ def load_index(root, database, *, require_depth_sources=False):
         CREATE TABLE depths(source TEXT,seq INTEGER,log_ns INTEGER,PRIMARY KEY(source,seq));
         CREATE TABLE pointclouds(source TEXT,seq INTEGER,PRIMARY KEY(source,seq));
         CREATE TABLE events(kind TEXT,body TEXT);
+        CREATE TABLE action_targets(source TEXT,k INTEGER,body TEXT,PRIMARY KEY(source,k));
+        CREATE INDEX action_primary ON action_targets(source,json_extract(body,'$.primary_frame.source_seq'));
     """)
     with (root / "raw.mcap").open("rb") as stream:
         for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages(
@@ -55,6 +62,10 @@ def load_index(root, database, *, require_depth_sources=False):
             if not channel.topic.startswith("/humanoid/session/"):
                 continue
             kind = channel.topic.removeprefix("/humanoid/session/").split("/")[0]
+            if channel.message_encoding == "humanoid-rgb" and kind == "rgb":
+                # Deferred robot encoding retains the exact source pixels in
+                # MCAP. Preview lookup uses its committed MP4 frame bindings.
+                continue
             if channel.message_encoding in {"humanoid-depth", "humanoid-pointcloud"}:
                 length = struct.unpack("<I", message.data[:4])[0]
                 data = json.loads(message.data[4 : 4 + length])
@@ -91,11 +102,32 @@ def load_index(root, database, *, require_depth_sources=False):
             else:
                 data = json.loads(message.data)
                 body = canonical(data).decode()
-                if kind == "raw":
+                if kind == 'depth_video_frame':
+                    from hc_data_platform.data_formats.depth_source import validate_profile
+                    from hc_data_platform.data_formats.holobrain_depth import DEFAULT_PROFILE
+                    ref, meta = data['depth_video'], data['depth']
+                    relative = Path(ref['video_segment_path'])
+                    if (relative.is_absolute() or '..' in relative.parts
+                            or not (root / relative).resolve().is_relative_to(root.resolve())
+                            or not (root / relative).is_file()):
+                        raise ValueError('depth video binding outside committed files')
+                    if ref['profile'] != DEFAULT_PROFILE.document() or ref['profile_sha256'] != DEFAULT_PROFILE.sha256:
+                        raise ValueError('unsupported compact depth quantization')
+                    source_profile = validate_profile(meta['source_profile'])
+                    depth_stream = depth_streams.setdefault(data['source_id'], {'shape':meta['shape'], 'profiles':{}})
+                    if depth_stream['shape'] != meta['shape']:
+                        raise ValueError('depth source grid changed within recording')
+                    depth_stream['profiles'][profile_hash(source_profile)] = source_profile
+                    database.execute('INSERT INTO depths VALUES(?,?,?)',
+                                     (data['source_id'],data['source_seq'],message.log_time))
+                elif kind == "raw":
                     database.execute(
                         "INSERT INTO raw_samples VALUES(?,?,?,?)",
                         (data["source_id"], data["source_seq"], data["capture_time_ns"], body),
                     )
+                elif kind == "action_target":
+                    database.execute("INSERT INTO action_targets VALUES(?,?,?)",
+                                     (data["source_id"], data["target_frame_index"], body))
                 elif kind == "video_frame":
                     relative = Path(data["video_segment_path"])
                     if (
@@ -116,10 +148,33 @@ def load_index(root, database, *, require_depth_sources=False):
     return depth_streams
 
 
+def capture_targets(database, cfg, start, end):
+    if not uses_primary_timeline(cfg['alignment']):
+        for index in range(target_count(start, end, cfg['dataset']['fps'])):
+            yield index, target_time(start, index, cfg['dataset']['fps']), None, None
+        return
+    primary = cfg['alignment']['primary_camera']
+    cursor = database.execute('SELECT body FROM raw_samples WHERE source=? AND capture_ns>=? '
+                              'AND capture_ns<? ORDER BY capture_ns,seq', (primary, start, end))
+    identities = (frame_identity(primary, json.loads(body)) for (body,) in cursor)
+    previous = None
+    for index, (current, following) in enumerate(pairwise(chain(identities, [None]))):
+        if previous is not None and current['capture_time_ns'] <= previous:
+            raise ValueError('primary_camera_duplicate_or_backward_timestamp')
+        previous = current['capture_time_ns']
+        yield index, previous, current, following
+
+
 def rows(database, cfg, start, end):
     aligner = Aligner(cfg, None, VERSION)
-    for index in range(target_count(start, end, cfg["dataset"]["fps"])):
-        target = target_time(start, index, cfg["dataset"]["fps"])
+    # Presence anywhere, including a late command or invalidation, wins over all
+    # fallback candidates. An expired real command must remain a QC failure.
+    missing_actions = [ident for ident, source in cfg["sources"].items()
+                       if source["kind"] == "action" and source.get("named_axes")
+                       and cfg["alignment"].get("derive_action_from_next_state", False)
+                       and not database.execute("SELECT 1 FROM raw_samples WHERE source=? LIMIT 1",
+                                                (ident,)).fetchone()]
+    for index, target, primary, following in capture_targets(database, cfg, start, end):
         cache = TimeCache(cfg["buffers"])
         aligner.cache = cache
         retention = round(cfg["buffers"]["retention_ms"] * 1e6)
@@ -170,11 +225,32 @@ def rows(database, cfg, start, end):
                         target,
                     )
         # Offline processing accepts late delivery, not future action timestamps.
-        row = aligner.row(index, start, target, deadline=2**63 - 1)
+        row = aligner.row(index, start, target, deadline=2**63 - 1, target_ns=target)
+        if primary:
+            row.update(primary_frame=primary, next_primary_frame=following,
+                       timeline_mode='primary_camera')
+        recorded = {}
+        for ident in missing_actions:
+            saved = (database.execute("SELECT body FROM action_targets WHERE source=? AND "
+                                      "json_extract(body,'$.primary_frame.source_seq')=?",
+                                      (ident, primary['source_seq'])).fetchone() if primary else
+                     database.execute("SELECT body FROM action_targets WHERE source=? AND k=?",
+                                      (ident, index)).fetchone())
+            if saved:
+                recorded[ident] = json.loads(saved[0])
+        if recorded:
+            apply_recorded_targets(row, recorded, cfg)
         if cache.evictions:
             row["export_qualified"] = row["valid"] = False
             row["invalid_reasons"].append("platform_association_capacity_exceeded")
         row["association_policy"] = "platform_offline_source_time"
+        if row["valid"]:
+            for ident, group in row["images"].items():
+                for stream in ("rgb", "depth"):
+                    if stream in group:
+                        image = group[stream]
+                        aligner.previous_images[(ident, stream)] = (
+                            ident, stream, image["clock_id"], image["clock_epoch"], image["source_seq"])
         yield row
 
 
@@ -206,13 +282,31 @@ def vectors(row, kind, cfg):
     return [values[a["source_name"]] for a in public.axes(cfg["capture"]["profile"])]
 
 
-def read_depth_message(path, source_id, source_seq, log_ns):
+def read_depth_message(path, source_id, source_seq, log_ns, readers=None):
     """A timestamp is not a camera identity: multiple cameras can share it."""
     with Path(path).open("rb") as raw_stream:
         matches = make_reader(raw_stream, validate_crcs=True).iter_messages(
             start_time=log_ns, end_time=log_ns + 1
         )
         for _, channel, message in matches:
+            if channel.topic.startswith('/humanoid/session/depth_video_frame/'):
+                metadata=json.loads(message.data)
+                if (metadata['source_id'],metadata['source_seq']) != (source_id,source_seq):
+                    continue
+                binding=metadata['depth_video']
+                root=Path(path).parent
+                relative=Path(binding['video_segment_path'])
+                if relative.is_absolute() or not (root/relative).resolve().is_relative_to(root.resolve()):
+                    raise ValueError('depth video path escapes recording')
+                reader=(readers.setdefault(source_id,FrameReader(root,'gray12le'))
+                        if readers is not None else FrameReader(root,'gray12le'))
+                try:
+                    pixels=reader.read(binding)
+                    from hc_data_platform.data_formats.compact_depth import validate_encoded_depth
+                    validate_encoded_depth(pixels,binding,metadata['depth']['source_profile'],metadata['depth']['shape'])
+                    return pixels,metadata
+                finally:
+                    if readers is None:reader.close()
             if channel.message_encoding != "humanoid-depth":
                 continue
             size = struct.unpack("<I", message.data[:4])[0]
@@ -261,12 +355,16 @@ def prepare(root, destination, command, progress=lambda: None):
     (destination / "sensors").mkdir()
     (destination / "source").mkdir()
     topics = ("/observation/state", "/action", "/openarm/capture_validity", "source.timestamp_ns")
-    videos, readers = {}, {}
+    videos, readers, depth_readers = {}, {}, {}
     invalid = 0
     try:
         with closing(sqlite3.connect(root.parent / "worker-index.sqlite3")) as db:
             depth_streams = load_index(root, db, require_depth_sources=True)
-            if any(camera["id"] not in depth_streams for camera in profile["cameras"]):
+            if any(
+                camera["id"] not in depth_streams
+                for camera in profile["cameras"]
+                if cfg["sources"][camera["id"]].get("depth_enabled", True)
+            ):
                 raise ValueError(
                     "DEPTH_SOURCE_CONTRACT_REQUIRED: no observed depth grid for camera"
                 )
@@ -286,7 +384,7 @@ def prepare(root, destination, command, progress=lambda: None):
                 channels = {
                     topic: writer.register_channel(topic, "json", schema) for topic in topics
                 }
-                for index, row in enumerate(rows(db, cfg, start, end)):
+                for index, row in enumerate(export_rows(rows(db, cfg, start, end), cfg, start, end)):
                     reasons = list(row["invalid_reasons"])
                     qualified = row["export_qualified"]
                     if any(a <= row["target_time_ns"] < b for a, b in ranges):
@@ -310,6 +408,11 @@ def prepare(root, destination, command, progress=lambda: None):
                             "names": names,
                             "units": units,
                         }
+                        if kind == "action":
+                            values[topic]["source_origins"] = {
+                                ident: value.get("action_origin", "recorded_command")
+                                for ident, value in row["action"].items()
+                            }
                     for camera in profile["cameras"]:
                         ident = camera["id"]
                         if ident not in videos:
@@ -336,7 +439,7 @@ def prepare(root, destination, command, progress=lambda: None):
                             if group
                             else None
                         )
-                        if not depth:
+                        if cfg["sources"][camera["id"]].get("depth_enabled", True) and not depth:
                             reasons.append(ident + ":depth_not_committed")
                             qualified = False
                         try:
@@ -350,6 +453,8 @@ def prepare(root, destination, command, progress=lambda: None):
                             reasons.append(ident + ":preview_placeholder")
                             qualified = False
                         videos[ident].write(pixels)
+                        if not cfg["sources"][camera["id"]].get("depth_enabled", True):
+                            continue
                         depth_id = ident + "_depth"
                         if depth_id not in videos:
                             videos[depth_id] = DepthEvidenceVideo(
@@ -362,23 +467,25 @@ def prepare(root, destination, command, progress=lambda: None):
                         depth_array, scale, metadata = None, None, None
                         if depth:
                             depth_array, metadata = read_depth_message(
-                                root / "raw.mcap", ident, group["source_seq"], depth[0]
+                                root / "raw.mcap", ident, group["source_seq"], depth[0], depth_readers
                             )
                             scale = metadata["depth"].get("depth_scale")
                         depth_meta = metadata["depth"] if depth else {}
+                        depth_target, depth_limit = depth_reference(row, ident, cfg)
                         videos[depth_id].write(
                             depth_array,
                             scale,
                             source_id=ident,
                             source_seq=depth_meta.get("source_seq") if depth else None,
                             source_timestamp_ns=depth_meta.get("capture_time_ns"),
-                            target_timestamp_ns=row["target_time_ns"],
+                            target_timestamp_ns=depth_target,
                             missing=not bool(depth),
                             invalid_values=depth_meta.get("source_profile", {}).get(
                                 "invalid_values", ()
                             ),
                             source_profile=depth_meta.get("source_profile"),
-                            max_time_error_ns=round(cfg["alignment"]["camera_max_error_ms"] * 1e6),
+                            max_time_error_ns=depth_limit,
+                            encoded_frame=metadata.get('depth_video') if metadata else None,
                         )
                     for ident, cloud in row["pointclouds"].items():
                         if (
@@ -395,6 +502,7 @@ def prepare(root, destination, command, progress=lambda: None):
                         "valid": bool(qualified),
                         "source_frame": index,
                         "reasons": sorted(set(reasons)),
+                        "timing_warnings": row.get('timing_warnings', []),
                     }
                     invalid += int(not qualified)
                     for topic, value in values.items():
@@ -445,7 +553,11 @@ def prepare(root, destination, command, progress=lambda: None):
             path = f"videos/{ident}.mp4"
             with av.open(str(destination / path)) as container:
                 base = container.streams.video[0].time_base
-            for depth in (False, True):
+            for depth in (
+                (False, True)
+                if cfg["sources"][camera["id"]].get("depth_enabled", True)
+                else (False,)
+            ):
                 camera_id = public.camera_name(ident) + ("_depth" if depth else "")
                 relative = f"videos/{ident}" + ("_depth" if depth else "") + ".mp4"
                 with av.open(str(destination / relative)) as container:
@@ -487,6 +599,11 @@ def prepare(root, destination, command, progress=lambda: None):
                     "processor_version": VERSION,
                     "depth_sources": depth_streams,
                     "capture_context": context,
+                    "recorder_action_fallback": manifest.get("action_fallback"),
+                    "timeline_mode": cfg['alignment'].get('timeline_mode', 'fixed_grid'),
+                    "require_camera_sync": cfg['alignment'].get('require_camera_sync', False),
+                    "export_time_policy": ('fixed-rate export of primary-exposure associations; '
+                                           'source.timestamp_ns retains actual exposure; gaps invalid'),
                     "session_id": snapshot["session_id"],
                     "source_t0_ns": start,
                     "source_end_ns": end,
@@ -504,6 +621,8 @@ def prepare(root, destination, command, progress=lambda: None):
         )
         return config, roles
     finally:
+        for reader in depth_readers.values():
+            reader.close()
         for reader in readers.values():
             reader.close()
         for video in videos.values():

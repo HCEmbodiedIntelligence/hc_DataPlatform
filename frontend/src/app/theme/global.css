@@ -47,9 +47,9 @@
   --hc-radius-md: 12px;
   --hc-radius-lg: 18px;
   --hc-radius-xl: 24px;
-  --hc-shell-header-height: 68px;
-  --hc-shell-navigation-width: 218px;
-  --hc-shell-navigation-collapsed-width: 64px;
+  --hc-shell-header-height: 56px;
+  --hc-shell-navigation-width: 176px;
+  --hc-shell-navigation-collapsed-width: 56px;
   --hc-page-gutter: 24px;
   --hc-page-gutter-compact: 16px;
   --hc-layout-columns: 12;

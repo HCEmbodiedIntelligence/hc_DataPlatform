@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, Query, Response
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from .captures import CaptureProgressPage
 from .models import (
     CollectionTask,
     CollectionTaskPackageList,
@@ -311,3 +312,33 @@ def list_collection_task_packages(
     )
     _no_store(response)
     return service.packages(organization_id, project_id, collection_task_id, region_code)
+
+
+@router.get(
+    "/projects/{project_id}/capture-progress",
+    response_model=CaptureProgressPage,
+    operation_id="listCaptureProgress",
+)
+def list_capture_progress(
+    project_id: Identifier,
+    region_code: RegionCode,
+    response: Response,
+    service: Service,
+    auth: VerifiedAuth,
+    organization_id: OrganizationId,
+    collection_task_id: Annotated[str | None, Query(max_length=128)] = None,
+    robot_id: Annotated[str | None, Query(max_length=128)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> CaptureProgressPage:
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id=organization_id)
+    _no_store(response)
+    return service.captures(
+        organization_id,
+        project_id,
+        region_code,
+        collection_task_id,
+        limit=limit,
+        offset=offset,
+        robot_id=robot_id,
+    )

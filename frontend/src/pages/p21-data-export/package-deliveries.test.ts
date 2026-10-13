@@ -128,3 +128,17 @@ it("does not bind annotation history from another data version", async () => {
     loadCollectionAnnotationHistory(f.scope, f.data, history.task.task_id),
   ).rejects.toThrow(/不一致/);
 });
+
+it.each(["mcap", "original", "hdf5"])("requests %s using the common delivery endpoint", async mode => {
+  const f = packageDeliveryFixture(true);
+  if (f.job.plan.format !== "hc-collection-delivery-plan/1") throw new Error("fixture");
+  f.job.plan.archive_format = `${mode}_collection_zip/1`;
+  f.job.plan.processor_version = "hc-export/1";
+  f.job.plan.reader_version = mode === "mcap" ? "mcap/1" : "original-bytes/1";
+  if (mode === "hdf5") vi.mocked(request).mockResolvedValueOnce([{ id: "hdf5", title: "HDF5", archive_format: "hdf5_collection_zip/1", supports_annotations: true, requires_originals: false }]);
+  vi.mocked(request).mockResolvedValueOnce(f.job);
+  const binding = f.annotation.job.plan.binding;
+  const members = [{ data: f.data, annotation: { task_id: binding.task_id, revision: binding.revision, allow_unreviewed: true, track: binding.track } }];
+  expect(await createPackageBatch(f.scope, members, mode, "universal")).toEqual(f.job);
+  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ method: "POST", path: expect.stringMatching(/\/collections$/u), body: { members, modalities: "rgbd", output_format: mode } }));
+});

@@ -6,7 +6,7 @@ import { completeDeliveryJobWire } from "../datasets/episodes/complete-deliverie
 import { annotationDeliveryPlanWire } from "../annotation/runtime/annotation-deliveries";
 
 export type PackageData = z.infer<typeof dataWire>;
-export type BatchMode = "independent" | "rgbd" | "rgb";
+export type BatchMode = string;
 export type AnnotationSelection = {
   task_id: string;
   revision: number;
@@ -36,18 +36,21 @@ const collectionPlan = z
             annotation: annotationDeliveryPlanWire.nullable(),
             selected_depth_profiles: z.record(z.string(), digest),
             excluded_depth_features: z.array(z.string()),
+            camera_calibration: z.record(z.string(), z.unknown()).optional(),
           })
           .strict(),
       )
       .min(1)
       .max(100),
     modalities: z.enum(["rgb", "rgbd"]),
-    archive_format: z.literal("lerobot_collection_zip/1"),
+    archive_format: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]*_collection_zip\/[1-9][0-9]*$/u),
     annotation_selection: z.literal("per_episode_fixed_selection"),
     contract_sha256: digest,
-    processor_version: z.literal("hc-lerobot-collection/1"),
+    processor_version: z.enum(["hc-lerobot-collection/1", "hc-export/1"]),
     archive_version: z.literal("hc-collection-archive/1"),
-    reader_version: z.literal("lerobot/0.6.1"),
+    reader_version: z.string().min(1),
   })
   .strict();
 const jobWire = z.union([
@@ -219,13 +222,30 @@ export async function createPackageBatch(
   members.forEach((m) => scopeData(dataWire.parse(m.data), scope));
   if (mode === "independent" && members.some((m) => m.annotation))
     throw new Error("带选定标注的批量交付请选择 LeRobot 集合。");
+  const expectedArchive =
+    mode === "rgb" || mode === "rgbd"
+      ? "lerobot_collection_zip/1"
+      : mode === "mcap"
+        ? "mcap_collection_zip/1"
+        : mode === "original"
+          ? "original_collection_zip/1"
+          : mode === "independent"
+            ? "independent_episode_batch_zip/1"
+            : (await loadExportFormats(scope, signal)).find(
+                (f) => f.id === mode,
+              )?.archive_format;
+  if (!expectedArchive) throw new Error("当前平台不支持所选导出格式。");
   const body =
     mode === "independent"
       ? {
           data: members.map((m) => m.data),
           archive_format: "independent_episode_batch_zip/1",
         }
-      : { members, modalities: mode };
+      : {
+          members,
+          modalities: mode === "rgb" || mode === "rgbd" ? mode : "rgbd",
+          ...(mode !== "rgb" && mode !== "rgbd" ? { output_format: mode } : {}),
+        };
   const job = checkedPackageJob(
     await request({
       method: "POST",
@@ -249,7 +269,9 @@ export async function createPackageBatch(
   } else {
     if (
       job.plan.format !== "hc-collection-delivery-plan/1" ||
-      job.plan.modalities !== mode
+      job.plan.modalities !==
+        (mode === "rgb" || mode === "rgbd" ? mode : "rgbd") ||
+      job.plan.archive_format !== expectedArchive
     )
       throw new Error("集合模态与所选格式不一致。");
     for (const m of job.plan.members) {
@@ -399,4 +421,28 @@ export async function loadCollectionAnnotationHistory(
   )
     throw new Error("标注历史与固定数据版本不一致。");
   return history;
+}
+
+export async function loadExportFormats(scope: Scope, signal?: AbortSignal) {
+  return z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        title: z.string().min(1),
+        archive_format: z
+          .string()
+          .regex(/^[a-z][a-z0-9_]*_collection_zip\/[1-9][0-9]*$/u),
+        supports_annotations: z.boolean(),
+        requires_originals: z.boolean(),
+      }),
+    )
+    .parse(
+      await request({
+        method: "GET",
+        path: base(scope) + "/formats",
+        scope,
+        signal,
+        cache: "no-store",
+      }),
+    );
 }

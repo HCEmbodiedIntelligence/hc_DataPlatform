@@ -514,6 +514,7 @@ class InMemoryAccessRepository:
                     detail="The account could not be registered with these credentials.",
                 )
             timestamp = _now()
+            first_account = not self._accounts
             principal = AccountPrincipal(
                 principal_id=str(uuid4()),
                 username=display_username,
@@ -525,7 +526,7 @@ class InMemoryAccessRepository:
                 principal=principal,
                 canonical_username=canonical_username,
                 password_hash=password_hash,
-                capability_revision=0,
+                capability_revision=int(first_account),
                 account_revision=1,
                 credential_revision=1,
                 updated_at=timestamp,
@@ -533,6 +534,10 @@ class InMemoryAccessRepository:
                 recovery_email=None,
             )
             self._username_index[canonical_username] = principal.principal_id
+            if first_account:
+                self._platform_capabilities[principal.principal_id] = set(
+                    PLATFORM_ADMIN_CAPABILITIES
+                )
             self._append_audit(
                 scope_kind="PLATFORM",
                 project_id=None,
@@ -542,7 +547,10 @@ class InMemoryAccessRepository:
                 resource_id=principal.principal_id,
                 request_id=request_id,
                 outcome="SUCCEEDED",
-                safe_details={"empty_account": True},
+                safe_details={
+                    "empty_account": not first_account,
+                    "bootstrap_admin": first_account,
+                },
                 occurred_at=timestamp,
             )
             return principal

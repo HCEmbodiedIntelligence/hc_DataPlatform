@@ -25,6 +25,8 @@ export type PlatformObjectStoreConfig = Readonly<{
   public_endpoint: string;
   bucket: string;
   region: string;
+  local_path?: string | null;
+  browser_path?: string | null;
   access_key_configured: boolean;
   access_key_hint: string | null;
   activation_required: boolean;
@@ -48,6 +50,7 @@ export type PlatformObjectStoreLocation = Readonly<{
   provider: "oss" | "s3";
   public_endpoint: string;
   region: string;
+  local_path?: string | null;
 }>;
 
 export type PlatformProject = Readonly<{
@@ -129,6 +132,8 @@ export const platformObjectStoreConfigWireSchema = z
     public_endpoint: z.string().max(2048),
     bucket: z.string().max(63),
     region: z.string().max(63),
+    local_path: z.string().max(4096).nullable().optional(),
+    browser_path: z.string().max(4096).nullable().optional(),
     access_key_configured: z.boolean(),
     access_key_hint: z.string().max(64).nullable(),
     activation_required: z.boolean(),
@@ -144,6 +149,7 @@ export const platformObjectStoreLocationWireSchema: z.ZodType<PlatformObjectStor
       provider: z.enum(["oss", "s3"]),
       public_endpoint: z.string().max(2048),
       region: z.string().max(63),
+      local_path: z.string().max(4096).nullable().optional(),
     })
     .strict()
     .superRefine((value, context) => {

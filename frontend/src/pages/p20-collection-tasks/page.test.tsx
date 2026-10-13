@@ -26,6 +26,12 @@ import type {
   CollectionTaskProgress,
 } from "../../features/collection-tasks/api";
 import { CollectionTaskPage } from "./page";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  configureRuntime,
+  resetRuntimeConfigForTests,
+} from "../../shared/config/runtime";
+import type { components } from "../../shared/api/generated/platform";
 
 const scope = {
   organizationId: "org-test",
@@ -219,8 +225,124 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetRuntimeConfigForTests();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("keeps capture records open when task progress and task-list reads refresh", async () => {
+  const gateway = makeGateway();
+  const client = new QueryClient();
+  configureRuntime({
+    apiBaseUrl: "/api/v1",
+    sseBaseUrl: "/api/v1",
+    buildVersion: "capture-refresh-test",
+    releaseEnv: "test",
+  });
+  const captures: components["schemas"]["CaptureProgress"][] = Array.from(
+    { length: 11 },
+    (_, index) => ({
+      upload_id: `upload-${index}`,
+      recording_id: `recording-${index}`,
+      robot_id: `robot-${index}`,
+      collection_task_id: task.collection_task_id,
+      dataset_id: task.dataset_id,
+      data_package_id: `package-${index}`,
+      rollout_id: `rollout-${index}`,
+      capture_mode: "CONTINUOUS",
+      created_at: "2026-10-10T05:00:00Z",
+      stage: "AWAITING_SLICE",
+      upload_state: "COMPLETED",
+      received: true,
+      episode_count: 0,
+      ready_episode_count: 0,
+      failed_episode_count: 0,
+      blocked_episode_count: 0,
+    }),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "http://platform.test");
+      const offset = Number(url.searchParams.get("offset"));
+      const body = url.pathname.endsWith("/episodes")
+        ? { items: [], qc_reports: [] }
+        : {
+            items: captures.slice(offset, offset + 10),
+            total: 11,
+            counts: {
+              upload_count: 11,
+              received_count: 11,
+              awaiting_slice_count: 11,
+              processing_count: 0,
+              blocked_count: 0,
+              episode_count: 0,
+              ready_episode_count: 0,
+              failed_episode_count: 0,
+              failed_count: 0,
+            },
+          };
+      return new Response(JSON.stringify(body), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
+  render(
+    <ProviderHarness>
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <CollectionTaskPage gateway={gateway} capabilityOverride="manage" />
+        </MemoryRouter>
+      </QueryClientProvider>
+    </ProviderHarness>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "采集记录" }));
+  const panel = await screen.findByRole("region", {
+    name: "采集上传与入库进度",
+  });
+  await screen.findByText("robot-0");
+  fireEvent.click(within(panel).getByTitle("2"));
+  const secondPageRecord = await screen.findByText("robot-10");
+  fireEvent.click(within(panel).getByRole("button", { name: "处理详情" }));
+  const detail = await screen.findByText("尚未生成 Episode");
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ["collection-task-progress"] });
+  });
+  expect(gateway.progress).toHaveBeenCalledTimes(2);
+  expect(panel).toBeVisible();
+  expect(screen.getByRole("region", { name: "采集上传与入库进度" })).toBe(
+    panel,
+  );
+  expect(screen.getByText("robot-10")).toBe(secondPageRecord);
+  expect(screen.getByText("尚未生成 Episode")).toBe(detail);
+  for (const fail of [false, true, false]) {
+    if (fail) gateway.list.mockRejectedValueOnce(new Error("暂时离线"));
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["collection-tasks"] });
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "刷新采集任务" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByRole("region", { name: "采集上传与入库进度" })).toBe(
+      panel,
+    );
+    expect(screen.getByText("robot-10")).toBe(secondPageRecord);
+    expect(screen.getByText("尚未生成 Episode")).toBe(detail);
+  }
+  await act(async () => {
+    await client.refetchQueries({ queryKey: ["capture-progress"] });
+  });
+  expect(screen.getByText("robot-10")).toBe(secondPageRecord);
+  expect(screen.getByText("尚未生成 Episode")).toBe(detail);
+  act(() =>
+    useShellStore
+      .getState()
+      .setScope({ ...scope, projectId: "another-project" }),
+  );
+  await waitFor(() => expect(panel).not.toBeInTheDocument());
+  client.clear();
 });
 
 describe("P20 collection tasks", () => {

@@ -1,0 +1,241 @@
+.explorer {
+  min-width: 0;
+  border: 1px solid var(--hc-color-border, #e4e7ed);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--hc-color-surface, #fff);
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 18px 20px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.heading > svg {
+  color: #7760c5;
+  flex-shrink: 0;
+}
+.heading strong {
+  font-size: 15px;
+}
+.heading p {
+  margin: 4px 0 0;
+  color: var(--hc-color-text-muted, #727985);
+  font-size: 12px;
+}
+.navigation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-block: 1px solid var(--hc-color-border, #e4e7ed);
+  background: #fafbfe;
+}
+.navigation :global(.ant-breadcrumb) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.crumb {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.crumb:hover {
+  color: #6d53ba;
+  background: #f0eafc;
+}
+.location {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 12px;
+  padding: 14px 20px;
+  font-size: 12px;
+}
+.location > span:first-child,
+.fileFacts > span:nth-child(odd) {
+  color: var(--hc-color-text-muted, #727985);
+}
+.location small {
+  grid-column: 2;
+  color: var(--hc-color-text-muted, #727985);
+}
+.location .path {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.table :global(.ant-table) {
+  border-radius: 0;
+}
+.table :global(.ant-table-thead > tr > th) {
+  background: #fafbfe;
+  color: #727985;
+  font-size: 12px;
+  font-weight: 500;
+}
+.table :global(.ant-table-cell:first-child) {
+  padding-left: 20px;
+}
+.fileName {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 0;
+  color: var(--hc-color-text, #263145);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+}
+.fileName span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.fileName svg {
+  flex-shrink: 0;
+  color: #8392ad;
+}
+.fileName .folderIcon {
+  color: #b38d3e;
+  fill: #fff3cf;
+}
+.fileName:hover {
+  color: #7055be;
+}
+.fileName:focus-visible,
+.crumb:focus-visible {
+  outline: 2px solid #8b6bd2;
+  outline-offset: 3px;
+}
+.size {
+  font-size: 12px;
+  white-space: nowrap;
+  color: #4f596c;
+}
+.size small {
+  display: block;
+  margin-top: 3px;
+  color: #8a909d;
+}
+.selected > td {
+  background: #f4f0fc !important;
+}
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 13px 20px;
+  color: #727985;
+  font-size: 12px;
+}
+.footer small {
+  margin-left: 8px;
+}
+.pager {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.preview {
+  margin: 4px 16px 16px;
+  padding: 16px;
+  border: 1px solid #e4ddef;
+  border-radius: 10px;
+  background: #fdfcff;
+}
+.previewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.previewHeader strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fileFacts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 16px;
+  font-size: 12px;
+}
+.fileFacts :global(.ant-typography),
+.digest :global(.ant-typography) {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.digest {
+  font-size: 12px;
+  color: #727985;
+  margin: 14px 0;
+}
+.digest summary {
+  cursor: pointer;
+  margin-bottom: 5px;
+}
+.textPreview {
+  max-height: 340px;
+  margin: 12px 0;
+  padding: 16px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: #f2f4f8;
+  border-radius: 6px;
+  color: #334155;
+  font:
+    12px/1.7 ui-monospace,
+    monospace;
+}
+.previewHint {
+  color: #727985;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.loading {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 80px;
+}
+@media (max-width: 600px) {
+  .header,
+  .navigation,
+  .location,
+  .footer {
+    padding-inline: 12px;
+  }
+  .heading p {
+    max-width: 200px;
+    line-height: 1.6;
+  }
+  .location {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .location small {
+    grid-column: 1;
+  }
+  .preview {
+    margin: 4px 8px 8px;
+    padding: 12px;
+  }
+  .table :global(.ant-table-cell:first-child) {
+    padding-left: 12px;
+  }
+}

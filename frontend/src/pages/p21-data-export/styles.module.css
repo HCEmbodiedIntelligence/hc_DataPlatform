@@ -38,16 +38,16 @@
   box-shadow: 0 10px 28px rgb(31 42 76 / 7%);
 }
 
-.sourceCard :global(.ant-card-head),
-.tasksCard :global(.ant-card-head) {
+.sourceCard > :global(.ant-card-head),
+.tasksCard > :global(.ant-card-head) {
   min-height: 52px;
   padding: 0 18px;
   border-bottom-color: var(--hc-color-border-subtle, #e7e9f2);
   background: #fff;
 }
 
-.sourceCard :global(.ant-card-body),
-.tasksCard :global(.ant-card-body) {
+.sourceCard > :global(.ant-card-body),
+.tasksCard > :global(.ant-card-body) {
   padding: 0;
 }
 
@@ -78,6 +78,39 @@
 .stageSelector {
   display: grid;
   gap: 10px;
+}
+
+.deliverySwitch:global(.ant-radio-group) {
+  display: inline-flex;
+  max-width: calc(100% - 36px);
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 14px 18px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #eef0f7;
+}
+
+.deliverySwitch :global(.ant-radio-button-wrapper) {
+  height: auto;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 22px;
+  white-space: normal;
+}
+
+.deliverySwitch :global(.ant-radio-button-wrapper)::before {
+  display: none;
+}
+
+.deliverySwitch :global(.ant-radio-button-wrapper-checked) {
+  color: var(--hc-color-primary, #4c57c6);
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(31 42 76 / 10%);
+  font-weight: 650;
 }
 
 .filterSection {

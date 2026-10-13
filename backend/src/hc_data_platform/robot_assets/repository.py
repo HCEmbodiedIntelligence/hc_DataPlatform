@@ -23,6 +23,9 @@ from .models import OrganizationRobotModelBinding
 
 
 class OrganizationRobotAssetRepository(Protocol):
+    def camera_calibration(self, organization_id, robot_id): ...
+    def save_camera_calibration(self, organization_id, robot_id, configuration, expected): ...
+
     def organization_exists(self, organization_id: str) -> bool: ...
 
     def list_robots(
@@ -142,12 +145,31 @@ def _bootstrap_from_mapping(row: Mapping[str, Any]) -> RobotBootstrap:
 
 
 class InMemoryOrganizationRobotAssetRepository:
+    def camera_calibration(self, organization_id, robot_id):
+        with self._lock:
+            return self._camera_calibrations.get((organization_id, robot_id))
+
+    def save_camera_calibration(self, organization_id, robot_id, configuration, expected):
+        from hc_data_platform.core.errors import problem
+
+        with self._lock:
+            previous = self._camera_calibrations.get((organization_id, robot_id))
+            if expected != (previous.content_sha256 if previous else "unconfigured"):
+                raise problem(
+                    status=412,
+                    code="CAMERA_CALIBRATION_CHANGED",
+                    title="相机参数已更新",
+                    detail="请重新读取后再保存。",
+                )
+            self._camera_calibrations[organization_id, robot_id] = configuration
+
     def __init__(self, organizations: tuple[str, ...] = ()) -> None:
         self._organizations = set(organizations)
         self._robots: dict[tuple[str, str], RobotBootstrap] = {}
         self._receipts: dict[tuple[str, str, str], tuple[str, Any]] = {}
         self._bindings: dict[tuple[str, str], OrganizationRobotModelBinding] = {}
         self._published_versions: set[tuple[str, str]] = set()
+        self._camera_calibrations = {}
         self._lock = RLock()
 
     def add_published_version(self, organization_id: str, version_id: str) -> None:
@@ -439,6 +461,18 @@ class InMemoryOrganizationRobotAssetRepository:
 
 
 class PostgresOrganizationRobotAssetRepository:
+    def camera_calibration(self, organization_id, robot_id):
+        from hc_data_platform.robotics.camera_calibration import load_camera_calibration
+
+        return load_camera_calibration(self._connection_factory, organization_id, robot_id)
+
+    def save_camera_calibration(self, organization_id, robot_id, configuration, expected):
+        from hc_data_platform.robotics.camera_calibration import save_camera_calibration
+
+        save_camera_calibration(
+            self._connection_factory, organization_id, robot_id, configuration, expected
+        )
+
     def __init__(
         self,
         connection_factory: Callable[[], Any],

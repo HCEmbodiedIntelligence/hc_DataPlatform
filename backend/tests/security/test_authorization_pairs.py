@@ -118,6 +118,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
     )
 
     with TestClient(app) as client:
+        _register(client, "bootstrap-owner")
         delegate_token = _register(client, "be23-delegate")
         reader_token = _register(client, "be23-reader")
         target_one_token = _register(client, "be23-target-one")
@@ -214,6 +215,7 @@ def test_upload_grant_expands_bootstrap_and_existing_session_then_revokes() -> N
         access_service=service,
     )
     with TestClient(app) as client:
+        _register(client, "bootstrap-owner")
         token = _register(client, "workflow-operator")
         membership = _request_membership(client, token, "workflow")
         _approve_membership(client, membership["request_id"], "workflow")

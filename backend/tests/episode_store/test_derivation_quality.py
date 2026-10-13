@@ -13,7 +13,10 @@ from hc_data_platform.quality.models import QualityInputV1, QualityProfileV1
 from tests.episode_store.test_writer import identity
 
 
-def test_parent_domain_limits_are_frozen_but_child_timing_and_verdict_are_independent(monkeypatch):
+@pytest.mark.parametrize("fps", [29.97, 30])
+def test_parent_domain_limits_are_frozen_but_child_timing_and_verdict_are_independent(
+    monkeypatch, fps
+):
     profile = QualityProfileV1(
         profile_id="actual-parent-profile",
         required_topics={"/action", "/joint_states"},
@@ -52,15 +55,18 @@ def test_parent_domain_limits_are_frozen_but_child_timing_and_verdict_are_indepe
         document=documents.__getitem__,
     )
     info = {
-        "fps": 29.97,
+        "fps": fps,
         "hc.feature_mapping": {"/action": "action", "/joint_states": "observation.state"},
     }
     result = derivation_quality.freeze_quality(package, info, 100, 33_366_800, None, 2)
+    assert result["profile"]["default_timing"]["minimum_frequency_hz_risk"] == (
+        27 if fps == 30 else fps * 0.95
+    )
     assert result["scope"] == "selected_aligned_episode"
     assert "status" not in result
     assert result["profile"]["action"] == profile.action.model_dump(mode="json")
     assert result["profile"]["joint_limits"] == {"elbow": [-1.0, 1.0]}
-    assert result["profile"]["default_timing"]["target_frequency_hz"] == 29.97
+    assert result["profile"]["default_timing"]["target_frequency_hz"] == fps
     assert result["expected_frames"] == {"/action": 2, "/joint_states": 2}
     assert result["end_basis"] == "last_sample_plus_nominal_period"
     assert result["parent_profile_sha256"] == profile.content_sha256()

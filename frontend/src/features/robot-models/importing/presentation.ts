@@ -42,6 +42,7 @@ export const parseErrorLabels: Readonly<Record<string, string>> = {
   URDF_LINKS_DUPLICATED: "URDF 中存在重复 link 名称。",
   URDF_JOINT_NAME_MISSING: "URDF 中存在没有 name 的 joint。",
   URDF_JOINTS_DUPLICATED: "URDF 中存在重复 joint 名称。",
+  URDF_MIMIC_INVALID: "URDF 从动关节的引用缺失、重复或存在循环，请检查 mimic 配置。",
   CONFIG_JSON_OBJECT_REQUIRED: "JSON 配置文件的根节点必须是对象。",
 };
 

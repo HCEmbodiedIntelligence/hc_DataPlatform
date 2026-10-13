@@ -22,6 +22,11 @@ _SESSION_LIFECYCLE_BACKFILL_BATCH_SIZE = 1_000
 _SESSION_LIFECYCLE_BACKFILL_NO_PROGRESS_LIMIT = 100
 _SESSION_LIFECYCLE_BACKFILL_RETRY_SECONDS = 0.05
 _MIGRATION_DDL_LOCK_TIMEOUT = "5s"
+# Retired data-only bootstrap. Preserve the historical SQL and checksum for
+# existing databases; fresh installations record it without creating a fixed
+# account. Public registration now atomically grants the first account its role.
+_RETIRED_DEFAULT_ADMIN_VERSION = "security/023_default_admin.sql"
+_RETIRED_DEFAULT_ADMIN_CHECKSUM = "ff7c314ded8fcbc925b96eb90ceea7b5703e21b99ef14e4e577ce9f6d0bec509"
 _REPEATABLE_SECURITY_MIGRATIONS = frozenset(
     {
         "security/001_core.sql",
@@ -485,7 +490,11 @@ async def _apply_pending_migration(
         await _apply_session_lifecycle_online(connection, migration)
         return
     async with connection.transaction():
-        await connection.execute(migration.sql)
+        if migration.version == _RETIRED_DEFAULT_ADMIN_VERSION:
+            if migration.checksum_sha256 != _RETIRED_DEFAULT_ADMIN_CHECKSUM:
+                raise RuntimeError("retired default-admin migration checksum drift")
+        else:
+            await connection.execute(migration.sql)
         await _record_migration(connection, migration)
 
 

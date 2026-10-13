@@ -11,7 +11,7 @@ from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.workflow.models import continuous_episode_workflow_id
 
-from .asset_models import EpisodeProcessing, EpisodeProcessingStatus
+from .asset_models import EpisodeProcessing, EpisodeProcessingStatus, RetryEpisodeCommand
 from .models import (
     ContinuousRecording,
     EpisodeSlice,
@@ -19,9 +19,22 @@ from .models import (
     RecordingSliceRevision,
     SliceRevisionStatus,
 )
+from .retry import prepare_retry, retry_event_id, retry_postgres
 
 
 class ContinuousRecordingRepository(Protocol):
+    def retry_episode(
+        self,
+        scope: RecordingScope,
+        recording_id: str,
+        episode_id: str,
+        command: RetryEpisodeCommand,
+        *,
+        actor_id: str,
+        request_id: str,
+        discard: bool = False,
+    ) -> EpisodeProcessing: ...
+
     def create(
         self, recording: ContinuousRecording, *, actor_id: str, request_id: str
     ) -> ContinuousRecording: ...
@@ -48,6 +61,8 @@ class ContinuousRecordingRepository(Protocol):
         request_id: str,
     ) -> ContinuousRecording: ...
 
+    def list_episode_qc(self, scope: RecordingScope, recording_id: str) -> tuple: ...
+
     def list_episode_processing(
         self, scope: RecordingScope, recording_id: str
     ) -> tuple[EpisodeProcessing, ...]: ...
@@ -65,12 +80,48 @@ class ContinuousRecordingRepository(Protocol):
 
 
 class InMemoryContinuousRecordingRepository:
+    def retry_episode(
+        self,
+        scope: RecordingScope,
+        recording_id: str,
+        episode_id: str,
+        command: RetryEpisodeCommand,
+        *,
+        actor_id: str,
+        request_id: str,
+        discard: bool = False,
+    ) -> EpisodeProcessing:
+        del actor_id, request_id
+        key = (*_recording_key(scope, recording_id), episode_id)
+        event_id = retry_event_id(scope, recording_id, episode_id, command.request_id)
+        with self._lock:
+            previous = self._episode_processing.get(key)
+            if previous is None:
+                raise _not_found()
+            replay = self._episode_decisions.get(event_id)
+            if replay:
+                if replay != (command, discard):
+                    raise problem(
+                        status=409,
+                        code="EPISODE_RETRY_REQUEST_REUSED",
+                        title="请求编号已使用",
+                        detail="请刷新处理结果后重试。",
+                    )
+                return previous
+            episode, event = prepare_retry(previous, command, discard=discard)
+            self._episode_processing[key] = episode
+            self._episode_decisions[event_id] = (command, discard)
+            if not discard:
+                self.outbox_events[event_id] = event
+            return episode
+
     def __init__(self) -> None:
         self._recordings: dict[tuple[str, str, str, str], ContinuousRecording] = {}
         self._by_upload: dict[tuple[str, str, str, str], str] = {}
         self._revisions: dict[tuple[str, str, str, str, int], RecordingSliceRevision] = {}
         self._episode_processing: dict[tuple[str, str, str, str, str], EpisodeProcessing] = {}
         self.outbox_events: dict[str, DomainEventEnvelope] = {}
+        self._episode_decisions: dict[str, tuple[RetryEpisodeCommand, bool]] = {}
         self._lock = RLock()
 
     def create(
@@ -168,6 +219,9 @@ class InMemoryContinuousRecordingRepository:
             self._recordings[key] = recording
             return recording
 
+    def list_episode_qc(self, scope: RecordingScope, recording_id: str) -> tuple:
+        return ()
+
     def list_episode_processing(
         self, scope: RecordingScope, recording_id: str
     ) -> tuple[EpisodeProcessing, ...]:
@@ -188,7 +242,7 @@ class InMemoryContinuousRecordingRepository:
             current = self._episode_processing.get(key)
             if current is None:
                 raise _not_found()
-            if current.status is not expected_status:
+            if current.status is not expected_status or current.workflow_id != episode.workflow_id:
                 raise _episode_status_conflict(current.status)
             self._episode_processing[key] = episode
             return episode
@@ -201,6 +255,28 @@ class InMemoryContinuousRecordingRepository:
 
 
 class PostgresContinuousRecordingRepository:
+    def retry_episode(
+        self,
+        scope: RecordingScope,
+        recording_id: str,
+        episode_id: str,
+        command: RetryEpisodeCommand,
+        *,
+        actor_id: str,
+        request_id: str,
+        discard: bool = False,
+    ) -> EpisodeProcessing:
+        return retry_postgres(
+            self._connection_factory,
+            scope,
+            recording_id,
+            episode_id,
+            command,
+            actor_id=actor_id,
+            request_id=request_id,
+            discard=discard,
+        )
+
     def __init__(self, connection_factory: Callable[[], Any]) -> None:
         self._connection_factory = connection_factory
 
@@ -396,6 +472,33 @@ class PostgresContinuousRecordingRepository:
         finally:
             connection.close()
 
+    def list_episode_qc(self, scope: RecordingScope, recording_id: str) -> tuple:
+        from .asset_models import RecordingEpisodeQc
+
+        with self._connection_factory() as db, db.cursor() as cursor:
+            cursor.execute(
+                """SELECT q.report_id, q.report_document
+                FROM ingest.recording_episode_processing p
+                JOIN ingest.recording_episode_qc_reports q
+                  ON q.organization_id=p.organization_id AND q.project_id=p.project_id
+                 AND q.region_code=p.region_code AND q.recording_id=p.recording_id
+                 AND q.episode_id=p.episode_id AND q.report_id=p.qc_report_id
+                WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
+                  AND p.recording_id=%s ORDER BY p.start_offset_ns,p.episode_id""",
+                (*_scope_values(scope), recording_id),
+            )
+            return tuple(
+                RecordingEpisodeQc(
+                    episode_id=doc["episode_id"],
+                    report_id=report_id,
+                    status=doc["status"],
+                    finding_codes=doc.get("finding_codes", ()),
+                    quality_report=doc["quality_report"],
+                    rules=doc.get("rule_evidence", {}).get("rules", ()),
+                )
+                for report_id, doc in cursor.fetchall()
+            )
+
     def list_episode_processing(
         self, scope: RecordingScope, recording_id: str
     ) -> tuple[EpisodeProcessing, ...]:
@@ -404,14 +507,22 @@ class PostgresContinuousRecordingRepository:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT episode_document FROM ingest.recording_episode_processing
-                    WHERE organization_id = %s AND project_id = %s AND region_code = %s
-                      AND recording_id = %s
-                    ORDER BY start_offset_ns, episode_id
+                    SELECT p.episode_document, e.last_error_code
+                    FROM ingest.recording_episode_processing p
+                    LEFT JOIN core.outbox_events e
+                      ON e.organization_id=p.organization_id AND e.project_id=p.project_id
+                     AND e.region_code=p.region_code AND e.event_id=p.event_id
+                     AND e.published_at IS NULL AND p.status='PENDING_QC'
+                    WHERE p.organization_id = %s AND p.project_id = %s AND p.region_code = %s
+                      AND p.recording_id = %s
+                    ORDER BY p.start_offset_ns, p.episode_id
                     """,
                     (*_scope_values(scope), recording_id),
                 )
-                return tuple(EpisodeProcessing.model_validate(row[0]) for row in cursor.fetchall())
+                return tuple(
+                    EpisodeProcessing.model_validate({**row[0], "dispatch_error_code": row[1]})
+                    for row in cursor.fetchall()
+                )
         finally:
             connection.close()
 
@@ -455,6 +566,7 @@ class PostgresContinuousRecordingRepository:
                         episode_document = %s::jsonb, updated_at = %s
                     WHERE organization_id = %s AND project_id = %s AND region_code = %s
                       AND recording_id = %s AND episode_id = %s AND status = %s
+                      AND workflow_id IS NOT DISTINCT FROM %s
                     """,
                     (
                         episode.status.value,
@@ -475,6 +587,7 @@ class PostgresContinuousRecordingRepository:
                         episode.recording_id,
                         episode.episode_id,
                         expected_status.value,
+                        episode.workflow_id,
                     ),
                 )
                 if cursor.rowcount != 1:

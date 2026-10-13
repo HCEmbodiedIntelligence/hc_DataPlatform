@@ -3,13 +3,16 @@
 具身智能数据治理平台，包含上传存储、自动质检、时间对齐、可视化、标注、审核、发布和导出，页面范围为 P01–P20。
 原始 MCAP、LeRobot v3、ROS bag 文件原样保存；原生 G1 LeRobot 处理直接引用原视频。
 
-已迁移的 OpenArm 本机环境使用[统一启动入口](deploy/local/README.md)，
-日常运行原平台 8088，沿用原业务数据；38088 集成测试环境已停止。
+本机使用[统一启动入口](deploy/local/README.md)，源码位于 `hc_DataPlatform`，
+平台入口为 8088。2026-10-09 已清空旧测试环境数据，使用当前源码重建镜像和全新数据卷。
 
 ## 默认部署：支持源码热更新
 
 部署到机器后还需要持续更新源码，使用 **`compose.dev.yaml`**。本页的启动、更新、停止命令均以此为准。
 默认连接真实 API 和本机 MinIO，无需 OSS 凭据。
+本机文件可从 `/home/hc_op/workspace/data-platform-files` 直接查看和复制；
+`bash deploy/local/data.sh usage` 查看文件数量及总大小。
+挂载目录、磁盘迁移及本机回收命令见 [本机存储说明](deploy/local/README.md)。
 
 两台开发部署之间需要保留双方项目和数据时，使用[自动合并迁移](docs/data-merge.md)：
 `deploy/scripts/merge-dev-data.py` 提供导出、预检与导入，自动备份目标数据库并处理账号、日志编号和重复文件。
@@ -37,7 +40,8 @@ docker compose -f compose.dev.yaml ps -a
 清理过构建缓存后，第一次构建会重新安装依赖，耗时会增加。
 
 打开 <http://localhost:8088>，真实账号登录入口为 <http://localhost:8088/auth/login>。
-新注册用户需要申请加入项目，由有权限的管理员批准后访问业务数据。
+全新平台的第一个注册账号自动成为平台管理员，不再预置管理员用户名或密码。
+后续注册用户需要申请加入项目，由有权限的管理员批准后访问业务数据。
 项目内具备上传权限（`upload.manage`）的账号可独立完成上传、标注、自审、发布、导出和下载；
 已有账号刷新页面即可获取完整操作入口，业务检查和项目访问范围仍生效。
 `deploy/compose/compose.real-api.yaml` 用于隔离自动化验收，日常部署无需叠加。

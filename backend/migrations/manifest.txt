@@ -152,3 +152,9 @@ episode_store/0016_migration_batches.sql
 episode_store/0017_annotation_migrations.sql
 episode_store/0018_collection_releases.sql
 robotics/0006_data_scene_snapshots.sql
+ingest/018_recording_episode_discard.sql
+ingest/019_mcap_processing.sql
+
+episode_store/0019_export_adapters.sql
+
+robotics/0007_camera_calibration.sql

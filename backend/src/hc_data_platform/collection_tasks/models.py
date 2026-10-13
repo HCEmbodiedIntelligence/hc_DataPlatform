@@ -7,6 +7,8 @@ from typing import Annotated, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from .captures import CaptureCounts
+
 Identifier = Annotated[
     str,
     StringConstraints(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$"),
@@ -212,6 +214,7 @@ class CollectionTaskProgress(StrictModel):
     duration_unknown_package_count: int = Field(ge=0)
     qc: CollectionTaskQcProgress
     attainment: CollectionTaskAttainment
+    captures: CaptureCounts = Field(default_factory=CaptureCounts)
     observed_sources: ManifestObservedSources
 
 
@@ -289,6 +292,7 @@ class CollectionTaskRecord(StrictModel):
 
 
 class ProgressFacts(StrictModel):
+    captures: CaptureCounts = Field(default_factory=CaptureCounts)
     as_of: datetime
     received_package_count: int = Field(ge=0)
     pass_count: int = Field(ge=0)

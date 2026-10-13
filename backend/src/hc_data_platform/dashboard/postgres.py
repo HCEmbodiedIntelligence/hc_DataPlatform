@@ -72,11 +72,27 @@ requested_scope AS (
 """.strip()
 
 COMMITTED_OBJECTS_QUERY = f"""
-WITH {_SCOPE_CTE}
+WITH {_SCOPE_CTE}, committed_facts AS (
+    SELECT organization_id,project_id,region_code,rollout_id,data_package_id,file_size,committed_at
+    FROM ingest.rollout_objects
+    UNION ALL
+    SELECT u.organization_id,u.project_id,u.region_code,COALESCE(r.rollout_id,u.upload_id),
+           COALESCE(r.data_package_id,u.upload_id),
+           COALESCE((u.upload_document ->> 'total_bytes')::bigint, 0),u.committed_at
+    FROM ingest.robot_ingest_uploads u
+    LEFT JOIN ingest.continuous_recordings r
+      ON (r.organization_id,r.project_id,r.region_code,r.recording_id)
+       = (u.organization_id,u.project_id,u.region_code,u.upload_document
+               #>> '{{manifest,format_metadata,recording_id}}')
+    WHERE u.capture_mode='CONTINUOUS' AND u.state='COMMITTED'
+      AND NOT EXISTS (SELECT 1 FROM ingest.rollout_objects o WHERE
+        (o.organization_id,o.project_id,o.region_code,o.data_package_id)
+        = (r.organization_id,r.project_id,r.region_code,r.data_package_id))
+)
 SELECT fact.project_id, fact.region_code, fact.rollout_id, fact.data_package_id,
        fact.file_size, fact.committed_at
 FROM requested_scope scope
-JOIN ingest.rollout_objects fact
+JOIN committed_facts fact
   ON fact.project_id = scope.project_id
  AND fact.region_code = scope.region_code
 WHERE scope.principal_id = scope.authorized_principal_id
@@ -88,12 +104,26 @@ LIMIT %s
 """.strip()
 
 COLLECTION_OBSERVATIONS_QUERY = f"""
-WITH {_SCOPE_CTE},
-bounded_rollouts AS (
+WITH {_SCOPE_CTE}, rollout_facts AS (
+    SELECT organization_id,project_id,region_code,collection_job_id,rollout_id,robot_id,created_at
+    FROM ingest.rollouts
+    UNION ALL
+    SELECT u.organization_id,u.project_id,u.region_code,u.collection_job_id,
+           COALESCE(r.rollout_id,u.upload_id),u.authenticated_robot_id,u.created_at
+    FROM ingest.robot_ingest_uploads u
+    LEFT JOIN ingest.continuous_recordings r
+      ON (r.organization_id,r.project_id,r.region_code,r.recording_id)
+       = (u.organization_id,u.project_id,u.region_code,u.upload_document
+               #>> '{{manifest,format_metadata,recording_id}}')
+    WHERE u.capture_mode='CONTINUOUS' AND NOT EXISTS (
+      SELECT 1 FROM ingest.rollouts x
+      WHERE (x.organization_id,x.project_id,x.region_code,x.rollout_id)
+        = (r.organization_id,r.project_id,r.region_code,r.rollout_id))
+), bounded_rollouts AS (
     SELECT rollout.project_id, rollout.region_code, rollout.collection_job_id,
            rollout.rollout_id, rollout.robot_id, rollout.created_at
     FROM requested_scope scope
-    JOIN ingest.rollouts rollout
+    JOIN rollout_facts rollout
       ON rollout.project_id = scope.project_id
      AND rollout.region_code = scope.region_code
     WHERE scope.principal_id = scope.authorized_principal_id
@@ -971,6 +1001,24 @@ class PostgresDashboardRepository:
             )
             for row in package_rows
         )
+        from hc_data_platform.collection_tasks.captures import read_captures
+
+        from .recording_projection import merge_recording_facts, read_recording_findings
+
+        connection = self._connection_factory()
+        try:
+            cursor = connection.cursor()
+            try:
+                organization = current_request_context().organization_id
+                captures = read_captures(cursor, organization, scope.project_id, scope.region_code)
+                findings = read_recording_findings(
+                    cursor, organization, scope.project_id, scope.region_code
+                )
+            finally:
+                cursor.close()
+        finally:
+            connection.close()
+        tasks, packages = merge_recording_facts(tasks, packages, captures, findings, selected_id)
         unavailable = (
             ("workflow_execution_state",)
             if any(not item.technical_state_available for item in packages)

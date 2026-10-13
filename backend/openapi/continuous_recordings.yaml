@@ -208,6 +208,210 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/EpisodeVideoSourceEnvelope"}
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:retry:
+    post:
+      tags:
+      - continuous-recordings
+      summary: Retry Continuous Recording Episode
+      operationId: retryContinuousRecordingEpisode
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: recording_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Recording Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryEpisodeCommand'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeProcessing'
+        '400':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:discard:
+    post:
+      tags:
+      - continuous-recordings
+      summary: Discard Continuous Recording Episode
+      operationId: discardContinuousRecordingEpisode
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: region_code
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Region Code
+      - name: recording_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Recording Id
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Episode Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetryEpisodeCommand'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EpisodeProcessing'
+        '400':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: The continuous-recording request could not be completed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 components:
   schemas:
     RecordingScope:
@@ -239,13 +443,15 @@ components:
     EpisodeProcessingStatus:
       type: string
       enum:
-        - PENDING_QC
-        - QC_RUNNING
-        - QC_FAILED
-        - PENDING_ALIGNMENT
-        - ALIGNING
-        - READY
-        - FAILED
+      - PENDING_QC
+      - QC_RUNNING
+      - QC_FAILED
+      - PENDING_ALIGNMENT
+      - ALIGNING
+      - READY
+      - FAILED
+      - DISCARDED
+      title: EpisodeProcessingStatus
     NanosecondsDecimal:
       type: string
       pattern: "^(?:0|[1-9][0-9]*)$"
@@ -615,85 +821,270 @@ components:
         recording: {$ref: "#/components/schemas/ContinuousRecording"}
         revision: {$ref: "#/components/schemas/RecordingSliceRevision"}
     EpisodeProcessing:
-      type: object
-      additionalProperties: false
-      required:
-        - scope
-        - recording_id
-        - episode_id
-        - finalized_revision
-        - start_offset_ns
-        - end_offset_ns
-        - status
-        - created_at
-        - updated_at
       properties:
-        schema_version: {type: string, const: recording-episode/v1}
-        scope: {$ref: "#/components/schemas/RecordingScope"}
-        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
-        episode_id: {type: string, pattern: "^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"}
-        finalized_revision: {type: integer, minimum: 1}
-        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
-        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
-        status: {$ref: "#/components/schemas/EpisodeProcessingStatus"}
-        workflow_id: {type: [string, "null"], minLength: 1, maxLength: 1024}
-        event_id: {type: [string, "null"], format: uuid}
-        qc_report_id: {type: [string, "null"]}
-        alignment_attempt_id: {type: [string, "null"]}
-        dataset_id: {type: [string, "null"], minLength: 1, maxLength: 128}
-        dataset_version: {type: [integer, "null"], minimum: 1}
-        lance_version: {type: [integer, "null"], minimum: 1}
+        schema_version:
+          type: string
+          const: recording-episode/v1
+          title: Schema Version
+          default: recording-episode/v1
+        scope:
+          $ref: '#/components/schemas/RecordingScope'
+        recording_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Recording Id
+        episode_id:
+          type: string
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+        finalized_revision:
+          type: integer
+          minimum: 1.0
+          title: Finalized Revision
+        start_offset_ns:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: Start Offset Ns
+          description: Nanoseconds encoded as a decimal string for JSON precision.
+        end_offset_ns:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: End Offset Ns
+          description: Nanoseconds encoded as a decimal string for JSON precision.
+        status:
+          $ref: '#/components/schemas/EpisodeProcessingStatus'
+          default: PENDING_QC
+        workflow_id:
+          anyOf:
+          - type: string
+            maxLength: 1024
+            minLength: 1
+          - type: 'null'
+          title: Workflow Id
+        event_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Event Id
+        qc_report_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Qc Report Id
+        dispatch_error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dispatch Error Code
+        alignment_attempt_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Alignment Attempt Id
+        dataset_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Dataset Id
+        dataset_episode_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Dataset Episode Id
+        dataset_version:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Dataset Version
+        lance_version:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Lance Version
         data_ref:
           anyOf:
-            - {$ref: "#/components/schemas/DataVersionRef"}
-            - {type: "null"}
-        collection_version_id: {type: [string, "null"], minLength: 1, maxLength: 256}
-        dataset_episode_id: {type: [string, "null"], minLength: 1, maxLength: 128}
-        annotation_task_id: {type: [string, "null"], minLength: 1, maxLength: 128}
-        aligned_media_camera_count: {type: [integer, "null"], minimum: 1, maximum: 128}
-        failure_code: {type: [string, "null"], pattern: "^[A-Z0-9_]+$"}
-        failure_stage: {type: [string, "null"], minLength: 1, maxLength: 128}
-        created_at: {type: string, format: date-time}
-        updated_at: {type: string, format: date-time}
-    EpisodeProcessingPage:
-      type: object
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        collection_version_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Collection Version Id
+        annotation_task_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Annotation Task Id
+        aligned_media_camera_count:
+          anyOf:
+          - type: integer
+            maximum: 128.0
+            minimum: 1.0
+          - type: 'null'
+          title: Aligned Media Camera Count
+        failure_code:
+          anyOf:
+          - type: string
+            pattern: ^[A-Z0-9_]+$
+          - type: 'null'
+          title: Failure Code
+        failure_stage:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Failure Stage
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
       additionalProperties: false
-      required: [items, total]
-      properties:
-        items:
-          type: array
-          items: {$ref: "#/components/schemas/EpisodeProcessing"}
-        total: {type: integer, minimum: 0}
-    EpisodeVideoSource:
       type: object
-      additionalProperties: false
       required:
-        - recording_id
-        - episode_id
-        - asset_id
-        - camera_id
-        - media_type
-        - source_url
-        - start_offset_ns
-        - end_offset_ns
-        - fps
-        - codec
-        - expires_at
+      - scope
+      - recording_id
+      - episode_id
+      - finalized_revision
+      - start_offset_ns
+      - end_offset_ns
+      title: EpisodeProcessing
+      description: Canonical database row for a continuous-recording Episode.
+    EpisodeProcessingPage:
       properties:
-        schema_version: {type: string, const: episode-video-source/v1}
-        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
-        episode_id: {type: string}
-        asset_id: {type: string, format: uuid}
-        camera_id: {$ref: "#/components/schemas/IngestIdentifier"}
-        media_type: {type: string}
-        source_url: {type: string}
-        start_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
-        end_offset_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
-        fps: {type: number, exclusiveMinimum: 0}
-        codec: {type: string}
-        expires_at: {type: string, format: date-time}
-        byte_range_supported: {type: boolean, const: true}
-        materialization: {type: string, const: ORIGINAL_VIDEO_TIME_WINDOW}
+        qc_reports:
+          items:
+            $ref: '#/components/schemas/RecordingEpisodeQc'
+          type: array
+          title: Qc Reports
+          default: []
+        items:
+          items:
+            $ref: '#/components/schemas/EpisodeProcessing'
+          type: array
+          title: Items
+        total:
+          type: integer
+          minimum: 0.0
+          title: Total
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      - total
+      title: EpisodeProcessingPage
+    EpisodeVideoSource:
+      properties:
+        schema_version:
+          type: string
+          const: episode-video-source/v1
+          title: Schema Version
+          default: episode-video-source/v1
+        recording_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Recording Id
+        episode_id:
+          type: string
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+        asset_id:
+          type: string
+          format: uuid
+          title: Asset Id
+        camera_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Camera Id
+        modality:
+          type: string
+          enum:
+          - rgb
+          - depth
+          title: Modality
+          default: rgb
+        preview_status:
+          type: string
+          enum:
+          - READY
+          - UNAVAILABLE
+          title: Preview Status
+          default: READY
+        media_type:
+          type: string
+          title: Media Type
+        source_url:
+          type: string
+          title: Source Url
+        start_offset_ns:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: Start Offset Ns
+          description: Nanoseconds encoded as a decimal string for JSON precision.
+        end_offset_ns:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: End Offset Ns
+          description: Nanoseconds encoded as a decimal string for JSON precision.
+        fps:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Fps
+        codec:
+          type: string
+          title: Codec
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        byte_range_supported:
+          type: boolean
+          title: Byte Range Supported
+          default: true
+        materialization:
+          type: string
+          enum:
+          - ORIGINAL_VIDEO_TIME_WINDOW
+          - DEPTH_PREVIEW_TIME_WINDOW
+          title: Materialization
+          default: ORIGINAL_VIDEO_TIME_WINDOW
+      additionalProperties: false
+      type: object
+      required:
+      - recording_id
+      - episode_id
+      - asset_id
+      - camera_id
+      - media_type
+      - source_url
+      - start_offset_ns
+      - end_offset_ns
+      - fps
+      - codec
+      - expires_at
+      title: EpisodeVideoSource
+      description: Direct original-video playback descriptor; no preview artifact is generated.
     EpisodeVideoSourceEnvelope:
       type: object
       additionalProperties: false
@@ -703,31 +1094,89 @@ components:
           type: array
           items: {$ref: "#/components/schemas/EpisodeVideoSource"}
     RecordingVideoSource:
-      type: object
-      additionalProperties: false
-      required:
-        - recording_id
-        - asset_id
-        - camera_id
-        - media_type
-        - source_url
-        - duration_ns
-        - fps
-        - codec
-        - expires_at
       properties:
-        schema_version: {type: string, const: recording-video-source/v1}
-        recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
-        asset_id: {type: string, format: uuid}
-        camera_id: {$ref: "#/components/schemas/IngestIdentifier"}
-        media_type: {type: string}
-        source_url: {type: string}
-        duration_ns: {$ref: "#/components/schemas/NanosecondsDecimal"}
-        fps: {type: number, exclusiveMinimum: 0}
-        codec: {type: string}
-        expires_at: {type: string, format: date-time}
-        byte_range_supported: {type: boolean, const: true}
-        materialization: {type: string, const: ORIGINAL_RECORDING}
+        schema_version:
+          type: string
+          const: recording-video-source/v1
+          title: Schema Version
+          default: recording-video-source/v1
+        recording_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Recording Id
+        asset_id:
+          type: string
+          format: uuid
+          title: Asset Id
+        camera_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Camera Id
+        modality:
+          type: string
+          enum:
+          - rgb
+          - depth
+          title: Modality
+          default: rgb
+        preview_status:
+          type: string
+          enum:
+          - READY
+          - UNAVAILABLE
+          title: Preview Status
+          default: READY
+        media_type:
+          type: string
+          title: Media Type
+        source_url:
+          type: string
+          title: Source Url
+        duration_ns:
+          type: string
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: Duration Ns
+          description: Nanoseconds encoded as a decimal string for JSON precision.
+        fps:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Fps
+        codec:
+          type: string
+          title: Codec
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        byte_range_supported:
+          type: boolean
+          title: Byte Range Supported
+          default: true
+        materialization:
+          type: string
+          enum:
+          - ORIGINAL_RECORDING
+          - DEPTH_PREVIEW
+          title: Materialization
+          default: ORIGINAL_RECORDING
+      additionalProperties: false
+      type: object
+      required:
+      - recording_id
+      - asset_id
+      - camera_id
+      - media_type
+      - source_url
+      - duration_ns
+      - fps
+      - codec
+      - expires_at
+      title: RecordingVideoSource
+      description: Direct whole-recording playback descriptor used by the slice editor.
     RecordingVideoSourceEnvelope:
       type: object
       additionalProperties: false
@@ -763,3 +1212,59 @@ components:
           type: array
           items: {$ref: "#/components/schemas/RecordingSensorSample"}
         truncated: {type: boolean, default: false}
+
+    RecordingEpisodeQc:
+      properties:
+        episode_id:
+          type: string
+          pattern: ^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
+          title: Episode Id
+        report_id:
+          type: string
+          title: Report Id
+        status:
+          type: string
+          enum:
+          - PASS
+          - REJECT
+          title: Status
+        finding_codes:
+          items:
+            type: string
+          type: array
+          title: Finding Codes
+          default: []
+        quality_report:
+          $ref: '#/components/schemas/QcReportV1'
+        rules:
+          items:
+            $ref: '#/components/schemas/RuleExecution'
+          type: array
+          title: Rules
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - episode_id
+      - report_id
+      - status
+      - quality_report
+      title: RecordingEpisodeQc
+
+    RetryEpisodeCommand:
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+        expected_workflow_id:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Expected Workflow Id
+      additionalProperties: false
+      type: object
+      required:
+      - request_id
+      - expected_workflow_id
+      title: RetryEpisodeCommand

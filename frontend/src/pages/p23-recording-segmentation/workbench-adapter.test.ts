@@ -15,6 +15,8 @@ const source: RecordingVideoSource = {
   duration_ns: "60000000000",
   fps: 30,
   codec: "h264",
+  modality: "rgb",
+  preview_status: "READY",
   expires_at: "2026-09-01T08:00:00Z",
   byte_range_supported: true,
   materialization: "ORIGINAL_RECORDING",

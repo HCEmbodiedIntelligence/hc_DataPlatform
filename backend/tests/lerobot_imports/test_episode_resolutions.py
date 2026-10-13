@@ -212,6 +212,28 @@ def test_active_batch_and_ready_episode_cannot_be_discarded(conflict):
 
 
 @pytest.mark.integration
+def test_qc_failure_before_alignment_can_be_discarded(conflict):
+    scope, connect, _ = conflict
+    state = resolutions.get_resolution(*scope, 2)
+    assert not state.available
+    assert state.discard_available
+    assert state.expected_attempt_id.startswith("episode:")
+    command = ResolveEpisode(
+        request_id=uuid4(), action="DISCARD", expected_attempt_id=state.expected_attempt_id
+    )
+    result = resolutions.resolve_episode(*scope, 2, command, "actor")
+    assert result.status == "DISCARDED"
+    assert resolutions.resolve_episode(*scope, 2, command, "actor") == result
+    assert not resolutions.get_resolution(*scope, 2).discard_available
+    with connect() as connection:
+        assert connection.execute(
+            "SELECT status FROM ingest.raw_source_episodes "
+            "WHERE raw_source_id=%s ORDER BY source_episode_index",
+            (scope[3],),
+        ).fetchall() == [("READY",), ("FAILED",), ("DISCARDED",)]
+
+
+@pytest.mark.integration
 def test_batch_retry_uses_fresh_attempt_and_redelivery_keeps_identity(conflict):
     scope, connect, _ = conflict
     launched = []

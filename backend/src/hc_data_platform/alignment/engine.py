@@ -388,7 +388,7 @@ class AlignmentEngine:
         tolerance_ns: int,
     ) -> AlignedValueV1:
         error = abs(sample.timestamp_ns - target_ns)
-        if error > tolerance_ns:
+        if sample.value is None or error > tolerance_ns:
             return AlignmentEngine._invalid(
                 strategy,
                 source_timestamps_ns=(sample.timestamp_ns,),

@@ -28,7 +28,7 @@ from .models import FileEntry, digest
 from .prepared_assets import PreparedVideo
 from .validation import document, package_file, parquet_rows, validate_depth
 
-VERSION = "hc-depth-window/2"
+VERSION = "hc-depth-window/3"
 PARENT_TIME_VERSION = "hc-depth-parent-window/1"
 REQUIRED = {"profile.json", "frames.parquet", "report.json", "validity/flags.parquet"}
 
@@ -62,12 +62,13 @@ def _verify_source(media):
             for row in parquet_rows(media.evidence_root / "frames.parquet")
         ),
         feature_key="depth",
+        allow_missing_reference=True,
     )
     return entries, report, fps
 
 
 def prepare_depth_window(
-    media: PreparedVideo, window: DepthWindow, destination: Path, *, preserve_parent_times=False
+    media: PreparedVideo, window: DepthWindow, destination: Path, *, preserve_parent_times=False, preserve_association_reference=False
 ) -> PreparedVideo:
     entries, original_report, source_fps = _verify_source(media)
     if preserve_parent_times and (
@@ -130,6 +131,8 @@ def prepare_depth_window(
     schema = pa.schema(
         [*fields, ("parent_frame_index", pa.int64()), ("parent_target_timestamp_ns", pa.int64())]
     )
+    if preserve_association_reference and "association_target_timestamp_ns" not in schema.names:
+        schema = schema.append(pa.field("association_target_timestamp_ns", pa.int64()))
     mask_schema = pq.read_schema(media.evidence_root / "validity/flags.parquet")
     source_rows = parquet_rows(media.evidence_root / "frames.parquet")
     source_masks = parquet_rows(media.evidence_root / "validity/flags.parquet")
@@ -169,6 +172,8 @@ def prepare_depth_window(
                 identity = None if missing else (row["source_id"], row["source_seq"])
                 error = None if missing else row["source_timestamp_ns"] - target
                 threshold = row["max_time_error_ns"]
+                association_target = row.get('association_target_timestamp_ns', row['target_timestamp_ns'])
+                threshold_error = (None if missing else row['source_timestamp_ns'] - association_target) if preserve_association_reference else error
                 output = {
                     **row,
                     "frame_index": index,
@@ -176,9 +181,10 @@ def prepare_depth_window(
                     "parent_target_timestamp_ns": row["target_timestamp_ns"],
                     "target_timestamp_ns": target,
                     "time_error_ns": error,
-                    "time_threshold_exceeded": error is not None
+                    "time_threshold_exceeded": threshold_error is not None
                     and threshold is not None
-                    and abs(error) > threshold,
+                    and abs(threshold_error) > threshold,
+                    **({'association_target_timestamp_ns': association_target} if preserve_association_reference else {}),
                     "repeated": identity is not None and identity == previous,
                 }
                 previous = identity
@@ -231,6 +237,8 @@ def prepare_depth_window(
         if whole
         else encoder.encoding_metadata()["encoder_configuration_sha256"],
     }
+    if preserve_association_reference:
+        mapping["association_policy"] = "preserve_source_rgb_reference"
     if preserve_parent_times:
         mapping["timestamp_policy"] = "exact_parent_targets"
     report = {

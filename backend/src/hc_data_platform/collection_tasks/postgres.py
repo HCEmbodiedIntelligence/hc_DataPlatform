@@ -12,6 +12,7 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.audit import canonical_hash
 
+from .dataset import ensure_task_dataset
 from .models import (
     CollectionTarget,
     CollectionTaskPackage,
@@ -139,6 +140,10 @@ class PostgresCollectionTaskRepository:
                     )
                 if inserted:
                     self._audit(cursor, action="collection_task.created", before=None, after=record)
+                # Project-only callers may omit a Region. Keep that API contract;
+                # the scoped web flow registers its empty Dataset atomically.
+                if region := current_request_context().region_code:
+                    ensure_task_dataset(cursor, record, region_code=region)
             connection.commit()
             return record
         except Exception:
@@ -426,6 +431,12 @@ class PostgresCollectionTaskRepository:
         finally:
             connection.close()
 
+    def captures(self, organization_id, project_id, region_code, task_id=None):
+        from .captures import read_captures
+
+        with self._connection_factory() as connection, connection.cursor() as cursor:
+            return read_captures(cursor, organization_id, project_id, region_code, task_id)
+
     def progress(
         self,
         organization_id: str,
@@ -563,18 +574,27 @@ class PostgresCollectionTaskRepository:
                 row = cursor.fetchone()
                 if row is None:
                     raise RuntimeError("progress aggregate did not return a row")
-                return ProgressFacts(
-                    as_of=row[0],
-                    received_package_count=int(row[1]),
-                    pass_count=int(row[2]),
-                    risk_count=int(row[3]),
-                    reject_count=int(row[4]),
-                    captured_duration_seconds=(None if row[5] is None else float(row[5])),
-                    duration_observed_package_count=int(row[6]),
-                    duration_unknown_package_count=int(row[7]),
-                    device_ids=tuple(map(str, row[8])),
-                    camera_ids=tuple(map(str, row[9])),
-                    topic_names=tuple(map(str, row[10])),
+                from .capture_facts import combine_capture_facts
+                from .captures import read_captures
+
+                captures = read_captures(
+                    cursor, organization_id, project_id, region_code, collection_task_id
+                )
+                return combine_capture_facts(
+                    ProgressFacts(
+                        as_of=row[0],
+                        received_package_count=int(row[1]),
+                        pass_count=int(row[2]),
+                        risk_count=int(row[3]),
+                        reject_count=int(row[4]),
+                        captured_duration_seconds=(None if row[5] is None else float(row[5])),
+                        duration_observed_package_count=int(row[6]),
+                        duration_unknown_package_count=int(row[7]),
+                        device_ids=tuple(map(str, row[8])),
+                        camera_ids=tuple(map(str, row[9])),
+                        topic_names=tuple(map(str, row[10])),
+                    ),
+                    captures,
                 )
         finally:
             connection.close()

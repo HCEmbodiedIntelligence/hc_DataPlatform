@@ -242,6 +242,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 if value.status not in {
                     EpisodeProcessingStatus.READY,
                     EpisodeProcessingStatus.QC_FAILED,
+                    EpisodeProcessingStatus.DISCARDED,
                 }:
                     return None
                 return value.model_dump(mode="json")
@@ -301,6 +302,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 if processing.status in {
                     EpisodeProcessingStatus.QC_FAILED,
                     EpisodeProcessingStatus.READY,
+                    EpisodeProcessingStatus.DISCARDED,
                 }:
                     raise _blocked("the continuous Episode is already terminal")
                 cursor.execute(
@@ -357,7 +359,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         )
         source_sha256 = canonical_hash(
             {
-                "pipeline": "continuous-episode-package/1"
+                "pipeline": "continuous-episode-package/3"
                 if self._package_schemas is not None
                 else "continuous-recording-episode/v1",
                 "recording_id": recording_id,
@@ -435,7 +437,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             quality_profile=quality_profile,
             alignment_profile=AlignmentProfileV1(
                 profile_id=f"continuous:{snapshot.schema_snapshot_id}",
-                converter_version="continuous-episode-package/1"
+                converter_version="continuous-episode-package/3"
                 if self._package_schemas is not None
                 else "continuous-mp4-sensor/1",
                 frequency_hz=30,
@@ -596,10 +598,18 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             "ORDER BY profile_id, profile_version",
             (project_id,),
         )
+        # Versions are immutable evidence. Select each profile's latest version
+        # before matching topics, so publishing a revision neither creates an
+        # ambiguity nor silently falls back to a superseded topic contract.
+        latest: dict[str, QualityProfileV1] = {}
+        for row in cursor.fetchall():
+            profile = QualityProfileV1.model_validate(row[0])
+            previous = latest.get(profile.profile_id)
+            if previous is None or profile.profile_version > previous.profile_version:
+                latest[profile.profile_id] = profile
         candidates = [
-            profile
-            for row in cursor.fetchall()
-            if (profile := QualityProfileV1.model_validate(row[0])).required_topics == topics
+            profile for profile in latest.values()
+            if profile.required_topics == topics
             and profile.default_timing.target_frequency_hz == 30
         ]
         if len(candidates) != 1:
@@ -645,7 +655,10 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         existing = schemas.schema_for(project_id, dataset_id)
         compatible = [item for item in candidates if existing is None or existing == item]
         if len(compatible) != 1:
-            raise _blocked("the task Dataset must have one compatible TAGGING Schema binding")
+            raise _blocked(
+                "the task Dataset must have one compatible TAGGING Schema binding",
+                code="RECORDING_DATASET_SCHEMA_MISMATCH",
+            )
         try:
             schemas.register_schema(compatible[0])
         except Exception as exc:
@@ -708,6 +721,11 @@ class ContinuousEpisodeProcessingService:
         )
         if current is None:
             raise ContinuousEpisodeProcessingError("continuous Episode ledger is missing")
+        if (
+            request.expected_workflow_id is not None
+            and request.expected_workflow_id != current.workflow_id
+        ) or (request.expected_workflow_id is None and ":retry:" in (current.workflow_id or "")):
+            raise ContinuousEpisodeProcessingError("stale Episode processing attempt")
         updates = {
             "status": request.new_status,
             "qc_report_id": request.qc_report_id or current.qc_report_id,
@@ -758,6 +776,8 @@ class ContinuousEpisodeProcessingService:
     def qc(self, request: ContinuousEpisodeWorkflowInput) -> ContinuousEpisodeQcActivityOutput:
         findings: set[str] = set()
         sensor_count = 0
+        capture_quality = None
+        warning_codes = set()
         with self._localized_assets(
             request,
             roles={
@@ -784,6 +804,14 @@ class ContinuousEpisodeProcessingService:
             ):
                 findings.add("CLOCK_DOMAIN_MISMATCH")
 
+            if request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"} and request.storage_format == "lerobot_v3":
+                from .capture_quality import summarize
+                capture_quality = summarize(
+                    [localized[a.asset_id] for a in _assets_for_role(request.assets, RecordingAssetRole.SENSOR_DATA)],
+                    request.start_offset_ns, request.end_offset_ns, request.quality_profile)
+                findings.update(capture_quality['reject_codes'])
+                warning_codes.update(capture_quality['warning_codes'])
+
             config_by_camera = {
                 camera.camera_id: camera for camera in request.recording_config.cameras
             }
@@ -796,6 +824,7 @@ class ContinuousEpisodeProcessingService:
                         request,
                         findings=findings,
                         counter=sensor_counter,
+                        tolerate_declared_gaps=capture_quality is not None,
                     )
                 for asset in _assets_for_role(request.assets, RecordingAssetRole.RAW_VIDEO):
                     camera = config_by_camera.get(asset.camera_id or "")
@@ -809,7 +838,7 @@ class ContinuousEpisodeProcessingService:
                         findings=findings,
                     )
 
-            joints, actions = self._openarm_numeric_quality(request, localized, findings)
+            joints, actions = self._openarm_numeric_quality(request, localized, findings, capture_quality)
             quality_data = QualityInputV1(
                 rollout_id=request.projection.rollout_id,
                 source_sha256=request.projection.source_sha256,
@@ -818,6 +847,7 @@ class ContinuousEpisodeProcessingService:
                 topic_timestamps_ns={},
                 joints=joints,
                 actions=actions,
+                complete_step_ratio=capture_quality["valid_ratio"] if capture_quality else 1.0,
             )
             rule_evidence = None
             if request.storage_format == "lerobot_v3":
@@ -833,8 +863,10 @@ class ContinuousEpisodeProcessingService:
                     quality_data, quality_observations(), request.quality_profile
                 )
             sensor_count = sensor_counter[0]
-            if report.status is not QualityStatus.PASS:
+            if report.status is QualityStatus.REJECT or (report.status is not QualityStatus.PASS and capture_quality is None):
                 findings.add(f"QUALITY_{report.status.value}")
+            elif report.status is not QualityStatus.PASS:
+                warning_codes.add(f"QUALITY_{report.status.value}")
 
         status = "PASS" if not findings else "REJECT"
         report_document = {
@@ -847,6 +879,8 @@ class ContinuousEpisodeProcessingService:
             "finding_codes": sorted(findings),
             "video_count": len(_assets_for_role(request.assets, RecordingAssetRole.RAW_VIDEO)),
             "sensor_message_count": sensor_count,
+            "warning_codes": sorted(warning_codes),
+            **({"capture_quality": capture_quality} if capture_quality is not None else {}),
             "quality_report": report.model_dump(mode="json"),
             **({"rule_evidence": rule_evidence.model_dump(mode="json")} if rule_evidence else {}),
         }
@@ -884,7 +918,7 @@ class ContinuousEpisodeProcessingService:
             start_ns, duration_ns = timeline(request, origin)
             end_ns = start_ns + duration_ns
         shift_ns = start_ns - _datetime_ns(request.projection.started_at)
-        if request.recording_config.recorder_version == "openarm-session/v2":
+        if request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}:
             from .openarm_grid import frame_at, frame_time
 
             end_ns = start_ns + frame_time(
@@ -937,7 +971,9 @@ class ContinuousEpisodeProcessingService:
                 for camera in request.recording_config.cameras
             )
             merged = heapq.merge(*iterators, key=lambda item: (item[0], item[1]))
-            writer = _CompleteFrameWriter(self._fragment_writers.create(alignment_request))
+            writer = self._fragment_writers.create(alignment_request)
+            if not (package_source is not None and request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}):
+                writer = _CompleteFrameWriter(writer)
             manifest = self._alignment.align_stream_to_writer(
                 rollout_id=data.rollout_id,
                 source_sha256=data.source_sha256,
@@ -1371,11 +1407,11 @@ class ContinuousEpisodeProcessingService:
                 localized[asset.asset_id] = path
             yield localized
 
-    def _openarm_numeric_quality(self, request, localized, findings):
+    def _openarm_numeric_quality(self, request, localized, findings, capture_quality=None):
         """Evaluate the actual recorded vectors as well as MCAP timing and video."""
         from hc_data_platform.quality.models import ActionObservation, JointObservation
 
-        if request.recording_config.recorder_version != "openarm-session/v2":
+        if request.recording_config.recorder_version not in {"openarm-session/v2", "native-mcap-recording/1"}:
             return (), ()
         configured = {s.topic: s for s in request.recording_config.sensors}
         joints, actions = [], []
@@ -1405,6 +1441,9 @@ class ContinuousEpisodeProcessingService:
                 try:
                     body = json.loads(message.data)
                     names, units, values = body["names"], body["units"], body["values"]
+                    masked_missing = bool(capture_quality and int(message.log_time) in capture_quality['invalid_offsets_ns']
+                                          and isinstance(values, list) and any(v is None for v in values)
+                                          and all(v is None or (type(v) in (int,float) and math.isfinite(v)) for v in values))
                     if (
                         not isinstance(values, list)
                         or not 1 <= len(values) <= 256
@@ -1412,12 +1451,14 @@ class ContinuousEpisodeProcessingService:
                         or len(units) != len(values)
                         or len(set(names)) != len(names)
                         or any(not isinstance(n, str) or not n for n in names + units)
-                        or any(type(v) not in (int, float) or not math.isfinite(v) for v in values)
+                        or (not masked_missing and any(type(v) not in (int, float) or not math.isfinite(v) for v in values))
                     ):
                         raise ValueError("invalid vector layout")
                     layout = (tuple(names), tuple(units))
                     if layouts.setdefault(topic, layout) != layout:
                         raise ValueError("vector layout changed")
+                    if masked_missing:
+                        continue
                     if topic == "/action":
                         actions.append(
                             ActionObservation(timestamp_ns=timestamp, values=tuple(values))
@@ -1442,6 +1483,7 @@ class ContinuousEpisodeProcessingService:
         *,
         findings: set[str],
         counter: list[int],
+        tolerate_declared_gaps: bool = False,
     ) -> Iterator[QualityStreamObservationV1]:
         configured = {sensor.topic: sensor for sensor in request.recording_config.sensors}
         seen: set[str] = set()
@@ -1484,12 +1526,12 @@ class ContinuousEpisodeProcessingService:
                     < _datetime_ns(request.projection.ended_at)
                 ):
                     if (
-                        request.recording_config.recorder_version == "openarm-session/v2"
+                        request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}
                         and topic == "/openarm/capture_validity"
                     ):
                         try:
                             validity = json.loads(message.data)
-                            if validity.get("valid") is not True:
+                            if validity.get("valid") is not True and not tolerate_declared_gaps:
                                 findings.add("OPENARM_CAPTURE_FRAME_INVALID")
                         except (ValueError, TypeError, AttributeError):
                             findings.add("OPENARM_CAPTURE_VALIDITY_INVALID")
@@ -1606,7 +1648,7 @@ class ContinuousEpisodeProcessingService:
                     previous = pts_ns
                     in_window = clip_start_ns <= pts_ns < clip_end_ns
                     timestamp_ns = capture_start_ns + camera.capture_start_offset_ns + pts_ns
-                    if request.recording_config.recorder_version == "openarm-session/v2":
+                    if request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}:
                         from .openarm_grid import frame_at, frame_time
 
                         frame = frame_at(pts_ns + camera.capture_start_offset_ns)
@@ -1722,7 +1764,7 @@ class ContinuousEpisodeProcessingService:
         end_ns = _datetime_ns(request.projection.ended_at)
         source_start_ns = request.start_offset_ns - camera.capture_start_offset_ns
         frame_count = math.ceil((end_ns - start_ns) * 30 / 1_000_000_000)
-        if request.recording_config.recorder_version == "openarm-session/v2":
+        if request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}:
             from .openarm_grid import frame_at, frame_time
 
             frame_count = frame_at(request.end_offset_ns) - frame_at(request.start_offset_ns)
@@ -1965,7 +2007,7 @@ class _CompleteFrameWriter:
 def _episode_sensor_timestamp(
     raw_timestamp_ns: int, mode: SensorTimestampMode, request: ContinuousEpisodeWorkflowInput
 ) -> int | None:
-    if request.recording_config.recorder_version == "openarm-session/v2":
+    if request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}:
         from .openarm_grid import slice_frame_time
 
         if mode is not SensorTimestampMode.RECORDING_OFFSET_NS:
@@ -2043,5 +2085,8 @@ def _datetime_ns(value: datetime) -> int:
     return (delta.days * 86_400 + delta.seconds) * 1_000_000_000 + delta.microseconds * 1000
 
 
-def _blocked(detail: str) -> IngestWorkflowPlanBlocked:
-    return IngestWorkflowPlanBlocked(detail)
+def _blocked(detail: str, *, code: str | None = None) -> IngestWorkflowPlanBlocked:
+    error = IngestWorkflowPlanBlocked(detail)
+    if code is not None:
+        error.code = code
+    return error

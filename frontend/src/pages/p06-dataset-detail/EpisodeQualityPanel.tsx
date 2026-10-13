@@ -1,20 +1,10 @@
+import { QualityEvidenceDetails } from "../../features/quality/QualityEvidenceDetails";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Card, Collapse, Tag, Typography } from "antd";
+import { Alert, Button, Card, Typography } from "antd";
 import type { Scope } from "../../shared/scope/model";
 import type { ReviewDataRef } from "../../features/datasets/episodes/data-reviews";
-import {
-  loadEpisodeQuality,
-  qualityReasonLabels,
-  qualityRuleLabels,
-} from "./episode-quality";
+import { loadEpisodeQuality } from "./episode-quality";
 
-const states = {
-  pass: { label: "通过", color: "success" },
-  warn: { label: "警告", color: "warning" },
-  fail: { label: "失败", color: "error" },
-  skip: { label: "未验明 / 跳过", color: "default" },
-  info: { label: "说明", color: "processing" },
-};
 const verdict = {
   PASS: "PASS",
   RISK: "RISK · 存在风险",
@@ -59,11 +49,12 @@ export function EpisodeQualityPanel({
                 自动 QC 总判定：{verdict[quality.status]}
               </Typography.Paragraph>
               <Typography.Paragraph>
-                数据版本 {data.version} · 自动检查结构与信号。
+                数据 {data.identity.episode_id} · 数据集 {data.identity.dataset_id} · 版本 {data.version}
               </Typography.Paragraph>
               {quality.report?.profile_id === "hc-tag-aligned-qc" && (
                 <Typography.Paragraph>
-                  检查范围：当前 Tag 区间的已对齐数据与视频。原始录制的质检结果保留在来源附件中。
+                  检查范围：当前 Tag
+                  区间的已对齐数据与视频。原始录制的质检结果保留在来源附件中。
                 </Typography.Paragraph>
               )}
               {quality.evidence_status !== "AVAILABLE" && (
@@ -77,74 +68,11 @@ export function EpisodeQualityPanel({
                   description="未记录的检查显示为未验明；请分别查看人工数据审核与标注审核。"
                 />
               )}
-              <div aria-label="逐规则结果统计">
-                {Object.entries(states).map(([key, value]) => (
-                  <Tag key={key} color={value.color}>
-                    {value.label}{" "}
-                    {quality.rules.filter((item) => item.status === key).length}
-                  </Tag>
-                ))}
-              </div>
-              {quality.additional_finding_codes.length > 0 && (
-                <Typography.Paragraph>
-                  录制检查：{quality.additional_finding_codes.join("、")}
-                </Typography.Paragraph>
-              )}
-              <Collapse
-                items={quality.rules.map((item) => ({
-                  key: `${item.code}:${item.topic ?? "all"}`,
-                  label: (
-                    <span>
-                      <Tag color={states[item.status].color}>
-                        {states[item.status].label}
-                      </Tag>
-                      {qualityRuleLabels[item.code] ?? item.code}{" "}
-                      {item.topic ?? ""}
-                    </span>
-                  ),
-                  children: (
-                    <>
-                      {item.reason && (
-                        <Typography.Paragraph>
-                          {qualityReasonLabels[item.reason] ?? item.reason}
-                        </Typography.Paragraph>
-                      )}
-                      <Typography.Paragraph>
-                        已评估 {item.evaluated_count} / {item.expected_count}{" "}
-                        项观测
-                      </Typography.Paragraph>
-                      {item.detector_findings.map((finding, index) => (
-                        <Typography.Paragraph key={index}>
-                          {finding.message} · 观测 {String(finding.observed)} ·
-                          阈值 {String(finding.threshold)}
-                        </Typography.Paragraph>
-                      ))}
-                      {item.report_finding_indexes.map((index) => (
-                        <Typography.Paragraph key={`report-${index}`}>
-                          原报告：{quality.report?.findings[index]?.message}
-                        </Typography.Paragraph>
-                      ))}
-                      <details>
-                        <summary>观测与阈值</summary>
-                        <pre
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            overflowWrap: "anywhere",
-                          }}
-                        >
-                          {JSON.stringify(
-                            {
-                              observed: item.observed,
-                              thresholds: item.thresholds,
-                            },
-                            null,
-                            2,
-                          )}
-                        </pre>
-                      </details>
-                    </>
-                  ),
-                }))}
+              <QualityEvidenceDetails
+                rules={quality.rules}
+                findingCodes={quality.additional_finding_codes}
+                findings={quality.report?.findings}
+                verdict={quality.status}
               />
             </>
           )}

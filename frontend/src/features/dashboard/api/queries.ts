@@ -36,7 +36,8 @@ export function useDashboardTaskStatus(
       : ["dashboard", "disabled", "task-status"],
     queryFn: ({ signal }) => getDashboardTaskStatus(scope!, taskId, signal),
     enabled: enabled && scope !== null,
-    staleTime: 60_000,
+    staleTime: 5_000,
+    refetchInterval: 5_000,
     retry: 2,
   });
 }

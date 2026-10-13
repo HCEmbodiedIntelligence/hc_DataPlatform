@@ -57,6 +57,86 @@ const grantWire = z.object({
   url: z.string().min(1),
   expires_at: z.iso.datetime({ offset: true }),
 }) satisfies z.ZodType<Schemas["OriginalFileGrant"]>;
+const directoryEntryWire = z.object({
+  name: path,
+  path,
+  kind: z.enum(["DIRECTORY", "FILE"]),
+  size: count,
+  file_count: count,
+  sha256: z.string().nullable().optional(),
+  storage_key: z.string().nullable().optional(),
+  local_path: z.string().nullable().optional(),
+  text_preview: z.boolean(),
+}) satisfies z.ZodType<Schemas["OriginalDirectoryEntry"]>;
+export type OriginalDirectoryEntry = z.infer<typeof directoryEntryWire>;
+const directoryWire = z.object({
+  import_id: path,
+  path: z.string(),
+  storage_prefix: path,
+  local_path: z.string().nullable(),
+  entries: z.array(directoryEntryWire),
+  total: count,
+  offset: count,
+  file_count: count,
+  total_bytes: count,
+}) satisfies z.ZodType<Schemas["OriginalDirectory"]>;
+export async function getOriginalDirectory(
+  scope: IngestScope,
+  importId: string,
+  directory: string,
+  offset: number,
+  signal: AbortSignal,
+) {
+  const endpoint = `${base(scope, importId)}/directory`;
+  const raw = await request<unknown>({
+    method: "GET",
+    path: endpoint,
+    scope,
+    scopeMode: "explicit",
+    signal,
+    cache: "no-store",
+    query: { path: directory, offset, limit: 50 },
+  });
+  return parseWire(
+    directoryWire.refine(
+      (value) =>
+        value.import_id === importId &&
+        value.path === directory &&
+        value.offset === offset,
+    ),
+    raw,
+    { endpoint },
+  );
+}
+export async function getOriginalTextPreview(
+  scope: IngestScope,
+  importId: string,
+  filePath: string,
+  signal: AbortSignal,
+) {
+  const endpoint = `${base(scope, importId)}/text-preview`;
+  const raw = await request<unknown>({
+    method: "GET",
+    path: endpoint,
+    scope,
+    scopeMode: "explicit",
+    signal,
+    cache: "no-store",
+    query: { path: filePath },
+  });
+  return parseWire(
+    z
+      .object({
+        path,
+        text: z.string(),
+        truncated: z.boolean(),
+        preview_bytes: count,
+      })
+      .refine((value) => value.path === filePath),
+    raw,
+    { endpoint },
+  );
+}
 function base(scope: IngestScope, importId: string) {
   return `${nativeRoot(scope)}/${encodeURIComponent(importId)}`;
 }

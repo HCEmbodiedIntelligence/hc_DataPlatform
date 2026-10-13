@@ -123,6 +123,9 @@ class ParquetStepReader:
             raise ValueError("requested logical modality is absent from this data version")
         projections = ["frame_index", "hc.timestamp_ns", "hc.sample_valid"]
         media = set()
+        sparse = info.get("hc.training_policy") == "drop_invalid_rows_preserve_source_time/v1"
+        if sparse:
+            projections.extend(["hc.video_frame_index", "hc.video_timestamp"])
         for name in selected:
             target = mapping[name]
             if info["features"][target]["dtype"] == "video":
@@ -148,6 +151,8 @@ class ParquetStepReader:
                             "feature": target,
                             "data_version_id": data.data_version_id,
                             "frame_index": row["frame_index"],
+                            **({"video_frame_index": row["hc.video_frame_index"],
+                                "video_timestamp": row["hc.video_timestamp"]} if sparse else {}),
                             "source": json.loads(row["hc.source_ref." + target]),
                         }
                     else:
@@ -279,17 +284,21 @@ class PhysicalDepthReader:
         )
         if profile.sha256 != declaration["profile_sha256"]:
             raise ValueError("depth profile checksum mismatch")
+        media_index = frame_index
+        if info.get('hc.training_policy') == 'drop_invalid_rows_preserve_source_time/v1':
+            with package.file(DATA_PATH) as path:
+                media_index = next(window_rows(path, frame_index, frame_index + 1, ['hc.video_frame_index']))['hc.video_frame_index']
         with package.file(f"{evidence}/frames.parquet") as path:
-            source = next(window_rows(path, frame_index, frame_index + 1))
+            source = next(window_rows(path, media_index, media_index + 1))
         with package.file(f"{evidence}/validity/flags.parquet") as path:
-            mask = next(window_rows(path, frame_index, frame_index + 1))
+            mask = next(window_rows(path, media_index, media_index + 1))
         with Image.open(io.BytesIO(mask["flags_png"])) as image:
             flags = np.asarray(image).copy()
         video = VIDEO_PATH.format(video_key=feature, chunk_index=0, file_index=0)
         codes = None
         with package.file(video) as path, av.open(str(path)) as container:
             stream = container.streams.video[0]
-            target = frame_index / info["fps"]
+            target = media_index / info["fps"]
             container.seek(int(target / stream.time_base), stream=stream, backward=True)
             for frame in container.decode(stream):
                 timestamp = float(frame.pts * frame.time_base)

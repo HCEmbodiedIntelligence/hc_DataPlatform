@@ -324,6 +324,9 @@ class InMemoryCollectionTaskRepository:
                 existing[4] if duration_seconds is None else duration_seconds,
             )
 
+    def captures(self, organization_id, project_id, region_code, task_id=None):
+        return ()
+
     def progress(
         self,
         organization_id: str,

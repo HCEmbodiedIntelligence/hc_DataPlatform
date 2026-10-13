@@ -14,7 +14,6 @@ from .collection_export import (
     contract,
     preflight,
     selected_info,
-    write_collection,
 )
 from .delivery_inventory import inventory_document
 from .delivery_repository import failure, scope_key
@@ -38,6 +37,9 @@ class CollectionDelivery:
                     raise PackageConflict("selected annotation task differs from collection data")
 
     def freeze(self, body, auth):
+        from .export_formats import get_format
+
+        adapter = get_format(body.output_format)
         members, sources = [], []
         for selected in sorted(body.members, key=lambda m: m.data.data_version_id):
             data = selected.data
@@ -46,6 +48,21 @@ class CollectionDelivery:
             package = self.owner.packages.files.open(data.identity, data.data_version_id)
             if package.receipt.data != data:
                 raise PackageConflict("collection data differs from its committed reference")
+            if adapter.name == "mcap":
+                from .original_export import require_original_mcap
+
+                require_original_mcap(package)
+            if adapter.originals:
+                from .original_export import originals
+
+                originals(package, self.owner.storage)
+            calibration = None
+            if adapter.name == "lerobot":
+                from .camera_calibration import freeze_camera_calibration
+
+                calibration = freeze_camera_calibration(
+                    package, self.owner.repository.connections, body.modalities
+                )
             annotation = None
             if selected.annotation is not None:
                 if self.owner.annotations is None:
@@ -55,6 +72,10 @@ class CollectionDelivery:
                 task = self.owner.annotations.authorize(selected.annotation.task_id, auth)
                 if task.data_ref != data:
                     raise PackageConflict("selected annotation is bound to different data")
+                if task.current_revision != selected.annotation.revision:
+                    raise failure(
+                        "ANNOTATION_CHANGED", "当前标注已更新，请刷新后重新确认导出。", 409
+                    )
                 selection = self.owner.annotations.freeze_selection(
                     selected.annotation.task_id,
                     RequestAnnotationDelivery(
@@ -77,6 +98,7 @@ class CollectionDelivery:
                     data=data,
                     manifest_sha256=package.receipt.manifest_sha256,
                     annotation=annotation,
+                    camera_calibration=calibration,
                     selected_depth_profiles=profiles,
                     excluded_depth_features=tuple(sorted(depth))
                     if body.modalities == "rgb"
@@ -84,19 +106,38 @@ class CollectionDelivery:
                 )
             )
             sources.append(CollectionSource(package))
-        preflight(sources, body.modalities)
+        if adapter.homogeneous:
+            preflight(sources, body.modalities)
         info, _, _ = selected_info(sources[0].package, body.modalities)
         return (
             CollectionDeliveryPlan(
                 members=tuple(members),
                 modalities=body.modalities,
-                contract_sha256=digest(contract(info)),
+                contract_sha256=digest(contract(info))
+                if adapter.homogeneous
+                else digest(
+                    [
+                        {"data": m.data.data_version_id, "manifest": m.manifest_sha256}
+                        for m in members
+                    ]
+                ),
+                processor_version="hc-lerobot-collection/1"
+                if adapter.homogeneous
+                else "hc-export/1",
+                reader_version=adapter.reader_version,
+                archive_format=adapter.archive,
             ),
             None,
             None,
         )
 
     def sources(self, plan):
+        from .export_formats import from_archive
+
+        if not from_archive(plan.archive_format).homogeneous and plan.contract_sha256 != digest(
+            [{"data": m.data.data_version_id, "manifest": m.manifest_sha256} for m in plan.members]
+        ):
+            raise PackageConflict("export source inventory differs from frozen contract")
         # Worker identity is constructed only after the persisted outbox event is verified.
         organization, project, region = scope_key()
         auth = AuthContext(
@@ -135,7 +176,12 @@ class CollectionDelivery:
                     else None,
                 }
             info, depth, _ = selected_info(package, plan.modalities)
-            if digest(contract(info)) != plan.contract_sha256:
+            from .export_formats import from_archive
+
+            if (
+                from_archive(plan.archive_format).homogeneous
+                and digest(contract(info)) != plan.contract_sha256
+            ):
                 raise PackageConflict("collection contract differs from frozen plan")
             evidence = package.document("hc/modalities.json")["depth"]
             profiles = {
@@ -151,14 +197,22 @@ class CollectionDelivery:
                 != member.excluded_depth_features
             ):
                 raise PackageConflict("collection depth selection differs from frozen plan")
-            result.append(CollectionSource(package, annotation, track, review))
+            result.append(
+                CollectionSource(package, annotation, track, review, member.camera_calibration)
+            )
         return result
 
     def build(self, plan, directory, archive_path, row, checkpoint):
         self.owner.repository.phase(row, "projecting")
         root = directory / "collection"
-        manifest, _ = write_collection(
-            root, self.sources(plan), modalities=plan.modalities, checkpoint=checkpoint
+        from .export_formats import from_archive
+
+        manifest, _ = from_archive(plan.archive_format).writer(
+            root,
+            self.sources(plan),
+            storage=self.owner.storage,
+            modalities=plan.modalities,
+            checkpoint=checkpoint,
         )
         extra = {
             "collection/hc/collection_manifest.json": canonical(manifest),

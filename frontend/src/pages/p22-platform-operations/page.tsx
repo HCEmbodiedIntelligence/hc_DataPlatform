@@ -1038,24 +1038,68 @@ function ObjectStoreConfigurationPanel() {
       <div className={styles.sectionHeading}>
         <div>
           <span className={styles.eyebrow}>RUNTIME DEPENDENCY</span>
-          <h2 id="object-store-title">OSS 存储地址</h2>
+          <h2 id="object-store-title">数据存储</h2>
         </div>
         <Button onClick={() => setExpanded((value) => !value)}>
-          {expanded
-            ? "收起存储配置"
-            : config.data?.configured
-              ? "编辑存储地址"
-              : "创建存储地址"}
+          {expanded ? "收起存储配置" : "查看存储配置"}
         </Button>
       </div>
       {!expanded ? null : config.isPending ? (
-        <PageState state="loading" label="OSS 存储地址" />
+        <PageState state="loading" label="数据存储" />
       ) : config.isError || !config.data ? (
         <PageState
           state={errorState(config.error)}
-          label="OSS 存储地址"
+          label="数据存储"
           onRetry={() => void config.refetch()}
         />
+      ) : config.data.provider === "s3" && config.data.configured ? (
+        <div className={styles.objectStoreForm}>
+          <StatusTag known label="已生效" status="environment" tone="success" />
+          <p>
+            存储方式：
+            {config.data.local_path ? "本机 MinIO" : "已部署的 S3 兼容存储"}
+          </p>
+          {config.data.browser_path ? (
+            <>
+              <p>
+                直接浏览文件：<code>{config.data.browser_path}</code>
+              </p>
+              <p>
+                在本机文件管理器中打开此目录，可查看和复制文件，无需进入 MinIO
+                网站，也不会多存一份数据。
+              </p>
+              <p>
+                查看文件数量和总大小：
+                <code>bash deploy/local/data.sh usage</code>
+              </p>
+              <p>
+                列出平台对象和可用操作：
+                <code>bash deploy/local/data.sh objects</code>
+              </p>
+              <p>
+                浏览目录为只读；回收操作通过本机命令执行，仍由平台检查引用及保留状态。
+              </p>
+            </>
+          ) : null}
+          {config.data.local_path ? (
+            <p>
+              MinIO 内部存储目录：<code>{config.data.local_path}</code>
+              （不要直接修改）
+            </p>
+          ) : null}
+          <p>
+            当前存储已配置，可以直接上传，无需填写 OSS 的 Key ID、Bucket
+            或地域。
+          </p>
+          {config.data.local_path ? (
+            <>
+              <p>更换磁盘目录时，在服务器执行迁移命令，已有文件会一并复制：</p>
+              <code>bash deploy/local/storage.sh set /新的绝对目录</code>
+              <p>取出普通文件用于拷贝：</p>
+              <code>bash deploy/local/storage.sh export-files /导出目录</code>
+            </>
+          ) : null}
+        </div>
       ) : (
         <form className={styles.objectStoreForm} onSubmit={submit}>
           <div className={styles.objectStoreStatus}>

@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { CameraCalibrationEditor } from "../../features/robots/CameraCalibrationEditor";
 import type { Robot, RobotLifecycle } from "../../entities/robot";
 import {
   useScopedBindRobotModelVersion,
@@ -573,6 +574,14 @@ export function Component() {
                 tone={selected.lifecycle === "ACTIVE" ? "success" : "warning"}
               />
             </div>
+            {organizationId && (
+              <CameraCalibrationEditor
+                key={organizationId + selected.id}
+                organizationId={organizationId}
+                robotId={selected.id}
+                canManage={canManage}
+              />
+            )}
             <Descriptions
               size="small"
               column={1}

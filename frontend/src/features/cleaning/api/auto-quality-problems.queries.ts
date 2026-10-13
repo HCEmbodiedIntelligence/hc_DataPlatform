@@ -12,6 +12,8 @@ const autoQualityProblemSchema = z
     session_id: z.string().min(1).nullable(),
     source_import_id: z.string().min(1).nullish(),
     source_episode_index: z.number().int().nonnegative().nullish(),
+    recording_id: z.string().min(1).nullish(),
+    recording_episode_id: z.string().min(1).nullish(),
     rollout_id: z.string().min(1),
     data_package_id: z.string().min(1).nullable(),
     status: z.enum(["RISK", "REJECT"]),
@@ -41,6 +43,8 @@ export interface AutoQualityProblem {
   readonly sessionId: string | null;
   readonly sourceImportId: string | null;
   readonly sourceEpisodeIndex: number | null;
+  readonly recordingId?: string | null;
+  readonly recordingEpisodeId?: string | null;
   readonly rolloutId: string;
   readonly dataPackageId: string | null;
   readonly status: "RISK" | "REJECT";
@@ -65,7 +69,8 @@ export function useAutoQualityProblems(allowed = true) {
       scope?.regionCode,
     ],
     enabled: allowed && Boolean(scope?.projectId && scope.regionCode),
-    staleTime: 15_000,
+    staleTime: 5_000,
+    refetchInterval: 5_000,
     queryFn: async ({ signal }) => {
       const path = `/projects/${encodeURIComponent(scope!.projectId!)}/regions/${encodeURIComponent(scope!.regionCode!)}/quality-problems`;
       const wire = parseWire(
@@ -84,6 +89,8 @@ export function useAutoQualityProblems(allowed = true) {
             sessionId: item.session_id,
             sourceImportId: item.source_import_id ?? null,
             sourceEpisodeIndex: item.source_episode_index ?? null,
+            recordingId: item.recording_id ?? null,
+            recordingEpisodeId: item.recording_episode_id ?? null,
             rolloutId: item.rollout_id,
             dataPackageId: item.data_package_id,
             status: item.status,

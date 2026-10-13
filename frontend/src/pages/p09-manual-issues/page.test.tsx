@@ -89,6 +89,7 @@ let client: QueryClient;
 let progress = processingFixture();
 let qualityPassed = false;
 let problemsCleared = false;
+let recordingStatus = "QC_FAILED";
 
 function processingFixture() {
   return {
@@ -112,6 +113,7 @@ beforeEach(() => {
   progress = processingFixture();
   qualityPassed = false;
   problemsCleared = false;
+  recordingStatus = "QC_FAILED";
   useShellStore.setState({
     scope,
     bootstrapLoaded: true,
@@ -167,6 +169,62 @@ function renderProblem(overrides: Record<string, unknown> = {}) {
           items: problemsCleared ? [] : [{ ...wireProblem, ...overrides }],
           total: problemsCleared ? 0 : 1,
         };
+      if (path.endsWith("/continuous-recordings/recording-a/episodes"))
+        return {
+          items: [
+            {
+              episode_id: "episode_0002",
+              status: recordingStatus,
+              workflow_id: "continuous-initial",
+              updated_at: "2026-10-10T01:00:00Z",
+              failure_code: "QC_REJECTED",
+            },
+          ],
+          total: 1,
+          qc_reports: [
+            {
+              episode_id: "episode_0002",
+              status: "REJECT",
+              rules: [],
+              finding_codes: ["OPENARM_CAPTURE_VECTOR_INVALID"],
+              quality_report: {
+                findings: [
+                  {
+                    code: "QC_ACTION_MISSING",
+                    topic: "/action",
+                    message: "No valid action samples",
+                    observed: 0,
+                    threshold: 1,
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      if (path.endsWith("/resolution")) {
+        if (method === "POST") {
+          problemsCleared = true;
+          return { status: "DISCARDED" };
+        }
+        return {
+          discard_available: true,
+          expected_attempt_id: "episode:original",
+          status: "FAILED",
+        };
+      }
+      if (path.endsWith(":discard")) {
+        problemsCleared = true;
+        recordingStatus = "DISCARDED";
+        return { episode_id: "episode_0002", status: recordingStatus };
+      }
+      if (path.includes("/continuous-recordings/") && path.endsWith(":retry")) {
+        recordingStatus = "PENDING_QC";
+        return {
+          episode_id: "episode_0002",
+          status: recordingStatus,
+          updated_at: "2026-10-10T01:01:00Z",
+        };
+      }
       if (path.endsWith("/processing")) return { ...progress };
       if (path.endsWith("/quality"))
         return {
@@ -198,12 +256,131 @@ function renderProblem(overrides: Record<string, unknown> = {}) {
 }
 
 describe("问题数据 Raw 入口", () => {
+  it.each([false, true])(
+    "deletes only the confirmed problem Episode (recording=%s)",
+    async (recording) => {
+      renderProblem(
+        recording
+          ? {
+              source_import_id: null,
+              source_episode_index: null,
+              recording_id: "recording-a",
+              recording_episode_id: "episode_0002",
+            }
+          : {},
+      );
+      fireEvent.click(await screen.findByRole("button", { name: /删\s*除/ }));
+      const dialog = await screen.findByRole("dialog", {
+        name: "删除这条问题数据？",
+      });
+      await client.invalidateQueries({ queryKey: ["quality-problems"] });
+      await waitFor(() => expect(dialog).toBeVisible());
+      expect(
+        requestMock.mock.calls.filter(([arg]) => arg.method === "POST"),
+      ).toHaveLength(0);
+      fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
+      await waitFor(() => expect(problemsCleared).toBe(true));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "查看与处理" }),
+        ).not.toBeInTheDocument(),
+      );
+      const posts = requestMock.mock.calls.filter(
+        ([arg]) => arg.method === "POST",
+      );
+      expect(posts).toHaveLength(1);
+      expect(posts[0]![0]).toEqual(
+        expect.objectContaining({
+          scope,
+          body: expect.objectContaining(
+            recording
+              ? { expected_workflow_id: "continuous-initial" }
+              : { action: "DISCARD", expected_attempt_id: "episode:original" },
+          ),
+        }),
+      );
+      expect(posts[0]![0].path).toContain(
+        recording ? "/episodes/episode_0002:discard" : "/episodes/7/resolution",
+      );
+    },
+  );
+
+  it("cancels deletion without changing data", async () => {
+    renderProblem();
+    fireEvent.click(await screen.findByRole("button", { name: /删\s*除/ }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "删除这条问题数据？",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: /取\s*消/ }));
+    expect(problemsCleared).toBe(false);
+    expect(
+      requestMock.mock.calls.filter(([arg]) => arg.method === "POST"),
+    ).toHaveLength(0);
+  });
+
+  it("retries a continuous Episode through the common processing panel", async () => {
+    renderProblem({
+      source_import_id: null,
+      source_episode_index: null,
+      recording_id: "recording-a",
+      recording_episode_id: "episode_0002",
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
+    const button = await screen.findByRole("button", {
+      name: "重新质检并继续处理",
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(requestMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          method: "POST",
+          path: "/projects/project-a/regions/cn-test/continuous-recordings/recording-a/episodes/episode_0002:retry",
+          body: expect.objectContaining({
+            expected_workflow_id: "continuous-initial",
+          }),
+        }),
+      ),
+    );
+    expect(
+      await screen.findByRole("button", { name: "正在处理，请等待" }),
+    ).toBeDisabled();
+  });
+
+  it("opens continuous Episode QC in the problem center without sending the user to the cutter", async () => {
+    renderProblem({
+      source_import_id: null,
+      source_episode_index: null,
+      recording_id: "recording-a",
+      recording_episode_id: "episode_0002",
+      finding_codes: ["QC_ACTION_MISSING"],
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText(/实测 0/)).toBeVisible();
+    expect(
+      within(dialog).getByRole("link", { name: "查看片段视频" }),
+    ).toHaveAttribute(
+      "href",
+      "/recordings/recording-a/slice?episode=episode_0002",
+    );
+    expect(requestMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        scope,
+        path: "/projects/project-a/regions/cn-test/continuous-recordings/recording-a/episodes",
+      }),
+    );
+    expect(screen.getByLabelText("当前地址")).toHaveTextContent(returnTo);
+    expect(previewMock).not.toHaveBeenCalled();
+  });
+
   it.each([0, 7])(
     "opens the native source at Episode %i without an upload session",
     async (episodeIndex) => {
       renderProblem({ source_episode_index: episodeIndex });
       fireEvent.click(
-        await screen.findByRole("button", { name: "查看 Raw 诊断" }),
+        await screen.findByRole("button", { name: "查看与处理" }),
       );
       const dialog = await screen.findByRole("dialog");
       await waitFor(() =>
@@ -258,7 +435,7 @@ describe("问题数据 Raw 入口", () => {
       source_import_id: undefined,
       source_episode_index: undefined,
     });
-    const link = await screen.findByRole("link", { name: "查看 Raw 诊断" });
+    const link = await screen.findByRole("link", { name: "查看与处理" });
     const target = new URL(link.getAttribute("href")!, "https://local.invalid");
     expect(target.pathname).toBe("/manual/issues/raw-diagnostic/session-a");
     const back = new URL(
@@ -280,9 +457,7 @@ describe("问题数据 Raw 入口", () => {
 
   it("retries the selected upload, keeps the resolved diagnostic open, and shows completion", async () => {
     renderProblem();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "查看 Raw 诊断" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
     const dialog = await screen.findByRole("dialog");
     const retryButton = await within(dialog).findByRole("button", {
       name: "重新质检并继续处理",
@@ -338,10 +513,11 @@ describe("问题数据 Raw 入口", () => {
         !["upload.manage", "dataset.read"].includes(capability ?? ""),
     );
     renderProblem();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "查看 Raw 诊断" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
     const dialog = await screen.findByRole("dialog");
+    expect(
+      screen.queryByRole("button", { name: /删\s*除/ }),
+    ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
         within(dialog).getByText(
@@ -371,18 +547,18 @@ describe("问题数据 Raw 入口", () => {
         ? Promise.reject(new Error("INTERNAL_ERROR"))
         : original(arg),
     );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "查看 Raw 诊断" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
     const dialog = await screen.findByRole("dialog");
     const retryButton = await within(dialog).findByRole("button", {
       name: "重新质检并继续处理",
     });
     await waitFor(() => expect(retryButton).toBeEnabled());
     fireEvent.click(retryButton);
-    expect(
-      await within(dialog).findByText("重新处理未能提交，请刷新状态后重试。"),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText("重新处理未能提交，请刷新状态后重试。"),
+      ).toBeVisible(),
+    );
     expect(dialog).not.toHaveTextContent("INTERNAL_ERROR");
     expect(
       within(dialog).queryByText("已排队，等待重新处理"),

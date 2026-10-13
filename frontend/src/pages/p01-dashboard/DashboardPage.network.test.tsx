@@ -1,7 +1,14 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -24,6 +31,7 @@ import {
 } from "../../shared/config/runtime";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { DashboardPage } from "./page";
+import { dashboardQueryKeys } from "../../features/dashboard/api/query-keys";
 
 const scope = {
   organizationId: "org_fx_01",
@@ -68,6 +76,28 @@ function responseFor(url: string): Response {
 
 describe("Dashboard production client path", () => {
   beforeEach(() => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({
+        matches: false,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const getComputedStyle = window.getComputedStyle.bind(window);
+    vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
+      getComputedStyle(element),
+    );
     configureRuntime({
       apiBaseUrl: "/api/v1",
       sseBaseUrl: "/api/v1",
@@ -94,8 +124,100 @@ describe("Dashboard production client path", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     resetRuntimeConfigForTests();
+  });
+
+  it("preserves an open failure detail through background refresh, failure and recovery", async () => {
+    const fixture = {
+      ...dashboardTaskStatusAllTasksFixture,
+      pipeline: {
+        ...dashboardTaskStatusAllTasksFixture.pipeline,
+        issues: [
+          {
+            task_id: "task-assembly-01",
+            rollout_id: "episode-failed",
+            data_package_id: "package-failed",
+            category: "TECHNICAL",
+            stage: "STANDARDIZATION",
+            reason_code: "ALIGNMENT_FAILED",
+            label: "对齐失败",
+            description: "需要保留的失败详情",
+            source_episode_index: 0,
+            source_import_id: null,
+            alignment_attempt_id: null,
+            qc_status: null,
+            lance_ready: false,
+            findings: [],
+          },
+        ],
+      },
+    };
+    let nextRead: Promise<Response> | undefined;
+    let failReads = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (!String(input).includes("/dashboard/task-status?"))
+          return responseFor(String(input));
+        if (nextRead) {
+          const read = nextRead;
+          nextRead = undefined;
+          return read;
+        }
+        return failReads
+          ? json({ message: "暂时离线" }, { status: 503 })
+          : json(fixture);
+      }),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retryDelay: 0 } },
+    });
+    const queryKey = dashboardQueryKeys.taskStatus(dashboardScope);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "处理失败 2" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "查看 Episode 0 详情" }),
+    );
+    const detail = await screen.findByText("需要保留的失败详情");
+    for (const fail of [false, true, false]) {
+      failReads = fail;
+      let resolve!: (response: Response) => void;
+      nextRead = new Promise<Response>((done) => {
+        resolve = done;
+      });
+      let refresh!: Promise<void>;
+      await act(async () => {
+        refresh = client.refetchQueries({ queryKey });
+      });
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "刷新工作台" })).toHaveClass(
+          "ant-btn-loading",
+        ),
+      );
+      expect(detail).toBeVisible();
+      expect(screen.getByText("需要保留的失败详情")).toBe(detail);
+      await act(async () => {
+        resolve(
+          fail ? json({ message: "暂时离线" }, { status: 503 }) : json(fixture),
+        );
+        await refresh;
+      });
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "刷新工作台" }),
+        ).not.toHaveClass("ant-btn-loading"),
+      );
+      expect(screen.getByText("需要保留的失败详情")).toBe(detail);
+    }
+    client.clear();
   });
 
   it("issues only the three visible-region HTTP reads with no Browser Mock or MSW fallback", async () => {

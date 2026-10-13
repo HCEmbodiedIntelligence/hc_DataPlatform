@@ -251,7 +251,35 @@ components:
       enum: [TASK_EXECUTION, PACKAGE_UPLOAD, RAW_RECEIPT, AUTOMATIC_VALIDATION, STANDARDIZATION, ANNOTATION, REVIEW, PUBLICATION]
     TaskPackageMainState:
       type: string
-      enum: [DISCARDED, DUPLICATE, REPROCESSING_CONFLICT, PROCESSING_RESUME_REQUIRED, REGISTERED, UPLOADING, UPLOAD_PAUSED, UPLOAD_FAILED, CANCELLED, RAW_RECEIVED, VALIDATION_RUNNING, VALIDATION_FAILED, QC_WAITING, QC_RISK, QC_REJECT, STANDARDIZATION_WAITING, ALIGNING, ALIGNMENT_FAILED, LANCE_WRITING, LANCE_FAILED, STANDARDIZED_READY, ANNOTATING, REVIEW_PENDING, PUBLISH_PENDING, PUBLISHED, UNKNOWN]
+      enum:
+      - DISCARDED
+      - DUPLICATE
+      - REPROCESSING_CONFLICT
+      - PROCESSING_RESUME_REQUIRED
+      - REGISTERED
+      - UPLOADING
+      - UPLOAD_PAUSED
+      - UPLOAD_FAILED
+      - CANCELLED
+      - RAW_RECEIVED
+      - VALIDATION_RUNNING
+      - VALIDATION_FAILED
+      - AWAITING_SLICE
+      - QC_WAITING
+      - QC_RISK
+      - QC_REJECT
+      - STANDARDIZATION_WAITING
+      - ALIGNING
+      - ALIGNMENT_FAILED
+      - LANCE_WRITING
+      - LANCE_FAILED
+      - STANDARDIZED_READY
+      - ANNOTATING
+      - REVIEW_PENDING
+      - PUBLISH_PENDING
+      - PUBLISHED
+      - UNKNOWN
+      title: TaskPackageMainState
     TaskStageCounts:
       type: object
       additionalProperties: false
@@ -429,15 +457,16 @@ components:
     TaskDataIssue:
       properties:
         task_id:
+          type: string
           title: Task Id
-          type: string
         rollout_id:
+          type: string
           title: Rollout Id
-          type: string
         data_package_id:
-          title: Data Package Id
           type: string
+          title: Data Package Id
         category:
+          type: string
           enum:
           - DUPLICATE
           - QUALITY
@@ -445,58 +474,58 @@ components:
           - PROCESSING_CONFLICT
           - RESUME_REQUIRED
           title: Category
-          type: string
         stage:
           $ref: '#/components/schemas/TaskProcessingStage'
         reason_code:
+          type: string
           title: Reason Code
-          type: string
         label:
+          type: string
           title: Label
-          type: string
         description:
-          title: Description
           type: string
+          title: Description
         duplicate_of_rollout_id:
           anyOf:
           - type: string
           - type: 'null'
-          default: null
           title: Duplicate Of Rollout Id
         source_episode_index:
           anyOf:
           - type: integer
           - type: 'null'
-          default: null
           title: Source Episode Index
         source_import_id:
           anyOf:
           - type: string
           - type: 'null'
-          default: null
           title: Source Import Id
+        recording_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Id
         qc_status:
           anyOf:
           - type: string
           - type: 'null'
-          default: null
           title: Qc Status
         lance_ready:
-          default: false
-          title: Lance Ready
           type: boolean
+          title: Lance Ready
+          default: false
         alignment_attempt_id:
           anyOf:
           - type: string
           - type: 'null'
-          default: null
           title: Alignment Attempt Id
         findings:
-          default: []
           items:
             $ref: '#/components/schemas/TaskIssueFinding'
-          title: Findings
           type: array
+          title: Findings
+          default: []
+      type: object
       required:
       - task_id
       - rollout_id
@@ -507,7 +536,6 @@ components:
       - label
       - description
       title: TaskDataIssue
-      type: object
     TaskPipelineStatus:
       type: object
       additionalProperties: false

@@ -17,7 +17,208 @@ from hc_data_platform.robot_ingest.recording_contract import OpenArmRecordingCom
 FIXTURE = Path(__file__).parents[1] / "fixtures/openarm-raw-v1"
 
 
-def declared_synthetic_fixture(root, *, floating=False):
+def test_unpaired_original_archive_is_accepted_without_becoming_training_frames(tmp_path):
+    from hc_data_platform.continuous_recordings.openarm_raw.config import config_hash, validate
+    from hc_data_platform.ingest.ports import crc64_ecma
+
+    root = tmp_path / "input"
+    declared_synthetic_fixture(root, exposure="measured")
+    archive = root / "originals.mcap"
+    with archive.open("wb") as stream:
+        writer = Writer(stream)
+        writer.start(profile="ros2")
+        # A deliberately unpaired raw evidence stream has no normalized sample
+        # or preview binding. It must not be mistaken for a training frame.
+        channel = writer.register_channel("/camera_left/camera/color/metadata", "json", 0)
+        writer.add_message(channel, 100, b'{"frame_number":99999}', 100, 0)
+        writer.finish()
+    payload = archive.read_bytes()
+    manifest = json.loads((root / "manifest.json").read_text())
+    manifest["committed"].append({
+        "path": "originals.mcap", "kind": "original_ros", "closed": True, "fsynced": True,
+    })
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    snapshot = json.loads((root / "session.json").read_text())
+    snapshot["config"]["sources"]["camera_left"]["original_topics"] = {
+        "rgb": "/camera_left/camera/color/image_raw",
+        "depth": "/camera_left/camera/depth/image_rect_raw",
+        "rgb_meta": "/camera_left/camera/color/metadata",
+        "depth_meta": "/camera_left/camera/depth/metadata",
+        "rgb_info": "/camera_left/camera/color/camera_info",
+        "depth_info": "/camera_left/camera/depth/camera_info",
+    }
+    snapshot["config"] = validate(snapshot["config"])
+    snapshot["config_hash"] = config_hash(snapshot["config"])
+    (root / "session.json").write_text(json.dumps(snapshot))
+    marker = json.loads((root / "recording-complete.json").read_text())
+    marker["recording_upload"]["assets"].append({
+        "path": "originals.mcap", "role": "AUXILIARY", "camera_id": None,
+        "media_type": "application/mcap", "size": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(), "crc64": crc64_ecma(payload),
+        "part_count": 1,
+    })
+    seal = OpenArmRecordingComplete.model_validate(marker)
+    destination = tmp_path / "prepared"
+    config, _ = prepare(root, destination, seal.recording_upload)
+    assert len(config["cameras"]) == 6
+    assert archive.read_bytes() == payload
+    for line in (destination / "source/frames.jsonl").read_text().splitlines():
+        for image in json.loads(line)["row"]["images"].values():
+            assert image["rgb"].get("source_seq") != 99999
+
+
+def test_mixed_rgbd_and_rgb_only_prepares_five_real_video_streams(tmp_path):
+    from hc_data_platform.continuous_recordings.openarm_raw.config import config_hash, validate
+
+    root = tmp_path / "input"
+    declared_synthetic_fixture(root, exposure="measured")
+    snapshot = json.loads((root / "session.json").read_text())
+    snapshot["config"]["sources"]["camera_hand"].update(depth_enabled=False, transport="envelope")
+    snapshot["config"] = validate(snapshot["config"])
+    snapshot["config_hash"] = config_hash(snapshot["config"])
+    (root / "session.json").write_text(json.dumps(snapshot))
+    old = root / "raw-before.mcap"
+    (root / "raw.mcap").rename(old)
+    with old.open("rb") as stream, (root / "raw.mcap").open("wb") as output:
+        writer = Writer(output)
+        writer.start()
+        channels = {}
+        for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages(
+            log_time_order=False
+        ):
+            if channel.message_encoding == "humanoid-depth" and channel.topic.endswith(
+                "/camera_hand"
+            ):
+                continue
+            if channel.id not in channels:
+                channels[channel.id] = writer.register_channel(
+                    channel.topic, channel.message_encoding, 0
+                )
+            payload = message.data
+            if channel.message_encoding == "json" and channel.topic.endswith("/camera_hand"):
+                data = json.loads(payload)
+                data.pop("depth", None)
+                payload = json.dumps(data).encode()
+            writer.add_message(
+                channels[channel.id],
+                message.log_time,
+                payload,
+                message.publish_time,
+                message.sequence,
+            )
+        writer.finish()
+    seal = OpenArmRecordingComplete.model_validate_json(
+        (root / "recording-complete.json").read_bytes()
+    )
+    destination = tmp_path / "prepared"
+    config, roles = prepare(root, destination, seal.recording_upload)
+    assert {c["camera_id"] for c in config["cameras"]} == {
+        "camera_left",
+        "camera_left_depth",
+        "camera_right",
+        "camera_right_depth",
+        "head",
+    }
+    assert "videos/camera_hand_depth.mp4" not in roles
+    assert not (destination / "videos/camera_hand_depth.mp4").exists()
+    # Exercise the package consumer as well as the raw producer. A version
+    # mismatch here used to pass QC but fail every valid slice at alignment.
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+    from hc_data_platform.continuous_recordings.asset_models import (
+        RecordingAssetRole, RecordingConfigurationV1,
+    )
+    from hc_data_platform.continuous_recordings.package import source_context
+
+    assets = [SimpleNamespace(relative_path=path, role=RecordingAssetRole(role),
+                              camera_id=camera) for path, (role, camera, _) in roles.items()]
+    assets.append(SimpleNamespace(relative_path="source/original/manifest.json",
+        role=RecordingAssetRole.AUXILIARY, camera_id=None,
+        content_sha256=hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest()))
+    request = SimpleNamespace(recording_config=RecordingConfigurationV1.model_validate(config),
+                              assets=assets)
+    upload = SimpleNamespace(command=SimpleNamespace(capture_started_at=datetime.now(timezone.utc)))
+    origin, _, media = source_context(request, upload, {path: destination / path for path in roles})
+    assert origin == json.loads((root / "manifest.json").read_text())["t0_ns"]
+    assert set(media) == {"camera_left_depth", "camera_right_depth"}
+    assert {item["kind"] for item in media.values()} == {"depth"}
+    rows = [
+        json.loads(line) for line in (destination / "source/frames.jsonl").read_text().splitlines()
+    ]
+    assert any(row["valid"] for row in rows)
+    for row in rows:
+        image = row["row"]["images"].get("camera_hand")
+        if image:
+            assert "depth" not in image
+            assert set(image["state_at_exposure"]) == {"rgb"}
+
+
+def test_retained_original_rgb_does_not_replace_preview_frame_bindings(tmp_path):
+    import sqlite3
+
+    shutil.copytree(FIXTURE, tmp_path, dirs_exist_ok=True)
+    with (
+        (FIXTURE / "raw.mcap").open("rb") as original,
+        (tmp_path / "raw.mcap").open("wb") as output,
+    ):
+        writer = Writer(output)
+        writer.start()
+        channels = {}
+        for _, channel, message in make_reader(original).iter_messages(log_time_order=False):
+            if channel.id not in channels:
+                channels[channel.id] = writer.register_channel(
+                    channel.topic, channel.message_encoding, 0
+                )
+            writer.add_message(
+                channels[channel.id],
+                message.log_time,
+                message.data,
+                message.publish_time,
+                message.sequence,
+            )
+        rgb = writer.register_channel("/humanoid/session/rgb/camera_left", "humanoid-rgb", 0)
+        metadata = json.dumps({"rgb": {"shape": [1, 1, 3]}}).encode()
+        writer.add_message(
+            rgb, 1, struct.pack("<I", len(metadata)) + metadata + b"\xff\x00\x80", publish_time=1
+        )
+        writer.finish()
+    with sqlite3.connect(":memory:") as before, sqlite3.connect(":memory:") as after:
+        load_index(FIXTURE, before)
+        load_index(tmp_path, after)
+        for table in ("raw_samples", "frames", "depths", "pointclouds", "events"):
+            assert (
+                before.execute(f"SELECT * FROM {table}").fetchall()
+                == after.execute(f"SELECT * FROM {table}").fetchall()
+            )
+
+
+def test_robot_config_profile_accepts_new_layout_without_changing_legacy_profile():
+    from copy import deepcopy
+
+    from hc_data_platform.continuous_recordings.openarm_raw.profile import validate_capture_config
+
+    cfg = json.loads((FIXTURE / "session.json").read_text())["config"]
+    cfg["capture"]["profile"]["profile_version"] = "robot-config-v1"
+    cfg["capture"]["profile"]["cameras"] = [cfg["capture"]["profile"]["cameras"][0]]
+    cfg["capture"]["profile"]["axes"] = [cfg["capture"]["profile"]["axes"][0]]
+    camera_id = cfg["capture"]["profile"]["cameras"][0]["id"]
+    axis = cfg["capture"]["profile"]["axes"][0]
+    cfg["sources"] = {
+        key: value
+        for key, value in cfg["sources"].items()
+        if key == camera_id or value.get("named_axes", [{}])[0].get("name") == axis["name"]
+    }
+    for source in cfg["sources"].values():
+        if "named_axes" in source:
+            source["named_axes"] = source["named_axes"][:1]
+    validate_capture_config(cfg)
+    legacy = deepcopy(cfg)
+    legacy["capture"]["profile"]["profile_version"] = "openarmx-v1"
+    with pytest.raises(ValueError, match="frozen"):
+        validate_capture_config(legacy)
+
+
+def declared_synthetic_fixture(root, *, floating=False, exposure=None):
     """Make NEW test input with explicit oracle units, never upgrade real legacy data.
 
     The historical synthetic input provides numeric/time oracles. Rebuild its
@@ -29,6 +230,21 @@ def declared_synthetic_fixture(root, *, floating=False):
 
     assert json.loads((FIXTURE / "recording-complete.json").read_text())["synthetic"] is True
     shutil.copytree(FIXTURE, root)
+    if exposure is not None:
+        from hc_data_platform.continuous_recordings.openarm_raw.config import config_hash, validate
+
+        snapshot = json.loads((root / "session.json").read_text())
+        cfg = snapshot["config"]
+        cfg["alignment"]["state_reference"] = "primary_exposure_midpoint"
+        cfg["alignment"]["camera_timing_reference"] = "per_camera_rgb"
+        if exposure == "d435":
+            cfg["sources"]["camera_hand"]["rgbd_max_midpoint_skew_ms"] = 2
+        for source in cfg["sources"].values():
+            if source["kind"] == "rgbd":
+                source["require_exposure_metadata"] = True
+        snapshot["config"] = validate(cfg)
+        snapshot["config_hash"] = config_hash(snapshot["config"])
+        (root / "session.json").write_text(json.dumps(snapshot))
     profile = {
         "schema_version": "hc-depth-source/1",
         "encoding": "32FC1" if floating else "16UC1",
@@ -73,9 +289,38 @@ def declared_synthetic_fixture(root, *, floating=False):
             elif channel.message_encoding == "json":
                 data = json.loads(payload)
                 pixels = None
+            elif channel.message_encoding == "humanoid-pointcloud":
+                size = struct.unpack("<I", payload[:4])[0]
+                data = json.loads(payload[4 : 4 + size])
+                pixels = None
             else:
                 data, pixels = {}, None
             if "depth" in data:
+                if exposure is not None and "rgb" in data:
+                    for name in ("rgb", "depth"):
+                        image = data[name]
+                        stamp = image["capture_time_ns"] + 500_000
+                        if (
+                            exposure == "d435"
+                            and data["source_id"] == "camera_hand"
+                            and name == "depth"
+                        ):
+                            stamp -= 1_949_000
+                        image.update(
+                            capture_time_ns=stamp,
+                            header_timestamp_ns=stamp,
+                            exposure_midpoint_ns=stamp,
+                            timestamp_semantics="exposure_midpoint",
+                            actual_exposure_us=3900,
+                            exposure_evidence="synthetic per-frame exposure fixture",
+                            timestamp_evidence="synthetic exposure midpoint fixture",
+                        )
+                        if exposure == "missing":
+                            image.pop("timestamp_evidence")
+                    data.update(
+                        capture_time_ns=data["rgb"]["capture_time_ns"],
+                        header_timestamp_ns=data["rgb"]["capture_time_ns"],
+                    )
                 depth = data["depth"]
                 depth.update(
                     source_profile=profile,
@@ -92,6 +337,22 @@ def declared_synthetic_fixture(root, *, floating=False):
                 payload = (
                     struct.pack("<I", len(encoded)) + encoded + pixels.tobytes()
                     if pixels is not None
+                    else encoded
+                )
+            if exposure is not None and "camera_source_id" in data and "source_depth_seq" in data:
+                offset = 500_000 - (
+                    1_949_000
+                    if exposure == "d435" and data["camera_source_id"] == "camera_hand"
+                    else 0
+                )
+                data.update(
+                    capture_time_ns=data["capture_time_ns"] + offset,
+                    header_timestamp_ns=data["header_timestamp_ns"] + offset,
+                )
+                encoded = json.dumps(data).encode()
+                payload = (
+                    struct.pack("<I", len(encoded)) + encoded + payload[4 + size :]
+                    if channel.message_encoding == "humanoid-pointcloud"
                     else encoded
                 )
             writer.add_message(
@@ -115,6 +376,57 @@ def declared_synthetic_fixture(root, *, floating=False):
     ).hexdigest()
     (root / "recording-complete.json").write_text(json.dumps(seal))
     return profile
+
+
+@pytest.mark.parametrize("evidence", ["measured", "missing", "d435"])
+def test_exposure_reference_survives_raw_processing_and_missing_evidence_stays_invalid(
+    tmp_path, evidence
+):
+    root, derived = tmp_path / "original", tmp_path / "derived"
+    declared_synthetic_fixture(root, exposure=evidence)
+    marker = OpenArmRecordingComplete.model_validate_json(
+        (root / "recording-complete.json").read_bytes()
+    )
+    prepare(root, derived, marker.recording_upload)
+    traces = [
+        json.loads(line)["row"]
+        for line in (derived / "source/frames.jsonl").read_text().splitlines()
+    ]
+    with (derived / "sensors/robot.mcap").open("rb") as stream:
+        samples = [(c.topic, json.loads(m.data)) for _, c, m in make_reader(stream).iter_messages()]
+    states = [s for t, s in samples if t == "/observation/state"]
+    stamps = [s for t, s in samples if t == "source.timestamp_ns"]
+    valid = [s for t, s in samples if t == "/openarm/capture_validity"]
+    assert len(traces) == len(states) == len(stamps) == 21
+    if evidence == "missing":
+        assert all(not value["valid"] for value in valid)
+        assert all(value is None for value in stamps)
+        assert all(all(v is None for v in state["values"]) for state in states)
+    else:
+        interior = valid[1:-1] if evidence == "d435" else valid[:-1]
+        assert all(value["valid"] for value in interior), valid
+        if evidence == "d435":
+            assert not valid[0]["valid"]  # First depth predates the first joint sample.
+            assert all(
+                "state_missing_invalid_or_expired" in reason for reason in valid[0]["reasons"]
+            )
+        for k, (trace, state, stamp) in enumerate(zip(traces, states, stamps, strict=True)):
+            assert stamp == trace["association_time_ns"]
+            assert trace["grid_to_exposure_ns"] == 500_000
+            assert state["values"][0] == pytest.approx(0.8 + (k / 30 + 0.0005) * 0.1, abs=1e-6)
+            assert all("state_at_exposure" in group for group in trace["images"].values())
+        if evidence == "d435":
+            import pyarrow.parquet as pq
+
+            frames = pq.read_table(derived / "hc/depth/camera_hand/frames.parquet").to_pylist()
+            assert all(frame["time_error_ns"] == -1_949_000 for frame in frames)
+            assert all(
+                not frame["time_threshold_exceeded"] and frame["max_time_error_ns"] == 2_000_000
+                for frame in frames
+            ), frames
+            assert all(
+                trace["images"]["camera_hand"]["rgbd_limit_ns"] == 2_000_000 for trace in traces
+            )
 
 
 @pytest.mark.parametrize("floating", [False, True])

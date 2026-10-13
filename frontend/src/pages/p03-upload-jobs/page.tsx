@@ -1,3 +1,4 @@
+import { CaptureProgressPanel } from "../../features/collection-tasks/CaptureProgressPanel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Modal } from "antd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -660,6 +661,13 @@ export default function UploadJobsPage() {
         </section>
       )}
 
+      {activeTab === "records" && scope && canRead ? (
+        <CaptureProgressPanel
+          key={`captures-${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}
+          scope={scope}
+          robotId={robotIdFilter ?? undefined}
+        />
+      ) : null}
       {scope && canRead ? (
         <LeRobotProcessingRecords
           key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}

@@ -119,10 +119,12 @@ afterEach(() => {
   });
 });
 
-it("shows the immutable frontend release and manifest in the application shell", () => {
+it("keeps runtime release metadata out of the application navigation", () => {
   renderShell();
-  expect(screen.getByText("platform-v0.1.0-shell-test")).toBeVisible();
-  expect(screen.getByText("清单 sha256:aaaaaaaa…")).toBeVisible();
+  expect(
+    screen.queryByText("platform-v0.1.0-shell-test"),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("清单 sha256:aaaaaaaa…")).not.toBeInTheDocument();
 });
 
 const defaultScopeOptions = [

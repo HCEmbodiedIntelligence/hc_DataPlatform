@@ -70,7 +70,7 @@ def test_formal_fragment_matches_runtime_router_and_resolves_local_refs() -> Non
     app.include_router(router)
     generated = app.openapi()
     assert operations(fragment) == operations(generated)
-    assert len(operations(fragment)) == 9
+    assert len(operations(fragment)) == 10
 
     for ref in local_refs(fragment):
         current: object = fragment
@@ -235,4 +235,5 @@ def test_explicit_task_lifecycle_operations_are_limited_to_close_cancel_and_reop
         "reopenCollectionTask",
         "getCollectionTaskProgress",
         "listCollectionTaskPackages",
+        "listCaptureProgress",
     }

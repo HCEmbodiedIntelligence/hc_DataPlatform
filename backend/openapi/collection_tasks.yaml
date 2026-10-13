@@ -214,6 +214,86 @@ paths:
         '401': {description: A verified access token is required.}
         '403': {description: Project scope or read permission is missing.}
         '404': {description: No task is visible under this project identity.}
+  /api/v1/projects/{project_id}/capture-progress:
+    get:
+      tags:
+      - collection-tasks
+      summary: List Capture Progress
+      operationId: listCaptureProgress
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+      - name: collection_task_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Collection Task Id
+      - name: robot_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            maxLength: 128
+          - type: 'null'
+          title: Robot Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: X-Region-Code
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureProgressPage'
+        '422':
+          description: Validation Error
 components:
   parameters:
     CollectionTaskProjectId:
@@ -423,36 +503,77 @@ components:
         quality_threshold: {type: [number, 'null'], minimum: 0, maximum: 1}
         quality_status: {$ref: '#/components/schemas/CollectionTaskQualityRequirementStatus'}
     CollectionTaskProgress:
-      type: object
-      additionalProperties: false
-      required:
-        - schema_version
-        - collection_task_id
-        - organization_id
-        - project_id
-        - status
-        - as_of
-        - received_package_count
-        - captured_duration_seconds
-        - duration_observed_package_count
-        - duration_unknown_package_count
-        - qc
-        - attainment
-        - observed_sources
       properties:
-        schema_version: {type: string, const: '1', default: '1'}
-        collection_task_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
-        organization_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
-        project_id: {$ref: '#/components/schemas/CollectionTaskIdentifier'}
-        status: {$ref: '#/components/schemas/CollectionTaskStatus'}
-        as_of: {type: string, format: date-time}
-        received_package_count: {type: integer, minimum: 0}
-        captured_duration_seconds: {type: [number, 'null'], minimum: 0}
-        duration_observed_package_count: {type: integer, minimum: 0}
-        duration_unknown_package_count: {type: integer, minimum: 0}
-        qc: {$ref: '#/components/schemas/CollectionTaskQcProgress'}
-        attainment: {$ref: '#/components/schemas/CollectionTaskAttainment'}
-        observed_sources: {$ref: '#/components/schemas/ManifestObservedSources'}
+        schema_version:
+          type: string
+          pattern: ^1$
+          title: Schema Version
+          default: '1'
+        collection_task_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+        organization_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+        project_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+        status:
+          $ref: '#/components/schemas/CollectionTaskStatus'
+        as_of:
+          type: string
+          format: date-time
+          title: As Of
+        received_package_count:
+          type: integer
+          minimum: 0.0
+          title: Received Package Count
+        captured_duration_seconds:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Captured Duration Seconds
+        duration_observed_package_count:
+          type: integer
+          minimum: 0.0
+          title: Duration Observed Package Count
+        duration_unknown_package_count:
+          type: integer
+          minimum: 0.0
+          title: Duration Unknown Package Count
+        qc:
+          $ref: '#/components/schemas/CollectionTaskQcProgress'
+        attainment:
+          $ref: '#/components/schemas/CollectionTaskAttainment'
+        captures:
+          $ref: '#/components/schemas/CaptureCounts'
+        observed_sources:
+          $ref: '#/components/schemas/ManifestObservedSources'
+      additionalProperties: false
+      type: object
+      required:
+      - collection_task_id
+      - organization_id
+      - project_id
+      - status
+      - as_of
+      - received_package_count
+      - duration_observed_package_count
+      - duration_unknown_package_count
+      - qc
+      - attainment
+      - observed_sources
+      title: CollectionTaskProgress
     CollectionTaskPackageState:
       type: string
       enum:
@@ -535,3 +656,179 @@ components:
         topic_names:
           type: array
           items: {type: string}
+
+    CaptureProgress:
+      properties:
+        upload_id:
+          type: string
+          title: Upload Id
+        capture_mode:
+          type: string
+          title: Capture Mode
+        rollout_id:
+          type: string
+          title: Rollout Id
+        data_package_id:
+          type: string
+          title: Data Package Id
+        collection_task_id:
+          type: string
+          title: Collection Task Id
+        robot_id:
+          type: string
+          title: Robot Id
+        dataset_id:
+          type: string
+          title: Dataset Id
+        recording_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Id
+        source_import_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Import Id
+        upload_state:
+          type: string
+          title: Upload State
+        stage:
+          type: string
+          enum:
+          - UPLOADING
+          - RECEIVED
+          - PREPARING
+          - AWAITING_SLICE
+          - PROCESSING
+          - READY
+          - BLOCKED
+          - FAILED
+          - CANCELLED
+          - DISCARDED
+          title: Stage
+        received:
+          type: boolean
+          title: Received
+        duration_seconds:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Duration Seconds
+        episode_count:
+          type: integer
+          minimum: 0.0
+          title: Episode Count
+        ready_episode_count:
+          type: integer
+          minimum: 0.0
+          title: Ready Episode Count
+        failed_episode_count:
+          type: integer
+          minimum: 0.0
+          title: Failed Episode Count
+        blocked_episode_count:
+          type: integer
+          minimum: 0.0
+          title: Blocked Episode Count
+          default: 0
+        qc_outcome:
+          anyOf:
+          - type: string
+            enum:
+            - PASS
+            - RISK
+            - REJECT
+          - type: 'null'
+          title: Qc Outcome
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        received_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Received At
+      additionalProperties: false
+      type: object
+      required:
+      - upload_id
+      - capture_mode
+      - rollout_id
+      - data_package_id
+      - collection_task_id
+      - robot_id
+      - dataset_id
+      - upload_state
+      - stage
+      - received
+      - episode_count
+      - ready_episode_count
+      - failed_episode_count
+      - created_at
+      title: CaptureProgress
+    CaptureCounts:
+      properties:
+        upload_count:
+          type: integer
+          title: Upload Count
+          default: 0
+        received_count:
+          type: integer
+          title: Received Count
+          default: 0
+        awaiting_slice_count:
+          type: integer
+          title: Awaiting Slice Count
+          default: 0
+        processing_count:
+          type: integer
+          title: Processing Count
+          default: 0
+        failed_count:
+          type: integer
+          title: Failed Count
+          default: 0
+        blocked_count:
+          type: integer
+          title: Blocked Count
+          default: 0
+        episode_count:
+          type: integer
+          title: Episode Count
+          default: 0
+        ready_episode_count:
+          type: integer
+          title: Ready Episode Count
+          default: 0
+        failed_episode_count:
+          type: integer
+          title: Failed Episode Count
+          default: 0
+      type: object
+      title: CaptureCounts
+    CaptureProgressPage:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CaptureProgress'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        counts:
+          $ref: '#/components/schemas/CaptureCounts'
+      type: object
+      required:
+      - items
+      - total
+      - counts
+      title: CaptureProgressPage

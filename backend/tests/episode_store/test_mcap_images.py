@@ -146,7 +146,7 @@ def test_missing_or_out_of_tolerance_frame_retains_selection_reason(candidate):
         valid={"/depth": False},
         sample_valid=False,
     )
-    plan = SimpleNamespace(feature_mapping={"/depth": "depth"}, cameras={"depth": None})
+    plan = SimpleNamespace(feature_mapping={"/depth": "depth"}, cameras={"depth": None}, metadata={})
     result = next(mcap_steps(plan, [step]))
     ref = result.modalities["/depth"]
     assert ref["missing"] and ref["source"] is None and ref["source_profile_sha256"] is None

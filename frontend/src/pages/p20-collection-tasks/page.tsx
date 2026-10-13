@@ -216,7 +216,8 @@ export function CollectionTaskPage({
           signal,
         ),
       enabled: listEnabled,
-      staleTime: 30_000,
+      staleTime: 5_000,
+      refetchInterval: 5_000,
       retry: false,
     })),
   });
@@ -514,6 +515,7 @@ export function CollectionTaskPage({
 
   const table = (
     <CollectionTaskTable
+      key={scopeKey}
       canManage={canManage}
       filtered={filtered}
       loading={!unscopedAccount && list.isPending}
@@ -628,12 +630,9 @@ export function CollectionTaskPage({
                 list.error,
                 "刷新失败，仍保留上次成功加载的采集任务。",
               )}
-            >
-              {table}
-            </PageState>
-          ) : (
-            table
-          )}
+            />
+          ) : null}
+          {table}
         </div>
         {list.data ? (
           <nav

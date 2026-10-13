@@ -359,6 +359,11 @@ components:
           default: false
           title: Activation Required
           type: boolean
+        browser_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Browser Path
         bucket:
           title: Bucket
           type: string
@@ -376,6 +381,11 @@ components:
           default: hc-object-store-config/v1
           title: Format Version
           type: string
+        local_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Local Path
         provider:
           enum:
           - oss
@@ -486,6 +496,11 @@ components:
           default: hc-object-store-location/v1
           title: Format Version
           type: string
+        local_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Local Path
         provider:
           enum:
           - oss

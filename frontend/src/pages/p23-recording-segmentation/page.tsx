@@ -3,8 +3,12 @@ import {
   Alert,
   App,
   Button,
+  Checkbox,
+  Drawer,
   Input,
   InputNumber,
+  Modal,
+  Pagination,
   Tag,
   Tooltip,
   Typography,
@@ -24,6 +28,8 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -32,17 +38,18 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+const DatasetSourceFiles = lazy(
+  () => import("../../features/ingest/browser/DatasetSourceFiles"),
+);
 import {
   Link,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
+import { EpisodePreview } from "./EpisodePreview";
+import { RecordingNavigator, type RecordingFilter } from "./RecordingNavigator";
 import { useToast } from "../../shared/ui/ToastProvider";
-import type { DatasetId } from "../../entities/dataset";
-import type { DatasetVersionId } from "../../entities/dataset-version";
-import type { EpisodeId } from "../../entities/episode";
-import { routes as datasetRoutes } from "../../features/datasets/routing";
 import {
   useScopedRobotModelAssets,
   useScopedRobotModelJointMappings,
@@ -55,6 +62,7 @@ import {
   createLazyThreeRobotSceneLoader,
   createPlaybackClock,
   DataVisualizationWorkbench,
+  SynchronizedEpisodeWorkbench,
 } from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
@@ -63,11 +71,9 @@ import { StandardPageScaffold } from "../../shared/ui/layout/StandardPageScaffol
 import { PageState } from "../../shared/ui/state/PageState";
 import { StatusTag } from "../../shared/ui/state/StatusTag";
 import { WorkflowQueuePage } from "../../shared/ui/workflow/WorkflowQueuePage";
-import { annotationRoutes } from "../../features/annotation/routing";
 import {
   recordingGateway,
   type ContinuousRecording,
-  type EpisodeProcessing,
   type RecordingGateway,
   type RecordingScope,
 } from "./api";
@@ -144,27 +150,6 @@ function recordingQueueStage(
   return recording.current_revision > 0 ? "REVIEW" : "PENDING";
 }
 
-const processingLabels: Readonly<Record<EpisodeProcessing["status"], string>> =
-  {
-    PENDING_QC: "等待质检",
-    QC_RUNNING: "质检中",
-    QC_FAILED: "质检未通过",
-    PENDING_ALIGNMENT: "等待对齐",
-    ALIGNING: "对齐与媒体处理中",
-    READY: "已就绪",
-    FAILED: "处理失败",
-  };
-
-function processingTone(
-  status: EpisodeProcessing["status"],
-): "info" | "warning" | "danger" | "success" {
-  if (status === "READY") return "success";
-  if (status === "QC_FAILED" || status === "FAILED") return "danger";
-  if (status === "PENDING_QC" || status === "PENDING_ALIGNMENT")
-    return "warning";
-  return "info";
-}
-
 function RecordingListPage({
   gateway,
 }: {
@@ -177,6 +162,8 @@ function RecordingListPage({
   const query = searchParams.get("q") ?? "";
   const deferredQuery = useDeferredValue(query);
   const requestedStage = searchParams.get("stage");
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = 10;
   const stage: RecordingQueueStage =
     requestedStage === "REVIEW" || requestedStage === "SLICED"
       ? requestedStage
@@ -186,6 +173,7 @@ function RecordingListPage({
     queryFn: ({ signal }) => gateway.list(scope as RecordingScope, signal),
     enabled: scope !== null,
     retry: false,
+    refetchInterval: 5_000,
   });
   const rows = useMemo(() => {
     const normalized = deferredQuery.trim().toLocaleLowerCase("zh-CN");
@@ -219,6 +207,7 @@ function RecordingListPage({
   const updateQuery = (value: string) => {
     const next = new URLSearchParams(searchParams);
     const normalized = value.normalize("NFC").slice(0, 100);
+    next.delete("page");
     if (normalized) next.set("q", normalized);
     else next.delete("q");
     setSearchParams(next, { replace: true });
@@ -226,6 +215,7 @@ function RecordingListPage({
 
   const stageHref = (nextStage: RecordingQueueStage) => {
     const next = new URLSearchParams(searchParams);
+    next.delete("page");
     if (nextStage === "PENDING") next.delete("stage");
     else next.set("stage", nextStage);
     const encoded = next.toString();
@@ -297,8 +287,8 @@ function RecordingListPage({
         {
           key: "SLICED",
           label: "已分割",
-          description: "查看 Episode 与处理状态",
-          queueDescription: "切片已锁定并进入逐条质检与对齐流程。",
+          description: "查看已生成的 Episode",
+          queueDescription: "按片段查看与播放已生成的 Episode。",
           emptyDescription: "提交成片后的录制会进入此队列。",
           icon: BadgeCheck,
           count: counts.SLICED,
@@ -318,6 +308,22 @@ function RecordingListPage({
         meta: `${counts[stage]} 条处于此状态 · 共 ${list.data?.total ?? 0} 条录制`,
         onChange: updateQuery,
       }}
+      pagination={
+        <Pagination
+          current={Math.min(
+            page,
+            Math.max(1, Math.ceil(rows.length / pageSize)),
+          )}
+          total={rows.length}
+          pageSize={pageSize}
+          showSizeChanger={false}
+          onChange={(value) => {
+            const next = new URLSearchParams(searchParams);
+            next.set("page", String(value));
+            setSearchParams(next);
+          }}
+        />
+      }
       tableLabel="录制表"
       table={
         <table>
@@ -335,68 +341,103 @@ function RecordingListPage({
             </tr>
           </thead>
           <tbody>
-            {rows.map((recording) => (
-              <tr key={recording.recording_id}>
-                <th scope="row">
-                  <span
-                    className={styles.recordingPrimary}
-                    title={recording.recording_id}
-                  >
-                    {recording.recording_id}
-                  </span>
-                  <small title={recording.rollout_id}>
-                    {recording.rollout_id}
-                  </small>
-                </th>
-                <td>{statusTag(recording)}</td>
-                <td>
-                  <span className={styles.recordingPrimary}>
-                    {recording.robot_id}
-                  </span>
-                  <small>{recording.collection_task_id}</small>
-                </td>
-                <td>
-                  <time dateTime={recording.capture_started_at}>
-                    {new Intl.DateTimeFormat("zh-CN", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    }).format(new Date(recording.capture_started_at))}
-                  </time>
-                </td>
-                <td>
-                  <span className={styles.recordingDuration}>
-                    <Clock3 aria-hidden="true" size={13} />
-                    {formatDuration(durationOf(recording))}
-                  </span>
-                </td>
-                <td>
-                  <span className={styles.numeric}>
-                    {recording.video_asset_count} 路
-                  </span>
-                </td>
-                <td>
-                  <span className={styles.numeric}>
-                    r{recording.current_revision}
-                  </span>
-                </td>
-                <td>
-                  <Button
-                    type="link"
-                    onClick={() =>
+            {rows
+              .slice(
+                (Math.min(
+                  page,
+                  Math.max(1, Math.ceil(rows.length / pageSize)),
+                ) -
+                  1) *
+                  pageSize,
+                Math.min(page, Math.max(1, Math.ceil(rows.length / pageSize))) *
+                  pageSize,
+              )
+              .map((recording) => (
+                <tr
+                  key={recording.recording_id}
+                  className={styles.recordingRow}
+                  tabIndex={0}
+                  aria-label={`打开录制 ${recording.recording_id}`}
+                  onClick={(event) => {
+                    if (
+                      !(event.target as HTMLElement).closest("a,button,input")
+                    )
                       navigate(
                         `/recordings/${encodeURIComponent(recording.recording_id)}/slice`,
-                      )
+                      );
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.target === event.currentTarget &&
+                      (event.key === "Enter" || event.key === " ")
+                    ) {
+                      event.preventDefault();
+                      navigate(
+                        `/recordings/${encodeURIComponent(recording.recording_id)}/slice`,
+                      );
                     }
-                  >
-                    {recording.status === "SLICED"
-                      ? "查看"
-                      : recording.current_revision
-                        ? "检查切片"
-                        : "开始切片"}
-                  </Button>
-                </td>
-              </tr>
-            ))}
+                  }}
+                >
+                  <th scope="row">
+                    <span
+                      className={styles.recordingPrimary}
+                      title={recording.recording_id}
+                    >
+                      {recording.recording_id}
+                    </span>
+                    <small title={recording.rollout_id}>
+                      {recording.rollout_id}
+                    </small>
+                  </th>
+                  <td>{statusTag(recording)}</td>
+                  <td>
+                    <span className={styles.recordingPrimary}>
+                      {recording.robot_id}
+                    </span>
+                    <small>{recording.collection_task_id}</small>
+                  </td>
+                  <td>
+                    <time dateTime={recording.capture_started_at}>
+                      {new Intl.DateTimeFormat("zh-CN", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(recording.capture_started_at))}
+                    </time>
+                  </td>
+                  <td>
+                    <span className={styles.recordingDuration}>
+                      <Clock3 aria-hidden="true" size={13} />
+                      {formatDuration(durationOf(recording))}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={styles.numeric}>
+                      {recording.video_asset_count} 路
+                    </span>
+                  </td>
+                  <td>
+                    <span className={styles.numeric}>
+                      r{recording.current_revision}
+                    </span>
+                  </td>
+                  <td>
+                    <Button
+                      type="link"
+                      onClick={() =>
+                        navigate(
+                          `/recordings/${encodeURIComponent(recording.recording_id)}/slice`,
+                        )
+                      }
+                    >
+                      {recording.status === "SLICED"
+                        ? "查看"
+                        : recording.current_revision
+                          ? "检查切片"
+                          : "开始切片"}
+                    </Button>
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
       }
@@ -414,10 +455,14 @@ function RecordingSegmentationPage({
   gateway,
   recordingId,
   capabilityOverride,
+  recordingFilter,
+  onRecordingFilterChange,
 }: {
   readonly gateway: RecordingGateway;
   readonly recordingId: string;
   readonly capabilityOverride?: "manage" | "read-only";
+  readonly recordingFilter: RecordingFilter;
+  readonly onRecordingFilterChange: (next: RecordingFilter) => void;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -447,29 +492,20 @@ function RecordingSegmentationPage({
     retry: false,
     staleTime: 5 * 60_000,
   });
-  const processing = useQuery({
-    queryKey: ["continuous-recording-processing", scopeKey, recordingId],
-    queryFn: ({ signal }) =>
-      gateway.processing(scope as RecordingScope, recordingId, signal),
-    enabled: scope !== null,
-    retry: false,
-    refetchInterval: (query) => {
-      const episodes = query.state.data?.items ?? [];
-      return episodes.some(
-        (episode) =>
-          episode.status !== "READY" &&
-          episode.status !== "QC_FAILED" &&
-          episode.status !== "FAILED",
-      )
-        ? 3_000
-        : false;
-    },
-  });
   const [slices, setSlices] = useState<EditableSlice[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [episodeSearch] = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(() =>
+    episodeSearch.get("episode"),
+  );
   const [currentNs, setCurrentNs] = useState(0);
   const [markInNs, setMarkInNs] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [showDepth, setShowDepth] = useState(false);
+  const [previewSlice, setPreviewSlice] = useState<EditableSlice | null>(null);
+  const [originalFilesOpen, setOriginalFilesOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(
+    null,
+  );
   const initializedEtag = useRef<string | null>(null);
 
   const recording = detail.data?.data;
@@ -500,16 +536,6 @@ function RecordingSegmentationPage({
   const issues = useMemo(
     () => validateSlices(slices, durationNs, minimumDurationNs),
     [durationNs, minimumDurationNs, slices],
-  );
-  const processingByEpisode = useMemo(
-    () =>
-      new Map(
-        (processing.data?.items ?? []).map((episode) => [
-          episode.episode_id,
-          episode,
-        ]),
-      ),
-    [processing.data?.items],
   );
   const robotBootstrap = useScopedRobotBootstrap(
     scope?.organizationId ?? null,
@@ -667,17 +693,17 @@ function RecordingSegmentationPage({
       }),
     [gateway, recordingId, scope, sources.data?.sources],
   );
-  const timelineTracks = useMemo(
-    () => buildEpisodeTimelineTracks(slices),
-    [slices],
-  );
   const selectedSlice = slices.find((slice) => slice.episodeId === selectedId);
 
   useEffect(() => {
     if (!recording || initializedEtag.current === recording.etag) return;
     const initial = fromServerSlices(revision?.slices ?? []);
     setSlices(initial);
-    setSelectedId(initial[0]?.episodeId ?? null);
+    setSelectedId((previous) =>
+      initial.some((slice) => slice.episodeId === previous)
+        ? previous
+        : (initial[0]?.episodeId ?? null),
+    );
     setDirty(false);
     initializedEtag.current = recording.etag;
   }, [recording, revision]);
@@ -760,7 +786,7 @@ function RecordingSegmentationPage({
   ]);
 
   const applyTimelineRange = useCallback(
-    (rawStartNs: string, rawEndNs: string) => {
+    (rawStartNs: string, rawEndNs: string, create = false) => {
       if (readOnly) return;
       const startNs = Math.max(0, Number(rawStartNs));
       const endNs = Math.min(durationNs, Number(rawEndNs));
@@ -771,7 +797,9 @@ function RecordingSegmentationPage({
       )
         return;
 
-      const selected = slices.find((slice) => slice.episodeId === selectedId);
+      const selected = create
+        ? undefined
+        : slices.find((slice) => slice.episodeId === selectedId);
       const episodeId = selected?.episodeId ?? nextEpisodeId(slices);
       const candidate: EditableSlice = selected
         ? { ...selected, startNs, endNs }
@@ -895,15 +923,49 @@ function RecordingSegmentationPage({
   });
 
   const finalize = useMutation({
-    mutationFn: () =>
-      gateway.finalize(
+    mutationFn: async () => {
+      let current = { recording: recording!, revision };
+      if (dirty || !revision || slices.length === 0) {
+        const submission = slices.length
+          ? slices
+          : [
+              {
+                episodeId: nextEpisodeId(slices),
+                startNs: 0,
+                endNs: durationNs,
+                title: "完整录制",
+                taskLabel: "",
+                notes: "",
+              },
+            ];
+        const saved = await gateway.saveDraft(
+          scope as RecordingScope,
+          recordingId,
+          { slices: toSliceInputs(submission) },
+          recording!.etag,
+        );
+        // Keep the committed draft/ETag if finalization fails so retry is safe.
+        current = saved;
+        initializedEtag.current = saved.recording.etag;
+        setSlices(fromServerSlices(saved.revision.slices));
+        setSelectedId(saved.revision.slices[0]?.episode_id ?? null);
+        setDirty(false);
+        queryClient.setQueryData(detailKey, {
+          data: saved.recording,
+          current_slice_revision: saved.revision,
+        });
+      }
+      return gateway.finalize(
         scope as RecordingScope,
         recordingId,
-        revision?.revision ?? 0,
-        recording?.etag ?? "",
-      ),
+        current.revision!.revision,
+        current.recording.etag,
+      );
+    },
     onSuccess: (result) => {
       initializedEtag.current = result.recording.etag;
+      setSlices(fromServerSlices(result.revision.slices));
+      setSelectedId(result.revision.slices[0]?.episode_id ?? null);
       setDirty(false);
       queryClient.setQueryData(detailKey, {
         data: result.recording,
@@ -917,7 +979,7 @@ function RecordingSegmentationPage({
       });
       showToast({
         title: "Episode 已生成",
-        message: `${result.revision.slices.length} 条 Episode 已进入质检与对齐流程。`,
+        message: `已生成 ${result.revision.slices.length} 条 Episode。`,
         tone: "success",
       });
     },
@@ -957,20 +1019,15 @@ function RecordingSegmentationPage({
     }
   };
 
-  const leaveToList = () => {
+  const navigateFromRecording = (path: string) => {
+    if (saveDraft.isPending || finalize.isPending) return;
     if (!dirty) {
-      navigate("/recordings");
+      navigate(path);
       return;
     }
-    modal.confirm({
-      title: "放弃未保存的切片修改？",
-      content: "离开后，本次尚未保存的 Episode 边界和属性会丢失。",
-      okText: "放弃并离开",
-      okButtonProps: { danger: true },
-      cancelText: "继续编辑",
-      onOk: () => navigate("/recordings"),
-    });
+    setPendingNavigation(path);
   };
+  const leaveToList = () => navigateFromRecording("/recordings");
 
   if (scope === null) {
     return (
@@ -1014,562 +1071,630 @@ function RecordingSegmentationPage({
 
   const finalizeAllowed =
     !readOnly &&
-    !dirty &&
-    slices.length > 0 &&
+    durationNs >= minimumDurationNs &&
     issues.length === 0 &&
-    revision?.status === "DRAFT" &&
-    revision.authoring_mode === "HUMAN";
+    revision?.authoring_mode !== "MODEL" &&
+    !saveDraft.isPending;
   const needsHumanReview = revision?.authoring_mode === "MODEL";
+  const timelineTracks = buildEpisodeTimelineTracks(slices).map((track) => ({
+    ...track,
+    segments: track.segments?.map((segment) => ({
+      ...segment,
+      editing: readOnly
+        ? undefined
+        : {
+            selected: selectedId === segment.id,
+            onSelect: () => setSelectedId(segment.id),
+            onChange: (startNs: string, endNs: string) =>
+              updateSlices(
+                slices.map((slice) =>
+                  slice.episodeId === segment.id
+                    ? {
+                        ...slice,
+                        startNs: Number(startNs),
+                        endNs: Number(endNs),
+                      }
+                    : slice,
+                ),
+              ),
+            onDelete: () => {
+              updateSlices(
+                slices.filter((slice) => slice.episodeId !== segment.id),
+              );
+              setSelectedId(null);
+            },
+          },
+    })),
+  }));
+  const renderEpisodeList = () => (
+    <aside className={styles.episodeInspector} aria-label="Episode 列表与属性">
+      <div className={styles.inspectorHeading}>
+        <div>
+          <Scissors size={17} aria-hidden="true" />
+          <strong>Episode</strong>
+          <Tag>{slices.length}</Tag>
+        </div>
+        <Button
+          size="small"
+          icon={<Split size={15} />}
+          disabled={readOnly || !selectedId}
+          onClick={splitSelected}
+        >
+          播放头拆分
+        </Button>
+      </div>
+      <div className={styles.episodeList}>
+        {slices.length === 0 ? (
+          <div className={styles.emptyEpisodes}>
+            <Scissors size={28} aria-hidden="true" />
+            <strong>还没有 Episode</strong>
+            <span>
+              不分段可直接提交完整录制；需要多段时，在时间轴空白处拖拽新增
+              Episode。
+            </span>
+          </div>
+        ) : (
+          slices.map((slice, index) => {
+            const selected = selectedId === slice.episodeId;
+            const issue = issues.find(
+              (item) => item.episodeId === slice.episodeId,
+            );
+            return (
+              <article
+                className={styles.episodeCard}
+                data-selected={selected || undefined}
+                key={slice.episodeId}
+              >
+                <button
+                  type="button"
+                  className={styles.episodeCardHeader}
+                  onClick={() => {
+                    setSelectedId(slice.episodeId);
+                    seek(slice.startNs);
+                  }}
+                  aria-expanded={selected}
+                >
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <span>
+                    <strong>{slice.title || slice.episodeId}</strong>
+                    <small>
+                      {formatTimecode(slice.startNs)} —{" "}
+                      {formatTimecode(slice.endNs)}
+                    </small>
+                  </span>
+                  <span className={styles.episodeHeaderState}>
+                    {issue ? <Tag color="error">边界错误</Tag> : null}
+                  </span>
+                </button>
+                {selected ? (
+                  <div className={styles.episodeFields}>
+                    <Button
+                      onClick={() => {
+                        clock.pause();
+                        setPreviewSlice(slice);
+                      }}
+                    >
+                      查看视频
+                    </Button>
+                    <label>
+                      标题
+                      <Input
+                        value={slice.title}
+                        disabled={readOnly}
+                        maxLength={256}
+                        onChange={(event) =>
+                          updateSlices(
+                            slices.map((item) =>
+                              item.episodeId === slice.episodeId
+                                ? { ...item, title: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <label>
+                      任务标签
+                      <Input
+                        value={slice.taskLabel}
+                        disabled={readOnly}
+                        maxLength={128}
+                        placeholder="例如：抓取并放置"
+                        onChange={(event) =>
+                          updateSlices(
+                            slices.map((item) =>
+                              item.episodeId === slice.episodeId
+                                ? {
+                                    ...item,
+                                    taskLabel: event.target.value,
+                                  }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <div className={styles.boundaryFields}>
+                      <label>
+                        开始（秒）
+                        <InputNumber
+                          value={Number(nsToSeconds(slice.startNs).toFixed(3))}
+                          disabled={readOnly}
+                          min={0}
+                          max={nsToSeconds(slice.endNs)}
+                          step={0.033}
+                          onChange={(value) =>
+                            typeof value === "number" &&
+                            updateSlices(
+                              clampBoundary(
+                                slices,
+                                slice.episodeId,
+                                "start",
+                                secondsToNs(value),
+                                durationNs,
+                                minimumDurationNs,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        结束（秒）
+                        <InputNumber
+                          value={Number(nsToSeconds(slice.endNs).toFixed(3))}
+                          disabled={readOnly}
+                          min={nsToSeconds(slice.startNs)}
+                          max={nsToSeconds(durationNs)}
+                          step={0.033}
+                          onChange={(value) =>
+                            typeof value === "number" &&
+                            updateSlices(
+                              clampBoundary(
+                                slices,
+                                slice.episodeId,
+                                "end",
+                                secondsToNs(value),
+                                durationNs,
+                                minimumDurationNs,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      备注
+                      <Input.TextArea
+                        value={slice.notes}
+                        disabled={readOnly}
+                        rows={2}
+                        maxLength={4096}
+                        onChange={(event) =>
+                          updateSlices(
+                            slices.map((item) =>
+                              item.episodeId === slice.episodeId
+                                ? { ...item, notes: event.target.value }
+                                : item,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
+                    <div className={styles.episodeFieldFooter}>
+                      <code>{slice.episodeId}</code>
+                      <Button
+                        danger
+                        type="text"
+                        icon={<Trash2 size={15} />}
+                        disabled={readOnly}
+                        onClick={() => {
+                          updateSlices(
+                            slices.filter(
+                              (item) => item.episodeId !== slice.episodeId,
+                            ),
+                          );
+                          setSelectedId(null);
+                        }}
+                      >
+                        删除
+                      </Button>
+                    </div>
+                    {issue ? (
+                      <Typography.Text type="danger">
+                        {issue.message}
+                      </Typography.Text>
+                    ) : null}
+                  </div>
+                ) : null}
+              </article>
+            );
+          })
+        )}
+      </div>
+    </aside>
+  );
 
   return (
     <div
-      className={styles.workbenchPage}
+      className={styles.recordingWorkspace}
       tabIndex={0}
       onKeyDown={handleKeyboard}
       aria-label="录制切片工作台"
     >
-      <DataVisualizationWorkbench
-        showNavigation={false}
-        adapter={{
-          mode: "episode-slicing",
-          id: `recording-slicing-${recording.recording_id}`,
-          title: "录制切片",
-          description: `${recording.recording_id} · ${formatDuration(durationNs)} · ${recording.video_asset_count} 路相机 · 机器人 ${recording.robot_id}`,
-          readOnly,
-          clock,
-          cameraStreams,
-          ...(robotScene ? { robotScene } : {}),
-          ...(robotSceneUnavailableReason
-            ? { robotSceneUnavailableReason }
-            : {}),
-          collectionItems: [],
-          findings: [],
-          timelineTracks,
-          ...(selectedSlice
-            ? {
-                timelineSelection: {
-                  startNs: String(selectedSlice.startNs),
-                  endNs: String(selectedSlice.endNs),
-                  label: selectedSlice.title || selectedSlice.episodeId,
-                },
-              }
-            : {}),
-          actions: [],
-          onTimeRangeSelect: readOnly ? undefined : applyTimelineRange,
-          ...(sources.isError
-            ? {
-                banner: {
-                  label: "视频源",
-                  title: "原视频暂时无法播放",
-                  description: pageError(
-                    sources.error,
-                    "请检查录制格式，或刷新短期授权地址。",
-                  ),
-                  tone: "error" as const,
-                },
-              }
-            : revision?.authoring_mode === "MODEL"
+      <RecordingNavigator
+        gateway={gateway}
+        scope={scope}
+        scopeKey={scopeKey}
+        recording={recording}
+        filter={recordingFilter}
+        onFilterChange={onRecordingFilterChange}
+        disabled={saveDraft.isPending || finalize.isPending}
+        onSelect={(id) => {
+          if (id !== recordingId)
+            navigateFromRecording(
+              `/recordings/${encodeURIComponent(id)}/slice`,
+            );
+        }}
+      />
+      <div className={styles.workbenchPage}>
+        <SynchronizedEpisodeWorkbench
+          jointAngleStream={rawJointStream}
+          jointAngleFooter={
+            <>
+              <section
+                className={styles.sharedActionDock}
+                aria-label="切片状态与校验"
+              >
+                <div>
+                  <Scissors aria-hidden="true" size={16} />
+                  <span>
+                    <strong>{slices.length} 条 Episode</strong>
+                    <small>
+                      视频、时间轴与 URDF
+                      共用同一播放位置；拖拽选区即可调整边界。
+                    </small>
+                  </span>
+                </div>
+                {issues.length > 0 ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message={`${issues.length} 个切片边界问题`}
+                    description="修复重叠、越界或过短切片后才能保存。"
+                  />
+                ) : (
+                  <StatusTag
+                    status={dirty ? "DIRTY" : "VALID"}
+                    label={dirty ? "待保存" : "边界有效"}
+                    tone={dirty ? "warning" : "success"}
+                  />
+                )}
+              </section>
+            </>
+          }
+          adapter={{
+            mode: "episode-slicing",
+            id: `recording-slicing-${recording.recording_id}`,
+            title: "录制切片",
+            description: `${recording.recording_id} · ${formatDuration(durationNs)} · ${recording.video_asset_count} 路相机 · 机器人 ${recording.robot_id}`,
+            readOnly,
+            clock,
+            cameraStreams: cameraStreams.filter(
+              (stream) => stream.modality !== "depth",
+            ),
+            ...(robotScene ? { robotScene } : {}),
+            ...(robotSceneUnavailableReason
+              ? { robotSceneUnavailableReason }
+              : {}),
+            collectionItems: [],
+            findings: [],
+            timelineTracks,
+            ...(selectedSlice
               ? {
-                  banner: {
-                    label: "待人工检查",
-                    title: "当前是大模型切片建议",
-                    description: "请逐条核对边界；人工保存后才可提交成片。",
-                    tone: "warning" as const,
+                  timelineSelection: {
+                    startNs: String(selectedSlice.startNs),
+                    endNs: String(selectedSlice.endNs),
+                    label: selectedSlice.title || selectedSlice.episodeId,
                   },
                 }
-              : undefined),
-        }}
-        slots={{
-          workspaceToolbar: () => (
-            <div className={styles.sharedWorkbenchToolbar}>
-              <div className={styles.headerIdentity}>
-                <Button
-                  type="text"
-                  icon={<ArrowLeft size={17} />}
-                  onClick={leaveToList}
-                  aria-label="返回录制列表"
-                />
-                <div>
-                  <nav aria-label="面包屑">
-                    <Link
-                      to="/recordings"
-                      onClick={(event) => {
-                        if (!dirty) return;
-                        event.preventDefault();
-                        leaveToList();
+              : {}),
+            actions: [],
+            onTimeRangeSelect: readOnly ? undefined : applyTimelineRange,
+            onTimeRangeCreate: readOnly
+              ? undefined
+              : (start, end) => applyTimelineRange(start, end, true),
+            ...(sources.isError
+              ? {
+                  banner: {
+                    label: "视频源",
+                    title: "原视频暂时无法播放",
+                    description: pageError(
+                      sources.error,
+                      "请检查录制格式，或刷新短期授权地址。",
+                    ),
+                    tone: "error" as const,
+                  },
+                }
+              : revision?.authoring_mode === "MODEL"
+                ? {
+                    banner: {
+                      label: "待人工检查",
+                      title: "当前是大模型切片建议",
+                      description: "请逐条核对边界；人工保存后才可提交成片。",
+                      tone: "warning" as const,
+                    },
+                  }
+                : undefined),
+          }}
+          slots={{
+            workspaceToolbar: () => (
+              <div className={styles.sharedWorkbenchToolbar}>
+                <div className={styles.headerIdentity}>
+                  <Button
+                    type="text"
+                    icon={<ArrowLeft size={17} />}
+                    onClick={leaveToList}
+                    aria-label="返回录制列表"
+                  />
+                  <div>
+                    <nav aria-label="面包屑">
+                      <Link
+                        to="/recordings"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          leaveToList();
+                        }}
+                      >
+                        录制切片
+                      </Link>
+                      <span>/</span>
+                      <span aria-current="page">{recording.recording_id}</span>
+                    </nav>
+                    <p>
+                      直接读取存储中的原视频与原始关节角；视频、时间轴与 URDF
+                      使用同一录制时钟。
+                    </p>
+                  </div>
+                </div>
+                <div className={styles.headerActions}>
+                  {capabilities.has("upload.read") && (
+                    <Button onClick={() => setOriginalFilesOpen(true)}>
+                      原始文件
+                    </Button>
+                  )}
+                  {dirty ? (
+                    <Tag color="warning">有未保存修改</Tag>
+                  ) : (
+                    <Tag color="default">
+                      已保存 r{recording.current_revision}
+                    </Tag>
+                  )}
+                  <Button
+                    icon={<Save size={16} />}
+                    disabled={
+                      readOnly || finalize.isPending || issues.length > 0
+                    }
+                    loading={saveDraft.isPending}
+                    onClick={() => saveDraft.mutate()}
+                  >
+                    {needsHumanReview ? "确认并保存人工草稿" : "保存草稿"}
+                  </Button>
+                  <Tooltip
+                    title={
+                      !finalizeAllowed
+                        ? "请先确认模型建议并修复边界问题"
+                        : undefined
+                    }
+                  >
+                    <Button
+                      type="primary"
+                      icon={<CheckCircle2 size={16} />}
+                      disabled={!finalizeAllowed}
+                      loading={finalize.isPending}
+                      onClick={() => {
+                        modal.confirm({
+                          title: slices.length
+                            ? `生成 ${slices.length} 条 Episode？`
+                            : "将完整录制生成为 1 条 Episode？",
+                          content:
+                            "无需填写任务标签。将保存切片区间并生成 Episode；提交后区间锁定，原始录制保留。",
+                          okText: "确认生成",
+                          cancelText: "继续编辑",
+                          onOk: () => finalize.mutateAsync(),
+                        });
                       }}
                     >
-                      录制切片
-                    </Link>
-                    <span>/</span>
-                    <span aria-current="page">{recording.recording_id}</span>
-                  </nav>
-                  <p>
-                    直接读取 OSS 原视频与原始关节角；视频、时间轴与 URDF
-                    使用同一录制时钟。
-                  </p>
+                      提交成片
+                    </Button>
+                  </Tooltip>
                 </div>
+                {recording.status === "SLICED" ? (
+                  <Alert
+                    type="success"
+                    showIcon
+                    message="切片已最终提交"
+                    description="Episode 已生成，可逐段查看视频；已提交的切片区间只读。"
+                  />
+                ) : !canManage ? (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message="当前为只读模式"
+                    description="需要数据上传管理或标注编辑权限才能修改并提交切片。"
+                  />
+                ) : null}
               </div>
-              <div className={styles.headerActions}>
-                {dirty ? (
-                  <Tag color="warning">有未保存修改</Tag>
-                ) : (
-                  <Tag color="default">
-                    已保存 r{recording.current_revision}
-                  </Tag>
-                )}
-                <Button
-                  icon={<Save size={16} />}
+            ),
+            mediaHeader: () => (
+              <div className={styles.sharedMediaHint}>
+                <span>
+                  {sources.isPending
+                    ? "正在授权视频…"
+                    : "RGB 视频 · 深度可单独展开查看"}
+                </span>
+                <Checkbox
+                  checked={showDepth}
                   disabled={
-                    readOnly ||
-                    (!dirty && !needsHumanReview) ||
-                    issues.length > 0
+                    !cameraStreams.some((stream) => stream.modality === "depth")
                   }
-                  loading={saveDraft.isPending}
-                  onClick={() => saveDraft.mutate()}
+                  onChange={(event) => setShowDepth(event.target.checked)}
                 >
-                  {needsHumanReview ? "确认并保存人工草稿" : "保存草稿"}
-                </Button>
-                <Tooltip
-                  title={
-                    !finalizeAllowed
-                      ? "先保存人工草稿并修复所有边界问题"
-                      : undefined
-                  }
-                >
+                  显示深度视频
+                </Checkbox>
+              </div>
+            ),
+            timelineTools: () => (
+              <div className={styles.sharedTimelineTools}>
+                <div className={styles.markControls}>
                   <Button
-                    type="primary"
-                    icon={<CheckCircle2 size={16} />}
-                    disabled={!finalizeAllowed}
-                    loading={finalize.isPending}
+                    disabled={readOnly}
                     onClick={() => {
-                      modal.confirm({
-                        title: `生成 ${slices.length} 条 Episode？`,
-                        content:
-                          "提交后切片将锁定，并进入逐条质检和对齐流程。原视频仍保留在 OSS 中。",
-                        okText: "确认生成",
-                        cancelText: "继续编辑",
-                        onOk: () => finalize.mutateAsync(),
-                      });
+                      setSelectedId(null);
+                      setMarkInNs(null);
                     }}
                   >
-                    提交成片
+                    新增 Episode
+                  </Button>
+                  <Button
+                    disabled={readOnly}
+                    onClick={() => setMarkInNs(currentNs)}
+                  >
+                    设为入点 <kbd>I</kbd>
+                  </Button>
+                  <Button
+                    type="primary"
+                    icon={<Plus size={16} />}
+                    disabled={readOnly}
+                    onClick={addSlice}
+                  >
+                    {markInNs === null ? "开始标记" : "设为出点并添加"}{" "}
+                    <kbd>O</kbd>
+                  </Button>
+                  {markInNs !== null ? (
+                    <span>
+                      入点 {formatTimecode(markInNs)}{" "}
+                      <Button
+                        size="small"
+                        type="link"
+                        onClick={() => setMarkInNs(null)}
+                      >
+                        取消
+                      </Button>
+                    </span>
+                  ) : null}
+                </div>
+                <Tooltip title="也可以直接在共享时间轴拖拽创建或调整 Episode">
+                  <Button type="text" icon={<Keyboard size={16} />}>
+                    拖拽选区 · I/O 快捷键
                   </Button>
                 </Tooltip>
               </div>
-              {recording.status === "SLICED" ? (
-                <Alert
-                  type="success"
-                  showIcon
-                  message="切片已最终提交"
-                  description="Episode 已进入质检与对齐流程；当前页面只读。"
-                />
-              ) : !canManage ? (
-                <Alert
-                  type="info"
-                  showIcon
-                  message="当前为只读模式"
-                  description="需要数据上传管理或标注编辑权限才能修改并提交切片。"
-                />
-              ) : null}
-            </div>
-          ),
-          mediaHeader: () => (
-            <p className={styles.sharedMediaHint}>
-              {sources.isPending
-                ? "正在授权原始视频…"
-                : "直接读取 OSS，不生成预览副本"}
-            </p>
-          ),
-          inspector: () => (
-            <aside
-              className={styles.episodeInspector}
-              aria-label="Episode 列表与属性"
-            >
-              <div className={styles.inspectorHeading}>
-                <div>
-                  <Scissors size={17} aria-hidden="true" />
-                  <strong>Episode</strong>
-                  <Tag>{slices.length}</Tag>
-                </div>
-                <Button
-                  size="small"
-                  icon={<Split size={15} />}
-                  disabled={readOnly || !selectedId}
-                  onClick={splitSelected}
-                >
-                  播放头拆分
-                </Button>
-              </div>
-              <div className={styles.episodeList}>
-                {slices.length === 0 ? (
-                  <div className={styles.emptyEpisodes}>
-                    <Scissors size={28} aria-hidden="true" />
-                    <strong>还没有 Episode</strong>
-                    <span>在视频中定位入点和出点，然后添加第一条切片。</span>
-                  </div>
-                ) : (
-                  slices.map((slice, index) => {
-                    const selected = selectedId === slice.episodeId;
-                    const issue = issues.find(
-                      (item) => item.episodeId === slice.episodeId,
-                    );
-                    const episodeProcessing = processingByEpisode.get(
-                      slice.episodeId,
-                    );
-                    return (
-                      <article
-                        className={styles.episodeCard}
-                        data-selected={selected || undefined}
-                        key={slice.episodeId}
-                      >
-                        <button
-                          type="button"
-                          className={styles.episodeCardHeader}
-                          onClick={() => {
-                            setSelectedId(slice.episodeId);
-                            seek(slice.startNs);
-                          }}
-                          aria-expanded={selected}
-                        >
-                          <span>{String(index + 1).padStart(2, "0")}</span>
-                          <span>
-                            <strong>{slice.title || slice.episodeId}</strong>
-                            <small>
-                              {formatTimecode(slice.startNs)} —{" "}
-                              {formatTimecode(slice.endNs)}
-                            </small>
-                          </span>
-                          <span className={styles.episodeHeaderState}>
-                            {episodeProcessing ? (
-                              <StatusTag
-                                status={episodeProcessing.status}
-                                label={
-                                  processingLabels[episodeProcessing.status]
-                                }
-                                tone={processingTone(episodeProcessing.status)}
-                              />
-                            ) : processing.isPending &&
-                              recording.status === "SLICED" ? (
-                              <Tag>读取状态</Tag>
-                            ) : issue ? (
-                              <Tag color="error">边界错误</Tag>
-                            ) : null}
-                          </span>
-                        </button>
-                        {selected ? (
-                          <div className={styles.episodeFields}>
-                            {episodeProcessing ? (
-                              <div className={styles.processingPanel}>
-                                <div className={styles.processingHeading}>
-                                  <span>
-                                    <strong>处理阶段</strong>
-                                    <small>
-                                      {
-                                        processingLabels[
-                                          episodeProcessing.status
-                                        ]
-                                      }
-                                    </small>
-                                  </span>
-                                  <StatusTag
-                                    status={episodeProcessing.status}
-                                    label={episodeProcessing.status}
-                                    tone={processingTone(
-                                      episodeProcessing.status,
-                                    )}
-                                  />
-                                </div>
-                                {episodeProcessing.status === "READY" &&
-                                episodeProcessing.dataset_id &&
-                                episodeProcessing.dataset_version &&
-                                (!episodeProcessing.data_ref ||
-                                  episodeProcessing.collection_version_id) &&
-                                episodeProcessing.annotation_task_id ? (
-                                  <div className={styles.processingActions}>
-                                    <Link
-                                      to={datasetRoutes.episodeViewer.build({
-                                        datasetId:
-                                          episodeProcessing.dataset_id as DatasetId,
-                                        versionId: (episodeProcessing.data_ref
-                                          ? `version_${episodeProcessing.collection_version_id}`
-                                          : `version_lance_${episodeProcessing.dataset_version}`) as DatasetVersionId,
-                                        episodeId:
-                                          (episodeProcessing.dataset_episode_id ??
-                                            episodeProcessing.episode_id) as EpisodeId,
-                                        returnTo: globalThis.location.pathname,
-                                      })}
-                                    >
-                                      打开 Dataset Episode
-                                    </Link>
-                                    <Link
-                                      to={annotationRoutes.task.build({
-                                        taskId:
-                                          episodeProcessing.annotation_task_id,
-                                      })}
-                                    >
-                                      打开 TAGGING 任务
-                                    </Link>
-                                  </div>
-                                ) : episodeProcessing.failure_code ? (
-                                  <p className={styles.processingFailure}>
-                                    <code>
-                                      {episodeProcessing.failure_code}
-                                    </code>
-                                    <span>
-                                      阶段：
-                                      {episodeProcessing.failure_stage ??
-                                        "未知"}
-                                    </span>
-                                  </p>
-                                ) : (
-                                  <p className={styles.processingEvidence}>
-                                    {episodeProcessing.qc_report_id
-                                      ? `QC ${episodeProcessing.qc_report_id}`
-                                      : `工作流 ${episodeProcessing.workflow_id ?? "等待启动"}`}
-                                  </p>
-                                )}
-                              </div>
-                            ) : recording.status === "SLICED" &&
-                              !processing.isPending &&
-                              !processing.isError ? (
-                              <Alert
-                                type="warning"
-                                showIcon
-                                message="尚未建立处理账本"
-                                description="此 Episode 不会显示为可用；请由运维检查 finalize outbox。"
-                              />
-                            ) : null}
-                            <label>
-                              标题
-                              <Input
-                                value={slice.title}
-                                disabled={readOnly}
-                                maxLength={256}
-                                onChange={(event) =>
-                                  updateSlices(
-                                    slices.map((item) =>
-                                      item.episodeId === slice.episodeId
-                                        ? { ...item, title: event.target.value }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <label>
-                              任务标签
-                              <Input
-                                value={slice.taskLabel}
-                                disabled={readOnly}
-                                maxLength={128}
-                                placeholder="例如：抓取并放置"
-                                onChange={(event) =>
-                                  updateSlices(
-                                    slices.map((item) =>
-                                      item.episodeId === slice.episodeId
-                                        ? {
-                                            ...item,
-                                            taskLabel: event.target.value,
-                                          }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <div className={styles.boundaryFields}>
-                              <label>
-                                开始（秒）
-                                <InputNumber
-                                  value={Number(
-                                    nsToSeconds(slice.startNs).toFixed(3),
-                                  )}
-                                  disabled={readOnly}
-                                  min={0}
-                                  max={nsToSeconds(slice.endNs)}
-                                  step={0.033}
-                                  onChange={(value) =>
-                                    typeof value === "number" &&
-                                    updateSlices(
-                                      clampBoundary(
-                                        slices,
-                                        slice.episodeId,
-                                        "start",
-                                        secondsToNs(value),
-                                        durationNs,
-                                        minimumDurationNs,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </label>
-                              <label>
-                                结束（秒）
-                                <InputNumber
-                                  value={Number(
-                                    nsToSeconds(slice.endNs).toFixed(3),
-                                  )}
-                                  disabled={readOnly}
-                                  min={nsToSeconds(slice.startNs)}
-                                  max={nsToSeconds(durationNs)}
-                                  step={0.033}
-                                  onChange={(value) =>
-                                    typeof value === "number" &&
-                                    updateSlices(
-                                      clampBoundary(
-                                        slices,
-                                        slice.episodeId,
-                                        "end",
-                                        secondsToNs(value),
-                                        durationNs,
-                                        minimumDurationNs,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </label>
-                            </div>
-                            <label>
-                              备注
-                              <Input.TextArea
-                                value={slice.notes}
-                                disabled={readOnly}
-                                rows={2}
-                                maxLength={4096}
-                                onChange={(event) =>
-                                  updateSlices(
-                                    slices.map((item) =>
-                                      item.episodeId === slice.episodeId
-                                        ? { ...item, notes: event.target.value }
-                                        : item,
-                                    ),
-                                  )
-                                }
-                              />
-                            </label>
-                            <div className={styles.episodeFieldFooter}>
-                              <code>{slice.episodeId}</code>
-                              <Button
-                                danger
-                                type="text"
-                                icon={<Trash2 size={15} />}
-                                disabled={readOnly}
-                                onClick={() => {
-                                  updateSlices(
-                                    slices.filter(
-                                      (item) =>
-                                        item.episodeId !== slice.episodeId,
-                                    ),
-                                  );
-                                  setSelectedId(null);
-                                }}
-                              >
-                                删除
-                              </Button>
-                            </div>
-                            {issue ? (
-                              <Typography.Text type="danger">
-                                {issue.message}
-                              </Typography.Text>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </article>
-                    );
-                  })
-                )}
-              </div>
-            </aside>
-          ),
-          timelineTools: () => (
-            <div className={styles.sharedTimelineTools}>
-              <div className={styles.markControls}>
-                <Button
-                  disabled={readOnly}
-                  onClick={() => setMarkInNs(currentNs)}
-                >
-                  设为入点 <kbd>I</kbd>
-                </Button>
-                <Button
-                  type="primary"
-                  icon={<Plus size={16} />}
-                  disabled={readOnly}
-                  onClick={addSlice}
-                >
-                  {markInNs === null ? "开始标记" : "设为出点并添加"}{" "}
-                  <kbd>O</kbd>
-                </Button>
-                {markInNs !== null ? (
-                  <span>
-                    入点 {formatTimecode(markInNs)}{" "}
-                    <Button
-                      size="small"
-                      type="link"
-                      onClick={() => setMarkInNs(null)}
-                    >
-                      取消
-                    </Button>
-                  </span>
-                ) : null}
-              </div>
-              <Tooltip title="也可以直接在共享时间轴拖拽创建或调整 Episode">
-                <Button type="text" icon={<Keyboard size={16} />}>
-                  拖拽选区 · I/O 快捷键
-                </Button>
-              </Tooltip>
-            </div>
-          ),
-          actionDock: () => (
-            <section
-              className={styles.sharedActionDock}
-              aria-label="切片状态与校验"
-            >
-              <div>
-                <Scissors aria-hidden="true" size={16} />
-                <span>
-                  <strong>{slices.length} 条 Episode</strong>
-                  <small>
-                    视频、时间轴与 URDF 共用同一播放位置；拖拽选区即可调整边界。
-                  </small>
-                </span>
-              </div>
-              {issues.length > 0 ? (
-                <Alert
-                  type="error"
-                  showIcon
-                  message={`${issues.length} 个切片边界问题`}
-                  description="修复重叠、越界或过短切片后才能保存。"
-                />
-              ) : recording.status === "SLICED" && processing.isError ? (
-                <Alert
-                  type="error"
-                  showIcon
-                  message="Episode 处理状态加载失败"
-                  description={pageError(
-                    processing.error,
-                    "请刷新页面重新读取真实状态。",
-                  )}
-                  action={
-                    <Button
-                      size="small"
-                      onClick={() => void processing.refetch()}
-                    >
-                      重试
-                    </Button>
-                  }
-                />
-              ) : (
-                <StatusTag
-                  status={dirty ? "DIRTY" : "VALID"}
-                  label={dirty ? "待保存" : "边界有效"}
-                  tone={dirty ? "warning" : "success"}
-                />
-              )}
-            </section>
-          ),
+            ),
+          }}
+        />
+        {showDepth && (
+          <section aria-label="深度视频区域">
+            <DataVisualizationWorkbench
+              layout="preview"
+              showNavigation={false}
+              adapter={{
+                id: `recording-depth-${recordingId}`,
+                mode: "episode-slicing",
+                title: "深度视频",
+                readOnly: true,
+                clock,
+                cameraStreams: cameraStreams.filter(
+                  (stream) => stream.modality === "depth",
+                ),
+                collectionItems: [],
+                findings: [],
+                timelineTracks: [],
+                actions: [],
+              }}
+            />
+          </section>
+        )}
+        {renderEpisodeList()}
+      </div>
+      {previewSlice && (
+        <EpisodePreview
+          slice={previewSlice}
+          streams={cameraStreams}
+          onClose={() => setPreviewSlice(null)}
+        />
+      )}
+      <Modal
+        title="当前录制有未保存的切片修改"
+        open={pendingNavigation !== null}
+        closable={!saveDraft.isPending}
+        keyboard={!saveDraft.isPending}
+        mask={{ closable: false }}
+        onCancel={() => {
+          if (!saveDraft.isPending) setPendingNavigation(null);
         }}
-      />
+        footer={
+          <>
+            <Button
+              danger
+              disabled={saveDraft.isPending}
+              onClick={() => {
+                if (pendingNavigation) navigate(pendingNavigation);
+              }}
+            >
+              放弃修改并切换
+            </Button>
+            <Button
+              disabled={saveDraft.isPending}
+              onClick={() => setPendingNavigation(null)}
+            >
+              继续编辑
+            </Button>
+            <Button
+              type="primary"
+              loading={saveDraft.isPending}
+              disabled={issues.length > 0 || saveDraft.isPending}
+              onClick={() =>
+                saveDraft.mutate(undefined, {
+                  onSuccess: () => {
+                    if (pendingNavigation) navigate(pendingNavigation);
+                  },
+                })
+              }
+            >
+              保存草稿并切换
+            </Button>
+          </>
+        }
+      >
+        <p>
+          {issues.length > 0
+            ? "当前切片边界有问题，请返回修复后保存，或放弃本次修改再切换。"
+            : "保存草稿后切换，可以稍后回来继续编辑。"}
+        </p>
+        {saveDraft.isError && (
+          <Alert type="error" title="保存失败，仍停留在当前录制，修改已保留" />
+        )}
+      </Modal>
+      <Drawer
+        title="原始文件"
+        size="large"
+        styles={{ wrapper: { maxWidth: "100vw" } }}
+        open={originalFilesOpen}
+        onClose={() => setOriginalFilesOpen(false)}
+        destroyOnHidden
+      >
+        {originalFilesOpen && scope && capabilities.has("upload.read") && (
+          <div onKeyDown={(event) => event.stopPropagation()}>
+            <Suspense fallback={<p>加载原始文件…</p>}>
+              <DatasetSourceFiles
+                key={scopeKey + recordingId}
+                scope={scope}
+                recordingId={recordingId}
+              />
+            </Suspense>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }
@@ -1579,11 +1704,20 @@ export default function RecordingSegmentationPageEntry({
   capabilityOverride,
 }: Readonly<PageProps>) {
   const { recordingId } = useParams<{ recordingId: string }>();
+  const entryScope = useShellStore((state) => state.scope);
+  const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>({
+    search: "",
+    sameTask: true,
+    stage: "all",
+  });
   return recordingId ? (
     <RecordingSegmentationPage
+      key={`${entryScope?.organizationId}:${entryScope?.projectId}:${entryScope?.regionCode}:${recordingId}`}
       gateway={gateway}
       recordingId={recordingId}
       capabilityOverride={capabilityOverride}
+      recordingFilter={recordingFilter}
+      onRecordingFilterChange={setRecordingFilter}
     />
   ) : (
     <RecordingListPage gateway={gateway} />

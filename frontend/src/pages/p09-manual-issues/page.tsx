@@ -1,3 +1,4 @@
+import { RecordingProcessingDetails } from "../../features/quality/RecordingProcessingDetails";
 import {
   Alert,
   Avatar,
@@ -76,6 +77,8 @@ import {
 } from "../../shared/ui";
 import styles from "./styles.module.css";
 import { RawDiagnosticActions } from "./RawDiagnosticActions";
+import { AutoQualityProblemActions } from "../../features/cleaning/AutoQualityProblemActions";
+import { DeleteAutoQualityProblem } from "../../features/cleaning/DeleteAutoQualityProblem";
 
 const OriginalSourceBrowser = lazy(
   () => import("../../features/ingest/browser/OriginalSourceBrowser"),
@@ -596,6 +599,10 @@ export function ManualIssuesPage() {
     readonly scopeKey: string | null;
     readonly problem: AutoQualityProblem;
   } | null>(null);
+  const [deleteSelection, setDeleteSelection] = useState<{
+    scopeKey: string | null;
+    problem: AutoQualityProblem;
+  } | null>(null);
   const rawProblem =
     rawSelection?.scopeKey === rawScopeKey ? rawSelection?.problem : null;
   const openRawProblem = (problem: AutoQualityProblem | null) => {
@@ -603,7 +610,9 @@ export function ManualIssuesPage() {
   };
   const canPreviewOriginal = (problem: AutoQualityProblem) =>
     Boolean(
-      scope && problem.sourceImportId && problem.sourceEpisodeIndex != null,
+      scope &&
+        (problem.recordingId ||
+          (problem.sourceImportId && problem.sourceEpisodeIndex != null)),
     );
   const [reason, setReason] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
@@ -862,21 +871,36 @@ export function ManualIssuesPage() {
     {
       id: "actions",
       header: "下一步",
-      size: 172,
+      size: 230,
       cell: ({ row }) => {
         if (row.original.autoProblem) {
           const href = autoProblemHref(row.original.autoProblem, currentReturn);
           const original = canPreviewOriginal(row.original.autoProblem);
           return original || href ? (
-            <Button
-              type="primary"
-              {...(original
-                ? { onClick: () => openRawProblem(row.original.autoProblem) }
-                : { href: href! })}
-              icon={<LocateFixed aria-hidden="true" size={16} />}
-            >
-              查看 Raw 诊断
-            </Button>
+            <Space>
+              <Button
+                type="primary"
+                {...(original
+                  ? { onClick: () => openRawProblem(row.original.autoProblem) }
+                  : { href: href! })}
+                icon={<LocateFixed aria-hidden="true" size={16} />}
+              >
+                查看与处理
+              </Button>
+              {original && capabilities.has("upload.manage") && (
+                <Button
+                  danger
+                  onClick={() =>
+                    setDeleteSelection({
+                      scopeKey: rawScopeKey,
+                      problem: row.original.autoProblem!,
+                    })
+                  }
+                >
+                  删除
+                </Button>
+              )}
+            </Space>
           ) : (
             <Tooltip title="该质检记录未关联可预览的原始数据来源或上传会话。">
               <Button disabled>Raw 入口不可用</Button>
@@ -1037,12 +1061,8 @@ export function ManualIssuesPage() {
     ? emptyTitles[currentView]
     : "当前筛选没有匹配的问题";
   const content =
-    listState === "ready" ? (
+    listState === "ready" || listState === "refreshing" ? (
       table
-    ) : listState === "refreshing" ? (
-      <PageState state="refreshing" label="问题数据列表">
-        {table}
-      </PageState>
     ) : (
       <PageState
         state={listState}
@@ -1371,12 +1391,45 @@ export function ManualIssuesPage() {
         </div>
       </StandardPageScaffold>
 
+      {scope && deleteSelection && deleteSelection.scopeKey === rawScopeKey && (
+        <DeleteAutoQualityProblem
+          key={`${rawScopeKey}:${deleteSelection.problem.id}`}
+          scope={scope}
+          problem={deleteSelection.problem}
+          autoOpen
+          onClosed={() => setDeleteSelection(null)}
+        />
+      )}
+      {scope && rawProblem?.recordingId && (
+        <EntityDrawer
+          open
+          title="问题数据处理"
+          onClose={() => setRawSelection(null)}
+          width="min(960px, 95vw)"
+        >
+          <Space orientation="vertical" style={{ width: "100%" }}>
+            <AutoQualityProblemActions
+              key={`${rawScopeKey}:${rawProblem.id}`}
+              scope={scope}
+              problem={rawProblem}
+              canManage={capabilities.has("upload.manage")}
+              canReadDataset={capabilities.has("dataset.read")}
+            />
+            <RecordingProcessingDetails
+              showActions={false}
+              scope={scope}
+              recordingId={rawProblem.recordingId}
+              episodeId={rawProblem.recordingEpisodeId ?? undefined}
+            />
+          </Space>
+        </EntityDrawer>
+      )}
       {scope &&
       rawProblem?.sourceImportId &&
       rawProblem.sourceEpisodeIndex != null ? (
         <VideoPreviewModal
           open
-          title={`Raw 诊断 · Episode ${rawProblem.sourceEpisodeIndex}`}
+          title={`问题数据处理 · Episode ${rawProblem.sourceEpisodeIndex}`}
           onCancel={() => setRawSelection(null)}
         >
           <Space orientation="vertical" size="middle" style={{ width: "100%" }}>

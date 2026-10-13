@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Tabs, Typography } from "antd";
 import { Link, useLocation } from "react-router-dom";
@@ -21,6 +21,10 @@ import {
   type EpisodeAnnotationMigration,
 } from "../../features/datasets/episodes/episode-detail";
 import styles from "./EpisodeDetailPanel.module.css";
+
+const DatasetSourceFiles = lazy(
+  () => import("../../features/ingest/browser/DatasetSourceFiles"),
+);
 
 const reviews = { NOT_REVIEWED: "未审核", APPROVED: "通过", RETURNED: "退回" };
 const previews = {
@@ -403,6 +407,8 @@ export function EpisodeDetailPanel({
   canReview,
   canDownload = false,
   canCreate = false,
+  canReadOriginal = false,
+  initialTab = "playback",
   returnToPlayback,
 }: {
   scope: Scope;
@@ -411,10 +417,12 @@ export function EpisodeDetailPanel({
   canReview: boolean;
   canDownload?: boolean;
   canCreate?: boolean;
+  canReadOriginal?: boolean;
+  initialTab?: string;
   returnToPlayback: () => void;
 }) {
   const [selection, setSelection] = useState<DetailSelection>({});
-  const [activeTab, setActiveTab] = useState("playback");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const query = useQuery({
     queryKey: ["episode-overview", scope, data, selection],
     queryFn: ({ signal }) =>
@@ -554,6 +562,35 @@ export function EpisodeDetailPanel({
                 label: "数据文件",
                 children: <EpisodeFiles scope={scope} data={data} />,
               },
+              ...(canReadOriginal && scope.projectId && scope.regionCode
+                ? [
+                    {
+                      key: "original-files",
+                      label: "原始文件",
+                      children: (
+                        <Suspense fallback={<p>加载原始文件…</p>}>
+                          <DatasetSourceFiles
+                            scope={{
+                              organizationId: scope.organizationId,
+                              projectId: scope.projectId,
+                              regionCode: scope.regionCode,
+                            }}
+                            datasetId={data.identity.dataset_id}
+                            recordingId={
+                              value.source.parent_recording_id ?? undefined
+                            }
+                            initialImportId={
+                              typeof value.source.document.raw_upload_id ===
+                              "string"
+                                ? value.source.document.raw_upload_id
+                                : undefined
+                            }
+                          />
+                        </Suspense>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 key: "quality",
                 label: "数据质检",

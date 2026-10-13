@@ -18,6 +18,125 @@ components:
       - robot_etag
       title: BindOrganizationRobotModelRequest
       type: object
+    CameraCalibration:
+      additionalProperties: false
+      properties:
+        camera_id:
+          maxLength: 256
+          pattern: ^[A-Za-z0-9_][A-Za-z0-9_/.-]*$
+          title: Camera Id
+          type: string
+        depth:
+          anyOf:
+          - $ref: '#/components/schemas/CameraStreamCalibration'
+          - type: 'null'
+        rgb:
+          anyOf:
+          - $ref: '#/components/schemas/CameraStreamCalibration'
+          - type: 'null'
+      required:
+      - camera_id
+      title: CameraCalibration
+      type: object
+    CameraCalibrationState:
+      additionalProperties: false
+      properties:
+        configuration:
+          anyOf:
+          - $ref: '#/components/schemas/RobotCameraCalibration'
+          - type: 'null'
+        etag:
+          default: unconfigured
+          title: Etag
+          type: string
+        organization_id:
+          title: Organization Id
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+      required:
+      - organization_id
+      - robot_id
+      title: CameraCalibrationState
+      type: object
+    CameraIntrinsics:
+      additionalProperties: false
+      properties:
+        cx:
+          title: Cx
+          type: number
+        cy:
+          title: Cy
+          type: number
+        distortion_coefficients:
+          items:
+            type: number
+          maxItems: 8
+          title: Distortion Coefficients
+          type: array
+        distortion_model:
+          enum:
+          - none
+          - plumb_bob
+          - rational_polynomial
+          - equidistant
+          title: Distortion Model
+          type: string
+        fx:
+          exclusiveMinimum: 0.0
+          title: Fx
+          type: number
+        fy:
+          exclusiveMinimum: 0.0
+          title: Fy
+          type: number
+        height:
+          exclusiveMinimum: 0.0
+          maximum: 32768.0
+          title: Height
+          type: integer
+        skew:
+          default: 0
+          title: Skew
+          type: number
+        width:
+          exclusiveMinimum: 0.0
+          maximum: 32768.0
+          title: Width
+          type: integer
+      required:
+      - width
+      - height
+      - fx
+      - fy
+      - cx
+      - cy
+      - distortion_model
+      - distortion_coefficients
+      title: CameraIntrinsics
+      type: object
+    CameraStreamCalibration:
+      additionalProperties: false
+      properties:
+        feature_key:
+          maxLength: 256
+          minLength: 1
+          title: Feature Key
+          type: string
+        intrinsics:
+          $ref: '#/components/schemas/CameraIntrinsics'
+        optical_frame:
+          maxLength: 256
+          pattern: ^[A-Za-z0-9_][A-Za-z0-9_/.-]*$
+          title: Optical Frame
+          type: string
+      required:
+      - feature_key
+      - optical_frame
+      - intrinsics
+      title: CameraStreamCalibration
+      type: object
     Connectivity:
       additionalProperties: false
       properties:
@@ -92,56 +211,6 @@ components:
       - display_name
       - serial_no
       title: CreateRobotRequest
-      type: object
-    RobotLifecycleTransitionRequest:
-      additionalProperties: false
-      properties:
-        lifecycle_status:
-          pattern: ^(ACTIVE|MAINTENANCE|DISABLED|RETIRED)$
-          title: Lifecycle Status
-          type: string
-        reason:
-          maxLength: 512
-          minLength: 1
-          title: Reason
-          type: string
-      required:
-      - lifecycle_status
-      - reason
-      title: RobotLifecycleTransitionRequest
-      type: object
-    UpdateRobotRequest:
-      additionalProperties: false
-      description: Mutable robot facts; lifecycle transitions use their dedicated command.
-      properties:
-        connectivity_reason_code:
-          anyOf:
-          - maxLength: 128
-            minLength: 1
-            type: string
-          - type: 'null'
-          title: Connectivity Reason Code
-        connectivity_source:
-          anyOf:
-          - maxLength: 128
-            minLength: 1
-            type: string
-          - type: 'null'
-          title: Connectivity Source
-        connectivity_state:
-          anyOf:
-          - pattern: ^(ONLINE|OFFLINE|DEGRADED)$
-            type: string
-          - type: 'null'
-          title: Connectivity State
-        display_name:
-          anyOf:
-          - maxLength: 256
-            minLength: 1
-            type: string
-          - type: 'null'
-          title: Display Name
-      title: UpdateRobotRequest
       type: object
     EffectiveModelBinding:
       additionalProperties: false
@@ -349,6 +418,69 @@ components:
       - topology_revision
       title: RobotBootstrap
       type: object
+    RobotCameraCalibration:
+      additionalProperties: false
+      properties:
+        cameras:
+          items:
+            $ref: '#/components/schemas/CameraCalibration'
+          maxItems: 64
+          minItems: 1
+          title: Cameras
+          type: array
+        format:
+          const: hc-robot-camera-calibration/1
+          default: hc-robot-camera-calibration/1
+          title: Format
+          type: string
+        optical_axes:
+          const: x_right_y_down_z_forward
+          default: x_right_y_down_z_forward
+          title: Optical Axes
+          type: string
+        root_frames:
+          items:
+            maxLength: 256
+            pattern: ^[A-Za-z0-9_][A-Za-z0-9_/.-]*$
+            type: string
+          maxItems: 128
+          minItems: 1
+          title: Root Frames
+          type: array
+        static_transforms:
+          items:
+            $ref: '#/components/schemas/StaticTransform'
+          maxItems: 256
+          title: Static Transforms
+          type: array
+        transform_convention:
+          const: p_parent = R_xyzw * p_child + translation_m
+          default: p_parent = R_xyzw * p_child + translation_m
+          title: Transform Convention
+          type: string
+      required:
+      - root_frames
+      - cameras
+      - static_transforms
+      title: RobotCameraCalibration
+      type: object
+    RobotLifecycleTransitionRequest:
+      additionalProperties: false
+      properties:
+        lifecycle_status:
+          pattern: ^(ACTIVE|MAINTENANCE|DISABLED|RETIRED)$
+          title: Lifecycle Status
+          type: string
+        reason:
+          maxLength: 512
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - lifecycle_status
+      - reason
+      title: RobotLifecycleTransitionRequest
+      type: object
     RobotRecord:
       additionalProperties: false
       properties:
@@ -381,6 +513,79 @@ components:
       - lifecycle_status
       - connectivity
       title: RobotRecord
+      type: object
+    StaticTransform:
+      additionalProperties: false
+      properties:
+        child_frame:
+          maxLength: 256
+          pattern: ^[A-Za-z0-9_][A-Za-z0-9_/.-]*$
+          title: Child Frame
+          type: string
+        parent_frame:
+          maxLength: 256
+          pattern: ^[A-Za-z0-9_][A-Za-z0-9_/.-]*$
+          title: Parent Frame
+          type: string
+        rotation_xyzw:
+          maxItems: 4
+          minItems: 4
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          title: Rotation Xyzw
+          type: array
+        translation_m:
+          maxItems: 3
+          minItems: 3
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          title: Translation M
+          type: array
+      required:
+      - parent_frame
+      - child_frame
+      - translation_m
+      - rotation_xyzw
+      title: StaticTransform
+      type: object
+    UpdateRobotRequest:
+      additionalProperties: false
+      description: Mutable robot facts; lifecycle transitions use their dedicated
+        command.
+      properties:
+        connectivity_reason_code:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Connectivity Reason Code
+        connectivity_source:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Connectivity Source
+        connectivity_state:
+          anyOf:
+          - pattern: ^(ONLINE|OFFLINE|DEGRADED)$
+            type: string
+          - type: 'null'
+          title: Connectivity State
+        display_name:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Display Name
+      title: UpdateRobotRequest
       type: object
 info:
   title: HC robotics contract
@@ -674,6 +879,99 @@ paths:
       security:
       - bearerAuth: []
       summary: Get Organization Robot Bootstrap
+      tags:
+      - organization-robot-assets
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/camera-calibration:
+    get:
+      operationId: getRobotCameraCalibration
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraCalibrationState'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Camera Calibration
+      tags:
+      - organization-robot-assets
+    put:
+      operationId: saveRobotCameraCalibration
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotCameraCalibration'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CameraCalibrationState'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Put Camera Calibration
       tags:
       - organization-robot-assets
   /api/v1/organizations/{organization_id}/robots/{robot_id}/lifecycle:

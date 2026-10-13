@@ -6,6 +6,7 @@ the Episode store; public READY authorization is never used to read input assets
 
 import hashlib
 import json
+import math
 from contextlib import contextmanager
 from datetime import datetime
 from fractions import Fraction
@@ -36,7 +37,7 @@ from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from .asset_models import RecordingAsset, RecordingAssetRole, RecordingUpload
 from .openarm_grid import frame_at, frame_time
 
-VERSION = "continuous-episode-package/1"
+VERSION = "continuous-episode-package/3"
 
 
 def timestamp_ns(value: datetime):
@@ -154,7 +155,7 @@ def recording_files(request, connections, storage):
             # Originals stay immutable in Raw. The selected provenance file is
             # copied below; robot archives and whole MCAP are not new primaries.
             if (
-                request.recording_config.recorder_version == "openarm-session/v2"
+                request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}
                 and roles[file.relative_path] is RecordingAssetRole.AUXILIARY
                 and file.relative_path.startswith("source/original/")
             ):
@@ -211,6 +212,13 @@ def source_context(request, upload, paths):
         if provenance["processor_version"] not in {
             "openarm-raw-platform/3",
             "openarm-raw-platform/4",
+            "openarm-raw-platform/5",
+            "openarm-raw-platform/6",
+            "openarm-raw-platform/7",
+            "openarm-raw-platform/8",
+            "openarm-raw-platform/9",
+            "openarm-raw-platform/10",
+            "openarm-raw-platform/11",
         }:
             raise ValueError("recording derivation requires an explicit media contract")
         originals = {item.relative_path: item for item in request.assets}
@@ -220,6 +228,29 @@ def source_context(request, upload, paths):
         ):
             raise ValueError("recording grid provenance differs from original manifest")
         origin = provenance["source_t0_ns"]
+        if provenance.get("timeline_mode") == "primary_camera":
+            # Version 9 associates against actual primary exposures, then writes
+            # a CFR export starting at the first exposure. The record-button
+            # timestamp is no longer the origin of that export grid. Read its
+            # exact integer origin from the already hash-verified frame trace.
+            if provenance["processor_version"] not in {"openarm-raw-platform/9", "openarm-raw-platform/10", "openarm-raw-platform/11"}:
+                raise ValueError("unsupported primary-camera media contract")
+            with paths["source/frames.jsonl"].open() as stream:
+                first_line = stream.readline(16 * 1024 * 1024 + 1)
+            if len(first_line) > 16 * 1024 * 1024:
+                raise ValueError("recording frame evidence exceeds the bounded document limit")
+            first = json.loads(first_line)
+            origin = first["row"]["export_grid_origin_ns"]
+            if (
+                type(origin) is not int
+                or not provenance["source_t0_ns"] <= origin < provenance["source_end_ns"]
+                or first["source_frame"] != 0
+                or first["offset_ns"] != 0
+                or first["row"]["export_target_time_ns"] != origin
+                or first["row"]["target_time_ns"] != origin
+            ):
+                raise ValueError("recording primary-camera grid differs from frame evidence")
+            facts["timeline_mode"] = "primary_camera"
         if type(origin) is not int or not 0 <= origin < 2**63:
             raise ValueError("recording source grid requires exact integer nanoseconds")
         facts.update(
@@ -273,7 +304,7 @@ def source_context(request, upload, paths):
 
 
 def timeline(request, origin):
-    if request.recording_config.recorder_version == "openarm-session/v2":
+    if request.recording_config.recorder_version in {"openarm-session/v2", "native-mcap-recording/1"}:
         first, stop = frame_at(request.start_offset_ns), frame_at(request.end_offset_ns)
         if first >= stop:
             raise ValueError("recording slice has no canonical frames")
@@ -390,6 +421,8 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality):
         **({"quality_rules": quality["rule_evidence"]} if quality.get("rule_evidence") else {}),
         "calibration": {"status": "UNKNOWN", "reason": "no validated calibration declared"},
     }
+    if "mcap-provenance.json" in paths:
+        metadata["source"]["mcap"] = read_json(paths["mcap-provenance.json"])
     recording_evidence = []
     if "source/frames.jsonl" in files:
         recording_evidence.append("hc/recording/source_frames.jsonl")
@@ -534,7 +567,8 @@ def prepared_recording_assets(request, plan, paths, attempt_id):
             window = plan.windows[feature]
             destination = root / digest(feature)
             videos[feature] = (
-                prepare_depth_window(media, window, destination)
+                prepare_depth_window(media, window, destination,
+                                     preserve_association_reference=bool(plan.metadata.get("quality", {}).get("capture_quality")))
                 if entries
                 else prepare_rgb_window(media, window, destination / "rgb.mp4")
             )
@@ -578,6 +612,13 @@ def prepared_recording_assets(request, plan, paths, attempt_id):
         yield PreparedAssets(plan.input.identity, attempt_id, videos, root, tuple(extra))
 
 
+def capture_frame_rows(assets):
+    path = assets.auxiliary_root / 'hc/recording/source_frames.jsonl'
+    with path.open() as stream:
+        for line in stream:
+            yield json.loads(line)
+
+
 def recording_steps(steps, plan, assets):
     """Bind numeric rows to selected physical depth evidence, preserving source refs."""
     traces = {
@@ -585,6 +626,8 @@ def recording_steps(steps, plan, assets):
         for feature, media in assets.videos.items()
         if media.evidence_root is not None
     }
+    capture = (iter(capture_frame_rows(assets)) if assets.auxiliary_root is not None
+               and (assets.auxiliary_root / 'hc/recording/source_frames.jsonl').is_file() else None)
     count = 0
     for step in steps:
         if step.step_index != count or count >= plan.frame_count:
@@ -593,6 +636,27 @@ def recording_steps(steps, plan, assets):
             name: dict(getattr(step, name))
             for name in ("modalities", "source_timestamps_ns", "time_error_ns", "valid", "repeated")
         }
+        capture_valid = True
+        if capture is not None:
+            document = next(capture, None)
+            if document is None:
+                raise ValueError('capture validity trace ended early')
+            capture_valid = document['valid']
+            row = document['row']
+            for topic, value in step.modalities.items():
+                valid = updates['valid'].get(topic, False)
+                if topic in {'/observation/state', '/action'}:
+                    valid = valid and isinstance(value, dict) and bool(value.get('values')) and all(
+                        type(v) in (int, float) and math.isfinite(v) for v in value.get('values', []))
+                elif topic == 'source.timestamp_ns':
+                    valid = valid and type(value) is int
+                elif isinstance(value, dict) and 'camera_id' in value:
+                    camera_id = value['camera_id']
+                    stream = 'depth' if camera_id.endswith('_depth') else 'rgb'
+                    camera_id = camera_id.removesuffix('_depth')
+                    source_id = 'camera_hand' if camera_id == 'head' else camera_id
+                    valid = valid and stream in row['images'].get(source_id, {})
+                updates['valid'][topic] = bool(valid)
         for topic, feature in plan.feature_mapping.items():
             window, video = plan.windows[feature], plan.videos[feature]
             selected = window.source_frame(count, Fraction(str(video.feature["info"]["video.fps"])))
@@ -616,14 +680,14 @@ def recording_steps(steps, plan, assets):
                 )
                 updates["time_error_ns"][topic] = row["time_error_ns"]
                 updates["repeated"][topic] = row["repeated"]
-                updates["valid"][topic] = not row["missing"] and not row["time_threshold_exceeded"]
+                updates["valid"][topic] = updates["valid"].get(topic, False) and not row["missing"] and not row["time_threshold_exceeded"]
                 updates["modalities"][topic] = {
                     **value,
                     "depth_source_id": row["source_id"],
                     "depth_source_seq": row["source_seq"],
                 }
         yield step.model_copy(
-            update={**updates, "sample_valid": step.sample_valid and all(updates["valid"].values())}
+            update={**updates, "sample_valid": capture_valid and step.sample_valid and all(updates["valid"].values())}
         )
         count += 1
     if count != plan.frame_count or any(next(rows, None) is not None for rows in traces.values()):

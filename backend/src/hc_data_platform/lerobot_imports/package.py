@@ -39,6 +39,9 @@ def freeze_native_plan(session, request, manifest, staging, quality, *, quality_
         "robot_type": info.get("robot_type", "unknown"),
         "source": {
             "format": "lerobot_v3",
+            "original_inventory": [NativeFile(relative_path=item["path"], object=FrozenObject(
+                item.get("object_key") or f"{session.raw.storage_prefix}/{item['path']}",
+                item["size"], item["sha256"])).model_dump(mode="json") for item in session.raw_manifest["files"]],
             "raw_upload_id": session.raw.raw_source_id,
             "raw_manifest_sha256": session.source.source_sha256,
             "episode_index": session.source.lerobot.episode_index,

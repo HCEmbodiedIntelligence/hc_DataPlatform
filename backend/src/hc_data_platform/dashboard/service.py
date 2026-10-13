@@ -898,8 +898,12 @@ def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
         return TaskPackageMainState.LANCE_WRITING
     if fact.qc_status == "PASS":
         return TaskPackageMainState.STANDARDIZATION_WAITING
+    if fact.workflow_stage == "dispatch" and fact.workflow_error_code:
+        return TaskPackageMainState.VALIDATION_FAILED
     if fact.verification_status == "REJECTED":
         return TaskPackageMainState.VALIDATION_FAILED
+    if fact.workflow_stage == "awaiting_slice":
+        return TaskPackageMainState.AWAITING_SLICE
     if fact.verification_status == "RAW_VERIFIED":
         return TaskPackageMainState.QC_WAITING
     if fact.raw_committed:
@@ -999,7 +1003,9 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
             validation_bucket = "isolated"
         elif not fact.raw_committed:
             validation_bucket = "waiting"
-        elif fact.verification_status == "REJECTED":
+        elif (
+            fact.verification_status == "REJECTED" or main is TaskPackageMainState.VALIDATION_FAILED
+        ):
             validation_bucket = "failed"
         elif fact.qc_status in {"RISK", "REJECT"}:
             validation_bucket = "isolated"
@@ -1107,7 +1113,11 @@ def _blockers(
         elif main is TaskPackageMainState.VALIDATION_FAILED:
             value = (
                 fact.verification_reason_code or "RAW_STRUCTURE_REJECTED",
-                "Raw结构验证失败",
+                "采集通道与数据集结构不匹配"
+                if fact.workflow_error_code == "RECORDING_DATASET_SCHEMA_MISMATCH"
+                else "处理配置不完整"
+                if fact.workflow_stage == "dispatch"
+                else "Raw结构验证失败",
                 "RAW_VALIDATION",
                 False,
             )
@@ -1218,6 +1228,7 @@ def _data_issues(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskDataI
                 duplicate_of_rollout_id=fact.duplicate_of_rollout_id,
                 source_episode_index=fact.source_episode_index,
                 source_import_id=fact.source_import_id,
+                recording_id=fact.recording_id,
                 qc_status=fact.qc_status,
                 lance_ready=fact.lance_ready,
                 alignment_attempt_id=fact.alignment_attempt_id,

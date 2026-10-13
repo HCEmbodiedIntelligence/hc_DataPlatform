@@ -428,6 +428,46 @@ describe("P22 platform operations production client path", () => {
     });
   });
 
+  it("shows the local browser directory without requiring cloud credentials", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/platform/overview")) return json(overview);
+        if (url.includes("/platform/logs?")) return json(logResponse(url));
+        if (url.includes("/platform/releases?"))
+          return json(emptyReleaseHistory);
+        if (url.includes("/platform/object-store-config"))
+          return json({
+            ...unconfiguredObjectStore,
+            configured: true,
+            provider: "s3",
+            source: "environment",
+            endpoint: "http://minio:9000",
+            public_endpoint: "http://127.0.0.1:8088",
+            bucket: "hc-data-local",
+            region: "us-east-1",
+            access_key_configured: true,
+            local_path: "/home/hc_op/workspace/data-platform-storage",
+            browser_path: "/home/hc_op/workspace/data-platform-files",
+          });
+        return json({}, { status: 404 });
+      }),
+    );
+    renderPage();
+    const user = userEvent.setup();
+    await screen.findByText("PLATFORM.READY");
+    await user.click(screen.getByRole("button", { name: "查看存储配置" }));
+    expect(
+      await screen.findByText("/home/hc_op/workspace/data-platform-files"),
+    ).toBeVisible();
+    expect(screen.getByText("bash deploy/local/data.sh usage")).toBeVisible();
+    expect(
+      screen.queryByLabelText("OSS Access Key ID"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("OSS Bucket")).not.toBeInTheDocument();
+  });
+
   it("loads and saves encrypted OSS configuration only after the admin opens the panel", async () => {
     const fetchMock = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -466,7 +506,7 @@ describe("P22 platform operations production client path", () => {
       ),
     ).toBe(false);
 
-    await user.click(screen.getByRole("button", { name: "创建存储地址" }));
+    await user.click(screen.getByRole("button", { name: "查看存储配置" }));
     await screen.findByText("尚未配置");
     await user.type(screen.getByLabelText("OSS Bucket"), "hc-platform-test");
     await user.type(

@@ -279,13 +279,19 @@ class PostgresAccessRepository:
         cursor = connection.cursor()
         principal_id = str(uuid4())
         try:
+            # Serialize bootstrap with all account inserts. The existence check
+            # includes disabled/deleted accounts, so registration never repairs
+            # a missing admin by promoting an unrelated later registrant.
+            cursor.execute("LOCK TABLE access_control.accounts IN SHARE ROW EXCLUSIVE MODE")
+            cursor.execute("SELECT NOT EXISTS (SELECT 1 FROM access_control.accounts)")
+            first_account = bool(cursor.fetchone()[0])
             cursor.execute(
                 """
                 INSERT INTO access_control.accounts (
                     principal_id, canonical_username, display_username, status,
                     display_name, password_hash, capability_revision,
                     account_revision, credential_revision, password_changed_at
-                ) VALUES (%s::uuid, %s, %s, 'ACTIVE', %s, %s, 0, 1, 1, now())
+                ) VALUES (%s::uuid, %s, %s, 'ACTIVE', %s, %s, %s, 1, 1, now())
                 RETURNING principal_id::text AS principal_id,
                           display_username AS username, display_name, status, created_at
                 """,
@@ -295,12 +301,20 @@ class PostgresAccessRepository:
                     display_username,
                     display_username,
                     password_hash,
+                    int(first_account),
                 ),
             )
             raw = cursor.fetchone()
             if raw is None:
                 raise RuntimeError("PostgreSQL did not return the registered account")
             principal = AccountPrincipal.model_validate(_row(cursor, raw))
+            if first_account:
+                self._set_platform_admin_grants(
+                    cursor,
+                    principal_id=principal_id,
+                    actor_id="bootstrap:first-registration",
+                    enabled=True,
+                )
             self._audit(
                 cursor,
                 scope_kind="PLATFORM",
@@ -311,7 +325,10 @@ class PostgresAccessRepository:
                 resource_id=principal_id,
                 request_id=request_id,
                 outcome="SUCCEEDED",
-                safe_details={"empty_account": True},
+                safe_details={
+                    "empty_account": not first_account,
+                    "bootstrap_admin": first_account,
+                },
             )
             connection.commit()
             return principal

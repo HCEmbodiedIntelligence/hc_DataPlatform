@@ -920,6 +920,11 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 region_code=source.region_code,
                 recording_id=source.recording_id,
                 episode_id=source.episode_id,
+                expected_workflow_id=(
+                    workflow.info().workflow_id
+                    if workflow.patched("continuous-episode-attempt-fencing-v1")
+                    else None
+                ),
                 expected_status=expected,
                 new_status=new,
                 qc_report_id=qc_report_id,

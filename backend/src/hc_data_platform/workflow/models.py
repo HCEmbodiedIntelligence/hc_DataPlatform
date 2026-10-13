@@ -613,6 +613,7 @@ class ContinuousEpisodeStateActivityInput(BaseModel):
     region_code: str = Field(min_length=1)
     recording_id: str = Field(min_length=1)
     episode_id: str = Field(min_length=1)
+    expected_workflow_id: str | None = None
     expected_status: EpisodeProcessingStatus
     new_status: EpisodeProcessingStatus
     qc_report_id: str | None = Field(default=None, min_length=1, max_length=256)

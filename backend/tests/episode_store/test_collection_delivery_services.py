@@ -119,8 +119,10 @@ def test_collection_job_freezes_outputs_reuses_archive_and_preserves_existing_jo
 
 
 @pytest.mark.integration
-def test_normal_http_collection_worker_download_and_revocation(queued, tmp_path):
+@pytest.mark.parametrize("output_format", ["lerobot"])
+def test_normal_http_collection_worker_download_and_revocation(queued, tmp_path, output_format):
     service, source, body, _ = queued
+    body = RequestCollectionDelivery.model_validate({**body.model_dump(), "output_format": output_format})
     ident = source.identity
     with (
         scoped(source),
@@ -245,8 +247,10 @@ def test_collection_request_concurrency_and_retry_keep_frozen_plan(queued, monke
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("output_format", ["lerobot"])
 def test_collection_binds_annotation_and_rechecks_permissions_on_cached_archive(
     queued,
+    output_format,
     target,
     files,  # noqa: F811
     tmp_path,
@@ -269,6 +273,7 @@ def test_collection_binds_annotation_and_rechecks_permissions_on_cached_archive(
             except SnapshotBusy:
                 time.sleep(0.1)
         raw = body.model_dump(mode="json")
+        raw["output_format"] = output_format
         raw["members"][0]["annotation"] = {
             "task_id": task.task_id,
             "revision": 1,

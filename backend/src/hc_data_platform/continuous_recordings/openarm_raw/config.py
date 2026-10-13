@@ -50,7 +50,9 @@ DEFAULT = {
     "sources": {},
     "requirement_status": {
         "exposure_max_actual_us": {"value": 5000, "status": "required"},
-        "synchronization_and_grid_limits": "provisional_engineering_targets_pending_device_validation",
+        "synchronization_and_grid_limits": (
+            "provisional_engineering_targets_pending_device_validation"
+        ),
     },
     "versions": {
         "alignment": ALIGNMENT_VERSION,
@@ -107,6 +109,24 @@ def validate(value):
     if cfg["alignment"]["camera_validation"] not in {"timestamps", "strict"}:
         raise ValueError("不支持的相机时间关联策略")
     a, b, s = cfg["alignment"], cfg["buffers"], cfg["storage"]
+    if type(a.get("derive_action_from_next_state", False)) is not bool:
+        raise ValueError("derive_action_from_next_state 必须为布尔值")
+    if a.get('timeline_mode','fixed_grid') not in {'fixed_grid','primary_camera'}:
+        raise ValueError('不支持的录制时间轴')
+    if type(a.get('require_camera_sync',False)) is not bool:
+        raise ValueError('require_camera_sync 必须为布尔值')
+    if 'camera_match_max_skew_ms' in a:
+        number(a['camera_match_max_skew_ms'],'camera_match_max_skew_ms',.001,500/cfg['dataset']['fps']+1e-6)
+    if a.get('timeline_mode')=='primary_camera' and (
+            a.get('state_reference')!='primary_exposure_midpoint' or
+            a.get('camera_timing_reference')!='per_camera_rgb'):
+        raise ValueError('主相机时间轴必须使用真实曝光中点关联')
+    if a.get("camera_timing_reference", "grid") not in {"grid", "per_camera_rgb"}:
+        raise ValueError("不支持的相机时间检查基准")
+    if a.get("state_reference", "grid") not in {"grid", "primary_exposure_midpoint"}:
+        raise ValueError("不支持的关节时间基准")
+    if a.get("state_reference") == "primary_exposure_midpoint" and not a.get("primary_camera"):
+        raise ValueError("曝光中点关联必须指定主相机")
     for key in ("strict", "allow_camera_repeat", "causal"):
         if type(a[key]) is not bool:
             raise ValueError(key + " 必须为布尔值")
@@ -133,6 +153,11 @@ def validate(value):
         or not s["directory"].strip()
     ):
         raise ValueError("保存目录或持久化设置无效")
+    if "export_directory" in s and (
+        not isinstance(s["export_directory"], str) or not s["export_directory"].strip()
+    ):
+        raise ValueError("上传包保存目录无效")
+    number(a.get('next_observation_max_gap_ms',1000),'next_observation_max_gap_ms',1,10000)
     cameras = 0
     for ident, source in cfg["sources"].items():
         if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{0,63}", ident) or not isinstance(source, dict):
@@ -188,13 +213,31 @@ def validate(value):
             if source["required"] and not source["persist"]:
                 raise ValueError("必需点云须持久化；离线重建请配置为可选来源")
         if kind == "rgbd":
+            if type(source.get("depth_enabled", True)) is not bool:
+                raise ValueError("depth_enabled 必须为布尔值")
+            if not source.get("depth_enabled", True) and source["transport"] == "ros_images":
+                raise ValueError("RGB-only 需要标准化 ros_rgbd 或 envelope 输入")
+            for key in ("camera_max_error_ms", "rgbd_max_midpoint_skew_ms"):
+                if key in source:
+                    number(source[key], ident + "." + key, 0.000001, 1000)
+            if "allow_camera_repeat" in source and type(source["allow_camera_repeat"]) is not bool:
+                raise ValueError(ident + ".allow_camera_repeat 必须为布尔值")
+            if (
+                "require_exposure_metadata" in source
+                and type(source["require_exposure_metadata"]) is not bool
+            ):
+                raise ValueError("require_exposure_metadata 必须为布尔值")
+            if source.get("depth_source") is not None:
+                from .depth_source import validate_profile
+
+                validate_profile(source["depth_source"])
             cameras += 1
             number(source.get("fps", 30), ident + ".fps", 1, 240)
             source.setdefault("fps", 30)
             if (
                 source["required"]
                 and cfg["dataset"]["fps"] > source["fps"]
-                and not a["allow_camera_repeat"]
+                and not source.get("allow_camera_repeat", a["allow_camera_repeat"])
             ):
                 raise ValueError(ident + ": 输出 FPS 高于相机新帧频率，禁止用旧帧补足")
             exposure_defaults = (
@@ -289,8 +332,8 @@ def validate(value):
                     or source["semantics"] != "absolute_hold"
                 ):
                     raise ValueError(
-                        ident
-                        + ": 当前仅实现 active_at_target 绝对保持命令；增量转换与 cycle_linked 不可静默替代"
+                        ident + ": 当前仅实现 active_at_target 绝对保持命令；"
+                        "增量转换与 cycle_linked 不可静默替代"
                     )
                 if source.get("max_age_ms") is not None:
                     number(source["max_age_ms"], "action.max_age_ms", 0, 3600000)
@@ -308,10 +351,24 @@ def validate(value):
                     number(axis["max_age_ms"], "axis.max_age_ms", 1, 3600000)
                     if axis.get("mode", "periodic") not in {"periodic", "on_change"}:
                         raise ValueError("unsupported command validity mode")
+    camera_window = max(
+        [a["camera_max_error_ms"]]
+        + [
+            v.get("camera_max_error_ms", a["camera_max_error_ms"])
+            + v.get("rgbd_max_midpoint_skew_ms", a["rgbd_max_midpoint_skew_ms"])
+            for v in cfg["sources"].values()
+            if v["kind"] == "rgbd"
+        ]
+    )
+    if (
+        a.get("camera_timing_reference") == "per_camera_rgb"
+        and b["retention_ms"] < a["delay_ms"] + camera_window + a["joint_max_bracket_gap_ms"]
+    ):
+        raise ValueError("缓存时长必须覆盖每台相机的时间窗口与关节插值区间")
     for ident, source in cfg["sources"].items():
-        if (
-            source["kind"] == "pointcloud"
-            and cfg["sources"].get(source["camera_source_id"], {}).get("kind") != "rgbd"
+        if source["kind"] == "pointcloud" and (
+            cfg["sources"].get(source["camera_source_id"], {}).get("kind") != "rgbd"
+            or not cfg["sources"][source["camera_source_id"]].get("depth_enabled", True)
         ):
             raise ValueError(ident + ": 点云来源必须引用已配置的 RGB-D 组")
     if a["primary_camera"] and a["primary_camera"] not in [

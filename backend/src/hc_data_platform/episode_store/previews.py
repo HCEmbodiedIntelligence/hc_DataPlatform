@@ -276,7 +276,7 @@ class EpisodePreviews:
                     source,
                     stream,
                     output,
-                    data.frame_count,
+                    info.get("hc.media_frame_count", data.frame_count),
                     info["fps"],
                     width,
                     height,
@@ -311,7 +311,7 @@ class EpisodePreviews:
         )
 
     @staticmethod
-    def _encode(source, stream, output, frame_count, fps, width, height, *, masks, profile):
+    def _encode(source, stream, output, frame_count, fps, width, height, *, masks, profile, checkpoint=lambda: None):
         rate, began, count = Fraction(str(fps)), time.monotonic(), 0
         with (
             ExitStack() as resources,
@@ -328,6 +328,7 @@ class EpisodePreviews:
             encoder.width, encoder.height, encoder.pix_fmt = width, height, "yuv420p"
             encoder.options = {"crf": "20", "preset": "fast", "threads": "2", "bf": "0", "g": "30"}
             for frame in source.decode(stream):
+                checkpoint()
                 if (
                     count >= frame_count
                     or time.monotonic() - began > 3600
@@ -424,7 +425,7 @@ class EpisodePreviews:
             source_reused=receipt.source_reused,
             source_video_sha256=receipt.source_video_sha256,
             media_sha256=receipt.file.sha256,
-            frame_count=data.frame_count,
+            frame_count=package.document("meta/info.json").get("hc.media_frame_count", data.frame_count),
             fps=receipt.fps,
             width=receipt.width,
             height=receipt.height,

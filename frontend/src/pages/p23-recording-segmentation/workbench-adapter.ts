@@ -9,7 +9,7 @@ function authorizedMedia(source: RecordingVideoSource) {
   return {
     url: source.source_url,
     expiresAt: source.expires_at,
-    kind: "rgb-video" as const,
+    kind: source.modality === "depth" ? "depth-preview" : "rgb-video",
   };
 }
 
@@ -24,7 +24,7 @@ export function buildRecordingCameraStreams(input: {
     id: source.asset_id,
     canonicalPath: `recording/${source.recording_id}/camera/${source.camera_id}`,
     displayName: source.camera_id,
-    modality: "rgb",
+    modality: source.modality ?? "rgb",
     semanticRole: "camera",
     schema: {
       id: source.media_type,
@@ -34,13 +34,21 @@ export function buildRecordingCameraStreams(input: {
     rateHz: source.fps,
     startNs: "0",
     endNs: source.duration_ns,
-    availability: "ready",
-    accessibleSummary: `${source.camera_id} 原始录制，${source.fps} fps，${source.codec}`,
-    mediaSource: {
-      authorize: async () => authorizedMedia(source),
-      refresh: async (signal) =>
-        authorizedMedia(await input.refreshSource(source.asset_id, signal)),
-    },
+    availability: source.preview_status === "UNAVAILABLE" ? "missing" : "ready",
+    accessibleSummary:
+      source.preview_status === "UNAVAILABLE"
+        ? "深度预览尚未生成，原始深度仍保留。"
+        : `${source.camera_id} ${source.modality === "depth" ? "深度可视化" : "RGB 录制"}，${source.fps} fps，${source.codec}`,
+    mediaSource:
+      source.preview_status === "UNAVAILABLE"
+        ? undefined
+        : {
+            authorize: async () => authorizedMedia(source),
+            refresh: async (signal) =>
+              authorizedMedia(
+                await input.refreshSource(source.asset_id, signal),
+              ),
+          },
   }));
 }
 

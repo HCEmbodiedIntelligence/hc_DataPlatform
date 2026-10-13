@@ -66,7 +66,7 @@ def validate_capture_config(cfg):
     # G0 source-mapping schema fixes time_base to 1/30, including generic profiles.
     if profile["fps"] != 30 or cfg["dataset"]["fps"] != profile["fps"]:
         raise ValueError("openarm-capture/v1 requires 30 Hz; other rates need a contract revision")
-    if profile["robot_type"] == "openarmx" and profile != openarm_profile():
+    if profile["profile_version"] == "openarmx-v1" and profile != openarm_profile():
         raise ValueError("OpenArm profile differs from frozen G0; request E revision")
     for kind in ("state", "action"):
         actual = [

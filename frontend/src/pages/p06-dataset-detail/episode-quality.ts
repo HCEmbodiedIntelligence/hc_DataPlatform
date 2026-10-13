@@ -128,36 +128,7 @@ export async function loadEpisodeQuality(
   return result;
 }
 
-export const qualityRuleLabels: Record<string, string> = {
-  QC_REQUIRED_TOPIC_MISSING: "必需通道",
-  QC_TIMESTAMP_DUPLICATE: "重复时间戳",
-  QC_TIMESTAMP_BACKWARD: "时间戳倒退",
-  QC_FREQUENCY_LOW: "采样频率",
-  QC_GAP_EXCESSIVE: "采样间隔",
-  QC_CONSECUTIVE_FRAMES_MISSING: "连续缺帧",
-  QC_COVERAGE_LOW: "时间覆盖",
-  QC_IMAGE_BLACK: "RGB 黑帧",
-  QC_IMAGE_REPEATED: "RGB 重复帧",
-  QC_IMAGE_CORRUPT: "图像解码",
-  QC_JOINT_OUT_OF_RANGE: "关节范围",
-  QC_ACTION_MISSING: "动作数据数量",
-  QC_ACTION_JUMP: "相邻动作变化",
-  QC_POINT_CLOUD_EMPTY: "空点云",
-  QC_POINT_COUNT_ABNORMAL: "点云点数",
-  QC_MODALITY_OFFSET: "模态时间偏差",
-  QC_COMPLETE_STEP_RATIO_LOW: "完整同步步比例",
-};
-export const qualityReasonLabels: Record<string, string> = {
-  UNSUPPORTED_ENGINE_EVIDENCE: "此引擎版本的执行证据尚未适配",
-  NO_OBSERVATIONS: "缺少可评估观测",
-  PARTIAL_OBSERVATIONS: "只有部分观测可评估",
-  INSUFFICIENT_OBSERVATIONS: "观测数量不足",
-  EXCLUDED_BY_VERDICT_POLICY: "此规则不参与当前策略的总判定",
-  NO_REQUIRED_TOPICS: "未配置必需通道",
-  NO_JOINT_LIMITS: "未配置关节范围",
-  ACTION_COUNT_NOT_REQUIRED: "未设置动作数量要求",
-  NO_POINT_COUNT_LIMITS: "未配置点数范围",
-  COMPLETE_STEP_RATIO_NOT_MEASURED: "尚未测量完整同步步比例",
-  LEGACY_EXECUTION_EVIDENCE_MISSING: "历史报告缺少逐规则执行证据",
-  QC_REPORT_MISSING: "尚无可验证的 QC 报告",
-};
+export {
+  qualityRuleLabels,
+  qualityReasonLabels,
+} from "../../features/quality/labels";

@@ -5,6 +5,10 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from hc_data_platform.core.context import select_organization_scope
+from hc_data_platform.robotics.camera_calibration import (
+    CameraCalibrationState,
+    RobotCameraCalibration,
+)
 from hc_data_platform.robotics.models import (
     CreateRobotRequest,
     RobotLifecycleTransitionRequest,
@@ -274,3 +278,51 @@ def bind_organization_robot_model(
         idempotency_key=idempotency_key,
         request_id=_request_id(request),
     )
+
+
+@router.get(
+    "/{robot_id}/camera-calibration",
+    operation_id="getRobotCameraCalibration",
+    response_model=CameraCalibrationState,
+    responses=PROBLEM_RESPONSES,
+)
+def get_camera_calibration(
+    organization_id: str,
+    robot_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+) -> CameraCalibrationState:
+    _prepare(organization_id, response)
+    result = service.camera_calibration(
+        auth=auth, organization_id=organization_id, robot_id=robot_id
+    )
+    response.headers["ETag"] = result.etag
+    return result
+
+
+@router.put(
+    "/{robot_id}/camera-calibration",
+    operation_id="saveRobotCameraCalibration",
+    response_model=CameraCalibrationState,
+    responses=PROBLEM_RESPONSES,
+)
+def put_camera_calibration(
+    organization_id: str,
+    robot_id: str,
+    command: RobotCameraCalibration,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+    if_match: IfMatch,
+) -> CameraCalibrationState:
+    _prepare(organization_id, response)
+    result = service.camera_calibration(
+        auth=auth,
+        organization_id=organization_id,
+        robot_id=robot_id,
+        configuration=command,
+        expected=if_match,
+    )
+    response.headers["ETag"] = result.etag
+    return result

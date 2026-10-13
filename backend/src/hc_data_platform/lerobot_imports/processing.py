@@ -209,6 +209,7 @@ def list_progress(
     offset: int = 0,
     dataset_id: str | None = None,
     include_all_sources: bool = False,
+    recording_id: str | None = None,
 ) -> list[NativeImportProgress]:
     with connections()() as connection, connection.cursor() as cursor:
         cursor.execute(
@@ -227,6 +228,13 @@ def list_progress(
               AND s.raw_status='COMMITTED'
               AND (%s::text IS NULL OR s.raw_source_id=%s)
               AND (%s::text IS NULL OR s.dataset_id=%s)
+              AND (%s::text IS NULL OR EXISTS (
+                SELECT 1 FROM ingest.robot_ingest_uploads u
+                WHERE u.organization_id=s.organization_id AND u.project_id=s.project_id
+                  AND u.region_code=s.region_code AND u.upload_id=s.upload_id
+                  AND u.state='COMMITTED'
+                  AND u.upload_document #>> '{manifest,format_metadata,recording_id}' = %s
+              ))
             GROUP BY s.raw_source_id, s.dataset_id, j.job_type, j.status,
             j.last_error_code, j.updated_at, s.source_format, s.file_count, s.total_bytes,
             s.collection_task_id
@@ -240,6 +248,8 @@ def list_progress(
                 import_id,
                 dataset_id,
                 dataset_id,
+                recording_id,
+                recording_id,
                 limit,
                 offset,
             ),
@@ -275,7 +285,9 @@ def list_progress(
 def get_progress(
     organization_id: str, project_id: str, region_code: str, import_id: str
 ) -> NativeImportProgress:
-    rows = list_progress(organization_id, project_id, region_code, import_id)
+    rows = list_progress(
+        organization_id, project_id, region_code, import_id, include_all_sources=True
+    )
     if not rows:
         raise problem(
             status=404,
@@ -289,6 +301,13 @@ def get_progress(
 def retry_processing(
     organization_id: str, project_id: str, region_code: str, import_id: str
 ) -> NativeImportProgress:
+    # Browser and robot uploads resume the same durable recording preparation.
+    from .recording_recovery import retry_recording_source
+
+    if retry_recording_source(
+        organization_id, project_id, region_code, import_id, factory=connections()
+    ):
+        return get_progress(organization_id, project_id, region_code, import_id)
     scope = (organization_id, project_id, region_code, import_id)
     with connections()() as connection, connection.cursor() as cursor:
         cursor.execute(

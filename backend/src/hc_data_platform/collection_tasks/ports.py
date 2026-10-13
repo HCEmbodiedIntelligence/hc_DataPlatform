@@ -76,6 +76,10 @@ class CollectionTaskRepositoryPort(Protocol):
         expected_version: int,
     ) -> CollectionTaskRecord: ...
 
+    def captures(
+        self, organization_id: str, project_id: str, region_code: str, task_id: str | None = None
+    ) -> tuple: ...
+
     def progress(
         self,
         organization_id: str,

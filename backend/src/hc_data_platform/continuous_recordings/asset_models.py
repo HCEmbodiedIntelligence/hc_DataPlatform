@@ -16,6 +16,8 @@ from hc_data_platform.ingest.models import (
     Sha256,
     utc_now,
 )
+from hc_data_platform.quality.evidence import RuleExecution
+from hc_data_platform.quality.models import QcReportV1
 
 from .models import EpisodeId, Nanoseconds, RecordingScope
 
@@ -49,6 +51,7 @@ class EpisodeProcessingStatus(str, Enum):
     ALIGNING = "ALIGNING"
     READY = "READY"
     FAILED = "FAILED"
+    DISCARDED = "DISCARDED"
 
 
 class SensorTimestampMode(str, Enum):
@@ -291,6 +294,13 @@ class RecordingAssetPartGrant(BaseModel):
     parts: tuple[PartAuthorization, ...]
 
 
+class RetryEpisodeCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: UUID
+    expected_workflow_id: str = Field(min_length=1, max_length=1024)
+
+
 class EpisodeProcessing(BaseModel):
     """Canonical database row for a continuous-recording Episode."""
 
@@ -307,6 +317,7 @@ class EpisodeProcessing(BaseModel):
     workflow_id: str | None = Field(default=None, min_length=1, max_length=1024)
     event_id: UUID | None = None
     qc_report_id: str | None = None
+    dispatch_error_code: str | None = None
     alignment_attempt_id: str | None = None
     dataset_id: str | None = Field(default=None, min_length=1, max_length=128)
     dataset_episode_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -390,9 +401,20 @@ class EpisodeProcessingEnvelope(BaseModel):
     episode: EpisodeProcessing
 
 
+class RecordingEpisodeQc(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    episode_id: EpisodeId
+    report_id: str
+    status: Literal["PASS", "REJECT"]
+    finding_codes: tuple[str, ...] = ()
+    quality_report: QcReportV1
+    rules: tuple[RuleExecution, ...] = ()
+
+
 class EpisodeProcessingPage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    qc_reports: tuple[RecordingEpisodeQc, ...] = ()
     items: tuple[EpisodeProcessing, ...]
     total: int = Field(ge=0)
 
@@ -407,6 +429,8 @@ class EpisodeVideoSource(BaseModel):
     episode_id: EpisodeId
     asset_id: UUID
     camera_id: Identifier
+    modality: Literal["rgb", "depth"] = "rgb"
+    preview_status: Literal["READY", "UNAVAILABLE"] = "READY"
     media_type: str
     source_url: str
     start_offset_ns: Nanoseconds
@@ -415,7 +439,9 @@ class EpisodeVideoSource(BaseModel):
     codec: str
     expires_at: datetime
     byte_range_supported: bool = True
-    materialization: Literal["ORIGINAL_VIDEO_TIME_WINDOW"] = "ORIGINAL_VIDEO_TIME_WINDOW"
+    materialization: Literal["ORIGINAL_VIDEO_TIME_WINDOW", "DEPTH_PREVIEW_TIME_WINDOW"] = (
+        "ORIGINAL_VIDEO_TIME_WINDOW"
+    )
 
 
 class EpisodeVideoSourceEnvelope(BaseModel):
@@ -433,6 +459,8 @@ class RecordingVideoSource(BaseModel):
     recording_id: Identifier
     asset_id: UUID
     camera_id: Identifier
+    modality: Literal["rgb", "depth"] = "rgb"
+    preview_status: Literal["READY", "UNAVAILABLE"] = "READY"
     media_type: str
     source_url: str
     duration_ns: Nanoseconds
@@ -440,7 +468,7 @@ class RecordingVideoSource(BaseModel):
     codec: str
     expires_at: datetime
     byte_range_supported: bool = True
-    materialization: Literal["ORIGINAL_RECORDING"] = "ORIGINAL_RECORDING"
+    materialization: Literal["ORIGINAL_RECORDING", "DEPTH_PREVIEW"] = "ORIGINAL_RECORDING"
 
 
 class RecordingVideoSourceEnvelope(BaseModel):

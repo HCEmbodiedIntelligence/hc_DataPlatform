@@ -72,6 +72,7 @@ class TaskPackageMainState(str, Enum):
     RAW_RECEIVED = "RAW_RECEIVED"
     VALIDATION_RUNNING = "VALIDATION_RUNNING"
     VALIDATION_FAILED = "VALIDATION_FAILED"
+    AWAITING_SLICE = "AWAITING_SLICE"
     QC_WAITING = "QC_WAITING"
     QC_RISK = "QC_RISK"
     QC_REJECT = "QC_REJECT"
@@ -258,6 +259,7 @@ class TaskDataIssue(BaseModel):
     duplicate_of_rollout_id: str | None = None
     source_episode_index: int | None = None
     source_import_id: str | None = None
+    recording_id: str | None = None
     qc_status: str | None = None
     lance_ready: bool = False
     alignment_attempt_id: str | None = None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+from uuid import UUID
 
 from hc_data_platform.core.events import DomainEventEnvelope
 
@@ -64,10 +65,12 @@ class ContinuousEpisodeOutboxHandler:
         expected_workflow_id = continuous_episode_workflow_id(
             event.organization_id, event.project_id, event.region_code, recording_id, episode_id
         )
-        if (
-            persisted_workflow_id not in {expected_workflow_id, legacy_workflow_id}
-            or event.aggregate_id != resource_id
-        ):
+        retry_id = payload.get("retry_request_id")
+        allowed_ids = {expected_workflow_id, legacy_workflow_id}
+        if retry_id is not None:
+            retry_id = str(UUID(str(retry_id)))
+            allowed_ids = {f"{expected_workflow_id}:retry:{retry_id}"}
+        if persisted_workflow_id not in allowed_ids or event.aggregate_id != resource_id:
             raise ValueError("continuous Episode workflow locator disagrees with event lineage")
         scope = dict(
             organization_id=event.organization_id,

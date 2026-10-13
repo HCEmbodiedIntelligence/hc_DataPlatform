@@ -990,3 +990,15 @@ def test_robot_model_publish_uses_a_durable_preflight_and_one_time_proof() -> No
             command=PublishRobotModelVersionRequest(preflight_token="x" * 32),
         )
     assert invalid_token.value.problem.code == "ROBOT_MODEL_PUBLISH_PREFLIGHT_TOKEN_INVALID"
+
+
+def test_openarm_gripper_mimics_do_not_require_independent_recorded_axes():
+    urdf = (
+        b'<robot name="gripper"><joint name="drive" type="prismatic"/>'
+        b'<joint name="follower" type="prismatic"><mimic joint="drive"/></joint></robot>'
+    )
+    assert RegistryService._parse_urdf_joint_names((urdf,)) == {"drive"}
+    for reference in (b"follower", b"missing", b""):
+        invalid = urdf.replace(b'mimic joint="drive"', b'mimic joint="' + reference + b'"')
+        with pytest.raises(ValueError, match="mimic"):
+            RegistryService._parse_urdf_joint_names((invalid,))

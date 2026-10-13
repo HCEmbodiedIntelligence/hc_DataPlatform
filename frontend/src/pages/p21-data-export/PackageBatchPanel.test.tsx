@@ -8,6 +8,7 @@ import { PackageBatchPanel } from "./PackageBatchPanel";
 import {
   createPackageBatch,
   listPackageJobs,
+  loadExportFormats,
   loadPackageCandidates,
 } from "../../features/exports/package-deliveries";
 import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
@@ -15,6 +16,7 @@ import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 vi.mock("../../features/exports/package-deliveries", () => ({
   createPackageBatch: vi.fn(),
   listPackageJobs: vi.fn(),
+  loadExportFormats: vi.fn(),
   loadPackageCandidates: vi.fn(),
   commandPackageJob: vi.fn(),
   downloadPackageJob: vi.fn(),
@@ -41,6 +43,7 @@ function mount(annotated = false, canDownload = true) {
   const f = packageDeliveryFixture();
   vi.mocked(loadPackageCandidates).mockResolvedValue(f.candidates);
   vi.mocked(listPackageJobs).mockResolvedValue([]);
+  vi.mocked(loadExportFormats).mockResolvedValue([]);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -97,7 +100,7 @@ it("requires an explicit annotation selection for every selected Episode", async
     screen.getByRole("button", { name: "创建标准包交付任务" }),
   ).toBeDisabled();
   expect(
-    screen.getByText("请为每条 Episode 明确选择标注修订和分段轨道。"),
+    screen.getByText("请确认每条 Episode 的当前标注和分段。"),
   ).toBeVisible();
   expect(
     screen.getByRole("radio", { name: "独立标准包批量 ZIP（含已采集深度）" }),

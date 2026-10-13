@@ -1,5 +1,6 @@
 import { Alert, Button, Descriptions, Space, Spin, Table } from "antd";
 import { lazy, Suspense, useState } from "react";
+import { RecordingProcessingDetails } from "../../../features/quality/RecordingProcessingDetails";
 import type {
   DashboardDataIssue,
   DashboardScope,
@@ -202,7 +203,8 @@ export default function TaskIssueDrawer({
               />
             </Suspense>
           ) : null}
-          {selected.category === "RESUME_REQUIRED" &&
+          {(selected.category === "RESUME_REQUIRED" ||
+            selected.reason_code === "RAW_RECORDING_PREPARATION_FAILED") &&
           scope &&
           selected.source_import_id ? (
             <Suspense fallback={<Spin description="正在加载处理操作" />}>
@@ -213,7 +215,12 @@ export default function TaskIssueDrawer({
               />
             </Suspense>
           ) : null}
-          {canPreview ? (
+          {selected.recording_id && scope ? (
+            <RecordingProcessingDetails
+              scope={scope}
+              recordingId={selected.recording_id}
+            />
+          ) : canPreview ? (
             <Button type="primary" onClick={() => setPreviewOpen(true)}>
               查看原始数据与视频
             </Button>

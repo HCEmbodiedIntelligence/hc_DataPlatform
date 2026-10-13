@@ -508,6 +508,8 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}` | `upload.read`；校验 Episode 所属原始导入。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution` | N1；GET 要求 `upload.read`，POST 要求 `upload.manage`；校验 organization/project/region 与 Episode 归属，处理决定受当前 attempt、入库状态及请求幂等约束。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files` | `upload.read`；按组织、项目和区域读取原始文件列表。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/directory` | `upload.read`；仅浏览当前组织、项目、区域中已提交原始清单内的目录，拒绝越界路径。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/text-preview` | `upload.read`；校验原始文件清单成员关系，仅返回最多 256 KiB 的 UTF-8 文本。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing` | `upload.read`；按当前作用域读取处理状态。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process` | `upload.manage`；校验原始导入的作用域、格式及处理目标。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry` | `upload.manage`；仅在当前作用域重试导入处理。 |

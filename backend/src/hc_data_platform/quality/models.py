@@ -94,7 +94,7 @@ class TopicTimingProfileV1(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     target_frequency_hz: int | float = Field(default=30, gt=0, le=1000)
-    minimum_frequency_hz_risk: float = Field(default=28.5, ge=0)
+    minimum_frequency_hz_risk: float = Field(default=27.0, ge=0)
     minimum_frequency_hz_reject: float = Field(default=22.5, ge=0)
     minimum_coverage_ratio_risk: float = Field(default=0.98, ge=0, le=1)
     minimum_coverage_ratio_reject: float = Field(default=0.80, ge=0, le=1)
@@ -591,6 +591,8 @@ class AutoQualityProblemV1(BaseModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
     source_import_id: str | None = Field(default=None, min_length=1, max_length=256)
     source_episode_index: int | None = Field(default=None, ge=0)
+    recording_id: str | None = None
+    recording_episode_id: str | None = None
     rollout_id: str = Field(min_length=1, max_length=256)
     data_package_id: str | None = Field(default=None, min_length=1, max_length=256)
     status: Literal["RISK", "REJECT"]
@@ -599,7 +601,7 @@ class AutoQualityProblemV1(BaseModel):
     end_ns: str = Field(pattern=r"^[1-9][0-9]*$")
     message: str = Field(min_length=1, max_length=1_000)
     finding_count: int = Field(gt=0)
-    finding_codes: tuple[QualityCode, ...] = Field(min_length=1)
+    finding_codes: tuple[str, ...] = Field(min_length=1)
     topics: tuple[str, ...] = Field(min_length=1)
     report_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     updated_at: datetime
@@ -645,6 +647,45 @@ class AutoQualityProblemV1(BaseModel):
             finding_codes=tuple(sorted({item.code for item in findings}, key=str)),
             topics=tuple(sorted({item.topic for item in findings})),
             report_sha256=report.content_sha256,
+            updated_at=updated_at,
+        )
+
+    @classmethod
+    def from_recording_report(
+        cls,
+        document: dict,
+        *,
+        report_sha256: str,
+        recording_id: str,
+        data_package_id: str,
+        updated_at: datetime,
+    ) -> AutoQualityProblemV1:
+        if document["status"] != "REJECT":
+            raise ValueError("only rejected recording reports are problem data")
+        report = QcReportV1.model_validate(document["quality_report"])
+        findings = tuple(f for f in report.findings if f.severity != FindingSeverity.INFO)
+        codes = tuple(
+            sorted(set(document.get("finding_codes", ())) | {f.code.value for f in findings})
+        )
+        return cls(
+            id=f"qc_{report_sha256[:32]}",
+            recording_id=recording_id,
+            recording_episode_id=document["episode_id"],
+            rollout_id=report.rollout_id,
+            data_package_id=data_package_id,
+            status="REJECT",
+            severity="CRITICAL",
+            start_ns=str(min((f.start_ns for f in findings), default=report.start_ns)),
+            end_ns=str(
+                max((max(f.end_ns, f.start_ns + 1) for f in findings), default=report.end_ns)
+            ),
+            message=(
+                findings[0].message if findings else "录制数据未通过有效性检查：" + "、".join(codes)
+            )[:1000],
+            finding_count=max(len(findings), len(codes), 1),
+            finding_codes=codes or ("RECORDING_QC_REJECT",),
+            topics=tuple(sorted({f.topic for f in findings})) or ("/recording",),
+            report_sha256=report_sha256,
             updated_at=updated_at,
         )
 

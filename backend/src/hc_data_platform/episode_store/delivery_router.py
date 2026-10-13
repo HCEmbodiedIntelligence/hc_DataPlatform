@@ -82,6 +82,15 @@ def delivery_service(packages, auth, project_id, region_code):
         ) from exc
 
 
+@router.get(BASE + "/formats")
+def list_export_formats(project_id: str, region_code: str, auth: VerifiedAuth,
+                        packages: PackageServices):
+    from .export_formats import formats
+    with delivery_service(packages, auth, project_id, region_code) as service:
+        service.authorize(auth)
+        return formats()
+
+
 @router.post(BASE, response_model=EpisodeDeliveryJob)
 def request_episode_delivery(
     project_id: str,

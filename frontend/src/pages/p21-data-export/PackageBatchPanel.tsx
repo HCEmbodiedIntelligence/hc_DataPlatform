@@ -1,15 +1,28 @@
 import { useEffect, useRef, useState } from "react";
-import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
   Card,
   Checkbox,
+  Empty,
   Progress,
   Radio,
   Select,
+  Skeleton,
   Space,
 } from "antd";
+import {
+  Archive,
+  Check,
+  FileArchive,
+  Image,
+  Layers3,
+  PackageCheck,
+  RefreshCw,
+  X,
+} from "lucide-react";
+import styles from "./PackageBatchPanel.module.css";
 import type { Scope } from "../../shared/scope/model";
 import { CollectionAnnotationChooser } from "./CollectionAnnotationChooser";
 import {
@@ -17,6 +30,7 @@ import {
   createPackageBatch,
   downloadPackageJob,
   listPackageJobs,
+  loadExportFormats,
   loadPackageCandidates,
   type AnnotationSelection,
   type BatchMode,
@@ -34,6 +48,55 @@ const phases = {
   failed: "交付失败",
   cancelled: "已取消",
 };
+
+const builtInFormats = [
+  {
+    value: "original",
+    title: "原始文件",
+    label: "原始文件及标注",
+    description: "保留上传文件；带标注导出附带当前标注、切片范围及源帧映射。",
+    detail: "原始字节不变 · 标注附带交付",
+    badge: "保留来源",
+    icon: Archive,
+  },
+  {
+    value: "mcap",
+    title: "MCAP",
+    label: "MCAP 数据包集合",
+    description:
+      "仅支持保留原始 MCAP 的数据，按切片保留消息结构；LeRobot 不支持转 MCAP。",
+    detail: "保留原 topic、schema 和消息内容",
+    badge: "需要原始 MCAP",
+    icon: FileArchive,
+  },
+  {
+    value: "independent",
+    title: "完整标准包",
+    label: "独立标准包批量 ZIP（含已采集深度）",
+    description: "每条 Episode 独立保存，适合完整归档与交付。",
+    detail: "独立 Episode · 批量 ZIP",
+    badge: "保留深度",
+    icon: Archive,
+  },
+  {
+    value: "rgbd",
+    title: "LeRobot RGB-D",
+    label: "LeRobot RGB-D 集合",
+    description: "合并为一个 LeRobot 集合，保留 RGB 与已采集深度。",
+    detail: "统一索引 · 跨 Episode 读取",
+    badge: "保留深度",
+    icon: Layers3,
+  },
+  {
+    value: "rgb",
+    title: "LeRobot RGB",
+    label: "LeRobot RGB 子集（排除深度）",
+    description: "导出 RGB 与数值数据，适用于不需要深度的任务。",
+    detail: "RGB 子集 · 不含深度数据",
+    badge: "不含深度",
+    icon: Image,
+  },
+] as const;
 export function PackageBatchPanel({
   scope,
   datasets,
@@ -49,6 +112,31 @@ export function PackageBatchPanel({
   canCreate: boolean;
   canDownload: boolean;
 }) {
+  const formats = useQuery({
+    queryKey: ["export-formats", scope],
+    queryFn: ({ signal }) => loadExportFormats(scope, signal),
+    enabled: canDownload,
+  });
+  const deliveryFormats = [
+    ...builtInFormats,
+    ...(formats.data ?? [])
+      .filter(
+        (f) =>
+          !["lerobot", "mcap", "original"].includes(f.id) &&
+          (!annotated || f.supports_annotations),
+      )
+      .map((f) => ({
+        value: f.id,
+        title: f.title,
+        label: f.title,
+        description: "使用平台已注册的导出格式。",
+        detail: f.requires_originals
+          ? "保留原始来源"
+          : "包含所选数据与当前标注",
+        badge: "扩展格式",
+        icon: FileArchive,
+      })),
+  ];
   const [datasetId, setDatasetId] = useState(datasets[0]?.id);
   const [selected, setSelected] = useState<Record<string, PackageData>>({});
   const [annotations, setAnnotations] = useState<
@@ -174,26 +262,42 @@ export function PackageBatchPanel({
   }
   if (!canDownload) return <Alert type="warning" title="缺少完整包下载权限" />;
   return (
-    <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-      <Card title="完整标准包与 LeRobot 集合" size="small">
-        <Space orientation="vertical" style={{ width: "100%" }}>
-          <p>
-            按固定数据版本选择。完整包包含全部已采集
-            RGB、深度视频、profile、掩码和源帧；集合会重建索引、任务与统计并复用媒体。
-          </p>
-          {!datasets.length ? (
-            <Alert type="info" title="请先选择数据集或采集任务" />
-          ) : (
-            <Select
-              aria-label="标准包数据集"
-              value={datasetId}
-              style={{ width: "100%" }}
-              options={datasets.map((d) => ({ value: d.id, label: d.name }))}
-              onChange={setDatasetId}
-            />
+    <div className={styles.panel}>
+      <section
+        className={styles.composer}
+        aria-label="完整标准包与 LeRobot 集合"
+      >
+        <section
+          className={styles.section}
+          aria-labelledby="package-source-title"
+        >
+          <div className={styles.sectionHeading}>
+            <span className={styles.step}>2</span>
+            <div>
+              <h3 id="package-source-title">选择 Episode</h3>
+              <p>按数据版本选择导出内容，可从多个数据集添加，最多 100 条。</p>
+            </div>
+            <span className={styles.count} aria-live="polite">
+              已选 {selections.length} 条
+            </span>
+          </div>
+          {datasets.length > 0 && (
+            <div className={styles.datasetField}>
+              <label htmlFor="package-dataset">当前数据集</label>
+              <Select
+                id="package-dataset"
+                aria-label="标准包数据集"
+                value={datasetId}
+                showSearch
+                optionFilterProp="label"
+                options={datasets.map((d) => ({ value: d.id, label: d.name }))}
+                onChange={setDatasetId}
+              />
+            </div>
           )}
           {candidates.error && (
             <Alert
+              showIcon
               type="error"
               title="标准包候选读取失败"
               description={candidates.error.message}
@@ -204,32 +308,71 @@ export function PackageBatchPanel({
               }
             />
           )}
-          {candidates.isFetching && <span>读取固定集合快照…</span>}
-          {candidates.data && !candidates.error && (
-            <>
-              <span>
-                集合版本 {candidates.data.pages[0]?.version ?? "尚未建立"} ·{" "}
-                {candidates.data.pages[0]?.total ?? 0} 条标准包
+          {!datasets.length && (
+            <div className={styles.empty}>
+              <span className={styles.emptyIcon}>
+                <FileArchive size={23} aria-hidden="true" />
               </span>
+              <strong>请先选择数据集或采集任务</strong>
+              <p>选择上方的数据范围后，即可在这里勾选要导出的 Episode。</p>
+            </div>
+          )}
+          {candidates.isFetching && !candidates.data && datasetId && (
+            <div
+              className={styles.loading}
+              role="status"
+              aria-label="读取固定集合快照"
+            >
+              <Skeleton active title={false} paragraph={{ rows: 2 }} />
+            </div>
+          )}
+          {candidates.data && !candidates.error && (
+            <div className={styles.candidates}>
+              <div className={styles.listHeading}>
+                <span>
+                  可选 Episode{" "}
+                  <strong>{candidates.data.pages[0]?.total ?? 0}</strong>
+                </span>
+                <span>
+                  集合版本 {candidates.data.pages[0]?.version ?? "尚未建立"}
+                </span>
+              </div>
               {(candidates.data.pages[0]?.legacy_episode_count ?? 0) > 0 && (
                 <Alert
                   type="info"
+                  showIcon
                   title={`此集合另含 ${candidates.data.pages[0]?.legacy_episode_count} 条历史存储数据`}
-                  description="历史数据可在历史格式入口导出；这里不会把它们伪装成标准包。"
+                  description="如需导出这些数据，请切换到历史格式。"
                 />
               )}
-              {items.map((data) => (
-                <Checkbox
-                  key={`candidate-${data.data_version_id}`}
-                  checked={Boolean(selected[data.data_version_id])}
-                  onChange={(e) => select(data, e.target.checked)}
-                >
-                  {data.identity.episode_id} · 数据 v{data.version} ·{" "}
-                  {data.frame_count} 帧
-                </Checkbox>
-              ))}
+              <div className={styles.candidateList}>
+                {items.map((data) => (
+                  <Checkbox
+                    className={styles.candidate}
+                    key={`candidate-${data.data_version_id}`}
+                    checked={Boolean(selected[data.data_version_id])}
+                    onChange={(e) => select(data, e.target.checked)}
+                  >
+                    <span className={styles.candidateContent}>
+                      <span
+                        className={styles.episodeName}
+                        title={data.identity.episode_id}
+                      >
+                        {data.identity.episode_id}
+                      </span>
+                      <span className={styles.episodeMeta}>
+                        数据 v{data.version} ·{" "}
+                        {data.frame_count.toLocaleString("zh-CN")} 帧
+                      </span>
+                    </span>
+                  </Checkbox>
+                ))}
+              </div>
               {items.length === 0 && (
-                <span>此数据集暂无独立标准包；可查看历史格式或原始数据。</span>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="此数据集暂无独立标准包；可查看历史格式或原始数据。"
+                />
               )}
               {candidates.hasNextPage && (
                 <Button
@@ -239,48 +382,115 @@ export function PackageBatchPanel({
                   加载更多 Episode
                 </Button>
               )}
-            </>
-          )}
-          {selectionError && <Alert type="warning" title={selectionError} />}
-          <strong>已选 {selections.length} 条 Episode</strong>
-          {selections.map((data) => (
-            <div key={`selected-${data.data_version_id}`}>
-              <span>
-                {data.identity.episode_id} · 数据 v{data.version}
-              </span>{" "}
-              <Button size="small" onClick={() => select(data, false)}>
-                移除 {data.identity.episode_id}
-              </Button>
             </div>
-          ))}
+          )}
+          {selectionError && (
+            <Alert showIcon type="warning" title={selectionError} />
+          )}
+          {selections.length > 0 && (
+            <div className={styles.selectedList} aria-label="已选 Episode">
+              <span>已选 {selections.length} 条 Episode</span>
+              {selections.map((data) => (
+                <span
+                  className={styles.selectedItem}
+                  key={`selected-${data.data_version_id}`}
+                >
+                  <span title={data.identity.episode_id}>
+                    {data.identity.episode_id} · 数据 v{data.version}
+                  </span>
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label={`移除 ${data.identity.episode_id}`}
+                    icon={<X size={13} aria-hidden="true" />}
+                    onClick={() => select(data, false)}
+                  />
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
+        <section
+          className={styles.section}
+          aria-labelledby="package-format-title"
+        >
+          <div className={styles.sectionHeading}>
+            <span className={styles.step}>3</span>
+            <div>
+              <h3 id="package-format-title">选择交付格式</h3>
+              <p>根据归档或训练用途选择，导出范围以已选 Episode 为准。</p>
+            </div>
+          </div>
           <Radio.Group
+            className={styles.formatGrid}
             aria-label="标准包交付格式"
+            name="package-delivery-format"
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            options={[
-              {
-                value: "independent",
-                label: "独立标准包批量 ZIP（含已采集深度）",
-                disabled: annotated,
-              },
-              { value: "rgbd", label: "LeRobot RGB-D 集合" },
-              { value: "rgb", label: "LeRobot RGB 子集（排除深度）" },
-            ]}
-          />
+          >
+            {deliveryFormats.map((format) => {
+              const Icon = format.icon;
+              const disabled = annotated && format.value === "independent";
+              return (
+                <Radio
+                  key={format.value}
+                  value={format.value}
+                  aria-label={format.label}
+                  disabled={disabled}
+                  className={styles.formatCard}
+                >
+                  <span className={styles.formatTop}>
+                    <span className={styles.formatIcon}>
+                      <Icon size={21} aria-hidden="true" />
+                    </span>
+                    <span
+                      className={styles.formatBadge}
+                      data-depth={format.value !== "rgb"}
+                    >
+                      {format.badge}
+                    </span>
+                    <span
+                      className={styles.selectionIndicator}
+                      aria-hidden="true"
+                    >
+                      {mode === format.value && (
+                        <Check size={12} strokeWidth={3} />
+                      )}
+                    </span>
+                  </span>
+                  <strong className={styles.formatTitle}>{format.title}</strong>
+                  <span className={styles.formatDescription}>
+                    {format.description}
+                  </span>
+                  <span className={styles.formatDetail}>
+                    {disabled ? "带标注数据请选择 LeRobot 集合" : format.detail}
+                  </span>
+                </Radio>
+              );
+            })}
+          </Radio.Group>
           {mode === "rgb" ? (
             <Alert
+              className={styles.formatNotice}
+              showIcon
               type="warning"
               title="RGB 子集将排除深度视频、深度像素掩码及相关数据特征"
               description="数值、RGB 和来源说明保留。需要深度时选择完整标准包或 RGB-D 集合。"
             />
           ) : (
             <Alert
+              className={styles.formatNotice}
+              showIcon
               type="info"
               title="保留已采集深度视频、profile、有效掩码和源帧映射"
               description={
-                mode === "independent"
-                  ? "ZIP 内每条是可独立读取的标准包。"
-                  : "输出为一个可跨 Episode 读取的 LeRobot 集合；不兼容的频率、单位或相机契约会明确拒绝合并。"
+                mode === "original"
+                  ? "原文件不改写；切片范围和当前标注保存为附带文件。"
+                  : mode === "mcap"
+                    ? "有原始 MCAP 时保留其 topic、schema 和消息字段；其他来源采用平台 MCAP 格式，内含视频文件与帧引用。"
+                    : mode === "independent"
+                      ? "ZIP 内每条是可独立读取的标准包。"
+                      : "输出为一个可跨 Episode 读取的 LeRobot 集合；不兼容的频率、单位或相机契约会明确拒绝合并。"
               }
             />
           )}
@@ -302,17 +512,35 @@ export function PackageBatchPanel({
                   }
                 />
                 {annotations[data.data_version_id] && (
-                  <span>
-                    已固定选择 r{annotations[data.data_version_id]!.revision}
-                  </span>
+                  <span>已确认当前标注</span>
                 )}
               </Card>
             ))}
           {missingAnnotations && (
-            <span>请为每条 Episode 明确选择标注修订和分段轨道。</span>
+            <span className={styles.annotationHint}>
+              请确认每条 Episode 的当前标注和分段。
+            </span>
           )}
+        </section>
+        <div className={styles.footer}>
+          <div className={styles.summary} aria-live="polite">
+            <PackageCheck size={20} aria-hidden="true" />
+            <div>
+              <strong>
+                {deliveryFormats.find((format) => format.value === mode)?.title}
+                <span> · {selections.length} 条 Episode</span>
+              </strong>
+              <p>
+                {selections.length
+                  ? "任务在后台打包，完成后可在下方下载。"
+                  : "选择 Episode 后即可创建交付任务。"}
+              </p>
+            </div>
+          </div>
           <Button
+            className={styles.createButton}
             type="primary"
+            icon={<PackageCheck size={17} aria-hidden="true" />}
             loading={mutation.isPending}
             disabled={
               !canCreate ||
@@ -324,25 +552,33 @@ export function PackageBatchPanel({
           >
             创建标准包交付任务
           </Button>
-          {mutation.error && (
-            <Alert
-              type="error"
-              title="交付操作失败"
-              description={mutation.error.message}
-            />
-          )}
-        </Space>
-      </Card>
+        </div>
+        {mutation.error && (
+          <Alert
+            showIcon
+            className={styles.operationError}
+            type="error"
+            title="交付操作失败"
+            description={mutation.error.message}
+          />
+        )}
+      </section>
       <Card
+        className={styles.jobsCard}
         title="标准包交付任务"
         size="small"
         extra={
-          <Button onClick={() => void jobs.refetch()} loading={jobs.isFetching}>
+          <Button
+            size="small"
+            icon={<RefreshCw size={14} aria-hidden="true" />}
+            onClick={() => void jobs.refetch()}
+            loading={jobs.isFetching}
+          >
             刷新交付状态
           </Button>
         }
       >
-        <Space orientation="vertical" style={{ width: "100%" }}>
+        <div className={styles.jobsList}>
           {jobs.error && (
             <Alert
               type="error"
@@ -350,12 +586,25 @@ export function PackageBatchPanel({
               description={jobs.error.message}
             />
           )}
+          {jobs.isPending && (
+            <Skeleton active title={false} paragraph={{ rows: 2 }} />
+          )}
+          {!jobs.error && jobs.data && !jobs.data.pages.flat().length && (
+            <div className={styles.jobsEmpty}>
+              <FileArchive size={25} aria-hidden="true" />
+              <div>
+                <strong>暂无交付任务</strong>
+                <p>创建任务后，在这里查看打包进度并下载文件。</p>
+              </div>
+            </div>
+          )}
           {!jobs.error &&
             jobs.data?.pages.flat().map((job) => (
               <Card
+                className={styles.jobCard}
                 key={job.job_id}
                 size="small"
-                title={`${job.plan.archive_format === "lerobot_collection_zip/1" ? `LeRobot ${job.plan.modalities.toUpperCase()} 集合` : "独立标准包 ZIP"} · ${job.plan.members.length} 条 · ${phases[job.phase]}`}
+                title={`${job.plan.archive_format === "original_collection_zip/1" ? "原始文件" : job.plan.archive_format === "mcap_collection_zip/1" ? "MCAP 集合" : job.plan.archive_format === "lerobot_collection_zip/1" ? `LeRobot ${job.plan.modalities.toUpperCase()} 集合` : "独立标准包 ZIP"} · ${job.plan.members.length} 条 · ${phases[job.phase]}`}
               >
                 {job.total_files === null || job.total_bytes === null ? (
                   <p>正在生成集合，归档文件数和大小尚未确定。</p>
@@ -439,8 +688,8 @@ export function PackageBatchPanel({
               加载更多交付任务
             </Button>
           )}
-        </Space>
+        </div>
       </Card>
-    </Space>
+    </div>
   );
 }

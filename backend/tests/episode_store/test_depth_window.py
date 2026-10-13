@@ -34,7 +34,7 @@ def inventory(root):
     )
 
 
-def make_depth(root, *, fps=25, count=9):
+def make_depth(root, *, fps=25, count=9, missing_reference=False):
     root.mkdir()
     path, evidence = root / "video.mp4", root / "evidence"
     profile = dict(
@@ -63,7 +63,7 @@ def make_depth(root, *, fps=25, count=9):
             source_timestamp_ns=None
             if missing
             else START + round(Fraction(source_index * 10**9, fps)),
-            target_timestamp_ns=START + round(Fraction(index * 10**9, fps)),
+            target_timestamp_ns=None if missing and missing_reference else START + round(Fraction(index * 10**9, fps)),
             missing=missing,
             max_time_error_ns=15_000_000,
             source_profile=None if missing else profile,
@@ -111,6 +111,35 @@ def test_identical_stream_reuses_every_byte_and_no_encoder(tmp_path, monkeypatch
     assert result is media
     assert not output.exists()
     assert before == inventory(tmp_path / "input")
+
+
+@pytest.mark.parametrize("first,stop", [(0, 2), (2, 3)])
+def test_missing_rgb_reference_in_raw_evidence_does_not_block_valid_cuts(tmp_path, first, stop):
+    media = make_depth(tmp_path / "input", fps=30, missing_reference=True)
+    before = inventory(tmp_path / "input")
+    result = prepare_depth_window(media, DepthWindow(first, stop, stop-first, 30, START),
+                                  tmp_path / "output")
+    rows = list(parquet_rows(result.evidence_root / "frames.parquet"))
+    assert all(type(row["target_timestamp_ns"]) is int for row in rows)
+    assert rows[0]["missing"] is (first == 2)
+    if first == 2:
+        assert rows[0]["parent_target_timestamp_ns"] is None
+        assert rows[0]["source_timestamp_ns"] is None
+    assert before == inventory(tmp_path / "input")
+    validate_depth(result.evidence_root.parent, result.evidence_root.name, result.path,
+        result.feature, stop-first, 30,
+        target_rows=iter({"hc.timestamp_ns": row["target_timestamp_ns"]} for row in rows),
+        feature_key="depth")
+
+
+def test_final_episode_cannot_claim_a_null_time_even_for_missing_depth(tmp_path):
+    media = make_depth(tmp_path / "input", fps=30, missing_reference=True)
+    with pytest.raises(ValueError, match="temporal status"):
+        validate_depth(media.evidence_root.parent, media.evidence_root.name, media.path,
+            media.feature, 9, 30,
+            target_rows=({"hc.timestamp_ns": row["target_timestamp_ns"]}
+                         for row in parquet_rows(media.evidence_root / "frames.parquet")),
+            feature_key="depth")
 
 
 def test_missing_only_window_is_explicit_and_reuses_codes_without_inventing_a_source(
@@ -404,3 +433,16 @@ def test_row_group_boundary_and_a_window_of_a_window_keep_parent_hashes(tmp_path
         output.evidence_root / "report.json"
     )
     np.testing.assert_array_equal(decoded(child.path), decoded(output.path)[3:130])
+
+
+def test_capture_depth_keeps_own_rgb_association_when_export_grid_moves(tmp_path):
+    media = make_depth(tmp_path/'input', fps=30)
+    # Camera RGB/depth is synchronized locally. A different primary camera's
+    # export grid is 20 ms away; it must not invalidate all of this camera's depth.
+    result = prepare_depth_window(media, DepthWindow(0, 3, 3, 30, START+20_000_000),
+                                  tmp_path/'output', preserve_association_reference=True)
+    rows = list(parquet_rows(result.evidence_root/'frames.parquet'))
+    assert rows[0]['time_error_ns'] == -20_000_000
+    assert rows[0]['association_target_timestamp_ns'] == START
+    assert not rows[0]['time_threshold_exceeded']
+    assert rows[2]['missing']

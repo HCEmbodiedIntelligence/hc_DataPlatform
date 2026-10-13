@@ -130,24 +130,21 @@ function renderRegion(
   content: ReactNode,
   onRetry: () => void,
 ): ReactNode {
-  if (state === "ready") return content;
-  if (state === "refreshing") {
+  if (state === "ready" || state === "refreshing" || state === "partial") {
+    // Keep the content at the same position while polling. Wrapping it only
+    // during a refresh unmounts the board and closes its issue drawer.
     return (
-      <PageState state="refreshing" label={label}>
+      <>
+        {state === "partial" ? (
+          <PageState
+            state="partial"
+            label={label}
+            description="刷新失败，当前保留上次成功返回的数据。"
+            onRetry={onRetry}
+          />
+        ) : null}
         {content}
-      </PageState>
-    );
-  }
-  if (state === "partial") {
-    return (
-      <PageState
-        state="partial"
-        label={label}
-        description="刷新失败，当前保留上次成功返回的数据。"
-        onRetry={onRetry}
-      >
-        {content}
-      </PageState>
+      </>
     );
   }
   return (

@@ -12,6 +12,8 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from hc_data_platform.continuous_recordings.mcap_native import McapProcessingConfig
+
 from .capabilities import LeRobotCapabilities, LeRobotCapabilityRequest, detect_capabilities
 from .configuration import NativeConfiguration
 from .models import (
@@ -42,6 +44,7 @@ from .source_browser import (
     OriginalFilePage,
     OriginalSourceBrowser,
 )
+from .source_directory import OriginalDirectory, OriginalTextPreview, directory, text_preview
 
 router = APIRouter(
     prefix="/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports",
@@ -162,6 +165,46 @@ def process_stored_source(
     return start_stored_processing(organization_id, project_id, region_code, import_id, manifest)
 
 
+@router.get("/robots/{robot_id}/mcap-profile")
+def get_mcap_profile(project_id: str, region_code: str, robot_id: str,
+                     auth: VerifiedAuth, organization_id: OrganizationHeader) -> McapProcessingConfig:
+    from .mcap_processing import profile
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    return profile((organization_id, project_id, region_code), robot_id)
+
+
+@router.put("/robots/{robot_id}/mcap-profile")
+def set_mcap_profile(project_id: str, region_code: str, robot_id: str,
+                     command: McapProcessingConfig, auth: VerifiedAuth,
+                     organization_id: OrganizationHeader) -> McapProcessingConfig:
+    from .mcap_processing import profile
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    return profile((organization_id, project_id, region_code), robot_id, command)
+
+
+@router.post("/{import_id}:process-mcap")
+def process_mcap(project_id: str, region_code: str, import_id: str,
+                 command: StartStoredProcessing, auth: VerifiedAuth,
+                 organization_id: OrganizationHeader, service: Service):
+    from .mcap_processing import start
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    raw = browser.source(organization_id, project_id, region_code, import_id)
+    if raw.source_format.value != "MCAP" or not raw.dataset_id:
+        raise problem(status=422, code="MCAP_SOURCE_REQUIRED", title="需要 MCAP 原始数据",
+                      detail="请选择绑定数据集的 MCAP 原始数据。")
+    return start((organization_id, project_id, region_code), raw, browser.manifest(raw), command)
+
+
+@router.get("/{import_id}/mcap-processing")
+def mcap_progress(project_id: str, region_code: str, import_id: str,
+                  auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
+    from .mcap_processing import progress
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    OriginalSourceBrowser(service.storage, service.raw_sources).source(organization_id, project_id, region_code, import_id)
+    return progress((organization_id, project_id, region_code), import_id)
+
+
 @router.get("")
 def list_native_imports(
     project_id: str,
@@ -172,6 +215,7 @@ def list_native_imports(
     offset: Annotated[int, Query(ge=0)] = 0,
     dataset_id: Annotated[str | None, Query(max_length=128)] = None,
     include_all_sources: bool = False,
+    recording_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> list[NativeImportProgress]:
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
     return list_progress(
@@ -182,6 +226,7 @@ def list_native_imports(
         offset=offset,
         dataset_id=dataset_id,
         include_all_sources=include_all_sources,
+        recording_id=recording_id,
     )
 
 
@@ -217,6 +262,56 @@ def authorize_original_file(
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     return browser.grant(
         browser.source(organization_id, project_id, region_code, import_id), path, download=download
+    )
+
+
+def _source_local_root() -> str | None:
+    from hc_data_platform.core.config import get_settings
+
+    settings = get_settings()
+    if settings.environment == "local" and settings.object_store_provider == "s3":
+        return settings.object_store_browser_path
+    return None
+
+
+@router.get("/{import_id}/directory")
+def browse_original_directory(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+    response: Response,
+    path: Annotated[str, Query(max_length=1024)] = "",
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> OriginalDirectory:
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    response.headers["Cache-Control"] = "no-store"
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    raw = browser.source(organization_id, project_id, region_code, import_id)
+    return directory(
+        browser, raw, path=path, offset=offset, limit=limit, local_root=_source_local_root()
+    )
+
+
+@router.get("/{import_id}/text-preview")
+def preview_original_text(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+    response: Response,
+    path: Annotated[str, Query(min_length=1, max_length=1024)],
+) -> OriginalTextPreview:
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    response.headers["Cache-Control"] = "no-store"
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    return text_preview(
+        browser, browser.source(organization_id, project_id, region_code, import_id), path
     )
 
 

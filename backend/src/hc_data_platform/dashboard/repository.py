@@ -168,6 +168,7 @@ class TaskStatusPackageFact:
     alignment_attempt_id: str | None = None
     resolution_status: str | None = None
     quality_findings: tuple[TaskIssueFinding, ...] = ()
+    recording_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

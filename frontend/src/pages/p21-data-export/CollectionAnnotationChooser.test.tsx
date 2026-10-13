@@ -21,7 +21,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetAllMocks();
 });
-it("requires consent for an unapproved revision and blocks overlapping subtask tags", async () => {
+it("uses current annotations instead of older approval, without a revision selector", async () => {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn().mockReturnValue({
@@ -44,9 +44,20 @@ it("requires consent for an unapproved revision and blocks overlapping subtask t
       task_id: f.annotation.task.task_id,
     },
   });
-  vi.mocked(loadCollectionAnnotationHistory).mockResolvedValue(
-    f.annotation.history,
-  );
+  const current = f.annotation.revision;
+  f.annotation.history.task.current_revision = current.revision;
+  f.annotation.history.revisions.unshift({
+    ...current,
+    revision: current.revision - 1,
+    tags: [{ ...current.tags[0]!, label: "旧标注不应出现" }],
+  });
+  vi.mocked(loadCollectionAnnotationHistory).mockResolvedValue({
+    ...f.annotation.history,
+    task: {
+      ...f.annotation.history.task,
+      approved_revision: current.revision - 1,
+    },
+  });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -59,14 +70,21 @@ it("requires consent for an unapproved revision and blocks overlapping subtask t
       />
     </QueryClientProvider>,
   );
+  expect(
+    screen.queryByRole("combobox", { name: /标注修订/ }),
+  ).not.toBeInTheDocument();
   const user = userEvent.setup(),
     choose = await screen.findByRole("button", {
-      name: "选定此修订和分段轨道",
+      name: "确认当前标注和分段",
     });
+  expect(screen.queryByText(/旧标注不应出现/)).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("combobox", { name: /标注修订/ }),
+  ).not.toBeInTheDocument();
   await user.click(screen.getByRole("checkbox", { name: "第一段 [0, 2)" }));
   expect(choose).toBeDisabled();
   await user.click(
-    screen.getByRole("checkbox", { name: "明确导出此未批准修订" }),
+    screen.getByRole("checkbox", { name: "包含尚未审核的当前标注" }),
   );
   await user.click(choose);
   await waitFor(() =>

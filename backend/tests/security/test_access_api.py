@@ -37,6 +37,7 @@ from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import (
     CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE,
     CAPABILITY_PLATFORM_ADMIN,
+    PLATFORM_ADMIN_CAPABILITIES,
 )
 from hc_data_platform.security.passwords import PasswordPolicy
 
@@ -190,6 +191,7 @@ def test_zero_scope_account_can_join_organization_without_reauthentication() -> 
     repository = InMemoryAccessRepository(organization_projects=(("org-a", "project-a"),))
     service = AccessService(repository)
     with _client(service=service) as client:
+        _register_and_login(client, "bootstrap-owner")
         token, principal = _register_and_login(client, "personal-mode-user")
 
         initial = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token))
@@ -708,8 +710,27 @@ def test_platform_security_capability_unlocks_only_an_active_lock_once() -> None
     policy.check(attempt, request_id="after-unlock")
 
 
+def test_first_registration_can_manage_accounts_and_later_registration_cannot() -> None:
+    with _client() as client:
+        owner_token, _ = _register_and_login(client, "chosen-owner")
+        member_token, _ = _register_and_login(client, "later-member")
+        owner = client.get("/api/v1/auth/session/bootstrap", headers=_headers(owner_token))
+        member = client.get("/api/v1/auth/session/bootstrap", headers=_headers(member_token))
+        assert set(owner.json()["platform_capabilities"]) == PLATFORM_ADMIN_CAPABILITIES
+        assert member.json()["platform_capabilities"] == []
+        assert (
+            client.get("/api/v1/platform/accounts", headers=_headers(owner_token)).status_code
+            == 200
+        )
+        assert (
+            client.get("/api/v1/platform/accounts", headers=_headers(member_token)).status_code
+            == 403
+        )
+
+
 def test_registration_creates_loginable_empty_account_and_problem_details_are_redacted() -> None:
     with _client() as client:
+        _register_and_login(client, "bootstrap-owner")
         token, principal = _register_and_login(client, "empty-user")
         assert principal["status"] == "ACTIVE"
 
@@ -948,6 +969,7 @@ def test_logout_revokes_only_the_presented_session_and_is_concurrently_idempoten
 def test_two_users_are_repository_scoped_and_revocation_is_immediate() -> None:
     repository = InMemoryAccessRepository()
     with _client(repository) as client:
+        _register_and_login(client, "bootstrap-owner")
         alice_token, alice = _register_and_login(client, "alice")
         bob_token, _ = _register_and_login(client, "bob")
 

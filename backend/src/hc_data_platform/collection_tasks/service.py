@@ -338,6 +338,28 @@ class CollectionTaskService:
         )
         return CommandResult(record=result.value, replayed=result.replayed)
 
+    def captures(
+        self,
+        organization_id,
+        project_id,
+        region_code,
+        task_id=None,
+        *,
+        limit=20,
+        offset=0,
+        robot_id=None,
+    ):
+        from .captures import CaptureProgressPage, capture_counts
+
+        if task_id is not None:
+            self.detail(organization_id, project_id, task_id)
+        items = self.repository.captures(organization_id, project_id, region_code, task_id)
+        if robot_id is not None:
+            items = tuple(item for item in items if item.robot_id == robot_id)
+        return CaptureProgressPage(
+            items=items[offset : offset + limit], total=len(items), counts=capture_counts(items)
+        )
+
     def progress(
         self,
         organization_id: str,
@@ -361,6 +383,7 @@ class CollectionTaskService:
             project_id=project_id,
             status=task.status,
             as_of=facts.as_of,
+            captures=facts.captures,
             received_package_count=facts.received_package_count,
             captured_duration_seconds=facts.captured_duration_seconds,
             duration_observed_package_count=facts.duration_observed_package_count,

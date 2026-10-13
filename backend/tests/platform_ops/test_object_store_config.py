@@ -96,6 +96,8 @@ def test_unconfigured_oss_boots_and_page_write_never_returns_credentials() -> No
         "public_endpoint": "",
         "bucket": "",
         "region": "cn-hangzhou",
+        "local_path": None,
+        "browser_path": None,
         "access_key_configured": False,
         "access_key_hint": None,
         "activation_required": False,
@@ -208,6 +210,7 @@ def test_object_store_config_http_boundary_is_admin_only_and_redacts_secrets() -
         "provider": "oss",
         "public_endpoint": "https://oss-cn-hangzhou.aliyuncs.com",
         "region": "cn-hangzhou",
+        "local_path": None,
     }
     assert "bucket" not in location.text
     assert "internal" not in location.text
@@ -215,3 +218,21 @@ def test_object_store_config_http_boundary_is_admin_only_and_redacts_secrets() -
     serialized_audit = " ".join(event.model_dump_json() for event in audit.platform_audit_events)
     assert "http-sensitive-access-key" not in serialized_audit
     assert "http-sensitive-secret-key" not in serialized_audit
+
+
+def test_local_storage_reports_internal_and_browse_paths_without_cloud_setup():
+    settings = Settings(
+        environment="local",
+        runtime_backend="memory",
+        object_store_local_path="/local/internal",
+        object_store_browser_path="/local/files",
+        _env_file=None,
+    )
+    service = ObjectStoreConfigurationService(
+        InMemoryObjectStoreConfigurationRepository(), settings
+    )
+    status = service.current()
+    assert status.configured and status.provider == "s3"
+    assert status.local_path == "/local/internal"
+    assert status.browser_path == "/local/files"
+    assert service.location().local_path == "/local/internal"

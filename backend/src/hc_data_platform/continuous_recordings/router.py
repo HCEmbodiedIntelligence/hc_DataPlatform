@@ -12,6 +12,7 @@ from .asset_models import (
     AuthorizeRecordingAssetPartsCommand,
     CompleteRecordingAssetCommand,
     CreateRecordingUploadCommand,
+    EpisodeProcessing,
     EpisodeProcessingPage,
     EpisodeVideoSourceEnvelope,
     RecordingAssetPartGrant,
@@ -19,6 +20,7 @@ from .asset_models import (
     RecordingUploadEnvelope,
     RecordingUploadGrant,
     RecordingVideoSourceEnvelope,
+    RetryEpisodeCommand,
 )
 from .asset_repository import InMemoryRecordingAssetRepository
 from .models import (
@@ -423,6 +425,71 @@ def list_continuous_recording_episodes(
         project_id=project_id,
         region_code=region_code,
         recording_id=recording_id,
+    )
+
+
+@router.post(
+    "/{recording_id}/episodes/{episode_id}:retry",
+    operation_id="retryContinuousRecordingEpisode",
+    response_model=EpisodeProcessing,
+    responses=PROBLEM_RESPONSES,
+)
+def retry_continuous_recording_episode(
+    project_id: str,
+    region_code: str,
+    recording_id: str,
+    episode_id: str,
+    command: RetryEpisodeCommand,
+    request: Request,
+    response: Response,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+) -> EpisodeProcessing:
+    response.headers["Cache-Control"] = "no-store"
+    return service.retry_episode(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        recording_id=recording_id,
+        episode_id=episode_id,
+        command=command,
+        actor_id=auth.subject_id,
+        request_id=_request_id(request),
+    )
+
+
+@router.post(
+    "/{recording_id}/episodes/{episode_id}:discard",
+    operation_id="discardContinuousRecordingEpisode",
+    response_model=EpisodeProcessing,
+    responses=PROBLEM_RESPONSES,
+)
+def discard_continuous_recording_episode(
+    project_id: str,
+    region_code: str,
+    recording_id: str,
+    episode_id: str,
+    command: RetryEpisodeCommand,
+    request: Request,
+    response: Response,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+) -> EpisodeProcessing:
+    response.headers["Cache-Control"] = "no-store"
+    return service.retry_episode(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        recording_id=recording_id,
+        episode_id=episode_id,
+        command=command,
+        actor_id=auth.subject_id,
+        request_id=_request_id(request),
+        discard=True,
     )
 
 

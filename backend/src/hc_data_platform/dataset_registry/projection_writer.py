@@ -862,9 +862,20 @@ class DatasetProjectionWriter:
         first = self.steps.read_steps(ready.data.identity, ready.data.data_version_id, 0, 1).steps[
             0
         ]
-        if first.timestamp_ns != alignment.start_ns or ready.step_count != math.ceil(
+        expected_frames = math.ceil(
             (alignment.end_ns - alignment.start_ns) * Fraction(str(frequency_hz)) / 10**9
-        ):
+        )
+        if info.get('hc.training_policy') == 'drop_invalid_rows_preserve_source_time/v1':
+            from hc_data_platform.episode_store.validation import parquet_rows
+            with package.file('hc/recording/aligned_rows.parquet') as path:
+                archive_first = next(parquet_rows(path))
+            coherent = (info.get('hc.source_frame_count', info['hc.media_frame_count']) == expected_frames
+                        and 0 < ready.step_count <= expected_frames
+                        and first.timestamp_ns == info['hc.time_origin_ns']
+                        and archive_first['hc.timestamp_ns'] == alignment.start_ns)
+        else:
+            coherent = first.timestamp_ns == alignment.start_ns and ready.step_count == expected_frames
+        if not coherent:
             raise DatasetIngestProjectionConflict("package and projected alignment window differ")
         streams = []
         for topic, stream in sorted(alignment.streams.items()):

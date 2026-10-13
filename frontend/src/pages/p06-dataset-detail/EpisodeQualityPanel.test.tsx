@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { EpisodeQualityPanel } from "./EpisodeQualityPanel";
@@ -32,13 +31,13 @@ function setup(legacy = false, canRead = true) {
     </QueryClientProvider>,
   );
 }
-it("shows total PASS while keeping unmeasured rules visibly separate", async () => {
+it("shows the verdict and data identity without passed or skipped rule lists", async () => {
   setup();
   expect(await screen.findByText("自动 QC 总判定：PASS")).toBeVisible();
-  expect(screen.getByText("通过 0")).toBeVisible();
-  expect(screen.getByText("未验明 / 跳过 1")).toBeVisible();
-  await userEvent.click(screen.getByRole("button", { name: /RGB 黑帧/ }));
-  expect(await screen.findByText("缺少可评估观测")).toBeVisible();
+  expect(screen.getByText("未发现失败项。")).toBeVisible();
+  expect(screen.queryByLabelText("逐规则结果统计")).not.toBeInTheDocument();
+  expect(screen.queryByText("RGB 黑帧")).not.toBeInTheDocument();
+  expect(screen.getByText(/数据集.*版本/)).toBeVisible();
 });
 it("displays the missing historical evidence reason", async () => {
   setup(true);

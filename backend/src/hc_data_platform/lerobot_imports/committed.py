@@ -61,9 +61,12 @@ def normalize_committed_manifest(raw: RawSource, assets: list[dict[str, Any]]) -
     }
 
 
-def read_committed_manifest(storage: ObjectChunks, raw: RawSource) -> tuple[dict[str, Any], bytes]:
+def read_committed_manifest(
+    storage: ObjectChunks, raw: RawSource, *, body: bytes | None = None
+) -> tuple[dict[str, Any], bytes]:
     """Return a native read view plus the ORIGINAL bytes used for lineage hashes."""
-    body = b"".join(storage.read_chunks(raw.manifest_key))
+    if body is None:
+        body = b"".join(storage.read_chunks(raw.manifest_key))
     manifest = json.loads(body)
     if manifest.get("schema_version") == "robot-ingest-committed/v1":
         from hc_data_platform.robot_ingest.models import RobotIngestUpload

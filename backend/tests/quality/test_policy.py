@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from hc_data_platform.lerobot_imports.profiles import NativeProfile, quality_profile
 from hc_data_platform.quality import (
     ActionObservation,
     FindingSeverity,
@@ -169,3 +170,49 @@ def test_historical_reclassification_matches_new_evaluation_and_preserves_origin
                 },
             ),
         )
+
+
+@pytest.mark.parametrize("engine_version", ["be06-qc/2", "be06-qc/3"])
+@pytest.mark.parametrize("hz", [26.9, 27, 27.5, 28, 29, 30])
+def test_30hz_frequency_accepts_27hz_including_boundary(engine_version, hz) -> None:
+    timestamps = tuple(int(index * 1_000_000_000 / hz) for index in range(int(60 * hz)))
+    data = _input(timestamps)
+    configured = profile(engine_version=engine_version)
+    offline = QualityEngine().evaluate(data, configured)
+    online = QualityEngine().evaluate_stream(
+        data.model_copy(update={"topic_timestamps_ns": {}}),
+        (
+            QualityStreamObservationV1(
+                topic="/camera/front",
+                timestamp_ns=timestamp,
+                is_camera=True,
+            )
+            for timestamp in timestamps
+        ),
+        configured,
+    )
+    for report in (offline, online):
+        assert report.status is (QualityStatus.PASS if hz >= 27 else QualityStatus.RISK)
+        frequency = [f for f in report.findings if f.code is QualityCode.FREQUENCY_LOW]
+        if hz >= 27:
+            assert frequency == []
+        else:
+            assert len(frequency) == 1
+            assert frequency[0].threshold == 27
+
+
+@pytest.mark.parametrize("legacy_g1", [False, True])
+@pytest.mark.parametrize("fps", [20, 30])
+def test_native_import_frequency_threshold(legacy_g1, fps) -> None:
+    native = NativeProfile(
+        profile_id="test-native",
+        cameras=(),
+        topics=("/camera/front",),
+        state_names=(),
+        action_names=(),
+        joint_topic="/joint_states",
+        action_topic="/action",
+        legacy_g1=legacy_g1,
+    )
+    timing = quality_profile(native, fps).default_timing
+    assert timing.minimum_frequency_hz_risk == (27 if legacy_g1 or fps == 30 else fps * 0.95)

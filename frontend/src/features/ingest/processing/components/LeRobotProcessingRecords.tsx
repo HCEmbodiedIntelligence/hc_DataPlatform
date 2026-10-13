@@ -9,6 +9,7 @@ import type { IngestScope } from "../../../../entities/data-source";
 import { request } from "../../../../shared/api/http-client";
 import { nativeRoot, type NativeProgress } from "../lerobot-processing";
 import styles from "../../upload/upload.module.css";
+import { McapRobotProfile, McapPreparationProgress } from "./McapPreparation";
 import { ProcessingTargetFields } from "./ProcessingTargetFields";
 import { VideoPreviewModal } from "../../../viewer/VideoPreviewModal";
 import {
@@ -91,7 +92,7 @@ export function LeRobotProcessingRecords({
       request({
         method: "POST",
         scope,
-        path: `${nativeRoot(scope)}/${encodeURIComponent(processingItem!.import_id)}:process`,
+        path: `${nativeRoot(scope)}/${encodeURIComponent(processingItem!.import_id)}:${processingItem!.source_format === "MCAP" ? "process-mcap" : "process"}`,
         body: { collection_task_id: taskId, robot_id: robotId },
       }),
     onSuccess: async () => {
@@ -186,7 +187,7 @@ export function LeRobotProcessingRecords({
             <Space>
               {canManage &&
               item.status === "RAW_COMMITTED" &&
-              item.source_format === "LEROBOT_V3" ? (
+              ["LEROBOT_V3", "MCAP"].includes(item.source_format) ? (
                 <Button
                   onClick={() => {
                     setProcessingItem(item);
@@ -195,7 +196,9 @@ export function LeRobotProcessingRecords({
                     processStored.reset();
                   }}
                 >
-                  开始质检与对齐
+                  {item.source_format === "MCAP"
+                    ? "准备录制 / 重试"
+                    : "开始质检与对齐"}
                 </Button>
               ) : null}
               <Button onClick={() => setOpenedId(item.import_id)}>
@@ -220,6 +223,12 @@ export function LeRobotProcessingRecords({
                 </Button>
               ) : null}
             </Space>
+            {item.source_format === "MCAP" && (
+              <McapPreparationProgress
+                scope={scope}
+                importId={item.import_id}
+              />
+            )}
           </article>
         ))}
       </div>
@@ -263,6 +272,9 @@ export function LeRobotProcessingRecords({
                 onRobotIdChange={setRobotId}
               />
             </dl>
+            {processingItem.source_format === "MCAP" && (
+              <McapRobotProfile scope={scope} robotId={robotId} />
+            )}
             <ProcessingLabels
               scope={scope}
               datasetId={processingItem.dataset_id}

@@ -425,7 +425,7 @@ def read_detail(service, package, auth, *, delivery_id=None, annotation_task_id=
         },
         robot_id=frozen.robot_id,
         recording_date=frozen.recording_date,
-        duration_seconds=data.frame_count / info["fps"],
+        duration_seconds=info.get("hc.duration_seconds", data.frame_count / info["fps"]),
         frequency_hz=info["fps"],
         camera_stream_count=len(cameras),
         physical_camera_count=None,

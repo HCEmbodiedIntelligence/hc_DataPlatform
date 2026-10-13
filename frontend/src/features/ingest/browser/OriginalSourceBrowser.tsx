@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, InputNumber, Space, Spin, Table } from "antd";
+import { Alert, Button, InputNumber, Space, Spin } from "antd";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
 import { useScopeQueryRevision } from "../../../shared/api/use-scoped-query";
@@ -8,13 +8,12 @@ import {
   getOriginalEpisode,
   authorizeOriginalFile,
   originalPreviewReason,
-  type OriginalFile,
   type OriginalEpisode,
 } from "./original-source-api";
 import { createPlaybackClock } from "../../viewer/PlaybackClock";
 import { DataVisualizationWorkbench } from "../../viewer/DataVisualizationWorkbench";
 import type { StreamDescriptor } from "../../viewer/types";
-import { formatBytes } from "../upload/upload-contract";
+import OriginalFileExplorer from "./OriginalFileExplorer";
 import styles from "./OriginalSourceBrowser.module.css";
 
 export function OriginalEpisodePlayer({
@@ -130,9 +129,7 @@ export default function OriginalSourceBrowser({
   filesOnly?: boolean;
   canDownload?: boolean;
 }) {
-  const [offset, setOffset] = useState(0);
   const [episodeIndex, setEpisodeIndex] = useState(initialEpisodeIndex);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const revision = useScopeQueryRevision();
   const identity = [
     "original-source",
@@ -143,8 +140,9 @@ export default function OriginalSourceBrowser({
     importId,
   ];
   const files = useQuery({
-    queryKey: [...identity, "files", offset],
-    queryFn: ({ signal }) => getOriginalFiles(scope, importId, offset, signal),
+    queryKey: [...identity, "files"],
+    enabled: !filesOnly,
+    queryFn: ({ signal }) => getOriginalFiles(scope, importId, 0, signal),
     retry: false,
     staleTime: 60_000,
   });
@@ -159,26 +157,6 @@ export default function OriginalSourceBrowser({
     retry: false,
     staleTime: 60_000,
   });
-  const download = async (file: OriginalFile) => {
-    setDownloadError(null);
-    try {
-      const grant = await authorizeOriginalFile(
-        scope,
-        importId,
-        file.path,
-        true,
-      );
-      const link = document.createElement("a");
-      link.href = grant.url;
-      link.download = file.path.split("/").at(-1) ?? file.path;
-      link.rel = "noopener noreferrer";
-      document.body.append(link);
-      link.click();
-      link.remove();
-    } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : "下载授权失败");
-    }
-  };
   return (
     <div className={styles.browser}>
       {files.isError ? (
@@ -260,57 +238,11 @@ export default function OriginalSourceBrowser({
           episode={episode.data}
         />
       ) : null}
-      {downloadError ? <Alert type="error" title={downloadError} /> : null}
-      <details
-        className={styles.files}
-        open={filesOnly || files.data?.episode_count === 0}
-      >
-        <summary>原始文件（{files.data?.total ?? 0}）</summary>
-        <Table<OriginalFile>
-          size="small"
-          rowKey="path"
-          dataSource={files.data?.files ?? []}
-          loading={files.isPending}
-          pagination={false}
-          scroll={{ x: true }}
-          columns={[
-            { title: "原始路径", dataIndex: "path" },
-            {
-              title: "大小",
-              dataIndex: "size",
-              render: (size: number) => formatBytes(size),
-            },
-            { title: "SHA-256", dataIndex: "sha256", ellipsis: true },
-            {
-              title: "下载",
-              key: "download",
-              render: (_: unknown, file: OriginalFile) => (
-                <Button
-                  disabled={!canDownload}
-                  onClick={() => void download(file)}
-                >
-                  下载原文件
-                </Button>
-              ),
-            },
-          ]}
-        />
-        <Space>
-          <Button
-            disabled={offset === 0}
-            onClick={() => setOffset((value) => Math.max(0, value - 50))}
-          >
-            上一页
-          </Button>
-          <span>共 {files.data?.total ?? 0} 个文件</span>
-          <Button
-            disabled={offset + 50 >= (files.data?.total ?? 0)}
-            onClick={() => setOffset((value) => value + 50)}
-          >
-            下一页
-          </Button>
-        </Space>
-      </details>
+      <OriginalFileExplorer
+        scope={scope}
+        importId={importId}
+        canDownload={canDownload}
+      />
     </div>
   );
 }

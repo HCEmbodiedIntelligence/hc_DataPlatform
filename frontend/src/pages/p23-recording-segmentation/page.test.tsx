@@ -79,6 +79,8 @@ function makeGateway(): RecordingGateway {
             duration_ns: recording.duration_ns,
             fps: 30,
             codec: "h264",
+            modality: "rgb",
+            preview_status: "READY",
             expires_at: "2026-08-31T05:00:00Z",
             byte_range_supported: true,
             materialization: "ORIGINAL_RECORDING",
@@ -104,7 +106,7 @@ function makeGateway(): RecordingGateway {
       ],
       truncated: false,
     })),
-    processing: vi.fn(async () => ({ items: [], total: 0 })),
+    processing: vi.fn(async () => ({ items: [], total: 0, qc_reports: [] })),
     saveDraft: vi.fn(
       async (
         _scope: RecordingScope,
@@ -150,6 +152,45 @@ function makeGateway(): RecordingGateway {
 
 function LocationProbe() {
   return <output data-testid="location">{useLocation().pathname}</output>;
+}
+
+function makeSwitchingGateway() {
+  const gateway = makeGateway();
+  const second = {
+    ...recording,
+    recording_id: "recording_second",
+    rollout_id: "rollout-second",
+    capture_started_at: "2026-08-30T01:00:00Z",
+    duration_ns: "5000000000",
+  };
+  const otherTask = {
+    ...second,
+    recording_id: "recording_other_task",
+    collection_task_id: "task-2",
+    capture_started_at: "2026-08-29T01:00:00Z",
+  };
+  vi.mocked(gateway.list).mockResolvedValue({
+    items: [recording, second, otherTask],
+    total: 3,
+  });
+  vi.mocked(gateway.detail).mockImplementation(async (_scope, id) => ({
+    data:
+      id === recording.recording_id
+        ? recording
+        : id === second.recording_id
+          ? second
+          : otherTask,
+    current_slice_revision: null,
+  }));
+  return { gateway, second };
+}
+
+async function markFirstSlice(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: /开始标记/ }));
+  fireEvent.keyDown(screen.getByRole("slider", { name: "共享播放位置" }), {
+    key: "ArrowRight",
+  });
+  await user.click(screen.getByRole("button", { name: /设为出点并添加/ }));
 }
 
 function renderPage(gateway: RecordingGateway, initialEntry: string) {
@@ -226,8 +267,116 @@ afterEach(() => {
 });
 
 describe("P23 recording segmentation", () => {
+  it("switches original recordings in place, resets the player and keeps the chosen task filter", async () => {
+    const { gateway, second } = makeSwitchingGateway();
+    const user = userEvent.setup();
+    renderPage(
+      gateway,
+      `/recordings/${recording.recording_id}/slice?episode=episode_old`,
+    );
+    const sidebar = await screen.findByRole("complementary", {
+      name: "原始录制切换",
+    });
+    expect(
+      await within(sidebar).findByRole("button", {
+        name: `切换到录制 ${second.recording_id}`,
+      }),
+    ).toBeVisible();
+    expect(
+      within(sidebar).queryByRole("button", {
+        name: "切换到录制 recording_other_task",
+      }),
+    ).not.toBeInTheDocument();
+    await user.click(
+      within(sidebar).getByRole("checkbox", { name: "仅当前采集任务" }),
+    );
+    await user.click(within(sidebar).getByRole("button", { name: "下一条" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        `/recordings/${second.recording_id}/slice`,
+      ),
+    );
+    expect(
+      await screen.findByRole("checkbox", { name: "仅当前采集任务" }),
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole("button", { name: `切换到录制 ${second.recording_id}` }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      screen.getByRole("slider", { name: "共享播放位置" }),
+    ).toHaveAttribute("aria-valuenow", "0");
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+    expect(gateway.processing).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "上一条" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        `/recordings/${recording.recording_id}/slice`,
+      ),
+    );
+  });
+
+  it("keeps unsaved slices when switching is cancelled, then saves the current source before switching", async () => {
+    const { gateway, second } = makeSwitchingGateway();
+    const user = userEvent.setup();
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    await markFirstSlice(user);
+    await user.click(screen.getByRole("button", { name: "下一条待切片" }));
+    await user.click(screen.getByRole("button", { name: "继续编辑" }));
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      recording.recording_id,
+    );
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+    expect(screen.getByText("有未保存修改")).toBeVisible();
+    await user.click(
+      screen.getByRole("button", { name: `切换到录制 ${second.recording_id}` }),
+    );
+    await user.click(screen.getByRole("button", { name: "保存草稿并切换" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        second.recording_id,
+      ),
+    );
+    expect(gateway.saveDraft).toHaveBeenCalledWith(
+      scope,
+      recording.recording_id,
+      {
+        slices: [expect.objectContaining({ episode_id: "episode_0001" })],
+      },
+      recording.etag,
+    );
+    expect(
+      await screen.findByRole("button", { name: "保存草稿" }),
+    ).toBeVisible();
+    expect(screen.queryByText("有未保存修改")).not.toBeInTheDocument();
+    expect(screen.queryByText("Episode 0001")).not.toBeInTheDocument();
+  });
+
+  it("stays on the original recording after a save failure and supports explicit discard", async () => {
+    const { gateway, second } = makeSwitchingGateway();
+    vi.mocked(gateway.saveDraft).mockRejectedValue(new Error("save failed"));
+    const user = userEvent.setup();
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    await markFirstSlice(user);
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await user.click(screen.getByRole("button", { name: "保存草稿并切换" }));
+    expect(
+      await screen.findByText("保存失败，仍停留在当前录制，修改已保留"),
+    ).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      recording.recording_id,
+    );
+    expect(screen.getByText("有未保存修改")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "放弃修改并切换" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        second.recording_id,
+      ),
+    );
+    expect(gateway.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["lerobot_v3", "legacy_lance"])(
-    "opens the committed %s collection without borrowing a storage version",
+    "previews generated %s episodes without loading QC or admission details",
     async (format) => {
       const gateway = makeGateway();
       const packages = format === "lerobot_v3";
@@ -286,18 +435,15 @@ describe("P23 recording segmentation", () => {
           },
         ],
         total: 1,
+        qc_reports: [],
       });
       renderPage(gateway, "/recordings/recording_three_hours/slice");
-      const link = await screen.findByRole("link", {
-        name: "打开 Dataset Episode",
-      });
-      expect(link.getAttribute("href")).toContain(
-        packages ? "version_cv_test" : "version_lance_7",
-      );
-      expect(link.getAttribute("href")).toContain("episode_package");
       expect(
-        screen.getByRole("link", { name: "打开 TAGGING 任务" }),
+        await screen.findByRole("button", { name: "查看视频" }),
       ).toBeVisible();
+      expect(gateway.processing).not.toHaveBeenCalled();
+      expect(screen.queryByText("质检明细")).not.toBeInTheDocument();
+      expect(screen.queryByText("处理阶段")).not.toBeInTheDocument();
     },
   );
 
@@ -348,7 +494,7 @@ describe("P23 recording segmentation", () => {
       await screen.findByRole("heading", { name: "录制切片" }),
     ).toBeVisible();
     expect(await screen.findByText(recording.recording_id)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "开始切片" }));
+    await user.click(screen.getByText(recording.recording_id));
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/recordings/recording_three_hours/slice",
     );
@@ -360,8 +506,8 @@ describe("P23 recording segmentation", () => {
     renderPage(gateway, "/recordings/recording_three_hours/slice");
 
     expect(
-      await screen.findByText("直接读取 OSS，不生成预览副本"),
-    ).toBeVisible();
+      await screen.findByRole("checkbox", { name: "显示深度视频" }),
+    ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /开始标记/ }));
     const sharedPlayhead = screen.getByRole("slider", {
       name: "共享播放位置",
@@ -384,5 +530,107 @@ describe("P23 recording segmentation", () => {
         },
       ],
     });
+  });
+  it("saves an empty draft without requiring markers or labels", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    await user.click(await screen.findByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(gateway.saveDraft).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(gateway.saveDraft).mock.calls[0]?.[2]).toEqual({
+      slices: [],
+    });
+  });
+
+  it("creates a second Episode independently of the first", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    const mark = await screen.findByRole("button", { name: /开始标记/ });
+    const playhead = screen.getByRole("slider", { name: "共享播放位置" });
+    await user.click(mark);
+    for (let step = 0; step < 10; step++)
+      fireEvent.keyDown(playhead, { key: "ArrowRight" });
+    await user.click(screen.getByRole("button", { name: /设为出点并添加/ }));
+    await user.click(screen.getByRole("button", { name: "新增 Episode" }));
+    await user.click(mark);
+    for (let step = 0; step < 10; step++)
+      fireEvent.keyDown(playhead, { key: "ArrowRight" });
+    await user.click(screen.getByRole("button", { name: /设为出点并添加/ }));
+    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(gateway.saveDraft).toHaveBeenCalledTimes(1));
+    expect(
+      vi
+        .mocked(gateway.saveDraft)
+        .mock.calls[0]?.[2].slices.map((item) => item.episode_id),
+    ).toEqual(["episode_0001", "episode_0002"]);
+  });
+
+  it("only adds depth video frames when requested", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    const envelope = await gateway.videoSources(scope, recording.recording_id);
+    vi.mocked(gateway.videoSources).mockResolvedValue({
+      ...envelope,
+      sources: [
+        ...envelope.sources,
+        {
+          ...envelope.sources[0]!,
+          camera_id: "front_depth",
+          asset_id: "depth",
+          modality: "depth",
+          materialization: "DEPTH_PREVIEW",
+        },
+      ],
+    });
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    const toggle = await screen.findByRole("checkbox", {
+      name: "显示深度视频",
+    });
+    expect(toggle).not.toBeChecked();
+    expect(
+      screen.queryByRole("region", { name: "深度视频区域" }),
+    ).not.toBeInTheDocument();
+    await user.click(toggle);
+    expect(screen.getByRole("region", { name: "深度视频区域" })).toBeVisible();
+    await user.click(toggle);
+    expect(
+      screen.queryByRole("region", { name: "深度视频区域" }),
+    ).not.toBeInTheDocument();
+  });
+  it("generates the whole recording without marks and finalizes the saved ETag", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    vi.mocked(gateway.finalize).mockImplementation(async () => {
+      const saved = await vi.mocked(gateway.saveDraft).mock.results[0]!.value;
+      return {
+        recording: {
+          ...saved.recording,
+          status: "SLICED" as const,
+          finalized_revision: 1,
+        },
+        revision: { ...saved.revision, status: "FINALIZED" as const },
+      };
+    });
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    await user.click(await screen.findByRole("button", { name: "提交成片" }));
+    await user.click(await screen.findByRole("button", { name: "确认生成" }));
+    await waitFor(() =>
+      expect(gateway.finalize).toHaveBeenCalledWith(
+        scope,
+        recording.recording_id,
+        1,
+        '"v2"',
+      ),
+    );
+    expect(vi.mocked(gateway.saveDraft).mock.calls[0]?.[2].slices).toEqual([
+      {
+        episode_id: "episode_0001",
+        start_offset_ns: "0",
+        end_offset_ns: recording.duration_ns,
+        title: "完整录制",
+      },
+    ]);
+    expect(gateway.processing).not.toHaveBeenCalled();
   });
 });

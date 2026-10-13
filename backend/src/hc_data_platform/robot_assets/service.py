@@ -66,6 +66,34 @@ class OrganizationRobotAssetService:
                 detail="The requested organization does not exist.",
             )
 
+    def camera_calibration(
+        self, *, auth, organization_id, robot_id, configuration=None, expected=None
+    ):
+        from hc_data_platform.robotics.camera_calibration import CameraCalibrationState
+
+        self._authorize(
+            auth, organization_id, "robot.manage" if configuration is not None else "robot.read"
+        )
+        if self._repository.get_robot(organization_id=organization_id, robot_id=robot_id) is None:
+            raise problem(
+                status=404,
+                code="ROBOT_NOT_FOUND",
+                title="机器人不存在",
+                detail="当前组织中没有这台机器人。",
+            )
+        if configuration is not None:
+            self._repository.save_camera_calibration(
+                organization_id, robot_id, configuration, expected
+            )
+        else:
+            configuration = self._repository.camera_calibration(organization_id, robot_id)
+        return CameraCalibrationState(
+            organization_id=organization_id,
+            robot_id=robot_id,
+            configuration=configuration,
+            etag=configuration.content_sha256 if configuration else "unconfigured",
+        )
+
     def list_robots(
         self,
         *,

@@ -154,6 +154,12 @@ class RecordingOutboxHandler:
             raise RuntimeError("recording activity execution scope is not configured")
 
         event = DomainEventEnvelope.model_validate(value)
+        if "mcap_processing_id" in event.payload:
+            from hc_data_platform.lerobot_imports.mcap_processing import mark_failed
+            with self.execution_scope(event.project_id, event.region_code, event.aggregate_id,
+                                      organization_id=event.organization_id):
+                mark_failed(self.connections, event)
+            return
         with (
             self.execution_scope(
                 event.project_id,
@@ -191,6 +197,10 @@ class RecordingOutboxHandler:
         if event.event_type != EVENT_TYPE:
             raise RecordingBridgeError("unexpected event")
         scope = (event.organization_id, event.project_id, event.region_code)
+        if "mcap_processing_id" in event.payload:
+            from hc_data_platform.lerobot_imports.mcap_processing import process_file
+            with scope_context(*scope):
+                return process_file(self, event, progress)
         with scope_context(*scope), self.connections() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """SELECT upload_document FROM ingest.robot_ingest_uploads
@@ -343,6 +353,9 @@ class RecordingOutboxHandler:
                     committed_at=now,
                 )
                 projected.append(asset)
+            from hc_data_platform.continuous_recordings.previews import prepare_recording_previews
+
+            prepare_recording_previews(self.storage, recorded, tuple(projected), progress)
             try:
                 self.registrations.register(
                     cursor, VerifiedRecordingFacts(recorded, tuple(projected))

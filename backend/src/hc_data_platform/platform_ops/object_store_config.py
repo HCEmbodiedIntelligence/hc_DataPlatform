@@ -111,6 +111,8 @@ class ObjectStoreConfigurationStatus(BaseModel):
     public_endpoint: str
     bucket: str
     region: str
+    local_path: str | None = None
+    browser_path: str | None = None
     access_key_configured: bool
     access_key_hint: str | None = None
     activation_required: bool = False
@@ -127,6 +129,7 @@ class ObjectStoreLocationStatus(BaseModel):
     provider: Literal["oss", "s3"]
     public_endpoint: str
     region: str
+    local_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -502,6 +505,8 @@ class ObjectStoreConfigurationService:
             ),
             bucket=(self.settings.object_store_bucket if configured else ""),
             region=self.settings.object_store_region,
+            local_path=self.settings.object_store_local_path if local_minio else None,
+            browser_path=self.settings.object_store_browser_path if local_minio else None,
             access_key_configured=configured,
             access_key_hint=(
                 _masked_access_key(self.settings.object_store_access_key) if configured else None
@@ -531,6 +536,7 @@ class ObjectStoreConfigurationService:
             provider=status.provider,
             public_endpoint=status.public_endpoint if status.configured else "",
             region=status.region if status.configured else "",
+            local_path=status.local_path,
         )
 
 

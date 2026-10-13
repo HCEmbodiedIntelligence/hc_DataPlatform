@@ -475,11 +475,26 @@ describe("P21 data export page", () => {
             },
           ]),
       ),
-      http.get("*/lerobot-imports/:importId/files", () =>
+      http.get("*/lerobot-imports/:importId/directory", () =>
         HttpResponse.json({
           import_id: "raw-1",
           offset: 0,
-          files: [{ path: "meta/info.json", size: 10, sha256: "a".repeat(64) }],
+          path: "",
+          storage_prefix: "raw/source",
+          local_path: null,
+          file_count: 1,
+          total_bytes: 10,
+          entries: [
+            {
+              name: "info.json",
+              path: "info.json",
+              kind: "FILE",
+              size: 10,
+              file_count: 1,
+              sha256: "a".repeat(64),
+              text_preview: true,
+            },
+          ],
           total: 1,
           episode_count: 154,
           source_format: "LEROBOT_V3",
@@ -487,7 +502,7 @@ describe("P21 data export page", () => {
       ),
       http.get("*/lerobot-imports/:importId/assets:read", () =>
         HttpResponse.json({
-          path: "meta/info.json",
+          path: "info.json",
           url: "https://example.test/original-info.json",
           expires_at: new Date(Date.now() + 60_000).toISOString(),
         }),
@@ -513,7 +528,9 @@ describe("P21 data export page", () => {
       screen.queryByRole("button", { name: /创建 .* 个导出任务/u }),
     ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "选择原文件" }));
-    await user.click(await screen.findByRole("button", { name: "下载原文件" }));
+    await user.click(
+      await screen.findByRole("button", { name: "下载 info.json" }),
+    );
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
     expect(postedExports).toHaveLength(0);
   });

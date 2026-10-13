@@ -992,7 +992,7 @@ export function DataExportPage() {
                   {dataStage === "raw" ? (
                     "保留上传时的原文件"
                   ) : standardMode ? (
-                    "固定数据版本与标注修订"
+                    "使用所选数据与当前标注"
                   ) : (
                     <>
                       已选 {selectedSources.length} 个数据集 ·{" "}
@@ -1045,6 +1045,8 @@ export function DataExportPage() {
                   </div>
                   {dataStage !== "raw" && (
                     <Radio.Group
+                      className={styles.deliverySwitch}
+                      optionType="button"
                       aria-label="导出交付方式"
                       value={standardMode ? "standard" : "legacy"}
                       options={[

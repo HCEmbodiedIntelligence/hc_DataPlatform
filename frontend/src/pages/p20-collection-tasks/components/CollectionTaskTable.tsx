@@ -1,5 +1,14 @@
-import type { ColumnDef } from "@tanstack/react-table";
-import { Button, Dropdown, Progress, Tooltip, type MenuProps } from "antd";
+import { CaptureProgressPanel } from "../../../features/collection-tasks/CaptureProgressPanel";
+import { useIngestScope } from "../../../features/ingest/use-ingest-scope";
+import type { CellContext, ColumnDef } from "@tanstack/react-table";
+import {
+  Button,
+  Drawer,
+  Dropdown,
+  Progress,
+  Tooltip,
+  type MenuProps,
+} from "antd";
 import {
   ArrowUpRight,
   Ban,
@@ -9,7 +18,7 @@ import {
   RotateCcw,
   XCircle,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { createContext, useContext, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { DatasetId } from "../../../entities/dataset";
 import { routes } from "../../../features/datasets/routing";
@@ -18,7 +27,10 @@ import { DataTable } from "../../../shared/ui/data/DataTable";
 import { useCompactLayout } from "../../../shared/ui/layout/responsive";
 import { PageState } from "../../../shared/ui/state/PageState";
 import { StatusTag } from "../../../shared/ui/state/StatusTag";
-import type { CollectionTask, CollectionTaskProgress } from "../../../features/collection-tasks/api";
+import type {
+  CollectionTask,
+  CollectionTaskProgress,
+} from "../../../features/collection-tasks/api";
 import styles from "../styles.module.css";
 
 export interface TaskProgressState {
@@ -269,6 +281,19 @@ function ReceivedProgress({
       >
         {attainmentStatusCopy(data.attainment.status)}
       </span>
+      {data.captures && (
+        <span className={styles.captureCounts}>
+          <b>{data.captures.received_count} 条录制</b>
+          <span>
+            {data.captures.awaiting_slice_count} 待切片 ·{" "}
+            {data.captures.episode_count} 条成片
+          </span>
+          <span>
+            {data.captures.ready_episode_count} 已入库 ·{" "}
+            {data.captures.failed_episode_count} 未通过
+          </span>
+        </span>
+      )}
       <MetricProgress
         actual={data.received_package_count}
         ariaLabel="数据包接收目标进度"
@@ -437,6 +462,8 @@ function TaskActions({
   onReopen: (task: CollectionTask) => void;
 }>) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [capturesOpen, setCapturesOpen] = useState(false);
+  const scope = useIngestScope();
   const moreActionsRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
   const menuItems = useMemo<MenuProps["items"]>(() => {
     const run = (action: (selectedTask: CollectionTask) => void) => {
@@ -480,6 +507,24 @@ function TaskActions({
 
   return (
     <div className={styles.taskActions}>
+      <Button type="link" onClick={() => setCapturesOpen(true)}>
+        采集记录
+      </Button>
+      <Drawer
+        title={`${task.name} · 采集记录`}
+        open={capturesOpen}
+        size="large"
+        styles={{ wrapper: { maxWidth: "100vw" } }}
+        onClose={() => setCapturesOpen(false)}
+        destroyOnHidden
+      >
+        {scope && capturesOpen && (
+          <CaptureProgressPanel
+            scope={scope}
+            taskId={task.collection_task_id}
+          />
+        )}
+      </Drawer>
       <Link
         className={styles.viewDataAction}
         to={routes.datasetDetail.build({
@@ -617,105 +662,106 @@ function MobileTaskList({
   );
 }
 
-export function CollectionTaskTable(props: Readonly<CollectionTaskTableProps>) {
-  const {
-    canManage,
-    filtered,
-    loading = false,
-    onCancel,
-    onClose,
-    onEdit,
-    onReopen,
-    progressByTaskId,
-    tasks,
-  } = props;
-  const compact = useCompactLayout();
-  const columns = useMemo<readonly ColumnDef<CollectionTask, unknown>[]>(
-    () => [
-      {
-        id: "identity",
-        header: "任务信息",
-        size: 250,
-        cell: ({ row }) => <TaskIdentity task={row.original} />,
-      },
-      {
-        id: "status",
-        header: "状态",
-        size: 100,
-        cell: ({ row }) => <TaskStatus task={row.original} />,
-      },
-      {
-        id: "received",
-        header: "接收与目标",
-        size: 220,
-        cell: ({ row }) => (
-          <ReceivedProgress
-            progress={progressByTaskId.get(row.original.collection_task_id)}
-            task={row.original}
-          />
-        ),
-      },
-      {
-        id: "quality",
-        header: "质量结果",
-        size: 230,
-        cell: ({ row }) => (
-          <QualityProgress
-            progress={progressByTaskId.get(row.original.collection_task_id)}
-          />
-        ),
-      },
-      {
-        id: "asOf",
-        header: "数据截至",
-        size: 136,
-        cell: ({ row }) => (
-          <ProgressTime
-            progress={progressByTaskId.get(row.original.collection_task_id)}
-          />
-        ),
-      },
-      {
-        id: "actions",
-        header: "操作",
-        size: 156,
-        cell: ({ row }) => (
-          <TaskActions
-            canManage={canManage}
-            task={row.original}
-            onCancel={onCancel}
-            onClose={onClose}
-            onEdit={onEdit}
-            onReopen={onReopen}
-          />
-        ),
-      },
-    ],
-    [canManage, onCancel, onClose, onEdit, onReopen, progressByTaskId],
+const TaskTableContext = createContext<CollectionTaskTableProps | null>(null);
+
+function useTaskTable() {
+  const context = useContext(TaskTableContext);
+  if (!context) throw new Error("Task cells require a CollectionTaskTable");
+  return context;
+}
+
+function ProgressCell({ row, column }: CellContext<CollectionTask, unknown>) {
+  const { progressByTaskId } = useTaskTable();
+  const progress = progressByTaskId.get(row.original.collection_task_id);
+  if (column.id === "received")
+    return <ReceivedProgress progress={progress} task={row.original} />;
+  if (column.id === "quality") return <QualityProgress progress={progress} />;
+  return <ProgressTime progress={progress} />;
+}
+
+function ActionsCell({ row }: CellContext<CollectionTask, unknown>) {
+  const { canManage, onCancel, onClose, onEdit, onReopen } = useTaskTable();
+  return (
+    <TaskActions
+      canManage={canManage}
+      task={row.original}
+      onCancel={onCancel}
+      onClose={onClose}
+      onEdit={onEdit}
+      onReopen={onReopen}
+    />
   );
+}
+
+// TanStack renders cell functions as component types. Keep those types stable
+// and supply changing progress/actions via context so open drawers survive polls.
+const columns: readonly ColumnDef<CollectionTask, unknown>[] = [
+  {
+    id: "identity",
+    header: "任务信息",
+    size: 250,
+    cell: ({ row }) => <TaskIdentity task={row.original} />,
+  },
+  {
+    id: "status",
+    header: "状态",
+    size: 100,
+    cell: ({ row }) => <TaskStatus task={row.original} />,
+  },
+  {
+    id: "received",
+    header: "接收与目标",
+    size: 220,
+    cell: ProgressCell,
+  },
+  {
+    id: "quality",
+    header: "质量结果",
+    size: 230,
+    cell: ProgressCell,
+  },
+  {
+    id: "asOf",
+    header: "数据截至",
+    size: 136,
+    cell: ProgressCell,
+  },
+  {
+    id: "actions",
+    header: "操作",
+    size: 156,
+    cell: ActionsCell,
+  },
+];
+
+export function CollectionTaskTable(props: Readonly<CollectionTaskTableProps>) {
+  const { filtered, loading = false, tasks } = props;
+  const compact = useCompactLayout();
 
   if (compact) {
     return <MobileTaskList {...props} loading={loading} />;
   }
 
   return (
-    <DataTable
-      caption="采集任务"
-      columns={columns}
-      data={tasks}
-      empty={
-        <PageState
-          label="采集任务"
-          state={filtered ? "filtered-empty" : "empty"}
-          description={
-            filtered
-              ? "当前数据窗口没有匹配结果，请调整筛选条件。"
-              : "当前项目还没有采集任务；有管理权限时可新建任务。"
-          }
-        />
-      }
-      getRowId={(task) => task.collection_task_id}
-      state={loading ? "loading" : undefined}
-    />
+    <TaskTableContext.Provider value={props}>
+      <DataTable
+        caption="采集任务"
+        columns={columns}
+        data={tasks}
+        empty={
+          <PageState
+            label="采集任务"
+            state={filtered ? "filtered-empty" : "empty"}
+            description={
+              filtered
+                ? "当前数据窗口没有匹配结果，请调整筛选条件。"
+                : "当前项目还没有采集任务；有管理权限时可新建任务。"
+            }
+          />
+        }
+        getRowId={(task) => task.collection_task_id}
+        state={loading ? "loading" : undefined}
+      />
+    </TaskTableContext.Provider>
   );
 }

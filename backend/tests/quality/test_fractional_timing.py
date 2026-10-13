@@ -26,7 +26,9 @@ def test_prechange_integer_profile_report_and_evidence_hashes_are_preserved():
         current.evidence.content_sha256
         == "6621bcd6138d3abe7d13688c8323706577704c131dfc87a3618081c757152d2c"
     )
-    equivalent = _profile(default_timing={"target_frequency_hz": 30.0})
+    equivalent = _profile(
+        default_timing={"target_frequency_hz": 30.0, "minimum_frequency_hz_risk": 28.5}
+    )
     assert type(equivalent.default_timing.target_frequency_hz) is int
     assert equivalent.content_bytes() == profile.content_bytes()
 

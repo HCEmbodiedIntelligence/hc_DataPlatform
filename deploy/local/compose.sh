@@ -1,20 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
-environment="${1:?Usage: compose.sh original|openarm <docker compose arguments>}"
+environment="${1:?Usage: compose.sh current|original <docker compose arguments>}"
 shift
 case "$environment" in
-  original)
-    project=hc-data-platform-restore-test
-    config="$repo/deploy/local/original.env"
-    overlays=(-f "$repo/deploy/local/original.compose.yaml")
+  current|original)
+    project=hc-data-platform-dev
+    config="$repo/.env"
+    overlays=(-f "$repo/deploy/local/current.compose.yaml")
     ;;
-  openarm)
-    project=openarm-e
-    config="$repo/deploy/openarm-e/E.env"
-    overlays=(-f "$repo/deploy/openarm-e/compose.json" -f "$repo/deploy/openarm-e/compose-override.yaml")
-    ;;
-  *) echo 'Expected original or openarm' >&2; exit 2 ;;
+  *) echo 'Use current (original is an alias). The separate OpenArm deployment is retired.' >&2; exit 2 ;;
 esac
 if [[ ! -f "$config" ]]; then
   echo "Missing deployment configuration: $config. See deploy/local/README.md." >&2

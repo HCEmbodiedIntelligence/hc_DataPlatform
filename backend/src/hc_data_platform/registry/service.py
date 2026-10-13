@@ -1294,6 +1294,7 @@ class RegistryService:
         known_types = {"revolute", "continuous", "prismatic", "fixed", "floating", "planar"}
         declared_names: set[str] = set()
         actuated_names: set[str] = set()
+        mimic_targets: dict[str, str] = {}
         for element in root.iter():
             if element.tag.rsplit("}", 1)[-1] != "joint":
                 continue
@@ -1302,8 +1303,25 @@ class RegistryService:
             if not name or name in declared_names or joint_type not in known_types:
                 raise ValueError("URDF joint declarations are invalid")
             declared_names.add(name)
-            if joint_type != "fixed":
+            mimics = [child for child in element if child.tag.rsplit("}", 1)[-1] == "mimic"]
+            if len(mimics) > 1:
+                raise ValueError("URDF joint declares multiple mimic targets")
+            if mimics:
+                mimic_targets[name] = mimics[0].attrib.get("joint", "").strip()
+            elif joint_type != "fixed":
                 actuated_names.add(name)
+        # A coupled gripper finger follows its driver joint in the URDF viewer;
+        # it has no independent channel in the recorded state/action arrays.
+        for name in mimic_targets:
+            visited = {name}
+            target = mimic_targets[name]
+            while True:
+                if target not in declared_names or target in visited:
+                    raise ValueError("URDF mimic target is missing or cyclic")
+                visited.add(target)
+                if target not in mimic_targets:
+                    break
+                target = mimic_targets[target]
         return actuated_names
 
     def _preflight_token(self, record: RobotModelPublishPreflightRecord) -> str:

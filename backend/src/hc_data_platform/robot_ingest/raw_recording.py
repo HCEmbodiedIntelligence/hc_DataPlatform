@@ -14,7 +14,7 @@ from hc_data_platform.object_storage.checksums import crc64_ecma
 from .models import RobotIngestAsset
 
 READABLE_VERSIONS = tuple(
-    dict.fromkeys((VERSION, *(f"openarm-raw-platform/{i}" for i in (3, 2, 1))))
+    dict.fromkeys((VERSION, *(f"openarm-raw-platform/{i}" for i in (9, 8, 7, 6, 5, 4, 3, 2, 1))))
 )
 
 

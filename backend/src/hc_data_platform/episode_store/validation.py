@@ -65,6 +65,7 @@ def validate_depth(
     *,
     target_rows,
     feature_key: str,
+    allow_missing_reference: bool = False,
 ) -> dict[str, int]:
     declaration = document(root, f"{evidence_path}/profile.json")
     profile = DepthProfile(
@@ -157,7 +158,17 @@ def validate_depth(
                 raise ValueError("depth video/source/mask frame mapping mismatch")
             if row["target_timestamp_ns"] != target["hc.timestamp_ns"]:
                 raise ValueError("depth source mapping targets a different Episode time grid")
-            if type(row["missing"]) is not bool or type(row["target_timestamp_ns"]) is not int:
+            # Raw RGB/depth evidence has no reference exposure when both images
+            # are missing. Only source verification may accept that explicit
+            # absence; every final Episode still requires its integer grid time.
+            absent_reference = (
+                allow_missing_reference
+                and row["missing"] is True
+                and row["target_timestamp_ns"] is None
+            )
+            if type(row["missing"]) is not bool or (
+                type(row["target_timestamp_ns"]) is not int and not absent_reference
+            ):
                 raise ValueError("depth temporal status has an invalid timestamp/missing flag")
             if not row["missing"] and (
                 type(row["source_timestamp_ns"]) is not int
@@ -171,12 +182,16 @@ def validate_depth(
                 None if row["missing"] else row["source_timestamp_ns"] - row["target_timestamp_ns"]
             )
             threshold = row["max_time_error_ns"]
+            association_target = row.get('association_target_timestamp_ns', row['target_timestamp_ns'])
+            if not row['missing'] and type(association_target) is not int:
+                raise ValueError('depth association reference is absent')
+            threshold_error = None if row['missing'] else row['source_timestamp_ns']-association_target
             if (
                 row["time_error_ns"] != error
                 or threshold is not None
                 and (type(threshold) is not int or threshold < 0)
                 or row["time_threshold_exceeded"]
-                != (error is not None and threshold is not None and abs(error) > threshold)
+                != (threshold_error is not None and threshold is not None and abs(threshold_error) > threshold)
                 or row["repeated"] != (identity is not None and identity == previous_source)
             ):
                 raise ValueError("depth temporal status differs from original source identity/time")
@@ -327,6 +342,11 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
     if not isinstance(frames, int) or frames <= 0 or not math.isfinite(fps) or fps <= 0:
         raise ValueError("invalid frame count/frequency")
     features = info["features"]
+    sparse = info.get("hc.training_policy") == "drop_invalid_rows_preserve_source_time/v1"
+    media_frames = info.get("hc.media_frame_count", frames) if sparse else frames
+    compacted = info.get("hc.media_selection") == "selected-rows-cfr/v1"
+    if compacted and (not sparse or media_frames != frames):
+        raise ValueError("compacted media must contain exactly one frame per retained sample")
     if not set(source.required_features).issubset(features):
         raise ValueError("declared source modality missing from complete package")
     depths = {key for key, f in features.items() if f.get("info", {}).get("is_depth_map")}
@@ -405,6 +425,7 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
         ):
             raise ValueError(f"numerical feature dtype/shape differs from official metadata: {key}")
     offset = 0
+    previous_stamp = previous_media = None
     for batch in parquet.iter_batches(batch_size=4096):
         columns = batch.to_pydict()
         count = batch.num_rows
@@ -414,18 +435,32 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
             or columns.get("frame_index") != index
             or columns.get("episode_index") != [0] * count
             or any(t not in range(len(tasks)) for t in columns["task_index"])
-            or not np.allclose(
+            or (not sparse and not np.allclose(
                 columns["timestamp"],
                 np.asarray(index) / fps,
                 rtol=0,
                 atol=max(1e-6, frames / fps * 1.2e-7),
-            )
+            ))
         ):
             raise ValueError("data indexes/timestamps invalid")
+        if sparse:
+            for row in batch.to_pylist():
+                stamp, media_index = row['hc.timestamp_ns'], row['hc.video_frame_index']
+                if (not row['hc.sample_valid'] or type(stamp) is not int
+                        or previous_stamp is not None and stamp <= previous_stamp
+                        or type(media_index) is not int or not 0 <= media_index < media_frames
+                        or previous_media is not None and media_index <= previous_media
+                        or abs(row['timestamp'] - (stamp-info['hc.time_origin_ns'])/1e9) > 1e-9
+                        or abs(row['hc.video_timestamp'] - media_index/fps) > 1e-9):
+                    raise ValueError('invalid sparse capture timestamp/media reference')
+                previous_stamp, previous_media = stamp, media_index
         for key, feature in features.items():
             if feature["dtype"] != "video" and key not in columns:
                 raise ValueError(f"missing declared numerical feature: {key}")
         offset += count
+    if sparse:
+        from .capture_selection import validate_capture_selection
+        validate_capture_selection(root, info)
     for key, feature in features.items():
         if feature["dtype"] != "video":
             continue
@@ -439,7 +474,7 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 "chunk_index": 0,
                 "file_index": 0,
                 "from_timestamp": 0.0,
-                "to_timestamp": frames / fps,
+                "to_timestamp": media_frames / fps,
             }.items()
         ):
             raise ValueError("video offset mismatch")
@@ -451,17 +486,22 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                 for kind in ("source_timestamps_ns", "time_error_ns", "repeated", "valid")
                 if f"hc.{kind}.{key}" in parquet.schema_arrow.names
             ]
-            target_rows = (
-                row
-                for batch in parquet.iter_batches(batch_size=128, columns=target_columns)
-                for row in batch.to_pylist()
-            )
+            evidence_parquet = (pq.ParquetFile(package_file(root, "hc/recording/aligned_rows.parquet"))
+                                if sparse else parquet)
+            if compacted:
+                # Media is dense; depth association evidence retains the original grid time.
+                evidence_columns = list(dict.fromkeys([*target_columns, 'hc.sample_valid']))
+                target_rows = (row for batch in evidence_parquet.iter_batches(batch_size=128, columns=evidence_columns)
+                               for row in batch.to_pylist() if row['hc.sample_valid'])
+            else:
+                target_rows = (row for batch in evidence_parquet.iter_batches(batch_size=128, columns=target_columns)
+                               for row in batch.to_pylist())
             depth_totals = validate_depth(
                 root,
                 modalities["depth"][key]["evidence_path"],
                 video,
                 feature,
-                frames,
+                media_frames,
                 fps,
                 target_rows=target_rows,
                 feature_key=key,
@@ -490,7 +530,7 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
                     ):
                         raise ValueError("RGB dimensions/time grid mismatch")
                     count += 1
-            if count != frames:
+            if count != media_frames:
                 raise ValueError("RGB frame count mismatch")
     files = []
     for path in sorted(root.rglob("*")):

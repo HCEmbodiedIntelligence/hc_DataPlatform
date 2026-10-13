@@ -7,6 +7,133 @@
   font-size: 0.8125rem;
 }
 
+.recordingWorkspace {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--hc-space-3);
+  min-width: 0;
+}
+
+.recordingWorkspace > .workbenchPage {
+  min-width: 0;
+  padding-inline: 0;
+}
+
+.recordingNavigator {
+  position: sticky;
+  top: var(--hc-space-3);
+  display: grid;
+  gap: var(--hc-space-2);
+  min-width: 0;
+  padding: var(--hc-space-2);
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-md);
+  background: var(--hc-color-surface);
+}
+
+.navigatorHeading {
+  display: grid;
+  gap: 4px;
+}
+
+.navigatorHeading span,
+.navigatorItem > span:not(.navigatorItemHeading),
+.navigatorItem small {
+  color: var(--hc-color-text-secondary);
+  font-size: 0.75rem;
+}
+
+.navigatorControls {
+  display: flex;
+  gap: var(--hc-space-2);
+}
+
+.navigatorControls > button {
+  flex: 1;
+}
+
+.navigatorItems {
+  display: grid;
+  grid-auto-rows: max-content;
+  gap: var(--hc-space-2);
+  max-height: calc(100dvh - 390px);
+  min-height: 150px;
+  overflow-y: auto;
+}
+
+.navigatorItem {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  width: 100%;
+  height: auto;
+  min-height: 94px;
+  min-width: 0;
+  padding: var(--hc-space-2);
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-sm);
+  color: var(--hc-color-text);
+  background: var(--hc-color-surface);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.navigatorItem strong {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.navigatorItem:hover,
+.navigatorItem[aria-current="page"] {
+  border-color: var(--hc-color-primary);
+  background: color-mix(
+    in srgb,
+    var(--hc-color-primary) 7%,
+    var(--hc-color-surface)
+  );
+}
+
+.navigatorItem:focus-visible {
+  outline: 2px solid var(--hc-color-primary);
+  outline-offset: -2px;
+}
+
+.navigatorItem:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.navigatorItem strong,
+.navigatorItem small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navigatorItemHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1100px) {
+  .recordingWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .recordingNavigator {
+    position: static;
+  }
+  .navigatorItems {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    max-height: 230px;
+  }
+}
+
 .summaryStrip span {
   display: flex;
   align-items: baseline;
@@ -366,9 +493,7 @@
 
 .episodeInspector {
   display: grid;
-  height: 100%;
-  max-height: 100%;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -376,7 +501,6 @@
 
 .episodeList {
   min-height: 0;
-  overflow-y: auto;
   padding: var(--hc-space-2);
   background: var(--hc-color-surface-subtle);
 }
@@ -475,67 +599,6 @@
   gap: var(--hc-space-2);
   padding: 0 var(--hc-space-2) var(--hc-space-2);
   border-top: 1px solid var(--hc-color-border-subtle);
-}
-
-.processingPanel {
-  display: grid;
-  gap: var(--hc-space-2);
-  margin-top: var(--hc-space-2);
-  padding: var(--hc-space-2);
-  border: 1px solid var(--hc-color-border-subtle);
-  border-radius: var(--hc-radius-xs);
-  background: var(--hc-color-surface-subtle);
-}
-
-.processingHeading,
-.processingActions,
-.processingFailure {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-}
-
-.processingHeading {
-  justify-content: space-between;
-  gap: var(--hc-space-2);
-}
-
-.processingHeading > span {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.processingHeading strong {
-  color: var(--hc-color-text);
-  font-size: 0.75rem;
-}
-
-.processingHeading small,
-.processingEvidence,
-.processingFailure {
-  color: var(--hc-color-text-muted);
-  font-size: 0.6875rem;
-}
-
-.processingActions {
-  flex-wrap: wrap;
-  gap: var(--hc-space-3);
-  font-size: 0.75rem;
-}
-
-.processingEvidence,
-.processingFailure {
-  margin: 0;
-}
-
-.processingFailure {
-  flex-wrap: wrap;
-  gap: var(--hc-space-2);
-}
-
-.processingFailure code {
-  color: var(--hc-color-danger);
 }
 
 .episodeFields > label,
@@ -890,4 +953,23 @@
   gap: 5px;
   color: var(--hc-color-neutral-text);
   font-variant-numeric: tabular-nums;
+}
+
+.recordingRow {
+  cursor: pointer;
+}
+.recordingRow:focus-visible {
+  outline: 2px solid var(--hc-color-primary);
+  outline-offset: -2px;
+}
+.recordingRow > th,
+.recordingRow > td {
+  border-bottom: 1px solid var(--hc-color-border);
+}
+.sharedMediaHint {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
 }

@@ -88,11 +88,11 @@ def freeze_quality(package, info, start, last, following, count, override=AUTO_Q
     )
     profile = QualityProfileV1(
         profile_id="hc-tag-aligned-qc",
-        profile_version=1,
+        profile_version=2,
         required_topics=frozenset(mapping),
         default_timing=TopicTimingProfileV1(
             target_frequency_hz=fps,
-            minimum_frequency_hz_risk=fps * 0.95,
+            minimum_frequency_hz_risk=27.0 if fps == 30 else fps * 0.95,
             minimum_frequency_hz_reject=fps * 0.75,
         ),
         action=action,

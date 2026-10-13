@@ -152,7 +152,35 @@ class OriginalSourceBrowser:
         return raw
 
     def manifest(self, raw: RawSource) -> dict[str, Any]:
-        value = json.loads(read_bounded(self.storage, raw.manifest_key, _MAX_MANIFEST_BYTES))
+        body = read_bounded(self.storage, raw.manifest_key, _MAX_MANIFEST_BYTES)
+        value = json.loads(body)
+        if isinstance(value, dict) and value.get("schema_version") == "robot-ingest-committed/v1":
+            from .committed import read_committed_manifest
+
+            return read_committed_manifest(self.storage, raw, body=body)[0]
+        if isinstance(value, dict) and "content_hash" not in value:
+            # Robot capture uploads use a Rollout manifest rather than a native file list.
+            from hc_data_platform.ingest.models import RolloutManifestV1, raw_object_key
+
+            capture = RolloutManifestV1.model_validate(value)
+            key = raw_object_key(capture)
+            if (
+                capture.sha256 != raw.content_hash
+                or capture.project_id != raw.project_id
+                or key.rsplit("/", 1)[0] != raw.storage_prefix
+            ):
+                raise ValueError("original capture manifest identity mismatch")
+            value = {
+                "content_hash": capture.sha256,
+                "files": [
+                    {
+                        "path": key.rsplit("/", 1)[-1],
+                        "size": capture.file_size,
+                        "sha256": capture.sha256,
+                        "object_key": key,
+                    }
+                ],
+            }
         if not isinstance(value, dict) or value.get("content_hash") != raw.content_hash:
             raise ValueError("original source manifest identity mismatch")
         return cast(dict[str, Any], value)

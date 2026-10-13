@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, Input, Select, Space } from "antd";
 import type { Scope } from "../../shared/scope/model";
@@ -19,7 +19,6 @@ export function CollectionAnnotationChooser({
   onChange: (value: AnnotationSelection | null) => void;
 }) {
   const [taskId, setTaskId] = useState<string>();
-  const [revision, setRevision] = useState<number>();
   const [members, setMembers] = useState<string[]>([]);
   const [label, setLabel] = useState("任务分段");
   const [allowUnreviewed, setAllowUnreviewed] = useState(false);
@@ -35,10 +34,17 @@ export function CollectionAnnotationChooser({
     queryFn: ({ signal }) =>
       loadCollectionAnnotationHistory(scope, data, chosenTask!, signal),
   });
-  const selected =
-    revision ??
-    history.data?.task.approved_revision ??
-    history.data?.task.current_revision;
+  const selected = history.data?.task.current_revision;
+  const changeRef = useRef(onChange);
+  useEffect(() => {
+    changeRef.current = onChange;
+  }, [onChange]);
+  useEffect(() => {
+    changeRef.current(null);
+    setConfirmation(null);
+    setMembers([]);
+    setAllowUnreviewed(false);
+  }, [chosenTask, selected]);
   const saved = history.data?.revisions.find((r) => r.revision === selected);
   const approved =
     selected !== undefined && selected === history.data?.task.approved_revision;
@@ -54,7 +60,7 @@ export function CollectionAnnotationChooser({
   }
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
-      <strong>{data.identity.episode_id} · 选择固定标注修订</strong>
+      <strong>{data.identity.episode_id} · 使用当前保存的标注</strong>
       {(overview.error || history.error) && (
         <Alert
           type="error"
@@ -82,28 +88,13 @@ export function CollectionAnnotationChooser({
             reset();
             setTaskId(value);
             setAllowUnreviewed(false);
-            setRevision(undefined);
             setMembers([]);
           }}
         />
       )}
       {history.data && !history.error && !overview.error && (
         <>
-          <Select
-            aria-label={`标注修订 ${data.identity.episode_id}`}
-            value={selected}
-            style={{ width: "100%" }}
-            options={history.data.revisions.map((r) => ({
-              value: r.revision,
-              label: `修订 r${r.revision}${r.revision === history.data.task.approved_revision ? " · 已批准" : " · 未按当前批准交付"}`,
-            }))}
-            onChange={(value) => {
-              reset();
-              setRevision(value);
-              setMembers([]);
-              setAllowUnreviewed(false);
-            }}
-          />
+          <span>导出使用当前保存的标注，无需选择版本。</span>
           <Input
             aria-label={`分段轨道名称 ${data.identity.episode_id}`}
             value={label}
@@ -137,7 +128,7 @@ export function CollectionAnnotationChooser({
                 setAllowUnreviewed(e.target.checked);
               }}
             >
-              明确导出此未批准修订
+              包含尚未审核的当前标注
             </Checkbox>
           )}
           <Button
@@ -163,11 +154,11 @@ export function CollectionAnnotationChooser({
                 },
               });
               setConfirmation(
-                "已选定；创建任务时服务端将再次核对并冻结此修订。",
+                "已确认当前标注及分段；导出任务将保存本次使用的标注内容。",
               );
             }}
           >
-            选定此修订和分段轨道
+            确认当前标注和分段
           </Button>
           {confirmation && <span role="status">{confirmation}</span>}
         </>

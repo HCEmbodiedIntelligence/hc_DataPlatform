@@ -193,8 +193,33 @@ export async function parseRobotModelAssets(
   if (new Set(joints.map((joint) => joint.name)).size !== joints.length) {
     throw new Error("URDF_JOINTS_DUPLICATED");
   }
+  const mimicTargets = new Map<string, string>();
+  for (const element of Array.from(document.getElementsByTagName("joint"))) {
+    const mimics = element.getElementsByTagName("mimic");
+    if (mimics.length > 1) throw new Error("URDF_MIMIC_INVALID");
+    if (mimics.length)
+      mimicTargets.set(
+        element.getAttribute("name")!.trim(),
+        mimics.item(0)?.getAttribute("joint")?.trim() ?? "",
+      );
+  }
+  const declaredNames = new Set(joints.map((joint) => joint.name));
+  for (const [name, initial] of mimicTargets) {
+    const visited = new Set([name]);
+    let target = initial;
+    while (true) {
+      if (!declaredNames.has(target) || visited.has(target))
+        throw new Error("URDF_MIMIC_INVALID");
+      visited.add(target);
+      if (!mimicTargets.has(target)) break;
+      target = mimicTargets.get(target)!;
+    }
+  }
   const actuatedJointNames = joints
-    .filter((joint) => joint.type.toLowerCase() !== "fixed")
+    .filter(
+      (joint) =>
+        joint.type.toLowerCase() !== "fixed" && !mimicTargets.has(joint.name),
+    )
     .map((joint) => joint.name);
 
   const configurationAsset = assets.find(

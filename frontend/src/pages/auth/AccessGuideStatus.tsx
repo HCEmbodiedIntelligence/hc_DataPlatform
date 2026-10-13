@@ -15,7 +15,7 @@ export function AccessGuideStatus() {
           </li>
           <li>
             <strong>直接登录</strong>
-            <span>新账户登录后先进入空账户状态。</span>
+            <span>首个注册账户成为平台管理员，后续账户需申请权限。</span>
           </li>
           <li>
             <strong>按需申请</strong>

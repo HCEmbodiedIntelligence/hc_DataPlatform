@@ -69,6 +69,7 @@ def action_at(documents, axes, target, epoch, observed=None):
 
 def state_at(documents, axes, target, epoch, max_gap_ns):
     values, valid, brackets, received = [], [], [], []
+    evidence = []
     for axis in axes:
         name = axis["name"]
         data = [d for d in documents if d["clock_epoch"] == epoch and name in d["joint_names"]]
@@ -90,6 +91,7 @@ def state_at(documents, axes, target, epoch, max_gap_ns):
                 gap <= max_gap_ns
                 and left.get("valid", True)
                 and right.get("valid", True)
+                and left.get("clock_id") == right.get("clock_id")
                 and left.get("source_epoch") == right.get("source_epoch")
                 and left.get("continuity_id") == right.get("continuity_id")
                 and all(isinstance(x, (int, float)) and math.isfinite(x) for x in (a, b))
@@ -104,7 +106,15 @@ def state_at(documents, axes, target, epoch, max_gap_ns):
         received.append(
             max(left["receive_time_ns"], right["receive_time_ns"]) if left and right else None
         )
-    return {"values": values, "valid": valid, "brackets_ns": brackets, "receive_ns": received}
+        evidence.append({"target_ns": target,
+                         "left_seq": left["source_seq"] if left else None,
+                         "right_seq": right["source_seq"] if right else None,
+                         "alpha": alpha if good else None,
+                         "clock_id": left.get("clock_id") if left else None,
+                         "source_epoch": left.get("source_epoch") if left else None,
+                         "timestamp_semantics": [d.get("timestamp_semantics") if d else None for d in (left, right)]})
+    return {"values": values, "valid": valid, "brackets_ns": brackets, "receive_ns": received,
+            "interpolation": evidence}
 
 
 def aligned(samples, target, source, alignment, epoch):

@@ -164,7 +164,7 @@ export function LoginPanel({
           <UserRound size={18} aria-hidden="true" />
           <span>
             <strong>注册即可登录</strong>
-            <small>新账户默认无项目和业务权限。</small>
+            <small>全新平台的首个注册账户自动成为管理员。</small>
           </span>
         </li>
         <li>

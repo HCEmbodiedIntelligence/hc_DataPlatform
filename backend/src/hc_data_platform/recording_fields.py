@@ -44,6 +44,11 @@ def axes(profile):
 
 
 def source_timestamp(row, cfg):
+    if cfg["alignment"].get("state_reference") == "primary_exposure_midpoint":
+        stamp = row.get("association_time_ns")
+        if type(stamp) is not int or stamp <= 0:
+            raise ValueError("Primary RGB exposure midpoint is missing")
+        return stamp
     # The reference column means the primary RGB's actual source header time,
     # not frame_index/fps, the alignment target or the file write time.
     images = row.get("images", {})
@@ -83,7 +88,13 @@ def _depth_scale(source):
 def description(cfg):
     profile = cfg.get("capture", {}).get("profile") if cfg.get("capture") else None
     cameras = [ident for ident, source in cfg["sources"].items() if source["kind"] == "rgbd"]
-    keys = [image_key(ident, depth) for ident in cameras for depth in (False, True)]
+    keys = [
+        image_key(ident, depth)
+        for ident in cameras
+        for depth in (
+            (False, True) if cfg["sources"][ident].get("depth_enabled", True) else (False,)
+        )
+    ]
     if len(keys) != len(set(keys)):
         raise ValueError("Camera IDs collide in the public recording field namespace")
     return {
@@ -93,10 +104,14 @@ def description(cfg):
             {
                 "source_id": ident,
                 "rgb": image_key(ident),
-                "depth": image_key(ident, True),
+                "depth": image_key(ident, True) if source.get("depth_enabled", True) else None,
                 "rgb_topic": camera_topic(ident),
-                "depth_topic": camera_topic(ident, True),
-                "depth_scale_m_per_unit": _depth_scale(source),
+                "depth_topic": camera_topic(ident, True)
+                if source.get("depth_enabled", True)
+                else None,
+                "depth_scale_m_per_unit": _depth_scale(source)
+                if source.get("depth_enabled", True)
+                else None,
             }
             for ident, source in cfg["sources"].items()
             if source["kind"] == "rgbd"
@@ -104,7 +119,10 @@ def description(cfg):
         "state_topic": STATE_TOPIC,
         "action_topic": ACTION_TOPIC,
         "source_timestamp": (
-            "head RGB, otherwise configured primary RGB; original source header nanoseconds"
+            "configured primary RGB exposure midpoint in ROS nanoseconds; "
+            "state/action associated at this time"
+            if cfg.get("alignment", {}).get("state_reference") == "primary_exposure_midpoint"
+            else "head RGB, otherwise configured primary RGB; original source header nanoseconds"
         ),
         "derived_fields": (
             "observation.holobrain.* requires actual robot calibration and preprocessing"

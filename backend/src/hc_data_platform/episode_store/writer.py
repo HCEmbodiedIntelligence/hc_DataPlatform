@@ -67,12 +67,30 @@ def write_json(root, path, value):
     (root / path).write_bytes(canonical(value))
 
 
+def capture_value(value, enabled):
+    if (enabled and isinstance(value, dict) and set(value) <= {'values', 'names', 'units', 'source_origins'}
+            and isinstance(value.get('values'), list) and value['values']
+            and all(v is None or (type(v) in (int, float) and np.isfinite(v)) for v in value['values'])):
+        return value['values'], {'encoding': 'vector', 'value_key': 'values',
+                                 'names': value.get('names'), 'units': value.get('units')}
+    return lerobot_value(value)
+
+
+def capture_type(value, encoding, name, enabled):
+    if enabled and name in {'/observation/state', '/action'} and encoding and encoding.get('encoding') == 'vector':
+        return pa.list_(pa.float64(), len(value)), 'float64', (len(value),)
+    if enabled and name == 'source.timestamp_ns' and value is None:
+        return pa.int64(), 'int64', ()
+    return feature_type(value, pa)
+
+
 def write_episode(
     root: Path, source: PackageInput, steps, assets: PreparedAssets, *, fps: float, metadata: dict
 ):
     assert_scope(source.identity)
     if not np.isfinite(fps) or fps <= 0:
         raise ValueError("Episode frequency must be finite and positive")
+    capture_masking = bool(metadata.get("quality", {}).get("capture_quality"))
     iterator = iter(steps)
     first = next(iterator, None)
     if first is None:
@@ -88,7 +106,7 @@ def write_episode(
     (root / "hc").mkdir()
     features, types, encodings, source_types, source_shapes = {}, {}, {}, {}, {}
     for name, target in mapping.items():
-        value, encoding = lerobot_value(first.modalities[name])
+        value, encoding = capture_value(first.modalities[name], capture_masking)
         if target in cameras:
             column, value, encoding = (
                 "hc.source_ref." + target,
@@ -97,7 +115,7 @@ def write_episode(
             )
         else:
             column = target
-        arrow_type, dtype, shape = feature_type(value, pa)
+        arrow_type, dtype, shape = capture_type(value, encoding, name, capture_masking)
         source_types[target], source_shapes[target] = arrow_type, list(shape)
         # Official LeRobot treats shape=(1,) as a scalar Parquet column. Keep
         # the source shape separately so platform reads reconstruct [value].
@@ -136,6 +154,9 @@ def write_episode(
             raise ValueError(f"source modality conflicts with standard index: {key}")
         types[key] = type_
         features[key] = {"dtype": dtype, "shape": [1], "names": None}
+    if capture_masking:
+        types['hc.action_source_origins'] = pa.string()
+        features['hc.action_source_origins'] = {'dtype': 'string', 'shape': [1], 'names': None}
     schema = pa.schema(list(types.items()))
     frame_schema = pa.schema(
         [
@@ -152,12 +173,18 @@ def write_episode(
     }
     count = 0
     pending, source_rows = [], []
+    training_indices = []
 
     def flush(data_writer, frame_writer):
         table = pa.Table.from_pylist(pending, schema=schema)
         data_writer.write_table(table)
         for key, statistics in moments.items():
-            statistics.add(table[key].to_pylist())
+            values = table[key].to_pylist()
+            mask_key = 'hc.valid.' + key
+            if capture_masking and mask_key in table.column_names:
+                values = [v for v, valid in zip(values, table[mask_key].to_pylist(), strict=True) if valid]
+            if values:
+                statistics.add(values)
         frame_writer.write_table(pa.Table.from_pylist(source_rows, schema=frame_schema))
         pending.clear()
         source_rows.clear()
@@ -186,11 +213,13 @@ def write_episode(
                 if target in cameras:
                     row["hc.source_ref." + target] = canonical(step.modalities[name]).decode()
                 else:
-                    value, encoding = lerobot_value(step.modalities[name])
+                    value, encoding = capture_value(step.modalities[name], capture_masking)
                     if encoding != encodings.get(target):
                         raise ValueError("numeric semantics changed within Episode")
-                    if feature_type(value, pa)[0] != source_types[target]:
+                    if capture_type(value, encoding, name, capture_masking)[0] != source_types[target]:
                         raise ValueError("numeric dtype/shape changed within Episode")
+                    if capture_masking and (value is None or isinstance(value, list) and any(v is None for v in value)) and step.valid.get(name, False):
+                        raise ValueError('missing numerical value is marked valid')
                     row[target] = value[0] if source_shapes[target] == [1] else value
                 # Unknown stays unknown in the trace; never infer validity from absent evidence.
                 row[f"hc.source_timestamps_ns.{target}"] = canonical(
@@ -199,6 +228,11 @@ def write_episode(
                 row[f"hc.time_error_ns.{target}"] = canonical(step.time_error_ns.get(name)).decode()
                 row[f"hc.valid.{target}"] = step.valid.get(name, False)
                 row[f"hc.repeated.{target}"] = step.repeated.get(name, False)
+            if capture_masking:
+                action = step.modalities.get('/action', {})
+                row['hc.action_source_origins'] = canonical(action.get('source_origins', {})).decode()
+                if step.sample_valid:
+                    training_indices.append(count)
             pending.append(row)
             source_rows.append(
                 {
@@ -215,6 +249,11 @@ def write_episode(
                 flush(output, source_output)
         if pending:
             flush(output, source_output)
+    if capture_masking:
+        write_json(root, 'hc/training_selection.json', {
+            'schema_version': 'hc-training-selection/v1',
+            'row_count': count, 'selected_frame_indices': training_indices,
+            'policy': 'drop_invalid_rows_preserve_source_time/v1'})
     stats = {key: item.document() for key, item in moments.items()}
     task = metadata.get("task") or "unknown"
     episode = {
@@ -302,6 +341,7 @@ def write_episode(
         "hc.structured_features": encodings,
         "hc.source_shapes": source_shapes,
         "hc.package_version": "hc-episode-package/1",
+        **({'hc.training_policy': 'drop_invalid_rows_preserve_source_time/v1'} if capture_masking else {}),
     }
     for relative, value in {
         "meta/info.json": info,
@@ -363,4 +403,7 @@ def write_episode(
             raise ValueError("recording evidence cannot overwrite an Episode file")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(origin, target)
+    if capture_masking:
+        from .capture_selection import compact_capture_rows
+        compact_capture_rows(root)
     return validate_package(root, source)

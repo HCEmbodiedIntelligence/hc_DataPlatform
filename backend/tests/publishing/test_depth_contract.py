@@ -105,3 +105,17 @@ def test_hevc_code_roundtrip_with_independent_masks_and_missing_frame(tmp_path):
     assert report["totals"]["missing_frames"] == 1
     assert report["totals"]["repeated_frames"] == 1
     assert not report["validity"]["official_reader_applies_mask"]
+
+
+
+def test_depth_time_evidence_keeps_missing_reference_unknown(tmp_path):
+    writer = DepthEvidenceVideo(tmp_path / "depth.mp4", tmp_path / "evidence", 30, (16, 16))
+    for index, target in enumerate((1_000_000_000, 999_999_999, None)):
+        writer.write(np.ones((16, 16), dtype=np.uint16), .001,
+                     source_id="wrist", source_seq=index, source_timestamp_ns=1_002_000_000,
+                     target_timestamp_ns=target, max_time_error_ns=2_000_000)
+    writer.close()
+    rows = pq.read_table(tmp_path / "evidence/frames.parquet").to_pylist()
+    assert rows[0]["time_error_ns"] == 2_000_000 and not rows[0]["time_threshold_exceeded"]
+    assert rows[1]["time_error_ns"] == 2_000_001 and rows[1]["time_threshold_exceeded"]
+    assert rows[2]["target_timestamp_ns"] is None and rows[2]["time_error_ns"] is None

@@ -402,7 +402,7 @@ def confirm_recovery_email(
     status_code=status.HTTP_201_CREATED,
     responses={
         201: {
-            "description": "The ACTIVE empty account was created.",
+            "description": "Account created. The first registered account is the platform admin.",
             "headers": NO_STORE_RESPONSE_HEADERS,
         },
         400: CLIENT_NETWORK_INVALID_RESPONSE,

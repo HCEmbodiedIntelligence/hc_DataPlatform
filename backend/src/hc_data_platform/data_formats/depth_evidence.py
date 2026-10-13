@@ -97,17 +97,30 @@ class DepthEvidenceVideo:
         source_id: str,
         source_seq: int | None,
         source_timestamp_ns: int | None,
-        target_timestamp_ns: int,
+        target_timestamp_ns: int | None,
         missing: bool = False,
         valid_mask: ArrayLike | None = None,
         invalid_values: Sequence[float] = (),
         max_time_error_ns: int | None = None,
         source_profile: dict[str, Any] | None = None,
+        encoded_frame: dict[str, Any] | None = None,
     ) -> NDArray[np.uint16]:
         if self.closed:
             raise ValueError("depth evidence writer is closed")
         source_profile_sha256 = None
-        if missing:
+        if encoded_frame is not None:
+            from .compact_depth import validate_encoded_depth
+            if missing or source_seq is None or source_timestamp_ns is None:
+                raise ValueError('encoded depth requires a present source frame')
+            if source_profile is None or scale != source_profile['scale_m_per_unit']:
+                raise ValueError('encoded depth source scale mismatch')
+            result = validate_encoded_depth(array, encoded_frame, source_profile, self.shape)
+            source_profile_sha256 = profile_hash(source_profile)
+            self.source_profiles[source_profile_sha256] = json.loads(json.dumps(source_profile))
+            if len(self.source_profiles) > 64:
+                raise ValueError('too many depth source profile versions')
+            source_dtype = encoded_frame['source_dtype']
+        elif missing:
             if any(v is not None for v in (source_seq, source_timestamp_ns, scale, source_profile)):
                 raise ValueError("missing depth cannot claim a source frame or scale")
             array = np.zeros(self.shape, dtype=np.uint16)
@@ -145,7 +158,7 @@ class DepthEvidenceVideo:
             raise ValueError("depth resolution differs from declared stream")
         report = result.error_report(self.profile)
         error_ns = (
-            None if source_timestamp_ns is None else source_timestamp_ns - target_timestamp_ns
+            None if source_timestamp_ns is None or target_timestamp_ns is None else source_timestamp_ns - target_timestamp_ns
         )
         exceeded = (
             error_ns is not None

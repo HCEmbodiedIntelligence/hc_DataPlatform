@@ -11,12 +11,13 @@ __all__ = ["FrameReader", "TrainingVideo"]
 
 
 class FrameReader:
-    def __init__(self, root):
+    def __init__(self, root, pixel_format='rgb24'):
         self.root = Path(root)
         self.container = None
         self.path = None
         self.index = -1
         self.frame = None
+        self.pixel_format = pixel_format
 
     def read(self, binding, seek=False):
         path = binding["video_segment_path"]
@@ -24,6 +25,11 @@ class FrameReader:
         if path != self.path or target < self.index:
             self.close()
             self.container = av.open(str(self.root / path))
+            if self.pixel_format == 'gray12le':
+                codec=self.container.streams.video[0].codec_context
+                if (codec.name,codec.format.name) != ('hevc','gray12le'):
+                    self.close()
+                    raise ValueError('depth media requires HEVC gray12le')
             self.iterator = iter(self.container.decode(video=0))
             self.path, self.index = path, -1
         expected = Fraction(binding["pts"]) * Fraction(*binding["time_base"])
@@ -46,7 +52,7 @@ class FrameReader:
             self.index += 1
         if abs(self.frame.pts * self.frame.time_base - expected) > Fraction(1, 1000000):
             raise ValueError("视频帧 PTS 与索引不一致")
-        return self.frame.to_ndarray(format="rgb24")
+        return self.frame.to_ndarray(format=self.pixel_format)
 
     def close(self):
         if self.container is not None:

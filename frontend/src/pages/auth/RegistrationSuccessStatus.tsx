@@ -17,7 +17,7 @@ export function RegistrationSuccessStatus({
       description={
         <div className={styles.centeredCopy}>
           <p>现在可以直接登录。</p>
-          <p>当前账户尚未加入任何项目，也没有业务权限。</p>
+          <p>若你是平台首个注册用户，登录后即可使用管理员权限；其他账户需申请加入项目和业务权限。</p>
         </div>
       }
     />

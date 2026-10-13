@@ -153,7 +153,7 @@ export function RegisterPanel({
           type="info"
           showIcon
           title="账户与项目分开授权"
-          description="注册不需要邮箱、手机号、验证码或管理员审批；新账户默认没有项目和业务权限。"
+          description="全新平台的首个注册账户自动成为管理员；后续账户需申请加入项目和业务权限。"
         />
 
         <Button

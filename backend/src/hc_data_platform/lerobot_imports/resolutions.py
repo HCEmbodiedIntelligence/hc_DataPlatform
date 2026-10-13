@@ -30,6 +30,9 @@ class EpisodeResolution(BaseModel):
     unavailable_reason: str | None = None
     error_code: str | None = None
     updated_at: datetime | None = None
+    discard_available: bool = False
+    discard_unavailable_reason: str | None = None
+    expected_attempt_id: str | None = None
 
 
 def _facts(
@@ -37,7 +40,7 @@ def _facts(
 ) -> dict[str, Any]:
     # The aggregate job lock serializes decisions against batch retries.
     cursor.execute(
-        """SELECT j.status, e.status, e.episode_id
+        """SELECT j.status, e.status, e.episode_id, e.updated_at
         FROM ingest.raw_ingest_jobs j
         JOIN ingest.raw_sources s USING (organization_id, project_id, region_code, raw_source_id)
         JOIN ingest.raw_source_episodes e USING
@@ -57,7 +60,7 @@ def _facts(
             title="数据不存在",
             detail="当前项目和区域中没有这条原始数据。",
         )
-    batch, episode, episode_id = row
+    batch, episode, episode_id, episode_updated_at = row
     cursor.execute(
         """SELECT resolution_id, action, status, error_code, updated_at
         FROM ingest.episode_resolutions
@@ -109,11 +112,24 @@ def _facts(
         if episode != "FAILED" or not (conflict or retry_failed) or not attempt
         else None
     )
+    discard_reason = (
+        "该数据已入库，请使用数据集清洗流程。"
+        if committed or episode == "READY"
+        else "这条记录已删除。"
+        if episode == "DISCARDED"
+        else "本批数据正在处理，请等待处理结束后再操作。"
+        if batch in {"PENDING", "RUNNING"}
+        else "只可删除已停止且未入库的问题数据。"
+        if episode != "FAILED"
+        else None
+    )
     return {
         "episode_id": episode_id,
         "attempt": attempt[0] if attempt else None,
         "resolution": resolution,
         "reason": reason,
+        "discard_reason": discard_reason,
+        "discard_token": attempt[0] if attempt else f"episode:{episode_updated_at.isoformat()}",
     }
 
 
@@ -127,6 +143,9 @@ def _view(facts: dict[str, Any]) -> EpisodeResolution:
         updated_at=row[4] if row else None,
         available=facts["reason"] is None,
         unavailable_reason=facts["reason"],
+        discard_available=facts["discard_reason"] is None,
+        discard_unavailable_reason=facts["discard_reason"],
+        expected_attempt_id=facts["discard_token"],
     )
 
 
@@ -197,14 +216,16 @@ def resolve_episode(
             return _view(facts)
         if existing and existing[0] == resolution_id and existing[1] == command.action:
             return _view(facts)
-        if facts["reason"]:
+        reason = facts["discard_reason"] if command.action == "DISCARD" else facts["reason"]
+        if reason:
             raise problem(
                 status=409,
                 code="EPISODE_RESOLUTION_UNAVAILABLE",
                 title="当前不可处理",
-                detail=facts["reason"],
+                detail=reason,
             )
-        if facts["attempt"] != command.expected_attempt_id:
+        expected = facts["discard_token"] if command.action == "DISCARD" else facts["attempt"]
+        if expected != command.expected_attempt_id:
             raise problem(
                 status=409,
                 code="EPISODE_RESOLUTION_STALE",
@@ -226,7 +247,7 @@ def resolve_episode(
                 facts["episode_id"],
                 command.action,
                 status,
-                facts["attempt"],
+                expected,
                 locator if command.action == "REPROCESS" else None,
                 actor_id,
             ),

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 
 from .models import AutoQualityProblemV1, QcReportV1, QualityProfileV1, QualitySummaryV1
@@ -256,6 +257,23 @@ class PostgresQualityRepository:
                      WHERE summary.project_id = %s
                        AND summary.region_code = %s
                        AND summary.status IN ('RISK', 'REJECT')
+                       AND NOT EXISTS (
+                           SELECT 1 FROM ingest.raw_source_episodes removed
+                           WHERE removed.organization_id=summary.organization_id
+                             AND removed.project_id=summary.project_id
+                             AND removed.region_code=summary.region_code
+                             AND removed.episode_id=summary.rollout_id
+                             AND removed.status='DISCARDED'
+                       )
+                       AND NOT EXISTS (
+                           SELECT 1 FROM ingest.recording_episode_processing removed
+                           WHERE removed.organization_id=summary.organization_id
+                             AND removed.project_id=summary.project_id
+                             AND removed.region_code=summary.region_code
+                             AND removed.recording_id || ':' || removed.episode_id
+                                 = summary.rollout_id
+                             AND removed.status='DISCARDED'
+                       )
                      ORDER BY summary.updated_at DESC, summary.rollout_id DESC
                      LIMIT 1000
                     """,
@@ -285,7 +303,41 @@ class PostgresQualityRepository:
                             source_episode_index=source_episode_index,
                         )
                     )
-                return tuple(result)
+                cursor.execute(
+                    """
+                    SELECT q.report_document, q.report_sha256, r.recording_id,
+                           r.data_package_id, q.created_at
+                    FROM ingest.recording_episode_processing p
+                    JOIN ingest.recording_episode_qc_reports q
+                      ON (q.organization_id,q.project_id,q.region_code,
+                          q.recording_id,q.episode_id,q.report_id)
+                       = (p.organization_id,p.project_id,p.region_code,
+                           p.recording_id,p.episode_id,p.qc_report_id)
+                    JOIN ingest.continuous_recordings r
+                      ON (r.organization_id,r.project_id,r.region_code,r.recording_id)
+                       = (p.organization_id,p.project_id,p.region_code,p.recording_id)
+                    WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
+                      AND p.status NOT IN ('READY','DISCARDED') AND q.status='REJECT'
+                    ORDER BY q.created_at DESC, p.episode_id LIMIT 1000
+                    """,
+                    (current_request_context().organization_id, project_id, region_code),
+                )
+                continuous = [
+                    AutoQualityProblemV1.from_recording_report(
+                        document,
+                        report_sha256=str(digest),
+                        recording_id=recording_id,
+                        data_package_id=package,
+                        updated_at=created,
+                    )
+                    for document, digest, recording_id, package, created in cursor.fetchall()
+                ]
+                # The outer recording gate is authoritative when a generic report also exists.
+                covered = {item.rollout_id for item in continuous}
+                result = [item for item in result if item.rollout_id not in covered] + continuous
+                return tuple(
+                    sorted(result, key=lambda item: (item.updated_at, item.id), reverse=True)[:1000]
+                )
         finally:
             connection.close()
 
