@@ -1,3 +1,4 @@
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Checkbox, Input, Select, Space } from "antd";
@@ -60,7 +61,14 @@ export function CollectionAnnotationChooser({
   }
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
-      <strong>{data.identity.episode_id} · 使用当前保存的标注</strong>
+      <strong>
+        <ResourceLabel
+          kind="episode"
+          id={data.identity.episode_id}
+          datasetId={data.identity.dataset_id}
+        />{" "}
+        · 使用当前保存的标注
+      </strong>
       {(overview.error || history.error) && (
         <Alert
           type="error"
@@ -82,7 +90,7 @@ export function CollectionAnnotationChooser({
           style={{ width: "100%" }}
           options={overview.data.annotation.task_options.map((t) => ({
             value: t.task_id,
-            label: t.task_id,
+            label: <ResourceLabel kind="annotation_task" id={t.task_id} />,
           }))}
           onChange={(value) => {
             reset();

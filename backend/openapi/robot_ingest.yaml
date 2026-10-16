@@ -63,6 +63,13 @@ paths:
       security:
       - bearerAuth: []
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:
+    delete:
+      operationId: deleteRobotIngestIdentity
+      responses:
+        '204':
+          description: Identity deleted and all credentials permanently revoked; uploaded data retained.
+      security:
+      - bearerAuth: []
     get:
       operationId: getRobotIngestIdentity
       responses: {}

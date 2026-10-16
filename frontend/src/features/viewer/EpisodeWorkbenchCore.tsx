@@ -1420,6 +1420,7 @@ export function SharedSignalTimeline({
     trigger: HTMLButtonElement;
   } | null>(null);
   const dragRef = useRef<TimelineDragState | null>(null);
+  const scrubRef = useRef<{ pointerId: number; originNs: string } | null>(null);
   const [dragging, setDragging] = useState<TimelineDragMode | null>(null);
   const [zoom, setZoom] = useState(1);
   const normalizeSelection = useCallback(
@@ -1563,6 +1564,16 @@ export function SharedSignalTimeline({
   };
 
   const updateDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (scrubRef.current?.pointerId === event.pointerId) {
+      clock.seek(
+        clampNs(
+          nsFromClientX(event.clientX),
+          boundsStart,
+          boundsEnd - 1n,
+        ).toString(),
+      );
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (disabled) return;
@@ -1607,6 +1618,11 @@ export function SharedSignalTimeline({
   };
 
   const finishDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (scrubRef.current?.pointerId === event.pointerId) {
+      updateDrag(event);
+      scrubRef.current = null;
+      return;
+    }
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (disabled) {
@@ -1648,6 +1664,8 @@ export function SharedSignalTimeline({
   };
 
   const cancelDrag = () => {
+    if (scrubRef.current) clock.seek(scrubRef.current.originNs);
+    scrubRef.current = null;
     if (dragRef.current) clock.seek(dragRef.current.originPlayheadNs);
     dragRef.current = null;
     setDragging(null);
@@ -1744,10 +1762,10 @@ export function SharedSignalTimeline({
       onPointerUp={finishDrag}
       onPointerCancel={cancelDrag}
       onLostPointerCapture={() => {
-        if (dragRef.current) cancelDrag();
+        if (dragRef.current || scrubRef.current) cancelDrag();
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && dragRef.current) {
+        if (event.key === "Escape" && (dragRef.current || scrubRef.current)) {
           event.preventDefault();
           event.stopPropagation();
           cancelDrag();
@@ -1762,25 +1780,31 @@ export function SharedSignalTimeline({
               ? `选区 ${formatElapsedNs(BigInt(preview.endNs) - BigInt(preview.startNs), 0n)}`
               : variant === "signals"
                 ? "全部相机、关节、动作与质检共享此光标"
-                : "拖拽画面条创建标注区间"}
+                : rangeEditing
+                  ? "拖拽画面条创建标注区间"
+                  : "拖动时间轴调整播放位置"}
           </span>
         </div>
         <div className="viewer-timeline__tools" aria-label="时间轴工具">
-          <button
-            type="button"
-            disabled={!rangeEditing}
-            onClick={() => setBoundaryAtPlayhead("start")}
-          >
-            设为入点
-          </button>
-          <button
-            type="button"
-            disabled={!rangeEditing}
-            onClick={() => setBoundaryAtPlayhead("end")}
-          >
-            设为出点
-          </button>
-          <span className="viewer-timeline__divider" aria-hidden="true" />
+          {onRangeSelect && (
+            <>
+              <button
+                type="button"
+                disabled={!rangeEditing}
+                onClick={() => setBoundaryAtPlayhead("start")}
+              >
+                设为入点
+              </button>
+              <button
+                type="button"
+                disabled={!rangeEditing}
+                onClick={() => setBoundaryAtPlayhead("end")}
+              >
+                设为出点
+              </button>
+              <span className="viewer-timeline__divider" aria-hidden="true" />
+            </>
+          )}
           <button
             type="button"
             aria-label="缩小时间轴"
@@ -1827,7 +1851,9 @@ export function SharedSignalTimeline({
             aria-label={
               variant === "signals"
                 ? "共享播放位置"
-                : "播放位置；拖拽可创建标注区间"
+                : rangeEditing
+                  ? "播放位置；拖拽可创建标注区间"
+                  : "播放位置"
             }
             aria-valuemin={0}
             aria-valuemax={100}
@@ -1851,7 +1877,15 @@ export function SharedSignalTimeline({
             }}
             onPointerDown={(event) => {
               if (rangeEditing) beginDrag("create", event);
-              else
+              else if (event.button === 0) {
+                event.preventDefault();
+                event.currentTarget.focus({ preventScroll: true });
+                scrubRef.current = {
+                  pointerId: event.pointerId,
+                  originNs: clock.currentNs(),
+                };
+                clock.pause();
+                event.currentTarget.setPointerCapture(event.pointerId);
                 clock.seek(
                   clampNs(
                     nsFromClientX(event.clientX),
@@ -1859,6 +1893,7 @@ export function SharedSignalTimeline({
                     boundsEnd - 1n,
                   ).toString(),
                 );
+              }
             }}
           >
             {variant === "filmstrip" ? (

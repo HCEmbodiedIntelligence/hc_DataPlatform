@@ -6,6 +6,7 @@ import {
   Drawer,
   Dropdown,
   Progress,
+  Tabs,
   Tooltip,
   type MenuProps,
 } from "antd";
@@ -16,6 +17,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  Trash2,
   XCircle,
 } from "lucide-react";
 import { createContext, useContext, useMemo, useRef, useState } from "react";
@@ -50,6 +52,7 @@ export interface CollectionTaskTableProps {
   readonly onClose: (task: CollectionTask) => void;
   readonly onCancel: (task: CollectionTask) => void;
   readonly onReopen: (task: CollectionTask) => void;
+  readonly onDelete: (task: CollectionTask) => void;
 }
 
 type TargetMetric = NonNullable<
@@ -141,6 +144,9 @@ function TaskIdentity({ task }: Readonly<{ task: CollectionTask }>) {
         className={styles.taskNameLink}
         to={routes.datasetDetail.build({
           datasetId: task.dataset_id as DatasetId,
+          tab: "episodes",
+          collectionTaskId: task.collection_task_id,
+          returnTo: "/collection-tasks",
         })}
       >
         <strong title={task.name}>{task.name}</strong>
@@ -152,21 +158,6 @@ function TaskIdentity({ task }: Readonly<{ task: CollectionTask }>) {
       >
         {formatTaskCode(task.task_code)}
       </code>
-      <span
-        className={styles.taskDataset}
-        title={`关联数据集：${task.dataset_id}`}
-      >
-        <span>数据集</span>
-        <code translate="no">{task.dataset_id}</code>
-      </span>
-      <span
-        className={styles.taskMetadata}
-        title={`类型：${task.type}；场景：${task.scenario}`}
-      >
-        <span>类型：{task.type}</span>
-        <span aria-hidden="true">·</span>
-        <span>场景：{task.scenario}</span>
-      </span>
     </div>
   );
 }
@@ -254,9 +245,11 @@ function MetricProgress({
 }
 
 function ReceivedProgress({
+  compact = false,
   progress,
   task,
 }: Readonly<{
+  compact?: boolean;
   progress: TaskProgressState | undefined;
   task: CollectionTask;
 }>) {
@@ -272,6 +265,37 @@ function ReceivedProgress({
   const data = progress.data;
   const packageTarget = task.target?.package_count ?? null;
   const durationTarget = task.target?.duration_seconds ?? null;
+
+  if (compact) {
+    return (
+      <div className={styles.progressSummary}>
+        <strong className={styles.summaryValue}>
+          {data.captures
+            ? `${numberFormat.format(data.captures.received_count)} 条录制 · ${numberFormat.format(data.captures.episode_count)} 条成片`
+            : `${numberFormat.format(data.received_package_count)} 包${packageTarget === null ? "" : ` / ${numberFormat.format(packageTarget)} 包`}`}
+        </strong>
+        <span className={styles.summaryMeta}>
+          <span>
+            {data.captured_duration_seconds == null
+              ? "时长待汇总"
+              : formatDuration(data.captured_duration_seconds)}
+          </span>
+          {data.captures && data.captures.awaiting_slice_count > 0 ? (
+            <span className={styles.qualityPending}>
+              {numberFormat.format(data.captures.awaiting_slice_count)} 待切片
+            </span>
+          ) : data.attainment.status !== "NOT_CONFIGURED" ? (
+            <span
+              className={styles.attainmentStatus}
+              data-status={data.attainment.status}
+            >
+              {attainmentStatusCopy(data.attainment.status)}
+            </span>
+          ) : null}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.receivedProgress}>
@@ -321,8 +345,9 @@ function ReceivedProgress({
 }
 
 function QualityProgress({
+  compact = false,
   progress,
-}: Readonly<{ progress: TaskProgressState | undefined }>) {
+}: Readonly<{ compact?: boolean; progress: TaskProgressState | undefined }>) {
   if (progress?.pending && !progress.data) {
     return <span className={styles.mutedValue}>质检加载中…</span>;
   }
@@ -337,24 +362,26 @@ function QualityProgress({
   const threshold = data.attainment.quality_threshold ?? null;
 
   return (
-    <div className={styles.qualityProgress}>
-      <div
-        aria-label={`Pass ${qc.pass_count}，Risk ${qc.risk_count}，Reject ${qc.reject_count}，未出质检 ${qc.pending_count}`}
-        className={styles.qcCounts}
-      >
-        <span className={styles.qcPass}>
-          P {numberFormat.format(qc.pass_count)}
-        </span>
-        <span className={styles.qcRisk}>
-          R {numberFormat.format(qc.risk_count)}
-        </span>
-        <span className={styles.qcReject}>
-          X {numberFormat.format(qc.reject_count)}
-        </span>
-        <span className={styles.qcPending}>
-          未出质检 {numberFormat.format(qc.pending_count)}
-        </span>
-      </div>
+    <div className={compact ? styles.progressSummary : styles.qualityProgress}>
+      {!compact ? (
+        <div
+          aria-label={`Pass ${qc.pass_count}，Risk ${qc.risk_count}，Reject ${qc.reject_count}，未出质检 ${qc.pending_count}`}
+          className={styles.qcCounts}
+        >
+          <span className={styles.qcPass}>
+            P {numberFormat.format(qc.pass_count)}
+          </span>
+          <span className={styles.qcRisk}>
+            R {numberFormat.format(qc.risk_count)}
+          </span>
+          <span className={styles.qcReject}>
+            X {numberFormat.format(qc.reject_count)}
+          </span>
+          <span className={styles.qcPending}>
+            未出质检 {numberFormat.format(qc.pending_count)}
+          </span>
+        </div>
+      ) : null}
       {passRate !== null ? (
         <strong
           className={`${styles.passRate} ${qualityToneClass(qualityStatus)}`}
@@ -364,15 +391,27 @@ function QualityProgress({
       ) : (
         <span className={styles.mutedValue}>暂无已评估数据</span>
       )}
-      <small className={styles.qualityRequirement}>
-        {threshold === null
-          ? "未配置质量阈值"
-          : `阈值 ${percentFormat.format(threshold)}`}
-        <span aria-hidden="true"> · </span>
-        <b className={qualityToneClass(qualityStatus)}>
-          {qualityStatusCopy(qualityStatus)}
-        </b>
-      </small>
+      {compact ? (
+        <span
+          className={`${styles.summaryMeta} ${qualityToneClass(qualityStatus)}`}
+        >
+          {qc.pending_count > 0
+            ? `${numberFormat.format(qc.pending_count)} 待质检`
+            : qualityStatus === "NOT_CONFIGURED"
+              ? `${numberFormat.format(qc.evaluated_count)} 已评估`
+              : qualityStatusCopy(qualityStatus)}
+        </span>
+      ) : (
+        <small className={styles.qualityRequirement}>
+          {threshold === null
+            ? "未配置质量阈值"
+            : `阈值 ${percentFormat.format(threshold)}`}
+          <span aria-hidden="true"> · </span>
+          <b className={qualityToneClass(qualityStatus)}>
+            {qualityStatusCopy(qualityStatus)}
+          </b>
+        </small>
+      )}
     </div>
   );
 }
@@ -446,20 +485,69 @@ function dropdownContainer(): HTMLElement {
   return document.body;
 }
 
+function TaskDetails({
+  task,
+  progress,
+}: Readonly<{
+  task: CollectionTask;
+  progress: TaskProgressState | undefined;
+}>) {
+  return (
+    <section aria-label="任务详情">
+      <dl className={styles.taskDetails}>
+        <dt>任务码</dt>
+        <dd>
+          <code translate="no">{task.task_code}</code>
+        </dd>
+        <dt>关联数据集</dt>
+        <dd>
+          <code translate="no">{task.dataset_id}</code>
+        </dd>
+        <dt>采集类型</dt>
+        <dd>{task.type}</dd>
+        <dt>采集场景</dt>
+        <dd>{task.scenario}</dd>
+        {task.description ? (
+          <>
+            <dt>任务说明</dt>
+            <dd>{task.description}</dd>
+          </>
+        ) : null}
+        <dt>接收与目标</dt>
+        <dd>
+          <ReceivedProgress progress={progress} task={task} />
+        </dd>
+        <dt>质量结果</dt>
+        <dd>
+          <QualityProgress progress={progress} />
+        </dd>
+        <dt>数据截至</dt>
+        <dd>
+          <ProgressTime progress={progress} />
+        </dd>
+      </dl>
+    </section>
+  );
+}
+
 function TaskActions({
   canManage,
   onCancel,
   onClose,
   onEdit,
   onReopen,
+  onDelete,
+  progress,
   task,
 }: Readonly<{
   canManage: boolean;
   task: CollectionTask;
+  progress: TaskProgressState | undefined;
   onEdit: (task: CollectionTask) => void;
   onClose: (task: CollectionTask) => void;
   onCancel: (task: CollectionTask) => void;
   onReopen: (task: CollectionTask) => void;
+  onDelete: (task: CollectionTask) => void;
 }>) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [capturesOpen, setCapturesOpen] = useState(false);
@@ -470,6 +558,13 @@ function TaskActions({
       moreActionsRef.current?.focus();
       action(task);
     };
+    const deleteItem = {
+      key: "delete",
+      danger: true,
+      icon: <Trash2 aria-hidden="true" size={16} />,
+      label: "删除任务及数据",
+      onClick: () => run(onDelete),
+    };
     if (task.status !== "ACTIVE") {
       return [
         {
@@ -478,6 +573,7 @@ function TaskActions({
           label: "重新开启",
           onClick: () => run(onReopen),
         },
+        deleteItem,
       ];
     }
     return [
@@ -502,12 +598,13 @@ function TaskActions({
         label: "取消任务",
         onClick: () => run(onCancel),
       },
+      deleteItem,
     ];
-  }, [onCancel, onClose, onEdit, onReopen, task]);
+  }, [onCancel, onClose, onEdit, onReopen, onDelete, task]);
 
   return (
     <div className={styles.taskActions}>
-      <Button type="link" onClick={() => setCapturesOpen(true)}>
+      <Button size="small" type="link" onClick={() => setCapturesOpen(true)}>
         采集记录
       </Button>
       <Drawer
@@ -518,10 +615,26 @@ function TaskActions({
         onClose={() => setCapturesOpen(false)}
         destroyOnHidden
       >
-        {scope && capturesOpen && (
-          <CaptureProgressPanel
-            scope={scope}
-            taskId={task.collection_task_id}
+        {capturesOpen && (
+          <Tabs
+            defaultActiveKey="captures"
+            items={[
+              {
+                key: "captures",
+                label: "采集记录",
+                children: scope ? (
+                  <CaptureProgressPanel
+                    scope={scope}
+                    taskId={task.collection_task_id}
+                  />
+                ) : null,
+              },
+              {
+                key: "details",
+                label: "任务详情",
+                children: <TaskDetails task={task} progress={progress} />,
+              },
+            ]}
           />
         )}
       </Drawer>
@@ -529,6 +642,9 @@ function TaskActions({
         className={styles.viewDataAction}
         to={routes.datasetDetail.build({
           datasetId: task.dataset_id as DatasetId,
+          tab: "episodes",
+          collectionTaskId: task.collection_task_id,
+          returnTo: "/collection-tasks",
         })}
       >
         查看数据集
@@ -595,6 +711,7 @@ function MobileTaskList({
   onClose,
   onEdit,
   onReopen,
+  onDelete,
   progressByTaskId,
   tasks,
 }: Readonly<CollectionTaskTableProps>) {
@@ -625,36 +742,24 @@ function MobileTaskList({
             className={styles.mobileTaskCard}
             key={task.collection_task_id}
           >
-            <TaskIdentity task={task} />
-            <div className={styles.mobileTaskSection}>
-              <span className={styles.mobileTaskLabel}>状态</span>
+            <div className={styles.mobileTaskHeader}>
+              <TaskIdentity task={task} />
               <TaskStatus task={task} />
             </div>
-            <div className={styles.mobileTaskSection}>
-              <span className={styles.mobileTaskLabel}>接收与目标</span>
-              <ReceivedProgress progress={progress} task={task} />
+            <div className={styles.mobileTaskSummary}>
+              <ReceivedProgress compact progress={progress} task={task} />
+              <QualityProgress compact progress={progress} />
             </div>
-            <div className={styles.mobileTaskSection}>
-              <span className={styles.mobileTaskLabel}>质量结果</span>
-              <QualityProgress progress={progress} />
-            </div>
-            <div className={styles.mobileTaskSection}>
-              <span className={styles.mobileTaskLabel}>数据截至</span>
-              <ProgressTime progress={progress} />
-            </div>
-            <div
-              className={`${styles.mobileTaskSection} ${styles.mobileTaskActions}`}
-            >
-              <span className={styles.mobileTaskLabel}>操作</span>
-              <TaskActions
-                canManage={canManage}
-                task={task}
-                onCancel={onCancel}
-                onClose={onClose}
-                onEdit={onEdit}
-                onReopen={onReopen}
-              />
-            </div>
+            <TaskActions
+              canManage={canManage}
+              task={task}
+              progress={progress}
+              onCancel={onCancel}
+              onClose={onClose}
+              onEdit={onEdit}
+              onReopen={onReopen}
+              onDelete={onDelete}
+            />
           </article>
         );
       })}
@@ -674,21 +779,30 @@ function ProgressCell({ row, column }: CellContext<CollectionTask, unknown>) {
   const { progressByTaskId } = useTaskTable();
   const progress = progressByTaskId.get(row.original.collection_task_id);
   if (column.id === "received")
-    return <ReceivedProgress progress={progress} task={row.original} />;
-  if (column.id === "quality") return <QualityProgress progress={progress} />;
-  return <ProgressTime progress={progress} />;
+    return <ReceivedProgress compact progress={progress} task={row.original} />;
+  return <QualityProgress compact progress={progress} />;
 }
 
 function ActionsCell({ row }: CellContext<CollectionTask, unknown>) {
-  const { canManage, onCancel, onClose, onEdit, onReopen } = useTaskTable();
+  const {
+    canManage,
+    onCancel,
+    onClose,
+    onEdit,
+    onReopen,
+    onDelete,
+    progressByTaskId,
+  } = useTaskTable();
   return (
     <TaskActions
       canManage={canManage}
       task={row.original}
+      progress={progressByTaskId.get(row.original.collection_task_id)}
       onCancel={onCancel}
       onClose={onClose}
       onEdit={onEdit}
       onReopen={onReopen}
+      onDelete={onDelete}
     />
   );
 }
@@ -710,26 +824,20 @@ const columns: readonly ColumnDef<CollectionTask, unknown>[] = [
   },
   {
     id: "received",
-    header: "接收与目标",
+    header: "采集概况",
     size: 220,
     cell: ProgressCell,
   },
   {
     id: "quality",
     header: "质量结果",
-    size: 230,
-    cell: ProgressCell,
-  },
-  {
-    id: "asOf",
-    header: "数据截至",
-    size: 136,
+    size: 150,
     cell: ProgressCell,
   },
   {
     id: "actions",
     header: "操作",
-    size: 156,
+    size: 220,
     cell: ActionsCell,
   },
 ];
@@ -746,6 +854,7 @@ export function CollectionTaskTable(props: Readonly<CollectionTaskTableProps>) {
     <TaskTableContext.Provider value={props}>
       <DataTable
         caption="采集任务"
+        columnLayout="stable"
         columns={columns}
         data={tasks}
         empty={

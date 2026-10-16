@@ -1,3 +1,23 @@
+.annotationWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  min-width: 0;
+}
+.annotationWorkspace[data-navigation-visible="true"] {
+  grid-template-columns: 184px minmax(0, 1fr);
+}
+.annotationWorkspace[data-navigation-visible="true"][data-navigator-collapsed="true"] {
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+@media (max-width: 767px) {
+  .annotationWorkspace[data-navigation-visible="true"],
+  .annotationWorkspace[data-navigation-visible="true"][data-navigator-collapsed="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .page {
   width: 100%;
   min-width: 0;

@@ -95,11 +95,11 @@ export default function DatasetSourceFiles({
         options={[
           ...(activeId &&
           !query.data?.some((item) => item.import_id === activeId)
-            ? [{ value: activeId, label: activeId }]
+            ? [{ value: activeId, label: "当前原始批次" }]
             : []),
           ...(query.data ?? []).map((item) => ({
             value: item.import_id,
-            label: `${item.import_id} · ${item.source_format} · ${item.file_count} 个文件 · ${formatBytes(item.total_bytes)}`,
+            label: `${item.source_format} · ${new Date(item.updated_at).toLocaleString("zh-CN", { hour12: false })} · ${item.file_count} 个文件 · ${formatBytes(item.total_bytes)}`,
           })),
         ]}
       />

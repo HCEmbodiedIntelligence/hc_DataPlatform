@@ -133,9 +133,40 @@ function makeGateway() {
     })),
     close: vi.fn(async () => ({ ...task, status: "CLOSED" as const })),
     cancel: vi.fn(async () => ({ ...task, status: "CANCELLED" as const })),
+    delete: vi.fn(async () => ({
+      status: "DELETED",
+      deleted_objects: 3,
+      deleted_bytes: 1024,
+    })),
     reopen: vi.fn(async () => ({ ...task, status: "ACTIVE" as const })),
   } satisfies CollectionTaskGateway;
 }
+
+it("permanently deletes task data only after confirmation and retains the retry identity", async () => {
+  const gateway = makeGateway();
+  gateway.delete.mockRejectedValueOnce(new Error("storage unavailable"));
+  const user = userEvent.setup();
+  renderPage(gateway);
+  await screen.findByText(task.name);
+  await chooseTaskAction(user, "删除任务及数据");
+  await waitFor(() =>
+    expect(screen.getByText("永久删除任务及全部数据？")).toBeVisible(),
+  );
+  expect(gateway.delete).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "永久删除任务及数据" }));
+  await waitFor(() => expect(gateway.delete).toHaveBeenCalledTimes(1));
+  await screen.findByRole("alert");
+  await user.click(screen.getByRole("button", { name: "永久删除任务及数据" }));
+  await waitFor(() => expect(gateway.delete).toHaveBeenCalledTimes(2));
+  expect(gateway.delete.mock.calls[1]).toEqual(gateway.delete.mock.calls[0]);
+  expect(gateway.delete).toHaveBeenCalledWith(
+    scope,
+    task.collection_task_id,
+    '"v1"',
+    expect.stringMatching(/^delete-/u),
+  );
+  await screen.findByText("采集任务及数据已删除");
+});
 
 function renderPage(
   gateway: CollectionTaskGateway,
@@ -182,7 +213,7 @@ async function fillMinimumCreateForm(user: ReturnType<typeof userEvent.setup>) {
 
 async function chooseTaskAction(
   user: ReturnType<typeof userEvent.setup>,
-  name: "编辑任务" | "关闭任务" | "取消任务" | "重新开启",
+  name: "编辑任务" | "关闭任务" | "取消任务" | "重新开启" | "删除任务及数据",
 ) {
   await user.click(screen.getByRole("button", { name: "更多操作" }));
   await user.click(await screen.findByRole("menuitem", { name }));
@@ -377,7 +408,12 @@ describe("P20 collection tasks", () => {
     const link = await screen.findByRole("link", {
       name: `查看采集任务 ${task.name}（${task.task_code}）的数据集`,
     });
-    expect(link).toHaveAttribute("href", `/datasets/${task.dataset_id}`);
+    const target = new URL(link.getAttribute("href")!, "http://platform.test");
+    expect(target.pathname).toBe(`/datasets/${task.dataset_id}`);
+    expect(target.searchParams.get("tab")).toBe("episodes");
+    expect(target.searchParams.get("collectionTaskId")).toBe(
+      task.collection_task_id,
+    );
 
     await user.click(link);
     expect(screen.getByTestId("location")).toHaveTextContent(
@@ -385,37 +421,69 @@ describe("P20 collection tasks", () => {
     );
   });
 
-  it("renders the real receive, duration, QC, source, and threshold facts", async () => {
+  it("keeps task rows compact and shows complete progress facts on demand", async () => {
+    const user = userEvent.setup();
+    configureRuntime({
+      apiBaseUrl: "/api/v1",
+      sseBaseUrl: "/api/v1",
+      buildVersion: "compact-task-test",
+      releaseEnv: "test",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ items: [], total: 0 }), {
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
     renderPage(makeGateway());
 
     await screen.findByText("目标进行中");
     expect(screen.getByTitle("原始任务码：00000001")).toHaveTextContent(
       "0000 0001",
     );
-    expect(screen.getByText("类型：抓取采集")).toBeVisible();
-    expect(screen.getByText("场景：透明工件工位")).toBeVisible();
     expect(screen.getByText("8 包 / 20 包")).toBeVisible();
-    expect(screen.getByText("10 分钟 / 20 分钟")).toBeVisible();
-    expect(screen.getByText("2 包时长未知")).toBeVisible();
-    expect(
-      screen.getByLabelText("Pass 6，Risk 1，Reject 0，未出质检 1"),
-    ).toBeVisible();
+    expect(screen.getByText("10 分钟")).toBeVisible();
     expect(screen.getByText("通过率 85.7%")).toBeVisible();
-    expect(screen.getByText("存在未出质检包")).toBeVisible();
-    expect(screen.getByText("1 设备 · 1 相机")).toBeVisible();
+    expect(screen.getByText("1 待质检")).toBeVisible();
+    expect(screen.queryByText(task.scenario)).not.toBeInTheDocument();
+    expect(screen.queryByText(task.dataset_id)).not.toBeInTheDocument();
+    expect(screen.queryByText("2 包时长未知")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 设备 · 1 相机")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "数据截至" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByText("搜索与类型仅筛选当前游标窗口"),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByText("任务码用于数据归类，不是数据包 ID。"),
     ).not.toBeInTheDocument();
-    expect(screen.getByText(task.dataset_id)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "查看数据集" })).toHaveAttribute(
-      "href",
-      `/datasets/${task.dataset_id}`,
+    const href = screen
+      .getByRole("link", { name: "查看数据集" })
+      .getAttribute("href")!;
+    expect(new URL(href, "http://platform.test").searchParams.get("tab")).toBe(
+      "episodes",
     );
     expect(screen.queryByLabelText("当前项目")).not.toBeInTheDocument();
     expect(screen.queryByText(/SAVED/u)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "采集记录" }));
+    await user.click(await screen.findByRole("tab", { name: "任务详情" }));
+    const details = within(screen.getByRole("region", { name: "任务详情" }));
+    expect(details.getByText(task.type)).toBeVisible();
+    expect(details.getByText(task.scenario)).toBeVisible();
+    expect(details.getByText(task.dataset_id)).toBeVisible();
+    expect(details.getByText("8 包 / 20 包")).toBeVisible();
+    expect(details.getByText("10 分钟 / 20 分钟")).toBeVisible();
+    expect(details.getByText("2 包时长未知")).toBeVisible();
+    expect(
+      details.getByLabelText("Pass 6，Risk 1，Reject 0，未出质检 1"),
+    ).toBeVisible();
+    expect(details.getByText("存在未出质检包")).toBeVisible();
+    expect(details.getByText("1 设备 · 1 相机")).toBeVisible();
   });
 
   it("uses the API quality status for a low pass rate", async () => {

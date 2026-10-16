@@ -954,7 +954,8 @@ components:
       type: object
     DatasetPageEpisodePackageBinding:
       additionalProperties: false
-      description: Exact committed package binding for either a numeric or RGB/depth stream.
+      description: Exact committed package binding for either a numeric or RGB/depth
+        stream.
       properties:
         data:
           $ref: '#/components/schemas/DataVersionRef'
@@ -3115,6 +3116,100 @@ components:
       - meta
       title: DatasetPageVersionSchemaSummaryEnvelope
       type: object
+    DisplayReference:
+      properties:
+        kind:
+          type: string
+          enum:
+          - dataset
+          - collection_task
+          - robot
+          - episode
+          - annotation_task
+          - rollout
+          title: Kind
+        id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Id
+        dataset_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Dataset Id
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - id
+      title: DisplayReference
+    DisplayLabelRequest:
+      properties:
+        references:
+          items:
+            $ref: '#/components/schemas/DisplayReference'
+          type: array
+          maxItems: 100
+          minItems: 1
+          title: References
+      additionalProperties: false
+      type: object
+      required:
+      - references
+      title: DisplayLabelRequest
+    DisplayLabel:
+      properties:
+        kind:
+          type: string
+          enum:
+          - dataset
+          - collection_task
+          - robot
+          - episode
+          - annotation_task
+          - rollout
+          title: Kind
+        id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Id
+        dataset_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Dataset Id
+        label:
+          type: string
+          title: Label
+        description_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description Label
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - id
+      - label
+      title: DisplayLabel
+    DisplayLabelResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DisplayLabel'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: DisplayLabelResponse
 info:
   title: HC P05 dataset-page contract
   version: '2026-08-19'
@@ -3172,8 +3267,8 @@ paths:
           - type: 'null'
           description: Exact immutable collection-task identity owned by the Dataset.
           title: Collection Task Id
-      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
-          Episode task.
+      - description: Case-insensitive plain-text substring matched against the dataset
+          task or any dataset Episode task.
         in: query
         name: task
         required: false
@@ -3183,8 +3278,8 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
-          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
-            Episode task.
+          description: Case-insensitive plain-text substring matched against the dataset
+            task or any dataset Episode task.
           title: Task
       - in: query
         name: tag
@@ -5946,8 +6041,8 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
-          Episode task.
+      - description: Case-insensitive plain-text substring matched against the dataset
+          task or any dataset Episode task.
         in: query
         name: task
         required: false
@@ -5957,8 +6052,8 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
-          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
-            Episode task.
+          description: Case-insensitive plain-text substring matched against the dataset
+            task or any dataset Episode task.
           title: Task
       - in: query
         name: tag
@@ -6254,8 +6349,8 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
-          Episode task.
+      - description: Case-insensitive plain-text substring matched against the dataset
+          task or any dataset Episode task.
         in: query
         name: task
         required: false
@@ -6265,8 +6360,8 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
-          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
-            Episode task.
+          description: Case-insensitive plain-text substring matched against the dataset
+            task or any dataset Episode task.
           title: Task
       - in: query
         name: tag
@@ -6436,3 +6531,53 @@ paths:
       summary: Get Dataset Summary
       tags:
       - datasets
+  /api/v1/projects/{project_id}/datasets:display-labels:
+    post:
+      tags:
+      - datasets
+      summary: Resolve Display Labels
+      operationId: resolveDataDisplayLabels
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: X-Organization-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 128
+          title: X-Organization-Id
+      - name: X-Region-Code
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+          title: X-Region-Code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisplayLabelRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisplayLabelResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'

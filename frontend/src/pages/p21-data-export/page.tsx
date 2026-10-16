@@ -1,3 +1,4 @@
+import { ResourceLabel, taskNumber } from "../../shared/lib/resource-labels";
 import { downloadExport } from "../../features/exports/download";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import {
@@ -771,8 +772,7 @@ export function DataExportPage() {
       key: "episode",
       render: (_, episode) => (
         <div className={styles.primaryCell}>
-          <strong>Episode {episode.ordinal}</strong>
-          <code>{episode.episodeId}</code>
+          <strong title={episode.episodeId}>Episode {episode.ordinal}</strong>
         </div>
       ),
     },
@@ -785,7 +785,19 @@ export function DataExportPage() {
       title: "来源任务",
       key: "task",
       render: (_, episode) =>
-        episode.task ? (taskById.get(episode.task)?.name ?? episode.task) : "—",
+        episode.task ? (
+          <ResourceLabel
+            kind="collection_task"
+            id={episode.task}
+            fallback={
+              taskById.get(episode.task)
+                ? taskNumber(taskById.get(episode.task)!.task_code)
+                : undefined
+            }
+          />
+        ) : (
+          "—"
+        ),
     },
     {
       title: "版本",
@@ -865,10 +877,15 @@ export function DataExportPage() {
       ),
     },
     {
-      title: "任务 ID",
+      title: "技术信息",
       key: "jobId",
       responsive: ["xl"],
-      render: (_, row) => <code className={styles.jobId}>{row.ref.jobId}</code>,
+      render: (_, row) => (
+        <details>
+          <summary>导出记录</summary>
+          <code className={styles.jobId}>{row.ref.jobId}</code>
+        </details>
+      ),
     },
     {
       title: "操作",
@@ -1081,7 +1098,7 @@ export function DataExportPage() {
                           <strong id="export-scope-title">选择数据范围</strong>
                           <small>
                             {dataStage === "raw"
-                              ? "按任务或数据集查找，再选择原始批次中的文件"
+                              ? "按任务或数据集查找，勾选原始批次后批量下载"
                               : "先按任务或数据集查找，再勾选 Episode"}
                           </small>
                         </span>
@@ -1139,7 +1156,7 @@ export function DataExportPage() {
                             )
                             .map((task) => ({
                               value: task.collection_task_id,
-                              label: task.name,
+                              label: taskNumber(task.task_code),
                             }))}
                           placeholder="全部任务"
                           value={appliedTasks}

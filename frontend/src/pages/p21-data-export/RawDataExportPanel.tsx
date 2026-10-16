@@ -1,9 +1,13 @@
-import { lazy, Suspense, useState } from "react";
+import { ResourceLabel } from "../../shared/lib/resource-labels";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
-import { Alert, Button, Table } from "antd";
+import { Alert, Button, Space, Table } from "antd";
 import type { Scope } from "../../shared/scope/model";
 import { request } from "../../shared/api/http-client";
 import { PageState } from "../../shared/ui";
+import { downloadRawSources } from "../../features/exports/raw-download";
+import { formatBytes } from "../../features/ingest/upload/upload-contract";
+import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import {
   nativeRoot,
   type NativeProgress,
@@ -13,22 +17,45 @@ const OriginalSourceBrowser = lazy(
   () => import("../../features/ingest/browser/OriginalSourceBrowser"),
 );
 
-export default function RawDataExportPanel({
-  scope,
-  datasetIds,
-  taskIds,
-  hasFilter,
-  canRead,
-  canDownload,
-}: {
+type Props = {
   scope: Scope;
   datasetIds: readonly string[];
   taskIds: readonly string[];
   hasFilter: boolean;
   canRead: boolean;
   canDownload: boolean;
-}) {
+};
+
+export default function RawDataExportPanel(props: Props) {
+  const revision = useScopeQueryRevision();
+  const identity = JSON.stringify([
+    revision,
+    props.scope,
+    [...props.datasetIds].sort(),
+    [...props.taskIds].sort(),
+    props.hasFilter,
+    props.canRead,
+    props.canDownload,
+  ]);
+  return <RawDataSelection key={identity} {...props} />;
+}
+
+function RawDataSelection({
+  scope,
+  datasetIds,
+  taskIds,
+  hasFilter,
+  canRead,
+  canDownload,
+}: Props) {
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadedBytes, setDownloadedBytes] = useState(0);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadComplete, setDownloadComplete] = useState(false);
+  const controller = useRef<AbortController | null>(null);
+  useEffect(() => () => controller.current?.abort(), []);
   const ingestScope =
     scope?.projectId && scope.regionCode
       ? {
@@ -91,13 +118,51 @@ export default function RawDataExportPanel({
         (item.collection_task_id && taskIds.includes(item.collection_task_id)),
     );
   const opened = records.find((item) => item.import_id === openedId);
+  const selected = records.filter((item) =>
+    selectedIds.includes(item.import_id),
+  );
+  function select(ids: string[]) {
+    setSelectedIds(ids);
+    setDownloadComplete(false);
+    setDownloadError(null);
+  }
+  async function download() {
+    if (!ingestScope || !canDownload || !selected.length || controller.current)
+      return;
+    const current = new AbortController();
+    controller.current = current;
+    setDownloading(true);
+    setDownloadedBytes(0);
+    setDownloadError(null);
+    setDownloadComplete(false);
+    try {
+      await downloadRawSources(
+        ingestScope,
+        selected.map((item) => item.import_id),
+        current.signal,
+        setDownloadedBytes,
+      );
+      if (!current.signal.aborted) setDownloadComplete(true);
+    } catch (error) {
+      if (
+        !current.signal.aborted &&
+        !(error instanceof DOMException && error.name === "AbortError")
+      )
+        setDownloadError(
+          error instanceof Error ? error.message : "原始数据下载失败，请重试。",
+        );
+    } finally {
+      if (controller.current === current) controller.current = null;
+      setDownloading(false);
+    }
+  }
   return (
     <section aria-label="原始数据导出">
       <Alert
         showIcon
         type="info"
         title="按原始文件下载"
-        description="保留上传时的文件内容，不要求处理或标注完成。展开原始批次后，选择要下载的原文件。"
+        description="勾选一个或多个原始批次，一次下载为 ZIP。保留原文件内容和目录结构，不要求处理或标注完成。"
       />
       <p role="status">
         共 {records.length} 个原始批次 ·{" "}
@@ -105,13 +170,97 @@ export default function RawDataExportPanel({
         Episode · {records.reduce((count, item) => count + item.file_count, 0)}{" "}
         个文件
       </p>
+      <Space wrap style={{ marginBottom: 16 }}>
+        <Button
+          disabled={!canDownload || downloading || records.length === 0}
+          onClick={() => select(records.map((item) => item.import_id))}
+        >
+          全选筛选结果
+        </Button>
+        <Button
+          disabled={downloading || selected.length === 0}
+          onClick={() => select([])}
+        >
+          清空选择
+        </Button>
+        <span aria-live="polite">
+          已选 {selected.length} 个批次 ·{" "}
+          {selected.reduce((n, item) => n + item.file_count, 0)} 个文件
+          {selected.length > 0
+            ? ` · ${formatBytes(selected.reduce((n, item) => n + item.total_bytes, 0))}`
+            : ""}
+        </span>
+        <Button
+          type="primary"
+          disabled={
+            !canDownload || selected.length === 0 || selected.length > 1000
+          }
+          loading={downloading}
+          onClick={() => void download()}
+        >
+          下载所选批次
+        </Button>
+        {downloading ? (
+          <>
+            <span role="status">已接收 {formatBytes(downloadedBytes)}</span>
+            <Button onClick={() => controller.current?.abort()}>
+              取消下载
+            </Button>
+          </>
+        ) : null}
+      </Space>
+      {selected.length > 1000 ? (
+        <Alert
+          type="warning"
+          showIcon
+          title="一次最多下载 1000 个批次，请减少选择。"
+        />
+      ) : null}
+      {downloadError ? (
+        <Alert
+          type="error"
+          showIcon
+          title="原始数据下载失败"
+          description={downloadError}
+        />
+      ) : null}
+      {downloadComplete ? (
+        <Alert type="success" showIcon title="所选原始数据已下载为 ZIP" />
+      ) : null}
       <Table<NativeProgress>
         aria-label="原始数据批次"
         rowKey="import_id"
         dataSource={records}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        rowSelection={{
+          selectedRowKeys: selected.map((item) => item.import_id),
+          onChange: (keys) => select(keys.map(String)),
+          getCheckboxProps: () => ({ disabled: !canDownload || downloading }),
+        }}
         columns={[
-          { title: "原始批次", dataIndex: "import_id" },
+          {
+            title: "原始批次",
+            key: "source",
+            render: (_, record) => (
+              <span title={record.import_id}>
+                {record.source_format.toUpperCase()} ·{" "}
+                {new Date(record.updated_at).toLocaleString("zh-CN", {
+                  hour12: false,
+                })}
+              </span>
+            ),
+          },
+          {
+            title: "采集任务",
+            key: "task",
+            render: (_, record) => (
+              <ResourceLabel
+                kind="collection_task"
+                id={record.collection_task_id}
+                scope={scope}
+              />
+            ),
+          },
           { title: "源格式", dataIndex: "source_format" },
           { title: "原始 Episode 数", dataIndex: "episode_count" },
           { title: "文件数", dataIndex: "file_count" },
@@ -120,7 +269,7 @@ export default function RawDataExportPanel({
             key: "open",
             render: (_, record) => (
               <Button onClick={() => setOpenedId(record.import_id)}>
-                选择原文件
+                查看文件
               </Button>
             ),
           },

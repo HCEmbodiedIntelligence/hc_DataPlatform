@@ -727,6 +727,10 @@ components:
           enum: [continuous-recording/v1, continuous-recording/v2]
         scope: {$ref: "#/components/schemas/RecordingScope"}
         recording_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        file_name: {type: [string, "null"], maxLength: 255}
+        source_file_name: {type: [string, "null"], maxLength: 255}
+        robot_name: {type: [string, "null"], maxLength: 256}
+        task_code: {type: [string, "null"], maxLength: 128}
         upload_session_id: {type: [string, "null"], format: uuid}
         recording_upload_id: {type: [string, "null"], format: uuid}
         rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}

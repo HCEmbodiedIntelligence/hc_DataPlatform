@@ -4,6 +4,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from hc_data_platform.robot_ingest import recording_bridge
 from hc_data_platform.robot_ingest.models import RobotIngestUpload
+from hc_data_platform.robot_ingest.processing_dispatch import mcap_eligible, retry_mcap
 
 
 def retry_recording_source(organization_id, project_id, region_code, import_id, *, factory):
@@ -18,7 +19,7 @@ def retry_recording_source(organization_id, project_id, region_code, import_id, 
                = (s.organization_id,s.project_id,s.region_code,s.raw_source_id)
             WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
               AND s.raw_source_id=%s AND s.raw_status='COMMITTED'
-              AND s.source_format='CAPTURE_BUNDLE'""",
+              AND s.source_format IN ('CAPTURE_BUNDLE','MCAP')""",
             (organization_id, project_id, region_code, import_id),
         ).fetchone()
     if row is None:
@@ -31,6 +32,9 @@ def retry_recording_source(organization_id, project_id, region_code, import_id, 
         upload.raw_source_id,
     ) != (organization_id, project_id, region_code, import_id):
         raise ValueError("recording upload receipt differs from its source scope")
+    if mcap_eligible(upload):
+        retry_mcap(factory, upload)
+        return True
     if not recording_bridge.eligible(upload):
         return False
     # Concurrent retries of the same failed preparation use the same outbox key.

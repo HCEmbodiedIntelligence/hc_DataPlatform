@@ -25,7 +25,10 @@ from hc_data_platform.robot_ingest.models import (
     RobotIngestEpisodeResult,
     RobotIngestUploadManifest,
 )
-from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
+from hc_data_platform.robot_ingest.repository import (
+    PostgresRobotIngestRepository,
+    RobotIngestIdentityMissing,
+)
 from hc_data_platform.robot_ingest.service import RobotIngestService
 from hc_data_platform.security.auth import AuthContext
 
@@ -489,3 +492,98 @@ def _assert_collection_job_authority_is_immutable(dsn: str, collection_job_id: s
                 (REGION_B, PROJECT_A, collection_job_id),
             )
         assert caught.value.diag.constraint_name == "robot_ingest_uploads_job_authority_fk"
+
+
+def test_postgres_identity_deletion_preserves_raw_lineage_and_cannot_be_resurrected():
+    import psycopg
+
+    assert DSN is not None
+    _setup_database(DSN)
+    repository = PostgresRobotIngestRepository.from_dsn(DSN, psycopg_connection_factory(DSN))
+    storage = InMemoryObjectStorage()
+    service = RobotIngestService(
+        repository, storage, credential_hmac_key="identity-delete-test-hmac-key", clock=lambda: NOW
+    )
+    context = bind_request_context(
+        RequestContext(
+            organization_id=ORG,
+            project_id=PROJECT_A,
+            region_code=REGION_A,
+            subject_id="robot-pg-admin",
+        )
+    )
+    admin = {"auth": _admin(), "organization_id": ORG, "project_id": PROJECT_A}
+    try:
+        identity = service.create_identity(
+            **admin, command=CreateRobotIngestIdentity(robot_id=ROBOT, allowed_formats=("MCAP",))
+        ).data
+        selected = {**admin, "ingest_identity_id": identity.ingest_identity_id}
+        credential = service.issue_credential(
+            **selected, command=IssueCredentialCommand()
+        ).credential
+        assert credential is not None
+        body = b"identity-delete-preserves-raw"
+        upload = service.create_upload(
+            token=credential.token, manifest=_manifest(TASK_A, str(uuid4()), body)
+        ).data
+        part = storage.upload_part(
+            upload.assets[0].multipart_upload_id, 1, body, key=upload.assets[0].object_key
+        )
+        service.complete_asset(
+            token=credential.token,
+            upload_id=upload.upload_id,
+            asset_id="raw",
+            command=CompleteAssetCommand(parts=(CompletedPart(part_number=1, etag=part.etag),)),
+        )
+        committed = service.commit_upload(token=credential.token, upload_id=upload.upload_id).data
+        assert committed.raw_source_id is not None
+        assert not repository.delete_identity("another-org", identity.ingest_identity_id, NOW)
+        service.delete_identity(**selected)
+        service.delete_identity(**selected)
+        assert repository.get_identity(ORG, identity.ingest_identity_id) is None
+        assert repository.find_identity(ORG, ROBOT) is None
+        assert (
+            repository.get_upload(ORG, upload.upload_id, identity.ingest_identity_id) == committed
+        )
+        with psycopg.connect(normalize_postgres_dsn(DSN)) as connection:
+            row = connection.execute(
+                """SELECT raw_source_id FROM ingest.raw_sources
+                   WHERE organization_id=%s AND raw_source_id=%s""",
+                (ORG, committed.raw_source_id),
+            ).fetchone()
+            assert row == (committed.raw_source_id,)
+            assert connection.execute(
+                """SELECT count(*) FROM ingest.robot_ingest_credentials
+                   WHERE organization_id=%s AND ingest_identity_id=%s AND state='ACTIVE'""",
+                (ORG, identity.ingest_identity_id),
+            ).fetchone() == (0,)
+        with pytest.raises(RobotIngestIdentityMissing):
+            repository.save_identity(identity)
+        with pytest.raises(RobotIngestIdentityMissing):
+            repository.issue_credential(
+                identity=identity,
+                summary=repository.list_credentials(ORG, identity.ingest_identity_id)[0],
+                token_digest="0" * 64,
+                revoke_previous=False,
+            )
+        fresh = service.create_identity(
+            **admin, command=CreateRobotIngestIdentity(robot_id=ROBOT, allowed_formats=("MCAP",))
+        ).data
+        assert fresh.ingest_identity_id != identity.ingest_identity_id
+        service.delete_identity(**selected)
+        assert (
+            service.get_identity(**admin, ingest_identity_id=fresh.ingest_identity_id).data == fresh
+        )
+        new_credential = service.issue_credential(
+            **admin, ingest_identity_id=fresh.ingest_identity_id, command=IssueCredentialCommand()
+        ).credential
+        assert new_credential is not None
+        assert (
+            service.authenticate(new_credential.token).ingest_identity_id
+            == fresh.ingest_identity_id
+        )
+        with pytest.raises(ProblemException) as caught:
+            service.authenticate(credential.token)
+        assert caught.value.problem.code == "ROBOT_CREDENTIAL_REVOKED"
+    finally:
+        reset_request_context(context)

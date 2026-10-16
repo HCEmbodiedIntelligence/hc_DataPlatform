@@ -1,6 +1,6 @@
-import type { ReactNode } from 'react';
-import { PageHeader, type PageHeaderProps } from './PageHeader';
-import styles from './layout.module.css';
+import type { ReactNode } from "react";
+import { PageHeader, type PageHeaderProps } from "./PageHeader";
+import styles from "./layout.module.css";
 
 export interface DetailPageScaffoldProps {
   header: PageHeaderProps;
@@ -17,18 +17,25 @@ export function DetailPageScaffold({
   tabs,
   children,
   inspector,
-  inspectorLabel = '详情检查器',
+  inspectorLabel = "详情检查器",
 }: Readonly<DetailPageScaffoldProps>) {
   return (
-    <section className={styles.detailPage} data-layout="detail-page" aria-label={header.title}>
+    <section
+      className={styles.detailPage}
+      data-layout="detail-page"
+      aria-label={header.title}
+    >
       <PageHeader
         {...header}
         metadata={
           <>
             {header.metadata}
-            <span className={styles.resourceIdentity}>
-              不可变资源 ID：<code>{resourceId}</code>
-            </span>
+            <details className={styles.resourceIdentity}>
+              <summary>技术信息</summary>
+              <span>
+                资源 ID：<code>{resourceId}</code>
+              </span>
+            </details>
           </>
         }
       />
@@ -39,9 +46,12 @@ export function DetailPageScaffold({
       ) : null}
       <div
         className={styles.detailGrid}
-        data-has-inspector={inspector ? 'true' : undefined}
+        data-has-inspector={inspector ? "true" : undefined}
       >
-        <section className={styles.detailContent} aria-label={`${header.title}详情`}>
+        <section
+          className={styles.detailContent}
+          aria-label={`${header.title}详情`}
+        >
           {children}
         </section>
         {inspector ? (

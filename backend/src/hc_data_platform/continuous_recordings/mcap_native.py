@@ -61,12 +61,13 @@ def decoded(schema, channel, message, decoder):
     )
 
 
-def inspect(path):
+def inspect(path, progress=lambda: None):
     result, decoder = {}, McapRos2DecoderProbe()
     with Path(path).open("rb") as stream:
         for schema, channel, message in make_reader(stream, validate_crcs=True).iter_messages(
             log_time_order=False
         ):
+            progress()
             if channel.topic in result:
                 continue
             if schema is None:
@@ -182,7 +183,7 @@ def prepare(path, destination, config, progress=lambda: None):
             from .mcap_transport import prepare_transport
 
             return prepare_transport(path, destination, progress)
-    inventory = inspect(path)
+    inventory = inspect(path, progress)
     cfg = resolve(config, inventory)
     destination.mkdir(parents=True, exist_ok=False)
     (destination / "sensors").mkdir()
@@ -449,7 +450,10 @@ def prepare(path, destination, config, progress=lambda: None):
             "action_origin": "sent" if cfg.action_topic else "next_state",
             "joint_value_semantics": "source position values; no delta conversion",
             "topic_mapping": {
-                **{topic: "observation.images." + camera["id"] for topic, camera in cameras.items()},
+                **{
+                    topic: "observation.images." + camera["id"]
+                    for topic, camera in cameras.items()
+                },
                 cfg.state_topic: "/observation/state",
                 **({cfg.action_topic: "/action"} if cfg.action_topic else {}),
             },

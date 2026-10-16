@@ -932,8 +932,7 @@ for (const viewport of [
           links.map((link) => Math.round(link.getBoundingClientRect().top)),
         ).size,
     );
-    const expectedRows = viewport.width >= 1440 ? 1 : 2;
-    expect(cardColumns).toBe(expectedRows);
+    expect(cardColumns).toBe(1);
 
     const queuePanel = page.getByRole("region", {
       name: "待标注",
@@ -945,7 +944,10 @@ for (const viewport of [
     const search = page.getByLabel("搜索任务、Rollout、Dataset 或数据结构");
     await expect(search).toHaveAttribute("name", "annotation-task-search");
     await expect(search).toHaveAttribute("autocomplete", "off");
-    await expect(search).toHaveAttribute("placeholder", "输入关键词…");
+    await expect(search).toHaveAttribute(
+      "placeholder",
+      "搜索任务 / Rollout / Dataset…",
+    );
     const longId = page.getByTitle(
       "annotation-task-fe13-with-a-deliberately-long-auditable-identifier",
     );

@@ -3,7 +3,6 @@ import {
   Alert,
   App,
   Button,
-  Checkbox,
   Drawer,
   Input,
   InputNumber,
@@ -26,6 +25,7 @@ import {
   Scissors,
   Split,
   Trash2,
+  X,
 } from "lucide-react";
 import {
   lazy,
@@ -49,6 +49,12 @@ import {
 } from "react-router-dom";
 import { EpisodePreview } from "./EpisodePreview";
 import { RecordingNavigator, type RecordingFilter } from "./RecordingNavigator";
+import {
+  recordingFileName,
+  recordingRobotName,
+  recordingTaskNumber,
+  recordingSearchValues,
+} from "./presentation";
 import { useToast } from "../../shared/ui/ToastProvider";
 import {
   useScopedRobotModelAssets,
@@ -61,7 +67,8 @@ import {
   buildJointFrameSource,
   createLazyThreeRobotSceneLoader,
   createPlaybackClock,
-  DataVisualizationWorkbench,
+  CameraViewToolbar,
+  selectCameraStreams,
   SynchronizedEpisodeWorkbench,
 } from "../../features/viewer";
 import { isDomainError } from "../../shared/api/domain-error";
@@ -181,13 +188,7 @@ function RecordingListPage({
       .filter((recording) => {
         if (recordingQueueStage(recording) !== stage) return false;
         if (!normalized) return true;
-        return [
-          recording.recording_id,
-          recording.rollout_id,
-          recording.robot_id,
-          recording.collection_task_id,
-          recording.data_package_id,
-        ].some((value) =>
+        return recordingSearchValues(recording).some((value) =>
           value.toLocaleLowerCase("zh-CN").includes(normalized),
         );
       })
@@ -253,6 +254,7 @@ function RecordingListPage({
   return (
     <WorkflowQueuePage
       title="录制切片"
+      density="compact"
       headerActions={
         <button
           disabled={list.isFetching}
@@ -302,8 +304,8 @@ function RecordingListPage({
       search={{
         id: "recording-search",
         name: "recording-search",
-        label: "搜索录制、Rollout、机器人或采集任务",
-        placeholder: "输入关键词…",
+        label: "搜索文件名、机器人名称或任务编号",
+        placeholder: "搜索文件名 / 机器人 / 任务编号…",
         value: query,
         meta: `${counts[stage]} 条处于此状态 · 共 ${list.data?.total ?? 0} 条录制`,
         onChange: updateQuery,
@@ -330,7 +332,7 @@ function RecordingListPage({
           <caption>{stage} 录制列表</caption>
           <thead>
             <tr>
-              <th>录制 / Rollout</th>
+              <th>录制文件名</th>
               <th>当前状态</th>
               <th>机器人 / 采集任务</th>
               <th>采集时间</th>
@@ -357,7 +359,7 @@ function RecordingListPage({
                   key={recording.recording_id}
                   className={styles.recordingRow}
                   tabIndex={0}
-                  aria-label={`打开录制 ${recording.recording_id}`}
+                  aria-label={`打开录制 ${recordingFileName(recording)}`}
                   onClick={(event) => {
                     if (
                       !(event.target as HTMLElement).closest("a,button,input")
@@ -381,20 +383,20 @@ function RecordingListPage({
                   <th scope="row">
                     <span
                       className={styles.recordingPrimary}
-                      title={recording.recording_id}
+                      title={recordingFileName(recording)}
                     >
-                      {recording.recording_id}
+                      {recordingFileName(recording)}
                     </span>
-                    <small title={recording.rollout_id}>
-                      {recording.rollout_id}
-                    </small>
                   </th>
                   <td>{statusTag(recording)}</td>
                   <td>
-                    <span className={styles.recordingPrimary}>
-                      {recording.robot_id}
+                    <span
+                      className={styles.recordingPrimary}
+                      title={recordingRobotName(recording)}
+                    >
+                      {recordingRobotName(recording)}
                     </span>
-                    <small>{recording.collection_task_id}</small>
+                    <small>{recordingTaskNumber(recording)}</small>
                   </td>
                   <td>
                     <time dateTime={recording.capture_started_at}>
@@ -457,12 +459,16 @@ function RecordingSegmentationPage({
   capabilityOverride,
   recordingFilter,
   onRecordingFilterChange,
+  navigatorCollapsed,
+  onNavigatorToggle,
 }: {
   readonly gateway: RecordingGateway;
   readonly recordingId: string;
   readonly capabilityOverride?: "manage" | "read-only";
   readonly recordingFilter: RecordingFilter;
   readonly onRecordingFilterChange: (next: RecordingFilter) => void;
+  readonly navigatorCollapsed: boolean;
+  readonly onNavigatorToggle: () => void;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -500,9 +506,10 @@ function RecordingSegmentationPage({
   const [currentNs, setCurrentNs] = useState(0);
   const [markInNs, setMarkInNs] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [showDepth, setShowDepth] = useState(false);
+  const [cameraView, setCameraView] = useState("__quad__");
   const [previewSlice, setPreviewSlice] = useState<EditableSlice | null>(null);
   const [originalFilesOpen, setOriginalFilesOpen] = useState(false);
+  const [finalizedNoticeClosed, setFinalizedNoticeClosed] = useState(false);
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(
     null,
   );
@@ -644,11 +651,11 @@ function RecordingSegmentationPage({
     if (!rawJointStream)
       return "当前录制不是可直接读取原始 SENSOR_DATA 的 v2 多对象录制。";
     if (robotBootstrap.isPending)
-      return `正在解析机器人 ${recording.robot_id} 的模型绑定…`;
+      return `正在解析机器人 ${recordingRobotName(recording)} 的模型绑定…`;
     if (robotBootstrap.isError)
-      return `无法读取机器人 ${recording.robot_id} 的模型配置。`;
+      return `无法读取机器人 ${recordingRobotName(recording)} 的模型配置。`;
     if (!boundVersionId)
-      return `机器人 ${recording.robot_id} 尚未绑定已发布 URDF 模型。`;
+      return `机器人 ${recordingRobotName(recording)} 尚未绑定已发布 URDF 模型。`;
     if (robotModelVersion.isPending || robotModelAssets.isPending)
       return "正在加载已发布模型版本与 URDF 资产…";
     if (robotModelVersion.isError || robotModelAssets.isError)
@@ -692,6 +699,10 @@ function RecordingSegmentationPage({
         },
       }),
     [gateway, recordingId, scope, sources.data?.sources],
+  );
+  const visibleCameraStreams = useMemo(
+    () => selectCameraStreams(cameraStreams, cameraView, clock),
+    [cameraStreams, cameraView, clock],
   );
   const selectedSlice = slices.find((slice) => slice.episodeId === selectedId);
 
@@ -1054,7 +1065,7 @@ function RecordingSegmentationPage({
           title: "录制切片",
           breadcrumbs: [
             { key: "recordings", label: "录制切片", to: "/recordings" },
-            { key: "recording", label: recordingId },
+            { key: "recording", label: "录制详情" },
           ],
         }}
         state={
@@ -1108,21 +1119,6 @@ function RecordingSegmentationPage({
   }));
   const renderEpisodeList = () => (
     <aside className={styles.episodeInspector} aria-label="Episode 列表与属性">
-      <div className={styles.inspectorHeading}>
-        <div>
-          <Scissors size={17} aria-hidden="true" />
-          <strong>Episode</strong>
-          <Tag>{slices.length}</Tag>
-        </div>
-        <Button
-          size="small"
-          icon={<Split size={15} />}
-          disabled={readOnly || !selectedId}
-          onClick={splitSelected}
-        >
-          播放头拆分
-        </Button>
-      </div>
       <div className={styles.episodeList}>
         {slices.length === 0 ? (
           <div className={styles.emptyEpisodes}>
@@ -1168,17 +1164,10 @@ function RecordingSegmentationPage({
                 </button>
                 {selected ? (
                   <div className={styles.episodeFields}>
-                    <Button
-                      onClick={() => {
-                        clock.pause();
-                        setPreviewSlice(slice);
-                      }}
-                    >
-                      查看视频
-                    </Button>
                     <label>
                       标题
                       <Input
+                        size="small"
                         value={slice.title}
                         disabled={readOnly}
                         maxLength={256}
@@ -1196,6 +1185,7 @@ function RecordingSegmentationPage({
                     <label>
                       任务标签
                       <Input
+                        size="small"
                         value={slice.taskLabel}
                         disabled={readOnly}
                         maxLength={128}
@@ -1218,6 +1208,7 @@ function RecordingSegmentationPage({
                       <label>
                         开始（秒）
                         <InputNumber
+                          size="small"
                           value={Number(nsToSeconds(slice.startNs).toFixed(3))}
                           disabled={readOnly}
                           min={0}
@@ -1241,6 +1232,7 @@ function RecordingSegmentationPage({
                       <label>
                         结束（秒）
                         <InputNumber
+                          size="small"
                           value={Number(nsToSeconds(slice.endNs).toFixed(3))}
                           disabled={readOnly}
                           min={nsToSeconds(slice.startNs)}
@@ -1262,12 +1254,13 @@ function RecordingSegmentationPage({
                         />
                       </label>
                     </div>
-                    <label>
+                    <label className={styles.episodeNotes}>
                       备注
                       <Input.TextArea
+                        size="small"
                         value={slice.notes}
                         disabled={readOnly}
-                        rows={2}
+                        autoSize={{ minRows: 1, maxRows: 3 }}
                         maxLength={4096}
                         onChange={(event) =>
                           updateSlices(
@@ -1281,8 +1274,17 @@ function RecordingSegmentationPage({
                       />
                     </label>
                     <div className={styles.episodeFieldFooter}>
-                      <code>{slice.episodeId}</code>
                       <Button
+                        size="small"
+                        onClick={() => {
+                          clock.pause();
+                          setPreviewSlice(slice);
+                        }}
+                      >
+                        查看视频
+                      </Button>
+                      <Button
+                        size="small"
                         danger
                         type="text"
                         icon={<Trash2 size={15} />}
@@ -1300,7 +1302,10 @@ function RecordingSegmentationPage({
                       </Button>
                     </div>
                     {issue ? (
-                      <Typography.Text type="danger">
+                      <Typography.Text
+                        className={styles.episodeBoundaryError}
+                        type="danger"
+                      >
                         {issue.message}
                       </Typography.Text>
                     ) : null}
@@ -1317,6 +1322,7 @@ function RecordingSegmentationPage({
   return (
     <div
       className={styles.recordingWorkspace}
+      data-navigator-collapsed={navigatorCollapsed}
       tabIndex={0}
       onKeyDown={handleKeyboard}
       aria-label="录制切片工作台"
@@ -1326,6 +1332,8 @@ function RecordingSegmentationPage({
         scope={scope}
         scopeKey={scopeKey}
         recording={recording}
+        collapsed={navigatorCollapsed}
+        onToggle={onNavigatorToggle}
         filter={recordingFilter}
         onFilterChange={onRecordingFilterChange}
         disabled={saveDraft.isPending || finalize.isPending}
@@ -1339,49 +1347,14 @@ function RecordingSegmentationPage({
       <div className={styles.workbenchPage}>
         <SynchronizedEpisodeWorkbench
           jointAngleStream={rawJointStream}
-          jointAngleFooter={
-            <>
-              <section
-                className={styles.sharedActionDock}
-                aria-label="切片状态与校验"
-              >
-                <div>
-                  <Scissors aria-hidden="true" size={16} />
-                  <span>
-                    <strong>{slices.length} 条 Episode</strong>
-                    <small>
-                      视频、时间轴与 URDF
-                      共用同一播放位置；拖拽选区即可调整边界。
-                    </small>
-                  </span>
-                </div>
-                {issues.length > 0 ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    message={`${issues.length} 个切片边界问题`}
-                    description="修复重叠、越界或过短切片后才能保存。"
-                  />
-                ) : (
-                  <StatusTag
-                    status={dirty ? "DIRTY" : "VALID"}
-                    label={dirty ? "待保存" : "边界有效"}
-                    tone={dirty ? "warning" : "success"}
-                  />
-                )}
-              </section>
-            </>
-          }
           adapter={{
             mode: "episode-slicing",
             id: `recording-slicing-${recording.recording_id}`,
             title: "录制切片",
-            description: `${recording.recording_id} · ${formatDuration(durationNs)} · ${recording.video_asset_count} 路相机 · 机器人 ${recording.robot_id}`,
+            description: `${recordingFileName(recording)} · ${formatDuration(durationNs)} · ${recording.video_asset_count} 路相机 · ${recordingRobotName(recording)} · 任务 ${recordingTaskNumber(recording)}`,
             readOnly,
             clock,
-            cameraStreams: cameraStreams.filter(
-              (stream) => stream.modality !== "depth",
-            ),
+            cameraStreams: visibleCameraStreams,
             ...(robotScene ? { robotScene } : {}),
             ...(robotSceneUnavailableReason
               ? { robotSceneUnavailableReason }
@@ -1448,7 +1421,12 @@ function RecordingSegmentationPage({
                         录制切片
                       </Link>
                       <span>/</span>
-                      <span aria-current="page">{recording.recording_id}</span>
+                      <span
+                        aria-current="page"
+                        title={recordingFileName(recording)}
+                      >
+                        {recordingFileName(recording)}
+                      </span>
                     </nav>
                     <p>
                       直接读取存储中的原视频与原始关节角；视频、时间轴与 URDF
@@ -1508,14 +1486,22 @@ function RecordingSegmentationPage({
                     </Button>
                   </Tooltip>
                 </div>
-                {recording.status === "SLICED" ? (
-                  <Alert
-                    type="success"
-                    showIcon
-                    message="切片已最终提交"
-                    description="Episode 已生成，可逐段查看视频；已提交的切片区间只读。"
-                  />
-                ) : !canManage ? (
+                {recording.status === "SLICED" && !finalizedNoticeClosed ? (
+                  <div className={styles.finalizedNotice} role="status">
+                    <CheckCircle2 size={15} aria-hidden="true" />
+                    <span>切片已最终提交</span>
+                    <span className={styles.finalizedNoticeDetail}>
+                      · 已生成 Episode，区间只读
+                    </span>
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label="关闭提交提示"
+                      icon={<X size={14} />}
+                      onClick={() => setFinalizedNoticeClosed(true)}
+                    />
+                  </div>
+                ) : recording.status !== "SLICED" && !canManage ? (
                   <Alert
                     type="info"
                     showIcon
@@ -1526,95 +1512,105 @@ function RecordingSegmentationPage({
               </div>
             ),
             mediaHeader: () => (
-              <div className={styles.sharedMediaHint}>
-                <span>
-                  {sources.isPending
-                    ? "正在授权视频…"
-                    : "RGB 视频 · 深度可单独展开查看"}
-                </span>
-                <Checkbox
-                  checked={showDepth}
-                  disabled={
-                    !cameraStreams.some((stream) => stream.modality === "depth")
-                  }
-                  onChange={(event) => setShowDepth(event.target.checked)}
-                >
-                  显示深度视频
-                </Checkbox>
-              </div>
+              <CameraViewToolbar
+                view={cameraView}
+                cameras={cameraStreams.map((stream) => ({
+                  id: stream.id,
+                  label: stream.displayName,
+                }))}
+                visibleStreams={visibleCameraStreams}
+                onViewChange={setCameraView}
+              >
+                {sources.isPending ? <span>正在授权视频…</span> : null}
+              </CameraViewToolbar>
             ),
             timelineTools: () => (
-              <div className={styles.sharedTimelineTools}>
-                <div className={styles.markControls}>
-                  <Button
-                    disabled={readOnly}
-                    onClick={() => {
-                      setSelectedId(null);
-                      setMarkInNs(null);
-                    }}
-                  >
-                    新增 Episode
-                  </Button>
-                  <Button
-                    disabled={readOnly}
-                    onClick={() => setMarkInNs(currentNs)}
-                  >
-                    设为入点 <kbd>I</kbd>
-                  </Button>
-                  <Button
-                    type="primary"
-                    icon={<Plus size={16} />}
-                    disabled={readOnly}
-                    onClick={addSlice}
-                  >
-                    {markInNs === null ? "开始标记" : "设为出点并添加"}{" "}
-                    <kbd>O</kbd>
-                  </Button>
-                  {markInNs !== null ? (
-                    <span>
-                      入点 {formatTimecode(markInNs)}{" "}
-                      <Button
-                        size="small"
-                        type="link"
-                        onClick={() => setMarkInNs(null)}
-                      >
-                        取消
-                      </Button>
+              <>
+                <div className={styles.sharedTimelineTools}>
+                  <div className={styles.markControls}>
+                    <span className={styles.episodeSummary}>
+                      <Scissors size={15} aria-hidden="true" />
+                      <strong>Episode</strong>
+                      <Tag>{slices.length}</Tag>
                     </span>
-                  ) : null}
-                </div>
-                <Tooltip title="也可以直接在共享时间轴拖拽创建或调整 Episode">
-                  <Button type="text" icon={<Keyboard size={16} />}>
-                    拖拽选区 · I/O 快捷键
+                    <Button
+                      size="small"
+                      disabled={readOnly}
+                      onClick={() => {
+                        setSelectedId(null);
+                        setMarkInNs(null);
+                      }}
+                    >
+                      新增 Episode
+                    </Button>
+                    <Button
+                      size="small"
+                      disabled={readOnly}
+                      onClick={() => setMarkInNs(currentNs)}
+                    >
+                      设为入点 <kbd>I</kbd>
+                    </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<Plus size={16} />}
+                      disabled={readOnly}
+                      onClick={addSlice}
+                    >
+                      {markInNs === null ? "开始标记" : "设为出点并添加"}{" "}
+                      <kbd>O</kbd>
+                    </Button>
+                    {markInNs !== null ? (
+                      <span>
+                        入点 {formatTimecode(markInNs)}{" "}
+                        <Button
+                          size="small"
+                          type="link"
+                          onClick={() => setMarkInNs(null)}
+                        >
+                          取消
+                        </Button>
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <Button
+                    size="small"
+                    icon={<Split size={14} />}
+                    disabled={readOnly || !selectedId}
+                    onClick={splitSelected}
+                  >
+                    播放头拆分
                   </Button>
-                </Tooltip>
-              </div>
+                  <StatusTag
+                    status={
+                      issues.length ? "INVALID" : dirty ? "DIRTY" : "VALID"
+                    }
+                    label={
+                      issues.length
+                        ? `${issues.length} 个边界问题`
+                        : dirty
+                          ? "待保存"
+                          : "边界有效"
+                    }
+                    tone={
+                      issues.length ? "danger" : dirty ? "warning" : "success"
+                    }
+                  />
+                  <Tooltip title="拖拽创建或调整 Episode；I 设入点，O 设出点并添加，空格播放或暂停">
+                    <Button
+                      size="small"
+                      type="text"
+                      aria-label="切片快捷键"
+                      icon={<Keyboard size={16} />}
+                    />
+                  </Tooltip>
+                </div>
+                {renderEpisodeList()}
+              </>
             ),
           }}
         />
-        {showDepth && (
-          <section aria-label="深度视频区域">
-            <DataVisualizationWorkbench
-              layout="preview"
-              showNavigation={false}
-              adapter={{
-                id: `recording-depth-${recordingId}`,
-                mode: "episode-slicing",
-                title: "深度视频",
-                readOnly: true,
-                clock,
-                cameraStreams: cameraStreams.filter(
-                  (stream) => stream.modality === "depth",
-                ),
-                collectionItems: [],
-                findings: [],
-                timelineTracks: [],
-                actions: [],
-              }}
-            />
-          </section>
-        )}
-        {renderEpisodeList()}
       </div>
       {previewSlice && (
         <EpisodePreview
@@ -1705,6 +1701,7 @@ export default function RecordingSegmentationPageEntry({
 }: Readonly<PageProps>) {
   const { recordingId } = useParams<{ recordingId: string }>();
   const entryScope = useShellStore((state) => state.scope);
+  const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [recordingFilter, setRecordingFilter] = useState<RecordingFilter>({
     search: "",
     sameTask: true,
@@ -1718,6 +1715,8 @@ export default function RecordingSegmentationPageEntry({
       capabilityOverride={capabilityOverride}
       recordingFilter={recordingFilter}
       onRecordingFilterChange={setRecordingFilter}
+      navigatorCollapsed={navigatorCollapsed}
+      onNavigatorToggle={() => setNavigatorCollapsed((value) => !value)}
     />
   ) : (
     <RecordingListPage gateway={gateway} />

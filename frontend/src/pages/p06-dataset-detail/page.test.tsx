@@ -20,6 +20,7 @@ import {
   datasetBootstrapFixture,
   datasetIds,
   datasetVersionCapacityFixture,
+  episodePageFixture,
 } from "../../mocks/fixtures/datasets/core";
 import { datasetHandlers } from "../../mocks/handlers/datasets.handlers";
 import {
@@ -113,6 +114,7 @@ afterEach(() => {
   server.resetHandlers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
   capacityRequests.mockReset();
   useShellStore.getState().clearSensitiveState();
 });
@@ -157,6 +159,116 @@ function mount(tab: string) {
   );
   return router;
 }
+
+it("shows received uploads immediately and refreshes Episodes without publication", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  let processed = false;
+  const internalVersion = `version_${collectionId}`;
+  const store = useShellStore.getState();
+  store.setAuthorization({
+    ...store.authorization!,
+    capabilities: [...store.authorization!.capabilities, "upload.read"],
+  });
+  const captureDatasets: Array<string | null> = [];
+  const episodeVersions: string[] = [];
+  server.use(
+    http.get("*/datasets/:datasetId/bootstrap", () =>
+      HttpResponse.json({
+        ...datasetBootstrapFixture,
+        data: {
+          ...datasetBootstrapFixture.data,
+          dataset: { ...datasetBootstrapFixture.data.dataset, folder_path: [] },
+          current_ready_version: null,
+          working_version_id: processed ? internalVersion : null,
+          suggested_version_id: processed ? internalVersion : null,
+          summary: {
+            ...datasetBootstrapFixture.data.summary,
+            episode_count: processed ? "1" : "0",
+          },
+        },
+      }),
+    ),
+    http.get("*/projects/:projectId/capture-progress", ({ request }) => {
+      captureDatasets.push(new URL(request.url).searchParams.get("dataset_id"));
+      return HttpResponse.json({
+        items: [
+          {
+            upload_id: "upload-received-before-episode",
+            capture_mode: "CONTINUOUS",
+            rollout_id: "rollout-received",
+            data_package_id: "package-received",
+            collection_task_id: "assembly",
+            robot_id: "robot-received",
+            dataset_id: datasetIds.dataset,
+            upload_state: "COMMITTED",
+            received: true,
+            stage: processed ? "READY" : "RECEIVED",
+            episode_count: processed ? 1 : 0,
+            ready_episode_count: processed ? 1 : 0,
+            failed_episode_count: 0,
+            created_at: "2026-10-16T05:00:00Z",
+          },
+        ],
+        total: 1,
+        counts: {
+          upload_count: 1,
+          received_count: 1,
+          awaiting_slice_count: 0,
+          processing_count: processed ? 0 : 1,
+          failed_count: 0,
+          blocked_count: 0,
+          episode_count: processed ? 1 : 0,
+          ready_episode_count: processed ? 1 : 0,
+          failed_episode_count: 0,
+        },
+      });
+    }),
+    http.get("*/projects/:projectId/regions/:regionCode/lerobot-imports", () =>
+      HttpResponse.json([]),
+    ),
+    http.get(
+      "*/datasets/:datasetId/versions/:versionId/episodes",
+      ({ params }) => {
+        episodeVersions.push(String(params.versionId));
+        return HttpResponse.json({
+          ...episodePageFixture,
+          items: episodePageFixture.items.map((item) => ({
+            ...item,
+            version_id: internalVersion,
+          })),
+        });
+      },
+    ),
+  );
+  respondCapacity("PARTIAL");
+  const router = createMemoryRouter(
+    [{ path: "/datasets/:datasetId", element: <DatasetDetailPage /> }],
+    {
+      initialEntries: [
+        `/datasets/${datasetIds.dataset}?tab=episodes&collectionTaskId=assembly`,
+      ],
+    },
+  );
+  render(
+    <ProviderHarness>
+      <RouterProvider router={router} />
+    </ProviderHarness>,
+  );
+  expect(await screen.findByText("rollout-received")).toBeVisible();
+  expect(screen.getByText("已接收，等待处理")).toBeVisible();
+  expect(episodeVersions).toEqual([]);
+  processed = true;
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5_000);
+  });
+  expect(await screen.findByTitle(datasetIds.episode)).toBeVisible();
+  expect(episodeVersions).toEqual([internalVersion]);
+  expect(
+    new URLSearchParams(router.state.location.search).has("versionId"),
+  ).toBe(false);
+  expect(captureDatasets.every((id) => id === datasetIds.dataset)).toBe(true);
+  expect(screen.queryByText("尚未发布数据集版本")).not.toBeInTheDocument();
+});
 
 describe("Dataset capacity display", () => {
   it.each(["overview", "episodes"])(
@@ -356,14 +468,12 @@ describe("P06 collection business publication entry", () => {
     await openCollectionPublication();
     act(() => {
       const auth = useShellStore.getState().authorization!;
-      useShellStore
-        .getState()
-        .setAuthorization({
-          ...auth,
-          capabilities: auth.capabilities.filter(
-            (capability) => capability !== "dataset_version.publish",
-          ),
-        });
+      useShellStore.getState().setAuthorization({
+        ...auth,
+        capabilities: auth.capabilities.filter(
+          (capability) => capability !== "dataset_version.publish",
+        ),
+      });
     });
     await waitFor(() =>
       expect(

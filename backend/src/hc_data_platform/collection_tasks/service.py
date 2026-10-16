@@ -53,10 +53,12 @@ class CollectionTaskService:
         idempotency: IdempotencyStore | None = None,
         *,
         cursor_secret: str = "collection-task-local-cursor-secret",
+        deletion=None,
     ) -> None:
         self.repository = repository or InMemoryCollectionTaskRepository()
         self.idempotency = idempotency or InMemoryIdempotencyStore()
         self._cursor = CursorCodec(cursor_secret)
+        self.deletion = deletion
 
     @staticmethod
     def etag(record: CollectionTaskRecord) -> str:
@@ -348,6 +350,7 @@ class CollectionTaskService:
         limit=20,
         offset=0,
         robot_id=None,
+        dataset_id=None,
     ):
         from .captures import CaptureProgressPage, capture_counts
 
@@ -356,6 +359,8 @@ class CollectionTaskService:
         items = self.repository.captures(organization_id, project_id, region_code, task_id)
         if robot_id is not None:
             items = tuple(item for item in items if item.robot_id == robot_id)
+        if dataset_id is not None:
+            items = tuple(item for item in items if item.dataset_id == dataset_id)
         return CaptureProgressPage(
             items=items[offset : offset + limit], total=len(items), counts=capture_counts(items)
         )

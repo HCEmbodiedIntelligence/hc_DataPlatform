@@ -1,11 +1,77 @@
 """Continuous uploads in the existing dashboard's package lifecycle projection."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from hc_data_platform.collection_tasks.captures import CaptureProgress
 
 from .models import TaskIssueFinding
 from .repository import TaskStatusPackageFact
+
+
+@dataclass(frozen=True, slots=True)
+class RecordingEpisodeWorkflow:
+    annotation_task_id: str | None = None
+    annotation_status: str | None = None
+    review_decision: str | None = None
+    published: bool = False
+
+
+def read_recording_workflows(cursor, organization_id, project_id, region_code):
+    """Use each finalized slice's bound task, not the parent recording's rollout."""
+    cursor.execute(
+        """
+        SELECT r.recording_id, a.task_id, a.status, review.decision,
+               EXISTS (
+                 SELECT 1 FROM publishing.rollout_publication_lineage publication
+                 WHERE publication.organization_id=a.organization_id
+                   AND publication.project_id=a.project_id
+                   AND publication.region_code=a.region_code
+                   AND publication.rollout_id=a.rollout_id
+               ) AS published
+        FROM ingest.continuous_recordings r
+        JOIN ingest.recording_episode_slices s
+          ON s.organization_id=r.organization_id AND s.project_id=r.project_id
+         AND s.region_code=r.region_code AND s.recording_id=r.recording_id
+         AND s.revision=r.finalized_revision
+        LEFT JOIN ingest.recording_episode_processing p
+          ON p.organization_id=s.organization_id AND p.project_id=s.project_id
+         AND p.region_code=s.region_code AND p.recording_id=s.recording_id
+         AND p.episode_id=s.episode_id AND p.finalized_revision=s.revision
+        LEFT JOIN annotation.annotation_tasks a
+          ON a.organization_id=p.organization_id AND a.project_id=p.project_id
+         AND a.region_code=p.region_code AND a.dataset_id=p.dataset_id
+         AND a.task_id=p.annotation_task_id AND p.status='READY'
+        LEFT JOIN LATERAL (
+          SELECT decision.decision FROM annotation.annotation_reviews decision
+          WHERE decision.task_id=a.task_id
+          ORDER BY decision.created_at DESC, decision.review_id DESC LIMIT 1
+        ) review ON true
+        WHERE r.organization_id=%s AND r.project_id=%s AND r.region_code=%s
+          AND p.status IS DISTINCT FROM 'DISCARDED'
+        ORDER BY r.recording_id,s.ordinal,s.episode_id
+        """,
+        (organization_id, project_id, region_code),
+    )
+    result = {}
+    for recording, task_id, status, review, published in cursor.fetchall():
+        result.setdefault(recording, []).append(
+            RecordingEpisodeWorkflow(task_id, status, review, published)
+        )
+    return {recording: tuple(episodes) for recording, episodes in result.items()}
+
+
+def _annotation_priority(episode: RecordingEpisodeWorkflow) -> int:
+    # A package only finishes a stage once every active slice has finished it.
+    # Select the earliest unfinished slice for the existing package action link.
+    if episode.annotation_task_id is None:
+        return 0
+    return {
+        "NEEDS_REVISION": 1,
+        "REJECTED": 1,
+        "DRAFT": 2,
+        "SUBMITTED": 3,
+        "APPROVED": 4,
+    }.get(episode.annotation_status, 0)
 
 
 def read_recording_findings(cursor, organization_id, project_id, region_code):
@@ -48,7 +114,13 @@ def read_recording_findings(cursor, organization_id, project_id, region_code):
     return {key: tuple(values) for key, values in result.items()}
 
 
-def recording_package(capture: CaptureProgress, findings=()) -> TaskStatusPackageFact:
+def recording_package(
+    capture: CaptureProgress,
+    findings=(),
+    *,
+    episodes: tuple[RecordingEpisodeWorkflow, ...] = (),
+) -> TaskStatusPackageFact:
+    downstream = min(episodes, key=_annotation_priority) if episodes else RecordingEpisodeWorkflow()
     return TaskStatusPackageFact(
         task_id=capture.collection_task_id,
         rollout_id=capture.rollout_id,
@@ -70,6 +142,10 @@ def recording_package(capture: CaptureProgress, findings=()) -> TaskStatusPackag
         verification_reason_code=capture.error_code,
         qc_status=capture.qc_outcome,
         lance_ready=capture.stage == "READY",
+        annotation_task_id=downstream.annotation_task_id,
+        annotation_status=downstream.annotation_status,
+        review_decision=downstream.review_decision,
+        published=bool(episodes) and all(episode.published for episode in episodes),
         workflow_status="TECHNICAL_FAILED" if capture.stage in {"FAILED", "BLOCKED"} else "RUNNING",
         workflow_stage=(
             "dispatch"
@@ -85,7 +161,7 @@ def recording_package(capture: CaptureProgress, findings=()) -> TaskStatusPackag
     )
 
 
-def merge_recording_facts(tasks, packages, captures, findings, selected_id):
+def merge_recording_facts(tasks, packages, captures, findings, selected_id, *, workflows=None):
     """One package per upload; replace matching legacy facts instead of double counting."""
     visible_tasks = {task.task_id for task in tasks}
     continuous = [
@@ -101,7 +177,11 @@ def merge_recording_facts(tasks, packages, captures, findings, selected_id):
         key = (capture.collection_task_id, capture.data_package_id)
         if key not in by_key:
             additions.append(capture)
-        by_key[key] = recording_package(capture, findings.get(capture.recording_id, ()))
+        by_key[key] = recording_package(
+            capture,
+            findings.get(capture.recording_id, ()),
+            episodes=(workflows or {}).get(capture.recording_id, ()),
+        )
     # Task totals must cover all tasks, even when the package list is filtered.
     # Existing registered facts may include manual recordings; only direct uploads
     # absent from the selected package projection add counts to that task.

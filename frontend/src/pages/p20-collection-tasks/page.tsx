@@ -45,7 +45,7 @@ interface SaveRequest {
   readonly idempotencyKey?: string;
 }
 
-type LifecycleAction = "close" | "cancel" | "reopen";
+type LifecycleAction = "close" | "cancel" | "reopen" | "delete";
 
 interface LifecycleTarget {
   readonly task: CollectionTask;
@@ -329,6 +329,14 @@ export function CollectionTaskPage({
         lifecycleAttempt.current = attempt;
       }
       try {
+        if (action === "delete") {
+          return await gateway.delete(
+            scope,
+            task.collection_task_id,
+            attempt.etag,
+            attempt.idempotencyKey,
+          );
+        }
         if (action === "close") {
           return await gateway.close(
             scope,
@@ -367,17 +375,36 @@ export function CollectionTaskPage({
       setLifecycleTarget(null);
       showToast({
         title:
-          request.action === "close"
-            ? "采集任务已关闭"
-            : request.action === "cancel"
-              ? "采集任务已取消"
-              : "采集任务已重新开启",
-        message: `${request.task.name}（${request.task.task_code}）状态已更新。`,
+          request.action === "delete"
+            ? "采集任务及数据已删除"
+            : request.action === "close"
+              ? "采集任务已关闭"
+              : request.action === "cancel"
+                ? "采集任务已取消"
+                : "采集任务已重新开启",
+        message: `${request.task.name}（${request.task.task_code}）${request.action === "delete" ? "已永久删除。" : "状态已更新。"}`,
         tone: "success",
       });
       await queryClient.invalidateQueries({
         queryKey: ["collection-tasks", scopeKey],
       });
+      if (request.action === "delete") {
+        queryClient.removeQueries({
+          queryKey: [
+            "collection-task-detail",
+            scopeKey,
+            request.task.collection_task_id,
+          ],
+        });
+        await queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey.some(
+              (key) =>
+                typeof key === "string" &&
+                /dataset|capture-progress|processing/.test(key),
+            ),
+        });
+      }
       window.setTimeout(() => returnFocusRef.current?.focus(), 0);
     },
     onSettled: () => {
@@ -523,6 +550,12 @@ export function CollectionTaskPage({
       onClose={requestCloseTask}
       onEdit={openEdit}
       onReopen={requestReopenTask}
+      onDelete={(task) => {
+        if (!canManage) return;
+        lifecycleTask.reset();
+        lifecycleAttempt.current = null;
+        setLifecycleTarget({ task, action: "delete" });
+      }}
       progressByTaskId={progressByTaskId}
       tasks={visibleTasks}
     />
@@ -694,17 +727,21 @@ export function CollectionTaskPage({
   const drawerLoadError = drawerMode === "edit" ? detail.error : undefined;
   const lifecycleAction = lifecycleTarget?.action ?? "close";
   const lifecycleTitle =
-    lifecycleAction === "close"
-      ? "确认关闭任务？"
-      : lifecycleAction === "cancel"
-        ? "确认取消任务？"
-        : "重新开启采集任务";
+    lifecycleAction === "delete"
+      ? "永久删除任务及全部数据？"
+      : lifecycleAction === "close"
+        ? "确认关闭任务？"
+        : lifecycleAction === "cancel"
+          ? "确认取消任务？"
+          : "重新开启采集任务";
   const lifecycleConfirm =
-    lifecycleAction === "close"
-      ? "确认关闭任务"
-      : lifecycleAction === "cancel"
-        ? "确认取消任务"
-        : "确认重新开启";
+    lifecycleAction === "delete"
+      ? "永久删除任务及数据"
+      : lifecycleAction === "close"
+        ? "确认关闭任务"
+        : lifecycleAction === "cancel"
+          ? "确认取消任务"
+          : "确认重新开启";
 
   return (
     <div
@@ -820,11 +857,13 @@ export function CollectionTaskPage({
               <code translate="no">{lifecycleTarget.task.task_code}</code>
             </p>
             <p>
-              {lifecycleAction === "close"
-                ? "关闭后将不再接受新的数据包关联，历史数据仍可查询；有权限成员可重新开启。"
-                : lifecycleAction === "cancel"
-                  ? "取消后将不再接受新的数据包关联；任务不会被删除，历史数据与审计记录仍会保留。"
-                  : "重新开启不会修改已关联的数据包、质量事实或目标。"}
+              {lifecycleAction === "delete"
+                ? "将永久删除该任务及专属数据集中的原始文件、视频、切片、质检结果和标注。此操作无法恢复；其他任务和机器人配置会保留。清理中断时可重试删除。"
+                : lifecycleAction === "close"
+                  ? "关闭后将不再接受新的数据包关联，历史数据仍可查询；有权限成员可重新开启。"
+                  : lifecycleAction === "cancel"
+                    ? "取消后将不再接受新的数据包关联；任务不会被删除，历史数据与审计记录仍会保留。"
+                    : "重新开启不会修改已关联的数据包、质量事实或目标。"}
             </p>
             {lifecycleTask.error ? (
               <Alert

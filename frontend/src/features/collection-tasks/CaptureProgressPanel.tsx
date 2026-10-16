@@ -1,3 +1,4 @@
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { RecordingProcessingDetails } from "../quality/RecordingProcessingDetails";
 import ResumeProcessingAction from "../ingest/processing/ResumeProcessingAction";
 import { useQuery } from "@tanstack/react-query";
@@ -28,10 +29,12 @@ export function CaptureProgressPanel({
   scope,
   taskId,
   robotId,
+  datasetId,
 }: {
   readonly scope: CollectionTaskScope;
   readonly taskId?: string;
   readonly robotId?: string;
+  readonly datasetId?: string;
 }) {
   const [page, setPage] = useState(1);
   const [detailsId, setDetailsId] = useState<string | null>(null);
@@ -43,6 +46,7 @@ export function CaptureProgressPanel({
       scope.regionCode,
       taskId,
       robotId,
+      datasetId,
       page,
     ],
     queryFn: ({ signal }) =>
@@ -54,6 +58,7 @@ export function CaptureProgressPanel({
         query: {
           collection_task_id: taskId,
           robot_id: robotId,
+          dataset_id: datasetId,
           limit: 10,
           offset: (page - 1) * 10,
         },
@@ -115,14 +120,25 @@ export function CaptureProgressPanel({
       )}
       <div className={styles.rows}>
         {query.data?.items.map((item) => (
-          <article key={item.upload_id} className={styles.row}>
+          <article
+            key={`${item.upload_id}:${item.recording_id ?? "raw"}`}
+            className={styles.row}
+          >
             <div>
-              <strong>{item.robot_id}</strong>
+              <strong>
+                <ResourceLabel kind="robot" id={item.robot_id} scope={scope} />
+              </strong>
               <small>
                 {new Date(item.created_at).toLocaleString("zh-CN")} ·{" "}
                 {item.duration_seconds?.toFixed(1) ?? "待统计"} 秒
               </small>
-              <small title={item.upload_id}>{item.upload_id}</small>
+              <small>
+                <ResourceLabel
+                  kind="rollout"
+                  id={item.recording_id ?? item.rollout_id}
+                  scope={scope}
+                />
+              </small>
             </div>
             <div className={styles.stages}>
               <Tag color={item.received ? "success" : "processing"}>
@@ -155,13 +171,19 @@ export function CaptureProgressPanel({
               {item.error_code && (
                 <small role="status">原因：{item.error_code}</small>
               )}
+              {item.stage === "PREPARING" && (
+                <small role="status">
+                  正在校验与预处理；服务中断后会自动检测并重试，无需重复上传。
+                </small>
+              )}
               {!item.recording_id &&
                 item.source_import_id &&
                 item.capture_mode === "CONTINUOUS" &&
-                ["FAILED", "PREPARING"].includes(item.stage) && (
+                ["FAILED", "BLOCKED", "PREPARING"].includes(item.stage) && (
                   <ResumeProcessingAction
                     scope={scope}
                     importId={item.source_import_id}
+                    robotId={item.robot_id}
                   />
                 )}
             </div>

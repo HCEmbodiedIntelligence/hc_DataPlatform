@@ -1,3 +1,4 @@
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { QualityEvidenceDetails } from "../../features/quality/QualityEvidenceDetails";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Typography } from "antd";
@@ -49,7 +50,19 @@ export function EpisodeQualityPanel({
                 自动 QC 总判定：{verdict[quality.status]}
               </Typography.Paragraph>
               <Typography.Paragraph>
-                数据 {data.identity.episode_id} · 数据集 {data.identity.dataset_id} · 版本 {data.version}
+                <ResourceLabel
+                  kind="episode"
+                  id={data.identity.episode_id}
+                  datasetId={data.identity.dataset_id}
+                  scope={scope}
+                />{" "}
+                · 数据集{" "}
+                <ResourceLabel
+                  kind="dataset"
+                  id={data.identity.dataset_id}
+                  scope={scope}
+                />{" "}
+                · 版本 {data.version}
               </Typography.Paragraph>
               {quality.report?.profile_id === "hc-tag-aligned-qc" && (
                 <Typography.Paragraph>

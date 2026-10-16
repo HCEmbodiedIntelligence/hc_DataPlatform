@@ -4,7 +4,7 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as renderBase,
   screen,
   waitFor,
   within,
@@ -20,7 +20,8 @@ import {
   it,
   vi,
 } from "vitest";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { JSX } from "react";
 import { createDomainError } from "../../shared/api/domain-error";
 import type { ViewerPanelRenderContext } from "../../features/viewer";
@@ -37,6 +38,17 @@ import {
   createVisualAnnotationBundle,
   visualAnnotationScope,
 } from "./testing/annotation-fixture";
+
+function render(node: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return renderBase(node, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+}
 
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
@@ -438,8 +450,12 @@ describe("P08 page-level workspace navigation", () => {
     fireEvent.pointerUp(surface!, { clientX: 160, pointerId: 1 });
     fireEvent.keyDown(document, { key: "[" });
     fireEvent.keyDown(document, { key: "]" });
-    fireEvent.click(screen.getByRole("button", { name: "设为入点" }));
-    fireEvent.click(screen.getByRole("button", { name: "设为出点" }));
+    expect(
+      screen.queryByRole("button", { name: "设为入点" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "设为出点" }),
+    ).not.toBeInTheDocument();
 
     expect(onTagsChange).not.toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
@@ -638,7 +654,9 @@ describe("P08 viewer-slot composition", () => {
         "data-workspace-layout",
         "synchronized",
       );
-      expect(screen.getByRole("article", { name: "关节位置变化" })).toBeVisible();
+      expect(
+        screen.getByRole("article", { name: "关节位置变化" }),
+      ).toBeVisible();
       const cameras = screen.getByLabelText("数据清单相机视图");
       expect(cameras.querySelectorAll(".viewer-panel")).toHaveLength(4);
       expect(cameras.querySelector(".viewer-robot-panel")).toBeNull();
@@ -878,11 +896,14 @@ describe("P08 viewer-slot composition", () => {
     expect(observedStreams.at(-1)).toBe(initialStream);
   });
 
-  it("keeps collection data folded by default and preserves task selection in the drawer", async () => {
+  it("shows a task rail and preserves the detailed collection drawer", async () => {
     const user = userEvent.setup();
     const onSelectTask = vi.fn<(taskId: string) => void>();
     renderWorkbench({ cameraCount: 4, onSelectTask });
 
+    expect(
+      screen.getByRole("complementary", { name: "标注数据切换" }),
+    ).toBeVisible();
     expect(screen.queryByLabelText("采集条目导航")).not.toBeInTheDocument();
     const trigger = screen.getByRole("button", { name: "数据信息" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -920,6 +941,84 @@ describe("P08 viewer-slot composition", () => {
       ).not.toBeInTheDocument(),
     );
     expect(trigger).toHaveFocus();
+  });
+
+  it("keeps unsaved tags when navigation is cancelled and saves before switching", async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn();
+    let finishSave: (() => void) | undefined;
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    renderWorkbench({ cameraCount: 1, dirty: true, onSelectTask, onSave });
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    expect(onSelectTask).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "继续标注" }));
+    expect(
+      screen.queryByRole("dialog", { name: "当前数据有未保存的标注" }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "当前数据有未保存的标注",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "保存后切换" }),
+    );
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "下一条待标注" })).toBeDisabled();
+    await act(async () => {
+      finishSave?.();
+    });
+    await waitFor(() =>
+      expect(onSelectTask).toHaveBeenCalledWith("annotation-task-0143"),
+    );
+  });
+
+  it("stays on the current task and displays a save failure in the switch dialog", async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn();
+    renderWorkbench({
+      cameraCount: 1,
+      dirty: true,
+      onSelectTask,
+      onSave: vi.fn().mockRejectedValue(new Error("保存服务暂时不可用")),
+    });
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "当前数据有未保存的标注",
+    });
+    await user.click(
+      within(dialog).getByRole("button", { name: "保存后切换" }),
+    );
+    expect(
+      await within(dialog).findByText(/保存服务暂时不可用/u),
+    ).toBeVisible();
+    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(
+      within(dialog).getByRole("button", { name: "继续标注" }),
+    ).toBeEnabled();
+  });
+
+  it("discards only after explicit selection in the switch dialog", async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn();
+    const onDiscardChanges = vi.fn();
+    const { onSave } = renderWorkbench({
+      cameraCount: 1,
+      dirty: true,
+      onSelectTask,
+      onDiscardChanges,
+    });
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    expect(onDiscardChanges).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "放弃修改并切换" }));
+    expect(onDiscardChanges).toHaveBeenCalledOnce();
+    expect(onSelectTask).toHaveBeenCalledWith("annotation-task-0143");
+    expect(onSave).not.toHaveBeenCalled();
   });
 });
 
@@ -1330,8 +1429,12 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
       screen.queryByRole("button", { name: "提交审核" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("开始步 *")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "设为入点" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "设为出点" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "设为入点" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "设为出点" }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a true 409 conflict and keeps writes disabled", () => {

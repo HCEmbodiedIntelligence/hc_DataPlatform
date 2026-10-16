@@ -47,6 +47,10 @@ class ContinuousRecordingRepository(Protocol):
 
     def list(self, scope: RecordingScope) -> tuple[ContinuousRecording, ...]: ...
 
+    def present(
+        self, items: tuple[ContinuousRecording, ...]
+    ) -> tuple[ContinuousRecording, ...]: ...
+
     def get_revision(
         self, scope: RecordingScope, recording_id: str, revision: int
     ) -> RecordingSliceRevision | None: ...
@@ -80,6 +84,9 @@ class ContinuousRecordingRepository(Protocol):
 
 
 class InMemoryContinuousRecordingRepository:
+    def present(self, items: tuple[ContinuousRecording, ...]) -> tuple[ContinuousRecording, ...]:
+        return items
+
     def retry_episode(
         self,
         scope: RecordingScope,
@@ -255,6 +262,11 @@ class InMemoryContinuousRecordingRepository:
 
 
 class PostgresContinuousRecordingRepository:
+    def present(self, items: tuple[ContinuousRecording, ...]) -> tuple[ContinuousRecording, ...]:
+        from .presentation import present_recordings
+
+        return present_recordings(self._connection_factory, items)
+
     def retry_episode(
         self,
         scope: RecordingScope,

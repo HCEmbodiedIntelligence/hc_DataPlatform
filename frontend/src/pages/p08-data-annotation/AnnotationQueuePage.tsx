@@ -1,5 +1,9 @@
+import {
+  ResourceLabel,
+  readableFallback,
+} from "../../shared/lib/resource-labels";
 import { annotationDataLabel } from "../../features/annotation/runtime/annotation-package";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Pagination } from "antd";
@@ -13,7 +17,12 @@ import {
   RotateCcw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -50,8 +59,8 @@ export const ANNOTATION_QUEUE_STAGES: readonly QueueStageDefinition[] = [
   {
     status: "DRAFT",
     label: "待标注",
-    description: "领取任务并开始标注",
-    queueDescription: "等待领取或继续编辑的标注任务。",
+    description: "选择任务开始标注",
+    queueDescription: "点击任务行即可进入标注。",
     emptyDescription: "新任务会在 Lance 与标签结构固定后进入此队列。",
     icon: PencilLine,
   },
@@ -150,6 +159,8 @@ function QueueRow(props: {
   readonly returnTo: string;
   readonly onChanged: () => void;
 }): JSX.Element {
+  const navigate = useNavigate();
+  const entering = useRef(false);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const unassignedDraft =
@@ -166,15 +177,24 @@ function QueueRow(props: {
     fixedSubmissionExists;
   const canModify = assignedToCurrent && props.canEdit;
 
-  const claim = async () => {
+  const openTask = async () => {
+    if (!props.canOpen || entering.current) return;
+    entering.current = true;
     setClaiming(true);
     setClaimError(null);
     try {
-      await claimRuntimeAnnotationTask(props.scope, props.task);
-      props.onChanged();
+      let target = props.task;
+      if (unassignedDraft && props.canClaim) {
+        target = await claimRuntimeAnnotationTask(props.scope, props.task);
+        props.onChanged();
+      }
+      await navigate(taskTarget(target, props.returnTo));
     } catch (error) {
-      setClaimError(error instanceof Error ? error.message : "领取失败。");
+      setClaimError(
+        error instanceof Error ? error.message : "进入标注失败，请重试。",
+      );
     } finally {
+      entering.current = false;
       setClaiming(false);
     }
   };
@@ -182,7 +202,9 @@ function QueueRow(props: {
   const operationLabel =
     props.task.status === "DRAFT"
       ? unassignedDraft
-        ? "领取标注"
+        ? props.canClaim
+          ? "进入标注"
+          : "查看任务"
         : canModify
           ? "继续标注"
           : "打开任务"
@@ -199,17 +221,39 @@ function QueueRow(props: {
             : "查看结果";
 
   return (
-    <tr>
+    <tr
+      className={props.canOpen ? "p08-clickable-row" : undefined}
+      tabIndex={props.canOpen ? 0 : undefined}
+      aria-busy={claiming}
+      onClick={(event) => {
+        if (
+          event.target instanceof Element &&
+          event.target.closest(
+            "a, button, input, select, textarea, [role='button']",
+          )
+        )
+          return;
+        void openTask();
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          void openTask();
+        }
+      }}
+    >
       <th scope="row">
         <span
           className="p08-cell-primary p08-truncate"
           title={props.task.rollout_id}
         >
-          {props.task.rollout_id}
+          <ResourceLabel
+            kind="annotation_task"
+            id={props.task.task_id}
+            fallback={readableFallback("rollout", props.task.rollout_id)}
+          />
         </span>
-        <small className="p08-truncate" title={props.task.task_id}>
-          {props.task.task_id}
-        </small>
       </th>
       <td>
         <span
@@ -223,7 +267,7 @@ function QueueRow(props: {
           className="p08-cell-primary p08-truncate"
           title={props.task.dataset_id}
         >
-          {props.task.dataset_id}
+          <ResourceLabel kind="dataset" id={props.task.dataset_id} />
         </span>
         <small>
           Dataset v{props.task.dataset_version} ·{" "}
@@ -253,14 +297,18 @@ function QueueRow(props: {
         {unassignedDraft ? (
           <button
             className="p08-row-action"
-            disabled={!props.canClaim || claiming}
+            disabled={!props.canOpen || claiming}
             title={
-              props.canClaim ? undefined : "当前账号没有领取标注任务的权限。"
+              !props.canOpen
+                ? "当前账号没有读取任务详情的权限。"
+                : !props.canClaim
+                  ? "当前账号可查看任务，没有领取标注任务的权限。"
+                  : undefined
             }
             type="button"
-            onClick={() => void claim()}
+            onClick={() => void openTask()}
           >
-            {claiming ? "领取中…" : operationLabel}
+            {claiming ? "正在进入…" : operationLabel}
           </button>
         ) : props.canOpen ? (
           <Link
@@ -447,6 +495,7 @@ function RuntimeAnnotationQueuePage({
   return (
     <WorkflowQueuePage
       title="数据标注"
+      density="compact"
       headerActions={
         <>
           <Link
@@ -486,7 +535,7 @@ function RuntimeAnnotationQueuePage({
         id: "p08-task-search",
         name: "annotation-task-search",
         label: "搜索任务、Rollout、Dataset 或数据结构",
-        placeholder: "输入关键词…",
+        placeholder: "搜索任务 / Rollout / Dataset…",
         value: queryText,
         meta: `按最近更新时间展示 · ${counts[queueSearch.stage]} 项处于此状态`,
         onChange: updateQuery,

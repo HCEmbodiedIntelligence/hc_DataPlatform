@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from hc_data_platform.security.http import VerifiedAuth
 
+from .display_labels import DisplayLabelRequest, DisplayLabelResponse
 from .models import (
     CreateDatasetCommand,
     DatasetPageApproveReviewCommand,
@@ -143,6 +144,28 @@ def _request_id(request: Request) -> str:
 
 def _no_store(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store"
+
+
+@router.post(
+    ":display-labels", response_model=DisplayLabelResponse, operation_id="resolveDataDisplayLabels"
+)
+def resolve_display_labels(
+    project_id: str,
+    command: DisplayLabelRequest,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+    organization_id: OrganizationHeader,
+    region_code: RegionHeader,
+) -> DisplayLabelResponse:
+    _no_store(response)
+    return service.display_labels(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        command=command,
+    )
 
 
 def _filters(

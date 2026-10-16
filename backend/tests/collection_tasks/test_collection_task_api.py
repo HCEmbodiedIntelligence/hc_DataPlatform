@@ -85,6 +85,88 @@ def create(client: TestClient, *, project_id: str = "project-a") -> Any:
     )
 
 
+def test_delete_requires_management_scope_and_version_headers(api):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from hc_data_platform.collection_tasks.deletion import TaskDeletionResult
+
+    client, current = api
+    deleted = Mock(
+        return_value=TaskDeletionResult(
+            collection_task_id="task-delete",
+            task_code="00000001",
+            deleted_rows=4,
+            deleted_objects=2,
+            deleted_bytes=100,
+        )
+    )
+    configure_collection_tasks(CollectionTaskService(deletion=SimpleNamespace(delete=deleted)))
+    path = "/api/v1/projects/project-a/collection-tasks/task-delete"
+    headers = {"X-Region-Code": "cn-test", "If-Match": '"v1"', "Idempotency-Key": "delete-1"}
+    current["auth"] = auth("upload.read")
+    assert client.delete(path, headers=headers).status_code == 403
+    deleted.assert_not_called()
+    current["auth"] = auth("upload.manage")
+    assert client.delete(path).status_code == 422
+    response = client.delete(path, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "DELETED"
+    assert response.headers["Cache-Control"] == "no-store"
+    deleted.assert_called_once_with(
+        (ORGANIZATION_ID, "project-a", "cn-test"), "task-delete", '"v1"', "delete-1"
+    )
+
+
+def test_capture_dataset_filter_applies_before_pagination_and_counts(api):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from hc_data_platform.collection_tasks.captures import CaptureProgress
+
+    client, current = api
+    captures = tuple(
+        CaptureProgress(
+            upload_id=f"upload-{index}",
+            capture_mode="CONTINUOUS",
+            rollout_id=f"rollout-{index}",
+            data_package_id=f"package-{index}",
+            collection_task_id="task-a",
+            robot_id="robot-a",
+            dataset_id=dataset,
+            upload_state="COMMITTED",
+            stage="RECEIVED",
+            received=True,
+            episode_count=0,
+            ready_episode_count=0,
+            failed_episode_count=0,
+            created_at="2026-10-16T05:00:00Z",
+        )
+        for index, dataset in enumerate(("dataset_other", "dataset_target", "dataset_target"))
+    )
+    repository = SimpleNamespace(captures=Mock(return_value=captures))
+    configure_collection_tasks(CollectionTaskService(repository=repository))
+    path = "/api/v1/projects/project-a/capture-progress"
+    response = client.get(
+        path,
+        headers={"X-Region-Code": "cn-test"},
+        params={
+            "dataset_id": "dataset_target",
+            "limit": 1,
+            "offset": 1,
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["counts"]["received_count"] == 2
+    assert data["counts"]["episode_count"] == 0
+    assert [item["upload_id"] for item in data["items"]] == ["upload-2"]
+    repository.captures.assert_called_once_with(ORGANIZATION_ID, "project-a", "cn-test", None)
+    current["auth"] = auth("dataset.read")
+    assert client.get(path, headers={"X-Region-Code": "cn-test"}).status_code == 403
+
+
 def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[str, Any]]) -> None:
     client, _ = api
     created = create(client)

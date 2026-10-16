@@ -122,3 +122,35 @@ it("does not submit or load processing controls without permission", () => {
   ).toBeDisabled();
   expect(request).not.toHaveBeenCalled();
 });
+
+it("shows MCAP preparation errors and retries the stored source", async () => {
+  vi.mocked(request).mockImplementation(async (input) => {
+    if (input.path.endsWith("/mcap-processing")) {
+      return {
+        files: [{
+          processing_id: "mcap-a",
+          path: "source.mcap",
+          status: "FAILED",
+          recording_id: null,
+          error: "MCAP_DEPTH_UNITS_REQUIRED: 请设置深度单位",
+        }],
+      };
+    }
+    return {
+      ...progress,
+      source_format: "MCAP",
+      status: input.method === "POST" ? "PENDING" : "FAILED",
+    };
+  });
+  setup();
+  expect(await screen.findByText(/MCAP_DEPTH_UNITS_REQUIRED/)).toBeVisible();
+  const button = await screen.findByRole("button", { name: "重试录制准备" });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  expect(await screen.findByText("已提交，正在继续处理")).toBeVisible();
+  expect(request).toHaveBeenCalledWith(expect.objectContaining({
+    method: "POST",
+    path: "/projects/project/regions/region/lerobot-imports/import-a:retry",
+  }));
+  expect(button).toBeDisabled();
+});

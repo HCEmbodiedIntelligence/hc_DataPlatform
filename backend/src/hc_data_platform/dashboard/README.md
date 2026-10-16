@@ -45,6 +45,10 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
   `UNKNOWN/UNAVAILABLE`，不伪造等待或成功。
 - 后续：`annotation_tasks`、最新 `annotation_reviews` 和
   `publishing.rollout_publication_lineage`。
+  连续录制通过当前 finalized revision 的 `recording_episode_slices` →
+  `recording_episode_processing.annotation_task_id` 读取同组织、项目、Region 的切片标注，
+  不用原始录制的 rollout 查找切片标注。已丢弃切片不参与统计；只有所有有效切片完成相应阶段，
+  整条录制才计为完成。未完成时选择进度最靠前的切片提供操作入口，上传包仍只计一次。
 
 任务 `ACTIVE/CLOSED/CANCELLED` 生命周期和 target attainment 分字段返回；达到数据包目标不会
 自动关闭ACTIVE任务。持续时长目标只汇总每个数据包最新的设备 `SAVED` 事实；尚未收到事实时

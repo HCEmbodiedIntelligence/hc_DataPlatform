@@ -1,3 +1,4 @@
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -358,7 +359,11 @@ export function PackageBatchPanel({
                         className={styles.episodeName}
                         title={data.identity.episode_id}
                       >
-                        {data.identity.episode_id}
+                        <ResourceLabel
+                          kind="episode"
+                          id={data.identity.episode_id}
+                          datasetId={data.identity.dataset_id}
+                        />
                       </span>
                       <span className={styles.episodeMeta}>
                         数据 v{data.version} ·{" "}
@@ -396,7 +401,12 @@ export function PackageBatchPanel({
                   key={`selected-${data.data_version_id}`}
                 >
                   <span title={data.identity.episode_id}>
-                    {data.identity.episode_id} · 数据 v{data.version}
+                    <ResourceLabel
+                      kind="episode"
+                      id={data.identity.episode_id}
+                      datasetId={data.identity.dataset_id}
+                    />{" "}
+                    · 数据 v{data.version}
                   </span>
                   <Button
                     type="text"

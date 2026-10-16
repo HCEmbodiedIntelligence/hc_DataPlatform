@@ -1,3 +1,7 @@
+import {
+  ResourceLabel,
+  decodedFileName,
+} from "../../shared/lib/resource-labels";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Tabs, Typography } from "antd";
@@ -295,7 +299,11 @@ function AnnotationSummary({
             onClick={() => select({ annotationTaskId: option.task_id })}
           >
             集合版本 {option.dataset_version} · 修订 {option.current_revision} ·{" "}
-            {option.task_id}
+            <ResourceLabel
+              kind="annotation_task"
+              id={option.task_id}
+              scope={scope}
+            />
           </Button>
         ))}
         {ann.task_options_has_more && (
@@ -450,11 +458,26 @@ export function EpisodeDetailPanel({
       {value && !query.error && (
         <>
           <Typography.Title level={4} className={styles.wrap}>
-            {value.display_name}
+            {value.display_name_origin === "SOURCE" ? (
+              decodedFileName(value.display_name)
+            ) : (
+              <ResourceLabel
+                kind="episode"
+                id={data.identity.episode_id}
+                datasetId={data.identity.dataset_id}
+                scope={scope}
+              />
+            )}
           </Typography.Title>
           <p>
-            {value.task.instructions.join(" / ") || value.task.task_id} ·{" "}
-            {value.robot_id} · {value.recording_date}
+            采集任务{" "}
+            <ResourceLabel
+              kind="collection_task"
+              id={value.task.task_id}
+              scope={scope}
+            />{" "}
+            · <ResourceLabel kind="robot" id={value.robot_id} scope={scope} /> ·{" "}
+            {value.recording_date}
           </p>
           <dl className={styles.facts}>
             <dt>数据版本</dt>
@@ -628,7 +651,14 @@ export function EpisodeDetailPanel({
                   <div className={styles.stack}>
                     <dl className={styles.facts}>
                       <dt>父录制</dt>
-                      <dd>{value.source.parent_recording_id ?? "未记录"}</dd>
+                      <dd>
+                        <ResourceLabel
+                          kind="rollout"
+                          id={value.source.parent_recording_id}
+                          scope={scope}
+                          fallback="来源录制"
+                        />
+                      </dd>
                       <dt>父录制时长</dt>
                       <dd>{secondsFromNs(value.source.parent_duration_ns)}</dd>
                       <dt>源窗口</dt>

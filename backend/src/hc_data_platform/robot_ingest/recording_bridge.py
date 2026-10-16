@@ -36,6 +36,7 @@ from hc_data_platform.security.audit import canonical_hash
 
 from .models import RobotIngestUpload
 from .recording_contract import OpenArmRawRecordingUpload, OpenArmRecordingComplete
+from .recording_heartbeat import recording_heartbeat
 
 EVENT_TYPE = "robot.recording.register.requested.v1"
 
@@ -140,13 +141,19 @@ class RecordingOutboxHandler:
             raise RuntimeError("recording activity execution scope is not configured")
 
         event = DomainEventEnvelope.model_validate(value)
-        with self.execution_scope(
-            event.project_id,
-            event.region_code,
-            event.aggregate_id,
-            organization_id=event.organization_id,
+        with (
+            self.execution_scope(
+                event.project_id,
+                event.region_code,
+                event.aggregate_id,
+                organization_id=event.organization_id,
+            ),
+            recording_heartbeat() as checkpoint,
         ):
-            self.adopt(event, progress=activity.heartbeat)
+            activity.logger.info(
+                "Recording preparation started (attempt %s)", activity.info().attempt
+            )
+            self.adopt(event, progress=checkpoint)
 
     @activity.defn(name="robot.recording.failed")
     def failed(self, value):
@@ -322,6 +329,7 @@ class RecordingOutboxHandler:
                 )
             # The authenticated ingest service owns the collection job. Keep the
             # original client marker immutable and project the authoritative job.
+            progress()
             command = command.model_copy(update={"collection_job_id": upload.collection_job_id})
             target = RecordingScope(
                 organization_id=scope[0], project_id=scope[1], region_code=scope[2]

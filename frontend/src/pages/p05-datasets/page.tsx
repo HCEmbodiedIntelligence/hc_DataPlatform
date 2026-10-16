@@ -1,3 +1,7 @@
+import {
+  ResourceLabel,
+  useResourceLabel,
+} from "../../shared/lib/resource-labels";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Tag, Typography } from "antd";
 import { Plus } from "lucide-react";
@@ -8,6 +12,7 @@ import type { DatasetVersionId } from "../../entities/dataset-version";
 import type { EpisodeId } from "../../entities/episode";
 import {
   useCreateDatasetMutation,
+  useDatasetBootstrapQuery,
   useDatasetFacetsQuery,
   useDatasetsPageCapabilitiesQuery,
   useDatasetSummaryQuery,
@@ -35,6 +40,7 @@ import { DatasetFilterPanel } from "./components/DatasetFilterPanel";
 import { DatasetTable } from "./components/DatasetTable";
 import { SelectedDatasetSummary } from "./components/SelectedDatasetSummary";
 import { EpisodeTable } from "../../features/datasets/components/DatasetTables";
+import { CaptureProgressPanel } from "../../features/collection-tasks/CaptureProgressPanel";
 import {
   collectionTaskGateway,
   type CollectionTaskPackage,
@@ -108,18 +114,58 @@ function datasetCountLabel(
 const packageStatePresentation: Readonly<
   Record<
     CollectionTaskPackage["state"],
-    { readonly color: string; readonly label: string; readonly description: string }
+    {
+      readonly color: string;
+      readonly label: string;
+      readonly description: string;
+    }
   >
 > = {
-  PENDING_QC: { color: "default", label: "等待质检", description: "尚未产生质检结果" },
-  PROCESSING: { color: "processing", label: "处理中", description: "正在对齐、入库或发布" },
-  PUBLISHED: { color: "success", label: "可视化", description: "已发布为当前任务数据集的 Episode" },
-  QUALITY_RISK: { color: "warning", label: "质量风险", description: "需确认风险后才能继续发布" },
-  QUALITY_REJECTED: { color: "error", label: "质检拒绝", description: "未通过质量门禁" },
-  TECHNICAL_FAILED: { color: "error", label: "技术失败", description: "处理工作流失败，可修复后重试" },
-  CANCELLED: { color: "default", label: "已取消", description: "处理任务已取消，原始数据保留" },
-  RETRY_PENDING: { color: "processing", label: "等待重试", description: "处理遇到临时故障，系统将自动重试" },
-  DATASET_MISMATCH: { color: "warning", label: "数据集不匹配", description: "已发布到非本任务指定的数据集" },
+  PENDING_QC: {
+    color: "default",
+    label: "等待质检",
+    description: "尚未产生质检结果",
+  },
+  PROCESSING: {
+    color: "processing",
+    label: "处理中",
+    description: "正在质检、对齐与入库",
+  },
+  PUBLISHED: {
+    color: "success",
+    label: "可视化",
+    description: "已生成当前任务数据集的 Episode",
+  },
+  QUALITY_RISK: {
+    color: "warning",
+    label: "质量风险",
+    description: "需确认质量风险后继续处理",
+  },
+  QUALITY_REJECTED: {
+    color: "error",
+    label: "质检拒绝",
+    description: "未通过质量门禁",
+  },
+  TECHNICAL_FAILED: {
+    color: "error",
+    label: "技术失败",
+    description: "处理工作流失败，可修复后重试",
+  },
+  CANCELLED: {
+    color: "default",
+    label: "已取消",
+    description: "处理任务已取消，原始数据保留",
+  },
+  RETRY_PENDING: {
+    color: "processing",
+    label: "等待重试",
+    description: "处理遇到临时故障，系统将自动重试",
+  },
+  DATASET_MISMATCH: {
+    color: "warning",
+    label: "数据集不匹配",
+    description: "数据归属与当前任务指定的数据集不一致",
+  },
 };
 
 function TaskPackageList({
@@ -130,16 +176,26 @@ function TaskPackageList({
   onOpenViewer: (item: CollectionTaskPackage) => void;
 }>) {
   return (
-    <section className={styles.taskPackageSection} aria-labelledby="task-package-heading">
+    <section
+      className={styles.taskPackageSection}
+      aria-labelledby="task-package-heading"
+    >
       <div className={styles.taskPackageHeader}>
         <div>
-          <Typography.Title id="task-package-heading" level={2}>数据包处理明细</Typography.Title>
+          <Typography.Title id="task-package-heading" level={2}>
+            数据包处理明细
+          </Typography.Title>
           <Typography.Paragraph>
-            共 {items.length} 个接收包；只有完成质检、处理并发布到本任务数据集的包可以打开 Viewer。
+            共 {items.length}{" "}
+            个接收包；完成质检和处理后即可查看，无需发布数据集版本。
           </Typography.Paragraph>
         </div>
       </div>
-      <div className={styles.taskPackageTable} role="table" aria-label="任务数据包处理明细">
+      <div
+        className={styles.taskPackageTable}
+        role="table"
+        aria-label="任务数据包处理明细"
+      >
         <div className={styles.taskPackageRow} role="row">
           <strong role="columnheader">数据包 / Rollout</strong>
           <strong role="columnheader">机器人</strong>
@@ -150,12 +206,17 @@ function TaskPackageList({
         {items.map((item) => {
           const presentation = packageStatePresentation[item.state];
           return (
-            <div className={styles.taskPackageRow} role="row" key={item.data_package_id}>
+            <div
+              className={styles.taskPackageRow}
+              role="row"
+              key={item.data_package_id}
+            >
               <span role="cell" className={styles.taskPackageIdentity}>
-                <code>{item.data_package_id}</code>
-                <small>{item.rollout_id}</small>
+                <ResourceLabel kind="rollout" id={item.rollout_id} />
               </span>
-              <code role="cell">{item.robot_id}</code>
+              <span role="cell">
+                <ResourceLabel kind="robot" id={item.robot_id} />
+              </span>
               <span role="cell">
                 <Tag color={presentation.color}>{presentation.label}</Tag>
                 <small>{presentation.description}</small>
@@ -163,7 +224,8 @@ function TaskPackageList({
               <span role="cell" className={styles.taskPackageIdentity}>
                 <small>QC：{item.qc_outcome ?? "待定"}</small>
                 <small>
-                  工作流：{item.workflow_stage ?? item.workflow_status ?? "待启动"}
+                  工作流：
+                  {item.workflow_stage ?? item.workflow_status ?? "待启动"}
                   {item.error_code ? ` · ${item.error_code}` : ""}
                 </small>
               </span>
@@ -198,26 +260,52 @@ function TaskDatasetEpisodes({
   onInspect,
   onOpenViewer,
 }: Readonly<{
-  item: DatasetListItemVm & {
-    currentVersion: NonNullable<DatasetListItemVm["currentVersion"]>;
-  };
+  item: DatasetListItemVm;
   collectionTaskId: string;
   onOpenDataset: (item: DatasetListItemVm) => void;
   onInspect: (item: DatasetListItemVm, episode: EpisodeListItemVm) => void;
   onOpenViewer: (item: DatasetListItemVm, episode: EpisodeListItemVm) => void;
 }>) {
-  const [cursor, setCursor] = useState<EpisodeCursor>({});
+  const [cursor, setCursor] = useState<
+    EpisodeCursor & { versionId?: DatasetVersionId }
+  >({});
+  const taskLabel = useResourceLabel({
+    kind: "collection_task",
+    id: collectionTaskId,
+  });
+  const bootstrap = useDatasetBootstrapQuery(item.datasetId);
+  const versionId =
+    bootstrap.data?.workingVersionId ??
+    bootstrap.data?.suggestedVersionId ??
+    item.currentVersion?.versionId;
   const episodes = useVersionEpisodesQuery(
     item.datasetId,
-    item.currentVersion.versionId,
+    versionId ?? ("version_pending" as DatasetVersionId),
     {
       collectionTaskId,
-      ...cursor,
+      ...(cursor.versionId === versionId
+        ? { after: cursor.after, before: cursor.before }
+        : {}),
       limit: 50,
     },
+    bootstrap.isSuccess && Boolean(versionId),
   );
 
-  const content = episodes.isPending ? (
+  const content = bootstrap.isPending ? (
+    <PageState state="loading" label={`${item.name} 数据明细`} />
+  ) : bootstrap.isError ? (
+    <PageState
+      state={stateFromError(bootstrap.error)}
+      requestId={requestId(bootstrap.error)}
+      onRetry={() => void bootstrap.refetch()}
+    />
+  ) : !versionId ? (
+    <PageState
+      state="empty"
+      title="该数据集暂无可浏览的 Episode"
+      description="处理完成后会自动显示，无需手动发布数据集版本。"
+    />
+  ) : episodes.isPending ? (
     <PageState state="loading" label={`${item.name} 数据明细`} />
   ) : episodes.isError ? (
     <PageState
@@ -247,8 +335,8 @@ function TaskDatasetEpisodes({
           hasNextPage: episodes.data.pageInfo.hasNextPage,
         }}
         busy={episodes.isFetching}
-        windowLabel={`当前 ${episodes.data.items.length} 条 · 仅限任务 ${collectionTaskId}`}
-        onChange={setCursor}
+        windowLabel={`当前 ${episodes.data.items.length} 条 · 仅限任务 ${taskLabel.data?.label ?? "—"}`}
+        onChange={(next) => setCursor({ ...next, versionId })}
       />
     </>
   );
@@ -264,8 +352,7 @@ function TaskDatasetEpisodes({
             {item.name}
           </Typography.Title>
           <Typography.Paragraph>
-            <code>{item.datasetId}</code> · {item.currentVersion.displayVersion}{" "}
-            · <code>{item.currentVersion.versionId}</code>
+            {versionId ? "当前数据 · 可浏览 Episodes" : "等待上传与处理"}
           </Typography.Paragraph>
         </div>
         <Button onClick={() => onOpenDataset(item)}>打开数据集详情</Button>
@@ -273,14 +360,6 @@ function TaskDatasetEpisodes({
       {content}
     </section>
   );
-}
-
-function hasCurrentVersion(
-  item: DatasetListItemVm,
-): item is DatasetListItemVm & {
-  currentVersion: NonNullable<DatasetListItemVm["currentVersion"]>;
-} {
-  return item.currentVersion !== null;
 }
 
 function safeMutationError(error: unknown): string | null {
@@ -362,8 +441,13 @@ export function DatasetsPage() {
     [collectionTaskId, shellScope],
   );
   const packageQuery = useQuery({
-    queryKey: ["collection-task-packages", collectionTaskId, collectionTaskScope],
-    enabled: listEnabled && collectionTaskScope !== null && Boolean(collectionTaskId),
+    queryKey: [
+      "collection-task-packages",
+      collectionTaskId,
+      collectionTaskScope,
+    ],
+    enabled:
+      listEnabled && collectionTaskScope !== null && Boolean(collectionTaskId),
     queryFn: ({ signal }) =>
       collectionTaskGateway.packages(
         collectionTaskScope as CollectionTaskScope,
@@ -373,7 +457,10 @@ export function DatasetsPage() {
     staleTime: 5_000,
     refetchInterval: (current) =>
       current.state.data?.items.some(
-        (item) => item.state === "PENDING_QC" || item.state === "PROCESSING" || item.state === "RETRY_PENDING",
+        (item) =>
+          item.state === "PENDING_QC" ||
+          item.state === "PROCESSING" ||
+          item.state === "RETRY_PENDING",
       )
         ? 5_000
         : false,
@@ -494,12 +581,10 @@ export function DatasetsPage() {
   );
   const openEpisodes = useCallback(
     (item: DatasetListItemVm) => {
-      if (!item.currentVersion) return;
       void navigate(
         routes.datasetDetail.build({
           datasetId: item.datasetId,
           tab: "episodes",
-          versionId: item.currentVersion.versionId,
           collectionTaskId,
           ...(collectionTaskId
             ? { returnTo: routes.datasets.build({ collectionTaskId }) }
@@ -555,7 +640,8 @@ export function DatasetsPage() {
         !item.dataset_id ||
         !item.version_id ||
         !item.episode_id
-      ) return;
+      )
+        return;
       void navigate(
         routes.episodeViewer.build({
           datasetId: item.dataset_id as DatasetId,
@@ -631,33 +717,46 @@ export function DatasetsPage() {
       ) : null}
     </div>
   );
-  const taskDatasets = query.data?.items.filter(hasCurrentVersion) ?? [];
+  const taskDatasets = query.data?.items ?? [];
   const taskPackages = packageQuery.data?.items ?? [];
   const visualizablePackageCount = taskPackages.filter(
     (item) => item.visualizable,
   ).length;
   const taskTable = collectionTaskId ? (
     <div className={styles.taskDatasetWorkspace}>
-      <Alert
-        type="info"
-        showIcon
-        title={
-          packageQuery.isPending
-            ? "正在读取任务数据包明细"
-            : `任务接收 ${taskPackages.length} 个数据包，其中 ${visualizablePackageCount} 个已可视化`
-        }
-        description={`下方先列出全部接收包及不能可视化的原因，再按 ${taskDatasets.length} 个指定数据集展示已发布 Episode。`}
-      />
+      {collectionTaskScope && capabilities.has("upload.read") ? (
+        <CaptureProgressPanel
+          scope={collectionTaskScope}
+          taskId={collectionTaskId}
+        />
+      ) : null}
+      {taskPackages.length > 0 ? (
+        <Alert
+          type="info"
+          showIcon
+          title={
+            packageQuery.isPending
+              ? "正在读取任务数据包明细"
+              : `任务接收 ${taskPackages.length} 个数据包，其中 ${visualizablePackageCount} 个已可视化`
+          }
+          description={`下方列出全部接收包及处理状态，并按 ${taskDatasets.length} 个关联数据集展示已处理的 Episode，无需手动发布版本。`}
+        />
+      ) : null}
       {packageQuery.isError ? (
         <Alert
           type="warning"
           showIcon
           title="数据包明细加载失败"
-          description="已发布 Episode 仍可浏览；可重试读取 14 个原始接收包的处理状态。"
-          action={<Button onClick={() => void packageQuery.refetch()}>重试</Button>}
+          description="已处理的 Episode 仍可浏览；可重试读取接收包的处理状态。"
+          action={
+            <Button onClick={() => void packageQuery.refetch()}>重试</Button>
+          }
         />
       ) : taskPackages.length > 0 ? (
-        <TaskPackageList items={taskPackages} onOpenViewer={openTaskPackageViewer} />
+        <TaskPackageList
+          items={taskPackages}
+          onOpenViewer={openTaskPackageViewer}
+        />
       ) : null}
       {taskDatasets.map((item) => (
         <TaskDatasetEpisodes
@@ -672,7 +771,7 @@ export function DatasetsPage() {
       {query.isSuccess && taskDatasets.length === 0 ? (
         <PageState
           state="empty"
-          title="该任务尚无已发布 Episode"
+          title="该任务尚无关联数据集"
           description="上方仍会保留全部接收包；待质检和处理完成后，可视化入口会自动出现。"
         />
       ) : null}
@@ -726,6 +825,7 @@ export function DatasetsPage() {
       <StandardPageScaffold
         header={{
           title: collectionTaskId ? "采集任务数据" : "数据集",
+          compact: true,
           breadcrumbs: [
             { key: "assets", label: "数据资产", to: routes.datasets.build() },
             { key: "datasets", label: "数据集" },

@@ -23,11 +23,13 @@ import {
   KeyRound,
   RotateCcw,
   ShieldCheck,
+  Trash2,
   UploadCloud,
 } from "lucide-react";
 import { useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
 import {
+  useDeleteRobotIdentity,
   useIssueRobotCredential,
   useRevokeRobotCredential,
   useRobotAttemptHistory,
@@ -243,6 +245,10 @@ export function RobotIdentityConsole({
     useState<IssuedRobotCredential | null>(null);
   const [copied, setCopied] = useState(false);
   const [stateConfirmation, setStateConfirmation] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    readonly identity: RobotIdentity;
+    readonly scope: IngestScope;
+  } | null>(null);
   const [revokeCredentialId, setRevokeCredentialId] = useState<string | null>(
     null,
   );
@@ -282,6 +288,7 @@ export function RobotIdentityConsole({
   const updateIdentity = useRobotIdentityMutation("update");
   const enableIdentity = useRobotIdentityMutation("enable");
   const disableIdentity = useRobotIdentityMutation("disable");
+  const deleteIdentity = useDeleteRobotIdentity();
   const issueCredential = useIssueRobotCredential();
   const revokeCredential = useRevokeRobotCredential();
 
@@ -426,6 +433,17 @@ export function RobotIdentityConsole({
                       onClick={() => setStateConfirmation(true)}
                     >
                       {selectedIdentity.state === "ENABLED" ? "停用" : "启用"}
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      icon={<Trash2 size={14} aria-hidden="true" />}
+                      onClick={() => {
+                        deleteIdentity.reset();
+                        setDeleteTarget({ identity: selectedIdentity, scope });
+                      }}
+                    >
+                      删除
                     </Button>
                   </Flex>
                 ) : null}
@@ -1024,6 +1042,64 @@ export function RobotIdentityConsole({
               </Button>
             </Flex>
           </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={
+          deleteTarget !== null &&
+          deleteTarget.scope.organizationId === scope.organizationId &&
+          deleteTarget.scope.projectId === scope.projectId &&
+          deleteTarget.scope.regionCode === scope.regionCode
+        }
+        title="删除机器人上传身份"
+        okText="确认删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true, disabled: !canManage }}
+        cancelButtonProps={{ disabled: deleteIdentity.isPending }}
+        confirmLoading={deleteIdentity.isPending}
+        closable={!deleteIdentity.isPending}
+        keyboard={!deleteIdentity.isPending}
+        maskClosable={!deleteIdentity.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onOk={() => {
+          if (!deleteTarget || !canManage || deleteIdentity.isPending) return;
+          deleteIdentity.mutate(
+            {
+              scope: deleteTarget.scope,
+              identityId: deleteTarget.identity.ingest_identity_id,
+            },
+            {
+              onSuccess: () => {
+                setDeleteTarget(null);
+                setSelectedIdentityId(null);
+                setIssuedCredential(null);
+                setCredentialMode(null);
+                issueCredential.reset();
+              },
+            },
+          );
+        }}
+      >
+        <p>
+          确定删除“
+          {deleteTarget?.identity.display_name ||
+            deleteTarget?.identity.robot_id}
+          ”的上传身份？
+        </p>
+        <Alert
+          type="warning"
+          showIcon
+          title="删除后旧凭据永久失效，机器人将无法继续使用该身份上传。"
+          description="已上传的数据、采集任务和历史记录保留。如需恢复上传，请重新创建身份并配置新凭据。"
+        />
+        {deleteIdentity.error ? (
+          <Alert
+            type="error"
+            showIcon
+            title="删除未完成"
+            description={errorMessage(deleteIdentity.error)}
+          />
         ) : null}
       </Modal>
 

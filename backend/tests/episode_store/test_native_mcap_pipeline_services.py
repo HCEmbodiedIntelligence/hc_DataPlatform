@@ -3,9 +3,12 @@
 The legacy catalog is a trap: any Lance access fails this test.
 """
 
+import hashlib
 import io
 import json
+import os
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -21,6 +24,7 @@ from hc_data_platform.lerobot_imports.models import (
 from hc_data_platform.lerobot_imports.processing import StartStoredProcessing
 from hc_data_platform.lerobot_imports.service import LeRobotWebUploadService
 from hc_data_platform.lerobot_imports.source_browser import OriginalSourceBrowser
+from hc_data_platform.object_storage.checksums import crc64_ecma
 from tests.continuous_recordings.test_mcap_native import synthetic_mcap
 from tests.episode_store import test_recording_package_services as b
 from tests.episode_store.test_complete_delivery_services import run_job
@@ -29,10 +33,12 @@ from tests.robot_ingest.test_raw_derivation_services import uploaded_raw  # noqa
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("ingress", ["browser", "robot"])
 def test_bare_mcap_to_slice_package_and_all_exports(
     uploaded_raw,  # noqa: F811
     tmp_path,
     monkeypatch,
+    ingress,
 ):
     repository, storage, old_upload, _, old_command, _ = uploaded_raw
     target = old_upload.target
@@ -65,44 +71,51 @@ def test_bare_mcap_to_slice_package_and_all_exports(
         )
         raw_bytes = synthetic_mcap(tmp_path / "source.mcap").read_bytes()
         slice_end, expected_frames = 10, 9
-        manifest = CreateLeRobotImportV1(
-            dataset_id=identity.dataset_id,
-            source_format="MCAP",
-            files=({"path": "source.mcap", "size": len(raw_bytes), "part_count": 1},),
-        )
-        grant = service.begin(auth=auth, **scope.model_dump(), manifest=manifest)
-        asset = grant.assets[0]
-        service.upload_part(
-            auth=auth,
-            **scope.model_dump(),
-            import_id=grant.import_id,
-            dataset_id=manifest.dataset_id,
-            path=asset.path,
-            multipart_upload_id=asset.multipart_upload_id,
-            part_number=1,
-            body=io.BytesIO(raw_bytes),
-            size=len(raw_bytes),
-        )
-        service.complete_asset(
-            auth=auth,
-            **scope.model_dump(),
-            import_id=grant.import_id,
-            command=CompleteLeRobotAssetV1(
+        if ingress == "robot":
+            robot_upload = upload_robot_mcap(
+                repository, storage, old_upload, old_command, raw_bytes
+            )
+            raw_id = robot_upload.raw_source_id
+        else:
+            manifest = CreateLeRobotImportV1(
+                dataset_id=identity.dataset_id,
+                source_format="MCAP",
+                files=({"path": "source.mcap", "size": len(raw_bytes), "part_count": 1},),
+            )
+            grant = service.begin(auth=auth, **scope.model_dump(), manifest=manifest)
+            asset = grant.assets[0]
+            service.upload_part(
+                auth=auth,
+                **scope.model_dump(),
+                import_id=grant.import_id,
                 dataset_id=manifest.dataset_id,
                 path=asset.path,
                 multipart_upload_id=asset.multipart_upload_id,
+                part_number=1,
+                body=io.BytesIO(raw_bytes),
                 size=len(raw_bytes),
-                part_count=1,
-            ),
-        )
-        service.commit(
-            auth=auth,
-            **scope.model_dump(),
-            import_id=grant.import_id,
-            command=CommitLeRobotImportV1(manifest=manifest),
-        )
+            )
+            service.complete_asset(
+                auth=auth,
+                **scope.model_dump(),
+                import_id=grant.import_id,
+                command=CompleteLeRobotAssetV1(
+                    dataset_id=manifest.dataset_id,
+                    path=asset.path,
+                    multipart_upload_id=asset.multipart_upload_id,
+                    size=len(raw_bytes),
+                    part_count=1,
+                ),
+            )
+            service.commit(
+                auth=auth,
+                **scope.model_dump(),
+                import_id=grant.import_id,
+                command=CommitLeRobotImportV1(manifest=manifest),
+            )
+            raw_id = grant.import_id
         browser = OriginalSourceBrowser(storage, service.raw_sources)
-        raw = browser.source(*identity.scope, grant.import_id)
+        raw = browser.source(*identity.scope, raw_id)
         monkeypatch.setattr(mcap_processing, "connections", lambda: repository.connections)
         # Target setup/authorization is exercised by the normal target validator tests;
         # this fixture's robot is not registered as a browser data source.
@@ -112,14 +125,18 @@ def test_bare_mcap_to_slice_package_and_all_exports(
             "profile",
             lambda *args: McapProcessingConfig(depth_scale_m_per_unit=0.001),
         )
-        progress = mcap_processing.start(
-            identity.scope,
-            raw,
-            browser.manifest(raw),
-            StartStoredProcessing(
-                collection_task_id=old_command.collection_task_id, robot_id=old_command.robot_id
-            ),
-        )
+        if ingress == "robot":
+            # Robot commit must create the durable event itself; no manual process call.
+            progress = mcap_processing.progress(identity.scope, raw_id)
+        else:
+            progress = mcap_processing.start(
+                identity.scope,
+                raw,
+                browser.manifest(raw),
+                StartStoredProcessing(
+                    collection_task_id=old_command.collection_task_id, robot_id=old_command.robot_id
+                ),
+            )
         processing_id = progress["files"][0]["processing_id"]
         with repository.transaction() as cursor:
             cursor.execute(
@@ -143,23 +160,62 @@ def test_bare_mcap_to_slice_package_and_all_exports(
             mcap_processing.progress(identity.scope, raw.raw_source_id)["files"][0]["status"]
             == "FAILED"
         )
-        retried = mcap_processing.start(
-            identity.scope,
-            raw,
-            browser.manifest(raw),
-            StartStoredProcessing(
-                collection_task_id=old_command.collection_task_id, robot_id=old_command.robot_id
-            ),
-        )
+        if ingress == "robot":
+            from hc_data_platform.lerobot_imports.recording_recovery import retry_recording_source
+
+            assert retry_recording_source(*identity.scope, raw_id, factory=repository.connections)
+            retried = mcap_processing.progress(identity.scope, raw_id)
+        else:
+            assert mcap_processing.retry_source(identity.scope, raw_id, repository.connections)
+            retried = mcap_processing.progress(identity.scope, raw_id)
         assert retried["files"][0]["attempts"] == 1
+        handler.adopt(event)  # Superseded attempts cannot restart or fail the retry.
+        mcap_processing.mark_failed(repository.connections, event)
+        assert (
+            mcap_processing.progress(identity.scope, raw.raw_source_id)["files"][0]["status"]
+            == "PENDING"
+        )
+        with repository.transaction() as cursor:
+            cursor.execute(
+                "SELECT envelope FROM core.outbox_events "
+                "WHERE envelope->'payload'->>'mcap_processing_id'=%s "
+                "AND envelope->'payload'->>'attempt'='1'",
+                (processing_id,),
+            )
+            event = b.DomainEventEnvelope.model_validate(cursor.fetchone()[0])
         handler.adopt(event)
         handler.adopt(event)  # Delivery redelivery must not duplicate or re-encode.
         result = mcap_processing.progress(identity.scope, raw.raw_source_id)["files"][0]
         assert result["status"] == "READY", result
+        if ingress == "robot":
+            from hc_data_platform.collection_tasks.captures import read_captures
+            from hc_data_platform.robot_ingest.processing_dispatch import mcap_result
+
+            assert mcap_result(repository.connections, robot_upload)["status"] == "AWAITING_SLICE"
+            with repository.transaction() as cursor:
+                captures = read_captures(cursor, *identity.scope, old_command.collection_task_id)
+            capture = next(c for c in captures if c.upload_id == robot_upload.upload_id)
+            assert capture.recording_id == result["recording_id"]
+            assert capture.stage == "AWAITING_SLICE" and capture.qc_outcome is None
         records = b.PostgresContinuousRecordingRepository(repository.connections)
         record = records.get(scope, result["recording_id"])
         assets = b.PostgresRecordingAssetRepository(repository.connections)
         upload = assets.get_upload(scope, record.recording_upload_id)
+        # Both RGB and physical depth are committed MP4 media, not loose source images.
+
+        declarations = {a.path: a for a in upload.command.assets}
+        assert {c.codec for c in upload.command.recording_config.cameras} == {"h264", "hevc"}
+        assert len([a for a in declarations.values() if a.role.value == "RAW_VIDEO"]) == 2
+        assert any(p.endswith("_depth.mp4") for p in declarations)
+        assert any(p.endswith("validity/flags.parquet") for p in declarations)
+        assert any(p.endswith("report.json") for p in declarations)
+        with repository.transaction() as cursor:
+            cursor.execute(
+                "SELECT source_document FROM ingest.mcap_processing_files WHERE processing_id=%s",
+                (processing_id,),
+            )
+            original = cursor.fetchone()[0]
+        assert b"".join(storage.read_chunks(original["object_key"])) == raw_bytes
         packages = b.EpisodePackageService(repository.connections, storage, tmp_path / "packages")
         staging = b.S3ProjectionArtifactStore(
             storage._client, storage._bucket, tmp_path / "staging"
@@ -323,6 +379,24 @@ def test_bare_mcap_to_slice_package_and_all_exports(
                 ).workflow_id,
             )
         )
+        state(
+            b.Status.ALIGNING,
+            b.Status.READY,
+            alignment_attempt_id=aligned.staged_manifest.attempt_id,
+            dataset_id=request.dataset_id,
+            dataset_episode_id=plan.input.identity.episode_id,
+            dataset_version=committed.version.version,
+            data_ref=data,
+            collection_version_id=committed.version.collection_version_id,
+            annotation_task_id=task.task_id,
+            aligned_media_camera_count=len(plan.feature_mapping),
+        )
+        if ingress == "robot":
+            with repository.transaction() as cursor:
+                captures = read_captures(cursor, *identity.scope, old_command.collection_task_id)
+            capture = next(c for c in captures if c.upload_id == robot_upload.upload_id)
+            assert capture.stage == "READY" and capture.qc_outcome == "PASS"
+            assert capture.ready_episode_count == 1
         claimed = annotation.claim(task.task_id, actor(data.identity))
         annotation.save_draft(
             task.task_id,
@@ -381,6 +455,32 @@ def test_bare_mcap_to_slice_package_and_all_exports(
                     mcap = io.BytesIO(archive.read("collection/episode-000000.mcap"))
                     reader = make_reader(mcap, validate_crcs=True)
                     messages = list(reader.iter_messages())
+                    # Slice export copies original message payloads and clocks; it never
+                    # reconstructs ROS data from the lossy RGB/depth preview videos.
+                    expected = list(
+                        make_reader(io.BytesIO(raw_bytes)).iter_messages(
+                            start_time=1_000_000_000 + b.frame_time(1),
+                            end_time=1_000_000_000 + b.frame_time(slice_end),
+                        )
+                    )
+
+                    def evidence(rows):
+                        return [
+                            (
+                                s.name,
+                                s.encoding,
+                                s.data,
+                                c.topic,
+                                c.message_encoding,
+                                m.log_time,
+                                m.publish_time,
+                                m.sequence,
+                                m.data,
+                            )
+                            for s, c, m in rows
+                        ]
+
+                    assert evidence(messages) == evidence(expected)
                     assert {c.topic for _, c, _ in messages} == {
                         "/color",
                         "/depth",
@@ -398,8 +498,222 @@ def test_bare_mcap_to_slice_package_and_all_exports(
                         )
                         assert document["annotations"]["revision"]["tags"][0]["label"] == "抓取"
                         assert "annotation_frame_mapping" in document
+                        mapping = "collection/" + document["annotation_frame_mapping"]
+                        assert mapping in archive.namelist()
+                        import pyarrow.parquet as pq
+
+                        assert (
+                            pq.read_table(io.BytesIO(archive.read(mapping))).num_rows
+                            == expected_frames
+                        )
                 if format == "original":
                     originals = [n for n in archive.namelist() if n.endswith("source.mcap")]
                     assert len(originals) == 1 and archive.read(originals[0]) == raw_bytes
                     document = json.loads(archive.read("collection/selections/000000.json"))
                     assert bool(document["annotations"]) == annotated
+
+
+def upload_robot_mcap(
+    repository,
+    storage,
+    old_upload,
+    command,
+    content,
+    *,
+    configure=True,
+    asset_path="source.mcap",
+    queued=True,
+):
+    from hc_data_platform.robot_ingest.models import (
+        CompleteAssetCommand,
+        CompletedPart,
+        IssueCredentialCommand,
+        RobotIngestAssetManifest,
+        RobotIngestUploadManifest,
+        UpdateRobotIngestIdentity,
+    )
+    from hc_data_platform.robot_ingest.repository import PostgresRobotIngestRepository
+    from hc_data_platform.robot_ingest.service import RobotIngestService
+
+    target = old_upload.target
+    scope = (target.organization_id, target.project_id, target.region_code)
+    auth = b.AuthContext(
+        subject_id="mcap-robot-test",
+        organization_ids=frozenset({scope[0]}),
+        project_ids=frozenset({scope[1]}),
+        region_codes=frozenset({scope[2]}),
+        organization_scope_triples=frozenset({scope}),
+        scope_pairs=frozenset({scope[1:]}),
+        organization_scoped_capabilities=frozenset({(scope[0], scope[1], "ingest_source.manage")}),
+    )
+    service = RobotIngestService(
+        PostgresRobotIngestRepository.from_dsn(
+            os.environ["HC_G1_TEST_POSTGRES_DSN"], repository.connections
+        ),
+        storage,
+        credential_hmac_key="mcap-robot-integration-key",
+    )
+    identity_args = dict(
+        auth=auth,
+        organization_id=scope[0],
+        project_id=scope[1],
+        ingest_identity_id=old_upload.ingest_identity_id,
+    )
+    existing = service.repository.get_identity(scope[0], old_upload.ingest_identity_id)
+    service.update_identity(
+        **identity_args,
+        command=UpdateRobotIngestIdentity(
+            allowed_formats=("MCAP",),
+            allowed_transports=existing.allowed_transports,
+            upload_policy=existing.upload_policy,
+        ),
+    )
+    token = service.issue_credential(
+        **identity_args, command=IssueCredentialCommand()
+    ).credential.token
+    if configure:
+        with repository.transaction() as cursor:
+            cursor.execute(
+                "INSERT INTO ingest.mcap_robot_profiles VALUES (%s,%s,%s,%s,%s::jsonb,now())",
+                (*scope, command.robot_id, '{"depth_scale_m_per_unit":0.001}'),
+            )
+    upload = service.create_upload(
+        token=token,
+        manifest=RobotIngestUploadManifest(
+            client_upload_id=str(uuid4()),
+            collection_task_id=command.collection_task_id,
+            robot_id=command.robot_id,
+            source_format="MCAP",
+            source_format_version="0",
+            capture_mode="CONTINUOUS",
+            capture_started_at=command.capture_started_at,
+            capture_ended_at=command.capture_ended_at,
+            assets=(
+                RobotIngestAssetManifest(
+                    asset_id="mcap",
+                    path=asset_path,
+                    size_bytes=len(content),
+                    sha256=hashlib.sha256(content).hexdigest(),
+                    crc64=crc64_ecma(content),
+                    media_type="application/mcap",
+                ),
+            ),
+        ),
+    ).data
+    asset = upload.assets[0]
+    part = storage.upload_part_stream(
+        asset.object_key, asset.multipart_upload_id, 1, io.BytesIO(content), len(content)
+    )
+    service.complete_asset(
+        token=token,
+        upload_id=upload.upload_id,
+        asset_id=asset.asset_id,
+        command=CompleteAssetCommand(parts=(CompletedPart(part_number=1, etag=part.etag),)),
+    )
+    committed = service.commit_upload(token=token, upload_id=upload.upload_id).data
+    assert (
+        service.commit_upload(token=token, upload_id=upload.upload_id).data.raw_source_id
+        == committed.raw_source_id
+    )
+    with repository.transaction() as cursor:
+        cursor.execute(
+            "SELECT count(*) FROM core.outbox_events WHERE organization_id=%s "
+            "AND project_id=%s AND region_code=%s AND envelope->>'aggregate_id'=%s",
+            (*scope, committed.raw_source_id),
+        )
+        assert cursor.fetchone()[0] == int(queued)
+    return committed
+
+
+@pytest.mark.integration
+def test_robot_mcap_missing_mapping_settles_and_retries_original(
+    uploaded_raw,  # noqa: F811
+    tmp_path,
+    monkeypatch,
+):
+    from hc_data_platform.collection_tasks.captures import read_captures
+    from hc_data_platform.lerobot_imports.recording_recovery import retry_recording_source
+    from hc_data_platform.robot_ingest.processing_dispatch import mcap_result
+
+    repository, storage, old, _, command, _ = uploaded_raw
+    scope = (old.target.organization_id, old.target.project_id, old.target.region_code)
+    monkeypatch.setattr(mcap_processing, "connections", lambda: repository.connections)
+    content = synthetic_mcap(tmp_path / "source.mcap").read_bytes()
+    upload = upload_robot_mcap(repository, storage, old, command, content, configure=False)
+
+    def queued_event():
+        progress = mcap_processing.progress(scope, upload.raw_source_id)["files"][0]
+        with repository.transaction() as cursor:
+            cursor.execute(
+                "SELECT envelope FROM core.outbox_events "
+                "WHERE envelope->'payload'->>'mcap_processing_id'=%s ORDER BY occurred_at DESC",
+                (progress["processing_id"],),
+            )
+            return b.DomainEventEnvelope.model_validate(cursor.fetchone()[0])
+
+    handler = b.RecordingOutboxHandler(
+        repository.connections, storage, registrations=b.PostgresRecordingRegistration()
+    )
+    old_event = queued_event()
+    with pytest.raises(ValueError, match="MCAP_DEPTH_UNITS_REQUIRED"):
+        handler.adopt(old_event)
+    status = mcap_result(repository.connections, upload)
+    assert status["terminal"] and status["status"] == "FAILED"
+    assert status["error_code"] == "MCAP_DEPTH_UNITS_REQUIRED"
+    with repository.transaction() as cursor:
+        item = next(c for c in read_captures(cursor, *scope) if c.upload_id == upload.upload_id)
+    assert item.stage == "BLOCKED" and item.qc_outcome is None
+    assert not retry_recording_source(
+        scope[0], scope[1], "foreign-region", upload.raw_source_id, factory=repository.connections
+    )
+    # This robot came through robot ingest, without a separate browser data-source row.
+    for config, expected in (
+        ({"state_topic": "/absent"}, "MCAP_MAPPING_INVALID"),
+        ({}, "MCAP_DEPTH_UNITS_REQUIRED"),
+    ):
+        mcap_processing.profile(scope, command.robot_id, config)
+        assert retry_recording_source(*scope, upload.raw_source_id, factory=repository.connections)
+        event = queued_event()
+        assert event.event_id != old_event.event_id
+        with pytest.raises(ValueError, match=expected):
+            handler.adopt(event)
+        assert mcap_result(repository.connections, upload)["error_code"] == expected
+    mcap_processing.profile(scope, command.robot_id, {"depth_scale_m_per_unit": 0.001})
+    assert retry_recording_source(*scope, upload.raw_source_id, factory=repository.connections)
+    current = queued_event()
+    assert current.event_id != old_event.event_id
+    handler.adopt(old_event)  # A superseded configuration cannot run after repair.
+    assert mcap_processing.progress(scope, upload.raw_source_id)["files"][0]["status"] == "PENDING"
+    handler.adopt(current)
+    assert mcap_result(repository.connections, upload)["status"] == "AWAITING_SLICE"
+    asset = upload.assets[0]
+    assert b"".join(storage.read_chunks(asset.object_key)) == content
+
+
+@pytest.mark.integration
+def test_unsupported_mcap_layout_retains_receipt_and_reports_failure(
+    uploaded_raw,  # noqa: F811
+    tmp_path,
+):
+    from hc_data_platform.collection_tasks.captures import read_captures
+
+    repository, storage, old, _, command, _ = uploaded_raw
+    scope = (old.target.organization_id, old.target.project_id, old.target.region_code)
+    content = synthetic_mcap(tmp_path / "source.mcap").read_bytes()
+    upload = upload_robot_mcap(
+        repository,
+        storage,
+        old,
+        command,
+        content,
+        configure=False,
+        asset_path="unsupported.bin",
+        queued=False,
+    )
+    assert upload.state.value == "COMMITTED"
+    assert upload.processing_status.value == "FAILED"
+    with repository.transaction() as cursor:
+        item = next(c for c in read_captures(cursor, *scope) if c.upload_id == upload.upload_id)
+    assert item.stage == "FAILED" and item.error_code == "ROBOT_PROCESSOR_UNAVAILABLE"
+    assert item.received and item.qc_outcome is None
+    assert b"".join(storage.read_chunks(upload.assets[0].object_key)) == content

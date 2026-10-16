@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -159,6 +160,33 @@ def _create_body(name: str = "P05 新建 Dataset") -> dict[str, object]:
         "description": "创建空数据集，不隐式创建版本。",
         "labels": ["robot", "p05", "robot"],
     }
+
+
+def test_episode_navigation_does_not_require_a_published_version() -> None:
+    service, _ = _service()
+    configure_dataset_page(service)
+    reader = _auth()
+    current = {
+        "value": replace(
+            reader,
+            scoped_capabilities=reader.scoped_capabilities | {(PROJECT_ID, "episode.read")},
+        )
+    }
+    client = TestClient(_app(current))
+    root = f"/api/v1/projects/{PROJECT_ID}/datasets"
+    response = client.get(root, headers=_headers())
+    assert response.status_code == 200
+    for item in response.json()["items"]:
+        assert item["current_version"] is None
+        actions = {action["action"]: action["allowed"] for action in item["allowed_actions"]}
+        assert actions["OPEN_EPISODE"] is True
+        assert actions["OPEN_VERSION"] is False
+    current["value"] = reader
+    response = client.get(root, headers=_headers())
+    for item in response.json()["items"]:
+        action = next(a for a in item["allowed_actions"] if a["action"] == "OPEN_EPISODE")
+        assert action["allowed"] is False
+        assert action["blocked_reasons"][0]["code"] == "EPISODE_READ_CAPABILITY_REQUIRED"
 
 
 def test_p05_page_aggregate_create_replay_and_scoped_read_contract() -> None:

@@ -1,3 +1,4 @@
+import { ResourceLabel } from "../../../../shared/lib/resource-labels";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Modal, Progress, Space, Tag } from "antd";
 import { lazy, Suspense, useState } from "react";
@@ -65,12 +66,7 @@ export function LeRobotProcessingRecords({
         signal,
         query: { limit: 20, offset, dataset_id: datasetId },
       }),
-    refetchInterval: (query) =>
-      query.state.data?.some((item) =>
-        ["PENDING", "RUNNING"].includes(item.status),
-      )
-        ? 5_000
-        : false,
+    refetchInterval: 5_000,
     retry: false,
   });
   const retry = useMutation({
@@ -127,8 +123,19 @@ export function LeRobotProcessingRecords({
       <div className={styles.queueList}>
         {records.data?.map((item) => (
           <article className={styles.queueItem} key={item.import_id}>
-            <strong>Dataset {item.dataset_id}</strong>
-            <small>{item.import_id}</small>
+            <strong>
+              <ResourceLabel
+                kind="dataset"
+                id={item.dataset_id}
+                scope={scope}
+              />
+            </strong>
+            <small title={item.import_id}>
+              {item.source_format.toUpperCase()} ·{" "}
+              {new Date(item.updated_at).toLocaleString("zh-CN", {
+                hour12: false,
+              })}
+            </small>
             <Tag
               color={
                 ["SUCCEEDED", "RAW_COMMITTED"].includes(item.status)
@@ -186,7 +193,8 @@ export function LeRobotProcessingRecords({
             ) : null}
             <Space>
               {canManage &&
-              item.status === "RAW_COMMITTED" &&
+              (item.status === "RAW_COMMITTED" ||
+                (item.source_format === "MCAP" && item.status === "FAILED")) &&
               ["LEROBOT_V3", "MCAP"].includes(item.source_format) ? (
                 <Button
                   onClick={() => {

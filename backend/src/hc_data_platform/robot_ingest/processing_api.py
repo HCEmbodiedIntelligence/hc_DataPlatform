@@ -139,14 +139,18 @@ def get_recording(
     upload_id: str, response: Response, token: RobotToken, service: Service, store: Store
 ) -> RecordingResult:
     from . import recording_bridge
+    from .processing_dispatch import mcap_eligible, mcap_result
 
     upload = service.get_upload(token=token, upload_id=upload_id).data
+    if mcap_eligible(upload):
+        response.headers["Cache-Control"] = "no-store"
+        return RecordingResult.model_validate(mcap_result(store.connections, upload))
     if not recording_bridge.eligible(upload):
         raise problem(
             status=409,
             code="ROBOT_RECORDING_INCOMPATIBLE",
             title="Recording unavailable",
-            detail="This endpoint requires a committed OpenArm recording bundle.",
+            detail="This endpoint requires a committed recording bundle or continuous MCAP.",
         )
     response.headers["Cache-Control"] = "no-store"
     return RecordingResult.model_validate(recording_bridge.result(store.connections, upload))
@@ -166,11 +170,15 @@ def retry_recording(
     store: Store,
 ) -> RecordingResult:
     from . import recording_bridge
+    from .processing_dispatch import mcap_eligible, retry_mcap
 
     # Same Bearer ownership check as GET; this never allocates another Raw.
     get_recording(upload_id, response, token, service, store)
     upload = service.get_upload(token=token, upload_id=upload_id).data
-    recording_bridge.retry(store.connections, upload, str(command.request_id))
+    if mcap_eligible(upload):
+        retry_mcap(store.connections, upload)
+    else:
+        recording_bridge.retry(store.connections, upload, str(command.request_id))
     return get_recording(upload_id, response, token, service, store)
 
 

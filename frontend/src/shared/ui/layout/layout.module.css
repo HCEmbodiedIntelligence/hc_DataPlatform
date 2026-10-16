@@ -30,6 +30,21 @@
   line-height: 1.55;
 }
 
+.pageHeader[data-compact] .pageTitle {
+  font-size: 1.25rem;
+  line-height: 1.35;
+  letter-spacing: 0;
+}
+.pageHeader[data-compact] .pageDescription {
+  max-width: 100ch;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.pageHeader[data-compact] .pageMetadata {
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
 .pageMetadata {
   display: flex;
   flex-wrap: wrap;
@@ -131,10 +146,17 @@
 }
 
 .resourceIdentity {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--hc-space-1, 4px);
-  align-items: center;
+  font-size: 0.75rem;
+}
+
+.resourceIdentity summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.resourceIdentity > span {
+  display: block;
+  margin-top: 4px;
 }
 
 .resourceIdentity code {

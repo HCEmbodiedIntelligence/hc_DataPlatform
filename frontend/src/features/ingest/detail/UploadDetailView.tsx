@@ -775,7 +775,7 @@ function PendingQualityUploadDetail({
     <section className={styles.passedPage}>
       <PageHeader
         title="上传详情"
-        description="上传内容已接收，后台摄取和自动质检仍在进行。"
+        description="上传内容已接收，后台正在处理，质检结果尚未生成。"
         breadcrumbs={[
           { key: "uploads", label: "上传记录", to: uploadRecordsPath },
           { key: "detail", label: detail.session.data_package_id },
@@ -783,7 +783,7 @@ function PendingQualityUploadDetail({
         metadata={
           <Space wrap>
             <StatusTag status={detail.session.status} tone="info" />
-            <StatusTag status="PENDING" label="自动质检处理中" tone="info" />
+            <StatusTag status="PENDING" label="等待质检结果" tone="info" />
           </Space>
         }
       />

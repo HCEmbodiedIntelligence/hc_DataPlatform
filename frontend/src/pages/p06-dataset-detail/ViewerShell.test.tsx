@@ -1,18 +1,28 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { StrictMode } from "react";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EpisodeViewerShell } from "./ViewerShell";
+import { loadEpisodeOverview } from "../../features/datasets/episodes/episode-detail";
+import { loadEpisodeAnnotationTracks } from "../../features/datasets/episodes/episode-annotations";
+import { episodeMigrationFixture } from "./testing/episode-detail-fixture";
 import type { EpisodeRevisionWire } from "../../features/datasets/api/wire-schemas";
+
+vi.mock(
+  "../../features/datasets/episodes/episode-detail",
+  async (original) => ({
+    ...(await original<
+      typeof import("../../features/datasets/episodes/episode-detail")
+    >()),
+    loadEpisodeOverview: vi.fn(),
+  }),
+);
+vi.mock("../../features/datasets/episodes/episode-annotations", () => ({
+  loadEpisodeAnnotationTracks: vi.fn(),
+}));
 
 const state = vi.hoisted(() => ({
   data: {} as Record<string, unknown>,
@@ -199,28 +209,79 @@ describe("dataset Episode shared workbench", () => {
     expect(state.createIssue).not.toHaveBeenCalled();
   });
 
-  it("retains the immutable revision and selected time range when recording an issue", async () => {
+  it("shows saved Tags for the exact Episode data and has no issue or range editing controls", async () => {
+    const f = episodeMigrationFixture();
+    Object.assign(f.data.identity, {
+      organization_id: "org-p06",
+      project_id: "project-p06",
+      region_code: "region-p06",
+      dataset_id: datasetId,
+      episode_id: episodeId,
+    });
+    const boundRevision = structuredClone(revision);
+    boundRevision.streams[0]!.package_binding = {
+      data: f.data,
+      rollout_id: f.data.identity.rollout_id,
+      feature_key: "front",
+      modality_key: "/camera/front/image",
+      value_kind: null,
+      start_step: 0,
+      end_step: f.data.frame_count,
+    };
+    state.data.revision = boundRevision;
+    state.capabilities.add("dataset_version.read");
+    state.capabilities.add("annotation_task.read");
+    vi.mocked(loadEpisodeOverview).mockResolvedValue(f.view);
+    vi.mocked(loadEpisodeAnnotationTracks).mockResolvedValue({
+      count: 1,
+      tracks: [
+        {
+          id: "tags",
+          label: "Tag L1",
+          level: 0,
+          segments: [
+            {
+              id: "tag-pick",
+              label: "抓取物体",
+              startNs: "1000000000",
+              endNs: "2000000000",
+              activatePlayback: true,
+            },
+          ],
+        },
+      ],
+    });
     mount(
       "?selectionStartNs=1000000000&selectionEndNs=2000000000&streamId=stream_front",
     );
-    fireEvent.click(screen.getByRole("button", { name: "添加人工问题" }));
-    fireEvent.change(await screen.findByRole("textbox", { name: "说明" }), {
-      target: { value: "视频缺帧" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "确认添加问题" }));
-    await waitFor(() => expect(state.createIssue).toHaveBeenCalledOnce());
-    expect(state.createIssue).toHaveBeenCalledWith(
-      expect.objectContaining({
-        datasetId,
-        versionId,
-        episodeId,
-        revisionId: revision.revision_id,
-        streamId: "stream_front",
-        startNs: "1000000000",
-        endNs: "2000000000",
-        note: "视频缺帧",
-      }),
+    const tag = await screen.findByRole("button", { name: /从“抓取物体”/ });
+    expect(tag).not.toHaveAttribute("data-editable");
+    expect(loadEpisodeOverview).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "project-p06" }),
+      f.data,
+      { annotationTaskId: undefined },
+      expect.any(AbortSignal),
     );
+    expect(loadEpisodeAnnotationTracks).toHaveBeenCalledWith(
+      expect.anything(),
+      f.view,
+      "0",
+      "10000000000",
+      expect.any(AbortSignal),
+    );
+    expect(screen.getByText(/1 个 Tag/)).toBeVisible();
+    expect(screen.queryByLabelText("数据通道")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "查看问题清单" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "添加人工问题" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "设为入点" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("当前标注")).not.toBeInTheDocument();
+    expect(state.createIssue).not.toHaveBeenCalled();
   });
 
   it("keeps issue creation gated and returns to the dataset without opening annotation", () => {

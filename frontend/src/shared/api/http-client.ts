@@ -74,6 +74,8 @@ export type RequestOptions = {
   cache?: RequestCache;
   /** Preserve exact artifact bytes; errors still use the normal problem parser. */
   responseType?: "json" | "blob";
+  /** Stream successful downloads to a caller-owned sink within the request's scope lifetime. */
+  downloadTo?: WritableStream<Uint8Array>;
 };
 
 export function isSafeBearerToken(value: string): boolean {
@@ -531,9 +533,13 @@ export async function requestWithResponse<T>(
       throw scopeTransitionError("SCOPE_CHANGED", "请求所属组织已失效");
     }
     const raw =
-      response.ok && opts.responseType === "blob"
-        ? await response.blob()
-        : await readJson(response);
+      response.ok && opts.downloadTo
+        ? await response.body!.pipeTo(opts.downloadTo, {
+            signal: controller.signal,
+          })
+        : response.ok && opts.responseType === "blob"
+          ? await response.blob()
+          : await readJson(response);
     assertExplicitResponse();
     // A large download can finish after the user changes the selected tenant.
     if (activeScoped && getShellState().scopeKey !== requestScopeKey) {

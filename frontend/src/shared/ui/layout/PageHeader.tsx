@@ -1,7 +1,7 @@
-import { Flex, Typography } from 'antd';
-import { useId, type ReactNode } from 'react';
-import { Link, type To } from 'react-router-dom';
-import styles from './layout.module.css';
+import { Flex, Typography } from "antd";
+import { useId, type ReactNode } from "react";
+import { Link, type To } from "react-router-dom";
+import styles from "./layout.module.css";
 
 export interface PageBreadcrumbItem {
   key: string;
@@ -16,6 +16,7 @@ export interface PageHeaderProps {
   metadata?: ReactNode;
   actions?: ReactNode;
   headingId?: string;
+  compact?: boolean;
 }
 
 export function PageHeader({
@@ -25,12 +26,17 @@ export function PageHeader({
   metadata,
   actions,
   headingId,
+  compact = false,
 }: Readonly<PageHeaderProps>) {
   const generatedId = useId();
   const titleId = headingId ?? generatedId;
 
   return (
-    <header className={styles.pageHeader} aria-labelledby={titleId}>
+    <header
+      className={styles.pageHeader}
+      data-compact={compact || undefined}
+      aria-labelledby={titleId}
+    >
       <div className={styles.pageHeaderCopy}>
         {breadcrumbs.length > 0 ? (
           <nav aria-label="面包屑">
@@ -38,7 +44,10 @@ export function PageHeader({
               {breadcrumbs.map((item, index) => {
                 const current = index === breadcrumbs.length - 1;
                 return (
-                  <li key={item.key} aria-current={current ? 'page' : undefined}>
+                  <li
+                    key={item.key}
+                    aria-current={current ? "page" : undefined}
+                  >
                     {!current && item.to ? (
                       <Link className={styles.breadcrumbLink} to={item.to}>
                         {item.label}
@@ -55,8 +64,12 @@ export function PageHeader({
         <Typography.Title id={titleId} level={1} className={styles.pageTitle}>
           {title}
         </Typography.Title>
-        {description ? <div className={styles.pageDescription}>{description}</div> : null}
-        {metadata ? <div className={styles.pageMetadata}>{metadata}</div> : null}
+        {description ? (
+          <div className={styles.pageDescription}>{description}</div>
+        ) : null}
+        {metadata ? (
+          <div className={styles.pageMetadata}>{metadata}</div>
+        ) : null}
       </div>
       {actions ? (
         <Flex

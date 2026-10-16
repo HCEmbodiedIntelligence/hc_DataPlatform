@@ -1,13 +1,8 @@
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { describeEpisodeRobotPreview } from "../../features/datasets/episodes/robot-preview-provenance";
 import { useEffect, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Alert, Button, Card, Drawer, Modal, Typography } from "antd";
-import {
-  useLocation,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from "react-router-dom";
+import { Alert, Button, Card, Drawer, Typography } from "antd";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { isDatasetId, type DatasetId } from "../../entities/dataset";
 import {
   isDatasetVersionId,
@@ -20,10 +15,6 @@ import {
   selectCameraStreams,
   usePlaybackClock,
 } from "../../features/viewer";
-import {
-  createManualIssueCommand,
-  routes as cleaningRoutes,
-} from "../../features/cleaning/routing";
 import { useViewerEpisodeQuery } from "../../features/datasets/api";
 import { RegionState } from "../../features/datasets/components/RegionState";
 import { datasetRegionStateForError } from "../../features/datasets/components/error-state";
@@ -37,18 +28,13 @@ import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
 import { reviewDataReference } from "../../features/datasets/episodes/data-reviews";
 import { selectEpisodeJointStream } from "../../features/datasets/episodes/logical-viewer";
 import { useLogicalViewer } from "../../features/datasets/episodes/use-logical-viewer";
+import { useEpisodeAnnotations } from "./use-episode-annotations";
+import { EpisodeTagSummary } from "./EpisodeTagSummary";
 import styles from "./styles.module.css";
 
 const invalidDataset = "dataset_invalid" as DatasetId;
 const invalidVersion = "version_invalid" as DatasetVersionId;
 const invalidEpisode = "episode_invalid" as EpisodeId;
-
-function newIntentKey(prefix: string): string {
-  return (
-    globalThis.crypto?.randomUUID?.() ??
-    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  );
-}
 
 function decimalSecondsToNs(value: string): string | null {
   if (!/^(0|[1-9][0-9]*)(\.[0-9]{1,9})?$/.test(value)) return null;
@@ -62,7 +48,6 @@ function decimalSecondsToNs(value: string): string | null {
 export function EpisodeViewerShell() {
   const raw = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const [params] = useSearchParams();
   const search = assetEpisodeViewerQueryCodec.parse(params);
   const capabilities = useCapabilities();
@@ -82,36 +67,9 @@ export function EpisodeViewerShell() {
     episodeId,
     valid && capabilities.has("episode.read"),
   );
-  const [selection, setSelection] = useState<{
-    start: string;
-    end: string;
-  } | null>(() =>
-    search.selectionStartNs && search.selectionEndNs
-      ? { start: search.selectionStartNs, end: search.selectionEndNs }
-      : null,
-  );
-  const [issueOpen, setIssueOpen] = useState(false);
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
   const [dataInfoTab, setDataInfoTab] = useState("playback");
   const [cameraView, setCameraView] = useState("__quad__");
-  const [issueIntentKey, setIssueIntentKey] = useState("");
-  const [issueType, setIssueType] = useState<
-    | "POSE_JITTER"
-    | "TIMESTAMP_DRIFT"
-    | "MISSING_FRAME"
-    | "STREAM_GAP"
-    | "CALIBRATION_MISMATCH"
-    | "INVALID_MASK"
-    | "OTHER"
-  >("OTHER");
-  const [issueSeverity, setIssueSeverity] = useState<
-    "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
-  >("MEDIUM");
-  const [issueNote, setIssueNote] = useState("");
-  const [selectedStreamId, setSelectedStreamId] = useState<string>(
-    search.streamId ?? "",
-  );
-  const [createdIssueId, setCreatedIssueId] = useState<string | null>(null);
 
   const revision = query.data?.revision;
   const reviewTarget = useMemo(() => {
@@ -145,20 +103,17 @@ export function EpisodeViewerShell() {
     const value = decimalSecondsToNs(search.t);
     if (value !== null) clock.seek(value);
   }, [clock, search.t]);
-  useEffect(() => {
-    if (!revision || !selection) return;
-    const revisionEnd =
-      BigInt(revision.started_at_ns) + BigInt(revision.duration_ns);
-    if (
-      !/^\d+$/.test(selection.start) ||
-      !/^\d+$/.test(selection.end) ||
-      BigInt(selection.start) < BigInt(revision.started_at_ns) ||
-      BigInt(selection.end) > revisionEnd ||
-      BigInt(selection.start) >= BigInt(selection.end)
-    ) {
-      setSelection(null);
-    }
-  }, [revision, selection]);
+  const annotations = useEpisodeAnnotations({
+    scope,
+    data: reviewTarget.data,
+    canRead:
+      valid &&
+      capabilities.has("episode.read") &&
+      capabilities.has("dataset_version.read"),
+    canReadAnnotations: capabilities.has("annotation_task.read"),
+    startNs,
+    endNs,
+  });
 
   const logical = useLogicalViewer(
     revision,
@@ -191,55 +146,8 @@ export function EpisodeViewerShell() {
   );
   useEffect(() => {
     setCameraView("__quad__");
-    setSelectedStreamId(search.streamId ?? "");
-    setCreatedIssueId(null);
-    setIssueOpen(false);
-  }, [datasetId, versionId, episodeId, search.streamId]);
-  useEffect(() => {
-    if (!revision || selectedStreamId) return;
-    const requested =
-      search.streamId &&
-      revision.streams.some(
-        (stream) => stream.episode_stream_id === search.streamId,
-      )
-        ? search.streamId
-        : revision.streams.length === 1
-          ? revision.streams[0]?.episode_stream_id
-          : undefined;
-    if (requested) setSelectedStreamId(requested);
-  }, [revision, search.streamId, selectedStreamId]);
-
-  const issueMutation = useMutation({
-    mutationFn: async () => {
-      if (
-        !scope?.organizationId ||
-        !scope.projectId ||
-        !scope.regionCode ||
-        !revision ||
-        !selection ||
-        !selectedStreamId ||
-        !issueIntentKey
-      ) {
-        throw new Error("ManualIssue 创建上下文不完整");
-      }
-      return createManualIssueCommand({
-        organizationId: scope.organizationId,
-        projectId: scope.projectId,
-        regionCode: scope.regionCode,
-        datasetId,
-        versionId,
-        episodeId,
-        revisionId: revision.revision_id,
-        streamId: selectedStreamId,
-        startNs: selection.start,
-        endNs: selection.end,
-        issueType,
-        severity: issueSeverity,
-        note: issueNote.trim(),
-        idempotencyKey: issueIntentKey,
-      });
-    },
-  });
+    setDataInfoOpen(false);
+  }, [datasetId, versionId, episodeId]);
 
   if (!valid)
     return (
@@ -290,24 +198,6 @@ export function EpisodeViewerShell() {
     versionId,
   });
   const returnTo = search.returnTo ?? fallback;
-  const viewerReturn = `${location.pathname}${location.search}`;
-  const issueAction = query.data.bootstrap.allowedActions.find(
-    (action) => action.action === "CREATE_ISSUE",
-  );
-  const canCreateIssue =
-    capabilities.has("manual_issue.create") && issueAction?.allowed === true;
-  const issueBlockedReasons = [
-    ...(!issueAction?.allowed
-      ? (issueAction?.blockedReasons.map((reason) => reason.message) ?? [
-          "资源 allowed_actions 未允许 CREATE_ISSUE",
-        ])
-      : []),
-    ...(!selection ? ["请先在时间轴选择有效半开区间 [start,end)"] : []),
-    ...(!selectedStreamId ? ["请选择固定 Revision 中的 Episode Stream"] : []),
-    ...(!scope?.organizationId || !scope.projectId || !scope.regionCode
-      ? ["当前 Project/Region Scope 不可用"]
-      : []),
-  ];
   return (
     <main
       className={styles.page}
@@ -347,12 +237,8 @@ export function EpisodeViewerShell() {
           collectionItems: [],
           findings: [],
           actions: [],
-          timelineTracks: [],
+          timelineTracks: annotations.tracks,
           timelineDisabled: false,
-          timelineSelection: selection
-            ? { startNs: selection.start, endNs: selection.end }
-            : undefined,
-          onTimeRangeSelect: (start, end) => setSelection({ start, end }),
         }}
         jointAngleStream={jointAngleStream}
         numericStreams={streams}
@@ -400,87 +286,7 @@ export function EpisodeViewerShell() {
               )}
             </CameraViewToolbar>
           ),
-          timelineTools: () => (
-            <div className={styles.viewerInspector}>
-              <Typography.Text type="secondary">
-                只读查看 · 拖选时间范围可记录数据问题
-              </Typography.Text>
-              {selection ? (
-                <Typography.Text>
-                  已选片段{" "}
-                  {(
-                    Number(BigInt(selection.start) - BigInt(startNs)) / 1e9
-                  ).toFixed(2)}{" "}
-                  –{" "}
-                  {(
-                    Number(BigInt(selection.end) - BigInt(startNs)) / 1e9
-                  ).toFixed(2)}{" "}
-                  秒
-                </Typography.Text>
-              ) : (
-                <Typography.Paragraph>
-                  在时间轴拖动选择范围。
-                </Typography.Paragraph>
-              )}
-              {revision!.streams.length > 1 ? (
-                <label className={styles.filterField}>
-                  数据通道
-                  <select
-                    value={selectedStreamId}
-                    onChange={(event) =>
-                      setSelectedStreamId(event.target.value)
-                    }
-                  >
-                    <option value="">请选择</option>
-                    {revision!.streams.map((stream) => (
-                      <option
-                        key={stream.episode_stream_id}
-                        value={stream.episode_stream_id}
-                      >
-                        {stream.channel_path}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {canCreateIssue ? (
-                <Button
-                  type="primary"
-                  onClick={() => {
-                    setIssueIntentKey(newIntentKey("viewer-manual-issue"));
-                    setIssueOpen(true);
-                  }}
-                >
-                  添加人工问题
-                </Button>
-              ) : null}
-              {capabilities.has("manual_issue.read") ? (
-                <Button
-                  onClick={() =>
-                    void navigate(
-                      cleaningRoutes.manualIssues.build({
-                        datasetId,
-                        versionId,
-                        episodeId,
-                        ...(createdIssueId ? { issueId: createdIssueId } : {}),
-                        returnTo: viewerReturn,
-                      }),
-                    )
-                  }
-                >
-                  查看问题清单
-                </Button>
-              ) : null}
-              {createdIssueId ? (
-                <Alert
-                  type="success"
-                  showIcon
-                  title="问题已添加"
-                  description={<code>{createdIssueId}</code>}
-                />
-              ) : null}
-            </div>
-          ),
+          timelineTools: () => <EpisodeTagSummary annotations={annotations} />,
         }}
       />
       <Drawer
@@ -493,10 +299,17 @@ export function EpisodeViewerShell() {
         {!reviewTarget.data && (
           <>
             <Typography.Paragraph>
-              Episode <code>{episodeId}</code>
+              <ResourceLabel
+                kind="episode"
+                id={episodeId}
+                datasetId={datasetId}
+              />
             </Typography.Paragraph>
             <Typography.Paragraph>
-              Revision <code>{revision!.revision_id}</code>
+              <details>
+                <summary>技术信息</summary>Revision{" "}
+                <code>{revision!.revision_id}</code>
+              </details>
             </Typography.Paragraph>
           </>
         )}
@@ -528,108 +341,6 @@ export function EpisodeViewerShell() {
           </div>
         )}
       </Drawer>
-      <Modal
-        open={issueOpen}
-        title="添加人工问题"
-        closable={!issueMutation.isPending}
-        mask={{ closable: false }}
-        onCancel={() => {
-          if (!issueMutation.isPending) setIssueOpen(false);
-        }}
-        footer={[
-          <Button
-            key="cancel"
-            disabled={issueMutation.isPending}
-            onClick={() => setIssueOpen(false)}
-          >
-            取消
-          </Button>,
-          <Button
-            key="confirm"
-            type="primary"
-            loading={issueMutation.isPending}
-            disabled={issueBlockedReasons.length > 0 || !issueNote.trim()}
-            onClick={() =>
-              issueMutation.mutate(undefined, {
-                onSuccess: (issue) => {
-                  setCreatedIssueId(issue.id);
-                  setIssueOpen(false);
-                  setIssueNote("");
-                },
-              })
-            }
-          >
-            确认添加问题
-          </Button>,
-        ]}
-      >
-        <Typography.Paragraph>
-          创建问题记录，并保留当前时间点。
-        </Typography.Paragraph>
-        <div className={styles.reviewForm}>
-          <label>
-            问题类型
-            <select
-              value={issueType}
-              onChange={(event) =>
-                setIssueType(event.target.value as typeof issueType)
-              }
-            >
-              <option value="POSE_JITTER">姿态抖动</option>
-              <option value="TIMESTAMP_DRIFT">时间漂移</option>
-              <option value="MISSING_FRAME">缺帧</option>
-              <option value="STREAM_GAP">流中断</option>
-              <option value="CALIBRATION_MISMATCH">标定不匹配</option>
-              <option value="INVALID_MASK">无效掩码</option>
-              <option value="OTHER">其他</option>
-            </select>
-          </label>
-          <label>
-            严重级别
-            <select
-              value={issueSeverity}
-              onChange={(event) =>
-                setIssueSeverity(event.target.value as typeof issueSeverity)
-              }
-            >
-              <option value="LOW">低</option>
-              <option value="MEDIUM">中</option>
-              <option value="HIGH">高</option>
-              <option value="CRITICAL">严重</option>
-            </select>
-          </label>
-          <label>
-            说明
-            <textarea
-              required
-              maxLength={8192}
-              value={issueNote}
-              onChange={(event) => setIssueNote(event.target.value)}
-            />
-          </label>
-          {issueMutation.isError ? (
-            <p role="alert">
-              {issueMutation.error instanceof Error
-                ? issueMutation.error.message
-                : "问题添加失败"}
-            </p>
-          ) : null}
-          {issueBlockedReasons.length ? (
-            <Alert
-              type="warning"
-              showIcon
-              title="当前不可提交"
-              description={
-                <ul>
-                  {issueBlockedReasons.map((reason) => (
-                    <li key={reason}>{reason}</li>
-                  ))}
-                </ul>
-              }
-            />
-          ) : null}
-        </div>
-      </Modal>
     </main>
   );
 }

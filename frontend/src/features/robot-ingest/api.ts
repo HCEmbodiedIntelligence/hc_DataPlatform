@@ -67,6 +67,19 @@ export async function getRobotIdentity(
   return parse(robotIdentityEnvelopeSchema, raw, path);
 }
 
+export async function deleteRobotIdentity(input: {
+  readonly scope: IngestScope;
+  readonly identityId: string;
+}): Promise<void> {
+  await request<void>({
+    method: "DELETE",
+    path: identityPath(input.scope, input.identityId),
+    scope: input.scope,
+    scopeMode: "explicit",
+    cache: "no-store",
+  });
+}
+
 export async function listRobotCredentials(
   scope: IngestScope,
   identityId: string,
@@ -411,6 +424,40 @@ export function useRobotIdentityMutation(
           queryKey: identityQueryKey(input.scope, input.identityId),
         });
       }
+    },
+  });
+}
+
+export function useDeleteRobotIdentity() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: deleteRobotIdentity,
+    onSuccess: async (_result, input) => {
+      const organizationQueries = [...queryRoot, input.scope.organizationId];
+      await client.cancelQueries({ queryKey: organizationQueries });
+      client.setQueriesData<{ items: readonly RobotIdentity[] }>(
+        {
+          queryKey: organizationQueries,
+          predicate: (query) => query.queryKey[4] === "list",
+        },
+        (current) =>
+          current
+            ? {
+                ...current,
+                items: current.items.filter(
+                  (item) => item.ingest_identity_id !== input.identityId,
+                ),
+              }
+            : current,
+      );
+      client.removeQueries({
+        queryKey: organizationQueries,
+        predicate: (query) => query.queryKey[4] === input.identityId,
+      });
+      void client.invalidateQueries({
+        queryKey: organizationQueries,
+        predicate: (query) => query.queryKey[4] === "list",
+      });
     },
   });
 }

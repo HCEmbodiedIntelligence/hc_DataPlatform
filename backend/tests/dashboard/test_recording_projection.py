@@ -4,7 +4,11 @@ import pytest
 
 from hc_data_platform.collection_tasks.captures import capture_counts, capture_from_row
 from hc_data_platform.dashboard.models import TaskPackageMainState, TaskProcessingStage
-from hc_data_platform.dashboard.recording_projection import merge_recording_facts, recording_package
+from hc_data_platform.dashboard.recording_projection import (
+    RecordingEpisodeWorkflow,
+    merge_recording_facts,
+    recording_package,
+)
 from hc_data_platform.dashboard.repository import TaskStatusTaskFact
 from hc_data_platform.dashboard.service import _data_issues, _package_main_state, _stage_counts
 from hc_data_platform.quality.models import AutoQualityProblemV1
@@ -117,3 +121,106 @@ def test_discarded_episodes_leave_failure_counts_and_keep_siblings():
     assert all_removed.stage == "DISCARDED"
     assert all_removed.failed_episode_count == 0
     assert not _data_issues((recording_package(all_removed),))
+
+
+@pytest.mark.parametrize(
+    ("status", "review", "main", "annotation_bucket", "review_bucket"),
+    [
+        ("DRAFT", None, "ANNOTATING", "running", "waiting"),
+        ("SUBMITTED", None, "REVIEW_PENDING", "succeeded", "waiting"),
+        ("APPROVED", "APPROVE", "PUBLISH_PENDING", "succeeded", "succeeded"),
+        ("NEEDS_REVISION", "NEEDS_REVISION", "ANNOTATING", "running", "blocked"),
+        ("REJECTED", "REJECT", "ANNOTATING", "running", "blocked"),
+    ],
+)
+def test_recording_uses_bound_episode_annotation_status(
+    status, review, main, annotation_bucket, review_bucket
+):
+    item = capture(status="SLICED", episodes=[{"status": "READY", "quality": "PASS"}])
+    fact = recording_package(
+        item, episodes=(RecordingEpisodeWorkflow("annotation-a", status, review),)
+    )
+    assert fact.annotation_task_id == "annotation-a"
+    assert _package_main_state(fact).value == main
+    stages = {stage.stage: stage for stage in _stage_counts((fact,))}
+    assert getattr(stages[TaskProcessingStage.ANNOTATION], annotation_bucket) == 1
+    assert getattr(stages[TaskProcessingStage.REVIEW], review_bucket) == 1
+    assert stages[TaskProcessingStage.RAW_RECEIPT].succeeded == 1
+    assert stages[TaskProcessingStage.STANDARDIZATION].succeeded == 1
+
+
+@pytest.mark.parametrize(
+    ("unfinished", "main"),
+    [
+        (RecordingEpisodeWorkflow(), "STANDARDIZED_READY"),
+        (RecordingEpisodeWorkflow("draft", "DRAFT"), "ANNOTATING"),
+        (RecordingEpisodeWorkflow("submitted", "SUBMITTED"), "REVIEW_PENDING"),
+        (RecordingEpisodeWorkflow("returned", "NEEDS_REVISION", "NEEDS_REVISION"), "ANNOTATING"),
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_completed_sibling_cannot_hide_an_unfinished_recording_slice(unfinished, main, reverse):
+    item = capture(status="SLICED", episodes=[{"status": "READY", "quality": "PASS"}] * 2)
+    episodes = (RecordingEpisodeWorkflow("complete", "APPROVED", "APPROVE", True), unfinished)
+    fact = recording_package(item, episodes=episodes[::-1] if reverse else episodes)
+    assert fact.annotation_task_id == unfinished.annotation_task_id
+    assert _package_main_state(fact).value == main
+    assert not fact.published
+    stages = {stage.stage: stage for stage in _stage_counts((fact,))}
+    assert stages[TaskProcessingStage.REVIEW].succeeded == 0
+    assert stages[TaskProcessingStage.RAW_RECEIPT].succeeded == 1
+
+
+def test_recording_publication_requires_all_slices_and_keeps_one_package():
+    item = capture(status="SLICED", episodes=[{"status": "READY", "quality": "PASS"}] * 2)
+    episodes = (
+        RecordingEpisodeWorkflow("annotation-a", "APPROVED", "APPROVE", True),
+        RecordingEpisodeWorkflow("annotation-b", "APPROVED", "APPROVE", False),
+    )
+    fact = recording_package(item, episodes=episodes)
+    assert _package_main_state(fact) == TaskPackageMainState.PUBLISH_PENDING
+    complete = recording_package(item, episodes=(episodes[0], episodes[0]))
+    assert _package_main_state(complete) == TaskPackageMainState.PUBLISHED
+    stages = {stage.stage: stage for stage in _stage_counts((complete,))}
+    assert stages[TaskProcessingStage.ANNOTATION].succeeded == 1
+    assert stages[TaskProcessingStage.REVIEW].succeeded == 1
+    assert stages[TaskProcessingStage.PUBLICATION].succeeded == 1
+
+
+@pytest.mark.parametrize("selected_id", [None, "task-a", "task-b"])
+def test_recording_annotation_mapping_keeps_tasks_separate_even_in_a_shared_dataset(selected_id):
+    captures = tuple(
+        capture(status="SLICED", episodes=[{"status": "READY", "quality": "PASS"}]).model_copy(
+            update={
+                "collection_task_id": f"task-{suffix}",
+                "recording_id": f"rec-{suffix}",
+                "data_package_id": f"pkg-{suffix}",
+            }
+        )
+        for suffix in ("a", "b")
+    )
+    tasks = tuple(
+        TaskStatusTaskFact(
+            task_id=item.collection_task_id,
+            task_code=str(index),
+            name="same name",
+            lifecycle="ACTIVE",
+        )
+        for index, item in enumerate(captures)
+    )
+    workflows = {
+        "rec-a": (RecordingEpisodeWorkflow("annotation-a", "APPROVED", "APPROVE"),),
+        "rec-b": (RecordingEpisodeWorkflow("annotation-b", "DRAFT"),),
+    }
+    _, packages = merge_recording_facts(tasks, (), captures, {}, selected_id, workflows=workflows)
+    assert len(packages) == (2 if selected_id is None else 1)
+    for fact in packages:
+        suffix = fact.task_id[-1]
+        assert fact.annotation_task_id == f"annotation-{suffix}"
+        assert fact.annotation_status == ("APPROVED" if suffix == "a" else "DRAFT")
+        assert selected_id is None or fact.task_id == selected_id
+
+    _, refreshed = merge_recording_facts(
+        tasks, packages, captures, {}, selected_id, workflows=workflows
+    )
+    assert refreshed == packages

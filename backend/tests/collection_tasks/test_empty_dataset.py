@@ -10,6 +10,11 @@ from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
 from hc_data_platform.dataset_registry.service import DatasetPageService
+from tests.collection_tasks.test_collection_task_postgres import (
+    create_runtime_role,
+    drop_runtime_role,
+    restricted_connection_factory,
+)
 from tests.dashboard.test_dashboard_postgres import (
     actor,
     isolated_dsn,  # noqa: F401
@@ -18,11 +23,24 @@ from tests.dashboard.test_dashboard_postgres import (
 )
 
 
+@pytest.fixture
+def task_role(isolated_dsn):  # noqa: F811
+    name = f"empty_task_dataset_{uuid4().hex[:12]}"
+    create_runtime_role(isolated_dsn, name)
+    try:
+        yield name
+    finally:
+        drop_runtime_role(isolated_dsn, name)
+
+
 @pytest.mark.integration
-def test_task_dataset_opens_before_first_ingest_and_repair_preserves_metadata(isolated_dsn):  # noqa: F811
-    project, region = "project-a", "cn-east"
-    with request_scope(project, region):
-        connect = psycopg_connection_factory(isolated_dsn)
+@pytest.mark.parametrize("request_region", [None, "cn-east"])
+def test_task_dataset_opens_before_first_ingest_and_repair_preserves_metadata(
+    isolated_dsn, task_role, request_region  # noqa: F811
+):
+    project, region = "project-a", request_region or "global"
+    with request_scope(project, request_region):
+        connect = restricted_connection_factory(isolated_dsn, task_role)
         repo = PostgresCollectionTaskRepository(connect)
         service = CollectionTaskService(repo)
         task = service.create(
@@ -31,6 +49,20 @@ def test_task_dataset_opens_before_first_ingest_and_repair_preserves_metadata(is
             command=CreateCollectionTask(name="Empty Dataset", type="ROBOT", scenario="test"),
             idempotency_key=str(uuid4()),
         ).record
+        assert repo.create(task) == task
+        with connect() as connection:
+            cursor = connection.cursor()
+            before = connection.execute(
+                "SELECT current_setting('app.region_code', true)"
+            ).fetchone()[0]
+            assert not ensure_task_dataset(cursor, task, region_code=request_region)
+            after = connection.execute(
+                "SELECT current_setting('app.region_code', true)"
+            ).fetchone()[0]
+            assert after == before
+
+    with request_scope(project, region):
+        connect = psycopg_connection_factory(isolated_dsn)
         datasets = DatasetPageService(PostgresDatasetPageRepository(connect))
         args = dict(
             auth=actor(project, region, capabilities=("dataset.read",)),

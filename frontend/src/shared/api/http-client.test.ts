@@ -685,6 +685,80 @@ describe("scoped HTTP requests", () => {
 });
 
 describe("HTTP response handling", () => {
+  it("streams downloads into a sink without collecting a Blob", async () => {
+    const response = new Response(new Uint8Array([80, 75, 3, 4]));
+    const blob = vi.spyOn(response, "blob");
+    stubResponse(response);
+    const write = vi.fn();
+    const close = vi.fn();
+    await request<void>({
+      method: "POST",
+      path: "/projects/project-a/regions/region-a/lerobot-imports/archive",
+      scope: activeScope,
+      body: { import_ids: ["source-a", "source-b"] },
+      downloadTo: new WritableStream({ write, close }),
+    });
+    expect(write).toHaveBeenCalledWith(
+      new Uint8Array([80, 75, 3, 4]),
+      expect.anything(),
+    );
+    expect(close).toHaveBeenCalledOnce();
+    expect(blob).not.toHaveBeenCalled();
+  });
+
+  it("cancels a streamed download and aborts its sink when the session ends", async () => {
+    installExplicitGrants();
+    const cancel = vi.fn();
+    const abort = vi.fn();
+    const write = vi.fn();
+    stubResponse(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array([80, 75]));
+          },
+          cancel,
+        }),
+      ),
+    );
+    const pending = request<void>({
+      method: "POST",
+      path: "/projects/project-a/regions/region-a/lerobot-imports/archive",
+      scope: activeScope,
+      scopeMode: "explicit",
+      downloadTo: new WritableStream({ write, abort }),
+    });
+    const caught = rejectedDomainError(pending);
+    await vi.waitFor(() => expect(write).toHaveBeenCalled());
+    useShellStore.getState().setSession(null, null);
+    expect(await caught).toMatchObject({
+      code: "PRECONDITION_FAILED",
+      blockedReasons: [{ code: "SESSION_CHANGED" }],
+    });
+    expect(abort).toHaveBeenCalledOnce();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("parses archive errors without writing the problem response to the download", async () => {
+    stubResponse(
+      problemResponse(
+        { code: "RAW_SOURCE_NOT_FOUND", detail: "原始数据不存在" },
+        404,
+      ),
+    );
+    const write = vi.fn();
+    const error = await rejectedDomainError(
+      request({
+        method: "POST",
+        path: "/projects/project-a/regions/region-a/lerobot-imports/archive",
+        scope: activeScope,
+        downloadTo: new WritableStream({ write }),
+      }),
+    );
+    expect(error.problemCode).toBe("RAW_SOURCE_NOT_FOUND");
+    expect(write).not.toHaveBeenCalled();
+  });
+
   it("preserves downloaded JSON bytes without parsing and reserializing them", async () => {
     const bytes = ' { "value": 1 }\n';
     stubResponse(

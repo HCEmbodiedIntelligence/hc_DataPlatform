@@ -1,59 +1,70 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom/vitest';
-import { HttpResponse, http } from 'msw';
-import { setupServer } from 'msw/node';
-import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ProviderHarness } from '../../app/providers';
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
+import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+import { ProviderHarness } from "../../app/providers";
 import {
   configureRuntime,
   resetRuntimeConfigForTests,
-} from '../../shared/config/runtime';
-import { useShellStore } from '../../shared/scope/shell-store';
+} from "../../shared/config/runtime";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   datasetIds,
+  datasetBootstrapFixture,
   datasetListFixture,
   episodePageFixture,
-} from '../../mocks/fixtures/datasets/core';
-import { datasetHandlers } from '../../mocks/handlers/datasets.handlers';
-import { DatasetDetailPage } from '../p06-dataset-detail/page';
-import { DatasetsPage } from './page';
+} from "../../mocks/fixtures/datasets/core";
+import { datasetHandlers } from "../../mocks/handlers/datasets.handlers";
+import { DatasetDetailPage } from "../p06-dataset-detail/page";
+import { DatasetsPage } from "./page";
 
-const collectionTaskId = 'assembly';
+const collectionTaskId = "assembly";
 
 function packageItem(index: number) {
   return {
-    schema_version: '1',
+    schema_version: "1",
     data_package_id: `package-${index}`,
     rollout_id: `rollout-${index}`,
-    robot_id: 'robot-1',
-    state: 'PUBLISHED',
-    qc_outcome: 'PASS',
-    workflow_status: 'SUCCEEDED',
-    workflow_stage: 'completed',
+    robot_id: "robot-1",
+    state: "PUBLISHED",
+    qc_outcome: "PASS",
+    workflow_status: "SUCCEEDED",
+    workflow_stage: "completed",
     error_code: null,
     dataset_id: datasetListFixture.items[0].dataset_id,
     version_id: datasetListFixture.items[0].current_version?.version_id,
     episode_id: datasetIds.episode,
     revision_id: episodePageFixture.items[0].selected_revision.revision_id,
     visualizable: true,
-    received_at: '2026-08-24T00:00:00Z',
-    updated_at: '2026-08-24T00:01:00Z',
+    received_at: "2026-08-24T00:00:00Z",
+    updated_at: "2026-08-24T00:01:00Z",
   };
 }
 
 const collectionPackageHandler = http.get(
-  '*/projects/:projectId/collection-tasks/:collectionTaskId/packages',
+  "*/projects/:projectId/collection-tasks/:collectionTaskId/packages",
   ({ params }) =>
     HttpResponse.json({
-      schema_version: '1',
+      schema_version: "1",
       collection_task_id: String(params.collectionTaskId),
-      organization_id: 'org_fx_01',
-      project_id: 'prj_fx_01',
-      as_of: '2026-08-24T00:01:00Z',
-      items: params.collectionTaskId === 'task-without-data' ? [] : [packageItem(1)],
+      organization_id: "org_fx_01",
+      project_id: "prj_fx_01",
+      as_of: "2026-08-24T00:01:00Z",
+      items:
+        params.collectionTaskId === "task-without-data" ? [] : [packageItem(1)],
     }),
 );
 
@@ -62,9 +73,9 @@ const server = setupServer(...datasetHandlers, collectionPackageHandler);
 function createRouter(initialEntry: string) {
   return createMemoryRouter(
     [
-      { path: '/datasets', element: <DatasetsPage /> },
-      { path: '/datasets/:datasetId', element: <DatasetDetailPage /> },
-      { path: '/collection-tasks', element: <h1>采集任务</h1> },
+      { path: "/datasets", element: <DatasetsPage /> },
+      { path: "/datasets/:datasetId", element: <DatasetDetailPage /> },
+      { path: "/collection-tasks", element: <h1>采集任务</h1> },
     ],
     { initialEntries: [initialEntry] },
   );
@@ -72,28 +83,28 @@ function createRouter(initialEntry: string) {
 
 beforeAll(() => {
   configureRuntime({
-    apiBaseUrl: 'http://localhost/api/v1',
-    sseBaseUrl: 'http://localhost/api/v1/events',
-    buildVersion: 'collection-task-navigation-test',
-    releaseEnv: 'test',
+    apiBaseUrl: "http://localhost/api/v1",
+    sseBaseUrl: "http://localhost/api/v1/events",
+    buildVersion: "collection-task-navigation-test",
+    releaseEnv: "test",
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledRequest: "error" });
 });
 
 beforeEach(() => {
   const scope = {
-    organizationId: 'org_fx_01',
-    projectId: 'prj_fx_01',
-    regionCode: 'cn-shanghai',
+    organizationId: "org_fx_01",
+    projectId: "prj_fx_01",
+    regionCode: "cn-shanghai",
   } as const;
   useShellStore.getState().setScope(scope);
   useShellStore.getState().setAuthorization({
     scopeKey: useShellStore.getState().scopeKey,
-    roleVersion: 'collection-task-navigation-v1',
-    capabilities: ['dataset.read', 'episode.read'],
-    fetchedAt: '2026-08-24T00:00:00Z',
+    roleVersion: "collection-task-navigation-v1",
+    capabilities: ["dataset.read", "episode.read"],
+    fetchedAt: "2026-08-24T00:00:00Z",
   });
-  Object.defineProperty(window, 'matchMedia', {
+  Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn().mockImplementation((query: string) => ({
       matches: false,
@@ -107,16 +118,35 @@ beforeEach(() => {
     })),
   });
   const getComputedStyle = window.getComputedStyle.bind(window);
-  vi.spyOn(window, 'getComputedStyle').mockImplementation((element) =>
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
     getComputedStyle(element),
   );
   vi.stubGlobal(
-    'ResizeObserver',
+    "ResizeObserver",
     class {
       observe() {}
       unobserve() {}
       disconnect() {}
     },
+  );
+  server.use(
+    http.get("*/datasets/:datasetId/bootstrap", ({ params }) =>
+      HttpResponse.json({
+        ...datasetBootstrapFixture,
+        data: {
+          ...datasetBootstrapFixture.data,
+          dataset: {
+            ...datasetBootstrapFixture.data.dataset,
+            dataset_id: params.datasetId,
+            folder_path: [],
+          },
+          working_version_id:
+            params.datasetId === datasetIds.dataset
+              ? datasetIds.ready
+              : "version_fx_ready_02",
+        },
+      }),
+    ),
   );
 });
 
@@ -132,31 +162,84 @@ afterAll(() => {
   resetRuntimeConfigForTests();
 });
 
-describe('collection task dataset navigation', () => {
-  it('shows every linked dataset and keeps the task filter on every Episode request', async () => {
+describe("collection task dataset navigation", () => {
+  it("lists processed Episodes without a published dataset version", async () => {
+    const workingVersion = `version_cv_${"b".repeat(64)}`;
+    const episodeVersions: string[] = [];
+    server.use(
+      http.get("*/projects/:projectId/datasets", () =>
+        HttpResponse.json({
+          ...datasetListFixture,
+          items: [{ ...datasetListFixture.items[0], current_version: null }],
+        }),
+      ),
+      http.get("*/datasets/:datasetId/bootstrap", () =>
+        HttpResponse.json({
+          ...datasetBootstrapFixture,
+          data: {
+            ...datasetBootstrapFixture.data,
+            dataset: {
+              ...datasetBootstrapFixture.data.dataset,
+              folder_path: [],
+            },
+            current_ready_version: null,
+            working_version_id: workingVersion,
+            suggested_version_id: workingVersion,
+          },
+        }),
+      ),
+      http.get(
+        "*/datasets/:datasetId/versions/:versionId/episodes",
+        ({ params }) => {
+          episodeVersions.push(String(params.versionId));
+          return HttpResponse.json({
+            ...episodePageFixture,
+            items: episodePageFixture.items.map((item) => ({
+              ...item,
+              version_id: workingVersion,
+            })),
+          });
+        },
+      ),
+    );
+    const router = createRouter(
+      `/datasets?collectionTaskId=${collectionTaskId}`,
+    );
+    render(
+      <ProviderHarness>
+        <RouterProvider router={router} />
+      </ProviderHarness>,
+    );
+    expect(await screen.findByTitle(datasetIds.episode)).toBeVisible();
+    expect(episodeVersions).toEqual([workingVersion]);
+  });
+
+  it("shows every linked dataset and keeps the task filter on every Episode request", async () => {
     let listCollectionTask: string | null = null;
     const episodeTasks: string[] = [];
     let listRequests = 0;
     let episodeRequests = 0;
-    const secondDatasetId = 'dataset_fx_02';
-    const secondVersionId = 'version_fx_ready_02';
-    const secondEpisodeId = 'episode_fx_02';
+    const secondDatasetId = "dataset_fx_02";
+    const secondVersionId = "version_fx_ready_02";
+    const secondEpisodeId = "episode_fx_02";
     server.use(
       http.get(
-        '*/projects/:projectId/collection-tasks/:taskId/packages',
+        "*/projects/:projectId/collection-tasks/:taskId/packages",
         ({ params }) =>
           HttpResponse.json({
-            schema_version: '1',
+            schema_version: "1",
             collection_task_id: String(params.taskId),
-            organization_id: 'org_fx_01',
-            project_id: 'prj_fx_01',
-            as_of: '2026-08-24T00:01:00Z',
+            organization_id: "org_fx_01",
+            project_id: "prj_fx_01",
+            as_of: "2026-08-24T00:01:00Z",
             items: [packageItem(1), packageItem(2)],
           }),
       ),
-      http.get('*/projects/:projectId/datasets', ({ request }) => {
+      http.get("*/projects/:projectId/datasets", ({ request }) => {
         listRequests += 1;
-        listCollectionTask = new URL(request.url).searchParams.get('collection_task_id');
+        listCollectionTask = new URL(request.url).searchParams.get(
+          "collection_task_id",
+        );
         return HttpResponse.json({
           ...datasetListFixture,
           items: [
@@ -164,21 +247,23 @@ describe('collection task dataset navigation', () => {
             {
               ...datasetListFixture.items[0],
               dataset_id: secondDatasetId,
-              name: 'Second collection dataset',
+              name: "Second collection dataset",
               current_version: {
                 ...datasetListFixture.items[0].current_version,
                 version_id: secondVersionId,
-                display_version: 'v2',
+                display_version: "v2",
               },
             },
           ],
         });
       }),
       http.get(
-        '*/projects/:projectId/datasets/:datasetId/versions/:versionId/episodes',
+        "*/projects/:projectId/datasets/:datasetId/versions/:versionId/episodes",
         ({ request, params }) => {
           episodeRequests += 1;
-          episodeTasks.push(new URL(request.url).searchParams.get('task') ?? '');
+          episodeTasks.push(
+            new URL(request.url).searchParams.get("task") ?? "",
+          );
           const second = String(params.datasetId) === secondDatasetId;
           const episodeId = second ? secondEpisodeId : datasetIds.episode;
           return HttpResponse.json({
@@ -191,14 +276,18 @@ describe('collection task dataset navigation', () => {
               selected_revision: {
                 ...item.selected_revision,
                 episode_id: episodeId,
-                revision_id: second ? 'revision_fx_02' : item.selected_revision.revision_id,
+                revision_id: second
+                  ? "revision_fx_02"
+                  : item.selected_revision.revision_id,
               },
             })),
           });
         },
       ),
     );
-    const router = createRouter(`/datasets?collectionTaskId=${collectionTaskId}`);
+    const router = createRouter(
+      `/datasets?collectionTaskId=${collectionTaskId}`,
+    );
 
     render(
       <ProviderHarness>
@@ -206,23 +295,29 @@ describe('collection task dataset navigation', () => {
       </ProviderHarness>,
     );
 
-    expect(await screen.findByText(datasetIds.episode)).toBeVisible();
-    expect(await screen.findByText(secondEpisodeId)).toBeVisible();
-    expect(screen.getByText('Assembly dataset')).toBeVisible();
-    expect(screen.getByText('Second collection dataset')).toBeVisible();
-    expect(screen.getByText('任务接收 2 个数据包，其中 2 个已可视化')).toBeVisible();
+    expect(await screen.findByTitle(datasetIds.episode)).toBeVisible();
+    expect(await screen.findByTitle(secondEpisodeId)).toBeVisible();
+    expect(screen.getByText("Assembly dataset")).toBeVisible();
+    expect(screen.getByText("Second collection dataset")).toBeVisible();
+    expect(
+      screen.getByText("任务接收 2 个数据包，其中 2 个已可视化"),
+    ).toBeVisible();
     await waitFor(() => {
       expect(listCollectionTask).toBe(collectionTaskId);
       expect(listRequests).toBe(1);
       expect(episodeRequests).toBe(2);
       expect(episodeTasks).toEqual([collectionTaskId, collectionTaskId]);
     });
-    expect(router.state.location.pathname).toBe('/datasets');
-    expect(router.state.location.search).toBe(`?collectionTaskId=${collectionTaskId}`);
+    expect(router.state.location.pathname).toBe("/datasets");
+    expect(router.state.location.search).toBe(
+      `?collectionTaskId=${collectionTaskId}`,
+    );
   });
 
-  it('restores the same task-scoped aggregate view directly from the URL', async () => {
-    const router = createRouter(`/datasets?collectionTaskId=${collectionTaskId}`);
+  it("restores the same task-scoped aggregate view directly from the URL", async () => {
+    const router = createRouter(
+      `/datasets?collectionTaskId=${collectionTaskId}`,
+    );
 
     render(
       <ProviderHarness>
@@ -230,34 +325,44 @@ describe('collection task dataset navigation', () => {
       </ProviderHarness>,
     );
 
-    expect(await screen.findByText(datasetIds.episode)).toBeVisible();
-    expect(screen.getByText('任务接收 1 个数据包，其中 1 个已可视化')).toBeVisible();
-    expect(router.state.location.pathname).toBe('/datasets');
-    expect(router.state.location.search).toContain(`collectionTaskId=${collectionTaskId}`);
+    expect(await screen.findByTitle(datasetIds.episode)).toBeVisible();
+    expect(
+      screen.getByText("任务接收 1 个数据包，其中 1 个已可视化"),
+    ).toBeVisible();
+    expect(router.state.location.pathname).toBe("/datasets");
+    expect(router.state.location.search).toContain(
+      `collectionTaskId=${collectionTaskId}`,
+    );
   });
 
-  it('shows task-specific empty and invalid-parameter states without listing all datasets', async () => {
-    const emptyRouter = createRouter('/datasets?collectionTaskId=task-without-data');
+  it("shows task-specific empty and invalid-parameter states without listing all datasets", async () => {
+    const emptyRouter = createRouter(
+      "/datasets?collectionTaskId=task-without-data",
+    );
     const first = render(
       <ProviderHarness>
         <RouterProvider router={emptyRouter} />
       </ProviderHarness>,
     );
-    expect(await screen.findByText('该任务尚无已发布 Episode')).toBeVisible();
-    expect(screen.getByRole('heading', { name: '采集任务数据' })).toBeVisible();
+    expect(await screen.findByText("该任务尚无关联数据集")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "采集任务数据" })).toBeVisible();
     expect(screen.queryByText(/正在解析采集任务/)).not.toBeInTheDocument();
-    expect(screen.queryByText('已锁定采集任务范围')).not.toBeInTheDocument();
-    expect(screen.queryByText('task-without-data')).not.toBeInTheDocument();
-    expect(screen.queryByText(datasetListFixture.items[0].name)).not.toBeInTheDocument();
+    expect(screen.queryByText("已锁定采集任务范围")).not.toBeInTheDocument();
+    expect(screen.queryByText("task-without-data")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(datasetListFixture.items[0].name),
+    ).not.toBeInTheDocument();
     first.unmount();
 
-    const invalidRouter = createRouter('/datasets?collectionTaskId=%2Fbad');
+    const invalidRouter = createRouter("/datasets?collectionTaskId=%2Fbad");
     render(
       <ProviderHarness>
         <RouterProvider router={invalidRouter} />
       </ProviderHarness>,
     );
-    expect(await screen.findByText('采集任务参数无效')).toBeVisible();
-    expect(screen.queryByText(datasetListFixture.items[0].name)).not.toBeInTheDocument();
+    expect(await screen.findByText("采集任务参数无效")).toBeVisible();
+    expect(
+      screen.queryByText(datasetListFixture.items[0].name),
+    ).not.toBeInTheDocument();
   });
 });

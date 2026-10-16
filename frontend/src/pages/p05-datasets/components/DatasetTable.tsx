@@ -44,22 +44,25 @@ export function DatasetTable({
         size: 280,
         cell: ({ row }) => (
           <span className={styles.identity}>
-            <strong>{row.original.name}</strong>
-            <code>{row.original.datasetId}</code>
+            <strong title={row.original.datasetId}>{row.original.name}</strong>
           </span>
         ),
       },
       {
         id: "currentVersion",
-        header: "当前 Ready",
+        header: "发布状态",
         size: 165,
         cell: ({ row }) => {
           const current = row.original.currentVersion;
           if (!current) {
             return (
               <StatusTag
-                status="PENDING_INGEST"
-                label="待导入"
+                status="UNPUBLISHED"
+                label={
+                  row.original.episodeCount !== "0"
+                    ? "已处理 · 未发布"
+                    : "未发布"
+                }
                 tone="warning"
                 known
               />
@@ -116,9 +119,7 @@ export function DatasetTable({
             >
               打开
             </Button>
-            {row.original.currentVersion &&
-            canReadEpisodes &&
-            actionAllowed(row.original, "OPEN_EPISODE") ? (
+            {canReadEpisodes && actionAllowed(row.original, "OPEN_EPISODE") ? (
               <Button type="link" onClick={() => onOpenEpisodes(row.original)}>
                 Episodes
               </Button>

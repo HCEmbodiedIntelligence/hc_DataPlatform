@@ -27,6 +27,7 @@ export interface WorkflowQueueSearch {
 
 export interface WorkflowQueuePageProps<Key extends string> {
   readonly title: string;
+  readonly density?: "default" | "compact";
   readonly headerActions?: ReactNode;
   readonly stages: readonly WorkflowQueueStage<Key>[];
   readonly selectedStage: Key;
@@ -64,7 +65,9 @@ export function WorkflowQueuePage<Key extends string>({
   const hasSearch = props.search.value.trim().length > 0;
 
   return (
-    <main className={styles.page}>
+    <main
+      className={`${styles.page}${props.density === "compact" ? ` ${styles.compact}` : ""}`}
+    >
       <header className={styles.pageHeader}>
         <h1>{props.title}</h1>
         {props.headerActions ? (
@@ -90,6 +93,7 @@ export function WorkflowQueuePage<Key extends string>({
               aria-label={`${stage.label}，${stage.description}，${stage.count} 项${selected ? "，当前队列" : ""}`}
               className={styles.stageCard}
               key={stage.key}
+              title={stage.description}
               to={stage.href}
             >
               <span className={styles.stageIcon}>
@@ -122,7 +126,12 @@ export function WorkflowQueuePage<Key extends string>({
         <header className={styles.queueHeader}>
           <div>
             <p>当前队列</p>
-            <h2 id={`${props.search.id}-queue-title`}>{currentStage.label}</h2>
+            <h2
+              id={`${props.search.id}-queue-title`}
+              title={currentStage.queueDescription}
+            >
+              {currentStage.label}
+            </h2>
             <span>{currentStage.queueDescription}</span>
           </div>
           <output aria-live="polite">
@@ -141,6 +150,7 @@ export function WorkflowQueuePage<Key extends string>({
                 id={props.search.id}
                 name={props.search.name}
                 placeholder={props.search.placeholder}
+                title={props.search.label}
                 type="search"
                 value={props.search.value}
                 onChange={(event) => props.search.onChange(event.target.value)}

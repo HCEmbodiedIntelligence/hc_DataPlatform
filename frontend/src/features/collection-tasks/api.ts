@@ -43,6 +43,16 @@ export interface AssignableDataset {
 }
 
 export interface CollectionTaskGateway {
+  delete: (
+    scope: CollectionTaskScope,
+    collectionTaskId: string,
+    etag: string,
+    idempotencyKey: string,
+  ) => Promise<{
+    status: string;
+    deleted_objects: number;
+    deleted_bytes: number;
+  }>;
   listAssignableDatasets?: (
     scope: CollectionTaskScope,
     signal?: AbortSignal,
@@ -156,6 +166,15 @@ async function getCollectionTaskSnapshot(
 }
 
 export const collectionTaskGateway: CollectionTaskGateway = {
+  async delete(scope, collectionTaskId, etag, idempotencyKey) {
+    return request({
+      method: "DELETE",
+      path: `${collectionTaskRoot(scope)}/${encodeURIComponent(collectionTaskId)}`,
+      scope,
+      ifMatch: etag,
+      idempotencyKey,
+    });
+  },
   async listAssignableDatasets(scope, signal) {
     const datasets: AssignableDataset[] = [];
     let after: string | undefined;

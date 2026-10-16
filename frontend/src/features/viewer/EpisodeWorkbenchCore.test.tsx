@@ -95,6 +95,42 @@ it("formats all viewer time readouts as seconds with two decimals", () => {
 });
 
 describe("ClipTimeline", () => {
+  it("scrubs a read-only timeline without creating an annotation or exposing edit controls", () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
+    const { container } = render(
+      <SharedSignalTimeline clock={clock} tracks={tracks} />,
+    );
+    const slider = screen.getByRole("slider", { name: "播放位置" });
+    vi.spyOn(slider, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 76,
+      width: 100,
+      height: 76,
+      toJSON: () => ({}),
+    });
+    fireEvent.pointerDown(slider, { pointerId: 7, button: 0, clientX: 20 });
+    expect(clock.currentNs()).toBe("2000000000");
+    fireEvent.pointerMove(slider, { pointerId: 7, clientX: 60 });
+    expect(clock.currentNs()).toBe("6000000000");
+    fireEvent.pointerUp(slider, { pointerId: 7, clientX: 70 });
+    expect(clock.currentNs()).toBe("7000000000");
+    expect(container.querySelector(".viewer-timeline__selection")).toBeNull();
+    expect(screen.queryByText("当前标注")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "设为入点" }),
+    ).not.toBeInTheDocument();
+    const tag = screen.getByRole("button", { name: /从“抓取零件”/ });
+    expect(tag).not.toHaveAttribute("data-editable");
+    fireEvent.click(tag);
+    expect(clock.currentNs()).toBe("2000000000");
+    expect(clock.isPlaying()).toBe(true);
+    clock.dispose();
+  });
+
   it("distinguishes a new drag from resizing an existing selection", () => {
     const onRangeCreate = vi.fn();
     const { clock, onRangeSelect } = renderTimeline(onRangeCreate);

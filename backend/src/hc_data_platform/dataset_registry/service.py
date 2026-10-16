@@ -19,6 +19,12 @@ from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.security.versioning import ResourceVersion
 
 from .capacity import DatasetCapacityReader
+from .display_labels import (
+    READ_CAPABILITIES,
+    DisplayLabelReader,
+    DisplayLabelRequest,
+    DisplayLabelResponse,
+)
 from .models import (
     CreateDatasetCommand,
     DatasetPageActor,
@@ -159,12 +165,42 @@ class DatasetPageService:
         idempotency: IdempotencyStore | None = None,
         clock: Clock = lambda: datetime.now(timezone.utc),
         capacity_reader: DatasetCapacityReader | None = None,
+        display_label_reader: DisplayLabelReader | None = None,
     ) -> None:
         self._repository = repository
         self._cursor = CursorCodec(cursor_secret)
         self._idempotency = idempotency or InMemoryIdempotencyStore()
         self._clock = clock
         self._capacity_reader = capacity_reader
+        self._display_label_reader = display_label_reader
+
+    def display_labels(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        command: DisplayLabelRequest,
+    ) -> DisplayLabelResponse:
+        from hc_data_platform.core.context import select_request_scope
+
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        scope = self._scope(organization_id, project_id, region_code)
+        select_request_scope(project_id, region_code, organization_id=organization_id)
+        references = tuple(
+            ref
+            for ref in command.references
+            if auth.has_capability(READ_CAPABILITIES[ref.kind], project_id, organization_id)
+        )
+        # Missing and forbidden references are both omitted. This is a display-only lookup.
+        return DisplayLabelResponse(
+            items=(
+                self._display_label_reader(scope, references)
+                if references and self._display_label_reader
+                else ()
+            )
+        )
 
     @classmethod
     def in_memory(cls) -> DatasetPageService:
@@ -3028,20 +3064,9 @@ class DatasetPageService:
     def _actions(
         record: DatasetPageRecord, auth: AuthContext
     ) -> tuple[DatasetPageAllowedAction, ...]:
-        can_open_episode = record.current_ready_version is not None and _can_episode_read(
-            auth, record.scope.project_id
-        )
+        can_open_episode = _can_episode_read(auth, record.scope.project_id)
         reasons: tuple[DatasetPageBlockedReason, ...] = ()
-        if record.current_ready_version is None:
-            reasons = (
-                DatasetPageBlockedReason(
-                    code="READY_VERSION_REQUIRED",
-                    message=(
-                        "A ready dataset version is required before opening collection entries."
-                    ),
-                ),
-            )
-        elif not can_open_episode:
+        if not can_open_episode:
             reasons = (
                 DatasetPageBlockedReason(
                     code="EPISODE_READ_CAPABILITY_REQUIRED",

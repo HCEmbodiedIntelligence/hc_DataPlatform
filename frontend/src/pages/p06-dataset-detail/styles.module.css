@@ -529,3 +529,14 @@
 .viewerInspector :global(.ant-typography) {
   margin-bottom: 0;
 }
+
+.page :global(h2.ant-typography) {
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+.page :global(h3.ant-typography) {
+  font-size: 0.9375rem;
+}
+.page :global([data-layout="detail-page"]) {
+  gap: 12px;
+}

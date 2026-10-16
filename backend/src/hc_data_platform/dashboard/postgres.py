@@ -1003,7 +1003,11 @@ class PostgresDashboardRepository:
         )
         from hc_data_platform.collection_tasks.captures import read_captures
 
-        from .recording_projection import merge_recording_facts, read_recording_findings
+        from .recording_projection import (
+            merge_recording_facts,
+            read_recording_findings,
+            read_recording_workflows,
+        )
 
         connection = self._connection_factory()
         try:
@@ -1014,11 +1018,16 @@ class PostgresDashboardRepository:
                 findings = read_recording_findings(
                     cursor, organization, scope.project_id, scope.region_code
                 )
+                workflows = read_recording_workflows(
+                    cursor, organization, scope.project_id, scope.region_code
+                )
             finally:
                 cursor.close()
         finally:
             connection.close()
-        tasks, packages = merge_recording_facts(tasks, packages, captures, findings, selected_id)
+        tasks, packages = merge_recording_facts(
+            tasks, packages, captures, findings, selected_id, workflows=workflows
+        )
         unavailable = (
             ("workflow_execution_state",)
             if any(not item.technical_state_available for item in packages)

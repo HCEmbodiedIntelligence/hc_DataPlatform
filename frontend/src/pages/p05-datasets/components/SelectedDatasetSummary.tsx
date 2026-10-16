@@ -1,4 +1,4 @@
-import { Button } from 'antd';
+import { Button } from "antd";
 import {
   Archive,
   ArrowRight,
@@ -8,24 +8,26 @@ import {
   GitBranch,
   ListChecks,
   NotebookTabs,
-} from 'lucide-react';
-import type { ReactNode } from 'react';
-import type { DatasetId } from '../../../entities/dataset';
-import type { DatasetListItemVm } from '../../../features/datasets/api';
-import { StatusTag } from '../../../shared/ui';
-import styles from '../styles.module.css';
+} from "lucide-react";
+import type { ReactNode } from "react";
+import type { DatasetId } from "../../../entities/dataset";
+import type { DatasetListItemVm } from "../../../features/datasets/api";
+import { StatusTag } from "../../../shared/ui";
+import styles from "../styles.module.css";
 
 function actionAllowed(item: DatasetListItemVm, action: string): boolean {
-  return item.allowedActions.some((candidate) => candidate.action === action && candidate.allowed);
+  return item.allowedActions.some(
+    (candidate) => candidate.action === action && candidate.allowed,
+  );
 }
 
 function formatDateTime(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
     hour12: false,
   }).format(new Date(value));
 }
@@ -35,13 +37,13 @@ function CountFact({
   value,
   detail,
   icon,
-  tone = 'default',
+  tone = "default",
 }: Readonly<{
   label: string;
   value: string;
   detail: string;
   icon: ReactNode;
-  tone?: 'default' | 'warning' | 'success';
+  tone?: "default" | "warning" | "success";
 }>) {
   return (
     <article className={styles.selectedFact} data-tone={tone}>
@@ -73,9 +75,9 @@ export function SelectedDatasetSummary({
   onOpenEpisodes: (item: DatasetListItemVm) => void;
 }>) {
   const current = item.currentVersion;
-  const canOpen = actionAllowed(item, 'OPEN_DATASET');
+  const canOpen = actionAllowed(item, "OPEN_DATASET");
   const canOpenEpisodes =
-    current !== null && canReadEpisodes && actionAllowed(item, 'OPEN_EPISODE');
+    canReadEpisodes && actionAllowed(item, "OPEN_EPISODE");
 
   return (
     <section className={styles.selectedSummary} aria-label="当前选中数据集">
@@ -87,14 +89,19 @@ export function SelectedDatasetSummary({
           <span className={styles.selectedEyebrow}>
             当前选中 · {position} / {total}
           </span>
-          <h2>{item.name}</h2>
-          <code>ID · {item.datasetId}</code>
+          <h2 title={item.datasetId}>{item.name}</h2>
         </div>
         <StatusTag
-          status={current?.kind ?? 'PENDING_INGEST'}
-          label={current ? `当前 Ready · ${current.displayVersion}` : '待导入'}
-          tone={current ? 'success' : 'warning'}
-          known={current?.kind !== 'UNKNOWN'}
+          status={current?.kind ?? "UNPUBLISHED"}
+          label={
+            current
+              ? `已发布 · ${current.displayVersion}`
+              : item.episodeCount !== "0"
+                ? "已处理 · 未发布"
+                : "未发布"
+          }
+          tone={current ? "success" : "warning"}
+          known={current?.kind !== "UNKNOWN"}
         />
         <div className={styles.selectedActions}>
           <Button disabled={!canOpen} onClick={() => onOpen(item.datasetId)}>
@@ -117,9 +124,19 @@ export function SelectedDatasetSummary({
             <GitBranch size={20} />
           </span>
           <div>
-            <span>当前 Ready 版本</span>
-            <strong>{current ? `${current.displayVersion} · ${current.kind}` : '尚无版本'}</strong>
-            <code>{current?.versionId ?? '等待首次导入'}</code>
+            <span>当前已发布版本</span>
+            <strong>
+              {current
+                ? `${current.displayVersion} · ${current.kind}`
+                : "尚未发布"}
+            </strong>
+            <code>
+              {current
+                ? "查看已发布版本"
+                : item.episodeCount !== "0"
+                  ? "可直接浏览已处理的 Episodes"
+                  : "等待数据处理"}
+            </code>
           </div>
         </article>
         <CountFact
@@ -155,16 +172,23 @@ export function SelectedDatasetSummary({
       <footer className={styles.selectedTimeline}>
         <Clock3 aria-hidden="true" size={15} />
         <span>
-          创建 <time dateTime={item.datasetCreatedAt}>{formatDateTime(item.datasetCreatedAt)}</time>
+          创建{" "}
+          <time dateTime={item.datasetCreatedAt}>
+            {formatDateTime(item.datasetCreatedAt)}
+          </time>
         </span>
         <span>
-          最近活动{' '}
-          <time dateTime={item.datasetActivityAt}>{formatDateTime(item.datasetActivityAt)}</time>
+          最近活动{" "}
+          <time dateTime={item.datasetActivityAt}>
+            {formatDateTime(item.datasetActivityAt)}
+          </time>
         </span>
         {current ? (
           <span>
-            Ready 发布{' '}
-            <time dateTime={current.publishedAt}>{formatDateTime(current.publishedAt)}</time>
+            Ready 发布{" "}
+            <time dateTime={current.publishedAt}>
+              {formatDateTime(current.publishedAt)}
+            </time>
           </span>
         ) : null}
       </footer>

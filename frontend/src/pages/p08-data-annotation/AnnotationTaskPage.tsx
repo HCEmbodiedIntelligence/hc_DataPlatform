@@ -48,6 +48,7 @@ import { annotationRoutes } from "../../features/annotation/routing";
 import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/joint-angle-stream";
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import styles from "./workbench.module.css";
+import { defaultAnnotationNavigatorPreferences } from "./AnnotationNavigator";
 
 function taskQueryKey(
   scope: RuntimeAnnotationScope,
@@ -312,6 +313,9 @@ function RuntimeAnnotationTaskPage({
   });
   const [tags, setTags] = useState<readonly RuntimeAnnotationTag[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [navigatorPreferences, setNavigatorPreferences] = useState(
+    defaultAnnotationNavigatorPreferences,
+  );
   const [recoveryTags, setRecoveryTags] = useState<
     readonly RuntimeAnnotationTag[] | null
   >(null);
@@ -531,20 +535,18 @@ function RuntimeAnnotationTaskPage({
       throw new Error("任务已领取，但标注草稿尚未就绪，请重试刷新。");
   };
   const selectTask = (selectedTaskId: string) => {
+    if (selectedTaskId === bundle.task.task_id) return;
     const target =
       mode === "tag-review"
         ? annotationRoutes.tagReviewTask.build({ taskId: selectedTaskId })
         : annotationRoutes.task.build(
             { taskId: selectedTaskId },
-            { returnTo: `${location.pathname}${location.search}` },
+            {
+              returnTo:
+                new URLSearchParams(location.search).get("returnTo") ??
+                annotationRoutes.annotate.pattern,
+            },
           );
-    if (
-      dirty &&
-      !window.confirm(
-        "有尚未保存的 Tag 修改，确认切换任务并保留本会话恢复稿吗？",
-      )
-    )
-      return;
     void navigate(target);
   };
   const switchMode = (nextMode: AnnotationWorkbenchMode) => {
@@ -570,6 +572,9 @@ function RuntimeAnnotationTaskPage({
     <AnnotationWorkbenchView
       key={bundle.task.task_id}
       bundle={bundle}
+      principalId={principal?.actorId}
+      navigatorPreferences={navigatorPreferences}
+      onNavigatorChange={setNavigatorPreferences}
       revisionFilesPanel={
         <>
           <AnnotationRevisionFilesPanel

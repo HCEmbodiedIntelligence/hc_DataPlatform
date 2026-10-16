@@ -19,7 +19,7 @@ const COLLECTION_TASK_ID = /^[A-Za-z0-9._-]{1,128}$/;
 const DATASET_DETAIL_PATH = /^\/datasets\/dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
 const VERSION_DETAIL_PATH =
   /^\/datasets\/dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}\/versions\/version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$/;
-const TABS = ['overview', 'episodes', 'versions', 'schema', 'sources', 'capacity'] as const;
+const TABS = ['overview', 'episodes', 'versions', 'sources', 'capacity'] as const;
 const LIMITS = ['10', '20', '50'] as const;
 
 export type DatasetDetailSearch = Readonly<{
@@ -122,7 +122,7 @@ function parseDetail(input: string | URLSearchParams): DatasetDetailSearch {
 
 function buildDetail(input: DatasetDetailChanges): URLSearchParams {
   const params = new URLSearchParams();
-  const tab = input.tab ?? 'overview';
+  const tab = input.tab === 'schema' ? 'overview' : (input.tab ?? 'overview');
   if (tab !== 'overview') params.set('tab', tab);
   if (input.versionId) params.set('versionId', input.versionId);
   const collectionTaskId = cleanId(input.collectionTaskId, COLLECTION_TASK_ID);

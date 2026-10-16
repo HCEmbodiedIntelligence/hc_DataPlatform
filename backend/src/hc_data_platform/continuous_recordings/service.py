@@ -575,7 +575,7 @@ class ContinuousRecordingService:
             capabilities=("upload.read",),
         )
         items = self._repository.list(scope)
-        return ContinuousRecordingPage(items=items, total=len(items))
+        return ContinuousRecordingPage(items=self._repository.present(items), total=len(items))
 
     def get(
         self,
@@ -647,7 +647,9 @@ class ContinuousRecordingService:
             actor_id=actor_id,
             request_id=request_id,
         )
-        return SliceRevisionEnvelope(recording=persisted, revision=revision)
+        return SliceRevisionEnvelope(
+            recording=self._repository.present((persisted,))[0], revision=revision
+        )
 
     def propose_model_slices(
         self,
@@ -702,7 +704,9 @@ class ContinuousRecordingService:
             actor_id=actor_id,
             request_id=request_id,
         )
-        return SliceRevisionEnvelope(recording=persisted, revision=revision)
+        return SliceRevisionEnvelope(
+            recording=self._repository.present((persisted,))[0], revision=revision
+        )
 
     def finalize(
         self,
@@ -731,7 +735,9 @@ class ContinuousRecordingService:
             )
             if finalized is None:
                 raise RuntimeError("finalized recording revision is missing")
-            return SliceRevisionEnvelope(recording=recording, revision=finalized)
+            return SliceRevisionEnvelope(
+                recording=self._repository.present((recording,))[0], revision=finalized
+            )
         self._require_etag(recording, if_match)
         if expected_draft_revision != recording.current_revision:
             raise problem(
@@ -787,7 +793,9 @@ class ContinuousRecordingService:
             actor_id=actor_id,
             request_id=request_id,
         )
-        return SliceRevisionEnvelope(recording=persisted, revision=revision)
+        return SliceRevisionEnvelope(
+            recording=self._repository.present((persisted,))[0], revision=revision
+        )
 
     def list_episode_processing(
         self,
@@ -1243,7 +1251,7 @@ class ContinuousRecordingService:
             )
         )
         return ContinuousRecordingEnvelope(
-            data=recording,
+            data=self._repository.present((recording,))[0],
             current_slice_revision=revision,
         )
 

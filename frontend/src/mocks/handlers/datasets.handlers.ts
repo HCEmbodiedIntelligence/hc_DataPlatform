@@ -285,6 +285,30 @@ async function validateReturnBody(request: Request): Promise<Response | null> {
 }
 
 export const datasetHandlers = [
+  http.post(
+    /.*\/projects\/[^/]+\/datasets:display-labels$/u,
+    async ({ request }) => {
+      const body = (await request.json()) as {
+        references: { kind: string; id: string; dataset_id?: string }[];
+      };
+      return HttpResponse.json({
+        items: body.references.flatMap((ref) => {
+          const dataset = datasetListFixture.items.find(
+            (item) => item.dataset_id === ref.id,
+          );
+          if (ref.kind !== "dataset" || !dataset) return [];
+          return [
+            {
+              ...ref,
+              dataset_id: null,
+              label: dataset.name,
+              description_label: "数据集说明",
+            },
+          ];
+        }),
+      });
+    },
+  ),
   http.get("*/datasets/export-formats", ({ request }) => {
     if (
       new URL(request.url).searchParams.get("project_id") !==

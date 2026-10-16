@@ -58,11 +58,11 @@ def ensure_organization_project(dsn: str, project_id: str) -> str:
     with psycopg.connect(dsn) as connection:
         connection.execute(
             """
-            INSERT INTO registry.organization_projects (organization_id, project_id)
-            VALUES (%s, %s)
+            INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+            VALUES (%s, %s, %s)
             ON CONFLICT DO NOTHING
             """,
-            (organization_id, project_id),
+            (organization_id, project_id, project_id),
         )
     return organization_id
 
@@ -93,11 +93,11 @@ def set_scope(connection: Any, project_id: str, region_code: str = "cn-test") ->
     organization_id = organization_for(project_id)
     connection.execute(
         """
-        INSERT INTO registry.organization_projects (organization_id, project_id)
-        VALUES (%s, %s)
+        INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+        VALUES (%s, %s, %s)
         ON CONFLICT DO NOTHING
         """,
-        (organization_id, project_id),
+        (organization_id, project_id, project_id),
     )
     connection.execute(
         """
@@ -128,7 +128,7 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
         connection.execute(
             sql.SQL(
                 "GRANT USAGE ON SCHEMA access_control, core, collection_tasks, ingest, "
-                "registry, public TO {}"
+                "registry, dataset_registry, public TO {}"
             ).format(sql.Identifier(role_name))
         )
         for relation, privileges in (
@@ -136,11 +136,20 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
             ("core.audit_events", "INSERT"),
             ("access_control.account_notifications", "SELECT, INSERT"),
             ("collection_tasks.collection_tasks", "SELECT, INSERT, UPDATE"),
+            ("dataset_registry.datasets", "SELECT, INSERT"),
             ("registry.organization_projects", "SELECT"),
             ("ingest.collection_jobs", "SELECT"),
             ("ingest.rollouts", "SELECT"),
             ("ingest.rollout_objects", "SELECT"),
             ("ingest.manifest_discoveries", "SELECT"),
+            ("ingest.robot_ingest_uploads", "SELECT"),
+            ("ingest.continuous_recordings", "SELECT"),
+            ("ingest.raw_ingest_jobs", "SELECT"),
+            ("ingest.mcap_processing_files", "SELECT"),
+            ("ingest.raw_source_episodes", "SELECT"),
+            ("ingest.recording_episode_slices", "SELECT"),
+            ("ingest.recording_episode_processing", "SELECT"),
+            ("core.outbox_events", "SELECT"),
             ("quality_rollout_summaries", "SELECT"),
         ):
             connection.execute(
@@ -405,6 +414,9 @@ def cleanup(dsn: str, project_id: str) -> None:
         connection.execute("DELETE FROM ingest.rollouts WHERE project_id = %s", (project_id,))
         connection.execute(
             "DELETE FROM ingest.collection_jobs WHERE project_id = %s", (project_id,)
+        )
+        connection.execute(
+            "DELETE FROM dataset_registry.datasets WHERE project_id = %s", (project_id,)
         )
         connection.execute(
             "DELETE FROM collection_tasks.collection_tasks WHERE project_id = %s", (project_id,)

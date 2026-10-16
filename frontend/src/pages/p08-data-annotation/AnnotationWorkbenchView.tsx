@@ -1,3 +1,7 @@
+import {
+  ResourceLabel,
+  useResourceNames,
+} from "../../shared/lib/resource-labels";
 import { annotationDataLabel } from "../../features/annotation/runtime/annotation-package";
 import {
   useCallback,
@@ -14,7 +18,7 @@ import type {
   ReactNode,
   RefObject,
 } from "react";
-import { Alert, Form, Input, Modal, Select, Tooltip } from "antd";
+import { Alert, Button, Form, Input, Modal, Select, Tooltip } from "antd";
 import {
   AlertTriangle,
   Check,
@@ -87,6 +91,11 @@ import {
 } from "./tag-editing";
 import type { TagReviewCheckResult } from "./tag-validation";
 import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/joint-angle-stream";
+import {
+  AnnotationNavigator,
+  defaultAnnotationNavigatorPreferences,
+  type AnnotationNavigatorPreferences,
+} from "./AnnotationNavigator";
 import "./p08.css";
 import styles from "./workbench.module.css";
 
@@ -109,6 +118,9 @@ export interface AnnotationWorkbenchViewProps {
   readonly bundle: RuntimeAnnotationBundle;
   readonly scope: RuntimeAnnotationScope;
   readonly mode: AnnotationWorkbenchMode;
+  readonly principalId?: string;
+  readonly navigatorPreferences?: AnnotationNavigatorPreferences;
+  readonly onNavigatorChange?: (next: AnnotationNavigatorPreferences) => void;
   readonly tags: readonly RuntimeAnnotationTag[];
   readonly dirty: boolean;
   readonly permissions: AnnotationWorkbenchPermissions;
@@ -968,14 +980,22 @@ function DataViewInspector(props: {
           <h3>当前数据身份</h3>
           <dl className={styles.propertyTable}>
             <div>
-              <dt>Rollout</dt>
-              <dd>{props.bundle.task.rollout_id}</dd>
+              <dt>标注数据</dt>
+              <dd>
+                <ResourceLabel
+                  kind="annotation_task"
+                  id={props.bundle.task.task_id}
+                />
+              </dd>
             </div>
             <div>
               <dt>Dataset</dt>
               <dd>
-                {props.bundle.task.dataset_id} v
-                {props.bundle.task.dataset_version}
+                <ResourceLabel
+                  kind="dataset"
+                  id={props.bundle.task.dataset_id}
+                />{" "}
+                v{props.bundle.task.dataset_version}
               </dd>
             </div>
             <div>
@@ -1791,6 +1811,12 @@ function errorMessage(
 export function AnnotationWorkbenchView(
   props: AnnotationWorkbenchViewProps,
 ): JSX.Element {
+  const [localNavigatorPreferences, setLocalNavigatorPreferences] = useState(
+    defaultAnnotationNavigatorPreferences,
+  );
+  const navigatorPreferences =
+    props.navigatorPreferences ?? localNavigatorPreferences;
+  const [taskSwitchTarget, setTaskSwitchTarget] = useState<string | null>(null);
   const [selection, setSelection] = useState<StepSelection | null>(null);
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [deletedTag, setDeletedTag] = useState<{
@@ -2038,10 +2064,29 @@ export function AnnotationWorkbenchView(
       ...(cameraView === "__quad__" ? { cameraSlotCount: 4 } : {}),
     });
   }, [cameraView, props.bundle, props.scope, workspaceMode]);
+  const displayNames = useResourceNames(
+    props.bundle.tasks.flatMap((task) => [
+      { kind: "annotation_task" as const, id: task.task_id },
+      { kind: "dataset" as const, id: task.dataset_id },
+    ]),
+    props.scope,
+  );
+  const requestTask = useCallback(
+    (taskId: string) => {
+      if (taskId === props.bundle.task.task_id || pending !== null) return;
+      if (props.dirty) {
+        setTaskSwitchTarget(taskId);
+        return;
+      }
+      props.onSelectTask?.(taskId);
+    },
+    [props.bundle.task.task_id, props.dirty, props.onSelectTask, pending],
+  );
   const adapter = useMemo(() => {
     const adapterMode: AnnotationWorkbenchMode =
       workspaceMode === "tag-review" ? "tag-review" : "annotation";
     const runtimeAdapter = buildRuntimeWorkbenchAdapter({
+      names: displayNames.data,
       bundle: props.bundle,
       scope: props.scope,
       mode: adapterMode,
@@ -2054,7 +2099,7 @@ export function AnnotationWorkbenchView(
       ...(cameraView === "__quad__" ? { cameraSlotCount: 4 } : {}),
       readOnly: workspaceMode !== "annotation" || !permissions.canEdit,
       ...(props.onSelectTask && pending === null
-        ? { onSelectTask: props.onSelectTask }
+        ? { onSelectTask: requestTask }
         : {}),
       ...(timelineSelection ? { timelineSelection } : {}),
       ...(!permissions.canEdit || workspaceMode !== "annotation"
@@ -2093,6 +2138,7 @@ export function AnnotationWorkbenchView(
       cameraStreams,
     };
   }, [
+    displayNames.data,
     cameraStreams,
     clock,
     onResourceError,
@@ -2102,6 +2148,7 @@ export function AnnotationWorkbenchView(
     pending,
     props.bundle,
     props.onSelectTask,
+    requestTask,
     props.scope,
     props.tags,
     cameraView,
@@ -2430,7 +2477,7 @@ export function AnnotationWorkbenchView(
     </CameraViewToolbar>
   );
 
-  return (
+  const content = (
     <div className={styles.page} data-p08-mode={props.mode}>
       {props.recoveryAvailable ? (
         <section className={styles.recoveryBanner} role="status">
@@ -2674,6 +2721,63 @@ export function AnnotationWorkbenchView(
       >
         {revisionFilesOpen ? props.revisionFilesPanel : null}
       </EntityDrawer>
+      <Modal
+        title="当前数据有未保存的标注"
+        open={taskSwitchTarget !== null}
+        closable={pending !== "save"}
+        keyboard={pending !== "save"}
+        mask={{ closable: false }}
+        onCancel={() => {
+          if (pending !== "save") setTaskSwitchTarget(null);
+        }}
+        footer={
+          <>
+            <Button
+              danger
+              disabled={pending !== null || !props.onDiscardChanges}
+              onClick={() => {
+                if (!taskSwitchTarget) return;
+                props.onDiscardChanges?.();
+                props.onSelectTask?.(taskSwitchTarget);
+                setTaskSwitchTarget(null);
+              }}
+            >
+              放弃修改并切换
+            </Button>
+            <Button
+              disabled={pending !== null}
+              onClick={() => setTaskSwitchTarget(null)}
+            >
+              继续标注
+            </Button>
+            <Button
+              type="primary"
+              loading={pending === "save"}
+              disabled={pending !== null || !permissions.canSave}
+              onClick={() => {
+                const target = taskSwitchTarget;
+                if (!target || !permissions.canSave) return;
+                void (async () => {
+                  if (await invoke("save", props.onSave)) {
+                    setTaskSwitchTarget(null);
+                    props.onSelectTask?.(target);
+                  }
+                })();
+              }}
+            >
+              保存后切换
+            </Button>
+          </>
+        }
+      >
+        <p>
+          切换到下一条前，请保存当前 Tag
+          修改或选择放弃。继续标注会保留当前内容。
+        </p>
+        {visibleError && (
+          <Alert type="error" showIcon title={visibleError.message} />
+        )}
+      </Modal>
       <EntityDrawer
         open={dataInfoOpen}
         returnFocusRef={dataInfoTriggerRef}
@@ -2948,6 +3052,29 @@ export function AnnotationWorkbenchView(
           </p>
         ) : null}
       </DangerousActionDialog>
+    </div>
+  );
+
+  return (
+    <div
+      className={styles.annotationWorkspace}
+      data-navigation-visible={!!props.onSelectTask}
+      data-navigator-collapsed={navigatorPreferences.collapsed}
+    >
+      {props.onSelectTask && (
+        <AnnotationNavigator
+          task={props.bundle.task}
+          tasks={props.bundle.tasks}
+          items={adapter.collectionItems}
+          mode={props.mode}
+          principalId={props.principalId}
+          preferences={navigatorPreferences}
+          onChange={props.onNavigatorChange ?? setLocalNavigatorPreferences}
+          onSelect={requestTask}
+          disabled={pending !== null || reportPending}
+        />
+      )}
+      {content}
     </div>
   );
 }

@@ -24,12 +24,28 @@ def ensure_task_dataset(
     ):
         return False
     cursor.execute(
-        """SELECT upload_region_code FROM collection_tasks.collection_tasks
+        """SELECT upload_region_code, current_setting('app.region_code', true)
+        FROM collection_tasks.collection_tasks
         WHERE organization_id=%s AND project_id=%s AND collection_task_id=%s""",
         (task.organization_id, task.project_id, task.collection_task_id),
     )
-    upload_region = cursor.fetchone()[0]
+    upload_region, previous_region = cursor.fetchone()
     region = region_code or upload_region
+    # Project-scoped task creation still needs an exact Region for the Dataset's
+    # RLS policy. Narrow this transaction to the task's server-owned upload Region
+    # and restore the caller's scope after registration. On failure the caller
+    # rolls back both the task and Dataset, including this transaction-local setting.
+    if previous_region != region:
+        cursor.execute("SELECT set_config('app.region_code', %s, true)", (region,))
+    inserted = _register_task_dataset(cursor, task, region=region)
+    if previous_region != region:
+        cursor.execute(
+            "SELECT set_config('app.region_code', %s, true)", (previous_region or "",)
+        )
+    return inserted
+
+
+def _register_task_dataset(cursor: Any, task: CollectionTaskRecord, *, region: str) -> bool:
     cursor.execute(
         """SELECT 1 FROM dataset_registry.datasets
         WHERE organization_id=%s AND project_id=%s AND dataset_id=%s LIMIT 1""",

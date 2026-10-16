@@ -3,23 +3,28 @@
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { AnnotationQueuePage, TagReviewQueuePage } from "./AnnotationQueuePage";
 import { annotationQueueQueryCodec } from "./query-codec";
 import type { AnnotationQueueStage } from "./query-codec";
 import type { RuntimeAnnotationTask } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
-const { grantedCapabilities, listTasksMock } = vi.hoisted(() => ({
-  grantedCapabilities: new Set<string>(),
-  listTasksMock: vi.fn(),
-}));
+const { grantedCapabilities, listTasksMock, claimTaskMock } = vi.hoisted(
+  () => ({
+    grantedCapabilities: new Set<string>(),
+    listTasksMock: vi.fn(),
+    claimTaskMock: vi.fn(),
+  }),
+);
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
   useCapabilities: () => ({
@@ -45,14 +50,20 @@ vi.mock("../../shared/scope/shell-store", () => ({
     }),
 }));
 
-vi.mock("../../features/annotation/runtime/runtime-annotation-adapter", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../../features/annotation/runtime/runtime-annotation-adapter")>();
-  return {
-    ...actual,
-    listRuntimeAnnotationTasks: listTasksMock,
-  };
-});
+vi.mock(
+  "../../features/annotation/runtime/runtime-annotation-adapter",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../features/annotation/runtime/runtime-annotation-adapter")
+      >();
+    return {
+      ...actual,
+      listRuntimeAnnotationTasks: listTasksMock,
+      claimRuntimeAnnotationTask: claimTaskMock,
+    };
+  },
+);
 
 function task(
   status: AnnotationQueueStage,
@@ -91,6 +102,13 @@ function task(
   };
 }
 
+function CurrentLocation() {
+  const location = useLocation();
+  return (
+    <output aria-label="当前位置">{location.pathname + location.search}</output>
+  );
+}
+
 function renderQueue(
   mode: "annotation" | "tag-review",
   path = mode === "annotation"
@@ -106,6 +124,7 @@ function renderQueue(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[path]}>
         <Component />
+        <CurrentLocation />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -125,6 +144,10 @@ beforeEach(() => {
   grantedCapabilities.add("episode.read");
   listTasksMock.mockReset();
   listTasksMock.mockResolvedValue([]);
+  claimTaskMock.mockReset();
+  claimTaskMock.mockResolvedValue(
+    task("DRAFT", { assignee_id: "annotator-current" }),
+  );
 });
 
 afterEach(() => {
@@ -267,7 +290,7 @@ describe("AnnotationQueuePage status architecture", () => {
       "/annotations/annotate",
       { assignee_id: null },
       ["annotation_task.claim"],
-      "领取标注",
+      "进入标注",
     ],
     [
       "DRAFT",
@@ -294,7 +317,7 @@ describe("AnnotationQueuePage status architecture", () => {
       renderQueue("annotation", path);
 
       expect(
-        await screen.findByRole(/领取/u.test(label) ? "button" : "link", {
+        await screen.findByRole(label === "进入标注" ? "button" : "link", {
           name: label,
         }),
       ).toBeVisible();
@@ -309,6 +332,154 @@ describe("AnnotationQueuePage status architecture", () => {
   });
 });
 
+describe("AnnotationQueuePage row entry", () => {
+  it("claims an unassigned task once from a cell click, then opens it with the queue return location", async () => {
+    const draft = task("DRAFT");
+    const claimed = task("DRAFT", { assignee_id: "annotator-current" });
+    grantedCapabilities.add("annotation_task.claim");
+    listTasksMock.mockResolvedValue([draft]);
+    let finishClaim!: (value: RuntimeAnnotationTask) => void;
+    claimTaskMock.mockReturnValue(
+      new Promise<RuntimeAnnotationTask>((resolve) => {
+        finishClaim = resolve;
+      }),
+    );
+    const queuePath = "/annotations/annotate?q=rollout-draft";
+    renderQueue("annotation", queuePath);
+
+    const row = (
+      await screen.findByRole("button", { name: "进入标注" })
+    ).closest("tr")!;
+    const cell = within(row).getByText("900 步");
+    fireEvent.click(cell);
+    fireEvent.click(cell);
+
+    expect(claimTaskMock).toHaveBeenCalledTimes(1);
+    expect(claimTaskMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "project-fe13",
+        regionCode: "cn-shanghai",
+      }),
+      draft,
+    );
+    expect(row).toHaveAttribute("aria-busy", "true");
+    expect(
+      within(row).getByRole("button", { name: "正在进入…" }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText("当前位置").textContent).toBe(queuePath);
+
+    listTasksMock.mockResolvedValue([claimed]);
+    await act(async () => finishClaim(claimed));
+    await waitFor(() =>
+      expect(screen.getByLabelText("当前位置").textContent).toBe(
+        `/annotations/tasks/task-draft?returnTo=${encodeURIComponent(queuePath)}`,
+      ),
+    );
+    expect(listTasksMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the queue open when claiming fails and lets the entry button retry", async () => {
+    grantedCapabilities.add("annotation_task.claim");
+    listTasksMock.mockResolvedValue([task("DRAFT")]);
+    claimTaskMock.mockRejectedValueOnce(
+      new Error("任务暂时无法领取，请重试。"),
+    );
+    renderQueue("annotation");
+
+    fireEvent.click(await screen.findByRole("button", { name: "进入标注" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "任务暂时无法领取，请重试。",
+    );
+    expect(screen.getByLabelText("当前位置").textContent).toBe(
+      "/annotations/annotate",
+    );
+    expect(claimTaskMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "进入标注" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("当前位置").textContent).toContain(
+        "/annotations/tasks/task-draft?",
+      ),
+    );
+    expect(claimTaskMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it.each(["Enter", " "])(
+    "opens an assigned row with the %s key without claiming again",
+    async (key) => {
+      listTasksMock.mockResolvedValue([
+        task("DRAFT", { assignee_id: "annotator-current" }),
+      ]);
+      renderQueue("annotation");
+
+      const row = (
+        await screen.findByRole("link", { name: "打开任务" })
+      ).closest("tr")!;
+      expect(row).toHaveAttribute("tabindex", "0");
+      fireEvent.keyDown(row, { key });
+      await waitFor(() =>
+        expect(screen.getByLabelText("当前位置").textContent).toContain(
+          "/annotations/tasks/task-draft?",
+        ),
+      );
+      expect(claimTaskMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("opens the submitted row in review and preserves the action link", async () => {
+    listTasksMock.mockResolvedValue([task("SUBMITTED")]);
+    renderQueue("tag-review");
+
+    const link = await screen.findByRole("link", { name: "查看提交" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/annotations/tag-review/task-submitted",
+    );
+    fireEvent.click(within(link.closest("tr")!).getByText("900 步"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("当前位置").textContent).toBe(
+        "/annotations/tag-review/task-submitted",
+      ),
+    );
+    expect(claimTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("opens an unassigned task for viewing without claim permission", async () => {
+    listTasksMock.mockResolvedValue([task("DRAFT")]);
+    renderQueue("annotation");
+
+    const row = (
+      await screen.findByRole("button", { name: "查看任务" })
+    ).closest("tr")!;
+    fireEvent.click(within(row).getByText("900 步"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("当前位置").textContent).toContain(
+        "/annotations/tasks/task-draft?",
+      ),
+    );
+    expect(claimTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("does not claim or open a row without detail read permission", async () => {
+    grantedCapabilities.add("annotation_task.claim");
+    grantedCapabilities.delete("episode.read");
+    listTasksMock.mockResolvedValue([task("DRAFT")]);
+    renderQueue("annotation");
+
+    const entry = await screen.findByRole("button", { name: "进入标注" });
+    const row = entry.closest("tr")!;
+    expect(entry).toBeDisabled();
+    expect(row).not.toHaveAttribute("tabindex");
+    fireEvent.click(within(row).getByText("900 步"));
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(screen.getByLabelText("当前位置").textContent).toBe(
+      "/annotations/annotate",
+    );
+    expect(claimTaskMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("AnnotationQueuePage search and authorization semantics", () => {
   it("gives the task search a stable label, name, autocomplete and ellipsis", async () => {
     renderQueue("annotation");
@@ -318,7 +489,10 @@ describe("AnnotationQueuePage search and authorization semantics", () => {
     );
     expect(search).toHaveAttribute("name", "annotation-task-search");
     expect(search).toHaveAttribute("autocomplete", "off");
-    expect(search).toHaveAttribute("placeholder", "输入关键词…");
+    expect(search).toHaveAttribute(
+      "placeholder",
+      "搜索任务 / Rollout / Dataset…",
+    );
   });
 
   it("keeps the queue unavailable without annotation_task.read", async () => {

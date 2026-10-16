@@ -92,6 +92,7 @@ from hc_data_platform.cleaning_workbench.models import (
 from hc_data_platform.cleaning_workbench.repository import PostgresCleaningWorkbenchRepository
 from hc_data_platform.cleaning_workbench.router import configure_cleaning_workbench
 from hc_data_platform.cleaning_workbench.service import CleaningWorkbenchService
+from hc_data_platform.collection_tasks.deletion import PostgresTaskDeletion, TaskObjectPurger
 from hc_data_platform.collection_tasks.ingest_queries import task_dataset
 from hc_data_platform.collection_tasks.models import CollectionTaskRecord
 from hc_data_platform.collection_tasks.postgres import PostgresCollectionTaskRepository
@@ -127,6 +128,7 @@ from hc_data_platform.dataset_registry.capacity import (
     PostgresCapacityReferences,
     StoredDatasetCapacityReader,
 )
+from hc_data_platform.dataset_registry.display_labels import PostgresDisplayLabels
 from hc_data_platform.dataset_registry.ingest_projection import PostgresDatasetIngestProjector
 from hc_data_platform.dataset_registry.models import (
     DatasetPageApproveReviewMutationRecord,
@@ -827,6 +829,9 @@ def build_runtime(
             response_decoder=CollectionTaskRecord.model_validate,
         ),
         cursor_secret=resolved.cursor_secret,
+        deletion=PostgresTaskDeletion(
+            connection_factory, TaskObjectPurger(s3_client, resolved.object_store_bucket)
+        ),
     )
     storage_connection_factory = StorageTransactionConnectionFactory(connection_factory)
     storage_object_operator = S3StorageObjectOperator(
@@ -884,6 +889,7 @@ def build_runtime(
     )
     dataset_page = DatasetPageService(
         PostgresDatasetPageRepository(connection_factory),
+        display_label_reader=PostgresDisplayLabels(connection_factory),
         capacity_reader=StoredDatasetCapacityReader(
             PostgresCapacityReferences(connection_factory),
             S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),

@@ -1,3 +1,4 @@
+import { decodedFileName } from "../../../shared/lib/resource-labels";
 import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
@@ -99,7 +100,7 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
       signal.throwIfAborted();
       const link = document.createElement("a");
       link.href = grant.url;
-      link.download = file.name;
+      link.download = decodedFileName(file.name);
       link.rel = "noopener noreferrer";
       document.body.append(link);
       link.click();
@@ -157,7 +158,7 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
                   className={styles.crumb}
                   onClick={() => navigate(parts.slice(0, index + 1).join("/"))}
                 >
-                  {name}
+                  {decodedFileName(name)}
                 </button>
               ),
             })),
@@ -228,7 +229,7 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
                     ) : (
                       <File size={19} />
                     )}
-                    <span>{file.name}</span>
+                    <span>{decodedFileName(file.name)}</span>
                   </button>
                 ),
               },
@@ -254,7 +255,7 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
                     <Button
                       type="text"
                       title="下载原文件"
-                      aria-label={`下载 ${file.name}`}
+                      aria-label={`下载 ${decodedFileName(file.name)}`}
                       disabled={!canDownload || Boolean(downloading)}
                       loading={downloading === file.path}
                       icon={<Download size={16} />}
@@ -301,7 +302,7 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
       {selected && (
         <section className={styles.preview} aria-label="文件详情">
           <div className={styles.previewHeader}>
-            <strong>{selected.name}</strong>
+            <strong>{decodedFileName(selected.name)}</strong>
             <Button
               type="text"
               aria-label="关闭文件详情"

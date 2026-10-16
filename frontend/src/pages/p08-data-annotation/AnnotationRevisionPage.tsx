@@ -1,3 +1,7 @@
+import {
+  ResourceLabel,
+  readableFallback,
+} from "../../shared/lib/resource-labels";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ArrowLeft, RefreshCw } from "lucide-react";
 import { useState, type JSX } from "react";
@@ -75,8 +79,13 @@ function ThreadRow({
   return (
     <tr>
       <th scope="row">
-        <strong>{thread.rollout_id}</strong>
-        <small>{thread.task_id}</small>
+        <strong>
+          <ResourceLabel
+            kind="annotation_task"
+            id={thread.task_id}
+            fallback={readableFallback("rollout", thread.rollout_id)}
+          />
+        </strong>
       </th>
       <td>
         <span
@@ -94,7 +103,7 @@ function ThreadRow({
         </small>
       </td>
       <td>
-        {thread.dataset_id}
+        <ResourceLabel kind="dataset" id={thread.dataset_id} />
         <small>v{thread.dataset_version}</small>
       </td>
       <td>

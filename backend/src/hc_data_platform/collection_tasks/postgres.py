@@ -140,10 +140,11 @@ class PostgresCollectionTaskRepository:
                     )
                 if inserted:
                     self._audit(cursor, action="collection_task.created", before=None, after=record)
-                # Project-only callers may omit a Region. Keep that API contract;
-                # the scoped web flow registers its empty Dataset atomically.
-                if region := current_request_context().region_code:
-                    ensure_task_dataset(cursor, record, region_code=region)
+                # Task creation is project-scoped. Its persisted upload Region
+                # supplies the Dataset scope when the caller has no Region.
+                ensure_task_dataset(
+                    cursor, record, region_code=current_request_context().region_code
+                )
             connection.commit()
             return record
         except Exception:

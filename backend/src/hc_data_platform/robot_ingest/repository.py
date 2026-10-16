@@ -33,6 +33,10 @@ class RobotIngestConflict(RuntimeError):
     pass
 
 
+class RobotIngestIdentityMissing(KeyError):
+    pass
+
+
 class RobotIngestRepository(Protocol):
     def create_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity: ...
 
@@ -43,6 +47,12 @@ class RobotIngestRepository(Protocol):
     ) -> RobotIngestIdentity | None: ...
 
     def list_identities(self, organization_id: str) -> tuple[RobotIngestIdentity, ...]: ...
+
+    def find_identity(self, organization_id: str, robot_id: str) -> RobotIngestIdentity | None: ...
+
+    def delete_identity(
+        self, organization_id: str, ingest_identity_id: str, now: datetime
+    ) -> bool: ...
 
     def issue_credential(
         self,
@@ -172,6 +182,7 @@ class _CredentialRecord:
 class InMemoryRobotIngestRepository:
     def __init__(self, *, targets: tuple[UploadTarget, ...] = ()) -> None:
         self._identities: dict[tuple[str, str], RobotIngestIdentity] = {}
+        self._deleted_identities: set[tuple[str, str]] = set()
         self._robot_identity: dict[tuple[str, str], str] = {}
         self._credentials: dict[str, _CredentialRecord] = {}
         self._targets: dict[str, UploadTarget] = {}
@@ -203,8 +214,8 @@ class InMemoryRobotIngestRepository:
     def save_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity:
         key = (identity.organization_id, identity.ingest_identity_id)
         with self._lock:
-            if key not in self._identities:
-                raise KeyError(key)
+            if key not in self._identities or key in self._deleted_identities:
+                raise RobotIngestIdentityMissing(key)
             self._identities[key] = identity
         return identity
 
@@ -212,7 +223,37 @@ class InMemoryRobotIngestRepository:
         self, organization_id: str, ingest_identity_id: str
     ) -> RobotIngestIdentity | None:
         with self._lock:
+            if (organization_id, ingest_identity_id) in self._deleted_identities:
+                return None
             return self._identities.get((organization_id, ingest_identity_id))
+
+    def find_identity(self, organization_id: str, robot_id: str) -> RobotIngestIdentity | None:
+        with self._lock:
+            identity_id = self._robot_identity.get((organization_id, robot_id))
+            return self._identities.get((organization_id, identity_id)) if identity_id else None
+
+    def delete_identity(self, organization_id: str, ingest_identity_id: str, now: datetime) -> bool:
+        key = (organization_id, ingest_identity_id)
+        with self._lock:
+            identity = self._identities.get(key)
+            if identity is None:
+                return False
+            if key in self._deleted_identities:
+                return True
+            self._identities[key] = identity.model_copy(
+                update={"state": IdentityState.DISABLED, "updated_at": now}
+            )
+            self._deleted_identities.add(key)
+            self._robot_identity.pop((organization_id, identity.robot_id), None)
+            for credential_id, record in tuple(self._credentials.items()):
+                if (record.organization_id, record.ingest_identity_id) == key:
+                    self.revoke_credential(
+                        organization_id=organization_id,
+                        ingest_identity_id=ingest_identity_id,
+                        credential_id=credential_id,
+                        now=now,
+                    )
+            return True
 
     def list_identities(self, organization_id: str) -> tuple[RobotIngestIdentity, ...]:
         with self._lock:
@@ -220,8 +261,8 @@ class InMemoryRobotIngestRepository:
                 sorted(
                     (
                         identity
-                        for (saved_org, _), identity in self._identities.items()
-                        if saved_org == organization_id
+                        for key, identity in self._identities.items()
+                        if key[0] == organization_id and key not in self._deleted_identities
                     ),
                     key=lambda item: (item.updated_at, item.ingest_identity_id),
                     reverse=True,
@@ -237,6 +278,8 @@ class InMemoryRobotIngestRepository:
         revoke_previous: bool,
     ) -> None:
         with self._lock:
+            if self.get_identity(identity.organization_id, identity.ingest_identity_id) is None:
+                raise RobotIngestIdentityMissing(identity.ingest_identity_id)
             if summary.credential_id in self._credentials:
                 raise RobotIngestConflict("credential already exists")
             if revoke_previous:
@@ -819,7 +862,8 @@ class PostgresRobotIngestRepository:
                    SET state = %s, credential_revision = %s, identity_document = %s::jsonb,
                        updated_at = %s, last_authenticated_at = %s, last_seen_at = %s,
                        last_upload_at = %s
-                 WHERE organization_id = %s AND ingest_identity_id = %s
+                 WHERE organization_id = %s AND ingest_identity_id = %s AND deleted_at IS NULL
+                 RETURNING ingest_identity_id
                 """,
                 (
                     identity.state.value,
@@ -833,6 +877,8 @@ class PostgresRobotIngestRepository:
                     identity.ingest_identity_id,
                 ),
             )
+            if cursor.fetchone() is None:
+                raise RobotIngestIdentityMissing(identity.ingest_identity_id)
             connection.commit()
             return identity
         except Exception:
@@ -847,7 +893,8 @@ class PostgresRobotIngestRepository:
     ) -> RobotIngestIdentity | None:
         row = self._one(
             """SELECT identity_document FROM ingest.robot_ingest_identities
-                 WHERE organization_id = %s AND ingest_identity_id = %s""",
+                 WHERE organization_id = %s AND ingest_identity_id = %s
+                   AND deleted_at IS NULL""",
             (organization_id, ingest_identity_id),
         )
         return (
@@ -862,13 +909,70 @@ class PostgresRobotIngestRepository:
         try:
             cursor.execute(
                 """SELECT identity_document FROM ingest.robot_ingest_identities
-                     WHERE organization_id = %s ORDER BY updated_at DESC, ingest_identity_id""",
+                     WHERE organization_id = %s AND deleted_at IS NULL
+                     ORDER BY updated_at DESC, ingest_identity_id""",
                 (organization_id,),
             )
             return tuple(
                 RobotIngestIdentity.model_validate(_json(_row(cursor, raw)["identity_document"]))
                 for raw in cursor.fetchall()
             )
+        finally:
+            cursor.close()
+            connection.close()
+
+    def find_identity(self, organization_id: str, robot_id: str) -> RobotIngestIdentity | None:
+        row = self._one(
+            """SELECT identity_document FROM ingest.robot_ingest_identities
+                 WHERE organization_id = %s AND robot_id = %s AND deleted_at IS NULL""",
+            (organization_id, robot_id),
+        )
+        return (
+            None
+            if row is None
+            else RobotIngestIdentity.model_validate(_json(row["identity_document"]))
+        )
+
+    def delete_identity(self, organization_id: str, ingest_identity_id: str, now: datetime) -> bool:
+        connection = self._scoped()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """UPDATE ingest.robot_ingest_identities
+                      SET state = 'DISABLED', deleted_at = %s, updated_at = %s,
+                          identity_document = identity_document || %s::jsonb
+                    WHERE organization_id = %s AND ingest_identity_id = %s
+                      AND deleted_at IS NULL
+                    RETURNING ingest_identity_id""",
+                (
+                    now,
+                    now,
+                    json.dumps({"state": "DISABLED", "updated_at": now.isoformat()}),
+                    organization_id,
+                    ingest_identity_id,
+                ),
+            )
+            if cursor.fetchone() is None:
+                cursor.execute(
+                    """SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                        WHERE organization_id = %s AND ingest_identity_id = %s""",
+                    (organization_id, ingest_identity_id),
+                )
+                found = cursor.fetchone() is not None
+            else:
+                found = True
+                cursor.execute(
+                    """UPDATE ingest.robot_ingest_credentials
+                          SET state = 'REVOKED', revoked_at = %s
+                        WHERE organization_id = %s AND ingest_identity_id = %s
+                          AND state = 'ACTIVE'""",
+                    (now, organization_id, ingest_identity_id),
+                )
+            connection.commit()
+            return found
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             cursor.close()
             connection.close()
@@ -884,6 +988,14 @@ class PostgresRobotIngestRepository:
         connection = self._scoped()
         cursor = connection.cursor()
         try:
+            cursor.execute(
+                """SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                    WHERE organization_id = %s AND ingest_identity_id = %s
+                      AND deleted_at IS NULL FOR UPDATE""",
+                (identity.organization_id, identity.ingest_identity_id),
+            )
+            if cursor.fetchone() is None:
+                raise RobotIngestIdentityMissing(identity.ingest_identity_id)
             if revoke_previous:
                 cursor.execute(
                     """UPDATE ingest.robot_ingest_credentials
@@ -1640,14 +1752,17 @@ class PostgresRobotIngestRepository:
                     upload.ingest_identity_id,
                 ),
             )
-            from .processing_store import eligible, enqueue
+            from .processing_dispatch import enqueue
 
-            if eligible(committed):
-                enqueue(cursor, committed)
-            from . import recording_bridge
-
-            if recording_bridge.eligible(committed):
-                recording_bridge.enqueue(cursor, committed)
+            enqueue(cursor, committed)
+            cursor.execute(
+                """SELECT upload_document FROM ingest.robot_ingest_uploads
+                WHERE organization_id=%s AND upload_id=%s""",
+                (committed.target.organization_id, committed.upload_id),
+            )
+            committed = RobotIngestUpload.model_validate(
+                _json(_row(cursor, cursor.fetchone())["upload_document"])
+            )
             connection.commit()
             return committed
         except Exception:

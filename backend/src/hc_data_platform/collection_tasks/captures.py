@@ -66,8 +66,8 @@ class CaptureProgressPage(BaseModel):
 
 def capture_counts(items):
     return CaptureCounts(
-        upload_count=len(items),
-        received_count=sum(item.received for item in items),
+        upload_count=len({item.upload_id for item in items}),
+        received_count=len({item.upload_id for item in items if item.received}),
         awaiting_slice_count=sum(item.stage == "AWAITING_SLICE" for item in items),
         processing_count=sum(
             item.stage in {"RECEIVED", "PREPARING", "PROCESSING"} for item in items
@@ -85,8 +85,10 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
         """
         SELECT u.upload_id,u.collection_task_id,u.authenticated_robot_id,u.dataset_id,
                r.recording_id,u.state,u.committed_at,u.created_at,
-               u.upload_document #>> '{manifest,capture_started_at}',
-               u.upload_document #>> '{manifest,capture_ended_at}',
+               COALESCE(r.capture_started_at::text,
+                        u.upload_document #>> '{manifest,capture_started_at}'),
+               COALESCE(r.capture_ended_at::text,
+                        u.upload_document #>> '{manifest,capture_ended_at}'),
                r.status,j.status,j.last_error_code,
                COALESCE(episodes.items,'[]'::jsonb), u.capture_mode,
                COALESCE(r.rollout_id,u.upload_id), COALESCE(r.data_package_id,u.upload_id),
@@ -94,8 +96,18 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
         FROM ingest.robot_ingest_uploads u
         LEFT JOIN ingest.continuous_recordings r
           ON r.organization_id=u.organization_id AND r.project_id=u.project_id
-         AND r.region_code=u.region_code AND r.collection_job_id=u.collection_job_id
-         AND r.recording_id=u.upload_document #>> '{manifest,format_metadata,recording_id}'
+         AND r.region_code=u.region_code
+         AND ((r.collection_job_id=u.collection_job_id
+           AND r.recording_id=u.upload_document #>> '{manifest,format_metadata,recording_id}')
+           OR r.recording_id IN (
+             SELECT latest.recording_id FROM (
+               SELECT DISTINCT ON (m.source_path) m.recording_id
+               FROM ingest.mcap_processing_files m
+               WHERE m.organization_id=u.organization_id AND m.project_id=u.project_id
+                 AND m.region_code=u.region_code AND m.raw_source_id=u.raw_source_id
+               ORDER BY m.source_path,m.created_at DESC,m.processing_id
+             ) latest
+           ))
         LEFT JOIN ingest.raw_ingest_jobs j
           ON j.organization_id=u.organization_id AND j.project_id=u.project_id
          AND j.region_code=u.region_code AND j.raw_source_id=u.raw_source_id
@@ -198,10 +210,18 @@ def capture_from_row(row):
         if blocked
         else "PROCESSING"
         if episodes or recording_status == "SLICED"
+        else "BLOCKED"
+        if job_status == "FAILED"
+        and error
+        in {
+            "MCAP_MAPPING_REQUIRED",
+            "MCAP_MAPPING_INVALID",
+            "MCAP_DEPTH_UNITS_REQUIRED",
+        }
         else "FAILED"
         if job_status in {"FAILED", "PARTIALLY_FAILED"}
         else "PREPARING"
-        if job_status in {"PENDING", "RUNNING"}
+        if job_status == "RUNNING"
         else "RECEIVED"
     )
     duration = (

@@ -8,6 +8,7 @@ from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .captures import CaptureProgressPage
+from .deletion import TaskDeletionResult
 from .models import (
     CollectionTask,
     CollectionTaskPackageList,
@@ -73,6 +74,41 @@ def _no_store(response: Response) -> None:
     """Collection-task definitions and progress are tenant-scoped operational facts."""
 
     response.headers["Cache-Control"] = "no-store"
+
+
+@router.delete(
+    "/projects/{project_id}/collection-tasks/{collection_task_id}",
+    response_model=TaskDeletionResult,
+    operation_id="deleteCollectionTask",
+)
+def delete_collection_task(
+    project_id: Identifier,
+    collection_task_id: Identifier,
+    response: Response,
+    auth: VerifiedAuth,
+    service: Service,
+    organization_id: OrganizationId,
+    region_code: RegionCode,
+    if_match: IfMatch,
+    idempotency_key: IdempotencyKey,
+) -> TaskDeletionResult:
+    authorize_scope(
+        auth, project_id, "upload.manage", organization_id=organization_id, region_code=region_code
+    )
+    if service.deletion is None:
+        from hc_data_platform.core.errors import problem
+
+        raise problem(
+            status=503,
+            code="TASK_DELETE_UNAVAILABLE",
+            title="Deletion unavailable",
+            detail="任务删除服务尚未配置。",
+        )
+    result = service.deletion.delete(
+        (organization_id, project_id, region_code), collection_task_id, if_match, idempotency_key
+    )
+    _no_store(response)
+    return result
 
 
 @router.post(
@@ -328,6 +364,7 @@ def list_capture_progress(
     organization_id: OrganizationId,
     collection_task_id: Annotated[str | None, Query(max_length=128)] = None,
     robot_id: Annotated[str | None, Query(max_length=128)] = None,
+    dataset_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CaptureProgressPage:
@@ -341,4 +378,5 @@ def list_capture_progress(
         limit=limit,
         offset=offset,
         robot_id=robot_id,
+        dataset_id=dataset_id,
     )

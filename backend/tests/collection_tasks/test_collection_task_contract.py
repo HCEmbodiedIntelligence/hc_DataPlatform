@@ -70,7 +70,7 @@ def test_formal_fragment_matches_runtime_router_and_resolves_local_refs() -> Non
     app.include_router(router)
     generated = app.openapi()
     assert operations(fragment) == operations(generated)
-    assert len(operations(fragment)) == 10
+    assert len(operations(fragment)) == 11
 
     for ref in local_refs(fragment):
         current: object = fragment
@@ -217,7 +217,7 @@ def test_migration_has_scope_cas_audit_and_close_association_lock() -> None:
     assert "selected_organization_id" in organization_sql
 
 
-def test_explicit_task_lifecycle_operations_are_limited_to_close_cancel_and_reopen() -> None:
+def test_explicit_task_lifecycle_operations_include_permanent_deletion() -> None:
     fragment = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
     operation_ids = {
         operation["operationId"]
@@ -233,6 +233,7 @@ def test_explicit_task_lifecycle_operations_are_limited_to_close_cancel_and_reop
         "closeCollectionTask",
         "cancelCollectionTask",
         "reopenCollectionTask",
+        "deleteCollectionTask",
         "getCollectionTaskProgress",
         "listCollectionTaskPackages",
         "listCaptureProgress",

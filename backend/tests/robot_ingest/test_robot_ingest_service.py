@@ -896,7 +896,7 @@ def test_custom_adapter_uses_common_transport_and_attempts_statistics_are_querya
     assert filtered.committed_raw_count == 0
 
 
-def test_durable_raw_commit_survives_a_synchronous_processing_start_failure() -> None:
+def test_raw_commit_does_not_call_a_legacy_synchronous_processing_hook() -> None:
     class FailingStartAdapter(CustomFormatAdapter):
         def start_processing(self, raw_source_id: str) -> dict[str, object]:
             del raw_source_id
@@ -920,7 +920,7 @@ def test_durable_raw_commit_survives_a_synchronous_processing_start_failure() ->
         region_code=REGION,
         robot_id=ROBOT,
     )
-    assert any(
+    assert not any(
         item.failure_code == "ROBOT_INGEST_PROCESSING_START_FAILED"
         and item.raw_source_id == committed.raw_source_id
         for item in attempts

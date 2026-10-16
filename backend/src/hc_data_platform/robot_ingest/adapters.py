@@ -44,8 +44,6 @@ class RobotFormatAdapter(Protocol):
 
     def normalize_raw_source(self, manifest: RobotIngestUploadManifest) -> dict[str, Any]: ...
 
-    def start_processing(self, raw_source_id: str) -> dict[str, Any]: ...
-
 
 class _BaseAdapter:
     name = "base"
@@ -104,9 +102,6 @@ class _BaseAdapter:
             "source_format_version": manifest.source_format_version,
             "capture_mode": manifest.capture_mode.value,
         }
-
-    def start_processing(self, raw_source_id: str) -> dict[str, Any]:
-        return {"raw_source_id": raw_source_id, "adapter_name": self.name, "status": "PENDING"}
 
 
 class LeRobotAdapter(_BaseAdapter):

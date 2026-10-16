@@ -1,3 +1,7 @@
+import {
+  ResourceLabel,
+  decodedFileName,
+} from "../../../shared/lib/resource-labels";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Button, Space } from "antd";
 import { Eye } from "lucide-react";
@@ -38,7 +42,6 @@ export function VersionTable({
         cell: ({ row }) => (
           <span className={styles.identity}>
             <strong>{row.original.displayVersion}</strong>
-            <code>{row.original.id}</code>
           </span>
         ),
       },
@@ -110,23 +113,19 @@ export function EpisodeTable({
             onClick={() => onInspect(row.original)}
           >
             <span className={styles.identity}>
-              <strong>#{row.original.ordinal + 1}</strong>
-              <code title={row.original.episodeId}>
-                {row.original.episodeId}
-              </code>
+              <strong title={row.original.episodeId}>
+                Episode {row.original.ordinal + 1}
+              </strong>
             </span>
           </Button>
         ),
       },
       {
         id: "revision",
-        header: "Revision / 纳入",
+        header: "纳入状态",
         size: 190,
         cell: ({ row }) => (
           <span className={styles.tableCellStack}>
-            <code title={row.original.selectedRevisionId}>
-              {row.original.selectedRevisionId}
-            </code>
             <StatusTag
               status={row.original.included ? "INCLUDED" : "EXCLUDED"}
               label={episodeInclusionLabel(row.original.included)}
@@ -142,10 +141,10 @@ export function EpisodeTable({
         cell: ({ row }) => (
           <span className={styles.tableCellStack}>
             <strong title={row.original.task ?? undefined}>
-              {row.original.task ?? "—"}
+              <ResourceLabel kind="collection_task" id={row.original.task} />
             </strong>
             <code title={row.original.robotId ?? undefined}>
-              {row.original.robotId ?? "—"}
+              <ResourceLabel kind="robot" id={row.original.robotId} />
             </code>
           </span>
         ),
@@ -234,20 +233,33 @@ export function SourceTable({
         header: "来源",
         cell: ({ row }) => (
           <span className={styles.identity}>
-            <strong>{row.original.sourceDisplayName ?? "已脱敏"}</strong>
-            <code>{row.original.sourceId ?? "—"}</code>
+            <strong>
+              {row.original.sourceDisplayName
+                ? decodedFileName(row.original.sourceDisplayName)
+                : "已脱敏"}
+            </strong>
           </span>
         ),
       },
       {
         id: "upload",
         header: "Upload",
-        cell: ({ row }) => <code>{row.original.uploadId}</code>,
+        cell: ({ row }) => (
+          <details>
+            <summary>技术信息</summary>
+            <code>{row.original.uploadId}</code>
+          </details>
+        ),
       },
       {
         id: "manifest",
         header: "数据清单",
-        cell: ({ row }) => <code>{row.original.sourceManifestId}</code>,
+        cell: ({ row }) => (
+          <details>
+            <summary>技术信息</summary>
+            <code>{row.original.sourceManifestId}</code>
+          </details>
+        ),
       },
       {
         id: "storageRegion",

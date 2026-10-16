@@ -720,6 +720,44 @@
   }
 
   .workbenchFrame[data-workspace-layout="synchronized"]
+    :global([data-mode="published-readonly"])
+    .jointAngleDock,
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global([data-mode="published-readonly"])
+    .jointAngleDock
+    :global(.viewer-joint-curves) {
+    height: auto;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global([data-mode="published-readonly"])
+    .jointAngleDock
+    :global(.viewer-joint-curves__chart) {
+    height: clamp(140px, 20dvh, 200px);
+    flex: 0 0 auto;
+  }
+
+  /* Reserve a row for the floating timeline; scroll each data panel within
+     the remaining viewport instead of letting it extend behind the controls. */
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global([data-mode="published-readonly"][data-navigation-visible="false"]) {
+    height: calc(100dvh - 104px);
+    grid-template-rows: auto auto auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
+    :global(
+      [data-mode="published-readonly"]
+        > :is(
+          section[aria-label="相机与同步信号"],
+          section[aria-label="模式工具与发现"],
+          section[aria-label="诊断动作边界"]
+        )
+    ) {
+    overflow: auto;
+  }
+
+  .workbenchFrame[data-workspace-layout="synchronized"]
     :global(.viewer-timeline__viewport) {
     max-height: min(104px, 18dvh);
     overflow-y: auto;

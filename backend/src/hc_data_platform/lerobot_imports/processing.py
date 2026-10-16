@@ -224,7 +224,7 @@ def list_progress(
             LEFT JOIN ingest.raw_source_episodes e USING
               (organization_id, project_id, region_code, raw_source_id)
             WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
-              AND (%s OR j.job_type='RAW_STORAGE' OR s.source_format='LEROBOT_V3')
+              AND (%s OR j.job_type='RAW_STORAGE' OR s.source_format IN ('LEROBOT_V3','MCAP'))
               AND s.raw_status='COMMITTED'
               AND (%s::text IS NULL OR s.raw_source_id=%s)
               AND (%s::text IS NULL OR s.dataset_id=%s)
@@ -307,6 +307,10 @@ def retry_processing(
     if retry_recording_source(
         organization_id, project_id, region_code, import_id, factory=connections()
     ):
+        return get_progress(organization_id, project_id, region_code, import_id)
+    from .mcap_processing import retry_source
+
+    if retry_source((organization_id, project_id, region_code), import_id, connections()):
         return get_progress(organization_id, project_id, region_code, import_id)
     scope = (organization_id, project_id, region_code, import_id)
     with connections()() as connection, connection.cursor() as cursor:

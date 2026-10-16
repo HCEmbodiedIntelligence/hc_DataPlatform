@@ -304,6 +304,27 @@ def get_robot_identity(
     )
 
 
+@router.delete(
+    "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}",
+    status_code=204,
+    operation_id="deleteRobotIngestIdentity",
+)
+def delete_robot_identity(
+    project_id: str,
+    ingest_identity_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationId,
+    service: Service,
+) -> Response:
+    service.delete_identity(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        ingest_identity_id=ingest_identity_id,
+    )
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
 @router.patch(
     "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}",
     response_model=RobotIdentityEnvelope,

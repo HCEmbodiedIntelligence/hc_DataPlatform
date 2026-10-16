@@ -1,3 +1,5 @@
+import { buildTagTimelineTracks } from "./tag-timeline";
+import { readableFallback } from "../../../shared/lib/resource-labels";
 import { createDatasetPackageMediaSource } from "../../datasets/episodes/package-media-source";
 import {
   loadAnnotationLogicalData,
@@ -1054,97 +1056,14 @@ function tagTracks(
     values: readonly RuntimeAnnotationTag[],
     tone: "phase" | "action" | "tag-level",
   ): readonly ViewerTimelineTrack[] => {
-    const byId = new Map(values.map((tag) => [tag.annotation_id, tag]));
-    const depthCache = new Map<string, number>();
-    const pathCache = new Map<string, readonly string[]>();
-    const depthFor = (
-      tag: RuntimeAnnotationTag,
-      seen = new Set<string>(),
-    ): number => {
-      const cached = depthCache.get(tag.annotation_id);
-      if (cached !== undefined) return cached;
-      if (!tag.parent_annotation_id || seen.has(tag.annotation_id)) return 0;
-      const parent = byId.get(tag.parent_annotation_id);
-      if (!parent) return 0;
-      const depth = depthFor(parent, new Set(seen).add(tag.annotation_id)) + 1;
-      depthCache.set(tag.annotation_id, depth);
-      return depth;
-    };
-    const pathFor = (
-      tag: RuntimeAnnotationTag,
-      seen = new Set<string>(),
-    ): readonly string[] => {
-      const cached = pathCache.get(tag.annotation_id);
-      if (cached) return cached;
-      const label =
-        tag.label?.trim() ||
-        schemaLabels.get(tag.tag_id) ||
-        tag.path.at(-1) ||
-        tag.tag_id;
-      if (!tag.parent_annotation_id || seen.has(tag.annotation_id)) {
-        const path = tag.label
-          ? [label]
-          : tag.path.map((tagId) => schemaLabels.get(tagId) ?? tagId);
-        pathCache.set(tag.annotation_id, path);
-        return path;
-      }
-      const parent = byId.get(tag.parent_annotation_id);
-      const path = parent
-        ? [...pathFor(parent, new Set(seen).add(tag.annotation_id)), label]
-        : [label];
-      pathCache.set(tag.annotation_id, path);
-      return path;
-    };
-    const byDepth = new Map<number, RuntimeAnnotationTag[]>();
-    for (const tag of values) {
-      const depth = depthFor(tag);
-      const level = byDepth.get(depth) ?? [];
-      level.push(tag);
-      byDepth.set(depth, level);
-    }
-    const tagLevelTones = [
-      "tag-level-1",
-      "tag-level-2",
-      "tag-level-3",
-      "tag-level-4",
-    ] as const;
-    return [...byDepth.entries()]
-      .toSorted(([left], [right]) => left - right)
-      .flatMap(([depth, level]) => {
-        const lanes: RuntimeAnnotationTag[][] = [];
-        for (const tag of level.toSorted(
-          (left, right) =>
-            left.start_step - right.start_step ||
-            left.end_step - right.end_step,
-        )) {
-          const lane = lanes.find(
-            (candidate) =>
-              (candidate.at(-1)?.end_step ?? Number.NEGATIVE_INFINITY) <=
-              tag.start_step,
-          );
-          if (lane) lane.push(tag);
-          else lanes.push([tag]);
-        }
-        return lanes.map(
-          (lane, laneIndex) =>
-            ({
-              id: `${idPrefix}-level-${depth + 1}-lane-${laneIndex + 1}`,
-              label: `${labelPrefix} L${depth + 1}${laneIndex ? ` · ${laneIndex + 1}` : ""}`,
-              level: depth,
-              segments: lane.map((tag) => ({
-                id: `${idPrefix}-${tag.annotation_id}`,
-                label: pathFor(tag).join(" / "),
-                startNs: stepToTimelineNs(tag.start_step, frequencyHz),
-                endNs: stepToTimelineNs(tag.end_step, frequencyHz),
-                activatePlayback: true,
-                tone:
-                  tone === "tag-level"
-                    ? tagLevelTones[depth % tagLevelTones.length]
-                    : tone,
-              })),
-            }) satisfies ViewerTimelineTrack,
-        );
-      });
+    return buildTagTimelineTracks({
+      tags: values,
+      schemaLabels,
+      stepToNs: (step) => stepToTimelineNs(step, frequencyHz),
+      idPrefix,
+      labelPrefix,
+      tone,
+    });
   };
   const operations = {
     id: "revision-operations",
@@ -1176,11 +1095,12 @@ function tagTracks(
 
 function collectionItems(
   bundle: RuntimeAnnotationBundle,
+  names: Readonly<Record<string, string>> = {},
 ): readonly WorkbenchCollectionItem[] {
   return bundle.tasks.map((task) => ({
     id: task.task_id,
-    label: task.rollout_id,
-    description: `${task.dataset_id} · ${annotationDataLabel(task)}`,
+    label: names[task.task_id] ?? readableFallback("rollout", task.rollout_id),
+    description: `${names[task.dataset_id] ?? readableFallback("dataset", task.dataset_id)} · ${annotationDataLabel(task)}`,
     status: annotationTaskStatusLabel(task.status),
     statusTone:
       task.status === "APPROVED"
@@ -1213,6 +1133,7 @@ function collectionItems(
 }
 
 export function buildRuntimeWorkbenchAdapter(input: {
+  readonly names?: Readonly<Record<string, string>>;
   readonly bundle: RuntimeAnnotationBundle;
   readonly scope: RuntimeAnnotationScope;
   readonly mode: AnnotationWorkbenchMode;
@@ -1234,11 +1155,11 @@ export function buildRuntimeWorkbenchAdapter(input: {
     mode,
     id: `p08-${mode}-${bundle.task.task_id}`,
     title: mode === "tag-review" ? "Tag 审核" : "数据标注",
-    description: `固定 ${annotationDataLabel(bundle.task)} · ${bundle.task.rollout_id}`,
+    description: `固定 ${annotationDataLabel(bundle.task)} · ${input.names?.[bundle.task.task_id] ?? readableFallback("rollout", bundle.task.rollout_id)}`,
     readOnly: input.readOnly,
     clock: input.clock,
     cameraStreams: paddedCameraStreams,
-    collectionItems: collectionItems(bundle),
+    collectionItems: collectionItems(bundle, input.names),
     selectedCollectionItemId: bundle.task.task_id,
     onSelectCollectionItem: input.onSelectTask,
     findings: [],

@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 8c4999d53bef3ac8b2ccdbcba64237589f4bb885dc84492ad16186cc6c73565a
+// Runtime-OpenAPI-SHA256: 6a186ec57dbd30183172b1ed421b128fd5e4dde0253cc1cf331b953f451fc093
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -177,6 +177,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/capture-progress" },
   { method: "GET", path: "/projects/{project_id}/collection-tasks" },
   { method: "POST", path: "/projects/{project_id}/collection-tasks" },
+  { method: "DELETE", path: "/projects/{project_id}/collection-tasks/{collection_task_id}" },
   { method: "GET", path: "/projects/{project_id}/collection-tasks/{collection_task_id}" },
   { method: "PATCH", path: "/projects/{project_id}/collection-tasks/{collection_task_id}" },
   { method: "POST", path: "/projects/{project_id}/collection-tasks/{collection_task_id}:cancel" },
@@ -190,6 +191,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/dashboard/task-status" },
   { method: "GET", path: "/projects/{project_id}/datasets" },
   { method: "POST", path: "/projects/{project_id}/datasets" },
+  { method: "POST", path: "/projects/{project_id}/datasets:display-labels" },
   { method: "GET", path: "/projects/{project_id}/datasets:facets" },
   { method: "GET", path: "/projects/{project_id}/datasets:page-capabilities" },
   { method: "GET", path: "/projects/{project_id}/datasets:summary" },
@@ -324,6 +326,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-processing" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/text-preview" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/archive" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/robots/{robot_id}/mcap-profile" },
@@ -358,6 +361,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/robot-ingest/attempts" },
   { method: "GET", path: "/projects/{project_id}/robot-ingest/identities" },
   { method: "POST", path: "/projects/{project_id}/robot-ingest/identities" },
+  { method: "DELETE", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}" },
   { method: "GET", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}" },
   { method: "PATCH", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}" },
   { method: "POST", path: "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable" },

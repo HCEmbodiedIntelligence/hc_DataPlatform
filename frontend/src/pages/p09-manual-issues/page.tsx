@@ -1,3 +1,4 @@
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { RecordingProcessingDetails } from "../../features/quality/RecordingProcessingDetails";
 import {
   Alert,
@@ -456,10 +457,13 @@ function IssueDetail({
         size="small"
       >
         <Descriptions.Item label="数据位置">
-          数据集{" "}
-          <Typography.Text code>{issue.source.datasetId}</Typography.Text>
+          数据集 <ResourceLabel kind="dataset" id={issue.source.datasetId} />
           {" · "}采集条目{" "}
-          <Typography.Text code>{issue.source.episodeId}</Typography.Text>
+          <ResourceLabel
+            kind="episode"
+            id={issue.source.episodeId}
+            datasetId={issue.source.datasetId}
+          />
         </Descriptions.Item>
         <Descriptions.Item label="处理人">
           {issue.assignee?.displayName ?? "尚未分派"}
@@ -794,10 +798,33 @@ export function ManualIssuesPage() {
       cell: ({ row }) => (
         <div className={styles.locationCell}>
           <Tooltip title={row.original.sourceTitle}>
-            <strong>{row.original.sourceTitle}</strong>
+            <strong>
+              {row.original.manualIssue ? (
+                <ResourceLabel
+                  kind="episode"
+                  id={row.original.manualIssue.source.episodeId}
+                  datasetId={row.original.manualIssue.source.datasetId}
+                />
+              ) : (
+                <ResourceLabel
+                  kind="rollout"
+                  id={row.original.autoProblem?.rolloutId}
+                  fallback={`录制 · ${formatUpdatedAt(row.original.updatedAt)}`}
+                />
+              )}
+            </strong>
           </Tooltip>
           <Tooltip title={row.original.sourceSubtitle}>
-            <small>{row.original.sourceSubtitle}</small>
+            <small>
+              {row.original.manualIssue ? (
+                <ResourceLabel
+                  kind="dataset"
+                  id={row.original.manualIssue.source.datasetId}
+                />
+              ) : (
+                row.original.sourceSubtitle
+              )}
+            </small>
           </Tooltip>
         </div>
       ),
@@ -1502,7 +1529,11 @@ export function ManualIssuesPage() {
           >
             <Typography.Paragraph>
               <strong>{ISSUE_TYPE_LABELS[dialog.issue.issueType]}</strong> ·{" "}
-              {dialog.issue.source.episodeId}
+              <ResourceLabel
+                kind="episode"
+                id={dialog.issue.source.episodeId}
+                datasetId={dialog.issue.source.datasetId}
+              />
             </Typography.Paragraph>
             <Form.Item label="严重程度">
               <Select

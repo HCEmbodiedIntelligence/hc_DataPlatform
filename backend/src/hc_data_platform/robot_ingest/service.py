@@ -58,12 +58,12 @@ from .models import (
 from .repository import (
     InMemoryRobotIngestRepository,
     RobotIngestConflict,
+    RobotIngestIdentityMissing,
     RobotIngestRepository,
 )
 
 Clock = Callable[[], datetime]
 _TOKEN_PATTERN = re.compile(r"^hcri_([0-9a-f]{32})\.([A-Za-z0-9_-]{32,256})$")
-_IDENTITY_NAMESPACE = uuid5(NAMESPACE_URL, "hc-data-platform/robot-ingest/identity")
 _UPLOAD_NAMESPACE = uuid5(NAMESPACE_URL, "hc-data-platform/robot-ingest/upload")
 _JOB_NAMESPACE = uuid5(NAMESPACE_URL, "hc-data-platform/robot-ingest/collection-job")
 _RAW_NAMESPACE = uuid5(NAMESPACE_URL, "hc-data-platform/robot-ingest/raw-source")
@@ -113,13 +113,11 @@ class RobotIngestService:
     ) -> RobotIdentityEnvelope:
         self._authorize_admin(auth, organization_id, project_id)
         now = self._clock()
-        identity_seed = "\0".join((organization_id, command.robot_id))
-        identity_id = f"rii-{uuid5(_IDENTITY_NAMESPACE, identity_seed).hex}"
-        existing = self.repository.get_identity(organization_id, identity_id)
+        existing = self.repository.find_identity(organization_id, command.robot_id)
         if existing is not None:
             return RobotIdentityEnvelope(data=existing)
         identity = RobotIngestIdentity(
-            ingest_identity_id=identity_id,
+            ingest_identity_id=f"rii-{uuid4().hex}",
             organization_id=organization_id,
             robot_id=command.robot_id,
             display_name=command.display_name,
@@ -132,6 +130,9 @@ class RobotIngestService:
         try:
             saved = self.repository.create_identity(identity)
         except RobotIngestConflict as exc:
+            existing = self.repository.find_identity(organization_id, command.robot_id)
+            if existing is not None:
+                return RobotIdentityEnvelope(data=existing)
             raise problem(
                 status=409,
                 code="ROBOT_INGEST_IDENTITY_CONFLICT",
@@ -185,7 +186,7 @@ class RobotIngestService:
                 "updated_at": self._clock(),
             }
         )
-        return RobotIdentityEnvelope(data=self.repository.save_identity(updated))
+        return RobotIdentityEnvelope(data=self._save_identity(updated))
 
     def set_identity_state(
         self,
@@ -201,7 +202,19 @@ class RobotIngestService:
         if current.state is state:
             return RobotIdentityEnvelope(data=current)
         updated = current.model_copy(update={"state": state, "updated_at": self._clock()})
-        return RobotIdentityEnvelope(data=self.repository.save_identity(updated))
+        return RobotIdentityEnvelope(data=self._save_identity(updated))
+
+    def delete_identity(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        ingest_identity_id: str,
+    ) -> None:
+        self._authorize_admin(auth, organization_id, project_id)
+        if not self.repository.delete_identity(organization_id, ingest_identity_id, self._clock()):
+            raise self._identity_not_found()
 
     def issue_credential(
         self,
@@ -237,12 +250,15 @@ class RobotIngestService:
             expires_at=command.expires_at,
         )
         updated = current.model_copy(update={"credential_revision": revision, "updated_at": now})
-        self.repository.issue_credential(
-            identity=updated,
-            summary=summary,
-            token_digest=self._token_digest(token),
-            revoke_previous=command.revoke_previous,
-        )
+        try:
+            self.repository.issue_credential(
+                identity=updated,
+                summary=summary,
+                token_digest=self._token_digest(token),
+                revoke_previous=command.revoke_previous,
+            )
+        except RobotIngestIdentityMissing as exc:
+            raise self._identity_not_found() from exc
         return RobotIdentityEnvelope(
             data=updated,
             credential=IssuedRobotCredential(
@@ -942,30 +958,6 @@ class RobotIngestService:
             processing_status=verification.processing_status,
             now=now,
         )
-        try:
-            adapter.start_processing(raw_source_id)
-        except Exception:
-            # Raw and its durable ingest job were committed atomically above. A
-            # synchronous adapter notification must not turn that successful immutable
-            # commit into an ambiguous client failure; workers can retry the PENDING job.
-            self._safe_attempt(
-                RobotIngestAttempt(
-                    attempt_id=f"ria-{uuid4().hex}",
-                    organization_id=committed.target.organization_id,
-                    project_id=committed.target.project_id,
-                    region_code=committed.target.region_code,
-                    authenticated_robot_id=auth.authenticated_robot_id,
-                    request_robot_id=committed.request_robot_id,
-                    collection_task_id=committed.target.collection_task_id,
-                    source_format=committed.source_format,
-                    outcome=AttemptOutcome.FAILED,
-                    failure_stage="PROCESSING_START",
-                    failure_code="ROBOT_INGEST_PROCESSING_START_FAILED",
-                    upload_id=committed.upload_id,
-                    raw_source_id=committed.raw_source_id,
-                    occurred_at=now,
-                )
-            )
         self._safe_attempt(
             RobotIngestAttempt(
                 attempt_id=f"ria-{uuid4().hex}",
@@ -1427,13 +1419,23 @@ class RobotIngestService:
     ) -> RobotIngestIdentity:
         identity = self.repository.get_identity(organization_id, ingest_identity_id)
         if identity is None:
-            raise problem(
-                status=404,
-                code="ROBOT_INGEST_IDENTITY_NOT_FOUND",
-                title="Robot upload identity not found",
-                detail="The requested robot upload identity does not exist.",
-            )
+            raise self._identity_not_found()
         return identity
+
+    def _save_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity:
+        try:
+            return self.repository.save_identity(identity)
+        except RobotIngestIdentityMissing as exc:
+            raise self._identity_not_found() from exc
+
+    @staticmethod
+    def _identity_not_found() -> ProblemException:
+        return problem(
+            status=404,
+            code="ROBOT_INGEST_IDENTITY_NOT_FOUND",
+            title="Robot upload identity not found",
+            detail="The requested robot upload identity does not exist.",
+        )
 
     @staticmethod
     def _require_asset(upload: RobotIngestUpload, asset_id: str) -> RobotIngestAsset:

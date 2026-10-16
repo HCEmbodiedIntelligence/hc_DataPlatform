@@ -1,0 +1,137 @@
+.navigator {
+  position: sticky;
+  top: var(--hc-space-3);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-md);
+  background: var(--hc-color-surface);
+}
+.navigator[data-collapsed="true"] {
+  padding: 4px;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.heading strong {
+  font-size: 13px;
+}
+.navigator[data-collapsed="true"] .heading {
+  justify-content: center;
+}
+.content:not([hidden]) {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.navigator :global(.ant-btn) {
+  height: 28px;
+  min-height: 28px;
+  padding-block: 2px;
+  border-radius: 6px;
+  box-shadow: none;
+}
+.navigator :global(.ant-input-affix-wrapper) {
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.navigator :global(.ant-input) {
+  font-size: 12px;
+}
+.count,
+.item small,
+.empty {
+  color: var(--hc-color-text-secondary);
+  font-size: 12px;
+}
+.controls {
+  display: flex;
+  gap: 6px;
+}
+.controls > button {
+  flex: 1 1 0;
+  min-width: 0;
+  gap: 3px;
+  padding-inline: 4px;
+  font-size: 12px;
+}
+.items {
+  display: grid;
+  grid-auto-rows: max-content;
+  gap: 6px;
+  max-height: calc(100dvh - 350px);
+  min-height: 100px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.item {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-sm);
+  background: var(--hc-color-surface);
+  color: var(--hc-color-text);
+  text-align: start;
+  font: inherit;
+  cursor: pointer;
+}
+.item strong {
+  font-size: 13px;
+}
+.item strong,
+.item small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.item :global(.ant-tag) {
+  justify-self: start;
+  margin: 0;
+  font-size: 11px;
+}
+.item:hover:not(:disabled),
+.item[aria-current="page"] {
+  border-color: var(--hc-color-primary);
+  background: color-mix(
+    in srgb,
+    var(--hc-color-primary) 7%,
+    var(--hc-color-surface)
+  );
+}
+.item:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: -2px;
+}
+.item:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.empty {
+  margin: 0;
+  line-height: 1.5;
+}
+@media (max-width: 767px) {
+  .navigator {
+    position: static;
+  }
+  .navigator[data-collapsed="true"] {
+    justify-self: start;
+  }
+  .items {
+    max-height: 180px;
+    min-height: 0;
+  }
+}

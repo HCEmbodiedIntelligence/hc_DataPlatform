@@ -5,13 +5,19 @@ import type { IngestScope } from "../../../entities/data-source";
 import { request } from "../../../shared/api/http-client";
 import { useCapabilities } from "../../../shared/auth/use-capabilities";
 import { nativeRoot, type NativeProgress } from "./lerobot-processing";
+import {
+  McapPreparationProgress,
+  McapRobotProfile,
+} from "./components/McapPreparation";
 
 export default function ResumeProcessingAction({
   scope,
   importId,
+  robotId,
 }: Readonly<{
   scope: IngestScope;
   importId: string;
+  robotId?: string;
 }>) {
   const client = useQueryClient();
   const capabilities = useCapabilities();
@@ -67,7 +73,9 @@ export default function ResumeProcessingAction({
     result?.ready,
     result?.failed,
   ]);
-  const recordingPreparation = result?.source_format === "CAPTURE_BUNDLE";
+  const isMcap = result?.source_format === "MCAP";
+  const recordingPreparation =
+    result?.source_format === "CAPTURE_BUNDLE" || isMcap;
   const busy = ["PENDING", "RUNNING"].includes(result?.status ?? "");
   const retryable = ["FAILED", "PARTIALLY_FAILED", "CANCELLED"].includes(
     result?.status ?? "",
@@ -82,13 +90,24 @@ export default function ResumeProcessingAction({
       </p>
       {busy ? <Alert type="info" title="已提交，正在继续处理" /> : null}
       {result?.status === "SUCCEEDED" ? (
-        <Alert type="success" title="本批次处理已完成" />
+        <Alert
+          type="success"
+          title={
+            recordingPreparation
+              ? "录制已准备完成，可进入切片"
+              : "本批次处理已完成"
+          }
+        />
       ) : null}
       {result && !recordingPreparation ? (
         <span>
           已就绪 {result.ready} · 处理未完成 {result.failed}
         </span>
       ) : null}
+      {isMcap && <McapPreparationProgress scope={scope} importId={importId} />}
+      {isMcap && retryable && canManage && robotId && (
+        <McapRobotProfile scope={scope} robotId={robotId} />
+      )}
       {error ? (
         <Alert
           type="error"

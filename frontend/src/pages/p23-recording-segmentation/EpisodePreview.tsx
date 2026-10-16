@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Checkbox } from "antd";
 import {
+  CameraViewToolbar,
   createPlaybackClock,
   DataVisualizationWorkbench,
+  selectCameraStreams,
   type StreamDescriptor,
 } from "../../features/viewer";
 import { VideoPreviewModal } from "../../features/viewer/VideoPreviewModal";
@@ -18,7 +19,7 @@ export function EpisodePreview({
   readonly streams: readonly StreamDescriptor[];
   readonly onClose: () => void;
 }) {
-  const [showDepth, setShowDepth] = useState(false);
+  const [cameraView, setCameraView] = useState("__quad__");
   const clock = useMemo(
     () =>
       createPlaybackClock({
@@ -28,7 +29,10 @@ export function EpisodePreview({
     [slice.startNs, slice.endNs],
   );
   useEffect(() => () => clock.dispose(), [clock]);
-  const depth = streams.filter((stream) => stream.modality === "depth");
+  const cameraStreams = useMemo(
+    () => selectCameraStreams(streams, cameraView, clock),
+    [streams, cameraView, clock],
+  );
   return (
     <VideoPreviewModal
       open
@@ -36,49 +40,35 @@ export function EpisodePreview({
       onCancel={onClose}
     >
       <p>播放此 Episode 选定的录制区间。</p>
-      <Checkbox
-        checked={showDepth}
-        disabled={!depth.length}
-        onChange={(event) => setShowDepth(event.target.checked)}
-      >
-        显示深度视频（{depth.length} 路）
-      </Checkbox>
       <DataVisualizationWorkbench
         layout="preview"
         showNavigation={false}
         adapter={{
           id: `episode-preview-${slice.episodeId}`,
           mode: "episode-slicing",
-          title: "RGB 视频",
+          title: "视频预览",
           readOnly: true,
           clock,
-          cameraStreams: streams.filter(
-            (stream) => stream.modality !== "depth",
-          ),
+          cameraStreams,
           collectionItems: [],
           findings: [],
           timelineTracks: [],
           actions: [],
         }}
+        slots={{
+          mediaHeader: () => (
+            <CameraViewToolbar
+              view={cameraView}
+              cameras={streams.map((stream) => ({
+                id: stream.id,
+                label: stream.displayName,
+              }))}
+              visibleStreams={cameraStreams}
+              onViewChange={setCameraView}
+            />
+          ),
+        }}
       />
-      {showDepth && (
-        <DataVisualizationWorkbench
-          layout="preview"
-          showNavigation={false}
-          adapter={{
-            id: `episode-depth-${slice.episodeId}`,
-            mode: "episode-slicing",
-            title: "深度视频",
-            readOnly: true,
-            clock,
-            cameraStreams: depth,
-            collectionItems: [],
-            findings: [],
-            timelineTracks: [],
-            actions: [],
-          }}
-        />
-      )}
     </VideoPreviewModal>
   );
 }

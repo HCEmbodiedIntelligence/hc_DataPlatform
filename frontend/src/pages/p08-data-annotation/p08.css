@@ -514,6 +514,19 @@
   );
 }
 
+.p08-clickable-row {
+  cursor: pointer;
+}
+
+.p08-clickable-row:focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: -2px;
+}
+
+.p08-clickable-row[aria-busy="true"] {
+  cursor: progress;
+}
+
 .p08-cell-primary {
   display: block;
   color: var(--hc-color-text);

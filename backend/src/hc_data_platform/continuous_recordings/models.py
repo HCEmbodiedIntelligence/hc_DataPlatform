@@ -86,6 +86,10 @@ class ContinuousRecording(BaseModel):
     )
     scope: RecordingScope
     recording_id: Identifier
+    file_name: str | None = Field(default=None, max_length=255)
+    source_file_name: str | None = Field(default=None, max_length=255)
+    robot_name: str | None = Field(default=None, max_length=256)
+    task_code: str | None = Field(default=None, max_length=128)
     upload_session_id: UUID | None = None
     recording_upload_id: UUID | None = None
     rollout_id: Identifier

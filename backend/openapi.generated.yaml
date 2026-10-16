@@ -800,8 +800,7 @@ components:
       title: AlignedMediaSelectorV1
       type: object
     AlignedMediaTimelineV1:
-      description: Aligned logical clock, optionally mapped into an unchanged original
-        video.
+      description: Aligned logical clock, optionally mapped into an unchanged original video.
       properties:
         first_step:
           default: 0
@@ -1307,8 +1306,7 @@ components:
       title: AnnotationObjectRelation
       type: object
     AnnotationOperation:
-      description: An append-only operation over the half-open interval ``[start,
-        end)``.
+      description: An append-only operation over the half-open interval ``[start, end)``.
       properties:
         end_step:
           exclusiveMinimum: 0.0
@@ -1429,8 +1427,7 @@ components:
       type: object
     AnnotationRevision:
       additionalProperties: false
-      description: An immutable revision containing the operations added by one draft
-        save.
+      description: An immutable revision containing the operations added by one draft save.
       properties:
         author_id:
           minLength: 1
@@ -1578,8 +1575,7 @@ components:
       title: AnnotationRevisionFile
       type: object
     AnnotationRevisionThread:
-      description: One current annotation workflow thread in the project/region revision
-        index.
+      description: One current annotation workflow thread in the project/region revision index.
       properties:
         approved_review_id:
           anyOf:
@@ -1656,8 +1652,7 @@ components:
       title: AnnotationRevisionThread
       type: object
     AnnotationRevisionThreadPage:
-      description: Cursor page for the `/annotations/revisions` information-architecture
-        entry.
+      description: Cursor page for the `/annotations/revisions` information-architecture entry.
       properties:
         items:
           items:
@@ -1680,11 +1675,9 @@ components:
       description: 'The immutable revision fact displayed in a scoped revision index.
 
 
-        The index deliberately exposes only revision metadata.  Tags and operations
-        stay
+        The index deliberately exposes only revision metadata.  Tags and operations stay
 
-        behind the existing per-task revision endpoint so a list request cannot turn
-        into
+        behind the existing per-task revision endpoint so a list request cannot turn into
 
         an unbounded document download.'
       properties:
@@ -3594,8 +3587,7 @@ components:
       type: object
     AutoQualityProblemV1:
       additionalProperties: false
-      description: Latest failed automatic-QC result projected for the unified issue
-        center.
+      description: Latest failed automatic-QC result projected for the unified issue center.
       properties:
         data_package_id:
           anyOf:
@@ -3719,8 +3711,7 @@ components:
       type: object
     AvailableOrganization:
       additionalProperties: false
-      description: An active organization relationship that does not imply project
-        access.
+      description: An active organization relationship that does not imply project access.
       properties:
         member_status:
           const: ACTIVE
@@ -3987,8 +3978,7 @@ components:
       type: object
     CalibrationCameraIntrinsics:
       additionalProperties: false
-      description: Camera facts used by the calibration viewer; no implicit zero matrix
-        exists.
+      description: Camera facts used by the calibration viewer; no implicit zero matrix exists.
       properties:
         cx_px:
           minimum: 0.0
@@ -4131,8 +4121,7 @@ components:
       type: object
     CalibrationDatasetAssociationRequest:
       additionalProperties: false
-      description: Pin one immutable, ready dataset version to a ready calibration
-        version.
+      description: Pin one immutable, ready dataset version to a ready calibration version.
       properties:
         dataset_id:
           maxLength: 128
@@ -4293,8 +4282,7 @@ components:
       type: object
     CalibrationPublishPreflightRequest:
       additionalProperties: false
-      description: The browser's declared publish inputs, rechecked against stored
-        facts.
+      description: The browser's declared publish inputs, rechecked against stored facts.
       properties:
         acknowledge_warning_codes:
           default: []
@@ -4868,8 +4856,7 @@ components:
       type: object
     CameraRecordingConfigV1:
       additionalProperties: false
-      description: Queryable camera timing facts copied from the immutable config
-        object.
+      description: Queryable camera timing facts copied from the immutable config object.
       properties:
         camera_id:
           maxLength: 128
@@ -5166,8 +5153,7 @@ components:
       type: object
     CapacityGrowth:
       additionalProperties: false
-      description: Exact integer trend over a bounded window, never a client-side
-        estimate.
+      description: Exact integer trend over a bounded window, never a client-side estimate.
       properties:
         candidate_bytes_per_day:
           pattern: ^-?(0|[1-9][0-9]*)$
@@ -5211,8 +5197,7 @@ components:
       type: object
     CapacityHistory:
       additionalProperties: false
-      description: Bounded project-scoped daily history and an exact business-capacity
-        trend.
+      description: Bounded project-scoped daily history and an exact business-capacity trend.
       properties:
         growth:
           anyOf:
@@ -5275,18 +5260,14 @@ components:
       type: object
     CapacityInventoryFact:
       additionalProperties: false
-      description: 'One provider-reported physical instance in an immutable inventory
-        snapshot.
+      description: 'One provider-reported physical instance in an immutable inventory snapshot.
 
 
-        Duplicate rows may repeat the same ``physical_instance_id`` with exactly the
-        same
+        Duplicate rows may repeat the same ``physical_instance_id`` with exactly the same
 
-        fields. They are ignored by reconciliation. Replicas use a distinct physical
-        ID but
+        fields. They are ignored by reconciliation. Replicas use a distinct physical ID but
 
-        share one logical object ID, so the physical and candidate business totals
-        can both be
+        share one logical object ID, so the physical and candidate business totals can both be
 
         reported without counting a business object twice.'
       properties:
@@ -5405,8 +5386,7 @@ components:
           title: Duplicate Inventory Rows Ignored
           type: integer
         formula:
-          default: physical_total_bytes = candidate_business_total_bytes + replica_overhead_bytes
-            + temporary_bytes
+          default: physical_total_bytes = candidate_business_total_bytes + replica_overhead_bytes + temporary_bytes
           title: Formula
           type: string
         replica_instance_count:
@@ -6248,8 +6228,7 @@ components:
       type: object
     CleaningDraftIssueContext:
       additionalProperties: false
-      description: The one P09 ManualIssue source context a handoff Draft is allowed
-        to carry.
+      description: The one P09 ManualIssue source context a handoff Draft is allowed to carry.
       properties:
         base_revision_id:
           pattern: ^revision_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
@@ -7490,15 +7469,12 @@ components:
       type: object
     CollectionTarget:
       additionalProperties: false
-      description: 'Optional, explicit task target with one or two independently measured
-        dimensions.
+      description: 'Optional, explicit task target with one or two independently measured dimensions.
 
 
-        A task may intentionally have no target (for exploratory collection), but
-        a supplied
+        A task may intentionally have no target (for exploratory collection), but a supplied
 
-        target must contain at least one strictly-positive goal.  Attainment is a
-        read-only
+        target must contain at least one strictly-positive goal.  Attainment is a read-only
 
         fact and never changes the task state by itself.'
       properties:
@@ -7630,8 +7606,7 @@ components:
       type: string
     CollectionTaskPackage:
       additionalProperties: false
-      description: Read-only lineage from a committed package to its published Episode,
-        if any.
+      description: Read-only lineage from a committed package to its published Episode, if any.
       properties:
         data_package_id:
           maxLength: 256
@@ -7944,8 +7919,7 @@ components:
       type: string
     CollectionTaskTargetMetric:
       additionalProperties: false
-      description: One configured target with a fact-derived, non-clamped progress
-        ratio.
+      description: One configured target with a fact-derived, non-clamped progress ratio.
       properties:
         actual:
           anyOf:
@@ -8664,6 +8638,12 @@ components:
           pattern: ^"v[1-9][0-9]*"$
           title: Etag
           type: string
+        file_name:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          title: File Name
         finalized_revision:
           anyOf:
           - minimum: 1.0
@@ -8692,6 +8672,12 @@ components:
           pattern: ^[A-Za-z0-9._-]+$
           title: Robot Id
           type: string
+        robot_name:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Robot Name
         rollout_id:
           maxLength: 128
           minLength: 1
@@ -8707,6 +8693,12 @@ components:
           type: string
         scope:
           $ref: '#/components/schemas/RecordingScope'
+        source_file_name:
+          anyOf:
+          - maxLength: 255
+            type: string
+          - type: 'null'
+          title: Source File Name
         source_sha256:
           pattern: ^[a-f0-9]{64}$
           title: Source Sha256
@@ -8714,6 +8706,12 @@ components:
         status:
           $ref: '#/components/schemas/RecordingStatus'
           default: READY_FOR_SLICING
+        task_code:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Task Code
         updated_at:
           format: date-time
           title: Updated At
@@ -9073,8 +9071,7 @@ components:
       type: object
     CreateDraftFromIssueCommand:
       additionalProperties: false
-      description: The browser may not submit source or draft context to this P09
-        command.
+      description: The browser may not submit source or draft context to this P09 command.
       properties: {}
       title: CreateDraftFromIssueCommand
       type: object
@@ -9463,8 +9460,7 @@ components:
       type: object
     CreateRobotModelRequest:
       additionalProperties: false
-      description: Create a robot model identity together with its first editable
-        version.
+      description: Create a robot model identity together with its first editable version.
       properties:
         display_name:
           maxLength: 256
@@ -10180,8 +10176,7 @@ components:
       type: object
     DataReviewLocation:
       additionalProperties: false
-      description: Zero-based half-open Episode frames, never parent recording frame
-        numbers.
+      description: Zero-based half-open Episode frames, never parent recording frame numbers.
       properties:
         comment:
           maxLength: 2000
@@ -10238,8 +10233,7 @@ components:
       type: object
     DataSchemaDatasetReference:
       additionalProperties: false
-      description: Immutable evidence that a dataset consumed a fixed published schema
-        version.
+      description: Immutable evidence that a dataset consumed a fixed published schema version.
       properties:
         associated_at:
           format: date-time
@@ -10330,8 +10324,7 @@ components:
       type: object
     DataSchemaDatasetReferenceRequest:
       additionalProperties: false
-      description: Pins one READY immutable dataset version to a published schema
-        version.
+      description: Pins one READY immutable dataset version to a published schema version.
       properties:
         dataset_id:
           maxLength: 128
@@ -11965,8 +11958,7 @@ components:
       type: object
     DatasetIngestViewerTarget:
       additionalProperties: false
-      description: Compact stable route identity returned after an ingest projection
-        commits.
+      description: Compact stable route identity returned after an ingest projection commits.
       properties:
         dataset_id:
           pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
@@ -12916,8 +12908,7 @@ components:
       type: object
     DatasetPageEpisodePackageBinding:
       additionalProperties: false
-      description: Exact committed package binding for either a numeric or RGB/depth
-        stream.
+      description: Exact committed package binding for either a numeric or RGB/depth stream.
       properties:
         data:
           $ref: '#/components/schemas/DataVersionRef'
@@ -15583,6 +15574,100 @@ components:
       - episode_stream_id
       title: DisableChannelOperation
       type: object
+    DisplayLabel:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Dataset Id
+        description_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description Label
+        id:
+          maxLength: 256
+          minLength: 1
+          title: Id
+          type: string
+        kind:
+          enum:
+          - dataset
+          - collection_task
+          - robot
+          - episode
+          - annotation_task
+          - rollout
+          title: Kind
+          type: string
+        label:
+          title: Label
+          type: string
+      required:
+      - kind
+      - id
+      - label
+      title: DisplayLabel
+      type: object
+    DisplayLabelRequest:
+      additionalProperties: false
+      properties:
+        references:
+          items:
+            $ref: '#/components/schemas/DisplayReference'
+          maxItems: 100
+          minItems: 1
+          title: References
+          type: array
+      required:
+      - references
+      title: DisplayLabelRequest
+      type: object
+    DisplayLabelResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DisplayLabel'
+          title: Items
+          type: array
+      required:
+      - items
+      title: DisplayLabelResponse
+      type: object
+    DisplayReference:
+      additionalProperties: false
+      properties:
+        dataset_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Dataset Id
+        id:
+          maxLength: 256
+          minLength: 1
+          title: Id
+          type: string
+        kind:
+          enum:
+          - dataset
+          - collection_task
+          - robot
+          - episode
+          - annotation_task
+          - rollout
+          title: Kind
+          type: string
+      required:
+      - kind
+      - id
+      title: DisplayReference
+      type: object
     EffectiveModelBinding:
       additionalProperties: false
       properties:
@@ -17158,8 +17243,7 @@ components:
       type: object
     EpisodeVideoSource:
       additionalProperties: false
-      description: Direct original-video playback descriptor; no preview artifact
-        is generated.
+      description: Direct original-video playback descriptor; no preview artifact is generated.
       properties:
         asset_id:
           format: uuid
@@ -17560,8 +17644,7 @@ components:
       title: ExportFormatOptionV1
       type: object
     ExportJobProgressV1:
-      description: Progress over the three durable export phases, never an estimated
-        byte rate.
+      description: Progress over the three durable export phases, never an estimated byte rate.
       properties:
         completed_phases:
           minimum: 0.0
@@ -17582,8 +17665,7 @@ components:
       title: ExportJobProgressV1
       type: object
     ExportJobResultV1:
-      description: A completed export fact that deliberately omits physical locators
-        and grants.
+      description: A completed export fact that deliberately omits physical locators and grants.
       properties:
         artifact_content_hash:
           pattern: ^[0-9a-f]{64}$
@@ -17645,8 +17727,7 @@ components:
       title: ExportJobStatus
       type: string
     ExportJobV1:
-      description: One durable export workflow, projected without a reusable download
-        grant.
+      description: One durable export workflow, projected without a reusable download grant.
       properties:
         attempt_id:
           minLength: 1
@@ -17883,8 +17964,7 @@ components:
       type: object
     HuggingFaceEpisodeSourceV1:
       additionalProperties: false
-      description: Stable source recording identity, separate from converter artifact
-        identity.
+      description: Stable source recording identity, separate from converter artifact identity.
       properties:
         episode_index:
           minimum: 0.0
@@ -18005,8 +18085,7 @@ components:
       title: ImmutableReviewDecision
       type: object
     IngestProcessingMode:
-      description: Whether a committed package is already one episode or needs manual
-        slicing.
+      description: Whether a committed package is already one episode or needs manual slicing.
       enum:
       - DIRECT_EPISODE
       - CONTINUOUS_RECORDING
@@ -18055,8 +18134,7 @@ components:
       type: object
     InstanceReadinessSummary:
       additionalProperties: false
-      description: Small allowlisted readiness projection; never stores dependency
-        error text.
+      description: Small allowlisted readiness projection; never stores dependency error text.
       properties:
         failed_checks:
           default: []
@@ -19259,8 +19337,7 @@ components:
       type: object
     LogicalMediaGrant:
       additionalProperties: false
-      description: 'Playback mapping for one frozen stream, without storage dispatch
-        fields.
+      description: 'Playback mapping for one frozen stream, without storage dispatch fields.
 
 
         Logical sample i maps to media_start_seconds + i / sample_rate_hz.
@@ -20046,8 +20123,7 @@ components:
       type: object
     ManagedStorageObject:
       additionalProperties: false
-      description: Public object fact. Physical bucket/key locators never cross this
-        boundary.
+      description: Public object fact. Physical bucket/key locators never cross this boundary.
       properties:
         active_reference_count:
           minimum: 0.0
@@ -20211,8 +20287,7 @@ components:
       type: object
     ManifestDiscoveryV1:
       additionalProperties: false
-      description: Read-only package facts; no code in this domain writes P20 task
-        configuration.
+      description: Read-only package facts; no code in this domain writes P20 task configuration.
       properties:
         cameras:
           items:
@@ -20260,8 +20335,8 @@ components:
       additionalProperties: false
       properties:
         crc64:
-          description: Unsigned CRC64 encoded as a canonical decimal string so JSON
-            clients do not lose uint64 precision.
+          description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose
+            uint64 precision.
           maxLength: 20
           pattern: ^(?:0|[1-9][0-9]{0,19})$
           title: Crc64
@@ -22001,6 +22076,23 @@ components:
       - organization_id
       title: OrganizationRobotScope
       type: object
+    OriginalArchiveRequest:
+      additionalProperties: false
+      properties:
+        import_ids:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          maxItems: 1000
+          minItems: 1
+          title: Import Ids
+          type: array
+      required:
+      - import_ids
+      title: OriginalArchiveRequest
+      type: object
     OriginalDirectory:
       properties:
         entries:
@@ -22252,8 +22344,7 @@ components:
       title: OriginalVideo
       type: object
     OriginalVideoReferenceV1:
-      description: An existing immutable video; derivative cleanup must never own
-        this object.
+      description: An existing immutable video; derivative cleanup must never own this object.
       properties:
         codec:
           minLength: 1
@@ -23062,8 +23153,7 @@ components:
       type: object
     PlatformOperationsBackup:
       additionalProperties: false
-      description: A backup projection without repository, environment, or object
-        locators.
+      description: A backup projection without repository, environment, or object locators.
       properties:
         backup_completed_at:
           format: date-time
@@ -23119,8 +23209,7 @@ components:
       type: object
     PlatformOperationsNode:
       additionalProperties: false
-      description: An operational node projection with every host and process locator
-        removed.
+      description: An operational node projection with every host and process locator removed.
       properties:
         applied_config_revision:
           minimum: 0.0
@@ -24120,8 +24209,7 @@ components:
       type: string
     PublicAuthConfiguration:
       additionalProperties: false
-      description: Unauthenticated registration policy discovery with a stable challenge
-        seam.
+      description: Unauthenticated registration policy discovery with a stable challenge seam.
       properties:
         challenge:
           anyOf:
@@ -24396,8 +24484,7 @@ components:
       type: object
     QcFinding:
       additionalProperties: false
-      description: Traceable rule result with an affected range; point events use
-        equal bounds.
+      description: Traceable rule result with an affected range; point events use equal bounds.
       properties:
         code:
           $ref: '#/components/schemas/QualityCode'
@@ -24609,8 +24696,7 @@ components:
       type: string
     QualityProfileV1:
       additionalProperties: false
-      description: Immutable versioned rule profile. Every decision threshold lives
-        here.
+      description: Immutable versioned rule profile. Every decision threshold lives here.
       properties:
         action:
           $ref: '#/components/schemas/ActionQualityProfileV1'
@@ -24907,8 +24993,7 @@ components:
       type: object
     RecalibrateCalibrationSetRequest:
       additionalProperties: false
-      description: Create a successor draft; previously stored version content is
-        immutable.
+      description: Create a successor draft; previously stored version content is immutable.
       properties:
         change_summary:
           maxLength: 2000
@@ -26679,8 +26764,7 @@ components:
       type: object
     RobotAssetPartAuthorization:
       additionalProperties: false
-      description: A short-lived browser PUT authorization. Never persist or cache
-        this URL.
+      description: A short-lived browser PUT authorization. Never persist or cache this URL.
       properties:
         expires_at:
           format: date-time
@@ -28657,8 +28741,8 @@ components:
           title: Compression
           type: string
         crc64:
-          description: Unsigned CRC64 encoded as a canonical decimal string so JSON
-            clients do not lose uint64 precision.
+          description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose
+            uint64 precision.
           maxLength: 20
           pattern: ^(?:0|[1-9][0-9]{0,19})$
           title: Crc64
@@ -29322,8 +29406,7 @@ components:
       type: object
     SensorRecordingConfigV1:
       additionalProperties: false
-      description: Queryable non-video timing facts copied from the immutable config
-        object.
+      description: Queryable non-video timing facts copied from the immutable config object.
       properties:
         clock_domain:
           maxLength: 128
@@ -29724,9 +29807,9 @@ components:
       properties:
         modalities:
           additionalProperties: true
-          description: Logical modality values. Binary media payloads are never embedded
-            in the JSON step window; they are represented by a bounded metadata marker
-            and served through the canonical aligned-media authorization API.
+          description: Logical modality values. Binary media payloads are never embedded in the JSON step
+            window; they are represented by a bounded metadata marker and served through the canonical
+            aligned-media authorization API.
           title: Modalities
           type: object
         repeated:
@@ -29892,8 +29975,7 @@ components:
       type: object
     StreamSchemaDefinitionField:
       additionalProperties: false
-      description: The supported, portable field vocabulary for an authored stream
-        schema.
+      description: The supported, portable field vocabulary for an authored stream schema.
       properties:
         description:
           default: ''
@@ -30162,8 +30244,7 @@ components:
       type: object
     TagDerivationView:
       additionalProperties: false
-      description: Browser projection of the command; nanosecond integers remain exact
-        strings.
+      description: Browser projection of the command; nanosecond integers remain exact strings.
       properties:
         annotation_task_id:
           anyOf:
@@ -30296,8 +30377,7 @@ components:
       title: TagObjectRef
       type: object
     TagSchemaDocument:
-      description: Immutable schema content; no product maximum hierarchy depth is
-        assumed.
+      description: Immutable schema content; no product maximum hierarchy depth is assumed.
       properties:
         mutual_exclusions:
           default: []
@@ -30328,8 +30408,7 @@ components:
       type: string
     TagSchemaTarget:
       additionalProperties: false
-      description: Explicit compatibility link; automatic task creation never chooses
-        a latest schema.
+      description: Explicit compatibility link; automatic task creation never chooses a latest schema.
       properties:
         dataset_id:
           maxLength: 256
@@ -30510,10 +30589,38 @@ components:
       - description
       title: TaskDataIssue
       type: object
+    TaskDeletionResult:
+      properties:
+        collection_task_id:
+          title: Collection Task Id
+          type: string
+        deleted_bytes:
+          title: Deleted Bytes
+          type: integer
+        deleted_objects:
+          title: Deleted Objects
+          type: integer
+        deleted_rows:
+          title: Deleted Rows
+          type: integer
+        status:
+          default: DELETED
+          title: Status
+          type: string
+        task_code:
+          title: Task Code
+          type: string
+      required:
+      - collection_task_id
+      - task_code
+      - deleted_rows
+      - deleted_objects
+      - deleted_bytes
+      title: TaskDeletionResult
+      type: object
     TaskDeviceProgress:
       additionalProperties: false
-      description: Counts only authenticated device facts; cloud events never populate
-        this object.
+      description: Counts only authenticated device facts; cloud events never populate this object.
       properties:
         captured_count:
           minimum: 0.0
@@ -31605,8 +31712,7 @@ components:
       type: object
     UpdateRobotRequest:
       additionalProperties: false
-      description: Mutable robot facts; lifecycle transitions use their dedicated
-        command.
+      description: Mutable robot facts; lifecycle transitions use their dedicated command.
       properties:
         connectivity_reason_code:
           anyOf:
@@ -31639,8 +31745,7 @@ components:
       type: object
     UpdateStreamSchemaDraftRequest:
       additionalProperties: false
-      description: Edits only the currently addressed DRAFT version under a strong
-        ETag.
+      description: Edits only the currently addressed DRAFT version under a strong ETag.
       properties:
         change_summary:
           maxLength: 2000
@@ -31788,8 +31893,7 @@ components:
       type: object
     UploadEpisodeTargetV1:
       additionalProperties: false
-      description: Immutable Episode facts; the viewer target resolves its logical
-        streams.
+      description: Immutable Episode facts; the viewer target resolves its logical streams.
       properties:
         annotation_task_id:
           maxLength: 128
@@ -31885,8 +31989,8 @@ components:
           title: Authorization Expires At
         crc64:
           anyOf:
-          - description: Unsigned CRC64 encoded as a canonical decimal string so JSON
-              clients do not lose uint64 precision.
+          - description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose
+              uint64 precision.
             maxLength: 20
             pattern: ^(?:0|[1-9][0-9]{0,19})$
             type: string
@@ -31992,8 +32096,7 @@ components:
       type: string
     UploadProcessingStatusV1:
       additionalProperties: false
-      description: Uploader-safe processing projection; never exposes a raw Workflow
-        result.
+      description: Uploader-safe processing projection; never exposes a raw Workflow result.
       properties:
         aligned_media:
           anyOf:
@@ -32085,8 +32188,8 @@ components:
           - type: 'null'
           title: Etag
         expected_crc64:
-          description: Unsigned CRC64 encoded as a canonical decimal string so JSON
-            clients do not lose uint64 precision.
+          description: Unsigned CRC64 encoded as a canonical decimal string so JSON clients do not lose
+            uint64 precision.
           maxLength: 20
           pattern: ^(?:0|[1-9][0-9]{0,19})$
           title: Expected Crc64
@@ -32860,8 +32963,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -32929,8 +33031,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -33016,8 +33117,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -33179,8 +33279,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required authentication security provider is temporarily
-            unavailable.
+          description: A required authentication security provider is temporarily unavailable.
       security:
       - bearerAuth: []
       summary: Request Recovery Email Verification
@@ -33313,19 +33412,16 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/annotation-file:
     get:
-      description: 'Download exact hc-annotation/1 bytes. Defaults to the current
-        approved revision.
+      description: 'Download exact hc-annotation/1 bytes. Defaults to the current approved revision.
 
 
         Unreviewed downloads require both an explicit revision and allow_unreviewed=true.
 
         The immutable file contains data_binding, revision (all Tags/attributes/objects/relations),
 
-        complete tag_schema, half-open step conventions, cumulative operations and
-        source facts.
+        complete tag_schema, half-open step conventions, cumulative operations and source facts.
 
-        Later review records never rewrite these bytes. Response headers identify
-        revision,
+        Later review records never rewrite these bytes. Response headers identify revision,
 
         current approval/submission (when applicable), and the verified content SHA-256.'
       operationId: downloadRevisionFile
@@ -33382,8 +33478,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
@@ -33650,8 +33746,7 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/deliveries:
     get:
-      description: Read persisted jobs, newest first. Pass the last job_id as before
-        for the next page.
+      description: Read persisted jobs, newest first. Pass the last job_id as before for the next page.
       operationId: listAnnotationDeliveries
       parameters:
       - in: path
@@ -33685,8 +33780,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/AnnotationDeliveryJob'
-                title: Response List Annotation Deliveries Api V1 Annotation Tasks  Task
-                  Id  Deliveries Get
+                title: Response List Annotation Deliveries Api V1 Annotation Tasks  Task Id  Deliveries
+                  Get
                 type: array
           description: Successful Response
         '401':
@@ -33712,15 +33807,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: Invalid track selection; overlap errors identify annotation
-            IDs
+          description: Invalid track selection; overlap errors identify annotation IDs
         '503':
           content:
             application/problem+json:
@@ -33793,15 +33887,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: Invalid track selection; overlap errors identify annotation
-            IDs
+          description: Invalid track selection; overlap errors identify annotation IDs
         '503':
           content:
             application/problem+json:
@@ -33859,15 +33952,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: Invalid track selection; overlap errors identify annotation
-            IDs
+          description: Invalid track selection; overlap errors identify annotation IDs
         '503':
           content:
             application/problem+json:
@@ -33881,8 +33973,7 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}/cancel:
     post:
-      description: Fence the active worker immediately. Existing source/artifact objects
-        are retained.
+      description: Fence the active worker immediately. Existing source/artifact objects are retained.
       operationId: cancelAnnotationDelivery
       parameters:
       - in: path
@@ -33933,15 +34024,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: Invalid track selection; overlap errors identify annotation
-            IDs
+          description: Invalid track selection; overlap errors identify annotation IDs
         '503':
           content:
             application/problem+json:
@@ -33955,8 +34045,8 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}/download:
     post:
-      description: Reauthorize task ownership and verify the cached archive before
-        issuing a 5-minute grant.
+      description: Reauthorize task ownership and verify the cached archive before issuing a 5-minute
+        grant.
       operationId: downloadAnnotationDelivery
       parameters:
       - in: path
@@ -34001,15 +34091,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: Invalid track selection; overlap errors identify annotation
-            IDs
+          description: Invalid track selection; overlap errors identify annotation IDs
         '503':
           content:
             application/problem+json:
@@ -34023,8 +34112,7 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/deliveries/{job_id}/retry:
     post:
-      description: Retry the same frozen data/revision/track. Never creates an annotation
-        revision.
+      description: Retry the same frozen data/revision/track. Never creates an annotation revision.
       operationId: retryAnnotationDelivery
       parameters:
       - in: path
@@ -34075,15 +34163,14 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: Invalid track selection; overlap errors identify annotation
-            IDs
+          description: Invalid track selection; overlap errors identify annotation IDs
         '503':
           content:
             application/problem+json:
@@ -34149,8 +34236,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/ExclusionRange'
-                title: Response Get Effective Exclusions Api V1 Annotation Tasks  Task
-                  Id  Exclusions Get
+                title: Response Get Effective Exclusions Api V1 Annotation Tasks  Task Id  Exclusions
+                  Get
                 type: array
           description: Successful Response
         '422':
@@ -34209,8 +34296,7 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/AnnotationReview'
-                title: Response List Annotation Reviews Api V1 Annotation Tasks  Task
-                  Id  Reviews Get
+                title: Response List Annotation Reviews Api V1 Annotation Tasks  Task Id  Reviews Get
                 type: array
           description: Successful Response
         '422':
@@ -34281,8 +34367,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/AnnotationRevision'
-                title: Response List Annotation Revisions Api V1 Annotation Tasks  Task
-                  Id  Revisions Get
+                title: Response List Annotation Revisions Api V1 Annotation Tasks  Task Id  Revisions
+                  Get
                 type: array
           description: Successful Response
         '422':
@@ -34372,8 +34458,7 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/revisions/{revision}/file:
     get:
-      description: Read generation state for one saved revision without creating a
-        job or file.
+      description: Read generation state for one saved revision without creating a job or file.
       operationId: revisionFileStatus
       parameters:
       - in: path
@@ -34418,8 +34503,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
@@ -34438,8 +34523,7 @@ paths:
       tags:
       - annotation
     post:
-      description: Request generation/retry using the observed generation; never create
-        a new revision.
+      description: Request generation/retry using the observed generation; never create a new revision.
       operationId: requestRevisionFile
       parameters:
       - in: path
@@ -34490,8 +34574,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: File not ready, integrity mismatch, generation conflict or
-            explicit review selection required
+          description: File not ready, integrity mismatch, generation conflict or explicit review selection
+            required
         '422':
           content:
             application/problem+json:
@@ -34511,8 +34595,7 @@ paths:
       - annotation
   /api/v1/annotation-tasks/{task_id}/revisions:restore:
     post:
-      description: Create a new immutable annotation data revision from an earlier
-        revision.
+      description: Create a new immutable annotation data revision from an earlier revision.
       operationId: restoreAnnotationRevision
       parameters:
       - in: path
@@ -34569,8 +34652,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/AnnotationSubmission'
-                title: Response List Annotation Submissions Api V1 Annotation Tasks  Task
-                  Id  Submissions Get
+                title: Response List Annotation Submissions Api V1 Annotation Tasks  Task Id  Submissions
+                  Get
                 type: array
           description: Successful Response
         '422':
@@ -34669,8 +34752,7 @@ paths:
       - annotation
   /api/v1/annotations/revisions:
     get:
-      description: List current immutable revision threads for the selected project
-        and region.
+      description: List current immutable revision threads for the selected project and region.
       operationId: listAnnotationRevisionThreads
       parameters:
       - in: query
@@ -34828,8 +34910,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required public-authentication challenge is absent or was
-            rejected.
+          description: A required public-authentication challenge is absent or was rejected.
         '422':
           content:
             application/problem+json:
@@ -34841,8 +34922,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -34855,8 +34935,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required authentication security provider is temporarily
-            unavailable.
+          description: A required authentication security provider is temporarily unavailable.
       security: []
       summary: Request Password Recovery
       tags:
@@ -34887,8 +34966,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegistrationResult'
-          description: Account created. The first registered account is the platform
-            admin.
+          description: Account created. The first registered account is the platform admin.
           headers:
             Cache-Control:
               description: Authentication and authorization material must not be cached.
@@ -34906,8 +34984,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required public-authentication challenge is absent or was
-            rejected.
+          description: A required public-authentication challenge is absent or was rejected.
         '409':
           content:
             application/problem+json:
@@ -34925,8 +35002,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -34939,8 +35015,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required authentication security provider is temporarily
-            unavailable.
+          description: A required authentication security provider is temporarily unavailable.
       security: []
       summary: Register Account
       tags:
@@ -35045,8 +35120,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required public-authentication challenge is absent or was
-            rejected.
+          description: A required public-authentication challenge is absent or was rejected.
         '422':
           content:
             application/problem+json:
@@ -35058,8 +35132,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -35072,8 +35145,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: A required authentication security provider is temporarily
-            unavailable.
+          description: A required authentication security provider is temporarily unavailable.
       security: []
       summary: Create Session
       tags:
@@ -35765,8 +35837,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -35840,8 +35911,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -35915,8 +35985,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36086,8 +36155,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36226,8 +36294,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36313,8 +36380,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36400,8 +36466,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36487,8 +36552,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36612,8 +36676,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36752,8 +36815,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36839,8 +36901,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -36926,8 +36987,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -37013,8 +37073,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: An authentication security or session-admission policy denied
-            the request.
+          description: An authentication security or session-admission policy denied the request.
           headers:
             Retry-After:
               description: Bounded decimal delay-seconds before a retry.
@@ -40426,8 +40485,7 @@ paths:
           type: string
       responses:
         '204':
-          description: The active temporary lock was cleared, or the account was already
-            unlocked.
+          description: The active temporary lock was cleared, or the account was already unlocked.
           headers:
             Cache-Control:
               description: Authentication and authorization material must not be cached.
@@ -40938,8 +40996,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: The command conflicts with the current owner, lease, token,
-            or state.
+          description: The command conflicts with the current owner, lease, token, or state.
         '422':
           content:
             application/problem+json:
@@ -41056,8 +41113,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: The command conflicts with the current owner, lease, token,
-            or state.
+          description: The command conflicts with the current owner, lease, token, or state.
         '422':
           content:
             application/problem+json:
@@ -41123,8 +41179,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: The command conflicts with the current owner, lease, token,
-            or state.
+          description: The command conflicts with the current owner, lease, token, or state.
         '422':
           content:
             application/problem+json:
@@ -41186,8 +41241,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: The command conflicts with the current owner, lease, token,
-            or state.
+          description: The command conflicts with the current owner, lease, token, or state.
         '422':
           content:
             application/problem+json:
@@ -41253,8 +41307,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: The command conflicts with the current owner, lease, token,
-            or state.
+          description: The command conflicts with the current owner, lease, token, or state.
         '422':
           content:
             application/problem+json:
@@ -41316,8 +41369,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-          description: The command conflicts with the current owner, lease, token,
-            or state.
+          description: The command conflicts with the current owner, lease, token, or state.
         '422':
           content:
             application/problem+json:
@@ -42095,8 +42147,7 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/AnnotationTask'
-                title: Response List Annotation Tasks Api V1 Projects  Project Id  Annotation
-                  Tasks Get
+                title: Response List Annotation Tasks Api V1 Projects  Project Id  Annotation Tasks Get
                 type: array
           description: Successful Response
         '422':
@@ -43772,6 +43823,16 @@ paths:
           - type: 'null'
           title: Robot Id
       - in: query
+        name: dataset_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Dataset Id
+      - in: query
         name: limit
         required: false
         schema:
@@ -43945,6 +44006,79 @@ paths:
       tags:
       - collection-tasks
   /api/v1/projects/{project_id}/collection-tasks/{collection_task_id}:
+    delete:
+      operationId: deleteCollectionTask
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+      - in: path
+        name: collection_task_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: If-Match
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 255
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskDeletionResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Delete Collection Task
+      tags:
+      - collection-tasks
     get:
       operationId: getCollectionTask
       parameters:
@@ -44704,8 +44838,8 @@ paths:
           - type: 'null'
           description: Exact immutable collection-task identity owned by the Dataset.
           title: Collection Task Id
-      - description: Case-insensitive plain-text substring matched against the dataset
-          task or any dataset Episode task.
+      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+          Episode task.
         in: query
         name: task
         required: false
@@ -44715,8 +44849,8 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
-          description: Case-insensitive plain-text substring matched against the dataset
-            task or any dataset Episode task.
+          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+            Episode task.
           title: Task
       - in: query
         name: tag
@@ -47676,6 +47810,56 @@ paths:
       summary: Return Version Review
       tags:
       - datasets
+  /api/v1/projects/{project_id}/datasets:display-labels:
+    post:
+      operationId: resolveDataDisplayLabels
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 64
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisplayLabelRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisplayLabelResponse'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Resolve Display Labels
+      tags:
+      - datasets
   /api/v1/projects/{project_id}/datasets:facets:
     get:
       operationId: getDatasetFacets
@@ -47716,8 +47900,8 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - description: Case-insensitive plain-text substring matched against the dataset
-          task or any dataset Episode task.
+      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+          Episode task.
         in: query
         name: task
         required: false
@@ -47727,8 +47911,8 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
-          description: Case-insensitive plain-text substring matched against the dataset
-            task or any dataset Episode task.
+          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+            Episode task.
           title: Task
       - in: query
         name: tag
@@ -48024,8 +48208,8 @@ paths:
             type: string
           - type: 'null'
           title: Robot Id
-      - description: Case-insensitive plain-text substring matched against the dataset
-          task or any dataset Episode task.
+      - description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+          Episode task.
         in: query
         name: task
         required: false
@@ -48035,8 +48219,8 @@ paths:
             minLength: 1
             type: string
           - type: 'null'
-          description: Case-insensitive plain-text substring matched against the dataset
-            task or any dataset Episode task.
+          description: Case-insensitive plain-text substring matched against the dataset task or any dataset
+            Episode task.
           title: Task
       - in: query
         name: tag
@@ -48331,8 +48515,7 @@ paths:
       - logical_data
   /api/v1/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/manifest-discovery:
     get:
-      description: Return only the persisted discovery for this authorized task's
-        rollout.
+      description: Return only the persisted discovery for this authorized task's rollout.
       operationId: getAnnotationTaskManifestDiscovery
       parameters:
       - in: path
@@ -48418,8 +48601,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/TagDerivationView'
-                title: Response List Tag Episodes Api V1 Projects  Project Id  Regions  Region
-                  Code  Annotation Tasks  Task Id  Tag Episodes Get
+                title: Response List Tag Episodes Api V1 Projects  Project Id  Regions  Region Code  Annotation
+                  Tasks  Task Id  Tag Episodes Get
                 type: array
           description: Successful Response
         '422':
@@ -48543,8 +48726,7 @@ paths:
       - episode_data
   /api/v1/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes/{job_id}/cancel:
     post:
-      description: Cancel only a never-started command; started primary data is never
-        deleted.
+      description: Cancel only a never-started command; started primary data is never deleted.
       operationId: cancelTagEpisode
       parameters:
       - in: path
@@ -53827,9 +54009,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/DataVersionRef'
-                title: Response Versions Api V1 Projects  Project Id  Regions  Region
-                  Code  Datasets  Dataset Id  Episodes  Episode Id  Data Versions
-                  Get
+                title: Response Versions Api V1 Projects  Project Id  Regions  Region Code  Datasets  Dataset
+                  Id  Episodes  Episode Id  Data Versions Get
                 type: array
           description: Successful Response
         '422':
@@ -55253,8 +55434,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/EpisodeDeliveryJob'
-                title: Response List Episode Deliveries Api V1 Projects  Project Id  Regions  Region
-                  Code  Episode Deliveries Get
+                title: Response List Episode Deliveries Api V1 Projects  Project Id  Regions  Region Code  Episode
+                  Deliveries Get
                 type: array
           description: Successful Response
         '422':
@@ -55718,8 +55899,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/NativeImportProgress'
-                title: Response List Native Imports Api V1 Projects  Project Id  Regions  Region
-                  Code  Lerobot Imports Get
+                title: Response List Native Imports Api V1 Projects  Project Id  Regions  Region Code  Lerobot
+                  Imports Get
                 type: array
           description: Successful Response
         '422':
@@ -55778,6 +55959,55 @@ paths:
       security:
       - bearerAuth: []
       summary: Begin Lerobot Import
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/archive:
+    post:
+      operationId: downloadOriginalArchive
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OriginalArchiveRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/zip:
+              schema:
+                format: binary
+                type: string
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Original Archive
       tags:
       - lerobot-imports
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration:
@@ -57951,8 +58181,7 @@ paths:
       - manual-cleaning
   /api/v1/projects/{project_id}/regions/{region_code}/quality-problems:
     get:
-      description: Expose latest RISK/REJECT reports as read-only unified issue-center
-        rows.
+      description: Expose latest RISK/REJECT reports as read-only unified issue-center rows.
       operationId: listAutoQualityProblems
       parameters:
       - in: path
@@ -58470,8 +58699,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/UploadPart'
-                title: Response List Uploaded Parts Api V1 Projects  Project Id  Regions  Region
-                  Code  Upload Sessions  Session Id  Parts Get
+                title: Response List Uploaded Parts Api V1 Projects  Project Id  Regions  Region Code  Upload
+                  Sessions  Session Id  Parts Get
                 type: array
           description: Successful Response
         '422':
@@ -58487,8 +58716,7 @@ paths:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/processing:
     get:
-      description: Read only the processing result linked to this authorized upload
-        session.
+      description: Read only the processing result linked to this authorized upload session.
       operationId: getUploadProcessingStatus
       parameters:
       - in: path
@@ -58533,8 +58761,7 @@ paths:
       - ingest
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media:
     get:
-      description: Issue an audited, short-lived Raw MCAP read handle for the scoped
-        uploader.
+      description: Issue an audited, short-lived Raw MCAP read handle for the scoped uploader.
       operationId: getUploadRawMedia
       parameters:
       - in: path
@@ -58784,8 +59011,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/PartAuthorization'
-                title: Response Renew Upload Authorizations Api V1 Projects  Project
-                  Id  Regions  Region Code  Upload Sessions  Session Id  Renew Post
+                title: Response Renew Upload Authorizations Api V1 Projects  Project Id  Regions  Region
+                  Code  Upload Sessions  Session Id  Renew Post
                 type: array
           description: Successful Response
         '422':
@@ -58880,9 +59107,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/PartAuthorization'
-                title: Response Retry Failed Upload Parts Api V1 Projects  Project
-                  Id  Regions  Region Code  Upload Sessions  Session Id  Retry Parts
-                  Post
+                title: Response Retry Failed Upload Parts Api V1 Projects  Project Id  Regions  Region
+                  Code  Upload Sessions  Session Id  Retry Parts Post
                 type: array
           description: Successful Response
         '422':
@@ -59032,6 +59258,44 @@ paths:
       tags:
       - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:
+    delete:
+      operationId: deleteRobotIngestIdentity
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Delete Robot Identity
+      tags:
+      - robot-ingest
     get:
       operationId: getRobotIngestIdentity
       parameters:
@@ -61305,8 +61569,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/TagSchemaVersion'
-                title: Response List Tag Schema Versions Api V1 Projects  Project
-                  Id  Tag Schemas  Schema Id  Versions Get
+                title: Response List Tag Schema Versions Api V1 Projects  Project Id  Tag Schemas  Schema
+                  Id  Versions Get
                 type: array
           description: Successful Response
         '422':
@@ -61565,8 +61829,7 @@ paths:
       - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
     get:
-      description: Pre-discovery failures have no source episode. Keep the G0 schema
-        unchanged.
+      description: Pre-discovery failures have no source episode. Keep the G0 schema unchanged.
       operationId: getRobotIngestProcessingDiagnostics
       parameters:
       - in: path

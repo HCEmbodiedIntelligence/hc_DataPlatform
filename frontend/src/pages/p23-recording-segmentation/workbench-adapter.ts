@@ -38,7 +38,9 @@ export function buildRecordingCameraStreams(input: {
     accessibleSummary:
       source.preview_status === "UNAVAILABLE"
         ? "深度预览尚未生成，原始深度仍保留。"
-        : `${source.camera_id} ${source.modality === "depth" ? "深度可视化" : "RGB 录制"}，${source.fps} fps，${source.codec}`,
+        : source.modality === "depth"
+          ? `${source.camera_id}，RealSense 官方动态着色预览；颜色随帧内分布变化，不代表固定距离。无效深度显示为黑色。`
+          : `${source.camera_id} RGB 录制，${source.fps} fps，${source.codec}`,
     mediaSource:
       source.preview_status === "UNAVAILABLE"
         ? undefined

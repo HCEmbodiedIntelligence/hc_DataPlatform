@@ -6,7 +6,9 @@ from tempfile import SpooledTemporaryFile
 from typing import Annotated, BinaryIO, cast
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.router import get_service as get_ingest_service
@@ -38,6 +40,7 @@ from .processing import (
 )
 from .resolutions import EpisodeResolution, ResolveEpisode, get_resolution, resolve_episode
 from .service import LeRobotWebUploadService, read_bounded
+from .source_archive import OriginalArchiveRequest, archive_files, stream_archive
 from .source_browser import (
     OriginalEpisode,
     OriginalFileGrant,
@@ -227,6 +230,43 @@ def list_native_imports(
         dataset_id=dataset_id,
         include_all_sources=include_all_sources,
         recording_id=recording_id,
+    )
+
+
+@router.post(
+    "/archive",
+    operation_id="downloadOriginalArchive",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {
+                "application/zip": {"schema": {"type": "string", "format": "binary"}}
+            }
+        }
+    },
+)
+def download_original_archive(
+    project_id: str,
+    region_code: str,
+    command: OriginalArchiveRequest,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+) -> StreamingResponse:
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    authorize_scope(auth, project_id, "export.download", region_code, organization_id)
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    files = archive_files(browser, organization_id, project_id, region_code, command)
+    stream = stream_archive(browser, files)
+    return StreamingResponse(
+        stream,
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'attachment; filename="original-data.zip"',
+            "X-Accel-Buffering": "no",
+        },
+        background=BackgroundTask(stream.close),
     )
 
 

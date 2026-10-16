@@ -40,6 +40,7 @@ import {
 import { useShellStore } from "../../shared/scope/shell-store";
 import { DataExportPage } from "./page";
 import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
+import RawDataExportPanel from "./RawDataExportPanel";
 
 const server = setupServer(...datasetHandlers);
 const postedExports: { episode_ids: string[] }[] = [];
@@ -51,9 +52,11 @@ vi.mock("../../features/collection-tasks/api", () => ({
           collection_task_id: "assembly",
           dataset_id: "dataset_fx_01",
           name: "Assembly task",
+          task_code: "00000012",
         },
         {
           collection_task_id: "other",
+          task_code: "00000013",
           dataset_id: "dataset_fx_01",
           name: "Other task",
         },
@@ -65,6 +68,30 @@ vi.mock("../../features/collection-tasks/api", () => ({
 
 function LocationSearch() {
   return <output data-testid="location-search">{useLocation().search}</output>;
+}
+
+function rawDownloadSession() {
+  const store = useShellStore.getState();
+  const { authorization, scope } = store;
+  store.setSession(
+    { actorId: "reader", displayName: "Reader", roleIds: [] },
+    "test-session",
+  );
+  store.setSessionScopes(
+    [
+      {
+        organizationId: scope!.organizationId,
+        projectId: scope!.projectId!,
+        regionCodes: [scope!.regionCode!],
+        projectWide: false,
+        capabilities: [],
+      },
+    ],
+    1,
+  );
+  store.setScope(scope!);
+  store.setAuthorization(authorization!);
+  return scope!;
 }
 
 beforeAll(() => {
@@ -177,6 +204,126 @@ afterAll(() => {
 });
 
 describe("P21 data export page", () => {
+  it("selects raw batches across pages and downloads all selected files in one archive request", async () => {
+    const scope = rawDownloadSession();
+    const batches = Array.from({ length: 22 }, (_, i) => ({
+      import_id: `raw-${i}`,
+      dataset_id: datasetIds.dataset,
+      episode_count: 0,
+      file_count: 3,
+      total_bytes: 120,
+      source_format: "MCAP",
+      status: "RAW_COMMITTED",
+      updated_at: "2026-10-16T00:00:00Z",
+    }));
+    const archives: unknown[] = [];
+    server.use(
+      http.get("*/lerobot-imports", () => HttpResponse.json(batches)),
+      http.post("*/lerobot-imports/archive", async ({ request }) => {
+        archives.push(await request.json());
+        return new HttpResponse(new Uint8Array([80, 75, 3, 4]), {
+          headers: { "Content-Type": "application/zip" },
+        });
+      }),
+    );
+    const save = vi.fn(() => "blob:raw-archive");
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = save;
+        static revokeObjectURL = vi.fn();
+      },
+    );
+    const download = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(
+      <ProviderHarness>
+        <RawDataExportPanel
+          scope={scope}
+          datasetIds={[datasetIds.dataset]}
+          taskIds={[]}
+          hasFilter
+          canRead
+          canDownload
+        />
+      </ProviderHarness>,
+    );
+    await screen.findByText(/共 22 个原始批次/u);
+    const button = screen.getByRole("button", { name: "下载所选批次" });
+    expect(button).toBeDisabled();
+    const table = screen.getByRole("table", { name: "原始数据批次" });
+    await user.click(within(table).getAllByRole("checkbox")[1]!);
+    await user.click(within(table).getAllByRole("checkbox")[2]!);
+    await user.click(screen.getByTitle("2"));
+    await user.click(within(table).getAllByRole("checkbox")[1]!);
+    expect(screen.getByText(/已选 3 个批次 · 9 个文件/u)).toBeVisible();
+    await user.click(button);
+    await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    expect(archives).toEqual([{ import_ids: ["raw-0", "raw-1", "raw-20"] }]);
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "application/zip", size: 4 }),
+    );
+    expect(await screen.findByText("所选原始数据已下载为 ZIP")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "全选筛选结果" }));
+    expect(screen.getByText(/已选 22 个批次 · 66 个文件/u)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "清空选择" }));
+    expect(button).toBeDisabled();
+    expect(postedExports).toHaveLength(0);
+  });
+
+  it("resets raw selection when task filters change and disables downloads without permission", async () => {
+    const scope = rawDownloadSession();
+    server.use(
+      http.get("*/lerobot-imports", () =>
+        HttpResponse.json(
+          ["assembly", "other"].map((task) => ({
+            import_id: task,
+            collection_task_id: task,
+            dataset_id: datasetIds.dataset,
+            episode_count: 0,
+            file_count: 1,
+            total_bytes: 10,
+            source_format: "MCAP",
+            status: "RAW_COMMITTED",
+            updated_at: "2026-10-16T00:00:00Z",
+          })),
+        ),
+      ),
+    );
+    const panel = (taskIds: string[], canDownload = true) => (
+      <ProviderHarness>
+        <RawDataExportPanel
+          scope={scope}
+          datasetIds={[datasetIds.dataset]}
+          taskIds={taskIds}
+          hasFilter
+          canRead
+          canDownload={canDownload}
+        />
+      </ProviderHarness>
+    );
+    const user = userEvent.setup();
+    const view = render(panel([]));
+    await screen.findByText(/共 2 个原始批次/u);
+    await user.click(screen.getByRole("button", { name: "全选筛选结果" }));
+    expect(screen.getByText(/已选 2 个批次/u)).toBeVisible();
+    view.rerender(panel(["assembly"]));
+    await screen.findByText(/共 1 个原始批次/u);
+    expect(screen.getByRole("button", { name: "下载所选批次" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "全选筛选结果" }));
+    expect(screen.getByText(/已选 1 个批次/u)).toBeVisible();
+    view.rerender(panel(["assembly"], false));
+    expect(screen.getByRole("button", { name: "下载所选批次" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "全选筛选结果" })).toBeDisabled();
+    expect(
+      screen
+        .getAllByRole("checkbox")
+        .every((input) => (input as HTMLInputElement).disabled),
+    ).toBe(true);
+  });
+
   it("uses a newly registered format and freezes its selected implementation without page changes", async () => {
     const metadata = {
       format: "metadata_json",
@@ -527,7 +674,7 @@ describe("P21 data export page", () => {
     expect(
       screen.queryByRole("button", { name: /创建 .* 个导出任务/u }),
     ).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "选择原文件" }));
+    await user.click(screen.getByRole("button", { name: "查看文件" }));
     await user.click(
       await screen.findByRole("button", { name: "下载 info.json" }),
     );
@@ -796,7 +943,7 @@ describe("P21 data export page", () => {
       if (mode === "task") {
         await user.click(screen.getByLabelText("任务"));
         await user.click(
-          await screen.findByText("Assembly task", {
+          await screen.findByText("12", {
             selector: ".ant-select-item-option-content",
           }),
         );

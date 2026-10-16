@@ -1,5 +1,11 @@
+import {
+  DatasetDescription,
+  ResourceLabel,
+  useResourceLabel,
+} from "../../shared/lib/resource-labels";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { LeRobotProcessingRecords } from "../../features/ingest/processing/components/LeRobotProcessingRecords";
+import { CaptureProgressPanel } from "../../features/collection-tasks/CaptureProgressPanel";
 import { Alert, Button, Card, Input, Modal, Tabs, Typography } from "antd";
 import { Eye, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -18,7 +24,6 @@ import type { EpisodeListItemVm } from "../../features/datasets/api";
 import {
   useDatasetBootstrapQuery,
   useDatasetVersionCapacityQuery,
-  useDatasetVersionSchemaSummaryQuery,
   useDatasetVersionSourceProvenanceQuery,
   useDatasetVersionsQuery,
   usePublishDatasetVersionMutation,
@@ -66,7 +71,6 @@ const tabs: readonly { id: DatasetDetailTab; label: string }[] = [
   { id: "overview", label: "概要" },
   { id: "versions", label: "数据版本" },
   { id: "episodes", label: "Episodes" },
-  { id: "schema", label: "数据结构" },
   { id: "sources", label: "来源" },
   { id: "capacity", label: "容量" },
 ];
@@ -229,6 +233,10 @@ function EpisodeFilters({
   search: DatasetDetailSearch;
   onApply: (changes: Partial<DatasetDetailSearch>) => void;
 }>) {
+  const taskLabel = useResourceLabel({
+    kind: "collection_task",
+    id: search.collectionTaskId ?? "",
+  });
   const [draft, setDraft] = useState(() => ({
     q: search.q ?? "",
     task: search.collectionTaskId ?? search.task ?? "",
@@ -295,7 +303,11 @@ function EpisodeFilters({
           title={
             search.collectionTaskId ? "此任务范围由入口 URL 锁定" : undefined
           }
-          value={draft.task}
+          value={
+            search.collectionTaskId
+              ? (taskLabel.data?.label ?? "—")
+              : draft.task
+          }
           onChange={(event) =>
             search.collectionTaskId
               ? undefined
@@ -457,6 +469,7 @@ export function DatasetDetailPage() {
   const publishVersion = usePublishDatasetVersionMutation();
   const chosenVersionId =
     search.versionId ??
+    bootstrap.data?.workingVersionId ??
     bootstrap.data?.suggestedVersionId ??
     bootstrap.data?.currentReadyVersion?.versionId ??
     invalidVersion;
@@ -495,14 +508,6 @@ export function DatasetDetailPage() {
       hasChosenVersion &&
       capabilities.has("episode.read"),
   );
-  const schema = useDatasetVersionSchemaSummaryQuery(
-    datasetId,
-    chosenVersionId,
-    validRequest &&
-      search.tab === "schema" &&
-      hasChosenVersion &&
-      capabilities.has("data_schema.read"),
-  );
   const sources = useDatasetVersionSourceProvenanceQuery(
     datasetId,
     chosenVersionId,
@@ -519,13 +524,6 @@ export function DatasetDetailPage() {
       hasChosenVersion &&
       capabilities.has("storage.overview.read"),
   );
-  const versionBoundTab = [
-    "episodes",
-    "schema",
-    "sources",
-    "capacity",
-  ].includes(search.tab);
-
   useEffect(() => {
     const media = globalThis.matchMedia("(max-width: 1440px)");
     const update = () => setCompactInspector(media.matches);
@@ -543,33 +541,6 @@ export function DatasetDetailPage() {
     const base = routes.datasetDetail.build({ datasetId });
     void navigate(serialized ? `${base}?${serialized}` : base, { replace });
   };
-
-  useEffect(() => {
-    if (
-      !validRequest ||
-      !versionBoundTab ||
-      search.versionId ||
-      !hasChosenVersion
-    )
-      return;
-    const next = datasetDetailQueryCodec.withChanges(search, {
-      versionId: chosenVersionId,
-    });
-    const serialized = datasetDetailQueryCodec.build(next).toString();
-    const base = routes.datasetDetail.build({ datasetId });
-    void navigate(serialized ? `${base}?${serialized}` : base, {
-      replace: true,
-    });
-  }, [
-    chosenVersionId,
-    datasetId,
-    hasChosenVersion,
-    navigate,
-    search,
-    search.versionId,
-    validRequest,
-    versionBoundTab,
-  ]);
 
   useEffect(() => {
     if (
@@ -843,7 +814,7 @@ export function DatasetDetailPage() {
           {!hasChosenVersion ? (
             <PageState
               state="empty"
-              description="没有可用于列出 Episode 的固定版本。"
+              description="尚无处理完成的 Episode，完成后会自动显示，无需手动发布数据集版本。"
             />
           ) : (
             <div className={styles.episodeWorkspace}>
@@ -898,7 +869,7 @@ export function DatasetDetailPage() {
                         <strong>{episodes.data.items.length} 条</strong>
                       </div>
                       <div>
-                        <span>固定数据版本</span>
+                        <span>当前数据版本</span>
                         <code title={chosenVersionId}>{chosenVersionId}</code>
                       </div>
                     </section>
@@ -907,38 +878,6 @@ export function DatasetDetailPage() {
               </div>
             </div>
           )}
-        </section>
-      );
-    if (search.tab === "schema")
-      return !capabilities.has("data_schema.read") ? (
-        <PageState
-          state="forbidden"
-          description="数据结构摘要需要 data_schema.read 权限。"
-        />
-      ) : !hasChosenVersion ? (
-        <PageState state="empty" />
-      ) : schema.isPending ? (
-        <PageState state="loading" label="数据结构" />
-      ) : schema.isError ? (
-        <PageState
-          state={pageStateForError(schema.error)}
-          requestId={requestId(schema.error)}
-          onRetry={() => void schema.refetch()}
-        />
-      ) : (
-        <section className={styles.section}>
-          <Typography.Title level={2}>数据结构快照</Typography.Title>
-          <div className={styles.metricGrid}>
-            <MetricCard label="Version" value={schema.data.snapshot.version} />
-            <MetricCard
-              label="Channels"
-              value={schema.data.channelCount}
-              state={schema.data.channelCount === null ? "unknown" : "ready"}
-            />
-          </div>
-          <Typography.Paragraph>
-            SHA-256 <code>{schema.data.snapshot.sha256}</code>
-          </Typography.Paragraph>
         </section>
       );
     if (search.tab === "sources")
@@ -1040,7 +979,13 @@ export function DatasetDetailPage() {
         resourceId={datasetId}
         header={{
           title: data.dataset.name,
-          description: data.dataset.description || undefined,
+          description: data.dataset.description ? (
+            <DatasetDescription
+              datasetId={datasetId}
+              description={data.dataset.description}
+            />
+          ) : undefined,
+          compact: true,
           breadcrumbs: [
             { key: "assets", label: "数据资产", to: routes.datasets.build() },
             { key: "datasets", label: "数据集", to: routes.datasets.build() },
@@ -1100,12 +1045,9 @@ export function DatasetDetailPage() {
               onChange={(key) =>
                 applySearch({
                   tab: key as DatasetDetailTab,
-                  versionId:
-                    ["episodes", "schema", "sources", "capacity"].includes(
-                      key,
-                    ) && hasChosenVersion
-                      ? chosenVersionId
-                      : undefined,
+                  versionId: ["episodes", "sources", "capacity"].includes(key)
+                    ? search.versionId
+                    : undefined,
                 })
               }
             />
@@ -1124,7 +1066,17 @@ export function DatasetDetailPage() {
       >
         {rawScope &&
         capabilities.has("upload.read") &&
-        ["overview", "sources"].includes(search.tab) ? (
+        ["overview", "episodes"].includes(search.tab) ? (
+          <CaptureProgressPanel
+            key={`captures-${datasetId}`}
+            scope={rawScope}
+            datasetId={datasetId}
+            taskId={search.collectionTaskId}
+          />
+        ) : null}
+        {rawScope &&
+        capabilities.has("upload.read") &&
+        ["episodes", "overview", "sources"].includes(search.tab) ? (
           <LeRobotProcessingRecords
             key={datasetId}
             scope={rawScope}
@@ -1258,7 +1210,6 @@ function EpisodeInspector({
           <Typography.Title level={3}>
             Episode #{episode.ordinal + 1}
           </Typography.Title>
-          <code title={episode.episodeId}>{episode.episodeId}</code>
         </div>
         <Button
           className={styles.inspectorCloseButton}
@@ -1292,20 +1243,14 @@ function EpisodeInspector({
         </div>
       </section>
       <dl>
-        <dt>Revision</dt>
-        <dd>
-          <CopyableId value={episode.selectedRevisionId} label="Revision ID" />
-        </dd>
-        <dt>Version</dt>
-        <dd>
-          <CopyableId value={episode.versionId} label="Version ID" />
-        </dd>
         <dt>任务</dt>
-        <dd title={episode.task ?? undefined}>{episode.task ?? "未关联"}</dd>
+        <dd>
+          <ResourceLabel kind="collection_task" id={episode.task} />
+        </dd>
         <dt>机器人</dt>
         <dd>
           {episode.robotId ? (
-            <CopyableId value={episode.robotId} label="机器人 ID" />
+            <ResourceLabel kind="robot" id={episode.robotId} />
           ) : (
             "未绑定"
           )}
@@ -1315,6 +1260,12 @@ function EpisodeInspector({
         <dt>版本纳入</dt>
         <dd>{episodeInclusionLabel(episode.included)}</dd>
       </dl>
+      <details>
+        <summary>技术信息</summary>
+        <CopyableId value={episode.episodeId} label="Episode ID" />
+        <CopyableId value={episode.selectedRevisionId} label="Revision ID" />
+        <CopyableId value={episode.versionId} label="Version ID" />
+      </details>
       <div className={styles.drawerActions}>
         <Button
           type="primary"

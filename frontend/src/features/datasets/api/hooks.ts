@@ -70,6 +70,8 @@ export function useDatasetsQuery(
     queryFn: ({ signal }) => fetchDatasets(filters, signal),
     enabled,
     staleTime: 30_000,
+    refetchInterval: filters.collectionTaskId ? 5_000 : 30_000,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -122,6 +124,8 @@ export function useDatasetBootstrapQuery(datasetId: DatasetId, enabled = true) {
     queryKey: key,
     queryFn: ({ signal }) => fetchDatasetBootstrap(datasetId, signal),
     enabled,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   });
 }
 

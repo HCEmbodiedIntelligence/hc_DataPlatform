@@ -228,7 +228,7 @@ def validate(value):
             ):
                 raise ValueError("require_exposure_metadata 必须为布尔值")
             if source.get("depth_source") is not None:
-                from .depth_source import validate_profile
+                from hc_data_platform.data_formats.depth_source import validate_profile
 
                 validate_profile(source["depth_source"])
             cameras += 1

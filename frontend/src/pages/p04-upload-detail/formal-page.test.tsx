@@ -495,7 +495,7 @@ describe("P04 formal upload detail page", () => {
     expect(
       await screen.findByRole("heading", { name: "上传详情" }),
     ).toBeVisible();
-    expect(screen.getByText("自动质检处理中")).toBeVisible();
+    expect(screen.getByText("等待质检结果")).toBeVisible();
     expect(screen.getByText("自动质检报告尚未生成")).toBeVisible();
     expect(await screen.findByText(/后台处理中 · alignment/u)).toBeVisible();
     expect(screen.getByText("数据清单发现")).toBeVisible();

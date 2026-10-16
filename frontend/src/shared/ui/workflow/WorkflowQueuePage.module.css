@@ -530,6 +530,204 @@
   }
 }
 
+.compact {
+  gap: var(--hc-space-3);
+}
+
+.compact .pageHeader {
+  min-height: 48px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--hc-space-3);
+  padding: 0;
+}
+
+.compact .pageHeader h1 {
+  font-size: 26px;
+}
+
+.compact .headerActions {
+  width: auto;
+  align-self: center;
+}
+
+.compact .headerActions :where(button, a) {
+  min-height: 36px;
+  flex: none;
+  gap: 6px;
+  padding: 5px 11px;
+  font-size: 13px;
+}
+
+.compact .stageGrid {
+  grid-template-columns: repeat(var(--workflow-stage-count, 4), minmax(0, 1fr));
+  width: 100%;
+  gap: var(--hc-space-3);
+}
+
+.compact .stageCard {
+  min-height: 72px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-rows: auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  box-shadow: 0 2px 8px rgb(25 30 66 / 4%);
+}
+
+.compact .stageCard::before {
+  width: 3px;
+}
+
+.compact .stageIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.compact .stageIcon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.compact .stageCopy strong {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.compact .stageState,
+.compact .queueHeader p,
+.compact .queueHeader > div > span {
+  display: none;
+}
+
+.compact .stageCount {
+  min-width: 28px;
+  font-size: 22px;
+  line-height: 30px;
+  text-align: center;
+}
+
+.compact .stageCard[aria-current="page"] .stageCount {
+  color: var(--hc-color-primary-active);
+}
+
+.compact .queuePanel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.compact .queueHeader {
+  min-height: 60px;
+  justify-content: flex-start;
+  gap: var(--hc-space-3);
+  padding: 10px 14px;
+}
+
+.compact .queueHeader h2 {
+  margin: 0;
+  font-size: 16px;
+  white-space: nowrap;
+}
+
+.compact .queueHeader output {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.compact .queueHeader output strong {
+  font-size: 16px;
+}
+
+.compact .queueToolbar {
+  min-height: 60px;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--hc-space-3);
+  padding: 10px 14px;
+  background: transparent;
+}
+
+.compact .queueToolbar label {
+  display: block;
+  width: min(400px, 65%);
+  min-width: 0;
+}
+
+.compact .queueToolbar label > span:first-child {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.compact .searchField input {
+  min-height: 38px;
+  padding-block: 7px;
+  font-size: 13px;
+}
+
+.compact .tableWrap,
+.compact .queueEmpty,
+.compact .pagination {
+  grid-column: 1 / -1;
+}
+
+.compact .pagination {
+  padding: 8px 12px;
+}
+
+@media (max-width: 1023px) {
+  .compact .queuePanel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .compact .queueHeader {
+    min-height: 44px;
+    justify-content: space-between;
+  }
+
+  .compact .stageCard {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .compact .stageIcon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .compact .stageCount {
+    min-width: 24px;
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 560px) {
+  .compact .pageHeader h1 {
+    font-size: 20px;
+  }
+
+  .compact .stageGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .compact .queueToolbar {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .compact .queueToolbar label {
+    width: 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page *,
   .page *::before,

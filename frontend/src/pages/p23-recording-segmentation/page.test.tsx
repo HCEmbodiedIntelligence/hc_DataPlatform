@@ -38,6 +38,10 @@ const recording: ContinuousRecording = {
     region_code: scope.regionCode,
   },
   recording_id: "recording_three_hours",
+  file_name: "T1_20260831_090000_000.mcap",
+  source_file_name: "raw.mcap",
+  robot_name: "G1 测试机",
+  task_code: "00000001",
   recording_upload_id: "11111111-1111-4111-8111-111111111111",
   upload_session_id: null,
   rollout_id: "rollout-1",
@@ -159,6 +163,7 @@ function makeSwitchingGateway() {
   const second = {
     ...recording,
     recording_id: "recording_second",
+    file_name: "T1_20260830_090000_000.mcap",
     rollout_id: "rollout-second",
     capture_started_at: "2026-08-30T01:00:00Z",
     duration_ns: "5000000000",
@@ -166,6 +171,8 @@ function makeSwitchingGateway() {
   const otherTask = {
     ...second,
     recording_id: "recording_other_task",
+    file_name: "T2_20260829_090000_000.mcap",
+    task_code: "00000002",
     collection_task_id: "task-2",
     capture_started_at: "2026-08-29T01:00:00Z",
   };
@@ -277,14 +284,27 @@ describe("P23 recording segmentation", () => {
     const sidebar = await screen.findByRole("complementary", {
       name: "原始录制切换",
     });
+    const workspace = screen.getByLabelText("录制切片工作台");
+    await user.click(
+      within(sidebar).getByRole("button", { name: "收起原始录制" }),
+    );
+    expect(workspace).toHaveAttribute("data-navigator-collapsed", "true");
+    expect(within(sidebar).queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(
+      within(sidebar).getByRole("button", { name: "展开原始录制" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    await user.click(
+      within(sidebar).getByRole("button", { name: "展开原始录制" }),
+    );
+    expect(workspace).toHaveAttribute("data-navigator-collapsed", "false");
     expect(
       await within(sidebar).findByRole("button", {
-        name: `切换到录制 ${second.recording_id}`,
+        name: `切换到录制 ${second.file_name}`,
       }),
     ).toBeVisible();
     expect(
       within(sidebar).queryByRole("button", {
-        name: "切换到录制 recording_other_task",
+        name: "切换到录制 T2_20260829_090000_000.mcap",
       }),
     ).not.toBeInTheDocument();
     await user.click(
@@ -300,7 +320,7 @@ describe("P23 recording segmentation", () => {
       await screen.findByRole("checkbox", { name: "仅当前采集任务" }),
     ).not.toBeChecked();
     expect(
-      screen.getByRole("button", { name: `切换到录制 ${second.recording_id}` }),
+      screen.getByRole("button", { name: `切换到录制 ${second.file_name}` }),
     ).toHaveAttribute("aria-current", "page");
     expect(
       screen.getByRole("slider", { name: "共享播放位置" }),
@@ -328,7 +348,7 @@ describe("P23 recording segmentation", () => {
     expect(gateway.saveDraft).not.toHaveBeenCalled();
     expect(screen.getByText("有未保存修改")).toBeVisible();
     await user.click(
-      screen.getByRole("button", { name: `切换到录制 ${second.recording_id}` }),
+      screen.getByRole("button", { name: `切换到录制 ${second.file_name}` }),
     );
     await user.click(screen.getByRole("button", { name: "保存草稿并切换" }));
     await waitFor(() =>
@@ -493,8 +513,14 @@ describe("P23 recording segmentation", () => {
     expect(
       await screen.findByRole("heading", { name: "录制切片" }),
     ).toBeVisible();
-    expect(await screen.findByText(recording.recording_id)).toBeVisible();
-    await user.click(screen.getByText(recording.recording_id));
+    expect(await screen.findByText(recording.file_name!)).toBeVisible();
+    expect(screen.getByText("G1 测试机")).toBeVisible();
+    expect(screen.getByText("1", { selector: "small" })).toBeVisible();
+    expect(screen.queryByText(recording.recording_id)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(recording.collection_task_id),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByText(recording.file_name!));
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/recordings/recording_three_hours/slice",
     );
@@ -506,7 +532,7 @@ describe("P23 recording segmentation", () => {
     renderPage(gateway, "/recordings/recording_three_hours/slice");
 
     expect(
-      await screen.findByRole("checkbox", { name: "显示深度视频" }),
+      await screen.findByRole("combobox", { name: "显示视频" }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /开始标记/ }));
     const sharedPlayhead = screen.getByRole("slider", {
@@ -566,7 +592,7 @@ describe("P23 recording segmentation", () => {
     ).toEqual(["episode_0001", "episode_0002"]);
   });
 
-  it("only adds depth video frames when requested", async () => {
+  it("shows RGB and depth together with the annotation camera selector and one timeline", async () => {
     const gateway = makeGateway();
     const user = userEvent.setup();
     const envelope = await gateway.videoSources(scope, recording.recording_id);
@@ -580,23 +606,45 @@ describe("P23 recording segmentation", () => {
           asset_id: "depth",
           modality: "depth",
           materialization: "DEPTH_PREVIEW",
+          source_url: "https://objects.example.test/front-depth-preview.mp4",
         },
       ],
     });
     renderPage(gateway, "/recordings/recording_three_hours/slice");
-    const toggle = await screen.findByRole("checkbox", {
-      name: "显示深度视频",
-    });
-    expect(toggle).not.toBeChecked();
+    const select = await screen.findByRole("combobox", { name: "显示视频" });
+    expect(select).toHaveValue("__quad__");
+    expect(await screen.findByLabelText("front 媒体")).toBeVisible();
+    expect(screen.getByLabelText("front_depth 媒体")).toBeVisible();
     expect(
-      screen.queryByRole("region", { name: "深度视频区域" }),
-    ).not.toBeInTheDocument();
-    await user.click(toggle);
-    expect(screen.getByRole("region", { name: "深度视频区域" })).toBeVisible();
-    await user.click(toggle);
+      screen.getAllByRole("slider", { name: "共享播放位置" }),
+    ).toHaveLength(1);
+
+    const playhead = screen.getByRole("slider", { name: "共享播放位置" });
+    fireEvent.keyDown(playhead, { key: "ArrowRight" });
+    const position = playhead.getAttribute("aria-valuenow");
+    await user.selectOptions(select, "depth");
+    expect(screen.getByLabelText("front_depth 媒体")).toBeVisible();
+    expect(screen.queryByLabelText("front 媒体")).not.toBeInTheDocument();
+    expect(playhead).toHaveAttribute("aria-valuenow", position);
+
+    await user.selectOptions(select, "__all__");
+    expect(screen.getByLabelText("front 媒体")).toBeVisible();
+    expect(screen.getByLabelText("front_depth 媒体")).toBeVisible();
+    await markFirstSlice(user);
+    await user.click(screen.getByRole("button", { name: "查看视频" }));
+    const preview = within(await screen.findByRole("dialog"));
+    const previewSelect = preview.getByRole("combobox", { name: "显示视频" });
+    expect(previewSelect).toHaveValue("__quad__");
+    await waitFor(() =>
+      expect(preview.getByLabelText("front 媒体")).toBeVisible(),
+    );
+    expect(preview.getByLabelText("front_depth 媒体")).toBeVisible();
     expect(
-      screen.queryByRole("region", { name: "深度视频区域" }),
-    ).not.toBeInTheDocument();
+      preview.getAllByRole("slider", { name: "共享播放位置" }),
+    ).toHaveLength(1);
+    await user.selectOptions(previewSelect, "depth");
+    expect(preview.getByLabelText("front_depth 媒体")).toBeVisible();
+    expect(preview.queryByLabelText("front 媒体")).not.toBeInTheDocument();
   });
   it("generates the whole recording without marks and finalizes the saved ETag", async () => {
     const gateway = makeGateway();
@@ -631,6 +679,12 @@ describe("P23 recording segmentation", () => {
         title: "完整录制",
       },
     ]);
+    await user.click(
+      await screen.findByRole("button", { name: "关闭提交提示" }),
+    );
+    expect(screen.queryByText("切片已最终提交")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "提交成片" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled();
     expect(gateway.processing).not.toHaveBeenCalled();
   });
 });
