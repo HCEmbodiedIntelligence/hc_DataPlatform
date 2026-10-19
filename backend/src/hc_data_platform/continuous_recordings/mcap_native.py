@@ -132,7 +132,11 @@ def resolve(config, inventory):
         )
     )
     rgb = [k for k, v in inventory.items() if v["kind"] == "rgb"]
-    primary = unique(config.primary_camera, rgb, "primary camera")
+    primary = (
+        unique(config.primary_camera, rgb, "primary camera")
+        if rgb or config.primary_camera
+        else None
+    )
     names = config.joint_names or tuple(inventory[state]["joint_names"])
     if not names or not set(names) <= set(inventory[state]["joint_names"]):
         raise ValueError("MCAP_MAPPING_INVALID: state joint names do not match robot configuration")
@@ -259,7 +263,11 @@ def prepare(path, destination, config, progress=lambda: None):
             numeric[topic].sort(key=lambda x: x[0])
             if not numeric[topic]:
                 raise ValueError("MCAP_EMPTY_REQUIRED_TOPIC")
-        primary = times[cfg.primary_camera]
+        primary = (
+            times[cfg.primary_camera]
+            if cfg.primary_camera
+            else [x[0] for x in numeric[cfg.state_topic]]
+        )
         start = primary[0] // 1000 * 1000
         count = math.ceil((primary[-1] - start) * 30 / 1e9) + 1
         if count > 24 * 3600 * 30:
@@ -309,7 +317,11 @@ def prepare(path, destination, config, progress=lambda: None):
                     p = nearest(primary, target)
                     stamp = primary[p] if p is not None else target
                     if p is None or stamp == previous_primary:
-                        reasons.append("primary_camera_missing_or_repeated")
+                        reasons.append(
+                            "primary_camera_missing_or_repeated"
+                            if cfg.primary_camera
+                            else "state_missing_or_repeated"
+                        )
                     previous_primary = stamp
                     values = {}
                     for key, topic in (

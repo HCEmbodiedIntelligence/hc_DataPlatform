@@ -778,6 +778,9 @@ class IngestRolloutWorkflow(_JobLifecycle):
                 frame_selection=(
                     None
                     if frame_selection is None
+                    or not frame_selection.camera_set
+                    or frame_selection.selected_group_count < 1
+                    or frame_selection.source_frame_count < 1
                     else {
                         **frame_selection.model_dump(mode="json"),
                         "source_sha256": request.verification.source_sha256,

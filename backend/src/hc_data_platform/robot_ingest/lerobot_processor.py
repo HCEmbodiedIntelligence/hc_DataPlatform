@@ -99,6 +99,7 @@ class NativeLeRobotProcessor:
         derived = result.get("derived") or {}
         package_receipt = None
         native = derived.get("data") is not None
+        has_cameras = bool((result.get("frame_selection") or {}).get("camera_set") or metadata.get("cameras"))
         if status == "SUCCEEDED" and (
             report.status.value != "PASS"
             or (
@@ -108,7 +109,7 @@ class NativeLeRobotProcessor:
             )
             or derived.get("rollout_id") != episode_id
             or not result.get("annotation_task")
-            or result.get("aligned_media_count", 0) < 1
+            or (result.get("aligned_media_count", 0) < 1 if has_cameras else False)
         ):
             raise ProcessingFailure("ROBOT_PUBLICATION_RECEIPT_INCOMPLETE", retryable=True)
         if native:

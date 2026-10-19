@@ -42,8 +42,13 @@ def published_model_inputs(
         (organization_id, version_id),
     )
     mappings = tuple(
-        RobotModelJointMapping(source_joint_name=row[0], target_joint_name=row[1], direction=row[2])
-        for row in cursor.fetchall()
+        sorted(
+            (
+                RobotModelJointMapping(source_joint_name=row[0], target_joint_name=row[1], direction=row[2])
+                for row in cursor.fetchall()
+            ),
+            key=lambda candidate: candidate.source_joint_name,
+        )
     )
     return str(version[3]), version[1], assets, version[2], mappings
 
