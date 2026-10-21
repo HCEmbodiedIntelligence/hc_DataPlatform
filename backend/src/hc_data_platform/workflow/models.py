@@ -294,6 +294,14 @@ class IngestProjectionSourceV1(BaseModel):
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     materialization: ProjectionMaterializationV1 | None = None
     lerobot: LeRobotEpisodeSourceRefV1 | None = None
+    capture_snapshot: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_capture(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        if self.capture_snapshot is None:
+            document.pop("capture_snapshot", None)
+        return document
 
 
 class ProjectionMaterializationActivityInput(BaseModel):
@@ -545,7 +553,7 @@ class ContinuousEpisodeProjectionSourceV1(BaseModel):
     source_size_bytes: int = Field(ge=1)
     started_at: datetime
     ended_at: datetime
-    camera_modality_keys: tuple[str, ...] = Field(min_length=1, max_length=128)
+    camera_modality_keys: tuple[str, ...] = Field(max_length=128)
 
 
 class ContinuousEpisodeWorkflowInput(BaseModel):
@@ -555,7 +563,18 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=1)
     schema_snapshot_id: str = Field(min_length=1)
     recording_config: RecordingConfigurationV1
-    assets: tuple[ContinuousEpisodeAssetV1, ...] = Field(min_length=3, max_length=4096)
+    capture_snapshot: dict[str, Any] | None = None
+    capture_validation: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_capture(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        for key in ("capture_snapshot", "capture_validation"):
+            if document.get(key) is None:
+                document.pop(key, None)
+        return document
+
+    assets: tuple[ContinuousEpisodeAssetV1, ...] = Field(min_length=2, max_length=4096)
     quality_profile: QualityProfileV1
     alignment_profile: AlignmentProfileV1
     start_offset_ns: int = Field(ge=0)
@@ -600,8 +619,11 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
             raise ValueError("quality profile must exactly match configured Episode modalities")
         if self.alignment_profile.required_modalities != expected_modalities:
             raise ValueError("alignment profile must exactly match configured Episode modalities")
-        if self.alignment_profile.frequency_hz != 30:
-            raise ValueError("continuous Episode alignment must use the canonical 30 Hz timeline")
+        expected_fps = (
+            self.capture_snapshot["output"]["frequency_hz"] if self.capture_snapshot else 30
+        )
+        if self.alignment_profile.frequency_hz != expected_fps:
+            raise ValueError("continuous Episode alignment differs from its frozen frequency")
         return self
 
 
@@ -625,7 +647,7 @@ class ContinuousEpisodeStateActivityInput(BaseModel):
     data_ref: DataVersionRef | None = None
     collection_version_id: str | None = Field(default=None, min_length=1, max_length=256)
     annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)
-    aligned_media_camera_count: int | None = Field(default=None, ge=1, le=128)
+    aligned_media_camera_count: int | None = Field(default=None, ge=0, le=128)
     failure_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]+$")
     failure_stage: str | None = Field(default=None, min_length=1, max_length=128)
 
@@ -642,7 +664,7 @@ class ContinuousEpisodeQcActivityOutput(BaseModel):
     report_id: str = Field(min_length=1, max_length=256)
     status: Literal["PASS", "REJECT"]
     finding_codes: tuple[str, ...] = ()
-    inspected_video_count: int = Field(ge=1, le=128)
+    inspected_video_count: int = Field(ge=0, le=128)
     inspected_sensor_message_count: int = Field(ge=0)
 
 
@@ -665,7 +687,7 @@ class ContinuousEpisodeBundleCommitActivityInput(BaseModel):
     alignment_staging: AlignmentStagingArtifactV1
     expected_dataset_version: int | None = Field(default=None, ge=1)
     package_plan: RecordingEpisodePlan | None = None
-    expected_camera_ids: tuple[str, ...] = Field(min_length=1, max_length=128)
+    expected_camera_ids: tuple[str, ...] = Field(max_length=128)
     media_artifacts: tuple[AlignedMediaArtifactV1, ...] = Field(default=(), max_length=128)
 
     @model_validator(mode="after")
@@ -723,6 +745,7 @@ class AutomaticAnnotationActivityInput(BaseModel):
     source_workflow_id: str = Field(min_length=1)
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
+    allow_unconfigured: bool = False
 
     @model_validator(mode="after")
     def annotation_binding_matches(self) -> AutomaticAnnotationActivityInput:
@@ -753,8 +776,8 @@ class AutomaticAnnotationActivityInput(BaseModel):
 class AutomaticAnnotationActivityOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    task_id: str = Field(min_length=1)
-    status: Literal["CREATED"] = "CREATED"
+    task_id: str | None = Field(default=None, min_length=1)
+    status: Literal["CREATED", "PENDING_CONFIGURATION", "FAILED"] = "CREATED"
 
 
 class AlignedMediaActivityInput(BaseModel):

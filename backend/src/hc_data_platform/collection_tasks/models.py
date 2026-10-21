@@ -7,6 +7,8 @@ from typing import Annotated, cast
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from hc_data_platform.capture_schemes.references import SetTaskPlan
+
 from .captures import CaptureCounts
 
 Identifier = Annotated[
@@ -103,6 +105,13 @@ class CreateCollectionTask(StrictModel):
     description: str = Field(default="", max_length=10_000)
     target: CollectionTarget | None = None
     quality_threshold: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
+    capture_plan: SetTaskPlan | None = None
+
+    @model_validator(mode="after")
+    def new_plan_revision(self) -> CreateCollectionTask:
+        if self.capture_plan is not None and self.capture_plan.expected_revision != 0:
+            raise ValueError("a new task capture plan must start at expected_revision 0")
+        return self
 
 
 class UpdateCollectionTask(StrictModel):

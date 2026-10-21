@@ -1278,10 +1278,11 @@ function RecordingSegmentationPage({
                         size="small"
                         onClick={() => {
                           clock.pause();
-                          setPreviewSlice(slice);
+                          if (cameraStreams.length) setPreviewSlice(slice);
+                          else seek(slice.startNs);
                         }}
                       >
-                        查看视频
+                        {cameraStreams.length ? "查看视频" : "定位切片"}
                       </Button>
                       <Button
                         size="small"
@@ -1429,8 +1430,9 @@ function RecordingSegmentationPage({
                       </span>
                     </nav>
                     <p>
-                      直接读取存储中的原视频与原始关节角；视频、时间轴与 URDF
-                      使用同一录制时钟。
+                      {cameraStreams.length
+                        ? "视频、关节角、时间轴与 URDF 使用同一录制时钟。"
+                        : "按声明的关节状态时钟切片；曲线保留缺失区间，原始文件可追溯。"}
                     </p>
                   </div>
                 </div>

@@ -13,8 +13,9 @@ from pydantic import Field
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 
-from .models import RobotIngestUpload, StrictModel
+from .models import QualityStatus, RobotIngestUpload, StrictModel
 from .processing_contract import ProcessingDocument, ProcessingFailure, processing_result
+from .processing_errors import ProcessingError, current_failure
 
 EVENT_TYPE = "robot.ingest.processing.requested.v1"
 WORKFLOW_NAME = "RobotIngestProcessingWorkflow"
@@ -135,7 +136,38 @@ class ProcessingStore:
         row = cursor.fetchone()
         if row is None or (row[0], row[1]) != (task.generation, task.workflow_id):
             raise ProcessingFailure("ROBOT_PROCESSING_STALE_ATTEMPT")
-        return upload, ProcessingDocument.model_validate(_parse(row[2]))
+        return upload, self._with_discarded(
+            cursor, task.scope, ProcessingDocument.model_validate(_parse(row[2]))
+        )
+
+    @staticmethod
+    def _with_discarded(cursor, scope, document: ProcessingDocument) -> ProcessingDocument:
+        cursor.execute(
+            """SELECT episode_id FROM ingest.raw_source_episodes
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s
+              AND raw_source_id=%s AND status='DISCARDED'""",
+            scope,
+        )
+        removed = {row[0] for row in cursor.fetchall()}
+        return document.model_copy(
+            update={
+                "episodes": tuple(
+                    ep.model_copy(
+                        update={
+                            "status": "DISCARDED",
+                            "error_code": None,
+                            "error_detail": None,
+                            "retryable": False,
+                            "receipt": None,
+                            "quality_status": QualityStatus.PENDING,
+                        }
+                    )
+                    if ep.episode_id in removed
+                    else ep
+                    for ep in document.episodes
+                )
+            }
+        )
 
     def read(self, upload: RobotIngestUpload) -> tuple[ProcessingTask | None, ProcessingDocument]:
         with self.connections() as connection, connection.cursor() as cursor:
@@ -159,11 +191,40 @@ class ProcessingStore:
             task = _task(upload, row[0])
             if task.workflow_id != row[1]:
                 raise ValueError("processing workflow identity drift")
-            return task, ProcessingDocument.model_validate(_parse(row[2]))
+            return task, self._with_discarded(
+                cursor, task.scope, ProcessingDocument.model_validate(_parse(row[2]))
+            )
 
     def load(self, task: ProcessingTask) -> tuple[RobotIngestUpload, ProcessingDocument]:
         with self.connections() as connection, connection.cursor() as cursor:
             return self._locked(cursor, task)
+
+    def for_source(
+        self, *, scope: tuple[str, str, str], raw_source_id: str
+    ) -> ProcessingError | None:
+        from hc_data_platform.core.context import current_request_context
+
+        context = current_request_context()
+        if context is None or scope != (
+            context.organization_id,
+            context.project_id,
+            context.region_code,
+        ):
+            raise ValueError("processing error scope differs from request")
+        with self.connections() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT document FROM ingest.robot_processing
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                AND raw_source_id=%s""",
+                (*scope, raw_source_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            document = self._with_discarded(
+                cursor, (*scope, raw_source_id), ProcessingDocument.model_validate(_parse(row[0]))
+            )
+            return current_failure(document)
 
     def change(
         self, task: ProcessingTask, edit: Callable[[ProcessingDocument], ProcessingDocument]
@@ -177,6 +238,7 @@ class ProcessingStore:
     def _write(
         self, cursor: Any, task: ProcessingTask, upload: RobotIngestUpload, doc: ProcessingDocument
     ) -> None:
+        doc = self._with_discarded(cursor, task.scope, doc)
         result = processing_result(upload, doc)
         now = datetime.now(timezone.utc)
         receipts = [ep.receipt for ep in doc.episodes if ep.receipt is not None]
@@ -232,9 +294,8 @@ class ProcessingStore:
                 "FAILED": "FAILED",
             }[result.processing_status]
         )
-        error = doc.error_code or next(
-            (ep.error_code for ep in doc.episodes if ep.error_code), None
-        )
+        failure = current_failure(doc)
+        error = failure.code if failure else None
         cursor.execute(
             """UPDATE ingest.raw_ingest_jobs SET status=%s,last_error_code=%s,updated_at=%s
             WHERE organization_id=%s AND project_id=%s AND region_code=%s
@@ -254,7 +315,8 @@ class ProcessingStore:
                  sample_count=EXCLUDED.sample_count,dataset_version=EXCLUDED.dataset_version,
                  lance_version=EXCLUDED.lance_version,quality_status=EXCLUDED.quality_status,
                  qc_report_id=EXCLUDED.qc_report_id,updated_at=EXCLUDED.updated_at,
-                 data_ref=EXCLUDED.data_ref""",
+                 data_ref=EXCLUDED.data_ref
+                WHERE ingest.raw_source_episodes.status <> 'DISCARDED'""",
                 (
                     *task.scope,
                     ep.episode_id,
@@ -304,6 +366,7 @@ class ProcessingStore:
                 if row is None
                 else ProcessingDocument.model_validate(_parse(row[1]))
             )
+            doc = self._with_discarded(cursor, task.scope, doc)
             generation = 0 if row is None else row[0] + 1
             cursor.execute(
                 """SELECT 1 FROM ingest.robot_processing_requests
@@ -345,7 +408,12 @@ class ProcessingStore:
             reset = ProcessingDocument(
                 episodes=tuple(
                     ep.model_copy(
-                        update={"status": "PENDING", "error_code": None, "retryable": False}
+                        update={
+                            "status": "PENDING",
+                            "error_code": None,
+                            "error_detail": None,
+                            "retryable": False,
+                        }
                     )
                     if ep.status == "FAILED" and ep.retryable
                     else ep

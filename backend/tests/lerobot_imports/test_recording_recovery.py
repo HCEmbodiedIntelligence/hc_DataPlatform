@@ -14,6 +14,8 @@ def test_recording_recovery_preserves_scope_and_reuses_failed_attempt_request(mo
     upload = SimpleNamespace(
         target=SimpleNamespace(organization_id="org", project_id="project", region_code="region"),
         raw_source_id="raw",
+        state=SimpleNamespace(value="COMMITTED"),
+        source_format="CAPTURE_BUNDLE",
     )
     validate = MagicMock(return_value=upload)
     monkeypatch.setattr(recording_recovery.RobotIngestUpload, "model_validate", validate)
@@ -42,3 +44,24 @@ def test_recording_recovery_preserves_scope_and_reuses_failed_attempt_request(mo
         "org", "project", "region", "raw", factory=factory
     )
     assert retry.call_count == 3
+
+
+def test_native_robot_retry_uses_robot_processor_and_same_durable_request(monkeypatch):
+    factory = MagicMock()
+    factory.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = (
+        {},
+        "2026-10-20T01:00:00Z",
+    )
+    upload = SimpleNamespace(
+        target=SimpleNamespace(organization_id="org", project_id="p", region_code="r"),
+        raw_source_id="raw",
+        source_format="LEROBOT_V3",
+        state=SimpleNamespace(value="COMMITTED"),
+    )
+    monkeypatch.setattr(recording_recovery.RobotIngestUpload, "model_validate", lambda _: upload)
+    store = MagicMock()
+    monkeypatch.setattr(recording_recovery.processing_store, "ProcessingStore", lambda _: store)
+    for _ in range(2):
+        assert recording_recovery.retry_recording_source("org", "p", "r", "raw", factory=factory)
+    assert store.retry.call_count == 2
+    assert store.retry.call_args_list[0] == store.retry.call_args_list[1]

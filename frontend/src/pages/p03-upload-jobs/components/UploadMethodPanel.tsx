@@ -64,7 +64,7 @@ export function UploadMethodPanel(props: {
           </span>
           <strong>选择采集文件夹</strong>
           <span>保留原目录结构和文件内容</span>
-          <small>保留原始文件，按配置自动质检、对齐并进入标注</small>
+          <small>保留原始文件，按任务采集方案处理并质检</small>
           <small>文件只在确认上传后开始提交</small>
         </label>
 

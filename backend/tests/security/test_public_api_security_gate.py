@@ -34,7 +34,10 @@ ANONYMOUS_OPERATIONS = frozenset(
         ("GET", "/api/v1/platform/version"),
     }
 )
-ROBOT_CREDENTIAL_PATH_PREFIX = "/api/v1/robot-ingest/uploads"
+ROBOT_CREDENTIAL_PATH_PREFIXES = (
+    "/api/v1/robot-ingest/uploads",
+    "/api/v1/robot-ingest/heartbeat",
+)
 PATH_VALUES = {
     "access_request_id": "00000000-0000-0000-0000-000000000001",
     "collection_task_id": "collection-task-a",
@@ -104,7 +107,7 @@ def test_every_runtime_public_resource_operation_rejects_anonymous_before_valida
                 continue
             assert response.status_code == 401, (key, response.status_code, response.text)
             assert response.headers["content-type"].startswith("application/problem+json"), key
-            if path.startswith(ROBOT_CREDENTIAL_PATH_PREFIX):
+            if path.startswith(ROBOT_CREDENTIAL_PATH_PREFIXES):
                 assert response.json()["code"] == "ROBOT_CREDENTIAL_INVALID", key
             else:
                 assert response.json()["code"] in {

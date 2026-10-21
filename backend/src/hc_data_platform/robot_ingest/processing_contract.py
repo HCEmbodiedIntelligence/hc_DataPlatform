@@ -8,21 +8,23 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from hc_data_platform.episode_store.models import CommitReceipt
 from hc_data_platform.object_storage.ports import ObjectChunks
 
 from .models import QualityStatus, RobotIngestUpload, StrictModel
+from .processing_errors import safe_processing_detail
 
 
 class ProcessingFailure(Exception):
-    def __init__(self, code: str, *, retryable: bool = False) -> None:
+    def __init__(self, code: str, *, retryable: bool = False, detail: str | None = None) -> None:
         if not re.fullmatch(r"[A-Z0-9_]{1,128}", code):
             raise ValueError("processing error codes must be bounded uppercase identifiers")
         super().__init__(code)
         self.code = code
         self.retryable = retryable
+        self.detail = safe_processing_detail(detail)
 
 
 class SourceEpisode(StrictModel):
@@ -44,6 +46,8 @@ class EpisodeReceipt(StrictModel):
     dataset_version: int | None = Field(default=None, gt=0)
     lance_version: int | None = Field(default=None, gt=0)
     package_receipt: CommitReceipt | None = None
+    annotation_status: str = "UNKNOWN"
+    annotation_task_id: str | None = None
     qc_report_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$")
 
     @model_validator(mode="after")
@@ -127,11 +131,14 @@ class ProcessorUnavailable:
 
 class EpisodeProgress(SourceEpisode):
     episode_id: str
-    status: Literal["PENDING", "PROCESSING", "READY", "FAILED"] = "PENDING"
+    status: Literal["PENDING", "PROCESSING", "READY", "FAILED", "DISCARDED"] = "PENDING"
     quality_status: QualityStatus = QualityStatus.PENDING
     error_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]{1,128}$")
+    error_detail: str | None = None
     retryable: bool = False
     receipt: EpisodeReceipt | None = None
+
+    _safe_detail = field_validator("error_detail", mode="before")(safe_processing_detail)
 
     @model_validator(mode="after")
     def ready_receipt(self):
@@ -152,10 +159,15 @@ class ProcessingDocument(StrictModel):
     phase: Literal["PENDING", "DISCOVERING_EPISODES", "PROCESSING", "DONE"] = "PENDING"
     episodes: tuple[EpisodeProgress, ...] = ()
     error_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]{1,128}$")
+    error_detail: str | None = None
     retryable: bool = False
+
+    _safe_detail = field_validator("error_detail", mode="before")(safe_processing_detail)
 
 
 class EpisodeProcessingResult(SourceEpisode):
+    annotation_status: str = "UNKNOWN"
+    data_readable: bool = False
     episode_id: str | None
     dataset_id: str | None
     status: Literal["PENDING", "PROCESSING", "READY", "FAILED"]
@@ -189,11 +201,11 @@ def processing_result(upload: RobotIngestUpload, doc: ProcessingDocument) -> Pro
         status = "FAILED"
     elif "FAILED" in statuses:
         status = "PARTIALLY_FAILED"
-    elif statuses == {"READY"}:
+    elif statuses and statuses <= {"READY", "DISCARDED"}:
         status = "READY"
     else:
         status = "FAILED"  # An empty discovery can never be READY.
-    qualities = {ep.quality_status for ep in doc.episodes}
+    qualities = {ep.quality_status for ep in doc.episodes if ep.status != "DISCARDED"}
     quality = (
         "REJECT"
         if "REJECT" in qualities
@@ -226,6 +238,8 @@ def processing_result(upload: RobotIngestUpload, doc: ProcessingDocument) -> Pro
                 status=ep.status,
                 quality_status=ep.quality_status,
                 error_code=ep.error_code,
+                annotation_status=ep.receipt.annotation_status if ep.receipt else "UNKNOWN",
+                data_readable=bool(ep.receipt and ep.receipt.quality_status == "PASS"),
                 retryable=ep.status == "FAILED" and ep.retryable,
                 next_action=(
                     "wait"
@@ -240,5 +254,6 @@ def processing_result(upload: RobotIngestUpload, doc: ProcessingDocument) -> Pro
                 ),
             )
             for ep in doc.episodes
+            if ep.status != "DISCARDED"
         ),
     )

@@ -1,0 +1,67 @@
+.content {
+  display: grid;
+  gap: 12px;
+  max-height: 72vh;
+  overflow-y: auto;
+}
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.toolbar :global(.ant-select) {
+  min-width: 230px;
+}
+.record {
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.record :global(.ant-tag) {
+  width: fit-content;
+}
+.record small,
+.note {
+  color: var(--color-text-secondary, #64748b);
+}
+.note {
+  font-size: 12px;
+}
+
+.actionList {
+  display: grid;
+  gap: 12px;
+}
+.actionCard {
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  padding: 16px;
+}
+.actionCard p {
+  color: var(--color-text-secondary, #64748b);
+  margin: 8px 0 12px;
+}
+.transferRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+.transferRow > :global(.ant-select) {
+  flex: 1;
+  min-width: 0;
+}
+.actionCard .note {
+  display: block;
+  margin-top: 8px;
+}
+@media (max-width: 640px) {
+  .transferRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .transferRow > :global(.ant-select) {
+    width: 100%;
+    flex: auto;
+  }
+}

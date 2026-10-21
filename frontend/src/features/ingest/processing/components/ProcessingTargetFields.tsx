@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Select } from "antd";
 import { useMemo } from "react";
 import type { IngestScope } from "../../../../entities/data-source";
-import { useDataSourcesPage } from "../../api/index";
+import { request } from "../../../../shared/api/http-client";
+import { z } from "zod";
 import { listActiveCollectionTasks } from "../lerobot-targets";
 import styles from "../../upload/upload.module.css";
 
@@ -33,11 +34,26 @@ export function ProcessingTargetFields(props: {
     staleTime: 30_000,
     retry: false,
   });
-  const robotSources = useDataSourcesPage(props.scope, {
-    sourceType: ["ROBOT"],
-    administrativeState: ["ENABLED"],
-    sort: "name:asc",
-    limit: 50,
+  const robotSources = useQuery({
+    queryKey: ["import-robots", props.scope],
+    queryFn: async ({ signal }) =>
+      z
+        .array(
+          z.object({
+            robot_id: z.string(),
+            display_name: z.string(),
+            serial_no: z.string(),
+          }),
+        )
+        .parse(
+          await request({
+            method: "GET",
+            path: `/projects/${encodeURIComponent(props.scope.projectId)}/regions/${encodeURIComponent(props.scope.regionCode)}/lerobot-imports/robot-options`,
+            scope: props.scope,
+            scopeMode: "explicit",
+            signal,
+          }),
+        ),
   });
 
   const taskOptions = useMemo(
@@ -53,18 +69,10 @@ export function ProcessingTargetFields(props: {
         })),
     [tasks.data, props.fixedDatasetId],
   );
-  const robotOptions = useMemo(() => {
-    const options = new Map<string, { value: string; label: string }>();
-    for (const source of robotSources.data?.items ?? []) {
-      if (source.binding.kind !== "ROBOT") continue;
-      const robotName = source.binding.displayName ?? source.binding.robotId;
-      options.set(source.binding.robotId, {
-        value: source.binding.robotId,
-        label: `${source.name} · ${robotName} · ${source.binding.robotId}`,
-      });
-    }
-    return [...options.values()];
-  }, [robotSources.data?.items]);
+  const robotOptions = (robotSources.data ?? []).map((robot) => ({
+    value: robot.robot_id,
+    label: `${robot.display_name} · ${robot.serial_no} · ${robot.robot_id}`,
+  }));
 
   return (
     <>
@@ -133,10 +141,10 @@ export function ProcessingTargetFields(props: {
             value={props.robotId || undefined}
             notFoundContent={
               robotSources.isPending
-                ? "正在加载机器人数据源…"
+                ? "正在加载可用机器人…"
                 : robotSources.isError
-                  ? "机器人数据源加载失败"
-                  : "当前项目暂无已启用的机器人数据源"
+                  ? "可用机器人加载失败"
+                  : "当前项目暂无可用机器人"
             }
             onChange={props.onRobotIdChange}
           />
@@ -145,7 +153,7 @@ export function ProcessingTargetFields(props: {
               <span>
                 {queryError(
                   robotSources.error,
-                  "机器人数据源列表加载失败，请重试。",
+                  "可用机器人列表加载失败，请重试。",
                 )}
               </span>
               <Button

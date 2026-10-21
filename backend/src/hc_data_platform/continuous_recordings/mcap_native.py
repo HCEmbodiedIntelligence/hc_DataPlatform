@@ -10,12 +10,12 @@ import hashlib
 import json
 import math
 import sqlite3
+import statistics
 from pathlib import Path
 
 import numpy as np
 from mcap.reader import make_reader
 from mcap.writer import CompressionType, Writer
-from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hc_data_platform.data_formats.depth_evidence import DepthEvidenceVideo
 from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
@@ -23,30 +23,11 @@ from hc_data_platform.episode_store.mcap_images import decode_camera, get_field
 from hc_data_platform.episode_store.models import canonical
 from hc_data_platform.verification.ports import McapRos2DecoderProbe
 
-VERSION = "native-mcap-recording/1"
+from .mcap_contracts import CameraMapping as CameraMapping
+from .mcap_contracts import McapProcessingConfig as McapProcessingConfig
+
+VERSION = "native-mcap-recording/2"
 TOPICS = ("/observation/state", "/action", "/openarm/capture_validity", "source.timestamp_ns")
-
-
-class McapProcessingConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    # Empty topic selections are resolved only when schema/name discovery is unambiguous.
-    state_topic: str | None = None
-    action_topic: str | None = None
-    primary_camera: str | None = None
-    joint_names: tuple[str, ...] = ()
-    joint_units: tuple[str, ...] = ()
-    depth_scale_m_per_unit: float | None = Field(default=None, gt=0, le=1)
-    derive_action_from_next_state: bool = False
-    maximum_time_error_ms: float = Field(default=50, gt=0, le=1000)
-    fps: int = Field(default=30, ge=30, le=30)
-
-    @model_validator(mode="after")
-    def axes(self):
-        if self.joint_units and len(self.joint_units) != len(self.joint_names):
-            raise ValueError("joint names/units must have equal length")
-        if len(set(self.joint_names)) != len(self.joint_names):
-            raise ValueError("joint names must be unique")
-        return self
 
 
 def decoded(schema, channel, message, decoder):
@@ -63,103 +44,174 @@ def decoded(schema, channel, message, decoder):
 
 def inspect(path, progress=lambda: None):
     result, decoder = {}, McapRos2DecoderProbe()
+    last_arrival = {}
     with Path(path).open("rb") as stream:
-        for schema, channel, message in make_reader(stream, validate_crcs=True).iter_messages(
-            log_time_order=False
-        ):
-            progress()
-            if channel.topic in result:
-                continue
-            if schema is None:
-                continue
-            if not schema.name.endswith(("/Image", "/CompressedImage", "/JointState")):
+        reader = make_reader(stream, validate_crcs=True)
+        summary = reader.get_summary()
+        if summary:
+            for channel in summary.channels.values():
+                schema = summary.schemas.get(channel.schema_id)
+                name = schema.name if schema else ""
                 result[channel.topic] = {
-                    "schema": schema.name,
+                    "schema": name,
+                    "kind": "joints"
+                    if name.endswith("/JointState")
+                    else "rgb"
+                    if name.endswith(("/Image", "/CompressedImage"))
+                    else "other",
+                    "encoding": "",
+                    "joint_names": [],
+                    "message_count": 0,
+                    "first_log_time_ns": None,
+                    "last_log_time_ns": None,
+                }
+        for schema, channel, message in reader.iter_messages(log_time_order=False):
+            progress()
+            name = schema.name if schema else ""
+            entry = result.setdefault(
+                channel.topic,
+                {
+                    "schema": name,
                     "kind": "other",
                     "encoding": "",
                     "joint_names": [],
-                }
+                    "message_count": 0,
+                    "first_log_time_ns": None,
+                    "last_log_time_ns": None,
+                },
+            )
+            entry["message_count"] += 1
+            previous = last_arrival.get(channel.topic)
+            for key, condition in (
+                ("backwards_timestamps", previous is not None and message.log_time < previous),
+                ("duplicate_timestamps", previous == message.log_time),
+            ):
+                entry[key] = entry.get(key, 0) + int(condition)
+            last_arrival[channel.topic] = message.log_time
+            entry["first_log_time_ns"] = min(
+                entry["first_log_time_ns"]
+                if entry["first_log_time_ns"] is not None
+                else message.log_time,
+                message.log_time,
+            )
+            entry["last_log_time_ns"] = max(
+                entry["last_log_time_ns"]
+                if entry["last_log_time_ns"] is not None
+                else message.log_time,
+                message.log_time,
+            )
+            if entry["message_count"] > 1 or not name.endswith(
+                ("/Image", "/CompressedImage", "/JointState")
+            ):
                 continue
             value = decoded(schema, channel, message, decoder)
-            kind = "other"
             encoding = (
                 get_field(value, "encoding", "")
                 or get_field(value, "format", "").split(";", 1)[0].strip()
             )
-            if schema.name.endswith(("/Image", "/CompressedImage")):
-                kind = "depth" if encoding in {"16UC1", "mono16", "32FC1"} else "rgb"
-            elif schema.name.endswith("/JointState"):
-                kind = "joints"
-            result[channel.topic] = {
-                "schema": schema.name,
-                "kind": kind,
-                "encoding": encoding,
-                "joint_names": list(get_field(value, "name", [])) if kind == "joints" else [],
-            }
+            entry["encoding"] = encoding
+            if name.endswith("/JointState"):
+                entry.update(kind="joints", joint_names=list(get_field(value, "name", [])))
+            else:
+                entry["kind"] = "depth" if encoding in {"16UC1", "mono16", "32FC1"} else "rgb"
     return result
 
 
 def resolve(config, inventory):
     config = McapProcessingConfig.model_validate(config)
-    joints = [k for k, v in inventory.items() if v["kind"] == "joints"]
-
-    def unique(selected, candidates, role):
-        if selected:
-            if selected not in candidates:
-                raise ValueError(
-                    f"MCAP_MAPPING_INVALID: {role} topic {selected!r} absent or incompatible"
-                )
-            return selected
-        if len(candidates) != 1:
-            raise ValueError(f"MCAP_MAPPING_REQUIRED: select {role} from {candidates}")
-        return candidates[0]
-
-    state = unique(
-        config.state_topic,
-        joints if config.state_topic else [t for t in joints if "state" in t.lower()],
-        "state",
-    )
-    action_candidates = [
-        t
-        for t in joints
-        if any(x in t.lower() for x in ("cmd", "command", "action")) and "finger" not in t.lower()
+    joints = [
+        k for k, v in inventory.items() if v["kind"] == "joints" and v.get("message_count", 1) > 0
     ]
-    action = (
-        None
-        if not action_candidates and config.derive_action_from_next_state
-        else unique(
-            config.action_topic, joints if config.action_topic else action_candidates, "action"
+    missing = [
+        role
+        for role in ("state", "action")
+        if not getattr(config, role + "_topic")
+        and not (role == "action" and config.derive_action_from_next_state)
+    ]
+    if missing:
+        raise ValueError(
+            f"MCAP_MAPPING_REQUIRED: missing {', '.join(missing)} mapping; candidates={joints}"
         )
-    )
-    rgb = [k for k, v in inventory.items() if v["kind"] == "rgb"]
-    primary = (
-        unique(config.primary_camera, rgb, "primary camera")
-        if rgb or config.primary_camera
-        else None
-    )
-    names = config.joint_names or tuple(inventory[state]["joint_names"])
-    if not names or not set(names) <= set(inventory[state]["joint_names"]):
-        raise ValueError("MCAP_MAPPING_INVALID: state joint names do not match robot configuration")
-    if action and not set(names) <= set(inventory[action]["joint_names"]):
-        # Do not quietly manufacture feedback or omit configured axes.
-        if config.joint_names:
-            raise ValueError("MCAP_MAPPING_INVALID: action omits configured joints")
-        names = tuple(n for n in names if n in inventory[action]["joint_names"])
-    if (
-        any(v["kind"] == "depth" for v in inventory.values())
-        and config.depth_scale_m_per_unit is None
+    state, action = config.state_topic, config.action_topic
+    for role, topic in (("state", state), ("action", action)):
+        if topic and topic not in joints:
+            raise ValueError(
+                f"MCAP_MAPPING_INVALID: {role} topic {topic!r} absent, empty or incompatible; "
+                f"candidates={joints}"
+            )
+    rgb = [k for k, v in inventory.items() if v["kind"] == "rgb" and v.get("message_count", 1) > 0]
+    primary = config.primary_camera
+    if config.collection_mode == "RGB" and config.time_source == "RGB_LOG_TIME":
+        if primary and (
+            primary not in inventory or inventory[primary].get("message_count", 1) == 0
+        ):
+            raise ValueError(
+                f"MCAP_REQUIRED_RGB_MISSING: required topic={primary}; message_count=0; "
+                "文件中未录入必需的 RGB 图像"
+            )
+        if primary and primary not in rgb:
+            raise ValueError(
+                f"MCAP_MAPPING_INVALID: primary RGB topic {primary!r} has incompatible type"
+            )
+        if not rgb:
+            raise ValueError(
+                "MCAP_REQUIRED_RGB_MISSING: no RGB messages; 文件中未录入必需的 RGB 图像"
+            )
+        if not primary:
+            raise ValueError(f"MCAP_MAPPING_REQUIRED: missing primary camera; candidates={rgb}")
+    elif config.collection_mode == "JOINT_ONLY" and (
+        primary or config.cameras or config.time_source != "STATE_LOG_TIME"
     ):
         raise ValueError(
-            "MCAP_DEPTH_UNITS_REQUIRED: configure the robot's depth scale before processing"
+            "MCAP_MAPPING_INVALID: JOINT_ONLY requires no cameras and explicit STATE_LOG_TIME"
         )
-    return config.model_copy(
-        update={
-            "state_topic": state,
-            "action_topic": action,
-            "primary_camera": primary,
-            "joint_names": names,
-        }
-    )
+    for camera in config.cameras:
+        found = inventory.get(camera.topic)
+        if not found or found.get("message_count", 1) == 0:
+            if camera.required:
+                code = (
+                    "MCAP_REQUIRED_RGB_MISSING"
+                    if camera.kind == "rgb"
+                    else "MCAP_REQUIRED_DEPTH_MISSING"
+                )
+                raise ValueError(f"{code}: required topic={camera.topic}; message_count=0")
+        elif found["kind"] != camera.kind or found["schema"] != camera.message_type:
+            raise ValueError(
+                f"MCAP_MAPPING_INVALID: {camera.topic} "
+                f"expected {camera.message_type}/{camera.kind}, "
+                f"actual {found['schema']}/{found['kind']}"
+            )
+    state_names = inventory[state]["joint_names"]
+    action_names = inventory[action]["joint_names"] if action else state_names
+    if (
+        not state_names
+        or not action_names
+        or len(set(state_names)) != len(state_names)
+        or len(set(action_names)) != len(action_names)
+    ):
+        raise ValueError("MCAP_JOINT_LAYOUT_MISMATCH: empty or duplicate joints")
+    layouts = {}
+    for role, observed in (("state", state_names), ("action", action_names)):
+        names, _ = config.layout(role)
+        names = names or tuple(observed)
+        layouts[role + "_joint_names"] = names
+        absent = sorted(set(names) - set(observed))
+        if absent:
+            raise ValueError(
+                f"MCAP_JOINT_LAYOUT_MISMATCH: {role} missing={absent}; actual={observed}"
+            )
+    if (
+        config.collection_mode == "RGB"
+        and any(
+            v["kind"] == "depth"
+            and v.get("message_count", 1)
+            and (not config.cameras or k in {c.topic for c in config.cameras})
+            for k, v in inventory.items()
+        )
+        and config.depth_scale_m_per_unit is None
+    ):
+        raise ValueError("MCAP_DEPTH_UNITS_REQUIRED: configure depth scale from source evidence")
+    return config.model_copy(update=layouts)
 
 
 def depth_contract(encoding, scale):
@@ -189,6 +241,12 @@ def prepare(path, destination, config, progress=lambda: None):
             return prepare_transport(path, destination, progress)
     inventory = inspect(path, progress)
     cfg = resolve(config, inventory)
+    clock = cfg.primary_camera if cfg.time_source == "RGB_LOG_TIME" else cfg.state_topic
+    if inventory[clock].get("backwards_timestamps"):
+        raise ValueError(
+            f"MCAP_TIME_DISCONTINUITY: declared clock {clock} moves backwards; "
+            "inspect original channel evidence"
+        )
     destination.mkdir(parents=True, exist_ok=False)
     (destination / "sensors").mkdir()
     (destination / "videos").mkdir()
@@ -202,6 +260,7 @@ def prepare(path, destination, config, progress=lambda: None):
     )
     numeric = {cfg.state_topic: [], **({cfg.action_topic: []} if cfg.action_topic else {})}
     cameras, times = {}, {}
+    declared_cameras = {c.topic: c for c in cfg.cameras}
     try:
         with path.open("rb") as stream:
             for schema, channel, message in make_reader(stream, validate_crcs=True).iter_messages(
@@ -209,7 +268,9 @@ def prepare(path, destination, config, progress=lambda: None):
             ):
                 progress()
                 kind = inventory.get(channel.topic, {}).get("kind", "other")
-                if kind in {"rgb", "depth"}:
+                if kind in {"rgb", "depth"} and cfg.collection_mode == "RGB":
+                    if declared_cameras and channel.topic not in declared_cameras:
+                        continue
                     projected = copy.copy(channel)
                     if kind == "depth":
                         projected.metadata = {
@@ -224,7 +285,9 @@ def prepare(path, destination, config, progress=lambda: None):
                     camera = cameras.setdefault(
                         channel.topic,
                         {
-                            "id": "cam_"
+                            "id": declared_cameras[channel.topic].camera_id
+                            if channel.topic in declared_cameras
+                            else "cam_"
                             + hashlib.sha256(channel.topic.encode()).hexdigest()[:10]
                             + ("_depth" if kind == "depth" else ""),
                             "kind": kind,
@@ -248,11 +311,28 @@ def prepare(path, destination, config, progress=lambda: None):
                     times.setdefault(channel.topic, []).append(message.log_time)
                 elif channel.topic in numeric:
                     value = decoded(schema, channel, message, decoder)
+                    names = get_field(value, "name")
+                    if len(set(names)) != len(names):
+                        raise ValueError(
+                            f"MCAP_JOINT_LAYOUT_MISMATCH: duplicate joints at {message.log_time}"
+                        )
                     values = dict(
                         zip(get_field(value, "name"), get_field(value, "position"), strict=True)
                     )
-                    selected = [float(values[n]) for n in cfg.joint_names]
-                    if not all(math.isfinite(v) for v in selected):
+                    required_names = {
+                        name
+                        for role in ("state", "action")
+                        if (getattr(cfg, role + "_topic") or cfg.state_topic) == channel.topic
+                        for name in cfg.layout(role)[0]
+                    }
+                    absent = required_names - set(values)
+                    if absent:
+                        raise ValueError(
+                            f"MCAP_JOINT_LAYOUT_MISMATCH: {channel.topic} "
+                            f"missing={sorted(absent)} at {message.log_time}"
+                        )
+                    selected = {n: float(values[n]) for n in required_names}
+                    if not all(math.isfinite(v) for v in selected.values()):
                         raise ValueError("MCAP_NONFINITE_JOINT")
                     numeric[channel.topic].append((message.log_time, selected))
         db.execute("CREATE INDEX frame_time ON frames(topic,stamp)")
@@ -264,13 +344,14 @@ def prepare(path, destination, config, progress=lambda: None):
             if not numeric[topic]:
                 raise ValueError("MCAP_EMPTY_REQUIRED_TOPIC")
         primary = (
-            times[cfg.primary_camera]
-            if cfg.primary_camera
+            times[clock]
+            if cfg.time_source == "RGB_LOG_TIME"
             else [x[0] for x in numeric[cfg.state_topic]]
         )
-        start = primary[0] // 1000 * 1000
-        count = math.ceil((primary[-1] - start) * 30 / 1e9) + 1
-        if count > 24 * 3600 * 30:
+        start = primary[0]
+        # Nanosecond rounding at fractional periods must not manufacture a frame.
+        count = round((primary[-1] - start) * cfg.fps / 1e9) + 1
+        if count > 24 * 3600 * cfg.fps:
             raise ValueError("MCAP_DURATION_LIMIT: split recordings exceeding 24 hours")
         limit = round(cfg.maximum_time_error_ms * 1e6)
 
@@ -287,10 +368,10 @@ def prepare(path, destination, config, progress=lambda: None):
             evidence = "hc/depth/" + c["id"].removesuffix("_depth")
             writers[topic] = (
                 DepthEvidenceVideo(
-                    target, destination / evidence, 30, c["shape"], require_source_profile=True
+                    target, destination / evidence, cfg.fps, c["shape"], require_source_profile=True
                 )
                 if c["kind"] == "depth"
-                else RgbVideoWriter(target, 30, c["shape"])
+                else RgbVideoWriter(target, cfg.fps, c["shape"])
             )
             media[c["id"]] = {
                 "kind": c["kind"],
@@ -311,7 +392,7 @@ def prepare(path, destination, config, progress=lambda: None):
             try:
                 for index in range(count):
                     progress()
-                    offset = index * 10**9 // 30
+                    offset = round(index * 10**9 / cfg.fps)
                     target = start + offset
                     reasons, images = [], {}
                     p = nearest(primary, target)
@@ -328,6 +409,7 @@ def prepare(path, destination, config, progress=lambda: None):
                         (TOPICS[0], cfg.state_topic),
                         (TOPICS[1], cfg.action_topic or cfg.state_topic),
                     ):
+                        names, units = cfg.layout("state" if key == TOPICS[0] else "action")
                         reference = stamp
                         if key == TOPICS[1] and not cfg.action_topic:
                             reference = (
@@ -341,13 +423,15 @@ def prepare(path, destination, config, progress=lambda: None):
                         if pos is None:
                             reasons.append(key + ":missing")
                         values[key] = {
-                            "values": numeric[topic][pos][1]
+                            "values": [numeric[topic][pos][1][name] for name in names]
                             if pos is not None
-                            else [None] * len(cfg.joint_names),
-                            "names": list(cfg.joint_names),
-                            "units": list(cfg.joint_units)
-                            if cfg.joint_units
-                            else ["unknown"] * len(cfg.joint_names),
+                            else [None] * len(names),
+                            "validity": [pos is not None] * len(names),
+                            "source_timestamp_ns": numeric[topic][pos][0]
+                            if pos is not None
+                            else None,
+                            "names": list(names),
+                            "units": list(units) if units else ["unknown"] * len(names),
                         }
                     for topic, c in cameras.items():
                         j = nearest(times[topic], stamp)
@@ -422,14 +506,16 @@ def prepare(path, destination, config, progress=lambda: None):
                 c["time_base"] = stream.time_base
                 c["codec"] = stream.codec_context.name
         recording_config = {
-            "schema_version": "recording-config/v1",
+            "schema_version": "recording-config/v2" if not cameras else "recording-config/v1",
+            "collection_mode": cfg.collection_mode if cameras else "JOINT_ONLY",
+            "time_source": cfg.time_source,
             "recorder_version": VERSION,
             "primary_clock_domain": "recording_grid",
             "cameras": [
                 {
                     "camera_id": c["id"],
                     "topic": "observation.images." + c["id"],
-                    "fps": 30,
+                    "fps": cfg.fps,
                     "height": c["shape"][0],
                     "width": c["shape"][1],
                     "codec": c["codec"],
@@ -453,18 +539,53 @@ def prepare(path, destination, config, progress=lambda: None):
         provenance = {
             "format": VERSION,
             "source_origin_ns": start,
-            "duration_ns": math.ceil(count * 1e9 / 30 / 1000) * 1000,
+            "duration_ns": round(count * 1e9 / cfg.fps),
             "clock": "mcap_log_time",
+            "time_source": cfg.time_source,
+            "collection_mode": cfg.collection_mode,
             "config": cfg.model_dump(mode="json"),
             "inventory": inventory,
             "invalid_frames": invalid,
             "frames": count,
+            "source_frequency_hz": (
+                1e9
+                / statistics.median(
+                    b - a for a, b in zip(primary, primary[1:], strict=False) if b > a
+                )
+                if len(set(primary)) > 1
+                else None
+            ),
+            "output_features": {
+                **{
+                    name: {
+                        "dtype": "float64",
+                        "shape": [len(cfg.layout(role)[0])],
+                        "names": list(cfg.layout(role)[0]),
+                        "units": list(cfg.layout(role)[1]),
+                    }
+                    for role, name in (("state", "observation.state"), ("action", "action"))
+                },
+                **{
+                    "observation.images." + c["id"]: {
+                        "dtype": "video",
+                        "shape": list(c["shape"]) if c["kind"] == "rgb" else [*c["shape"], 1],
+                        "names": ["height", "width", "channels"],
+                        "info": {
+                            "video.fps": cfg.fps,
+                            "video.codec": c["codec"],
+                            "video.pix_fmt": "yuv420p" if c["kind"] == "rgb" else "gray12le",
+                            "is_depth_map": c["kind"] == "depth",
+                        },
+                    }
+                    for c in cameras.values()
+                },
+                "source.timestamp_ns": {"dtype": "int64", "shape": [1]},
+            },
             "action_origin": "sent" if cfg.action_topic else "next_state",
             "joint_value_semantics": "source position values; no delta conversion",
             "topic_mapping": {
                 **{
-                    topic: "observation.images." + camera["id"]
-                    for topic, camera in cameras.items()
+                    topic: "observation.images." + camera["id"] for topic, camera in cameras.items()
                 },
                 cfg.state_topic: "/observation/state",
                 **({cfg.action_topic: "/action"} if cfg.action_topic else {}),

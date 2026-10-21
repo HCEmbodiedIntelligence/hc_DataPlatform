@@ -13,6 +13,8 @@ from .models import CommitReceipt, DataVersionRef
 class NativeSchemaRegistry(Protocol):
     def register_schema(self, snapshot: DatasetSchemaSnapshot) -> None: ...
 
+    def schema_for(self, project_id: str, dataset_id: str) -> DatasetSchemaSnapshot | None: ...
+
 
 class NativeSampleCatalog(Protocol):
     def read_steps(

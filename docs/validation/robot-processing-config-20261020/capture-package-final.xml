@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="29.334" timestamp="2026-10-20T02:05:33.648361+00:00" hostname="3a1672690c46"><testcase classname="tests.episode_store.test_recording_package_services" name="test_uploaded_recording_slice_qc_package_ready_recovery[direct]" time="15.378" /><testcase classname="tests.episode_store.test_recording_package_services" name="test_uploaded_recording_slice_qc_package_ready_recovery[temporal]" time="12.376"><failure message="KeyError: 'HC_TEMPORAL_TARGET'">tests/episode_store/test_recording_package_services.py:332: in test_uploaded_recording_slice_qc_package_ready_recovery
+    captured = asyncio.run(
+/usr/local/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.12/asyncio/base_events.py:686: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/episode_store/test_recording_package_services.py:84: in run_temporal
+    os.environ["HC_TEMPORAL_TARGET"],
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+&lt;frozen os&gt;:714: in __getitem__
+    ???
+E   KeyError: 'HC_TEMPORAL_TARGET'</failure></testcase></testsuite></testsuites>

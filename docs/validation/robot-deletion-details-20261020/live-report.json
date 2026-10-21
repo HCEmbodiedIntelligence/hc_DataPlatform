@@ -1,0 +1,136 @@
+{
+  "organization_id": "01",
+  "robot_id": "robot_fa73724c028e571795e06eba838738fa",
+  "can_delete": false,
+  "blockers": [
+    {
+      "kind": "raw",
+      "label": "原始数据",
+      "count": 3,
+      "resolution": "需要保留任务成果：保留机器人，在实例详情中停用或退役。确定任务及其全部数据都不再需要：前往对应采集任务，在“更多”中选择“删除任务及数据”，核对范围并单独确认，完成后刷新检查。关闭或取消任务、移除上传身份不会解除历史数据关联。删除任务也不会清除已发布配置；仍有其他关联时机器人仍不能删除。未关联采集任务的旧数据需由数据管理员核对归属和保留要求。"
+    },
+    {
+      "kind": "upload",
+      "label": "上传记录",
+      "count": 3,
+      "resolution": "需要保留任务成果：保留机器人，在实例详情中停用或退役。确定任务及其全部数据都不再需要：前往对应采集任务，在“更多”中选择“删除任务及数据”，核对范围并单独确认，完成后刷新检查。关闭或取消任务、移除上传身份不会解除历史数据关联。删除任务也不会清除已发布配置；仍有其他关联时机器人仍不能删除。"
+    },
+    {
+      "kind": "configuration",
+      "label": "已发布采集配置",
+      "count": 1,
+      "resolution": "已发布版本不可删除，用于追溯历史录制与解析。删除草稿或任务不会解除此关联。请保留实例并停用或退役；进入采集与解析配置可核对方案与版本。"
+    }
+  ],
+  "items": [
+    {
+      "kind": "raw",
+      "id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "name": "teleop_20261019_154301.mcap",
+      "status": "FAILED",
+      "project_id": "01",
+      "region_code": "global",
+      "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "task_code": "00000014",
+      "task_name": "pick and place",
+      "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "scheme_id": null,
+      "version": null
+    },
+    {
+      "kind": "raw",
+      "id": "raw-6bda50f9801957bbb69ef48db6fe9a67",
+      "name": "teleop_20261020_141908.mcap",
+      "status": "READY",
+      "project_id": "01",
+      "region_code": "global",
+      "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "task_code": "00000014",
+      "task_name": "pick and place",
+      "raw_source_id": "raw-6bda50f9801957bbb69ef48db6fe9a67",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "scheme_id": null,
+      "version": null
+    },
+    {
+      "kind": "raw",
+      "id": "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+      "name": "data/chunk-000/file-000.parquet",
+      "status": "READY",
+      "project_id": "01",
+      "region_code": "global",
+      "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "task_code": "00000014",
+      "task_name": "pick and place",
+      "raw_source_id": "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "scheme_id": null,
+      "version": null
+    },
+    {
+      "kind": "upload",
+      "id": "riu-3ea25f8c9786511785e753d912a96d73",
+      "name": "teleop_20261020_141908.mcap",
+      "status": "COMMITTED",
+      "project_id": "01",
+      "region_code": "global",
+      "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "task_code": "00000014",
+      "task_name": "pick and place",
+      "raw_source_id": "raw-6bda50f9801957bbb69ef48db6fe9a67",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "scheme_id": null,
+      "version": null
+    },
+    {
+      "kind": "upload",
+      "id": "riu-445ff5ed97e8529db900a3af16cd0ff5",
+      "name": "teleop_20261019_154301.mcap",
+      "status": "COMMITTED",
+      "project_id": "01",
+      "region_code": "global",
+      "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "task_code": "00000014",
+      "task_name": "pick and place",
+      "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "scheme_id": null,
+      "version": null
+    },
+    {
+      "kind": "upload",
+      "id": "riu-6d4efe93d7b956129e04bd8441f5f954",
+      "name": "data/chunk-000/file-000.parquet",
+      "status": "COMMITTED",
+      "project_id": "01",
+      "region_code": "global",
+      "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "task_code": "00000014",
+      "task_name": "pick and place",
+      "raw_source_id": "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "scheme_id": null,
+      "version": null
+    },
+    {
+      "kind": "configuration",
+      "id": "x1-sim-joints-19:v1",
+      "name": "X1 仿真纯关节（19 控制关节）",
+      "status": "PUBLISHED",
+      "project_id": null,
+      "region_code": null,
+      "collection_task_id": null,
+      "task_code": null,
+      "task_name": null,
+      "raw_source_id": null,
+      "dataset_id": null,
+      "scheme_id": "x1-sim-joints-19",
+      "version": 1
+    }
+  ],
+  "total": 7,
+  "restricted_count": 0,
+  "offset": 0,
+  "limit": 100
+}

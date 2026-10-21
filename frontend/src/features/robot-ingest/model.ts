@@ -48,6 +48,7 @@ export const credentialSummarySchema = z.object({
   expires_at: timestamp.nullable(),
   revoked_at: timestamp.nullable(),
   last_authenticated_at: timestamp.nullable(),
+  reveal_available: z.boolean().optional(),
 });
 
 export const robotIdentityEnvelopeSchema = z.object({
@@ -134,6 +135,9 @@ export const robotAttemptListSchema = z.object({
 });
 
 export const robotEpisodeResultSchema = z.object({
+  // Older servers omit these fields; UNKNOWN is distinct from no annotation configuration.
+  annotation_status: z.string().default("UNKNOWN"),
+  data_readable: z.boolean().optional(),
   episode_id: z.string().min(1),
   source_episode_index: z.number().int().nonnegative(),
   status: z.enum(["PENDING", "PROCESSING", "READY", "FAILED"]),

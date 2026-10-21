@@ -2,7 +2,7 @@
 
 from uuid import NAMESPACE_URL, uuid5
 
-from hc_data_platform.robot_ingest import recording_bridge
+from hc_data_platform.robot_ingest import processing_store, recording_bridge
 from hc_data_platform.robot_ingest.models import RobotIngestUpload
 from hc_data_platform.robot_ingest.processing_dispatch import mcap_eligible, retry_mcap
 
@@ -19,7 +19,7 @@ def retry_recording_source(organization_id, project_id, region_code, import_id, 
                = (s.organization_id,s.project_id,s.region_code,s.raw_source_id)
             WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
               AND s.raw_source_id=%s AND s.raw_status='COMMITTED'
-              AND s.source_format IN ('CAPTURE_BUNDLE','MCAP')""",
+              AND s.source_format IN ('CAPTURE_BUNDLE','MCAP','LEROBOT_V3')""",
             (organization_id, project_id, region_code, import_id),
         ).fetchone()
     if row is None:
@@ -34,6 +34,10 @@ def retry_recording_source(organization_id, project_id, region_code, import_id, 
         raise ValueError("recording upload receipt differs from its source scope")
     if mcap_eligible(upload):
         retry_mcap(factory, upload)
+        return True
+    if upload.source_format == "LEROBOT_V3":
+        request_id = str(uuid5(NAMESPACE_URL, f"browser-native-retry:{import_id}:{row[1]}"))
+        processing_store.ProcessingStore(factory).retry(upload, request_id)
         return True
     if not recording_bridge.eligible(upload):
         return False

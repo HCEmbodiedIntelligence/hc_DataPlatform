@@ -145,7 +145,11 @@ export function RegisteredViewerPanel({
       <header>
         <h3 id={`${panel.panelId}-title`}>{panel.title}</h3>
       </header>
-      {unavailable ? <div role="note">此 Stream 当前不可用。</div> : null}
+      {unavailable ? (
+        <div role="note">
+          {panel.state === "missing" ? "未采集" : "此数据暂不支持显示。"}
+        </div>
+      ) : null}
       {current?.error ? (
         <div role="alert">
           资源加载失败：{current.error.message}。其他面板仍可使用。

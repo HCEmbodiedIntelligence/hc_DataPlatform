@@ -156,9 +156,11 @@ export function CameraViewToolbar({
     <div className={styles.cameraToolbar} data-camera-toolbar="true">
       <div className={styles.cameraToolbarSummary}>
         <span>
-          {view === "__quad__"
-            ? `四路视频 · 已接入 ${connectedCount} / 4 路`
-            : `视频视图 · 当前 ${connectedCount} / ${cameras.length} 路`}
+          {!cameras.length
+            ? "无相机数据 · 使用关节曲线与时间切片"
+            : view === "__quad__"
+              ? `四路视频 · 已接入 ${connectedCount} / 4 路`
+              : `视频视图 · 当前 ${connectedCount} / ${cameras.length} 路`}
         </span>
         <small>保持原始画面比例；视频、机器人姿态和信号共用时间轴。</small>
       </div>
@@ -194,7 +196,7 @@ export function selectCameraStreams(
   view: string,
   range: { readonly startNs: string; readonly endNs: string },
 ): readonly StreamDescriptor[] {
-  if (view === "__all__") return cameras;
+  if (!cameras.length || view === "__all__") return cameras;
   if (view !== "__quad__")
     return cameras.filter((camera) => camera.id === view);
   const visible = cameras.slice(0, 4);

@@ -51,6 +51,10 @@ OrganizationId = Annotated[
         pattern=r"^[A-Za-z0-9._-]+$",
     ),
 ]
+OptionalRegionCode = Annotated[
+    str | None,
+    Header(alias="X-Region-Code", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$"),
+]
 
 
 def _authorize_read(auth: AuthContext, organization_id: str, project_id: str) -> None:
@@ -125,8 +129,18 @@ def create_collection_task(
     auth: VerifiedAuth,
     organization_id: OrganizationId,
     idempotency_key: IdempotencyKey,
+    region_code: OptionalRegionCode = None,
 ) -> CollectionTask:
-    _authorize_manage(auth, organization_id, project_id)
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    if command.capture_plan is not None and region_code is None:
+        from hc_data_platform.core.errors import problem
+
+        raise problem(
+            status=422,
+            code="CAPTURE_REGION_REQUIRED",
+            title="请选择任务采集区域",
+            detail="创建带采集方案的任务需要 X-Region-Code，以固定任务与数据集的区域。",
+        )
     _no_store(response)
     result = service.create(
         organization_id=organization_id,

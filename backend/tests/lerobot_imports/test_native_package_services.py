@@ -72,7 +72,15 @@ def isolated_dsn():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "condition", ["complete", "missing-mask", "profile-mismatch", "frame-mismatch", "legacy-g1"]
+    "condition",
+    [
+        "complete",
+        "missing-mask",
+        "profile-mismatch",
+        "frame-mismatch",
+        "legacy-g1",
+        "fractional-window",
+    ],
 )
 async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch, condition):
     if os.getenv("OPENARM_REAL_INFRA") != "1":
@@ -87,7 +95,13 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
 
         root = make_native_g1(tmp_path / "source")
     else:
-        root = make_native_rgbd(tmp_path / "source")
+        # Regression: a 167-frame, 15 Hz source has an 11_133_333_333 ns
+        # window. Its microsecond transport manifest rounds up, which must
+        # never be interpreted as a 168-frame package during registration.
+        root = make_native_rgbd(
+            tmp_path / "source",
+            **({"fps": 15, "count": 167} if condition == "fractional-window" else {}),
+        )
     if condition == "missing-mask":
         (root / "hc/depth/head/validity/flags.parquet").unlink()
     elif condition == "profile-mismatch":
@@ -324,7 +338,7 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 ),
                 timeout=180,
             )
-            if condition not in {"complete", "legacy-g1"}:
+            if condition not in {"complete", "legacy-g1", "fractional-window"}:
                 assert job.status.value == "TECHNICAL_FAILED", job.model_dump()
                 assert job.error_code == (
                     "LEROBOT_DEPTH_EVIDENCE_REQUIRED"
@@ -390,6 +404,20 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
                 return
             assert job.status.value == "SUCCEEDED", job.model_dump()
             assert len(projection_attempts) == 2
+            if condition == "fractional-window":
+                with connect() as connection:
+                    stored = connection.execute(
+                        "SELECT receipt_document->'data' FROM episode_store.versions "
+                        "WHERE organization_id=%s AND status='COMMITTED'",
+                        (org,),
+                    ).fetchall()
+                    assert len(stored) == 1
+                    assert stored[0][0]["frame_count"] == 167
+                    assert connection.execute(
+                        "SELECT count(*) FROM dataset_registry.dataset_versions "
+                        "WHERE organization_id=%s",
+                        (org,),
+                    ).fetchone()[0] == 1
             # The four legacy G1 H264 RGB sources are reused byte-for-byte.
             assert len(preview_encodes) == (0 if condition == "legacy-g1" else 2)
             history = await temporal.get_workflow_handle(job.workflow_id).fetch_history()
@@ -646,6 +674,8 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
         evidence = {
             "source": "synthetic legacy G1 four RGB, 6 frames, 30 Hz"
             if condition == "legacy-g1"
+            else "synthetic RGB-D, 167 frames, 15 Hz"
+            if condition == "fractional-window"
             else "synthetic RGB-D, 6 frames, 25 Hz",
             "status": job.status.value,
             "workflow_id": job.workflow_id,
@@ -666,6 +696,8 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
         report_name = (
             "native-package-roundtrip-g1.json"
             if condition == "legacy-g1"
+            else "native-package-roundtrip-fractional-window.json"
+            if condition == "fractional-window"
             else "native-package-roundtrip.json"
         )
         (target / report_name).write_text(json.dumps(evidence, indent=2) + "\n")

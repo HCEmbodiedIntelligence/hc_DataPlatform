@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "dataset: same missing-image error, robot+scheme+source preserved, return restores exact batch",
+    "task: same missing-image error, robot+scheme+source preserved, return restores exact batch",
+    "upload: same missing-image error, robot+scheme+source preserved, return restores exact batch",
+    "dashboard: same missing-image error, robot+scheme+source preserved, return restores exact batch",
+    "Browser QC report shows image checks as not applicable"
+  ],
+  "screenshots": []
+}

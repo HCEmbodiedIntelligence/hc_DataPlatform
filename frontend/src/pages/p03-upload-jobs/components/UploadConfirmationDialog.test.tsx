@@ -125,8 +125,16 @@ beforeEach(() => {
     ],
   };
   requestMock.mockImplementation(async ({ path }: { path: string }) => {
+    if (path.endsWith("/robot-options"))
+      return [
+        {
+          robot_id: "robot-a",
+          display_name: "采集机器人",
+          serial_no: "serial-a",
+        },
+      ];
     if (path.endsWith(":capabilities")) return capability;
-    if (path.endsWith("/configuration")) return { configured: true };
+    if (path.endsWith("/configuration")) return { configured: false };
     throw new Error(`Unexpected request: ${path}`);
   });
   const store = useShellStore.getState();
@@ -203,7 +211,7 @@ describe("UploadConfirmationDialog original storage", () => {
     });
   });
 
-  it("uses a server-supported float64 profile and freezes its opaque revision", async () => {
+  it("uses a server-supported profile without requiring annotation and freezes its revision", async () => {
     capability = {
       ...capability,
       processing_supported: true,
@@ -218,9 +226,12 @@ describe("UploadConfirmationDialog original storage", () => {
     await user.click(screen.getByRole("combobox", { name: "采集任务 ID" }));
     await user.click(await screen.findByText("合成采集 · task-a"));
     await user.click(screen.getByRole("combobox", { name: "目标机器人 ID" }));
-    await user.click(await screen.findByText("数据源 · robot-a · robot-a"));
+    await user.click(
+      await screen.findByText("采集机器人 · serial-a · robot-a"),
+    );
     const confirm = screen.getByRole("button", { name: "确认上传" });
     await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByText(/标注待配置/)).toBeVisible();
     await user.click(confirm);
     expect(onConfirmMock).toHaveBeenCalledWith({
       datasetId: "dataset_alpha",

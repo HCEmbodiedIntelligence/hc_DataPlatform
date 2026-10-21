@@ -32,10 +32,15 @@
 .sourceCard,
 .tasksCard {
   min-width: 0;
-  overflow: hidden;
+  overflow: clip;
   border-color: var(--hc-color-border, #d9ddea);
   border-radius: 16px;
   box-shadow: 0 10px 28px rgb(31 42 76 / 7%);
+}
+
+.sourceCard {
+  border-radius: 10px;
+  box-shadow: none;
 }
 
 .sourceCard > :global(.ant-card-head),
@@ -76,26 +81,33 @@
 }
 
 .stageSelector {
-  display: grid;
-  gap: 10px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.stageSelector > strong {
+  font-size: 12px;
+}
+
+.stageSelector :global(.ant-radio-button-wrapper) {
+  font-size: 12px;
 }
 
 .deliverySwitch:global(.ant-radio-group) {
   display: inline-flex;
-  max-width: calc(100% - 36px);
+  max-width: 100%;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 14px 18px;
-  padding: 4px;
-  border-radius: 10px;
-  background: #eef0f7;
+  margin-left: auto;
 }
 
 .deliverySwitch :global(.ant-radio-button-wrapper) {
-  height: auto;
-  padding: 6px 14px;
+  height: 28px;
+  padding: 3px 10px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 5px;
   background: transparent;
   font-size: 12px;
   line-height: 22px;
@@ -108,12 +120,12 @@
 
 .deliverySwitch :global(.ant-radio-button-wrapper-checked) {
   color: var(--hc-color-primary, #4c57c6);
-  background: #fff;
-  box-shadow: 0 1px 4px rgb(31 42 76 / 10%);
+  background: #eef0f7;
   font-weight: 650;
 }
 
 .filterSection {
+  padding: 10px 16px;
   border-bottom: 1px solid var(--hc-color-border-subtle, #e7e9f2);
   background: #fbfcfe;
 }
@@ -174,8 +186,9 @@
 
 .filterGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: center;
+  gap: 12px;
 }
 
 .filterField,
@@ -192,6 +205,19 @@
   font-weight: 680;
 }
 
+.filterField {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.filterHint {
+  display: block;
+  margin-top: 5px;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+}
+
 .filterField :global(.ant-select),
 .taskToolbar :global(.ant-select) {
   width: 100%;
@@ -200,7 +226,7 @@
 .filterField :global(.ant-select-selector),
 .taskToolbar :global(.ant-input-affix-wrapper),
 .taskToolbar :global(.ant-select-selector) {
-  min-height: 40px !important;
+  min-height: 32px !important;
   border-radius: 9px !important;
 }
 
@@ -581,7 +607,7 @@
 
 @media (max-width: 1180px) {
   .filterGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   }
 
   .exportComposer {

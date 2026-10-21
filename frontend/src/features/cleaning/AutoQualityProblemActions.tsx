@@ -32,11 +32,13 @@ export function AutoQualityProblemActions({
   problem,
   canManage,
   canReadDataset,
+  onDeleted,
 }: {
   readonly scope: IngestScope;
   readonly problem: AutoQualityProblem;
   readonly canManage: boolean;
   readonly canReadDataset: boolean;
+  readonly onDeleted?: () => void;
 }) {
   const client = useQueryClient();
   const [deleted, setDeleted] = useState(false);
@@ -52,11 +54,13 @@ export function AutoQualityProblemActions({
   const processing = useQuery({
     queryKey: progressKey,
     queryFn: ({ signal }) => getAutoQualityProcessing(scope, problem, signal),
-    refetchInterval: (query) =>
-      runningStatuses.has(query.state.data?.status ?? "") ? 3_000 : false,
+    refetchInterval: 3_000,
     retry: false,
   });
   const progress = processing.data;
+  useEffect(() => {
+    if (progress?.status === "DISCARDED") onDeleted?.();
+  }, [onDeleted, progress?.status]);
   const running = runningStatuses.has(progress?.status ?? "");
   const quality = useQuery({
     queryKey: qualityKey,
@@ -88,8 +92,8 @@ export function AutoQualityProblemActions({
     },
   });
 
-  // Refresh the latest result when the batch advances or finishes. The modal keeps
-  // its selected episode even when a resolved issue disappears from the list.
+  // Episode deletion can change status without advancing the batch timestamp.
+  // Keep retry progress open, but refresh all issue views when either changes.
   useEffect(() => {
     if (!progress?.updated_at) return;
     void client.invalidateQueries({
@@ -119,6 +123,7 @@ export function AutoQualityProblemActions({
   }, [
     client,
     progress?.updated_at,
+    progress?.status,
     problem.rolloutId,
     scope.organizationId,
     scope.projectId,
@@ -138,7 +143,7 @@ export function AutoQualityProblemActions({
     if (!problem.recordingId) void quality.refetch();
   };
 
-  if (deleted)
+  if (deleted || progress?.status === "DISCARDED")
     return (
       <Alert
         showIcon
@@ -253,7 +258,10 @@ export function AutoQualityProblemActions({
           <DeleteAutoQualityProblem
             scope={scope}
             problem={problem}
-            onDeleted={() => setDeleted(true)}
+            onDeleted={() => {
+              setDeleted(true);
+              onDeleted?.();
+            }}
           />
         ) : null}
         {progress?.unavailableReason && (

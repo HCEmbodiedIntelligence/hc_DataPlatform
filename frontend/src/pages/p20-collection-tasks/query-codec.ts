@@ -11,6 +11,7 @@ export interface CollectionTaskSearch {
   readonly query: string;
   readonly type: string;
   readonly cursor?: string;
+  readonly taskId?: string;
   readonly drawer?: CollectionTaskDrawerState;
 }
 
@@ -35,6 +36,7 @@ export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
     const query = (params.get("q") ?? "").trim().slice(0, 200);
     const type = (params.get("type") ?? "").trim().slice(0, 100);
     const cursor = params.get("cursor");
+    const taskId = params.get("taskId");
     const drawerRaw = params.get("drawer");
     let drawer: CollectionTaskDrawerState | undefined;
     if (drawerRaw === "create") drawer = { mode: "create" };
@@ -50,6 +52,7 @@ export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
       type,
       ...(cursor && cursor.length <= 16_384 ? { cursor } : {}),
       ...(drawer ? { drawer } : {}),
+      ...(taskId && stableIdentifier.test(taskId) ? { taskId } : {}),
     };
   },
   build(value) {
@@ -59,6 +62,7 @@ export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
     if (value.query) params.set("q", value.query);
     if (value.type) params.set("type", value.type);
     if (value.cursor) params.set("cursor", value.cursor);
+    if (value.taskId) params.set("taskId", value.taskId);
     if (value.drawer?.mode === "create") params.set("drawer", "create");
     if (value.drawer?.mode === "edit") {
       params.set("drawer", `edit:${value.drawer.taskId}`);

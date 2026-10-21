@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Onboarding deletion previews concrete references and prevents confirmation",
+    "Task link loads the exact task ID regardless of the current list window",
+    "Robot instances page uses the same preview and resolutions",
+    "Only newly created isolated empty robot deleted; historical fixture report unchanged"
+  ]
+}

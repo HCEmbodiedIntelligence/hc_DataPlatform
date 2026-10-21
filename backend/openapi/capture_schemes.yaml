@@ -1,0 +1,2319 @@
+components:
+  schemas:
+    AddParticipants:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 1.0
+          title: Expected Revision
+          type: integer
+        participants:
+          items:
+            $ref: '#/components/schemas/Participant'
+          maxItems: 100
+          minItems: 1
+          title: Participants
+          type: array
+      required:
+      - expected_revision
+      - participants
+      title: AddParticipants
+      type: object
+    AssociateScheme:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        make_default:
+          default: false
+          title: Make Default
+          type: boolean
+        mapping:
+          $ref: '#/components/schemas/DeviceMapping'
+        scheme:
+          $ref: '#/components/schemas/VersionReference'
+      required:
+      - expected_revision
+      - scheme
+      title: AssociateScheme
+      type: object
+    CaptureAssociationRemoved:
+      additionalProperties: false
+      properties:
+        removed:
+          const: true
+          title: Removed
+          type: boolean
+      required:
+      - removed
+      title: CaptureAssociationRemoved
+      type: object
+    CaptureBundleAdapter:
+      additionalProperties: false
+      properties:
+        configuration:
+          $ref: '#/components/schemas/McapProcessingConfig'
+        parser_version:
+          const: capture-bundle/1
+          default: capture-bundle/1
+          title: Parser Version
+          type: string
+        source_format:
+          const: CAPTURE_BUNDLE
+          default: CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+      required:
+      - configuration
+      title: CaptureBundleAdapter
+      type: object
+    CaptureDifference:
+      additionalProperties: true
+      properties:
+        actual:
+          title: Actual
+        expected:
+          title: Expected
+        path:
+          title: Path
+          type: string
+        source:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source
+      required:
+      - path
+      - expected
+      - actual
+      title: CaptureDifference
+      type: object
+    CaptureDraftDefinition:
+      additionalProperties: false
+      properties:
+        adapters:
+          items:
+            discriminator:
+              mapping:
+                CAPTURE_BUNDLE: '#/components/schemas/DraftCaptureBundleAdapter'
+                LEROBOT_V3: '#/components/schemas/LeRobotAdapter'
+                MCAP: '#/components/schemas/DraftMcapAdapter'
+              propertyName: source_format
+            oneOf:
+            - $ref: '#/components/schemas/DraftMcapAdapter'
+            - $ref: '#/components/schemas/LeRobotAdapter'
+            - $ref: '#/components/schemas/DraftCaptureBundleAdapter'
+          maxItems: 3
+          minItems: 1
+          title: Adapters
+          type: array
+        description:
+          default: ''
+          maxLength: 10000
+          title: Description
+          type: string
+        model_version_ids:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          title: Model Version Ids
+          type: array
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        output:
+          $ref: '#/components/schemas/DraftOutputContract'
+        quality_policy:
+          additionalProperties:
+            type: string
+          title: Quality Policy
+          type: object
+        software:
+          default: ''
+          maxLength: 120
+          title: Software
+          type: string
+      required:
+      - name
+      - adapters
+      - output
+      title: CaptureDraftDefinition
+      type: object
+    CaptureEvidence:
+      additionalProperties: true
+      properties:
+        actor:
+          title: Actor
+          type: string
+        differences:
+          default: []
+          items:
+            $ref: '#/components/schemas/CaptureDifference'
+          title: Differences
+          type: array
+        draft_sha256:
+          anyOf:
+          - pattern: ^[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Draft Sha256
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        error_detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Detail
+        frame_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Frame Count
+        frequency_hz:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: number
+          - type: 'null'
+          title: Frequency Hz
+        input_structure_sha256:
+          anyOf:
+          - pattern: ^[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Input Structure Sha256
+        mapping_sha256:
+          anyOf:
+          - pattern: ^[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Mapping Sha256
+        parser_version:
+          title: Parser Version
+          type: string
+        presence:
+          additionalProperties:
+            type: boolean
+          title: Presence
+          type: object
+        revision:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Revision
+        sample:
+          anyOf:
+          - $ref: '#/components/schemas/Sample'
+          - type: 'null'
+        sample_robot_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Sample Robot Id
+        sample_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Sample Sha256
+          type: string
+        scheme_sha256:
+          anyOf:
+          - pattern: ^[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Scheme Sha256
+        source_format:
+          enum:
+          - MCAP
+          - LEROBOT_V3
+          - CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+        status:
+          enum:
+          - PASSED
+          - FAILED
+          title: Status
+          type: string
+        validated_at:
+          title: Validated At
+          type: string
+        validation_id:
+          pattern: ^[a-f0-9]{64}$
+          title: Validation Id
+          type: string
+      required:
+      - status
+      - source_format
+      - validation_id
+      - validated_at
+      - actor
+      - parser_version
+      - sample_sha256
+      title: CaptureEvidence
+      type: object
+    CaptureInstanceReference:
+      additionalProperties: false
+      properties:
+        active:
+          title: Active
+          type: boolean
+        is_default:
+          title: Is Default
+          type: boolean
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        version:
+          minimum: 1.0
+          title: Version
+          type: integer
+      required:
+      - robot_id
+      - version
+      - mapping_version
+      - active
+      - is_default
+      title: CaptureInstanceReference
+      type: object
+    CaptureMappingVersion:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Content Sha256
+          type: string
+        created_at:
+          title: Created At
+          type: string
+        created_by:
+          title: Created By
+          type: string
+        mapping:
+          $ref: '#/components/schemas/DeviceMapping'
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        scheme:
+          $ref: '#/components/schemas/VersionReference'
+      required:
+      - scheme
+      - mapping
+      - mapping_version
+      - content_sha256
+      - created_by
+      - created_at
+      title: CaptureMappingVersion
+      type: object
+    CaptureParticipantChange:
+      additionalProperties: false
+      properties:
+        base_revision:
+          minimum: 1.0
+          title: Base Revision
+          type: integer
+        kind:
+          const: ADD_PARTICIPANTS
+          title: Kind
+          type: string
+        participants:
+          items:
+            $ref: '#/components/schemas/Participant'
+          title: Participants
+          type: array
+      required:
+      - kind
+      - base_revision
+      - participants
+      title: CaptureParticipantChange
+      type: object
+    CaptureRecordingSnapshot:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        dataset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+          type: string
+        effective_adapter:
+          discriminator:
+            mapping:
+              CAPTURE_BUNDLE: '#/components/schemas/CaptureBundleAdapter'
+              LEROBOT_V3: '#/components/schemas/LeRobotAdapter'
+              MCAP: '#/components/schemas/McapAdapter'
+            propertyName: source_format
+          oneOf:
+          - $ref: '#/components/schemas/McapAdapter'
+          - $ref: '#/components/schemas/LeRobotAdapter'
+          - $ref: '#/components/schemas/CaptureBundleAdapter'
+          title: Effective Adapter
+        mapping_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Mapping Sha256
+          type: string
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        output:
+          $ref: '#/components/schemas/OutputContract'
+        output_contract_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Output Contract Sha256
+          type: string
+        plan_revision:
+          minimum: 1.0
+          title: Plan Revision
+          type: integer
+        plan_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Plan Sha256
+          type: string
+        prepared_at:
+          title: Prepared At
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        recording_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Recording Id
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+          type: string
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        schema_version:
+          const: capture-recording-snapshot/v1
+          title: Schema Version
+          type: string
+        scheme:
+          $ref: '#/components/schemas/VersionReference'
+        snapshot_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Snapshot Sha256
+          type: string
+        source:
+          const: TASK_PLAN
+          title: Source
+          type: string
+        source_format:
+          enum:
+          - MCAP
+          - LEROBOT_V3
+          - CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+      required:
+      - schema_version
+      - organization_id
+      - project_id
+      - region_code
+      - collection_task_id
+      - dataset_id
+      - robot_id
+      - recording_id
+      - plan_revision
+      - plan_sha256
+      - scheme
+      - mapping_version
+      - mapping_sha256
+      - source_format
+      - effective_adapter
+      - output
+      - output_contract_sha256
+      - source
+      - prepared_at
+      - snapshot_sha256
+      title: CaptureRecordingSnapshot
+      type: object
+    CaptureReference:
+      additionalProperties: false
+      properties:
+        plan_revision:
+          minimum: 1.0
+          title: Plan Revision
+          type: integer
+        plan_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Plan Sha256
+          type: string
+        recording_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Recording Id
+          type: string
+        snapshot_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Snapshot Sha256
+          type: string
+      required:
+      - plan_revision
+      - plan_sha256
+      - snapshot_sha256
+      - recording_id
+      title: CaptureReference
+      type: object
+    CaptureSchemeDetail:
+      additionalProperties: false
+      properties:
+        archived:
+          title: Archived
+          type: boolean
+        draft:
+          $ref: '#/components/schemas/CaptureDraftDefinition'
+        latest_version:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Latest Version
+        revision:
+          minimum: 1.0
+          title: Revision
+          type: integer
+        scheme_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+        validations:
+          items:
+            $ref: '#/components/schemas/CaptureEvidence'
+          title: Validations
+          type: array
+        versions:
+          items:
+            $ref: '#/components/schemas/CaptureSchemeVersion'
+          title: Versions
+          type: array
+      required:
+      - scheme_id
+      - revision
+      - draft
+      - latest_version
+      - archived
+      - validations
+      - versions
+      title: CaptureSchemeDetail
+      type: object
+    CaptureSchemeLink:
+      additionalProperties: false
+      properties:
+        active:
+          title: Active
+          type: boolean
+        archived:
+          title: Archived
+          type: boolean
+        is_default:
+          title: Is Default
+          type: boolean
+        mapping:
+          $ref: '#/components/schemas/CaptureMappingVersion'
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        revision:
+          minimum: 1.0
+          title: Revision
+          type: integer
+        scheme:
+          $ref: '#/components/schemas/CaptureSchemeVersion'
+        scheme_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+        scheme_version:
+          minimum: 1.0
+          title: Scheme Version
+          type: integer
+        status:
+          enum:
+          - READY
+          - MAPPING_UNVERIFIED
+          title: Status
+          type: string
+        validated_formats:
+          items:
+            enum:
+            - MCAP
+            - LEROBOT_V3
+            - CAPTURE_BUNDLE
+            type: string
+          title: Validated Formats
+          type: array
+        validations:
+          items:
+            $ref: '#/components/schemas/CaptureEvidence'
+          title: Validations
+          type: array
+      required:
+      - scheme_id
+      - revision
+      - scheme_version
+      - mapping_version
+      - is_default
+      - active
+      - mapping
+      - scheme
+      - archived
+      - status
+      - validated_formats
+      - validations
+      title: CaptureSchemeLink
+      type: object
+    CaptureSchemeLinks:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CaptureSchemeLink'
+          title: Items
+          type: array
+      required:
+      - items
+      title: CaptureSchemeLinks
+      type: object
+    CaptureSchemeList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/CaptureSchemeSummary'
+          title: Items
+          type: array
+      required:
+      - items
+      title: CaptureSchemeList
+      type: object
+    CaptureSchemeReferences:
+      additionalProperties: false
+      properties:
+        instances:
+          items:
+            $ref: '#/components/schemas/CaptureInstanceReference'
+          title: Instances
+          type: array
+        tasks:
+          items:
+            $ref: '#/components/schemas/CaptureTaskReference'
+          title: Tasks
+          type: array
+      required:
+      - instances
+      - tasks
+      title: CaptureSchemeReferences
+      type: object
+    CaptureSchemeSummary:
+      additionalProperties: false
+      properties:
+        archived:
+          title: Archived
+          type: boolean
+        draft:
+          $ref: '#/components/schemas/CaptureDraftDefinition'
+        instance_count:
+          minimum: 0.0
+          title: Instance Count
+          type: integer
+        latest_version:
+          anyOf:
+          - minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Latest Version
+        revision:
+          minimum: 1.0
+          title: Revision
+          type: integer
+        scheme_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+        task_count:
+          minimum: 0.0
+          title: Task Count
+          type: integer
+      required:
+      - scheme_id
+      - revision
+      - draft
+      - latest_version
+      - archived
+      - instance_count
+      - task_count
+      title: CaptureSchemeSummary
+      type: object
+    CaptureSchemeVersion:
+      additionalProperties: false
+      properties:
+        adapters:
+          items:
+            discriminator:
+              mapping:
+                CAPTURE_BUNDLE: '#/components/schemas/CaptureBundleAdapter'
+                LEROBOT_V3: '#/components/schemas/LeRobotAdapter'
+                MCAP: '#/components/schemas/McapAdapter'
+              propertyName: source_format
+            oneOf:
+            - $ref: '#/components/schemas/McapAdapter'
+            - $ref: '#/components/schemas/LeRobotAdapter'
+            - $ref: '#/components/schemas/CaptureBundleAdapter'
+          maxItems: 3
+          minItems: 1
+          title: Adapters
+          type: array
+        content_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Content Sha256
+          type: string
+        description:
+          default: ''
+          maxLength: 10000
+          title: Description
+          type: string
+        draft_revision:
+          minimum: 1.0
+          title: Draft Revision
+          type: integer
+        model_version_ids:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          title: Model Version Ids
+          type: array
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        output:
+          $ref: '#/components/schemas/OutputContract'
+        output_contract_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Output Contract Sha256
+          type: string
+        published_at:
+          title: Published At
+          type: string
+        published_by:
+          title: Published By
+          type: string
+        quality_policy:
+          additionalProperties:
+            type: string
+          title: Quality Policy
+          type: object
+        scheme_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+        software:
+          default: ''
+          maxLength: 120
+          title: Software
+          type: string
+        source:
+          const: SHARED_CAPTURE_SCHEME
+          title: Source
+          type: string
+        validations:
+          additionalProperties:
+            $ref: '#/components/schemas/CaptureEvidence'
+          propertyNames:
+            enum:
+            - MCAP
+            - LEROBOT_V3
+            - CAPTURE_BUNDLE
+          title: Validations
+          type: object
+        version:
+          minimum: 1.0
+          title: Version
+          type: integer
+      required:
+      - name
+      - adapters
+      - output
+      - scheme_id
+      - version
+      - draft_revision
+      - content_sha256
+      - output_contract_sha256
+      - validations
+      - published_at
+      - published_by
+      - source
+      title: CaptureSchemeVersion
+      type: object
+    CaptureSelectedParticipant:
+      additionalProperties: false
+      properties:
+        mapping_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Mapping Sha256
+          type: string
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+      required:
+      - robot_id
+      - mapping_version
+      - mapping_sha256
+      title: CaptureSelectedParticipant
+      type: object
+    CaptureSelection:
+      additionalProperties: false
+      properties:
+        participants:
+          items:
+            $ref: '#/components/schemas/Participant'
+          title: Participants
+          type: array
+        scheme:
+          $ref: '#/components/schemas/VersionReference'
+      required:
+      - scheme
+      - participants
+      title: CaptureSelection
+      type: object
+    CaptureTaskPlan:
+      additionalProperties: false
+      properties:
+        change:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureParticipantChange'
+          - type: 'null'
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        created_at:
+          title: Created At
+          type: string
+        created_by:
+          title: Created By
+          type: string
+        dataset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+          type: string
+        locked_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Locked At
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        output:
+          $ref: '#/components/schemas/OutputContract'
+        output_contract_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Output Contract Sha256
+          type: string
+        participants:
+          items:
+            $ref: '#/components/schemas/CaptureSelectedParticipant'
+          title: Participants
+          type: array
+        plan_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Plan Sha256
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+          type: string
+        revision:
+          minimum: 1.0
+          title: Revision
+          type: integer
+        schema_version:
+          const: capture-task-plan/v1
+          title: Schema Version
+          type: string
+        scheme:
+          $ref: '#/components/schemas/VersionReference'
+        selection:
+          $ref: '#/components/schemas/CaptureSelection'
+      required:
+      - schema_version
+      - organization_id
+      - project_id
+      - region_code
+      - collection_task_id
+      - dataset_id
+      - revision
+      - scheme
+      - selection
+      - participants
+      - output
+      - output_contract_sha256
+      - created_by
+      - created_at
+      - plan_sha256
+      - locked_at
+      title: CaptureTaskPlan
+      type: object
+    CaptureTaskPlanEnvelope:
+      additionalProperties: false
+      properties:
+        plan:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureTaskPlan'
+          - type: 'null'
+      required:
+      - plan
+      title: CaptureTaskPlanEnvelope
+      type: object
+    CaptureTaskReference:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        locked_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Locked At
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        revision:
+          minimum: 1.0
+          title: Revision
+          type: integer
+        version:
+          minimum: 1.0
+          title: Version
+          type: integer
+      required:
+      - project_id
+      - collection_task_id
+      - revision
+      - version
+      - locked_at
+      title: CaptureTaskReference
+      type: object
+    DeviceMapping:
+      additionalProperties: false
+      properties:
+        sources:
+          additionalProperties:
+            additionalProperties:
+              type: string
+            type: object
+          propertyNames:
+            enum:
+            - MCAP
+            - LEROBOT_V3
+            - CAPTURE_BUNDLE
+          title: Sources
+          type: object
+      title: DeviceMapping
+      type: object
+    DraftCaptureBundleAdapter:
+      additionalProperties: false
+      properties:
+        configuration:
+          $ref: '#/components/schemas/McapDraftConfig'
+        parser_version:
+          const: capture-bundle/1
+          default: capture-bundle/1
+          title: Parser Version
+          type: string
+        source_format:
+          const: CAPTURE_BUNDLE
+          default: CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+      required:
+      - configuration
+      title: DraftCaptureBundleAdapter
+      type: object
+    DraftMcapAdapter:
+      additionalProperties: false
+      properties:
+        configuration:
+          $ref: '#/components/schemas/McapDraftConfig'
+        parser_version:
+          const: native-mcap-recording/2
+          default: native-mcap-recording/2
+          title: Parser Version
+          type: string
+        source_format:
+          const: MCAP
+          default: MCAP
+          title: Source Format
+          type: string
+      required:
+      - configuration
+      title: DraftMcapAdapter
+      type: object
+    DraftOutputContract:
+      additionalProperties: false
+      properties:
+        algorithm:
+          const: capture-structure/v1
+          default: capture-structure/v1
+          title: Algorithm
+          type: string
+        features:
+          additionalProperties:
+            $ref: '#/components/schemas/Feature'
+          minProperties: 1
+          title: Features
+          type: object
+        frequency_hz:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 1000.0
+            type: number
+          - type: 'null'
+          title: Frequency Hz
+        frequency_policy:
+          const: PRESERVE
+          default: PRESERVE
+          title: Frequency Policy
+          type: string
+        time_source:
+          enum:
+          - FRAME_TIMESTAMP
+          - STATE_LOG_TIME
+          - RGB_LOG_TIME
+          title: Time Source
+          type: string
+      required:
+      - time_source
+      - features
+      title: DraftOutputContract
+      type: object
+    Feature:
+      additionalProperties: false
+      description: Semantic identity, independent of a batch's actual presence.
+      properties:
+        dtype:
+          maxLength: 64
+          minLength: 1
+          title: Dtype
+          type: string
+        media:
+          additionalProperties:
+            anyOf:
+            - type: string
+            - type: integer
+            - type: number
+            - type: boolean
+          title: Media
+          type: object
+        missing:
+          const: presence_and_validity
+          default: presence_and_validity
+          title: Missing
+          type: string
+        names:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - additionalProperties:
+              items:
+                type: string
+              type: array
+            type: object
+          - type: 'null'
+          title: Names
+        required:
+          default: true
+          title: Required
+          type: boolean
+        role:
+          enum:
+          - state
+          - action
+          - rgb
+          - depth
+          - numeric
+          - validity
+          - timestamp
+          title: Role
+          type: string
+        shape:
+          items:
+            type: integer
+          maxItems: 8
+          minItems: 1
+          title: Shape
+          type: array
+        units:
+          default: []
+          items:
+            type: string
+          title: Units
+          type: array
+        validity_feature:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Validity Feature
+      required:
+      - dtype
+      - shape
+      - role
+      title: Feature
+      type: object
+    LeRobotAdapter:
+      additionalProperties: false
+      properties:
+        codebase_version:
+          const: v3.0
+          default: v3.0
+          title: Codebase Version
+          type: string
+        feature_sources:
+          additionalProperties:
+            type: string
+          title: Feature Sources
+          type: object
+        parser_version:
+          const: lerobot-v3/1
+          default: lerobot-v3/1
+          title: Parser Version
+          type: string
+        source_format:
+          const: LEROBOT_V3
+          default: LEROBOT_V3
+          title: Source Format
+          type: string
+      title: LeRobotAdapter
+      type: object
+    McapAdapter:
+      additionalProperties: false
+      properties:
+        configuration:
+          $ref: '#/components/schemas/McapProcessingConfig'
+        parser_version:
+          const: native-mcap-recording/2
+          default: native-mcap-recording/2
+          title: Parser Version
+          type: string
+        source_format:
+          const: MCAP
+          default: MCAP
+          title: Source Format
+          type: string
+      required:
+      - configuration
+      title: McapAdapter
+      type: object
+    McapDraftConfig:
+      additionalProperties: false
+      properties:
+        action_joint_names:
+          default: []
+          items:
+            type: string
+          title: Action Joint Names
+          type: array
+        action_joint_units:
+          default: []
+          items:
+            type: string
+          title: Action Joint Units
+          type: array
+        action_topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Action Topic
+        cameras:
+          default: []
+          items:
+            $ref: '#/components/schemas/CameraMapping'
+          title: Cameras
+          type: array
+        collection_mode:
+          default: RGB
+          enum:
+          - RGB
+          - JOINT_ONLY
+          title: Collection Mode
+          type: string
+        depth_scale_m_per_unit:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 1.0
+            type: number
+          - type: 'null'
+          title: Depth Scale M Per Unit
+        depth_unit_evidence:
+          anyOf:
+          - maxLength: 2048
+            type: string
+          - type: 'null'
+          title: Depth Unit Evidence
+        derive_action_from_next_state:
+          default: false
+          title: Derive Action From Next State
+          type: boolean
+        fps:
+          anyOf:
+          - maximum: 240.0
+            minimum: 1.0
+            type: integer
+          - type: 'null'
+          title: Fps
+        joint_names:
+          default: []
+          items:
+            type: string
+          title: Joint Names
+          type: array
+        joint_units:
+          default: []
+          items:
+            type: string
+          title: Joint Units
+          type: array
+        maximum_time_error_ms:
+          default: 50
+          exclusiveMinimum: 0.0
+          maximum: 1000.0
+          title: Maximum Time Error Ms
+          type: number
+        primary_camera:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Primary Camera
+        state_joint_names:
+          default: []
+          items:
+            type: string
+          title: State Joint Names
+          type: array
+        state_joint_units:
+          default: []
+          items:
+            type: string
+          title: State Joint Units
+          type: array
+        state_topic:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: State Topic
+        time_source:
+          default: RGB_LOG_TIME
+          enum:
+          - RGB_LOG_TIME
+          - STATE_LOG_TIME
+          title: Time Source
+          type: string
+      title: McapDraftConfig
+      type: object
+    OutputContract:
+      additionalProperties: false
+      properties:
+        algorithm:
+          const: capture-structure/v1
+          default: capture-structure/v1
+          title: Algorithm
+          type: string
+        features:
+          additionalProperties:
+            $ref: '#/components/schemas/Feature'
+          minProperties: 1
+          title: Features
+          type: object
+        frequency_hz:
+          exclusiveMinimum: 0.0
+          maximum: 1000.0
+          title: Frequency Hz
+          type: number
+        frequency_policy:
+          const: PRESERVE
+          default: PRESERVE
+          title: Frequency Policy
+          type: string
+        time_source:
+          enum:
+          - FRAME_TIMESTAMP
+          - STATE_LOG_TIME
+          - RGB_LOG_TIME
+          title: Time Source
+          type: string
+      required:
+      - frequency_hz
+      - time_source
+      - features
+      title: OutputContract
+      type: object
+    Participant:
+      additionalProperties: false
+      properties:
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+      required:
+      - robot_id
+      - mapping_version
+      title: Participant
+      type: object
+    PrepareRecording:
+      additionalProperties: false
+      properties:
+        expected_plan_revision:
+          minimum: 1.0
+          title: Expected Plan Revision
+          type: integer
+        recording_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Recording Id
+          type: string
+        source_format:
+          enum:
+          - MCAP
+          - LEROBOT_V3
+          - CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+      required:
+      - expected_plan_revision
+      - recording_id
+      - source_format
+      title: PrepareRecording
+      type: object
+    Revision:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 1.0
+          title: Expected Revision
+          type: integer
+      required:
+      - expected_revision
+      title: Revision
+      type: object
+    Sample:
+      additionalProperties: false
+      properties:
+        episode_index:
+          default: 0
+          minimum: 0.0
+          title: Episode Index
+          type: integer
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        raw_source_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Raw Source Id
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+          type: string
+        source_format:
+          enum:
+          - MCAP
+          - LEROBOT_V3
+          - CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+        source_path:
+          default: meta/info.json
+          maxLength: 2048
+          minLength: 1
+          title: Source Path
+          type: string
+      required:
+      - project_id
+      - region_code
+      - raw_source_id
+      - source_format
+      title: Sample
+      type: object
+    SchemeDraft:
+      additionalProperties: false
+      properties:
+        adapters:
+          items:
+            discriminator:
+              mapping:
+                CAPTURE_BUNDLE: '#/components/schemas/DraftCaptureBundleAdapter'
+                LEROBOT_V3: '#/components/schemas/LeRobotAdapter'
+                MCAP: '#/components/schemas/DraftMcapAdapter'
+              propertyName: source_format
+            oneOf:
+            - $ref: '#/components/schemas/DraftMcapAdapter'
+            - $ref: '#/components/schemas/LeRobotAdapter'
+            - $ref: '#/components/schemas/DraftCaptureBundleAdapter'
+          maxItems: 3
+          minItems: 1
+          title: Adapters
+          type: array
+        description:
+          default: ''
+          maxLength: 10000
+          title: Description
+          type: string
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        model_version_ids:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          title: Model Version Ids
+          type: array
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        output:
+          $ref: '#/components/schemas/DraftOutputContract'
+        quality_policy:
+          additionalProperties:
+            type: string
+          title: Quality Policy
+          type: object
+        software:
+          default: ''
+          maxLength: 120
+          title: Software
+          type: string
+      required:
+      - name
+      - adapters
+      - output
+      - expected_revision
+      title: SchemeDraft
+      type: object
+    SetTaskPlan:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        participants:
+          items:
+            $ref: '#/components/schemas/Participant'
+          maxItems: 100
+          title: Participants
+          type: array
+        scheme:
+          $ref: '#/components/schemas/VersionReference'
+      required:
+      - expected_revision
+      - scheme
+      title: SetTaskPlan
+      type: object
+    ValidateDraft:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 1.0
+          title: Expected Revision
+          type: integer
+        sample:
+          $ref: '#/components/schemas/Sample'
+      required:
+      - expected_revision
+      - sample
+      title: ValidateDraft
+      type: object
+    ValidateMapping:
+      additionalProperties: false
+      properties:
+        mapping_version:
+          minimum: 1.0
+          title: Mapping Version
+          type: integer
+        sample:
+          $ref: '#/components/schemas/Sample'
+      required:
+      - mapping_version
+      - sample
+      title: ValidateMapping
+      type: object
+    VersionReference:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Content Sha256
+          type: string
+        scheme_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+        version:
+          minimum: 1.0
+          title: Version
+          type: integer
+      required:
+      - scheme_id
+      - version
+      - content_sha256
+      title: VersionReference
+      type: object
+info:
+  title: Shared capture schemes
+  version: '2026-10-21'
+openapi: 3.1.0
+paths:
+  /api/v1/organizations/{organization_id}/capture-schemes:
+    get:
+      operationId: listCaptureSchemes
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          default: ''
+          maxLength: 200
+          title: Q
+          type: string
+      - in: query
+        name: source_format
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - MCAP
+            - LEROBOT_V3
+            - CAPTURE_BUNDLE
+            type: string
+          - type: 'null'
+          title: Source Format
+      - in: query
+        name: include_archived
+        required: false
+        schema:
+          default: false
+          title: Include Archived
+          type: boolean
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeList'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Schemes
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/capture-schemes/{scheme_id}:
+    get:
+      operationId: getCaptureScheme
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeDetail'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Scheme
+      tags:
+      - capture-schemes
+    put:
+      operationId: saveCaptureSchemeDraft
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SchemeDraft'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeDetail'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Scheme
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/capture-schemes/{scheme_id}/references:
+    get:
+      operationId: getCaptureSchemeReferences
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeReferences'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get References
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/capture-schemes/{scheme_id}/versions/{version}:
+    get:
+      operationId: getCaptureSchemeVersion
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      - in: path
+        name: version
+        required: true
+        schema:
+          minimum: 1
+          title: Version
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeVersion'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Version
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/capture-schemes/{scheme_id}:archive:
+    post:
+      operationId: archiveCaptureScheme
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Revision'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeDetail'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Archive Scheme
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/capture-schemes/{scheme_id}:publish:
+    post:
+      operationId: publishCaptureScheme
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Revision'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeVersion'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Publish Scheme
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/capture-schemes/{scheme_id}:validate:
+    post:
+      operationId: validateCaptureScheme
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateDraft'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeDetail'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Validate Scheme
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/capture-schemes:
+    get:
+      operationId: listRobotCaptureSchemes
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeLinks'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Links
+      tags:
+      - capture-schemes
+    put:
+      operationId: associateRobotCaptureScheme
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssociateScheme'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeLinks'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Associate
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/capture-schemes/{scheme_id}:remove:
+    post:
+      operationId: removeRobotCaptureScheme
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Revision'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureAssociationRemoved'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Remove Link
+      tags:
+      - capture-schemes
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/capture-schemes/{scheme_id}:validate:
+    post:
+      operationId: validateRobotCaptureMapping
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ValidateMapping'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureSchemeLinks'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Validate Mapping
+      tags:
+      - capture-schemes
+  /api/v1/projects/{project_id}/collection-tasks/{task_id}/capture-plan:
+    get:
+      operationId: getTaskCapturePlan
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureTaskPlanEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Plan
+      tags:
+      - capture-schemes
+    put:
+      operationId: setTaskCapturePlan
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetTaskPlan'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureTaskPlanEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Set Plan
+      tags:
+      - capture-schemes
+  /api/v1/projects/{project_id}/collection-tasks/{task_id}/capture-plan:add-participants:
+    post:
+      operationId: addTaskCaptureParticipants
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Region-Code
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddParticipants'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureTaskPlanEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Add Task Participants
+      tags:
+      - capture-schemes

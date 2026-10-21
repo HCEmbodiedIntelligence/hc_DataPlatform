@@ -64,7 +64,9 @@ def test_ingest_workflow_pass_and_risk_are_distinct() -> None:
     passed = IngestRolloutWorkflow(Verifier(), Quality(), Aligner(), commit).run(
         {"rollout_id": "r1"}
     )
-    assert passed["training_eligible"] is True
+    assert passed["data_readable"] is True
+    assert passed["annotation_complete"] is False
+    assert passed["training_eligible"] is False
     risky = IngestRolloutWorkflow(Verifier(), Quality(QualityOutcome.RISK), Aligner(), commit).run(
         {"rollout_id": "r2"}
     )
@@ -174,6 +176,7 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
     workflows, activities = discover_temporal_registrations()
 
     assert {item.__name__ for item in workflows} == {
+        "RetryEpisodeAnnotationWorkflow",
         "IngestRolloutWorkflow",
         "DatasetWriterWorkflow",
         "PublishDatasetWorkflow",
@@ -192,6 +195,8 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
         "align_fragment",
         "commit_fragment",
         "commit_aligned_bundle",
+        "commit_prepared_bundle",
+        "reserve_ingest",
         "create_annotation_task",
         "cleanup_uncommitted_aligned_media",
         "cleanup_alignment_staging",
@@ -215,7 +220,10 @@ def test_worker_registers_every_workflow_and_activity_with_bounded_policies() ->
     }
     media_workflows, media_activities = discover_temporal_registrations("media")
     assert media_workflows == []
-    assert {item.__name__ for item in media_activities} == {"create_aligned_media"}
+    assert {item.__name__ for item in media_activities} == {
+        "create_aligned_media",
+        "prepare_aligned_media",
+    }
     assert ACTIVITY_RETRY_POLICY.maximum_attempts == 8
     assert ACTIVITY_RETRY_POLICY.backoff_coefficient == 2
     assert ACTIVITY_RETRY_POLICY.non_retryable_error_types is not None

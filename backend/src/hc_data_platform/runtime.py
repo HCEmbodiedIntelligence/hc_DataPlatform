@@ -9,6 +9,7 @@ import socket
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import partial
 from itertools import islice
 from pathlib import Path
 from typing import Any, cast, overload
@@ -82,6 +83,11 @@ from hc_data_platform.audit_projection.service import AuditProjectionService
 from hc_data_platform.calibrations.repository import PostgresCalibrationRepository
 from hc_data_platform.calibrations.router import configure_calibrations
 from hc_data_platform.calibrations.service import CalibrationService
+from hc_data_platform.capture_schemes.components import CaptureServices
+from hc_data_platform.capture_schemes.postgres import PostgresRecordingPlans
+from hc_data_platform.capture_schemes.samples import StoredSampleValidator
+from hc_data_platform.capture_schemes.transactions import bind_raw_snapshot
+from hc_data_platform.capture_schemes.web_uploads import PostgresWebUploadPlans
 from hc_data_platform.cleaning_drafts.repository import PostgresCleaningDraftRepository
 from hc_data_platform.cleaning_drafts.router import configure_cleaning_drafts
 from hc_data_platform.cleaning_drafts.service import CleaningDraftService
@@ -180,7 +186,9 @@ from hc_data_platform.lance_catalog.router import (
     configure_lance_catalog_audit_recorder,
 )
 from hc_data_platform.lance_catalog.service import LanceCatalogService, compute_fragment_hash
+from hc_data_platform.lerobot_imports.configuration import validate_target
 from hc_data_platform.lerobot_imports.discovery import NativeManifestDiscovery
+from hc_data_platform.lerobot_imports.service import LeRobotWebUploadService
 from hc_data_platform.logical_data.service import LogicalDataService
 from hc_data_platform.manual_cleaning.models import (
     ManualIssueDraftMutationRecord,
@@ -235,6 +243,7 @@ from hc_data_platform.robot_assets.binding_queries import (
     model_has_binding_history,
 )
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
+from hc_data_platform.robot_assets.resolution import PostgresRobotResolution
 from hc_data_platform.robot_assets.router import configure_organization_robot_assets
 from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
 from hc_data_platform.robot_ingest.processing_api import configure_processing
@@ -600,6 +609,8 @@ class RuntimeComponents:
     annotation_deliveries: Any = None
     logical_data: LogicalDataService | None = None
     annotation_logical: AnnotationLogicalService | None = None
+    capture_schemes: CaptureServices | None = None
+    lerobot_uploads: LeRobotWebUploadService | None = None
 
 
 @dataclass(frozen=True)
@@ -805,7 +816,9 @@ def build_runtime(
     ingest = UploadSessionService(
         object_storage,
         persistence=PostgresIngestPersistence(connection_factory),
-        raw_sources=PostgresRawSourceRepository(connection_factory),
+        raw_sources=PostgresRawSourceRepository(
+            connection_factory, capture_snapshot_writer=bind_raw_snapshot
+        ),
         authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
         cursor_secret=resolved.cursor_secret,
         alternate_manifest_discovery=NativeManifestDiscovery(
@@ -857,10 +870,12 @@ def build_runtime(
         ),
         cursor_secret=resolved.cursor_secret,
     )
+    robot_asset_repository = PostgresOrganizationRobotAssetRepository(
+        connection_factory, published_models=published_model_for_binding
+    )
     robot_assets = OrganizationRobotAssetService(
-        PostgresOrganizationRobotAssetRepository(
-            connection_factory, published_models=published_model_for_binding
-        ),
+        robot_asset_repository,
+        resolution=PostgresRobotResolution(connection_factory, collection_tasks.deletion),
     )
     calibrations = CalibrationService(
         PostgresCalibrationRepository(connection_factory),
@@ -879,6 +894,10 @@ def build_runtime(
             response_decoder=DataSourceMutationRecord.model_validate,
         ),
     )
+    from hc_data_platform.annotation.delivery_queries import PostgresAnnotationDeliveries
+    from hc_data_platform.robot_ingest.episode_delivery import EpisodeDeliveryProjection
+
+    robot_processing = ProcessingStore(connection_factory)
     robot_ingest = RobotIngestService(
         PostgresRobotIngestRepository.from_dsn(
             resolved.postgres_dsn,
@@ -886,6 +905,10 @@ def build_runtime(
         ),
         object_storage,
         credential_hmac_key=resolved.data_source_credential_key.get_secret_value(),
+        capture_plans=PostgresRecordingPlans(connection_factory),
+        episode_deliveries=EpisodeDeliveryProjection(
+            robot_processing, PostgresAnnotationDeliveries(connection_factory)
+        ),
     )
     dataset_page = DatasetPageService(
         PostgresDatasetPageRepository(connection_factory),
@@ -1055,9 +1078,9 @@ def build_runtime(
         native_manifest_parser=ObjectStorageManifestParser(object_storage),
         episode_packages=episode_packages,
     )
-    from functools import partial
 
     from hc_data_platform.episode_store.publication_receipts import EpisodePublicationReceipts
+    from hc_data_platform.lerobot_imports.delivery import NativeDeliveryProjection
     from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
     from hc_data_platform.lerobot_imports.planning_queries import PostgresNativePlanningQuery
     from hc_data_platform.lerobot_imports.state_store import PostgresNativeProcessingState
@@ -1067,8 +1090,6 @@ def build_runtime(
     from hc_data_platform.workflow.result_queries import PostgresTerminalWorkflowResults
 
     native_raw_sources = PostgresRawSourceRepository(connection_factory)
-    robot_processing = ProcessingStore(connection_factory)
-
     lerobot_pipeline = LeRobotPipeline(
         object_storage,
         catalog,
@@ -1225,6 +1246,24 @@ def build_runtime(
         storage=storage,
         registry=registry,
         robot_assets=robot_assets,
+        capture_schemes=CaptureServices(
+            connections=connection_factory,
+            samples=StoredSampleValidator(object_storage, ingest.raw_sources),
+            organization_exists=robot_asset_repository.organization_exists,
+        ),
+        lerobot_uploads=LeRobotWebUploadService(
+            object_storage,
+            raw_sources=ingest.raw_sources,
+            authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
+            target_validator=partial(validate_target, connection_factory=connection_factory),
+            capture_plans=PostgresWebUploadPlans(connection_factory),
+            delivery=NativeDeliveryProjection(
+                ingest.raw_sources,
+                PostgresTerminalWorkflowResults(connection_factory),
+                PostgresAnnotationDeliveries(connection_factory),
+                errors=robot_processing,
+            ),
+        ),
         calibrations=calibrations,
         data_schemas=data_schemas,
         data_sources=data_sources,

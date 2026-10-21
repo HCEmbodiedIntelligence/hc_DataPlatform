@@ -82,12 +82,19 @@ function drawValues(
   context.strokeStyle = "#2d70d7";
   context.lineWidth = 1.75;
   context.beginPath();
-  samples.forEach((value, index) => {
+  let connected = false;
+  values.forEach((row, index) => {
+    const value = row[0];
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      connected = false;
+      return;
+    }
     const x =
-      samples.length === 1 ? width / 2 : (index * width) / (samples.length - 1);
+      values.length === 1 ? width / 2 : (index * width) / (values.length - 1);
     const y = height - ((value - low) / span) * height;
-    if (index === 0) context.moveTo(x, y);
-    else context.lineTo(x, y);
+    if (connected) context.lineTo(x, y);
+    else context.moveTo(x, y);
+    connected = true;
   });
   context.stroke();
 }
@@ -191,6 +198,13 @@ export function viewerWindowSummary(payload: ViewerWindowPayload): string {
     return `已加载 ${payload.pointFrames?.length ?? 1} 帧真实点云数据；画面随共享时间轴切换最近样本。`;
   if (payload.events?.length)
     return `已加载 ${payload.events.length} 条真实事件；竖线对应共享时间轴上的事件时刻。`;
+  if (
+    payload.values?.length &&
+    !payload.values.some(
+      (row) => typeof row[0] === "number" && Number.isFinite(row[0]),
+    )
+  )
+    return "未采集";
   if (payload.values?.length)
     return `已加载 ${payload.values.length} 个真实数值样本；折线使用每个样本的首个数值维度。`;
   return "已加载固定采集数据。";

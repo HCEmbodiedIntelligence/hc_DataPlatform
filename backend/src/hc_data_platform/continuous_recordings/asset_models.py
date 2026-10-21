@@ -6,7 +6,15 @@ from pathlib import PurePosixPath
 from typing import Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    model_serializer,
+    model_validator,
+)
 
 from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.ingest.models import (
@@ -98,14 +106,36 @@ class SensorRecordingConfigV1(BaseModel):
 class RecordingConfigurationV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["recording-config/v1"] = "recording-config/v1"
+    schema_version: Literal["recording-config/v1", "recording-config/v2"] = "recording-config/v1"
+    collection_mode: Literal["RGB", "JOINT_ONLY"] = "RGB"
+    time_source: Literal["RGB_LOG_TIME", "STATE_LOG_TIME"] = "RGB_LOG_TIME"
     recorder_version: str = Field(min_length=1, max_length=128)
     primary_clock_domain: str = Field(min_length=1, max_length=128)
-    cameras: tuple[CameraRecordingConfigV1, ...] = Field(min_length=1, max_length=128)
+    cameras: tuple[CameraRecordingConfigV1, ...] = Field(max_length=128)
     sensors: tuple[SensorRecordingConfigV1, ...] = Field(default=(), max_length=2048)
 
     @model_validator(mode="after")
     def validate_cameras(self) -> RecordingConfigurationV1:
+        if self.collection_mode == "JOINT_ONLY":
+            if (
+                self.schema_version != "recording-config/v2"
+                or self.cameras
+                or self.time_source != "STATE_LOG_TIME"
+            ):
+                raise ValueError(
+                    "JOINT_ONLY requires recording-config/v2, no cameras and STATE_LOG_TIME"
+                )
+            if not {
+                "/observation/state",
+                "/action",
+                "/openarm/capture_validity",
+                "source.timestamp_ns",
+            } <= {s.topic for s in self.sensors if s.required}:
+                raise ValueError(
+                    "JOINT_ONLY requires state, action, source timestamps and validity evidence"
+                )
+        elif not self.cameras or self.schema_version != "recording-config/v1":
+            raise ValueError("legacy RGB recording-config/v1 requires cameras")
         camera_ids = [camera.camera_id for camera in self.cameras]
         if len(camera_ids) != len(set(camera_ids)):
             raise ValueError("recording config camera_id values must be unique")
@@ -118,6 +148,17 @@ class RecordingConfigurationV1(BaseModel):
         if set(modality_keys).intersection(sensor_topics):
             raise ValueError("camera and sensor modality keys must be disjoint")
         return self
+
+    @model_serializer(mode="wrap")
+    def serialize_compatible(self, handler):
+        document = handler(self)
+        if self.schema_version == "recording-config/v1":
+            document.pop("collection_mode", None)
+            # Preserve historical RGB-clock bytes without discarding an explicit
+            # state clock for a recording that also contains camera streams.
+            if self.time_source == "RGB_LOG_TIME":
+                document.pop("time_source", None)
+        return document
 
 
 class RecordingAssetManifestV1(BaseModel):
@@ -156,7 +197,9 @@ class CreateRecordingUploadCommand(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["continuous-recording-upload/v2"] = "continuous-recording-upload/v2"
+    schema_version: Literal["continuous-recording-upload/v2", "continuous-recording-upload/v3"] = (
+        "continuous-recording-upload/v2"
+    )
     recording_id: Identifier
     rollout_id: Identifier
     data_package_id: Identifier
@@ -167,7 +210,7 @@ class CreateRecordingUploadCommand(BaseModel):
     capture_started_at: AwareDatetime
     capture_ended_at: AwareDatetime
     recording_config: RecordingConfigurationV1
-    assets: tuple[RecordingAssetManifestV1, ...] = Field(min_length=3, max_length=4096)
+    assets: tuple[RecordingAssetManifestV1, ...] = Field(min_length=2, max_length=4096)
 
     @model_validator(mode="after")
     def validate_upload(self) -> CreateRecordingUploadCommand:
@@ -182,7 +225,13 @@ class CreateRecordingUploadCommand(BaseModel):
         if RecordingAssetRole.SENSOR_DATA not in roles:
             raise ValueError("at least one SENSOR_DATA asset is required")
         videos = [asset for asset in self.assets if asset.role is RecordingAssetRole.RAW_VIDEO]
-        if not videos:
+        joints = self.recording_config.collection_mode == "JOINT_ONLY"
+        if joints != (self.schema_version == "continuous-recording-upload/v3"):
+            raise ValueError(
+                "JOINT_ONLY requires continuous-recording-upload/v3; old "
+                "contracts retain video requirements"
+            )
+        if not videos and not joints:
             raise ValueError("at least one RAW_VIDEO asset is required")
         video_camera_ids = [asset.camera_id for asset in videos]
         if len(video_camera_ids) != len(set(video_camera_ids)):
@@ -196,7 +245,9 @@ class CreateRecordingUploadCommand(BaseModel):
 class RecordingUpload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["continuous-recording-upload/v2"] = "continuous-recording-upload/v2"
+    schema_version: Literal["continuous-recording-upload/v2", "continuous-recording-upload/v3"] = (
+        "continuous-recording-upload/v2"
+    )
     scope: RecordingScope
     upload_id: UUID
     command: CreateRecordingUploadCommand
@@ -326,7 +377,7 @@ class EpisodeProcessing(BaseModel):
     data_ref: DataVersionRef | None = None
     collection_version_id: str | None = Field(default=None, min_length=1, max_length=256)
     annotation_task_id: str | None = Field(default=None, min_length=1, max_length=128)
-    aligned_media_camera_count: int | None = Field(default=None, ge=1, le=128)
+    aligned_media_camera_count: int | None = Field(default=None, ge=0, le=128)
     failure_code: str | None = Field(default=None, pattern=r"^[A-Z0-9_]+$")
     failure_stage: str | None = Field(default=None, min_length=1, max_length=128)
     created_at: AwareDatetime = Field(default_factory=utc_now)
@@ -357,7 +408,6 @@ class EpisodeProcessing(BaseModel):
         ready_values = (
             self.dataset_id,
             self.dataset_version,
-            self.annotation_task_id,
             self.aligned_media_camera_count,
         )
         if self.status is EpisodeProcessingStatus.READY and any(
@@ -383,7 +433,13 @@ class EpisodeProcessing(BaseModel):
             raise ValueError("a package collection requires its Episode data reference")
         if self.status is not EpisodeProcessingStatus.READY and any(
             value is not None
-            for value in (*ready_values, self.lance_version, self.data_ref, self.dataset_episode_id)
+            for value in (
+                *ready_values,
+                self.annotation_task_id,
+                self.lance_version,
+                self.data_ref,
+                self.dataset_episode_id,
+            )
         ):
             raise ValueError("only READY Episodes expose Dataset, task, and media evidence")
         failed = self.status in {

@@ -7,10 +7,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
+const ReturnedProcessingRecord = lazy(
+  () => import("../../features/ingest/processing/ReturnedProcessingRecord"),
+);
 import { useQuery } from "@tanstack/react-query";
 import {
   Bell,
   Bot,
+  BotMessageSquare,
   Box,
   ChevronDown,
   ClipboardList,
@@ -33,6 +37,7 @@ import {
   Settings,
   ShieldAlert,
   ScrollText,
+  SlidersHorizontal,
   ServerCog,
   Tags,
   UserRound,
@@ -158,6 +163,8 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P12: <HardDrive aria-hidden="true" size={18} strokeWidth={1.8} />,
   P13: <Clock3 aria-hidden="true" size={18} strokeWidth={1.8} />,
   P14: <Bot aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P24: <SlidersHorizontal aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P15: <BotMessageSquare aria-hidden="true" size={18} strokeWidth={1.8} />,
   P16: <Crosshair aria-hidden="true" size={18} strokeWidth={1.8} />,
   P18: <UserRound aria-hidden="true" size={18} strokeWidth={1.8} />,
   P19: <ScrollText aria-hidden="true" size={18} strokeWidth={1.8} />,
@@ -1001,6 +1008,12 @@ export function PlatformShell({
             />
           ) : null}
           {useVisualFixture ? <ShellLoadingPage /> : <Outlet />}
+          {!useVisualFixture &&
+            new URLSearchParams(location.search).has("rawSource") && (
+              <Suspense fallback={null}>
+                <ReturnedProcessingRecord />
+              </Suspense>
+            )}
         </Content>
       </Layout>
 

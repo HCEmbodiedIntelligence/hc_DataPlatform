@@ -1,5 +1,6 @@
 export interface RuntimeConfig {
   apiBaseUrl: string;
+  robotPlatformBaseUrl?: string;
   sseBaseUrl: string;
   buildVersion: string;
   releaseEnv: 'local' | 'dev' | 'test' | 'staging' | 'production';

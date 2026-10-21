@@ -1,6 +1,9 @@
 import { Select } from "antd";
 import {
   Camera,
+  ChevronRight,
+  CircleAlert,
+  CircleMinus,
   CloudDownload,
   Database,
   Send,
@@ -47,12 +50,12 @@ const stagePresentation: Readonly<
     Readonly<{ label: string; eyebrow: string; Icon: LucideIcon }>
   >
 > = {
-  TASK_EXECUTION: { label: "采集", eyebrow: "任务执行", Icon: Camera },
+  TASK_EXECUTION: { label: "采集", eyebrow: "已登记", Icon: Camera },
   PACKAGE_UPLOAD: { label: "登记上传", eyebrow: "已上传", Icon: CloudDownload },
   RAW_RECEIPT: { label: "Raw 接收", eyebrow: "已接收", Icon: CloudDownload },
   AUTOMATIC_VALIDATION: {
     label: "自动校验",
-    eyebrow: "自动质检",
+    eyebrow: "质检通过",
     Icon: ShieldCheck,
   },
   STANDARDIZATION: {
@@ -60,8 +63,8 @@ const stagePresentation: Readonly<
     eyebrow: "已入库",
     Icon: Database,
   },
-  ANNOTATION: { label: "数据标注", eyebrow: "标注", Icon: Tags },
-  REVIEW: { label: "人工审核", eyebrow: "审核", Icon: UserRoundCheck },
+  ANNOTATION: { label: "数据标注", eyebrow: "已提交", Icon: Tags },
+  REVIEW: { label: "人工审核", eyebrow: "审核通过", Icon: UserRoundCheck },
   PUBLICATION: { label: "发布", eyebrow: "已发布", Icon: Send },
 };
 
@@ -101,7 +104,9 @@ function stageMeta(
     parts.push(`${waitingLabel} ${countFormatter.format(stage.waiting)}`);
   }
   if (stage.running > 0)
-    parts.push(`运行 ${countFormatter.format(stage.running)}`);
+    parts.push(
+      `${stage.stage === "ANNOTATION" ? "未提交" : "运行"} ${countFormatter.format(stage.running)}`,
+    );
   if (stage.blocked > 0 && stage.stage !== "STANDARDIZATION")
     parts.push(`阻塞 ${countFormatter.format(stage.blocked)}`);
   if (stage.unavailable > 0)
@@ -146,6 +151,7 @@ export function AssetCapacityBoard({
               tone={sectionTone(taskStatus.section.status)}
             />
           </div>
+          <p>按数据包统计；等待只包含已进入该阶段的数据。</p>
         </div>
 
         <div className={styles.taskContext}>
@@ -222,7 +228,8 @@ export function AssetCapacityBoard({
             ? undefined
             : stage.blocked + stage.failed + stage.unavailable > 0
               ? "danger"
-              : stage.stage === "AUTOMATIC_VALIDATION" && stage.isolated > 0
+              : stage.stage === "AUTOMATIC_VALIDATION" &&
+                  pipeline.qc.risk + pipeline.qc.rejected > 0
                 ? "quality"
                 : undefined;
           return (
@@ -242,73 +249,85 @@ export function AssetCapacityBoard({
               <span className={styles.stageFact}>
                 {countFormatter.format(stage?.succeeded ?? 0)} 个数据包
               </span>
-              {meta ? (
-                <span className={styles.stageMeta} data-tone={tone}>
-                  {meta}
-                </span>
-              ) : null}
-              {(
-                [
-                  {
-                    category: "QUALITY",
-                    label: "质检问题",
-                    count:
-                      stageCode === "AUTOMATIC_VALIDATION"
-                        ? pipeline.qc.risk + pipeline.qc.rejected
-                        : 0,
-                  },
-                  {
-                    category: "DUPLICATE",
-                    label: "重复数据",
-                    count:
-                      stageCode === "AUTOMATIC_VALIDATION"
-                        ? (pipeline.qc.duplicate ?? 0)
-                        : 0,
-                  },
-                  {
-                    category: "PROCESSING_CONFLICT",
-                    label: "处理冲突",
-                    count:
-                      stageCode === "STANDARDIZATION"
-                        ? (pipeline.qc.reprocessingConflicts ?? 0)
-                        : 0,
-                  },
-                  {
-                    category: "RESUME_REQUIRED",
-                    label: "待继续处理",
-                    count: issues.filter(
-                      (issue) =>
-                        issue.stage === stageCode &&
-                        issue.category === "RESUME_REQUIRED",
-                    ).length,
-                  },
-                  {
-                    category: "TECHNICAL",
-                    label: "处理失败",
-                    count: stage?.failed ?? 0,
-                  },
-                ] as const
-              ).map(({ category, label: issueLabel, count }) =>
-                count > 0 ? (
-                  <button
-                    type="button"
-                    key={category}
-                    className={styles.issueButton}
-                    data-tone={category === "TECHNICAL" ? "danger" : "quality"}
-                    onClick={() =>
-                      setIssueFilter({ stage: stageCode, category })
-                    }
+              <span
+                className={styles.stageMeta}
+                data-tone={tone}
+                aria-hidden={meta ? undefined : true}
+              >
+                {meta}
+              </span>
+              <div className={styles.stageBadges}>
+                {(
+                  [
+                    {
+                      category: "QUALITY",
+                      label: "质检问题",
+                      count:
+                        stageCode === "AUTOMATIC_VALIDATION"
+                          ? pipeline.qc.risk + pipeline.qc.rejected
+                          : 0,
+                    },
+                    {
+                      category: "PROCESSING_CONFLICT",
+                      label: "处理冲突",
+                      count:
+                        stageCode === "STANDARDIZATION"
+                          ? (pipeline.qc.reprocessingConflicts ?? 0)
+                          : 0,
+                    },
+                    {
+                      category: "RESUME_REQUIRED",
+                      label: "待继续处理",
+                      count: issues.filter(
+                        (issue) =>
+                          issue.stage === stageCode &&
+                          issue.category === "RESUME_REQUIRED",
+                      ).length,
+                    },
+                    {
+                      category: "TECHNICAL",
+                      label: "处理失败",
+                      count: stage?.failed ?? 0,
+                    },
+                  ] as const
+                ).map(({ category, label: issueLabel, count }) =>
+                  count > 0 ? (
+                    <button
+                      type="button"
+                      key={category}
+                      className={`${styles.stageBadge} ${styles.issueButton}`}
+                      data-tone={
+                        category === "TECHNICAL" ? "danger" : "quality"
+                      }
+                      aria-label={`${issueLabel} ${countFormatter.format(count)}`}
+                      title={`查看${issueLabel}的 ${countFormatter.format(count)} 个数据包`}
+                      onClick={() =>
+                        setIssueFilter({ stage: stageCode, category })
+                      }
+                    >
+                      <CircleAlert size={12} aria-hidden="true" />
+                      <span className={styles.badgeLabel}>{issueLabel}</span>
+                      <span className={styles.badgeCount}>
+                        {countFormatter.format(count)}
+                      </span>
+                      <ChevronRight size={11} aria-hidden="true" />
+                    </button>
+                  ) : null,
+                )}
+                {stageCode === "STANDARDIZATION" &&
+                (pipeline.qc.discarded ?? 0) > 0 ? (
+                  <span
+                    className={styles.stageBadge}
+                    title="已移除的数据包，不再计入后续待办"
                   >
-                    {issueLabel} {countFormatter.format(count)}
-                  </button>
-                ) : null,
-              )}
-              {stageCode === "STANDARDIZATION" &&
-              (pipeline.qc.discarded ?? 0) > 0 ? (
-                <span>
-                  已移除 {countFormatter.format(pipeline.qc.discarded!)}
-                </span>
-              ) : null}
+                    <CircleMinus size={12} aria-hidden="true" />
+                    <span className={styles.badgeLabel}>已移除</span>
+                    <span className={styles.badgeCount}>
+                      {countFormatter.format(pipeline.qc.discarded!)}
+                    </span>
+                  </span>
+                ) : null}
+              </div>
             </li>
           );
         })}

@@ -59,9 +59,11 @@ export default function TaskIssueDrawer({
     null,
   );
   const [previewOpen, setPreviewOpen] = useState(false);
-  const selected =
-    issues.find((item) => item.rollout_id === selectedIssue?.rollout_id) ??
-    selectedIssue;
+  const selected = issues.find(
+    (item) =>
+      item.task_id === selectedIssue?.task_id &&
+      item.rollout_id === selectedIssue?.rollout_id,
+  );
   const canPreview =
     scope &&
     selected?.source_import_id &&
@@ -137,7 +139,7 @@ export default function TaskIssueDrawer({
                 ? [
                     {
                       key: "attempt",
-                      label: "历史处理记录",
+                      label: "处理记录",
                       children: selected.alignment_attempt_id,
                     },
                   ]
@@ -204,6 +206,7 @@ export default function TaskIssueDrawer({
             </Suspense>
           ) : null}
           {(selected.category === "RESUME_REQUIRED" ||
+            selected.category === "TECHNICAL" ||
             selected.reason_code === "RAW_RECORDING_PREPARATION_FAILED") &&
           scope &&
           selected.source_import_id ? (

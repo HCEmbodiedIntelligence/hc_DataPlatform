@@ -90,6 +90,7 @@ let progress = processingFixture();
 let qualityPassed = false;
 let problemsCleared = false;
 let recordingStatus = "QC_FAILED";
+let resolutionStatus = "FAILED";
 
 function processingFixture() {
   return {
@@ -114,6 +115,7 @@ beforeEach(() => {
   qualityPassed = false;
   problemsCleared = false;
   recordingStatus = "QC_FAILED";
+  resolutionStatus = "FAILED";
   useShellStore.setState({
     scope,
     bootstrapLoaded: true,
@@ -204,12 +206,13 @@ function renderProblem(overrides: Record<string, unknown> = {}) {
       if (path.endsWith("/resolution")) {
         if (method === "POST") {
           problemsCleared = true;
+          resolutionStatus = "DISCARDED";
           return { status: "DISCARDED" };
         }
         return {
           discard_available: true,
           expected_attempt_id: "episode:original",
-          status: "FAILED",
+          status: resolutionStatus,
         };
       }
       if (path.endsWith(":discard")) {
@@ -256,6 +259,45 @@ function renderProblem(overrides: Record<string, unknown> = {}) {
 }
 
 describe("问题数据 Raw 入口", () => {
+  it.each([false, true])(
+    "closes an open problem when another view deletes it (recording=%s)",
+    async (recording) => {
+      renderProblem(
+        recording
+          ? {
+              source_import_id: null,
+              source_episode_index: null,
+              recording_id: "recording-a",
+              recording_episode_id: "episode_0002",
+            }
+          : {},
+      );
+      fireEvent.click(
+        await screen.findByRole("button", { name: "查看与处理" }),
+      );
+      const drawer = await screen.findByRole("dialog");
+      await waitFor(() =>
+        expect(
+          within(drawer).getByRole("button", { name: "重新质检并继续处理" }),
+        ).toBeEnabled(),
+      );
+      problemsCleared = true;
+      recordingStatus = "DISCARDED";
+      resolutionStatus = "DISCARDED";
+      await client.invalidateQueries({ queryKey: ["auto-quality-processing"] });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("button", { name: "查看与处理" }),
+        ).not.toBeInTheDocument(),
+      );
+      expect(
+        requestMock.mock.calls.filter(([arg]) => arg.method === "POST"),
+      ).toHaveLength(0);
+    },
+  );
   it.each([false, true])(
     "deletes only the confirmed problem Episode (recording=%s)",
     async (recording) => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from threading import RLock
 
+from hc_data_platform.capture_schemes.references import SetTaskPlan
 from hc_data_platform.core.errors import problem
 
 from .models import (
@@ -99,7 +100,14 @@ class InMemoryCollectionTaskRepository:
         with self._lock:
             return bool(self._packages.get((organization_id, project_id, collection_task_id), {}))
 
-    def create(self, task: CollectionTaskRecord) -> CollectionTaskRecord:
+    def create(
+        self, task: CollectionTaskRecord, *, capture_plan: SetTaskPlan | None = None
+    ) -> CollectionTaskRecord:
+        if capture_plan is not None:
+            raise problem(
+                status=503, code="CAPTURE_STORE_UNAVAILABLE",
+                title="采集计划存储不可用", detail="采集计划需要持久化的共享方案服务。",
+            )
         key = (task.organization_id, task.project_id, task.collection_task_id)
         with self._lock:
             existing = self._tasks.get(key)

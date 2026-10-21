@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="36" failures="0" errors="0" time="1.469229134">
+    <testsuite name="src/app/env.test.ts" timestamp="2026-10-20T02:01:40.200Z" hostname="9e52863bc117" tests="9" failures="0" errors="0" skipped="0" time="0.004807706">
+        <testcase classname="src/app/env.test.ts" name="keeps the robot&apos;s public platform URL independent of browser API requests" time="0.001763959">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="allows deployments without an explicit robot platform URL" time="0.000240172">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; materializes the exact immutable production identity once" time="0.000982658">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; rejects non-immutable production VITE_BUILD_VERSION" time="0.00042022">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; rejects non-immutable production VITE_GIT_COMMIT" time="0.000203047">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; rejects non-immutable production VITE_RELEASE_MANIFEST_DIGEST" time="0.000124187">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; rejects non-immutable production VITE_MIGRATION_MANIFEST_DIGEST" time="0.000085468">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; rejects non-immutable production VITE_COMPONENT_IMAGE_DIGEST" time="0.000074414">
+        </testcase>
+        <testcase classname="src/app/env.test.ts" name="frontend release identity &gt; allows explicit development sentinels without claiming a release" time="0.000265906">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/robot-ingest/ConnectionLink.test.tsx" timestamp="2026-10-20T02:01:40.201Z" hostname="9e52863bc117" tests="5" failures="0" errors="0" skipped="0" time="0.34472861">
+        <testcase classname="src/features/robot-ingest/ConnectionLink.test.tsx" name="copies one ten-minute link, reuses it and never stores secrets or rotates credentials" time="0.194757523">
+            <system-err>
+Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robot-ingest/ConnectionLink.test.tsx" name="does not generate a link for a disabled identity" time="0.031065876">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/ConnectionLink.test.tsx" name="copies the configured LAN platform URL even from a localhost browser" time="0.042760256">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/ConnectionLink.test.tsx" name="does not issue a ticket when only a loopback platform URL is available" time="0.029851446">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/ConnectionLink.test.tsx" name="copies on HTTP LAN pages without the Clipboard API" time="0.045661553">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/robot-ingest/connection-url.test.ts" timestamp="2026-10-20T02:01:40.202Z" hostname="9e52863bc117" tests="19" failures="0" errors="0" skipped="0" time="0.006691416">
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="uses the configured platform URL even when the page or API uses localhost" time="0.00121561">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="preserves reachable origins and gateway prefixes for /api/v1" time="0.000164778">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="preserves reachable origins and gateway prefixes for /platform/api/v1/" time="0.001700024">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="preserves reachable origins and gateway prefixes for https://api.example/api/v1" time="0.000156552">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="preserves reachable origins and gateway prefixes for /api/v1" time="0.000077826">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to localhost" time="0.000603174">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to localhost." time="0.000093751">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to robot.localhost" time="0.000077315">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to 127.0.0.1" time="0.000194721">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to 127.1.2.3" time="0.000102741">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to 0.0.0.0" time="0.000068804">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to [::1]" time="0.000061231">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to [::]" time="0.000056691">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects a robot link to [::ffff:127.0.0.1]" time="0.000138828">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects an invalid configured platform URL instead of silently using the page origin: /api/v1" time="0.000140116">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects an invalid configured platform URL instead of silently using the page origin: ftp://platform.example" time="0.00006186">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects an invalid configured platform URL instead of silently using the page origin: https://user:secret@platform.example" time="0.000056962">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects an invalid configured platform URL instead of silently using the page origin: http://platform.example/?secret=value" time="0.000085465">
+        </testcase>
+        <testcase classname="src/features/robot-ingest/connection-url.test.ts" name="rejects an invalid configured platform URL instead of silently using the page origin: http://platform.example/#fragment" time="0.000056006">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" timestamp="2026-10-20T02:01:40.203Z" hostname="9e52863bc117" tests="3" failures="0" errors="0" skipped="0" time="1.113001402">
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="shows the robot-reachable platform address in the detail drawer" time="0.387666643">
+            <system-err>
+Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="restores independent filters and card shortcuts clear business conditions while retaining sort and page size" time="0.557788106">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="query errors show unavailable cards even when old successful data is cached" time="0.166915532">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+    </testsuite>
+</testsuites>

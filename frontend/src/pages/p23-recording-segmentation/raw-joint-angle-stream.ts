@@ -31,9 +31,10 @@ function numericVector(value: unknown): readonly number[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > 256)
     return null;
   return value.every(
-    (item): item is number => typeof item === "number" && Number.isFinite(item),
+    (item) =>
+      item === null || (typeof item === "number" && Number.isFinite(item)),
   )
-    ? value
+    ? value.map((item) => (item === null ? Number.NaN : (item as number)))
     : null;
 }
 
@@ -89,7 +90,7 @@ function seriesForVector(
   return vector.values.map((_, index) => ({
     id: `joint-${index + 1}`,
     displayName: vector.names?.[index] ?? `J${index + 1}`,
-    unit: vector.units?.[index] ?? "rad",
+    unit: vector.units?.[index] ?? "未声明",
   }));
 }
 
@@ -168,13 +169,12 @@ export function buildRecordingJointAngleStream(input: {
 }): StreamDescriptor {
   return {
     id: `p23-raw-joint-angle-${input.recordingId}`,
-    canonicalPath: "/robot/joint_states",
-    displayName: "原始关节角",
+    canonicalPath: "状态通道（按录制配置）",
+    displayName: "录制关节角",
     modality: "joint_state",
     schema: {
       id: "raw-recording-joint-state",
       version: "recording-sensor-window/v1",
-      unit: "rad",
     },
     rateHz: 50,
     startNs: "0",

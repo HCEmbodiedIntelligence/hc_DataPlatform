@@ -13,6 +13,15 @@ paths:
         - $ref: '#/components/parameters/CollectionTaskProjectId'
         - $ref: '#/components/parameters/CollectionTaskOrganizationId'
         - $ref: '#/components/parameters/CollectionTaskIdempotencyKey'
+        - in: header
+          name: X-Region-Code
+          required: false
+          description: Required when capture_plan is supplied; fixes the new task and Dataset Region.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+            pattern: '^[A-Za-z0-9._-]+$'
       requestBody:
         required: true
         content:
@@ -409,6 +418,11 @@ components:
       additionalProperties: false
       required: [name, type, scenario]
       properties:
+        capture_plan:
+          description: Atomically bind the new task to a published scheme and participant mappings; expected_revision must be zero.
+          anyOf:
+            - {$ref: '#/components/schemas/SetTaskPlan'}
+            - {type: 'null'}
         dataset_id:
           type: string
           pattern: '^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$'

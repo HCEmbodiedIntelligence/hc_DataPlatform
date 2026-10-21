@@ -1,3 +1,5 @@
+import { captureProblemLabels } from "../../../features/capture-schemes/presentation";
+import { copyText } from "../../../shared/lib/copy-text";
 import {
   Alert,
   Button,
@@ -26,11 +28,15 @@ import {
   Trash2,
   UploadCloud,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createMutationIntentKey } from "../../../features/ingest/mutation-machine";
+import { useSuccessfulVolume } from "../../../features/robot-ingest/onboarding";
 import type { IngestScope } from "../../../entities/data-source";
 import {
   useDeleteRobotIdentity,
+  useDeleteRobotCredential,
   useIssueRobotCredential,
+  useRevealRobotCredential,
   useRevokeRobotCredential,
   useRobotAttemptHistory,
   useRobotCredentialHistory,
@@ -217,12 +223,14 @@ export function RobotIdentityConsole({
   scope,
   canRead,
   canManage,
+  identityId,
 }: {
   readonly scope: IngestScope | null;
   readonly canRead: boolean;
   readonly canManage: boolean;
+  readonly identityId?: string;
 }) {
-  const identities = useRobotIdentities(scope, canRead);
+  const identities = useRobotIdentities(scope, canRead && !identityId);
   const organizationRobots = useScopedRobots(scope?.organizationId ?? null, {
     lifecycle_status: "ACTIVE",
   });
@@ -241,6 +249,11 @@ export function RobotIdentityConsole({
     "issue" | "rotate" | null
   >(null);
   const [credentialExpiry, setCredentialExpiry] = useState("");
+  const [credentialKey, setCredentialKey] = useState(createMutationIntentKey);
+  const openCredential = (mode: "issue" | "rotate") => {
+    setCredentialKey(createMutationIntentKey());
+    setCredentialMode(mode);
+  };
   const [issuedCredential, setIssuedCredential] =
     useState<IssuedRobotCredential | null>(null);
   const [copied, setCopied] = useState(false);
@@ -252,6 +265,10 @@ export function RobotIdentityConsole({
   const [revokeCredentialId, setRevokeCredentialId] = useState<string | null>(
     null,
   );
+  const [deleteCredentialId, setDeleteCredentialId] = useState<string | null>(
+    null,
+  );
+  const credentialGeneration = useRef(0);
 
   const list = identities.data?.items ?? [];
   const boundRobotIds = new Set(list.map((identity) => identity.robot_id));
@@ -264,7 +281,8 @@ export function RobotIdentityConsole({
     ) ??
     list[0] ??
     null;
-  const effectiveIdentityId = selectedFromList?.ingest_identity_id ?? null;
+  const effectiveIdentityId =
+    identityId ?? selectedFromList?.ingest_identity_id ?? null;
   const detail = useRobotIdentityDetail(scope, effectiveIdentityId, canRead);
   const selectedIdentity = detail.data?.data ?? selectedFromList;
   const robotId = selectedIdentity?.robot_id ?? null;
@@ -278,11 +296,11 @@ export function RobotIdentityConsole({
   const uploads = useRobotUploadHistory(scope, robotId, canRead);
   const attempts = useRobotAttemptHistory(scope, robotId, canRead);
   const statistics = useRobotStatistics(scope, robotId, canRead);
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayStatistics = useRobotStatistics(scope, robotId, canRead, {
-    createdFrom: todayStart.toISOString(),
-  });
+  const todayStatistics = useSuccessfulVolume(
+    scope,
+    robotId,
+    canRead && Boolean(robotId),
+  );
 
   const createIdentity = useRobotIdentityMutation("create");
   const updateIdentity = useRobotIdentityMutation("update");
@@ -291,6 +309,17 @@ export function RobotIdentityConsole({
   const deleteIdentity = useDeleteRobotIdentity();
   const issueCredential = useIssueRobotCredential();
   const revokeCredential = useRevokeRobotCredential();
+  const revealCredential = useRevealRobotCredential();
+  const deleteCredential = useDeleteRobotCredential();
+  useEffect(() => {
+    setIssuedCredential(null);
+    setDeleteCredentialId(null);
+    setCopied(false);
+    credentialGeneration.current++;
+    return () => {
+      credentialGeneration.current++;
+    };
+  }, [scope?.organizationId, scope?.projectId, effectiveIdentityId, canManage]);
 
   const enabledCount = list.filter(
     (identity) => identity.state === "ENABLED",
@@ -304,50 +333,73 @@ export function RobotIdentityConsole({
     enableIdentity.error ??
     disableIdentity.error ??
     issueCredential.error ??
-    revokeCredential.error;
+    revokeCredential.error ??
+    revealCredential.error;
+
+  function closeCredential() {
+    credentialGeneration.current++;
+    setIssuedCredential(null);
+    setCredentialMode(null);
+    setCredentialExpiry("");
+    setCopied(false);
+    issueCredential.reset();
+    revealCredential.reset();
+  }
 
   if (!scope || !canRead) return null;
 
   return (
     <section
       className={styles.robotIdentityConsole}
-      aria-labelledby="robot-identity-title"
+      aria-label={identityId ? "机器人上传设置" : undefined}
+      aria-labelledby={identityId ? undefined : "robot-identity-title"}
     >
-      <header className={styles.robotIdentityHeader}>
-        <div>
-          <span className={styles.robotIdentityKicker}>
-            ROBOT AUTHENTICATION
-          </span>
-          <h2 id="robot-identity-title">
-            <Bot size={21} aria-hidden="true" />
-            机器人上传身份
-          </h2>
-          <p>
-            身份归属组织，不永久绑定项目；每次上传由 collection_task_id
-            解析项目、数据集与 Region。
-          </p>
-        </div>
-        <Flex gap="small" align="center" wrap="wrap">
-          <Tag color="blue">{enabledCount} 个已启用</Tag>
-          {canManage ? (
-            <Button
-              type="primary"
-              icon={<KeyRound size={16} aria-hidden="true" />}
-              onClick={() => {
-                createIdentity.reset();
-                setCreateRobotId(null);
-                setCreateOpen(true);
-              }}
-            >
-              新建身份
-            </Button>
-          ) : null}
-        </Flex>
-      </header>
+      {!identityId && (
+        <header className={styles.robotIdentityHeader}>
+          <div>
+            <span className={styles.robotIdentityKicker}>
+              ROBOT AUTHENTICATION
+            </span>
+            <h2 id="robot-identity-title">
+              <Bot size={21} aria-hidden="true" />
+              机器人上传身份
+            </h2>
+            <p>
+              身份归属组织，不永久绑定项目；每次上传由 collection_task_id
+              解析项目、数据集与 Region。
+            </p>
+          </div>
+          <Flex gap="small" align="center" wrap="wrap">
+            <Tag color="blue">{enabledCount} 个已启用</Tag>
+            {canManage ? (
+              <Button
+                type="primary"
+                icon={<KeyRound size={16} aria-hidden="true" />}
+                onClick={() => {
+                  createIdentity.reset();
+                  setCreateRobotId(null);
+                  setCreateOpen(true);
+                }}
+              >
+                新建身份
+              </Button>
+            ) : null}
+          </Flex>
+        </header>
+      )}
 
-      <AuthChain identity={selectedIdentity} />
+      {!identityId && <AuthChain identity={selectedIdentity} />}
 
-      {identities.isError ? (
+      {identityId && detail.isError ? (
+        <Alert
+          type="error"
+          title="上传设置暂不可用"
+          description={errorMessage(detail.error)}
+          action={<Button onClick={() => void detail.refetch()}>重试</Button>}
+        />
+      ) : identityId && detail.isPending ? (
+        <Skeleton active paragraph={{ rows: 3 }} />
+      ) : !identityId && identities.isError ? (
         <Alert
           type="error"
           showIcon
@@ -357,9 +409,9 @@ export function RobotIdentityConsole({
             <Button onClick={() => void identities.refetch()}>重试</Button>
           }
         />
-      ) : identities.isPending ? (
+      ) : !identityId && identities.isPending ? (
         <Skeleton active paragraph={{ rows: 3 }} />
-      ) : list.length === 0 ? (
+      ) : !identityId && list.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description="当前组织还没有机器人上传身份"
@@ -371,42 +423,47 @@ export function RobotIdentityConsole({
           ) : null}
         </Empty>
       ) : (
-        <div className={styles.robotIdentityWorkspace}>
-          <div
-            className={styles.robotIdentityList}
-            role="list"
-            aria-label="机器人身份"
-          >
-            {list.map((identity) => {
-              const selected =
-                identity.ingest_identity_id === effectiveIdentityId;
-              return (
-                <button
-                  type="button"
-                  role="listitem"
-                  className={selected ? styles.robotIdentitySelected : ""}
-                  key={identity.ingest_identity_id}
-                  onClick={() =>
-                    setSelectedIdentityId(identity.ingest_identity_id)
-                  }
-                >
-                  <span className={styles.robotAvatar} aria-hidden="true">
-                    <Bot size={19} />
-                  </span>
-                  <span className={styles.robotIdentityName}>
-                    <strong>
-                      {identity.display_name || identity.robot_id}
-                    </strong>
-                    <code>{identity.robot_id}</code>
-                  </span>
-                  <span className={styles.robotIdentityListState}>
-                    <StatusDot active={identity.state === "ENABLED"} />
-                    {identity.state === "ENABLED" ? "启用" : "停用"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+        <div
+          className={styles.robotIdentityWorkspace}
+          style={identityId ? { gridTemplateColumns: "1fr" } : undefined}
+        >
+          {!identityId && (
+            <div
+              className={styles.robotIdentityList}
+              role="list"
+              aria-label="机器人身份"
+            >
+              {list.map((identity) => {
+                const selected =
+                  identity.ingest_identity_id === effectiveIdentityId;
+                return (
+                  <button
+                    type="button"
+                    role="listitem"
+                    className={selected ? styles.robotIdentitySelected : ""}
+                    key={identity.ingest_identity_id}
+                    onClick={() =>
+                      setSelectedIdentityId(identity.ingest_identity_id)
+                    }
+                  >
+                    <span className={styles.robotAvatar} aria-hidden="true">
+                      <Bot size={19} />
+                    </span>
+                    <span className={styles.robotIdentityName}>
+                      <strong>
+                        {identity.display_name || identity.robot_id}
+                      </strong>
+                      <code>{identity.robot_id}</code>
+                    </span>
+                    <span className={styles.robotIdentityListState}>
+                      <StatusDot active={identity.state === "ENABLED"} />
+                      {identity.state === "ENABLED" ? "启用" : "停用"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {selectedIdentity ? (
             <div className={styles.robotIdentityDetail}>
@@ -443,7 +500,7 @@ export function RobotIdentityConsole({
                         setDeleteTarget({ identity: selectedIdentity, scope });
                       }}
                     >
-                      删除
+                      移除上传身份
                     </Button>
                   </Flex>
                 ) : null}
@@ -457,7 +514,7 @@ export function RobotIdentityConsole({
                   </strong>
                 </div>
                 <div>
-                  <span>最近心跳</span>
+                  <span>最近设备通信</span>
                   <strong>{shortDate(selectedIdentity.last_seen_at)}</strong>
                 </div>
                 <div>
@@ -472,6 +529,17 @@ export function RobotIdentityConsole({
                 </div>
               </div>
 
+              {statistics.isError && (
+                <Alert
+                  type="error"
+                  title="上传统计暂不可用"
+                  action={
+                    <Button onClick={() => void statistics.refetch()}>
+                      重试
+                    </Button>
+                  }
+                />
+              )}
               <section
                 className={styles.robotStats}
                 aria-label="机器人上传统计"
@@ -510,13 +578,15 @@ export function RobotIdentityConsole({
                   }
                 />
                 <Metric
-                  label="今日验证数据量"
+                  label="今日成功上传量 · Asia/Shanghai"
                   value={
-                    todayStatistics.data
-                      ? formatStorageSize(
-                          String(todayStatistics.data.raw_bytes),
-                        )
-                      : "—"
+                    todayStatistics.isError
+                      ? "暂不可用"
+                      : todayStatistics.data
+                        ? formatStorageSize(
+                            String(todayStatistics.data.raw_bytes),
+                          )
+                        : "—"
                   }
                 />
                 <Metric
@@ -565,22 +635,22 @@ export function RobotIdentityConsole({
                         <Button
                           type="link"
                           size="small"
-                          onClick={() => setCredentialMode("issue")}
+                          onClick={() => openCredential("issue")}
                         >
-                          签发
+                          生成上传凭据
                         </Button>
                         <Button
                           type="link"
                           size="small"
-                          onClick={() => setCredentialMode("rotate")}
+                          onClick={() => openCredential("rotate")}
                         >
-                          轮换
+                          更换上传凭据
                         </Button>
                       </Flex>
                     ) : null}
                   </header>
                   <div className={styles.credentialHistory}>
-                    {(credentials.data ?? []).slice(0, 4).map((credential) => (
+                    {(credentials.data ?? []).map((credential) => (
                       <div key={credential.credential_id}>
                         <span>
                           <code>v{credential.credential_version}</code>
@@ -594,8 +664,45 @@ export function RobotIdentityConsole({
                                 : "default"
                             }
                           >
-                            {credential.state}
+                            {
+                              {
+                                ACTIVE: "有效",
+                                REVOKED: "已撤销",
+                                EXPIRED: "已过期",
+                              }[credential.state]
+                            }
                           </Tag>
+                          {canManage && credential.state === "ACTIVE" && (
+                            <Button
+                              type="link"
+                              size="small"
+                              loading={revealCredential.isPending}
+                              onClick={() => {
+                                const generation = credentialGeneration.current;
+                                revealCredential.mutate(
+                                  {
+                                    scope,
+                                    identityId:
+                                      selectedIdentity.ingest_identity_id,
+                                    credentialId: credential.credential_id,
+                                  },
+                                  {
+                                    onSuccess: (value) => {
+                                      if (
+                                        generation ===
+                                        credentialGeneration.current
+                                      ) {
+                                        setCopied(false);
+                                        setIssuedCredential(value);
+                                      }
+                                    },
+                                  },
+                                );
+                              }}
+                            >
+                              查看凭据
+                            </Button>
+                          )}
                           {canManage && credential.state === "ACTIVE" ? (
                             <Button
                               type="link"
@@ -608,13 +715,38 @@ export function RobotIdentityConsole({
                               撤销
                             </Button>
                           ) : null}
+                          {canManage && credential.state !== "ACTIVE" && (
+                            <Button
+                              type="link"
+                              danger
+                              size="small"
+                              onClick={() => {
+                                deleteCredential.reset();
+                                setDeleteCredentialId(credential.credential_id);
+                              }}
+                            >
+                              删除凭据
+                            </Button>
+                          )}
                         </span>
                       </div>
                     ))}
+                    {credentials.isError && (
+                      <Alert
+                        type="error"
+                        title="凭据状态暂不可用"
+                        action={
+                          <Button onClick={() => void credentials.refetch()}>
+                            重试
+                          </Button>
+                        }
+                      />
+                    )}
                     {!credentials.isPending &&
+                    !credentials.isError &&
                     (credentials.data?.length ?? 0) === 0 ? (
                       <Typography.Text type="secondary">
-                        尚未签发凭据
+                        暂无凭据
                       </Typography.Text>
                     ) : null}
                   </div>
@@ -653,7 +785,19 @@ export function RobotIdentityConsole({
                         </Tag>
                       </div>
                     ))}
+                    {uploads.isError && (
+                      <Alert
+                        type="error"
+                        title="上传记录暂不可用"
+                        action={
+                          <Button onClick={() => void uploads.refetch()}>
+                            重试
+                          </Button>
+                        }
+                      />
+                    )}
                     {!uploads.isPending &&
+                    !uploads.isError &&
                     (uploads.data?.items.length ?? 0) === 0 ? (
                       <Typography.Text type="secondary">
                         暂无上传
@@ -672,6 +816,7 @@ export function RobotIdentityConsole({
                     .slice(0, 3)
                     .map(
                       (attempt) =>
+                        captureProblemLabels[attempt.failure_code ?? ""] ??
                         `${attempt.failure_stage}: ${attempt.failure_code ?? "UNKNOWN"}`,
                     )
                     .join("；")}
@@ -717,7 +862,7 @@ export function RobotIdentityConsole({
                 onSuccess: (envelope) => {
                   setSelectedIdentityId(envelope.data.ingest_identity_id);
                   setCreateOpen(false);
-                  setCredentialMode("issue");
+                  openCredential("issue");
                 },
               },
             );
@@ -954,6 +1099,7 @@ export function RobotIdentityConsole({
             {
               scope,
               identityId: selectedIdentity.ingest_identity_id,
+              idempotencyKey: credentialKey,
               rotate: credentialMode === "rotate",
               expiresAt,
             },
@@ -972,7 +1118,7 @@ export function RobotIdentityConsole({
           title={
             credentialMode === "rotate"
               ? "旧的活动凭据会立即撤销"
-              : "凭据明文只在签发成功后显示一次"
+              : "凭据加密保存，可在列表中再次查看和复制"
           }
         />
         <Form.Item
@@ -989,20 +1135,19 @@ export function RobotIdentityConsole({
 
       <Modal
         open={issuedCredential !== null}
-        title="立即保存机器人凭据"
+        title="机器人上传凭据"
         footer={null}
         destroyOnHidden
         mask={{ closable: false }}
-        closable={false}
-        keyboard={false}
+        onCancel={closeCredential}
       >
         {issuedCredential ? (
           <div className={styles.credentialReveal}>
             <Alert
-              type="warning"
+              type="info"
               showIcon
-              title="这是唯一一次明文展示"
-              description="关闭后平台不会再次返回该 Token；请写入机器人安全存储。"
+              title="可随时再次查看"
+              description="关闭后可从凭据列表重新查看和复制。"
             />
             <Input.TextArea
               value={issuedCredential.token}
@@ -1021,24 +1166,13 @@ export function RobotIdentityConsole({
                   )
                 }
                 onClick={() => {
-                  void navigator.clipboard
-                    .writeText(issuedCredential.token)
-                    .then(() => setCopied(true));
+                  void copyText(issuedCredential.token).then(setCopied);
                 }}
               >
                 {copied ? "已复制" : "复制 Token"}
               </Button>
-              <Button
-                type="primary"
-                onClick={() => {
-                  setIssuedCredential(null);
-                  setCredentialMode(null);
-                  setCredentialExpiry("");
-                  setCopied(false);
-                  issueCredential.reset();
-                }}
-              >
-                我已安全保存
+              <Button type="primary" onClick={closeCredential}>
+                关闭
               </Button>
             </Flex>
           </div>
@@ -1052,8 +1186,8 @@ export function RobotIdentityConsole({
           deleteTarget.scope.projectId === scope.projectId &&
           deleteTarget.scope.regionCode === scope.regionCode
         }
-        title="删除机器人上传身份"
-        okText="确认删除"
+        title="移除上传身份"
+        okText="仅移除上传身份"
         cancelText="取消"
         okButtonProps={{ danger: true, disabled: !canManage }}
         cancelButtonProps={{ disabled: deleteIdentity.isPending }}
@@ -1082,7 +1216,7 @@ export function RobotIdentityConsole({
         }}
       >
         <p>
-          确定删除“
+          确定移除“
           {deleteTarget?.identity.display_name ||
             deleteTarget?.identity.robot_id}
           ”的上传身份？
@@ -1091,7 +1225,7 @@ export function RobotIdentityConsole({
           type="warning"
           showIcon
           title="删除后旧凭据永久失效，机器人将无法继续使用该身份上传。"
-          description="已上传的数据、采集任务和历史记录保留。如需恢复上传，请重新创建身份并配置新凭据。"
+          description="这不会删除机器人实例。已上传的数据、采集任务和历史记录保留。要删除整台机器人，请使用详情右上角的“删除机器人”。"
         />
         {deleteIdentity.error ? (
           <Alert
@@ -1142,6 +1276,40 @@ export function RobotIdentityConsole({
               : "启用后仍需有效凭据和有效采集任务才能上传"
           }
         />
+      </Modal>
+
+      <Modal
+        open={deleteCredentialId !== null}
+        title="删除上传凭据"
+        okText="确认删除凭据"
+        cancelText="取消"
+        okButtonProps={{ danger: true, disabled: !canManage }}
+        confirmLoading={deleteCredential.isPending}
+        cancelButtonProps={{ disabled: deleteCredential.isPending }}
+        closable={!deleteCredential.isPending}
+        mask={{ closable: false }}
+        onCancel={() => setDeleteCredentialId(null)}
+        onOk={() => {
+          if (
+            !selectedIdentity ||
+            !deleteCredentialId ||
+            deleteCredential.isPending
+          )
+            return;
+          deleteCredential.mutate(
+            {
+              scope,
+              identityId: selectedIdentity.ingest_identity_id,
+              credentialId: deleteCredentialId,
+            },
+            { onSuccess: () => setDeleteCredentialId(null) },
+          );
+        }}
+      >
+        <p>删除这份已失效凭据并从列表移除。历史上传记录会保留。</p>
+        {deleteCredential.error && (
+          <Alert type="error" title={errorMessage(deleteCredential.error)} />
+        )}
       </Modal>
 
       <Modal

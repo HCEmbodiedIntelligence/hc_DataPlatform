@@ -137,6 +137,7 @@ export function adaptDashboardTaskStatus(
       },
       stages: wire.pipeline.stages.map((stage) => ({
         ...stage,
+        notStarted: stage.not_started ?? 0,
         isolated: stage.isolated ?? 0,
       })),
       issues: wire.pipeline.issues ?? [],
@@ -173,6 +174,7 @@ export function adaptDashboardTaskStatus(
           },
           stages: selected.stages.map((stage) => ({
             ...stage,
+            notStarted: stage.not_started ?? 0,
             isolated: stage.isolated ?? 0,
           })),
           mainStateCounts: selected.main_state_counts,

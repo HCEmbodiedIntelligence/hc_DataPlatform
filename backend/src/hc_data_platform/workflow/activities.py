@@ -1665,12 +1665,20 @@ def _commit_aligned_bundle(
         _dependencies.ingest_projection,
         "workflow.IngestProjectionPort",
     )
+    native_quality = QcReportV1.model_validate(plan.metadata["quality"]) if native else None
     alignment = (
         _require(_dependencies.lerobot_pipeline, "lerobot_pipeline").alignment_metadata(
             source,
             dataset_id=ready.dataset_id,
             dataset_version=ready.dataset_version,
-            **({"storage_format": "lerobot_v3"} if native else {}),
+            **(
+                {
+                    "storage_format": "lerobot_v3",
+                    "source_time_range": (native_quality.start_ns, native_quality.end_ns),
+                }
+                if native_quality is not None
+                else {}
+            ),
         )
         if source.lerobot is not None
         else projection.project_alignment_metadata(source)
@@ -1753,7 +1761,16 @@ async def create_annotation_task(
         request.rollout_id,
         organization_id=request.organization_id,
     ):
-        return await _invoke("annotation_task", create)
+
+        def optional_create() -> AutomaticAnnotationActivityOutput:
+            try:
+                return create()
+            except AutomaticAnnotationBlocked:
+                if not request.allow_unconfigured:
+                    raise
+                return AutomaticAnnotationActivityOutput(status="PENDING_CONFIGURATION")
+
+        return await _invoke("annotation_task", optional_create)
 
 
 @activity.defn(name=CREATE_ALIGNED_MEDIA_ACTIVITY)

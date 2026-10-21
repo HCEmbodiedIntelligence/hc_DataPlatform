@@ -5,9 +5,9 @@ from uuid import uuid4
 
 from hc_data_platform.core.artifact_tasks import DeliveryLeaseLost
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 
+from .delivery_errors import failure as failure
 from .delivery_models import EpisodeDeliveryJob
 from .models import canonical, digest
 from .postgres import PostgresEpisodeStore
@@ -25,15 +25,6 @@ def scope_key():
     if not all(scope):
         raise PermissionError("package delivery requires an exact tenant/project/region")
     return scope
-
-
-def failure(code, detail, status=409):
-    return problem(
-        status=status,
-        code="EPISODE_DELIVERY_" + code,
-        title="Episode delivery unavailable",
-        detail=detail,
-    )
 
 
 def record(cursor, row):

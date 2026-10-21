@@ -16,8 +16,11 @@ export interface NativeProgress {
   resume_required?: number;
   reprocessing_conflicts?: number;
   last_error_code: string | null;
+  last_error_detail?: string | null;
   updated_at: string;
   source_format: string;
   file_count: number;
   total_bytes: number;
+  readable_episodes?: number | null;
+  annotation_counts?: Record<string, number>;
 }

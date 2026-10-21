@@ -19,10 +19,13 @@ from hc_data_platform.robotics.models import (
     UpdateRobotRequest,
 )
 
+from .deletion import RobotDeletionCheck, deletion_blockers, pending_cleanup, read_deletion_check
 from .models import OrganizationRobotModelBinding
 
 
 class OrganizationRobotAssetRepository(Protocol):
+    def deletion_check(self, organization_id, robot_id, auth, kind, offset, limit): ...
+
     def camera_calibration(self, organization_id, robot_id): ...
     def save_camera_calibration(self, organization_id, robot_id, configuration, expected): ...
 
@@ -349,6 +352,15 @@ class InMemoryOrganizationRobotAssetRepository:
             )
             self._robots[(organization_id, robot_id)] = updated
             return updated
+
+    def deletion_check(self, organization_id, robot_id, auth, kind, offset, limit):
+        return RobotDeletionCheck(
+            organization_id=organization_id,
+            robot_id=robot_id,
+            can_delete=True,
+            offset=offset,
+            limit=limit,
+        )
 
     def delete_robot(
         self,
@@ -968,6 +980,27 @@ class PostgresOrganizationRobotAssetRepository:
             raise KeyError(robot_id)
         return _bootstrap_from_mapping(self._row(cursor, raw))
 
+    def deletion_check(self, organization_id, robot_id, auth, kind, offset, limit):
+        connection = self._connection_factory()
+        try:
+            # The factory initializes session-level RLS settings in a transaction.
+            connection.commit()
+            with connection.cursor() as cursor:
+                # One snapshot keeps counts, accessible totals and pages consistent.
+                cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                return read_deletion_check(
+                    cursor,
+                    organization_id,
+                    robot_id,
+                    auth,
+                    kind,
+                    offset,
+                    limit,
+                )
+        finally:
+            connection.rollback()
+            connection.close()
+
     def delete_robot(
         self,
         *,
@@ -979,81 +1012,122 @@ class PostgresOrganizationRobotAssetRepository:
     ) -> bool:
         connection = self._connection_factory()
         cursor = connection.cursor()
+        scope = (organization_id, robot_id)
         try:
+            # Same lock/order as processing.save/publish: a new draft or published
+            # version cannot appear between the usage check and physical deletion.
             cursor.execute(
-                """
-                SELECT robot_id
-                  FROM robotics.robot_assets
-                 WHERE organization_id = %s AND robot_id = %s
-                 FOR UPDATE
-                """,
-                (organization_id, robot_id),
+                "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+                (json.dumps(["robot-processing", organization_id, robot_id]),),
             )
-            raw = cursor.fetchone()
-            if raw is None:
+            cursor.execute(
+                """SELECT robot_id FROM robotics.robot_assets
+                WHERE organization_id=%s AND robot_id=%s FOR UPDATE""",
+                scope,
+            )
+            if cursor.fetchone() is None:
                 connection.commit()
                 return False
+            # Authentication, credential issuance and upload FK inserts serialize
+            # against these locks, including disabled/deleted identity remnants.
             cursor.execute(
-                """
-                SELECT EXISTS (
-                    SELECT 1
-                      FROM robotics.robot_asset_components
-                     WHERE organization_id = %s AND robot_id = %s
-                    UNION ALL
-                    SELECT 1
-                      FROM robotics.project_robot_assignments
-                     WHERE organization_id = %s AND robot_id = %s
-                    UNION ALL
-                    SELECT 1
-                      FROM ingest.robot_ingest_identities
-                     WHERE organization_id = %s AND robot_id = %s
-                    UNION ALL
-                    SELECT 1
-                      FROM calibrations.calibration_sets
-                     WHERE organization_id = %s AND robot_instance_id = %s
-                    UNION ALL
-                    SELECT 1
-                      FROM ingest.data_sources
-                     WHERE organization_id = %s
-                       AND source_type = 'ROBOT'
-                       AND source_document #>> '{binding,robot_id}' = %s
-                    UNION ALL
-                    SELECT 1
-                      FROM ingest.raw_sources
-                     WHERE organization_id = %s AND robot_id = %s
-                ) AS in_use
-                """,
-                (
-                    organization_id,
-                    robot_id,
-                    organization_id,
-                    robot_id,
-                    organization_id,
-                    robot_id,
-                    organization_id,
-                    robot_id,
-                    organization_id,
-                    robot_id,
-                    organization_id,
-                    robot_id,
-                ),
+                """SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                WHERE organization_id=%s AND robot_id=%s
+                ORDER BY ingest_identity_id FOR UPDATE""",
+                scope,
             )
-            usage = cursor.fetchone()
-            if usage is None or bool(self._row(cursor, usage)["in_use"]):
-                raise ValueError("robot is in use")
+            cursor.fetchall()
+            blockers = deletion_blockers(cursor, organization_id, robot_id)
+            if pending_cleanup(cursor, organization_id, robot_id):
+                raise ValueError("数据清理尚未完成，请在处理操作中重试。")
+            if blockers:
+                raise ValueError(
+                    "无法删除："
+                    + "；".join(f"{b.label} {b.count} 条" for b in blockers)
+                    + "。请在删除弹窗中转移关联或清理数据后重试。"
+                )
+            # Archive the last draft. Published snapshots whose active associations
+            # were resolved remain attached to the durable historical identity.
             cursor.execute(
-                """
-                DELETE FROM registry.organization_robot_model_bindings
-                 WHERE organization_id = %s AND robot_id = %s
-                """,
-                (organization_id, robot_id),
+                """INSERT INTO ingest.robot_processing_audit
+                (organization_id,robot_id,scheme_id,actor,action,document)
+                SELECT organization_id,robot_id,scheme_id,%s,'ROBOT_DELETED',
+                jsonb_build_object('last_draft',draft,'revision',revision)
+                FROM ingest.robot_processing_schemes
+                WHERE organization_id=%s AND robot_id=%s""",
+                (actor_id, *scope),
             )
             cursor.execute(
-                """
-                DELETE FROM robotics.robot_asset_command_receipts
-                 WHERE organization_id = %s
-                   AND (resource_id = %s OR response #>> '{robot,id}' = %s)
-                """,
+                """DELETE FROM ingest.robot_processing_schemes s
+                WHERE organization_id=%s AND robot_id=%s AND NOT EXISTS(
+                    SELECT 1 FROM ingest.robot_processing_versions v WHERE
+                    (v.organization_id,v.robot_id,v.scheme_id)=
+                    (s.organization_id,s.robot_id,s.scheme_id))""",
+                scope,
+            )
+            for table in (
+                "ingest.robot_connection_locals",
+                "ingest.robot_credential_requests",
+            ):
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE organization_id=%s AND ingest_identity_id IN "
+                    "(SELECT ingest_identity_id FROM ingest.robot_ingest_identities "
+                    "WHERE organization_id=%s AND robot_id=%s)",
+                    (organization_id, *scope),
+                )
+            cursor.execute(
+                """DELETE FROM ingest.robot_connection_tickets
+                WHERE organization_id=%s AND document->>'robot_id'=%s""",
+                scope,
+            )
+            cursor.execute(
+                """UPDATE ingest.robot_ingest_credentials SET state='REVOKED',
+                revoked_at=COALESCE(revoked_at,now())
+                WHERE organization_id=%s AND ingest_identity_id
+                IN (SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                    WHERE organization_id=%s AND robot_id=%s)""",
+                (organization_id, *scope),
+            )
+            cursor.execute(
+                """UPDATE ingest.robot_ingest_identities SET state='DISABLED',
+                deleted_at=COALESCE(deleted_at,now()),updated_at=now(),
+                identity_document=identity_document||jsonb_build_object(
+                    'state','DISABLED','deleted_at',now())
+                WHERE organization_id=%s AND robot_id=%s""",
+                scope,
+            )
+            cursor.execute(
+                """DELETE FROM ingest.robot_ingest_credentials c WHERE organization_id=%s
+                AND ingest_identity_id IN (SELECT ingest_identity_id
+                FROM ingest.robot_ingest_identities WHERE organization_id=%s AND robot_id=%s)
+                AND NOT EXISTS(SELECT 1 FROM ingest.robot_ingest_uploads u
+                               WHERE u.credential_id=c.credential_id)
+                AND NOT EXISTS(SELECT 1 FROM ingest.raw_sources r
+                               WHERE r.credential_id=c.credential_id)""",
+                (organization_id, *scope),
+            )
+            cursor.execute(
+                """DELETE FROM ingest.robot_ingest_identities i
+                WHERE organization_id=%s AND robot_id=%s
+                AND NOT EXISTS(SELECT 1 FROM ingest.robot_ingest_uploads u
+                    WHERE (u.organization_id,u.ingest_identity_id)=
+                          (i.organization_id,i.ingest_identity_id))
+                AND NOT EXISTS(SELECT 1 FROM ingest.raw_sources r
+                    WHERE (r.organization_id,r.ingest_identity_id)=
+                          (i.organization_id,i.ingest_identity_id))""",
+                scope,
+            )
+            for table in (
+                "robotics.project_robot_assignments",
+                "registry.organization_robot_model_bindings",
+            ):
+                cursor.execute(
+                    f"DELETE FROM {table} WHERE organization_id=%s AND robot_id=%s", scope
+                )
+            cursor.execute(
+                """DELETE FROM robotics.robot_asset_command_receipts
+                WHERE organization_id=%s
+                AND (resource_id=%s OR response #>> '{robot,id}'=%s)""",
                 (organization_id, robot_id, robot_id),
             )
             self._append_audit(
@@ -1066,16 +1140,15 @@ class PostgresOrganizationRobotAssetRepository:
                 occurred_at=occurred_at,
             )
             cursor.execute(
-                """
-                DELETE FROM robotics.robot_assets
-                 WHERE organization_id = %s AND robot_id = %s
-                """,
-                (organization_id, robot_id),
+                "DELETE FROM robotics.robot_assets WHERE organization_id=%s AND robot_id=%s",
+                scope,
             )
             connection.commit()
             return True
-        except Exception:
+        except Exception as exc:
             connection.rollback()
+            if getattr(exc, "sqlstate", None) == "23503":
+                raise ValueError("机器人新增了关联记录，请刷新后检查关联再删除。") from exc
             raise
         finally:
             cursor.close()

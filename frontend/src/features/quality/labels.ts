@@ -1,3 +1,4 @@
+import { captureProblemLabels } from "../capture-schemes/presentation";
 export const qualityRuleLabels: Record<string, string> = {
   QC_REQUIRED_TOPIC_MISSING: "必需通道",
   QC_TIMESTAMP_DUPLICATE: "重复时间戳",
@@ -18,6 +19,8 @@ export const qualityRuleLabels: Record<string, string> = {
   QC_COMPLETE_STEP_RATIO_LOW: "完整同步步比例",
 };
 export const qualityReasonLabels: Record<string, string> = {
+  ...captureProblemLabels,
+  NOT_APPLICABLE_NO_IMAGES: "不适用（本方案不含图像）",
   UNSUPPORTED_ENGINE_EVIDENCE: "此引擎版本的执行证据尚未适配",
   NO_OBSERVATIONS: "缺少可评估观测",
   PARTIAL_OBSERVATIONS: "只有部分观测可评估",

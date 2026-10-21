@@ -233,7 +233,7 @@ class RuleEvidenceCollector:
         def add(code, topic, count, expected, observed, thresholds, reason=None):
             raw = tuple(raw_by_target.get((code, topic), ()))
             indexes = tuple(report_by_target.get((code, topic), ()))
-            participates = known_engine and code in active
+            participates = known_engine and code in active and reason != "NOT_APPLICABLE_NO_IMAGES"
             if reason is None and (count == 0 or count < expected):
                 reason = "NO_OBSERVATIONS" if count == 0 else "PARTIAL_OBSERVATIONS"
             if not known_engine:
@@ -352,6 +352,7 @@ class RuleEvidenceCollector:
                         if k.startswith(prefix)
                         or (code == C.IMAGE_BLACK and k == "black_luma_threshold")
                     },
+                    "NOT_APPLICABLE_NO_IMAGES" if not data.image_checks_applicable else None,
                 )
         bounded = sum(
             name in profile.joint_limits for joint in data.joints for name in joint.positions

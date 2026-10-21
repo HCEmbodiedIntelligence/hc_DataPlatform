@@ -14,13 +14,15 @@ project 和一个 region；数据库查询统一使用 UTC 的 `[from,to)`。
 - pending-items V1 只有上传失败、QC 异常、待 Tag 审核、待发布四类，并与 principal capability
   取交集。
 - 区域容量只属于 P12；P01 不返回 storage 数据。
-- P01 主状态区域使用无时间窗口的 `task-status` 只读投影。任务列表按 exact project+region
-  的 `collection_jobs` 关联；不传 `task_id` 时主轨道汇总全部任务，`task_id` 只用于可选下钻。
+- P01 主状态区域使用无时间窗口的 `task-status` 只读投影。任务列表读取当前组织、项目中
+  `upload_region_code` 匹配当前 Region 的任务，尚无上传批次的任务也显示，数据包数为 0；
+  同时保留在当前 Region 已有关联 `collection_jobs` 的历史任务。不传 `task_id` 时主轨道
+  汇总全部任务，`task_id` 只用于可选下钻。
   只有一个任务时同时返回该任务详情；多任务汇总不会伪装成零值。
 
 ## Task status 当前状态投影
 
-投影 cohort 固定为 `collection_tasks.collection_tasks.collection_task_id` →
+数据包投影 cohort 固定为 `collection_tasks.collection_tasks.collection_task_id` →
 `ingest.collection_jobs.task_id` → `ingest.rollouts.collection_job_id`。每个
 `data_package_id` 只得到一个 current main state，同时保留以下正交事实：
 

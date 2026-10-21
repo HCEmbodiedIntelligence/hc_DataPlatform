@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Live onboarding shows filenames, task 00000014 pick and place, counts and disabled deletion",
+    "Resolution explains retention, task deletion scope, and immutable published versions",
+    "Exact task opened with its handling menu; no delete action selected",
+    "Retention path opens the real lifecycle dialog; no save/transition performed",
+    "Original MCAP link opens the exact historical processing record",
+    "Dataset link opens the task dataset and preserves the task filter",
+    "Published configuration reference opens X1 simulation scheme"
+  ],
+  "business_mutations": 0
+}

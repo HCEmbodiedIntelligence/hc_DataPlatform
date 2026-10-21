@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Click create performs PUT; new revision1 persists and existing default is unchanged",
+    "Real sample validation and v1 publication succeed; existing versions/default retained",
+    "Unused robot with a draft, deleted/live upload identities and credentials physically removed by UI; reload and API/DB confirm absence",
+    "Deletion of historical test robot blocked with exact reference counts and no configuration/history mutation"
+  ],
+  "created_scheme_id": "scheme-f865f89c-d721-459d-a672-3a840980bfab",
+  "deleted_test_robot_id": "robot_9c9c3e4f3e8e51918cec7338a8261b51"
+}

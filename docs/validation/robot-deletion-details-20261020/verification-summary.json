@@ -1,0 +1,67 @@
+{
+  "checked_at": "2026-10-20T06:54:57.507331+00:00",
+  "backend": {
+    "passed": 20,
+    "failed": 0
+  },
+  "frontend": {
+    "passed": 50,
+    "failed": 0
+  },
+  "architecture": {
+    "passed": 54
+  },
+  "typescript": "PASS",
+  "eslint_changed_files": "PASS",
+  "ruff_changed_files": "PASS",
+  "vite_build": "PASS",
+  "generated_api_check": "PASS",
+  "browser_isolated": {
+    "status": "PASS",
+    "checks": [
+      "Onboarding deletion previews concrete references and prevents confirmation",
+      "Task link loads the exact task ID regardless of the current list window",
+      "Robot instances page uses the same preview and resolutions",
+      "Only newly created isolated empty robot deleted; historical fixture report unchanged"
+    ]
+  },
+  "browser_live": {
+    "status": "PASS",
+    "checks": [
+      "Live onboarding shows filenames, task 00000014 pick and place, counts and disabled deletion",
+      "Resolution explains retention, task deletion scope, and immutable published versions",
+      "Exact task opened with its handling menu; no delete action selected",
+      "Retention path opens the real lifecycle dialog; no save/transition performed",
+      "Original MCAP link opens the exact historical processing record",
+      "Dataset link opens the task dataset and preserves the task filter",
+      "Published configuration reference opens X1 simulation scheme"
+    ],
+    "business_mutations": 0
+  },
+  "security_gate": {
+    "passed": 3,
+    "failed": 3,
+    "same_failures_before_deployment": true
+  },
+  "business_rows_unchanged": true,
+  "record_counts": {
+    "collection_tasks.collection_tasks": 1,
+    "ingest.mcap_processing_files": 2,
+    "ingest.raw_source_episodes": 1,
+    "ingest.raw_sources": 3,
+    "ingest.recording_source_links": 1,
+    "ingest.robot_ingest_uploads": 3,
+    "ingest.robot_processing_versions": 1,
+    "robotics.robot_assets": 1
+  },
+  "protected_episode": {
+    "episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+    "status": "READY",
+    "quality_status": "PASS",
+    "frame_count": 114
+  },
+  "business_mutations": 0,
+  "new_database_migrations": 0,
+  "historical_reprocessing": 0,
+  "historical_configuration_migration": 0
+}

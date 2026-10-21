@@ -1,161 +1,236 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Alert, Button, Input, InputNumber, Space, Checkbox } from "antd";
+import { Alert, Button, Collapse, Modal, Select, Space } from "antd";
 import { Link } from "react-router-dom";
 import type { IngestScope } from "../../../../entities/data-source";
 import { request } from "../../../../shared/api/http-client";
+import { useCapabilities } from "../../../../shared/auth/use-capabilities";
+import { RobotProcessingLink } from "../../../capture-schemes/RobotProcessingLink";
 import { nativeRoot } from "../lerobot-processing";
-
-type Profile = {
-  state_topic: string | null;
-  action_topic: string | null;
-  primary_camera: string | null;
-  joint_names: string[];
-  joint_units: string[];
-  depth_scale_m_per_unit: number | null;
-  derive_action_from_next_state: boolean;
-  maximum_time_error_ms: number;
-  fps: number;
-};
 export function McapRobotProfile({
-  scope,
   robotId,
 }: {
   scope: IngestScope;
   robotId: string;
 }) {
-  const path = `${nativeRoot(scope)}/robots/${encodeURIComponent(robotId)}/mcap-profile`;
-  const query = useQuery({
-    queryKey: ["mcap-profile", scope, robotId],
-    enabled: Boolean(robotId),
-    queryFn: ({ signal }) =>
-      request<Profile>({ method: "GET", scope, path, signal }),
-  });
-  const [draft, setDraft] = useState<Profile | null>(null);
-  useEffect(() => {
-    setDraft(query.data ?? null);
-  }, [query.data, robotId]);
-  const save = useMutation({
-    mutationFn: () =>
-      request<Profile>({ method: "PUT", path, scope, body: draft }),
-    onSuccess: () => query.refetch(),
-  });
-  if (!robotId) return null;
-  return (
-    <Space orientation="vertical" style={{ width: "100%" }}>
-      <strong>机器人 MCAP 解析配置</strong>
-      <span>
-        配置随机器人复用。通道唯一时可自动识别；多个候选时填写准确
-        topic。保存配置后开始处理。
-      </span>
-      {draft && (
-        <>
-          {(
-            [
-              ["state_topic", "关节状态 topic"],
-              ["action_topic", "动作指令 topic"],
-              ["primary_camera", "主 RGB 相机 topic"],
-            ] as const
-          ).map(([key, label]) => (
-            <label key={key}>
-              {label}
-              <Input
-                aria-label={label}
-                value={draft[key] ?? ""}
-                onChange={(e) =>
-                  setDraft({ ...draft, [key]: e.target.value || null })
-                }
-              />
-            </label>
-          ))}
-          <label>
-            关节名称（逗号分隔，留空保留源关节）
-            <Input
-              value={draft.joint_names.join(",")}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  joint_names: e.target.value
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              }
-            />
-          </label>
-          <label>
-            对应单位（逗号分隔，留空记为 unknown）
-            <Input
-              value={draft.joint_units.join(",")}
-              onChange={(e) =>
-                setDraft({
-                  ...draft,
-                  joint_units: e.target.value
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              }
-            />
-          </label>
-          <label>
-            深度单位换算为米（如毫米为 0.001）
-            <InputNumber
-              min={0.000001}
-              max={1}
-              value={draft.depth_scale_m_per_unit}
-              onChange={(value) =>
-                setDraft({ ...draft, depth_scale_m_per_unit: value })
-              }
-            />
-          </label>
-          <Checkbox
-            checked={draft.derive_action_from_next_state}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                derive_action_from_next_state: e.target.checked,
-              })
-            }
-          >
-            缺少动作通道时允许使用下一帧状态作为动作
-          </Checkbox>
-          <Button onClick={() => save.mutate()} loading={save.isPending}>
-            保存机器人解析配置
-          </Button>
-        </>
-      )}
-      {save.isSuccess && <span>配置已保存</span>}
-      {(save.error || query.error) && (
-        <Alert
-          type="error"
-          title="解析配置操作失败"
-          description={(save.error || query.error)?.message}
-        />
-      )}
-    </Space>
-  );
+  return robotId ? <RobotProcessingLink robotId={robotId} /> : null;
 }
-
-type Progress = {
-  files: {
-    processing_id: string;
-    path: string;
-    status: string;
-    error: string | null;
-    recording_id: string | null;
-  }[];
+type Version = {
+  scheme_id: string;
+  version: number;
+  content_sha256: string;
+  name: string;
+  configuration: Record<string, unknown>;
+  error?: string;
 };
-export function McapPreparationProgress({
+type File = {
+  processing_id: string;
+  path: string;
+  status: string;
+  error: string | null;
+  recording_id: string | null;
+  robot_id: string;
+  collection_task_id: string;
+  configuration: Record<string, unknown>;
+  config_reference: Version | null;
+  channel_inventory: unknown;
+};
+type Progress = {
+  files: File[];
+  history: File[];
+  same_recording: { episode_id: string; evidence: unknown } | null;
+};
+function McapFile({
   scope,
   importId,
+  file,
+  onRetry,
+  linked = false,
 }: {
   scope: IngestScope;
   importId: string;
+  file: File;
+  onRetry: () => void;
+  linked?: boolean;
 }) {
-  const query = useQuery({
+  const canManage = useCapabilities().has("upload.manage");
+  const [opened, setOpened] = useState(false),
+    [selection, setSelection] = useState("original"),
+    [showChannels, setShowChannels] = useState(false);
+  const root = `${nativeRoot(scope)}/${encodeURIComponent(importId)}`;
+  const versions = useQuery({
+    queryKey: ["mcap-retry-versions", scope, importId, file.robot_id],
+    enabled: opened,
+    queryFn: () =>
+      request<{ items: Version[] }>({
+        method: "GET",
+        path: `${root}/mcap-versions`,
+        scope,
+        query: { robot_id: file.robot_id },
+      }),
+  });
+  const channels = useQuery({
+    queryKey: ["mcap-channels", scope, importId, file.path],
+    enabled: showChannels && !file.channel_inventory,
+    queryFn: () =>
+      request({
+        method: "GET",
+        path: `${root}/mcap-channels`,
+        scope,
+        query: { path: file.path },
+      }),
+  });
+  const chosen = versions.data?.items.find(
+    (v) => `${v.scheme_id}:${v.version}` === selection,
+  );
+  const retry = useMutation({
+    mutationFn: () =>
+      request({
+        method: "POST",
+        path: `${root}:process-mcap`,
+        scope,
+        body: {
+          robot_id: file.robot_id,
+          collection_task_id: file.collection_task_id,
+          ...(chosen
+            ? {
+                processing_config: {
+                  scheme_id: chosen.scheme_id,
+                  version: chosen.version,
+                  content_sha256: chosen.content_sha256,
+                },
+              }
+            : {}),
+        },
+      }),
+    onSuccess: () => {
+      setOpened(false);
+      onRetry();
+    },
+  });
+  return (
+    <div>
+      <strong>{file.path}</strong> ·{" "}
+      {(
+        {
+          PENDING: "等待处理",
+          RUNNING: "准备录制",
+          READY: "可预览与切片",
+          FAILED: "处理失败",
+        } as Record<string, string>
+      )[file.status] ?? file.status}
+      <p>
+        本次配置：{file.config_reference?.name ?? "历史快照"} ·{" "}
+        {file.config_reference?.version
+          ? `v${file.config_reference.version}`
+          : "未版本化"}
+      </p>
+      {file.error && <Alert type="error" title={file.error} />}
+      <Space wrap>
+        <RobotProcessingLink
+          robotId={file.robot_id}
+          scheme={file.config_reference?.scheme_id}
+          sample={importId}
+          file={file.path}
+        />
+        <Button onClick={() => setShowChannels(!showChannels)}>
+          查看原始通道
+        </Button>
+        <Button
+          disabled={linked || !canManage || file.status !== "FAILED"}
+          onClick={() => setOpened(true)}
+        >
+          重试处理
+        </Button>
+        {file.recording_id && (
+          <Link
+            to={`/recordings/${encodeURIComponent(file.recording_id)}/slice`}
+          >
+            预览与切片
+          </Link>
+        )}
+      </Space>
+      {showChannels && (
+        <pre
+          style={{ whiteSpace: "pre-wrap", maxHeight: 320, overflow: "auto" }}
+        >
+          {JSON.stringify(
+            file.channel_inventory ??
+              channels.data ??
+              channels.error?.message ??
+              "正在读取原文件…",
+            null,
+            2,
+          )}
+        </pre>
+      )}
+      <Collapse
+        items={[
+          {
+            key: "config",
+            label: "查看本批次实际配置快照",
+            children: (
+              <pre style={{ whiteSpace: "pre-wrap" }}>
+                {JSON.stringify(file.configuration, null, 2)}
+              </pre>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        title="选择重试配置版本"
+        open={opened}
+        onCancel={() => setOpened(false)}
+        onOk={() => retry.mutate()}
+        confirmLoading={retry.isPending}
+        okText="确认重试处理"
+        okButtonProps={{
+          disabled:
+            !chosen &&
+            (selection !== "original" ||
+              !!file.config_reference?.error ||
+              !file.configuration.state_topic),
+        }}
+      >
+        <p>
+          普通故障重试沿用原快照。选择其他已发布版本会建立新的处理记录，原记录保留。
+        </p>
+        <Select
+          aria-label="重试配置版本"
+          style={{ width: "100%" }}
+          value={selection}
+          onChange={setSelection}
+          options={[
+            { value: "original", label: "沿用上次实际配置" },
+            ...(versions.data?.items ?? []).map((v) => ({
+              value: `${v.scheme_id}:${v.version}`,
+              label: `${v.name} · v${v.version}`,
+            })),
+          ]}
+        />
+        {chosen && (
+          <pre style={{ whiteSpace: "pre-wrap" }}>
+            {JSON.stringify(
+              { 上次: file.configuration, 本次: chosen.configuration },
+              null,
+              2,
+            )}
+          </pre>
+        )}
+        {(retry.error || versions.error) && (
+          <Alert
+            type="error"
+            title={(retry.error || versions.error)?.message}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+export function mcapPreparationQuery(scope: IngestScope, importId: string) {
+  return {
     queryKey: ["mcap-preparation", scope, importId],
-    queryFn: ({ signal }) =>
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
       request<Progress>({
         method: "GET",
         scope,
@@ -163,32 +238,74 @@ export function McapPreparationProgress({
         path: `${nativeRoot(scope)}/${encodeURIComponent(importId)}/mcap-processing`,
       }),
     refetchInterval: 3000,
-  });
-  const labels: Record<string, string> = {
-    PENDING: "等待处理",
-    RUNNING: "准备录制",
-    READY: "可预览与切片",
-    FAILED: "处理失败",
+    staleTime: 2000,
   };
+}
+export function McapPreparationProgress({
+  scope,
+  importId,
+}: {
+  scope: IngestScope;
+  importId: string;
+}) {
+  const query = useQuery(mcapPreparationQuery(scope, importId));
+  const files = query.data?.files.map((file) => (
+    <McapFile
+      key={file.processing_id}
+      scope={scope}
+      importId={importId}
+      file={file}
+      linked={!!query.data?.same_recording}
+      onRetry={() => void query.refetch()}
+    />
+  ));
+  const first = query.data?.files[0];
   return (
-    <Space orientation="vertical">
-      {query.data?.files.map((f) => (
-        <div key={f.processing_id}>
-          {f.path} · {labels[f.status] ?? f.status}
-          {f.recording_id && (
-            <>
-              {" "}
-              ·{" "}
-              <Link
-                to={`/recordings/${encodeURIComponent(f.recording_id)}/slice`}
-              >
-                预览与切片
-              </Link>
-            </>
+    <Space orientation="vertical" style={{ width: "100%" }}>
+      {query.data?.same_recording ? (
+        <Alert
+          type="success"
+          title="同次录制已有成功结果"
+          description={`已关联 Episode ${query.data.same_recording.episode_id}，保留原始文件，禁止重复入库。`}
+        />
+      ) : null}
+      {query.data?.same_recording ? (
+        <>
+          {first && (
+            <RobotProcessingLink
+              robotId={first.robot_id}
+              sample={importId}
+              file={first.path}
+            />
           )}
-          {f.error && <p role="alert">{f.error}</p>}
-        </div>
-      ))}
+          <Collapse
+            items={[
+              {
+                key: "linked-history",
+                label: "查看此前错误与当时配置",
+                children: files,
+              },
+            ]}
+          />
+        </>
+      ) : (
+        files
+      )}
+      {!!query.data?.history.length && (
+        <Collapse
+          items={[
+            {
+              key: "history",
+              label: "处理记录与配置版本",
+              children: (
+                <pre style={{ whiteSpace: "pre-wrap" }}>
+                  {JSON.stringify(query.data.history, null, 2)}
+                </pre>
+              ),
+            },
+          ]}
+        />
+      )}
       {query.error && (
         <Alert
           type="error"

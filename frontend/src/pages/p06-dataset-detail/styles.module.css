@@ -69,9 +69,9 @@
 
 .episodeWorkspace {
   display: grid;
-  grid-template-columns: minmax(184px, 0.62fr) minmax(0, 3.38fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--hc-space-3, 12px);
-  align-items: stretch;
+  align-items: start;
 }
 
 .filterPanel,
@@ -92,11 +92,37 @@
   overflow: hidden;
 }
 .filterPanel :global(form) {
+  display: flex;
+  gap: 12px;
+}
+.filterPanel > section {
+  padding: 8px 12px;
+}
+.filterPanel :global(form) > div:first-child {
   display: grid;
+  grid-template-columns:
+    minmax(130px, 1.5fr) minmax(110px, 1.2fr)
+    minmax(100px, 1fr) minmax(100px, 1fr) 64px;
+  gap: 10px;
+}
+.filterPanel :global(form) > div:last-child {
+  margin-inline-start: auto;
 }
 .filterPanel .filterField {
   width: 100%;
   min-width: 0;
+}
+.filterPanel :global(.ant-btn) {
+  height: 32px;
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.page
+  :global([data-layout="detail-page"])
+  section[aria-label="采集上传与入库进度"],
+.page :global([data-layout="detail-page"]) section[aria-label="原始数据"] {
+  margin-top: 12px;
 }
 
 .tablePanel :global(.hc-data-table .ant-table-thead > tr > th) {
@@ -117,27 +143,26 @@
 }
 
 .episodeWindowSummary {
-  display: grid;
-  grid-template-columns: minmax(6rem, 0.5fr) minmax(10rem, 1fr) minmax(
-      11rem,
-      1fr
-    );
-  gap: 0;
-  margin: var(--hc-space-2, 8px);
-  border: 1px solid var(--hc-color-border, #dce5e3);
-  border-radius: var(--hc-radius-md, 6px);
-  background: #f7faf9;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  padding: 6px 12px 10px;
+  color: var(--hc-color-text-muted, #64736f);
 }
 
 .episodeWindowSummary > div {
-  display: grid;
+  display: flex;
+  align-items: baseline;
   min-width: 0;
-  gap: 2px;
-  padding: var(--hc-space-2, 8px) var(--hc-space-3, 12px);
+  gap: 8px;
 }
 
 .episodeWindowSummary > div + div {
-  border-inline-start: 1px solid var(--hc-color-border, #dce5e3);
+  flex: 1;
+}
+
+.episodeWindowSummary span {
+  flex-shrink: 0;
 }
 
 .episodeWindowSummary span,
@@ -446,14 +471,6 @@
 }
 
 @media (max-width: 768px) {
-  .episodeWindowSummary {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .episodeWindowSummary > div + div {
-    border-top: 1px solid var(--hc-color-border, #dce5e3);
-    border-inline-start: 0;
-  }
-
   .summaryBar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -468,17 +485,13 @@
   }
 }
 
-@media (max-width: 1280px) {
-  .episodeWorkspace {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
+@media (max-width: 1100px) {
   .filterPanel :global(form) {
-    display: flex;
+    flex-wrap: wrap;
   }
-  .filterPanel .filterField {
-    width: auto;
-    min-width: 150px;
+  .filterPanel :global(form) > div:first-child {
+    flex-basis: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   }
 }
 

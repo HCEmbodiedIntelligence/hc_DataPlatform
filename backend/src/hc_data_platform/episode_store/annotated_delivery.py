@@ -198,9 +198,11 @@ def write_annotated_delivery(
     (root / "hc/annotation.json").write_bytes(body)
     if review_document is not None:
         write_json(root, "hc/annotation-review.json", review_document)
-    (root / "hc/subtasks.jsonl").write_bytes(
-        b"".join(canonical(row) + b"\n" for row in projection.rows())
-    )
+    # No segmentation means no segment table. Manifest entries must be nonempty.
+    if projection.segments:
+        (root / "hc/subtasks.jsonl").write_bytes(
+            b"".join(canonical(row) + b"\n" for row in projection.rows())
+        )
     for path, value in {
         "meta/info.json": info,
         "meta/stats.json": stats,

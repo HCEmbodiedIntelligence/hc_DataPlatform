@@ -31,19 +31,13 @@ from hc_data_platform.robot_ingest.raw_recording import publish, verify
 from hc_data_platform.security.audit import canonical_hash
 
 from .configuration import connections, validate_target
+from .robot_eligibility import import_robots
 
 
 def profile(scope, robot_id, config=None):
+    organization_id, project_id, region_code = scope
     with connections()() as db:
-        exists = db.execute(
-            """SELECT 1 FROM ingest.data_sources WHERE organization_id=%s AND project_id=%s
-            AND region_code=%s AND source_type='ROBOT' AND administrative_state='ENABLED'
-            AND source_document->'binding'->>'robot_id'=%s
-            UNION ALL SELECT 1 FROM ingest.robot_ingest_uploads
-            WHERE organization_id=%s AND project_id=%s AND region_code=%s
-              AND authenticated_robot_id=%s LIMIT 1""",
-            (*scope, robot_id, *scope, robot_id),
-        ).fetchone()
+        exists = import_robots(db, organization_id, project_id, region_code, robot_id)
         if not exists:
             raise problem(
                 status=404,
@@ -52,14 +46,12 @@ def profile(scope, robot_id, config=None):
                 detail="请选择当前范围内已启用的机器人。",
             )
         if config is not None:
-            config = McapProcessingConfig.model_validate(config)
-            db.execute(
-                """INSERT INTO ingest.mcap_robot_profiles VALUES(%s,%s,%s,%s,%s::jsonb,now())
-                ON CONFLICT (organization_id,project_id,region_code,robot_id)
-                DO UPDATE SET configuration=EXCLUDED.configuration,updated_at=now()""",
-                (*scope, robot_id, config.model_dump_json()),
+            raise problem(
+                status=409,
+                code="ROBOT_CONFIG_MOVED",
+                title="配置入口已迁移",
+                detail=f"请在机器人实例 {robot_id} 的采集与解析配置中保存草稿、验证并发布版本。",
             )
-            db.commit()
         row = db.execute(
             """SELECT configuration FROM ingest.mcap_robot_profiles
             WHERE organization_id=%s AND project_id=%s AND region_code=%s AND robot_id=%s""",
@@ -68,37 +60,131 @@ def profile(scope, robot_id, config=None):
     return McapProcessingConfig.model_validate(row[0] if row else {})
 
 
-def progress(scope, raw_id):
+def progress(scope, raw_id, manifest=None):
     with connections()() as db:
         rows = db.execute(
-            """SELECT DISTINCT ON (source_path)
-            processing_id,source_path,status,error,recording_id,attempts,updated_at
-            FROM ingest.mcap_processing_files
-            WHERE organization_id=%s AND project_id=%s
-            AND region_code=%s
-            AND raw_source_id=%s ORDER BY source_path,created_at DESC,processing_id""",
+            (
+                """SELECT
+                processing_id,source_path,status,error,recording_id,attempts,updated_at,robot_id,configuration,config_reference
+                - 'validation' ,channel_inventory,collection_task_id FROM
+                ingest.mcap_processing_files WHERE organization_id=%s AND project_id=%s AND
+                region_code=%s AND raw_source_id=%s ORDER BY source_path,created_at
+                DESC,processing_id"""
+            ),
             (*scope, raw_id),
         ).fetchall()
-    return {
-        "files": [
-            dict(
-                zip(
-                    (
-                        "processing_id",
-                        "path",
-                        "status",
-                        "error",
-                        "recording_id",
-                        "attempts",
-                        "updated_at",
-                    ),
-                    row,
-                    strict=True,
-                )
+        receipt = db.execute(
+            """SELECT upload_document FROM ingest.robot_ingest_uploads
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s""",
+            (*scope, raw_id),
+        ).fetchone()
+        source = db.execute(
+            (
+                """SELECT s.robot_id,s.collection_task_id,j.last_error_code FROM
+                ingest.raw_sources s JOIN ingest.raw_ingest_jobs j
+                USING(organization_id,project_id,region_code,raw_source_id) WHERE
+                s.organization_id=%s AND s.project_id=%s AND s.region_code=%s AND
+                s.raw_source_id=%s"""
+            ),
+            (*scope, raw_id),
+        ).fetchone()
+        owner_row = db.execute(
+            """SELECT robotics.robot_reference_owner(organization_id,'raw',project_id,
+            region_code,raw_source_id,robot_id) FROM ingest.raw_sources
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s""",
+            (*scope, raw_id),
+        ).fetchone()
+        link = db.execute(
+            """SELECT canonical_episode_id,evidence FROM ingest.recording_source_links
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s""",
+            (*scope, raw_id),
+        ).fetchone()
+    history = [
+        dict(
+            zip(
+                (
+                    "processing_id",
+                    "path",
+                    "status",
+                    "error",
+                    "recording_id",
+                    "attempts",
+                    "updated_at",
+                    "robot_id",
+                    "configuration",
+                    "config_reference",
+                    "channel_inventory",
+                    "collection_task_id",
+                ),
+                row,
+                strict=True,
             )
-            for row in rows
+        )
+        for row in rows
+    ]
+    files = list(
+        {f["path"]: next(x for x in history if x["path"] == f["path"]) for f in history}.values()
+    )
+    if not files and source and source[0] and source[1] and manifest:
+        frozen = (receipt[0].get("processing_config_snapshot") or {}) if receipt else {}
+        files = [
+            {
+                "processing_id": "receipt:" + f["path"],
+                "path": f["path"],
+                "status": "FAILED",
+                "error": source[2] or frozen.get("error") or "ROBOT_PROCESSING_CONFIG_REQUIRED",
+                "robot_id": source[0],
+                "collection_task_id": source[1],
+                "recording_id": None,
+                "configuration": frozen.get("configuration", {}),
+                "config_reference": {k: v for k, v in frozen.items() if k != "validation"},
+                "channel_inventory": None,
+                "attempts": 0,
+            }
+            for f in manifest["files"]
+            if f["path"].lower().endswith(".mcap")
         ]
+    # Current actions follow the new association; historical attempts keep their
+    # original robot identity and frozen configuration.
+    if owner_row and owner_row[0]:
+        files = [{**file, "robot_id": owner_row[0]} for file in files]
+    return {
+        "files": files,
+        "history": history,
+        "same_recording": {"episode_id": link[0], "evidence": link[1]} if link else None,
     }
+
+
+def record_rejection(db, scope, raw, manifest, command, snapshot):
+    """Persist rejected dispatch evidence without enqueuing work or changing Raw bytes."""
+    lock_source(db, scope, raw.raw_source_id)
+    for file in manifest["files"]:
+        if not file["path"].lower().endswith(".mcap"):
+            continue
+        ident = canonical_hash([scope, raw.raw_source_id, file["path"], snapshot, "rejected"])
+        db.execute(
+            (
+                """INSERT INTO ingest.mcap_processing_files
+                (organization_id,project_id,region_code,raw_source_id,processing_id,source_path,source_document,
+                configuration,collection_task_id,robot_id,dataset_id,status,error,config_reference)
+                VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,'FAILED',%s,%s::jsonb)
+                ON CONFLICT DO NOTHING"""
+            ),
+            (
+                *scope,
+                raw.raw_source_id,
+                ident,
+                file["path"],
+                json.dumps(file),
+                json.dumps(snapshot.get("configuration", {})),
+                command.collection_task_id,
+                command.robot_id,
+                raw.dataset_id,
+                snapshot["error"],
+                json.dumps(snapshot),
+            ),
+        )
+    sync_source(db, scope, raw.raw_source_id)
 
 
 def start(scope, raw, manifest, command):
@@ -106,19 +192,52 @@ def start(scope, raw, manifest, command):
         *scope,
         SimpleNamespace(
             processing_mode="PROCESS",
+            source_format="MCAP",
             dataset_id=raw.dataset_id,
             collection_task_id=command.collection_task_id,
             robot_id=command.robot_id,
         ),
     )
-    cfg = profile(scope, command.robot_id)
+    from hc_data_platform.capture_schemes.common import reject
+    from hc_data_platform.capture_schemes.processing import resolve_raw_snapshot
+
     with connections()() as db:
-        enqueue_files(db, scope, raw, manifest, command, cfg)
+        lock_source(db, scope, raw.raw_source_id)
+        bound = db.execute(
+            (
+                """SELECT robotics.robot_reference_owner(organization_id,'raw',project_id,
+                region_code,raw_source_id,robot_id),collection_task_id FROM ingest.raw_sources WHERE
+                organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
+                FOR UPDATE"""
+            ),
+            (*scope, raw.raw_source_id),
+        ).fetchone()
+        if bound and any(
+            old and old != new
+            for old, new in zip(bound, (command.robot_id, command.collection_task_id), strict=True)
+        ):
+            reject("RAW_PROCESSING_ALREADY_BOUND", "不能改变已经接收的数据所属机器人或采集任务")
+        db.execute(
+            (
+                """UPDATE ingest.raw_sources SET
+                robot_id=COALESCE(robot_id,%s),collection_task_id=%s,processing_status=CASE WHEN
+                processing_status='NOT_REQUESTED' THEN 'PENDING' ELSE processing_status END
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND
+                raw_source_id=%s"""
+            ),
+            (command.robot_id, command.collection_task_id, *scope, raw.raw_source_id),
+        )
+        frozen = resolve_raw_snapshot(db, scope, raw.raw_source_id)
+        if frozen.get("error"):
+            record_rejection(db, scope, raw, manifest, command, frozen)
+        else:
+            cfg = McapProcessingConfig.model_validate(frozen["effective_adapter"]["configuration"])
+            enqueue_files(db, scope, raw, manifest, command, cfg, reference=frozen)
         db.commit()
     return progress(scope, raw.raw_source_id)
 
 
-def enqueue_files(db, scope, raw, manifest, command, cfg):
+def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
     """Queue preparation in the caller's Raw commit transaction for every ingress."""
     from hc_data_platform.robot_ingest.recording_bridge import EVENT_TYPE
 
@@ -126,6 +245,23 @@ def enqueue_files(db, scope, raw, manifest, command, cfg):
     if not files:
         raise ValueError("MCAP source has no MCAP members")
     lock_source(db, scope, raw.raw_source_id)
+    linked = db.execute(
+        """SELECT canonical_episode_id FROM ingest.recording_source_links
+        WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s""",
+        (*scope, raw.raw_source_id),
+    ).fetchone()
+    ready = db.execute(
+        (
+            """SELECT recording_id FROM ingest.mcap_processing_files WHERE organization_id=%s AND
+            project_id=%s AND region_code=%s AND raw_source_id=%s AND status='READY'"""
+        ),
+        (*scope, raw.raw_source_id),
+    ).fetchone()
+    if linked:
+        set_source_status(db, scope, raw.raw_source_id, "FAILED", "RECORDING_ALREADY_PROCESSED")
+        return
+    if ready:
+        return  # Replays and new defaults never produce a second recording.
     db.execute(
         """UPDATE ingest.raw_ingest_jobs SET job_type='CONTINUOUS_RECORDING_DISCOVERY',
         adapter_name='mcap' WHERE organization_id=%s AND project_id=%s AND region_code=%s
@@ -147,11 +283,12 @@ def enqueue_files(db, scope, raw, manifest, command, cfg):
             "robot": command.robot_id,
             "task": command.collection_task_id,
             "config": cfg.model_dump(mode="json"),
+            "config_reference": reference,
             "version": VERSION,
         }
         previous = db.execute(
             """SELECT processing_id,source_document,configuration,
-            collection_task_id,robot_id,dataset_id
+            collection_task_id,robot_id,dataset_id,config_reference
             FROM ingest.mcap_processing_files WHERE organization_id=%s AND project_id=%s
               AND region_code=%s AND raw_source_id=%s AND source_path=%s
             ORDER BY created_at DESC,processing_id LIMIT 1""",
@@ -163,6 +300,7 @@ def enqueue_files(db, scope, raw, manifest, command, cfg):
             command.collection_task_id,
             command.robot_id,
             raw.dataset_id,
+            reference,
         ):
             ident = previous[0]
         else:
@@ -175,8 +313,8 @@ def enqueue_files(db, scope, raw, manifest, command, cfg):
             """INSERT INTO ingest.mcap_processing_files
             (organization_id,project_id,region_code,raw_source_id,processing_id,source_path,
             source_document,
-             configuration,collection_task_id,robot_id,dataset_id,status)
-            VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,'PENDING')
+             configuration,collection_task_id,robot_id,dataset_id,status,config_reference)
+            VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s,%s,'PENDING',%s::jsonb)
             ON CONFLICT DO NOTHING""",
             (
                 *scope,
@@ -188,6 +326,7 @@ def enqueue_files(db, scope, raw, manifest, command, cfg):
                 command.collection_task_id,
                 command.robot_id,
                 raw.dataset_id,
+                json.dumps(reference) if reference else None,
             ),
         )
         state = db.execute(
@@ -221,9 +360,11 @@ def enqueue_files(db, scope, raw, manifest, command, cfg):
             payload={"mcap_processing_id": ident, "attempt": attempt},
         )
         db.execute(
-            """INSERT INTO core.outbox_events
-            (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)
-            VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,now()) ON CONFLICT DO NOTHING""",
+            (
+                """INSERT INTO core.outbox_events
+                (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)
+                VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,now()) ON CONFLICT DO NOTHING"""
+            ),
             (
                 event.event_id,
                 *scope,
@@ -244,9 +385,20 @@ def process_file(handler, event, checkpoint):
         try:
             with handler.connections() as db:
                 lock_source(db, scope, event.aggregate_id)
+                if db.execute(
+                    (
+                        """SELECT 1 FROM ingest.recording_source_links WHERE organization_id=%s
+                        AND project_id=%s AND region_code=%s AND raw_source_id=%s"""
+                    ),
+                    (*scope, event.aggregate_id),
+                ).fetchone():
+                    raise ValueError(
+                        "RECORDING_ALREADY_PROCESSED: same recording has a preserved "
+                        "successful Episode"
+                    )
                 row = db.execute(
                     """SELECT source_document,configuration,collection_task_id,
-                    robot_id,dataset_id,status,attempts,source_path
+                    robot_id,dataset_id,status,attempts,source_path,config_reference
                     FROM ingest.mcap_processing_files
                     WHERE organization_id=%s AND project_id=%s
                     AND region_code=%s
@@ -325,7 +477,31 @@ def process_file(handler, event, checkpoint):
                             output,
                         )
                     output = root / "derived"
+                    from hc_data_platform.continuous_recordings.mcap_native import inspect
+
+                    channels = inspect(source, checkpoint)
+                    with handler.connections() as evidence_db:
+                        evidence_db.execute(
+                            (
+                                """UPDATE ingest.mcap_processing_files SET
+                                channel_inventory=%s::jsonb WHERE organization_id=%s AND
+                                project_id=%s AND region_code=%s AND processing_id=%s"""
+                            ),
+                            (json.dumps(channels), *scope, ident),
+                        )
+                        evidence_db.commit()
                     config, provenance = prepare(source, output, cfg, checkpoint)
+                    if row[8] and row[8].get("schema_version") == "capture-recording-snapshot/v1":
+                        from hc_data_platform.capture_schemes.models import OutputContract
+                        from hc_data_platform.capture_schemes.processing import validate_mcap_output
+
+                        evidence = validate_mcap_output(
+                            OutputContract.model_validate(row[8]["output"]),
+                            McapProcessingConfig.model_validate(provenance["config"]),
+                            provenance,
+                        )
+                        provenance["capture_snapshot"] = row[8]
+                        provenance["capture_validation"] = evidence
                     # These locators are platform-owned immutable receipts, not user input.
                     provenance.update(
                         source_object=original,
@@ -395,6 +571,9 @@ def process_file(handler, event, checkpoint):
                         provenance["source_origin_ns"] // 10**9, timezone.utc
                     ) + timedelta(microseconds=(provenance["source_origin_ns"] % 10**9) // 1000)
                     command = CreateRecordingUploadCommand(
+                        schema_version="continuous-recording-upload/v3"
+                        if config.get("collection_mode") == "JOINT_ONLY"
+                        else "continuous-recording-upload/v2",
                         recording_id="mcap-" + ident[:40],
                         rollout_id="mcap-capture-" + ident[:40],
                         data_package_id="mcap-package-" + ident[:40],
@@ -515,24 +694,23 @@ def retry_source(scope, raw_id, factory):
     with factory() as db:
         lock_source(db, scope, raw_id)
         rows = db.execute(
-            """SELECT DISTINCT ON (source_path) source_document,collection_task_id,
-            robot_id,dataset_id,status,configuration FROM ingest.mcap_processing_files
-            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
-            ORDER BY source_path,created_at DESC,processing_id""",
+            (
+                """SELECT DISTINCT ON (source_path) source_document,collection_task_id,
+                robot_id,dataset_id,status,configuration,config_reference FROM
+                ingest.mcap_processing_files WHERE organization_id=%s AND project_id=%s AND
+                region_code=%s AND raw_source_id=%s ORDER BY source_path,created_at
+                DESC,processing_id"""
+            ),
             (*scope, raw_id),
         ).fetchall()
         if not rows:
             return False
-        for document, task, robot, dataset, status, previous_config in rows:
+        for document, task, robot, dataset, status, previous_config, reference in rows:
             if status != "FAILED":
                 continue
-            profile_row = db.execute(
-                """SELECT configuration FROM ingest.mcap_robot_profiles
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND robot_id=%s""",
-                (*scope, robot),
-            ).fetchone()
-            # Keep the previous snapshot when the profile is absent (legacy browser imports).
-            cfg = profile_row[0] if profile_row else previous_config
+            if reference and reference.get("error"):
+                continue  # A rejected snapshot needs an explicitly chosen published version.
+            cfg = previous_config
             enqueue_files(
                 db,
                 scope,
@@ -540,6 +718,7 @@ def retry_source(scope, raw_id, factory):
                 {"files": [document]},
                 SimpleNamespace(collection_task_id=task, robot_id=robot),
                 McapProcessingConfig.model_validate(cfg),
+                reference=reference,
             )
         db.commit()
     return True
@@ -606,7 +785,7 @@ def sync_source(db, scope, raw_id):
     )
     error = next((r[1] for r in rows if r[0] == "FAILED" and r[1]), None)
     code = error.split(":", 1)[0] if error else None
-    if code and not re.fullmatch(r"MCAP_[A-Z0-9_]+", code):
+    if code and not re.fullmatch(r"(?:MCAP|ROBOT|CAPTURE)_[A-Z0-9_]+", code):
         code = "MCAP_PREPARATION_FAILED"
     representative = next(r for r in rows if r[0] == ("READY" if status == "SUCCEEDED" else status))
     event_id = str(uuid5(NAMESPACE_URL, f"mcap:{representative[3]}:{representative[2]}"))

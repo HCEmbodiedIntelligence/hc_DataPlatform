@@ -1070,11 +1070,15 @@ export function ViewerJointAngleCurvePanel({
     const plot = { left: 52, right: 592, top: 14, bottom: 188 };
     const stride = Math.max(1, Math.ceil(values.length / 260));
     const paths = Array.from({ length: dimension }, (_, seriesIndex) => {
-      const points = values.flatMap((sample, sampleIndex) => {
-        if (sampleIndex % stride !== 0 && sampleIndex !== values.length - 1)
-          return [];
+      const segments: { x: number; y: number }[][] = [[]];
+      values.forEach((sample, sampleIndex) => {
         const value = sample[seriesIndex];
-        if (typeof value !== "number" || !Number.isFinite(value)) return [];
+        if (typeof value !== "number" || !Number.isFinite(value)) {
+          if (segments[segments.length - 1]?.length) segments.push([]);
+          return;
+        }
+        if (sampleIndex % stride !== 0 && sampleIndex !== values.length - 1)
+          return;
         const timestamp =
           payload?.timestampsNs[sampleIndex] ?? windowState.startNs;
         const position = clampTimelinePosition(
@@ -1082,14 +1086,12 @@ export function ViewerJointAngleCurvePanel({
           windowState.startNs,
           windowState.endNs,
         );
-        return [
-          {
-            x: plot.left + position * (plot.right - plot.left),
-            y: plot.bottom - ((value - low) / span) * (plot.bottom - plot.top),
-          },
-        ];
+        segments[segments.length - 1]?.push({
+          x: plot.left + position * (plot.right - plot.left),
+          y: plot.bottom - ((value - low) / span) * (plot.bottom - plot.top),
+        });
       });
-      return smoothJointPath(points);
+      return segments.map(smoothJointPath).join(" ");
     });
     return { dimension, high, low, paths, plot };
   }, [windowState.endNs, windowState.payload, windowState.startNs]);

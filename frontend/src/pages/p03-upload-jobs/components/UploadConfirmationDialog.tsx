@@ -21,10 +21,7 @@ import {
 import type { LeRobotTargetBinding } from "../../../features/ingest/upload/lerobot-client";
 import styles from "../../../features/ingest/upload/upload.module.css";
 import { ProcessingTargetFields } from "../../../features/ingest/processing/components/ProcessingTargetFields";
-import {
-  ProcessingLabels,
-  useProcessingConfiguration,
-} from "../../../features/ingest/processing/components/ProcessingLabels";
+import { ProcessingLabels } from "../../../features/ingest/processing/components/ProcessingLabels";
 
 function joined(values: readonly string[]): string {
   if (values.length === 0) return "未识别";
@@ -99,19 +96,11 @@ export function UploadConfirmationDialog(props: {
     "PROCESS" | "STORE_ONLY"
   >("PROCESS");
   const processing = supportsProcessing && processingMode === "PROCESS";
-  const configuration = useProcessingConfiguration(
-    props.scope,
-    datasetId,
-    processing,
-  );
   const targets = selectionTargetFacts(props.selection, props.scope);
   const lerobotBindingValid =
     props.selection.lerobot === null ||
     (Boolean(datasetId.trim()) &&
-      (!processing ||
-        Boolean(
-          collectionTaskId && robotId && configuration.data?.configured,
-        )));
+      (!processing || Boolean(collectionTaskId && robotId)));
   const blocked =
     !props.canManage ||
     !props.online ||
@@ -204,7 +193,7 @@ export function UploadConfirmationDialog(props: {
             value={processingMode}
             onChange={(e) => setProcessingMode(e.target.value)}
             options={[
-              { value: "PROCESS", label: "自动质检、对齐并进入标注" },
+              { value: "PROCESS", label: "按任务方案处理并质检" },
               { value: "STORE_ONLY", label: "仅存档，稍后处理" },
             ]}
           />

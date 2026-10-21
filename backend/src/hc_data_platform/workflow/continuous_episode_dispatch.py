@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
+from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
 
 from .models import (
@@ -19,6 +20,7 @@ from .service import TemporalWorkflowLauncher
 
 class ContinuousEpisodeWorkflowInputResolver(Protocol):
     def terminal_result(self, **scope: object) -> object | None: ...
+    def record_plan_failure(self, error: ProblemException, **scope: Any) -> object: ...
 
     def resolve(
         self,
@@ -84,7 +86,12 @@ class ContinuousEpisodeOutboxHandler:
         terminal = self._resolver.terminal_result(**scope)
         if terminal is not None:
             return terminal
-        request = self._resolver.resolve(**scope)
+        try:
+            request = self._resolver.resolve(**scope)
+        except ProblemException as exc:
+            if not exc.problem.code.startswith("CAPTURE_") or exc.problem.retryable:
+                raise
+            return self._resolver.record_plan_failure(exc, **scope)
         source = request.projection
         if (
             source.organization_id != event.organization_id

@@ -57,6 +57,10 @@ class CredentialVaultUnavailable(RuntimeError):
 
 
 class DataSourceRepository(Protocol):
+    def committed_bytes(
+        self, scope: DataSourceScope, start: datetime, end: datetime
+    ) -> int | None: ...
+
     def has_organization_project(self, *, organization_id: str, project_id: str) -> bool: ...
 
     def robot_display_name(
@@ -162,6 +166,10 @@ class InMemoryDataSourceRepository:
         ] = {}
         self.audit_events: list[DataSourceAuditEvent] = []
         self._lock = RLock()
+
+    def committed_bytes(self, scope: DataSourceScope, start: datetime, end: datetime) -> int | None:
+        # This adapter has no Raw registry; unknown is not a measured zero.
+        return None
 
     def has_organization_project(self, *, organization_id: str, project_id: str) -> bool:
         with self._lock:
@@ -443,6 +451,20 @@ class PostgresDataSourceRepository:
 
     def __init__(self, connection_factory: ConnectionFactory) -> None:
         self._connection_factory = connection_factory
+
+    def committed_bytes(self, scope: DataSourceScope, start: datetime, end: datetime) -> int | None:
+        from hc_data_platform.robot_ingest.onboarding_repository import volume
+
+        size, _ = volume(
+            self._connection_factory,
+            organization_id=scope.organization_id,
+            project_id=scope.project_id,
+            region_code=scope.region_code,
+            start=start,
+            end=end,
+            robot_id=None,
+        )
+        return size
 
     def has_organization_project(self, *, organization_id: str, project_id: str) -> bool:
         connection = self._connection_factory()

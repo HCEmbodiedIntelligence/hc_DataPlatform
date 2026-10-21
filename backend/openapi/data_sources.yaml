@@ -679,9 +679,13 @@ components:
           title: Total Count
           type: string
         verified_bytes_today:
-          pattern: ^(0|[1-9]\d*)$
+          anyOf:
+          - pattern: ^(0|[1-9]\d*)$
+            type: string
+          - type: 'null'
           title: Verified Bytes Today
-          type: string
+          deprecated: true
+          description: Committed original bytes for the current UTC day; null when observation is unavailable. Use getSuccessfulUploadVolume for an explicit timezone.
       required:
       - total_count
       - online_count

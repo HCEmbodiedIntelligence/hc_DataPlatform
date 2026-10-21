@@ -31,13 +31,16 @@ class RobotIngestProcessingWorkflow:
     async def failure(self, task: dict[str, Any], error: ActivityError, index: int | None) -> None:
         cause = error.cause
         code, retryable = "ROBOT_PROCESSING_TECHNICAL_FAILURE", True
+        detail = None
         if isinstance(cause, ApplicationError):
             code = cause.type or code
-            if cause.details:
+            if cause.details and isinstance(cause.details[0], dict):
                 retryable = bool(cause.details[0].get("retryable", True))
-        await self.call(
-            "fail", {"task": task, "index": index, "error_code": code, "retryable": retryable}
-        )
+                detail = cause.details[0].get("detail")
+        request = {"task": task, "index": index, "error_code": code, "retryable": retryable}
+        if isinstance(detail, str):
+            request["detail"] = detail
+        await self.call("fail", request)
 
     @workflow.run
     async def run(self, request: dict[str, Any]) -> None:

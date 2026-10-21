@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="19" failures="0" errors="0" time="0.56816498">
+    <testsuite name="src/features/viewer/EpisodeWorkbenchCore.test.tsx" timestamp="2026-10-20T01:58:36.239Z" hostname="c7938b492d83" tests="19" failures="0" errors="0" skipped="0" time="0.56816498">
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="formats all viewer time readouts as seconds with two decimals" time="0.000644315">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; scrubs a read-only timeline without creating an annotation or exposing edit controls" time="0.05458334">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; distinguishes a new drag from resizing an existing selection" time="0.027333668">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; creates a precise range by dragging across the filmstrip" time="0.010879637">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; supports keyboard trimming, zooming, and nested track labels" time="0.025932296">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; starts the shared playback clock at an interactive segment boundary" time="0.10717398">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; scrubs while moving a Tag, commits on release, and suppresses the drag&apos;s click" time="0.013013224">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; drags the start edge directly and follows that boundary" time="0.012704843">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; drags the end edge directly and follows that boundary" time="0.010017408">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; keeps the interval length inside the timeline bounds" time="0.010043547">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; cancels without writing on Escape" time="0.011279806">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; cancels without writing on pointercancel" time="0.011699486">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; selects a right-clicked Tag and offers deletion at the pointer" time="0.009808088">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; does not expose direct editing or deletion when read-only" time="0.004621874">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="EpisodeWorkbenchCore immutable window data &gt; loads a bound non-camera stream only when visible and exposes a real-data summary" time="0.00911492">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; breaks the joint curve at missing observations instead of connecting across the gap" time="0.017943408">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; keeps a slow window request alive and updates the cursor and values when time changes" time="0.202764537">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; renders all 29 G1 joints including the right wrist" time="0.015412991">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; keeps the last successful chart visible when a window refresh is transiently rejected" time="0.011671059">
+        </testcase>
+    </testsuite>
+</testsuites>

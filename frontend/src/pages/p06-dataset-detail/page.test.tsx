@@ -245,7 +245,7 @@ it("shows received uploads immediately and refreshes Episodes without publicatio
     [{ path: "/datasets/:datasetId", element: <DatasetDetailPage /> }],
     {
       initialEntries: [
-        `/datasets/${datasetIds.dataset}?tab=episodes&collectionTaskId=assembly`,
+        `/datasets/${datasetIds.dataset}?collectionTaskId=assembly`,
       ],
     },
   );
@@ -254,6 +254,15 @@ it("shows received uploads immediately and refreshes Episodes without publicatio
       <RouterProvider router={router} />
     </ProviderHarness>,
   );
+  const expandCaptures = await screen.findByRole("button", {
+    name: "展开采集记录",
+  });
+  expect(screen.getByRole("tab", { name: "Episodes" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(expandCaptures).toHaveAttribute("aria-expanded", "false");
+  await userEvent.setup().click(expandCaptures);
   expect(await screen.findByText("rollout-received")).toBeVisible();
   expect(screen.getByText("已接收，等待处理")).toBeVisible();
   expect(episodeVersions).toEqual([]);

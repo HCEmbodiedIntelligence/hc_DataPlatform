@@ -72,15 +72,21 @@ def test_formal_fragment_matches_runtime_router_and_resolves_local_refs() -> Non
     assert operations(fragment) == operations(generated)
     assert len(operations(fragment)) == 11
 
+    aggregate = aggregate_fragments(BACKEND / "openapi")
+    # Task commands reuse the shared capture references rather than owning a
+    # second copy. All formal references must still resolve in the composed API.
     for ref in local_refs(fragment):
-        current: object = fragment
+        current: object = aggregate
         for part in ref.removeprefix("#/").split("/"):
             assert isinstance(current, dict), ref
             assert part in current, ref
             current = current[part]
 
-    aggregate = aggregate_fragments(BACKEND / "openapi")
     assert operations(fragment) <= operations(aggregate)
+    assert "SetTaskPlan" not in fragment["components"]["schemas"]
+    assert fragment["components"]["schemas"]["CreateCollectionTask"]["properties"]["capture_plan"][
+        "anyOf"
+    ][0] == {"$ref": "#/components/schemas/SetTaskPlan"}
 
 
 def test_formal_schema_contains_only_confirmed_task_fields() -> None:

@@ -97,7 +97,7 @@ describe("AssetCapacityBoard", () => {
     expect(screen.queryByText(/上游问题隔离/)).not.toBeInTheDocument();
   });
 
-  it("includes source duplicates in the problem-data total", () => {
+  it("keeps confirmed duplicates out of current problems and history summaries", () => {
     const withDuplicates = {
       ...dashboardTaskStatusAllTasksFixture,
       pipeline: {
@@ -120,13 +120,15 @@ describe("AssetCapacityBoard", () => {
       </MemoryRouter>,
     );
 
-    const validation = within(screen.getByText("自动质检").closest("li")!);
+    const validation = within(screen.getByText("自动校验").closest("li")!);
     expect(
       validation.getByRole("button", { name: "质检问题 2" }),
     ).toBeVisible();
     expect(
-      validation.getByRole("button", { name: "重复数据 1" }),
-    ).toBeVisible();
+      validation.queryByRole("button", { name: "重复数据 1" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/历史处理：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/已去重 1 个数据包/)).not.toBeInTheDocument();
   });
 
   it("keeps the current task contract inside the eight-stage signal rail", () => {
@@ -151,7 +153,7 @@ describe("AssetCapacityBoard", () => {
     expect(screen.getByText("采集")).toBeVisible();
     expect(screen.getByText("登记上传")).toBeVisible();
     expect(screen.getByText("Raw 接收")).toBeVisible();
-    expect(screen.getByText("自动质检")).toBeVisible();
+    expect(screen.getByText("质检通过")).toBeVisible();
     expect(screen.getByText("已入库")).toBeVisible();
     expect(screen.getByText("数据标注")).toBeVisible();
     expect(screen.getByText("人工审核")).toBeVisible();
@@ -160,7 +162,7 @@ describe("AssetCapacityBoard", () => {
     expect(screen.getByText("3 个数据包")).toBeVisible();
     expect(screen.getAllByText("1 个数据包")).toHaveLength(3);
     expect(screen.getByText("当前 · 未质检 1")).toBeVisible();
-    expect(screen.getByText("等待 2 · 运行 2")).toBeVisible();
+    expect(screen.getByText("等待 1 · 运行 2")).toBeVisible();
     expect(screen.getByRole("button", { name: "处理失败 2" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "质检问题 3" })).toHaveLength(
       1,
@@ -172,6 +174,37 @@ describe("AssetCapacityBoard", () => {
     expect(screen.queryByText("任务目标")).not.toBeInTheDocument();
     expect(screen.queryByText("CAPTURED 12")).not.toBeInTheDocument();
     expect(screen.queryByText("建议操作")).not.toBeInTheDocument();
+  });
+
+  it("separates approved packages from upstream packages that have not reached review", () => {
+    const taskStatus = adaptDashboardTaskStatus(dashboardTaskStatusFixture);
+    render(
+      <MemoryRouter>
+        <AssetCapacityBoard
+          taskStatus={{
+            ...taskStatus,
+            pipeline: {
+              ...taskStatus.pipeline,
+              stages: taskStatus.pipeline.stages.map((stage) =>
+                stage.stage === "REVIEW"
+                  ? { ...stage, succeeded: 1, waiting: 0, notStarted: 2 }
+                  : stage.stage === "PUBLICATION"
+                    ? { ...stage, succeeded: 0, waiting: 1, notStarted: 2 }
+                    : stage,
+              ),
+            },
+          }}
+          onTaskChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const review = within(screen.getByText("人工审核").closest("li")!);
+    expect(review.getByText("审核通过")).toBeVisible();
+    expect(review.getByText("1 个数据包")).toBeVisible();
+    expect(review.queryByText(/等待/)).not.toBeInTheDocument();
+    const publication = within(screen.getByText("发布", { exact: true }).closest("li")!);
+    expect(publication.getByText("等待 1")).toBeVisible();
+    expect(screen.getByText("按数据包统计；等待只包含已进入该阶段的数据。")).toBeVisible();
   });
 
   it("keeps the rail visible for an empty task range", () => {

@@ -1,0 +1,32 @@
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.heading > span {
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+}
+
+.segments summary {
+  width: fit-content;
+  color: var(--hc-color-primary, #4c57c6);
+  cursor: pointer;
+}
+
+.segments p {
+  margin: 10px 0;
+  color: var(--hc-color-text-muted, #676b80);
+  font-size: 12px;
+}
+
+.tags {
+  display: flex;
+  max-height: 220px;
+  overflow: auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}

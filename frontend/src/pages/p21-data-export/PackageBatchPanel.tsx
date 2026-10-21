@@ -13,18 +13,11 @@ import {
   Skeleton,
   Space,
 } from "antd";
-import {
-  Archive,
-  Check,
-  FileArchive,
-  Image,
-  Layers3,
-  PackageCheck,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { PackageCheck, RefreshCw, X } from "lucide-react";
 import styles from "./PackageBatchPanel.module.css";
 import type { Scope } from "../../shared/scope/model";
+import { formatBytes } from "../../features/ingest/upload/upload-contract";
+import { BrowserDownloadHelp } from "../../features/exports/BrowserDownloadHelp";
 import { CollectionAnnotationChooser } from "./CollectionAnnotationChooser";
 import {
   commandPackageJob,
@@ -33,6 +26,7 @@ import {
   listPackageJobs,
   loadExportFormats,
   loadPackageCandidates,
+  loadPackageJob,
   type AnnotationSelection,
   type BatchMode,
   type PackageData,
@@ -45,57 +39,63 @@ const phases = {
   projecting: "生成集合",
   archiving: "归档文件",
   uploading: "上传归档",
-  completed: "交付就绪",
-  failed: "交付失败",
+  completed: "已完成",
+  failed: "导出失败",
   cancelled: "已取消",
 };
+
+function formatName(job: PackageJob) {
+  const { plan } = job;
+  if (plan.archive_format === "original_collection_zip/1") return "原始文件";
+  if (plan.archive_format === "mcap_collection_zip/1") return "MCAP 集合";
+  if (plan.archive_format === "lerobot_collection_zip/1")
+    return plan.modalities === "rgb"
+      ? "LeRobot RGB（不含深度）"
+      : "LeRobot RGB-D（含深度）";
+  return "完整标准包";
+}
+
+function depthSummary(job: PackageJob) {
+  if (job.plan.format !== "hc-collection-delivery-plan/1")
+    return "含已采集深度";
+  const excluded = job.plan.modalities === "rgb";
+  const count = job.plan.members.reduce(
+    (total, member) =>
+      total +
+      (excluded
+        ? member.excluded_depth_features.length
+        : Object.keys(member.selected_depth_profiles).length),
+    0,
+  );
+  if (!count) return "无深度数据";
+  return excluded ? `已排除 ${count} 项深度数据` : `含 ${count} 项深度数据`;
+}
 
 const builtInFormats = [
   {
     value: "original",
     title: "原始文件",
     label: "原始文件及标注",
-    description: "保留上传文件；带标注导出附带当前标注、切片范围及源帧映射。",
-    detail: "原始字节不变 · 标注附带交付",
-    badge: "保留来源",
-    icon: Archive,
   },
   {
     value: "mcap",
     title: "MCAP",
     label: "MCAP 数据包集合",
-    description:
-      "仅支持保留原始 MCAP 的数据，按切片保留消息结构；LeRobot 不支持转 MCAP。",
-    detail: "保留原 topic、schema 和消息内容",
-    badge: "需要原始 MCAP",
-    icon: FileArchive,
   },
   {
     value: "independent",
     title: "完整标准包",
     label: "独立标准包批量 ZIP（含已采集深度）",
-    description: "每条 Episode 独立保存，适合完整归档与交付。",
-    detail: "独立 Episode · 批量 ZIP",
-    badge: "保留深度",
-    icon: Archive,
   },
   {
     value: "rgbd",
-    title: "LeRobot RGB-D",
+    title: "LeRobot（含深度）",
     label: "LeRobot RGB-D 集合",
-    description: "合并为一个 LeRobot 集合，保留 RGB 与已采集深度。",
-    detail: "统一索引 · 跨 Episode 读取",
-    badge: "保留深度",
-    icon: Layers3,
   },
   {
     value: "rgb",
-    title: "LeRobot RGB",
+    title: "LeRobot（不含深度）",
     label: "LeRobot RGB 子集（排除深度）",
-    description: "导出 RGB 与数值数据，适用于不需要深度的任务。",
-    detail: "RGB 子集 · 不含深度数据",
-    badge: "不含深度",
-    icon: Image,
   },
 ] as const;
 export function PackageBatchPanel({
@@ -130,12 +130,6 @@ export function PackageBatchPanel({
         value: f.id,
         title: f.title,
         label: f.title,
-        description: "使用平台已注册的导出格式。",
-        detail: f.requires_originals
-          ? "保留原始来源"
-          : "包含所选数据与当前标注",
-        badge: "扩展格式",
-        icon: FileArchive,
       })),
   ];
   const [datasetId, setDatasetId] = useState(datasets[0]?.id);
@@ -147,6 +141,14 @@ export function PackageBatchPanel({
     annotated ? "rgbd" : "independent",
   );
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [autoJob, setAutoJob] = useState<PackageJob | null>(null);
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
+  const [downloadLink, setDownloadLink] = useState<{
+    url: string;
+    expiresAt: number;
+  } | null>(null);
+  const automaticDownloads = useRef(new Set<string>());
+  const jobsRef = useRef<HTMLDivElement>(null);
   const lifetime = useRef<AbortController | null>(null);
   const pending = useRef<{ signature: string; key: string } | null>(null);
   useEffect(() => {
@@ -154,6 +156,14 @@ export function PackageBatchPanel({
     lifetime.current = c;
     return () => c.abort();
   }, []);
+  useEffect(() => {
+    if (!downloadLink) return;
+    const timer = window.setTimeout(
+      () => setDownloadLink(null),
+      Math.max(0, downloadLink.expiresAt - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [downloadLink]);
   const candidates = useInfiniteQuery({
     queryKey: ["package-batch-candidates", scope, datasetId],
     initialPageParam: undefined as
@@ -182,6 +192,29 @@ export function PackageBatchPanel({
         ? 1500
         : false,
   });
+  const activeJob = useQuery({
+    queryKey: [
+      "package-active-export",
+      scope,
+      autoJob?.job_id,
+      autoJob?.generation,
+    ],
+    queryFn: ({ signal }) => loadPackageJob(scope, autoJob!, signal),
+    enabled: canDownload && Boolean(autoJob),
+    initialData: autoJob ?? undefined,
+    refetchInterval: (q) =>
+      ["PENDING", "RUNNING"].includes(q.state.data?.status ?? "")
+        ? 1500
+        : false,
+  });
+  const history = jobs.data?.pages.flat() ?? [];
+  const visibleJobs =
+    autoJob && activeJob.data
+      ? [
+          activeJob.data,
+          ...history.filter((job) => job.job_id !== autoJob.job_id),
+        ]
+      : history;
   const items = candidates.data?.pages.flatMap((p) => p.items) ?? [];
   const selections = Object.values(selected).toSorted((a, b) =>
     a.data_version_id.localeCompare(b.data_version_id),
@@ -192,6 +225,7 @@ export function PackageBatchPanel({
     mutationFn: async (action: {
       kind: "create" | "download" | "retry" | "cancel";
       job?: PackageJob;
+      automatic?: boolean;
     }) => {
       const signal = lifetime.current!.signal;
       if (action.kind === "create") {
@@ -214,6 +248,10 @@ export function PackageBatchPanel({
         return commandPackageJob(scope, action.job!, action.kind, signal);
       const grant = await downloadPackageJob(scope, action.job!, signal);
       signal.throwIfAborted();
+      setDownloadLink({
+        url: grant.url,
+        expiresAt: Date.now() + grant.expires_seconds * 1000,
+      });
       const a = document.createElement("a");
       a.href = grant.url;
       a.download = "";
@@ -222,10 +260,52 @@ export function PackageBatchPanel({
       a.click();
       a.remove();
     },
-    onSuccess: async () => {
+    onMutate: (action) => {
+      if (action.kind !== "cancel") {
+        setDownloadNotice(null);
+        setDownloadLink(null);
+      }
+    },
+    onSuccess: async (result, action) => {
+      if ((action.kind === "create" || action.kind === "retry") && result) {
+        pending.current = null;
+        automaticDownloads.current.delete(
+          `${result.job_id}:${result.generation}`,
+        );
+        setAutoJob(result);
+        jobsRef.current?.scrollIntoView?.({ block: "start" });
+      }
+      if (action.kind === "download") {
+        if (action.automatic || autoJob?.job_id === action.job?.job_id)
+          setAutoJob(null);
+        setDownloadNotice(
+          `${formatName(action.job!)}已生成，已向浏览器请求下载。`,
+        );
+      }
+      if (action.kind === "cancel" && autoJob?.job_id === action.job?.job_id)
+        setAutoJob(null);
       await jobs.refetch();
     },
+    onError: (_, action) => {
+      if (action.automatic) setAutoJob(null);
+    },
   });
+  const runAction = mutation.mutate;
+  useEffect(() => {
+    const job = activeJob.data;
+    if (!canDownload || !autoJob || !job || job.job_id !== autoJob.job_id)
+      return;
+    if (job.status === "FAILED" || job.status === "CANCELLED") {
+      setAutoJob(null);
+      void jobs.refetch();
+      return;
+    }
+    if (job.status !== "READY") return;
+    const key = `${job.job_id}:${job.generation}`;
+    if (automaticDownloads.current.has(key)) return;
+    automaticDownloads.current.add(key);
+    runAction({ kind: "download", job, automatic: true });
+  }, [canDownload, autoJob, activeJob.data, runAction, jobs.refetch]);
   function select(data: PackageData, enabled: boolean) {
     setSelectionError(null);
     if (
@@ -273,29 +353,24 @@ export function PackageBatchPanel({
           aria-labelledby="package-source-title"
         >
           <div className={styles.sectionHeading}>
-            <span className={styles.step}>2</span>
-            <div>
-              <h3 id="package-source-title">选择 Episode</h3>
-              <p>按数据版本选择导出内容，可从多个数据集添加，最多 100 条。</p>
-            </div>
-            <span className={styles.count} aria-live="polite">
-              已选 {selections.length} 条
-            </span>
-          </div>
-          {datasets.length > 0 && (
-            <div className={styles.datasetField}>
-              <label htmlFor="package-dataset">当前数据集</label>
+            <h3 id="package-source-title">数据</h3>
+            {datasets.length > 1 && (
               <Select
-                id="package-dataset"
+                className={styles.datasetSelect}
                 aria-label="标准包数据集"
+                size="small"
                 value={datasetId}
                 showSearch
                 optionFilterProp="label"
                 options={datasets.map((d) => ({ value: d.id, label: d.name }))}
                 onChange={setDatasetId}
               />
-            </div>
-          )}
+            )}
+            <span className={styles.count} aria-live="polite">
+              共 {candidates.data?.pages[0]?.total ?? 0} 条 · 已选{" "}
+              {selections.length} 条
+            </span>
+          </div>
           {candidates.error && (
             <Alert
               showIcon
@@ -310,13 +385,7 @@ export function PackageBatchPanel({
             />
           )}
           {!datasets.length && (
-            <div className={styles.empty}>
-              <span className={styles.emptyIcon}>
-                <FileArchive size={23} aria-hidden="true" />
-              </span>
-              <strong>请先选择数据集或采集任务</strong>
-              <p>选择上方的数据范围后，即可在这里勾选要导出的 Episode。</p>
-            </div>
+            <div className={styles.empty}>请选择任务或数据集</div>
           )}
           {candidates.isFetching && !candidates.data && datasetId && (
             <div
@@ -329,15 +398,6 @@ export function PackageBatchPanel({
           )}
           {candidates.data && !candidates.error && (
             <div className={styles.candidates}>
-              <div className={styles.listHeading}>
-                <span>
-                  可选 Episode{" "}
-                  <strong>{candidates.data.pages[0]?.total ?? 0}</strong>
-                </span>
-                <span>
-                  集合版本 {candidates.data.pages[0]?.version ?? "尚未建立"}
-                </span>
-              </div>
               {(candidates.data.pages[0]?.legacy_episode_count ?? 0) > 0 && (
                 <Alert
                   type="info"
@@ -384,7 +444,7 @@ export function PackageBatchPanel({
                   loading={candidates.isFetchingNextPage}
                   onClick={() => void candidates.fetchNextPage()}
                 >
-                  加载更多 Episode
+                  加载更多数据
                 </Button>
               )}
             </div>
@@ -393,124 +453,96 @@ export function PackageBatchPanel({
             <Alert showIcon type="warning" title={selectionError} />
           )}
           {selections.length > 0 && (
-            <div className={styles.selectedList} aria-label="已选 Episode">
-              <span>已选 {selections.length} 条 Episode</span>
-              {selections.map((data) => (
-                <span
-                  className={styles.selectedItem}
-                  key={`selected-${data.data_version_id}`}
-                >
-                  <span title={data.identity.episode_id}>
-                    <ResourceLabel
-                      kind="episode"
-                      id={data.identity.episode_id}
-                      datasetId={data.identity.dataset_id}
-                    />{" "}
-                    · 数据 v{data.version}
+            <details className={styles.selectionDetails}>
+              <summary>查看已选数据（{selections.length}）</summary>
+              <div className={styles.selectedList} aria-label="已选 Episode">
+                {selections.map((data) => (
+                  <span
+                    className={styles.selectedItem}
+                    key={`selected-${data.data_version_id}`}
+                  >
+                    <span title={data.identity.episode_id}>
+                      <ResourceLabel
+                        kind="episode"
+                        id={data.identity.episode_id}
+                        datasetId={data.identity.dataset_id}
+                      />{" "}
+                      · 数据 v{data.version}
+                    </span>
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label={`移除 ${data.identity.episode_id}`}
+                      icon={<X size={13} aria-hidden="true" />}
+                      onClick={() => select(data, false)}
+                    />
                   </span>
-                  <Button
-                    type="text"
-                    size="small"
-                    aria-label={`移除 ${data.identity.episode_id}`}
-                    icon={<X size={13} aria-hidden="true" />}
-                    onClick={() => select(data, false)}
-                  />
-                </span>
-              ))}
-            </div>
+                ))}
+              </div>
+            </details>
           )}
         </section>
         <section
           className={styles.section}
           aria-labelledby="package-format-title"
         >
-          <div className={styles.sectionHeading}>
-            <span className={styles.step}>3</span>
-            <div>
-              <h3 id="package-format-title">选择交付格式</h3>
-              <p>根据归档或训练用途选择，导出范围以已选 Episode 为准。</p>
-            </div>
-          </div>
-          <Radio.Group
-            className={styles.formatGrid}
-            aria-label="标准包交付格式"
-            name="package-delivery-format"
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-          >
-            {deliveryFormats.map((format) => {
-              const Icon = format.icon;
-              const disabled = annotated && format.value === "independent";
-              return (
-                <Radio
-                  key={format.value}
-                  value={format.value}
-                  aria-label={format.label}
-                  disabled={disabled}
-                  className={styles.formatCard}
-                >
-                  <span className={styles.formatTop}>
-                    <span className={styles.formatIcon}>
-                      <Icon size={21} aria-hidden="true" />
-                    </span>
-                    <span
-                      className={styles.formatBadge}
-                      data-depth={format.value !== "rgb"}
-                    >
-                      {format.badge}
-                    </span>
-                    <span
-                      className={styles.selectionIndicator}
-                      aria-hidden="true"
-                    >
-                      {mode === format.value && (
-                        <Check size={12} strokeWidth={3} />
-                      )}
-                    </span>
-                  </span>
-                  <strong className={styles.formatTitle}>{format.title}</strong>
-                  <span className={styles.formatDescription}>
-                    {format.description}
-                  </span>
-                  <span className={styles.formatDetail}>
-                    {disabled ? "带标注数据请选择 LeRobot 集合" : format.detail}
-                  </span>
-                </Radio>
-              );
-            })}
-          </Radio.Group>
-          {mode === "rgb" ? (
-            <Alert
-              className={styles.formatNotice}
-              showIcon
-              type="warning"
-              title="RGB 子集将排除深度视频、深度像素掩码及相关数据特征"
-              description="数值、RGB 和来源说明保留。需要深度时选择完整标准包或 RGB-D 集合。"
-            />
-          ) : (
-            <Alert
-              className={styles.formatNotice}
-              showIcon
-              type="info"
-              title="保留已采集深度视频、profile、有效掩码和源帧映射"
-              description={
-                mode === "original"
-                  ? "原文件不改写；切片范围和当前标注保存为附带文件。"
-                  : mode === "mcap"
-                    ? "有原始 MCAP 时保留其 topic、schema 和消息字段；其他来源采用平台 MCAP 格式，内含视频文件与帧引用。"
-                    : mode === "independent"
-                      ? "ZIP 内每条是可独立读取的标准包。"
-                      : "输出为一个可跨 Episode 读取的 LeRobot 集合；不兼容的频率、单位或相机契约会明确拒绝合并。"
+          <div className={styles.formatRow}>
+            <h3 id="package-format-title">格式</h3>
+            <Radio.Group
+              className={styles.formatOptions}
+              aria-label="标准包交付格式"
+              name="package-delivery-format"
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+            >
+              {deliveryFormats.map((format) => {
+                const disabled = annotated && format.value === "independent";
+                return (
+                  <Radio.Button
+                    key={format.value}
+                    value={format.value}
+                    aria-label={format.label}
+                    disabled={disabled}
+                    title={disabled ? "带标注数据请选择 LeRobot" : undefined}
+                  >
+                    {format.title}
+                  </Radio.Button>
+                );
+              })}
+            </Radio.Group>
+            <Button
+              className={styles.createButton}
+              type="primary"
+              icon={<PackageCheck size={16} aria-hidden="true" />}
+              title="导出完成后自动下载"
+              loading={mutation.isPending || Boolean(autoJob)}
+              disabled={
+                !canCreate ||
+                Boolean(autoJob) ||
+                !selections.length ||
+                missingAnnotations ||
+                (annotated && !canReadAnnotations)
               }
-            />
-          )}
+              onClick={() => mutation.mutate({ kind: "create" })}
+            >
+              导出
+            </Button>
+          </div>
           {annotated && !canReadAnnotations && (
             <Alert type="warning" title="带标注集合需要标注读取权限" />
+          )}
+          {annotated && canReadAnnotations && selections.length > 0 && (
+            <p className={styles.annotationHint}>
+              附带当前已保存标注（含未审核内容）
+            </p>
           )}
           {annotated &&
             canReadAnnotations &&
             selections.map((data) => (
-              <Card size="small" key={`annotation-${data.data_version_id}`}>
+              <div
+                className={styles.annotationRow}
+                key={`annotation-${data.data_version_id}`}
+              >
                 <CollectionAnnotationChooser
                   scope={scope}
                   data={data}
@@ -521,61 +553,73 @@ export function PackageBatchPanel({
                     }))
                   }
                 />
-                {annotations[data.data_version_id] && (
-                  <span>已确认当前标注</span>
-                )}
-              </Card>
+              </div>
             ))}
           {missingAnnotations && (
             <span className={styles.annotationHint}>
-              请确认每条 Episode 的当前标注和分段。
+              标注尚未就绪，请查看上方读取状态或分段提示。
             </span>
           )}
         </section>
-        <div className={styles.footer}>
-          <div className={styles.summary} aria-live="polite">
-            <PackageCheck size={20} aria-hidden="true" />
-            <div>
-              <strong>
-                {deliveryFormats.find((format) => format.value === mode)?.title}
-                <span> · {selections.length} 条 Episode</span>
-              </strong>
-              <p>
-                {selections.length
-                  ? "任务在后台打包，完成后可在下方下载。"
-                  : "选择 Episode 后即可创建交付任务。"}
-              </p>
-            </div>
-          </div>
-          <Button
-            className={styles.createButton}
-            type="primary"
-            icon={<PackageCheck size={17} aria-hidden="true" />}
-            loading={mutation.isPending}
-            disabled={
-              !canCreate ||
-              !selections.length ||
-              missingAnnotations ||
-              (annotated && !canReadAnnotations)
-            }
-            onClick={() => mutation.mutate({ kind: "create" })}
-          >
-            创建标准包交付任务
-          </Button>
-        </div>
         {mutation.error && (
           <Alert
             showIcon
             className={styles.operationError}
             type="error"
-            title="交付操作失败"
+            title={
+              mutation.variables?.kind === "download"
+                ? "文件未能开始下载，请在导出记录中重新下载"
+                : "导出操作失败"
+            }
             description={mutation.error.message}
+          />
+        )}
+        {downloadNotice && (
+          <Alert
+            showIcon
+            className={styles.operationError}
+            type="info"
+            title={downloadNotice}
+            description={
+              downloadLink ? (
+                <Space orientation="vertical" size={4}>
+                  <Space wrap>
+                    <span>若下载列表中没有记录，请点击下载：</span>
+                    <Button
+                      size="small"
+                      type="primary"
+                      href={downloadLink.url}
+                      download=""
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      点击下载 ZIP
+                    </Button>
+                  </Space>
+                  {downloadLink.url.startsWith("http:") && (
+                    <BrowserDownloadHelp />
+                  )}
+                </Space>
+              ) : (
+                "下载链接已过期，请在导出记录中重新下载。"
+              )
+            }
+          />
+        )}
+        {autoJob && activeJob.error && (
+          <Alert
+            showIcon
+            className={styles.operationError}
+            type="warning"
+            title="暂时无法读取导出进度，正在重试"
+            description={activeJob.error.message}
           />
         )}
       </section>
       <Card
+        ref={jobsRef}
         className={styles.jobsCard}
-        title="标准包交付任务"
+        title="导出记录"
         size="small"
         extra={
           <Button
@@ -584,7 +628,7 @@ export function PackageBatchPanel({
             onClick={() => void jobs.refetch()}
             loading={jobs.isFetching}
           >
-            刷新交付状态
+            刷新状态
           </Button>
         }
       >
@@ -592,110 +636,99 @@ export function PackageBatchPanel({
           {jobs.error && (
             <Alert
               type="error"
-              title="交付任务读取失败"
+              title="导出任务读取失败"
               description={jobs.error.message}
             />
           )}
           {jobs.isPending && (
             <Skeleton active title={false} paragraph={{ rows: 2 }} />
           )}
-          {!jobs.error && jobs.data && !jobs.data.pages.flat().length && (
-            <div className={styles.jobsEmpty}>
-              <FileArchive size={25} aria-hidden="true" />
-              <div>
-                <strong>暂无交付任务</strong>
-                <p>创建任务后，在这里查看打包进度并下载文件。</p>
-              </div>
-            </div>
+          {!jobs.error && jobs.data && !visibleJobs.length && (
+            <div className={styles.jobsEmpty}>暂无导出记录</div>
           )}
           {!jobs.error &&
-            jobs.data?.pages.flat().map((job) => (
-              <Card
-                className={styles.jobCard}
-                key={job.job_id}
-                size="small"
-                title={`${job.plan.archive_format === "original_collection_zip/1" ? "原始文件" : job.plan.archive_format === "mcap_collection_zip/1" ? "MCAP 集合" : job.plan.archive_format === "lerobot_collection_zip/1" ? `LeRobot ${job.plan.modalities.toUpperCase()} 集合` : "独立标准包 ZIP"} · ${job.plan.members.length} 条 · ${phases[job.phase]}`}
-              >
-                {job.total_files === null || job.total_bytes === null ? (
-                  <p>正在生成集合，归档文件数和大小尚未确定。</p>
-                ) : (
-                  <>
-                    <p>
-                      归档 {job.processed_files} / {job.total_files} 个文件 ·{" "}
-                      {job.processed_bytes.toLocaleString()} /{" "}
-                      {job.total_bytes.toLocaleString()} 字节
-                    </p>
-                    <Progress
-                      percent={Math.floor(
-                        (job.processed_bytes / job.total_bytes) * 100,
-                      )}
-                      status={
-                        job.status === "FAILED"
-                          ? "exception"
-                          : job.status === "READY"
-                            ? "success"
-                            : "normal"
-                      }
-                    />
-                  </>
-                )}
-                {job.phase === "uploading" && (
-                  <p>
-                    上传 {job.uploaded_bytes.toLocaleString()} /{" "}
-                    {job.size_bytes?.toLocaleString()} 字节
-                  </p>
-                )}
-                {job.error_code && (
-                  <Alert
-                    type="error"
-                    title="交付未完成"
-                    description="重试沿用固定的数据版本和标注选择；持续失败时请检查来源文件和服务。"
-                  />
-                )}
-                <Space wrap>
-                  <Button
-                    disabled={job.status !== "READY" || mutation.isPending}
-                    onClick={() => mutation.mutate({ kind: "download", job })}
-                  >
-                    下载交付 ZIP
-                  </Button>
+            visibleJobs.map((job) => (
+              <div className={styles.jobRow} key={job.job_id}>
+                <div className={styles.jobInfo}>
+                  <strong>
+                    {formatName(job)} · {job.plan.members.length} 条数据
+                  </strong>
+                  <span className={styles.jobMeta}>
+                    <span>{depthSummary(job)}</span>
+                    {job.size_bytes !== null && (
+                      <span> · {formatBytes(job.size_bytes)}</span>
+                    )}
+                  </span>
+                </div>
+                <div
+                  className={styles.jobStatus}
+                  role="status"
+                  data-status={job.status}
+                >
+                  <span>
+                    {phases[job.phase]}
+                    {autoJob?.job_id === job.job_id && " · 完成后自动下载"}
+                  </span>
+                  {["PENDING", "RUNNING"].includes(job.status) &&
+                    Boolean(job.total_bytes) && (
+                      <Progress
+                        size="small"
+                        percent={Math.min(
+                          100,
+                          Math.floor(
+                            (job.processed_bytes / job.total_bytes!) * 100,
+                          ),
+                        )}
+                      />
+                    )}
+                </div>
+                <Space className={styles.jobActions} size={0}>
+                  {job.status === "READY" && autoJob?.job_id !== job.job_id && (
+                    <Button
+                      type="link"
+                      size="small"
+                      disabled={mutation.isPending}
+                      onClick={() => mutation.mutate({ kind: "download", job })}
+                    >
+                      重新下载
+                    </Button>
+                  )}
                   {["PENDING", "RUNNING"].includes(job.status) && (
                     <Button
+                      type="link"
+                      size="small"
                       disabled={!canCreate || mutation.isPending}
                       onClick={() => mutation.mutate({ kind: "cancel", job })}
                     >
-                      取消交付
+                      取消导出
                     </Button>
                   )}
                   {["FAILED", "CANCELLED"].includes(job.status) && (
                     <Button
+                      type="link"
+                      size="small"
                       disabled={!canCreate || mutation.isPending}
                       onClick={() => mutation.mutate({ kind: "retry", job })}
                     >
-                      重试交付
+                      重试导出
                     </Button>
                   )}
                 </Space>
-                <details>
-                  <summary>固定选择与文件哈希</summary>
-                  <pre
-                    style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}
-                  >
-                    {JSON.stringify(
-                      { plan: job.plan, artifact_sha256: job.artifact_sha256 },
-                      null,
-                      2,
-                    )}
-                  </pre>
-                </details>
-              </Card>
+                {job.error_code && (
+                  <Alert
+                    className={styles.jobError}
+                    type="error"
+                    title={`导出失败：${job.error_code}`}
+                  />
+                )}
+              </div>
             ))}
           {jobs.hasNextPage && (
             <Button
               loading={jobs.isFetchingNextPage}
               onClick={() => void jobs.fetchNextPage()}
             >
-              加载更多交付任务
+              加载更多导出任务
             </Button>
           )}
         </div>

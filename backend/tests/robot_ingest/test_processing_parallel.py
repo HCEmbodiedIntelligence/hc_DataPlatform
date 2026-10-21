@@ -12,7 +12,10 @@ from hc_data_platform.robot_ingest.processing_workflow import RobotIngestProcess
 
 
 @pytest.mark.asyncio
-async def test_robot_episode_parallelism_is_bounded_and_preserves_failures_and_continuations():
+@pytest.mark.parametrize("detail", [None, "缺少 observation.images.head（头部相机视频）"])
+async def test_robot_episode_parallelism_is_bounded_and_preserves_failures_and_continuations(
+    detail,
+):
     done, failures = set(), []
     active = peak = 0
     finished = False
@@ -30,7 +33,10 @@ async def test_robot_episode_parallelism_is_bounded_and_preserves_failures_and_c
             await asyncio.sleep(0.05)
             if request["index"] == 1:
                 raise ApplicationError(
-                    "bad episode", type="TEST_FAILED_EPISODE", non_retryable=True
+                    "bad episode",
+                    {"retryable": False, **({"detail": detail} if detail else {})},
+                    type="TEST_FAILED_EPISODE",
+                    non_retryable=True,
                 )
             done.add(request["index"])
         finally:
@@ -38,6 +44,9 @@ async def test_robot_episode_parallelism_is_bounded_and_preserves_failures_and_c
 
     @activity.defn(name="robot.processing.fail")
     async def fail(request: dict) -> None:
+        assert request.get("detail") == detail
+        if detail is None:
+            assert "detail" not in request  # Existing workflow command payload remains unchanged.
         failures.append(request["index"])
         done.add(request["index"])
 
@@ -57,11 +66,14 @@ async def test_robot_episode_parallelism_is_bounded_and_preserves_failures_and_c
         workflow_id="parallel-robot",
         max_concurrent_episodes=3,
     )
-    async with await WorkflowEnvironment.start_time_skipping() as environment, Worker(
-        environment.client,
-        task_queue="robot-parallel-tests",
-        workflows=[RobotIngestProcessingWorkflow],
-        activities=[discover, episode, fail, finish],
+    async with (
+        await WorkflowEnvironment.start_time_skipping() as environment,
+        Worker(
+            environment.client,
+            task_queue="robot-parallel-tests",
+            workflows=[RobotIngestProcessingWorkflow],
+            activities=[discover, episode, fail, finish],
+        ),
     ):
         handle = await environment.client.start_workflow(
             RobotIngestProcessingWorkflow.run,

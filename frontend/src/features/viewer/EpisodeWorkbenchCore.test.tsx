@@ -395,6 +395,43 @@ describe("EpisodeWorkbenchCore immutable window data", () => {
 });
 
 describe("ViewerJointAngleCurvePanel recovery", () => {
+  it("breaks the joint curve at missing observations instead of connecting across the gap", async () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "5000000000" });
+    render(
+      <ViewerJointAngleCurvePanel
+        clock={clock}
+        stream={{
+          id: "gapped-joints",
+          canonicalPath: "/observation/state",
+          displayName: "关节角",
+          modality: "joint_state",
+          schema: { id: "joint-state", version: "1" },
+          startNs: "0",
+          endNs: "5000000000",
+          availability: "ready",
+          windowSource: {
+            loadWindow: async () => ({
+              generation: 0,
+              timestampsNs: [
+                "0",
+                "1000000000",
+                "2000000000",
+                "3000000000",
+                "4000000000",
+              ],
+              values: [[0.1], [0.2], [Number.NaN], [0.3], [0.4]],
+            }),
+          },
+        }}
+      />,
+    );
+    const chart = await screen.findByRole("img", { name: /关节角时间序列/ });
+    const path = chart.querySelector("path")?.getAttribute("d");
+    expect(path?.match(/M/g)).toHaveLength(2);
+    expect(path).not.toContain("NaN");
+    clock.dispose();
+  });
+
   it("keeps a slow window request alive and updates the cursor and values when time changes", async () => {
     const clock = createPlaybackClock({ startNs: "0", endNs: "20000000000" });
     let resolveWindow!: (payload: unknown) => void;

@@ -126,7 +126,7 @@ def test_discarded_episodes_leave_failure_counts_and_keep_siblings():
 @pytest.mark.parametrize(
     ("status", "review", "main", "annotation_bucket", "review_bucket"),
     [
-        ("DRAFT", None, "ANNOTATING", "running", "waiting"),
+        ("DRAFT", None, "ANNOTATING", "running", "not_started"),
         ("SUBMITTED", None, "REVIEW_PENDING", "succeeded", "waiting"),
         ("APPROVED", "APPROVE", "PUBLISH_PENDING", "succeeded", "succeeded"),
         ("NEEDS_REVISION", "NEEDS_REVISION", "ANNOTATING", "running", "blocked"),

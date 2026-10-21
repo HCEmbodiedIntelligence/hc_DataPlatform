@@ -1,0 +1,343 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="25" failures="0" errors="0" time="10.067421272">
+    <testsuite name="src/features/robots/ProcessingConfigEditor.test.tsx" timestamp="2026-10-20T03:03:59.807Z" hostname="c44a28afeeab" tests="7" failures="0" errors="0" skipped="0" time="4.876432299">
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="loads a matching template, preserves edits across steps and pages, and saves the complete explicit layout" time="1.755107444">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="opens the published default filled in, retains the sample scope, and prevents republishing unchanged versions" time="0.935777705">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="does not assign topics or units without a template and keeps pure-joint mode explicit" time="0.374937189">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="allows read-only navigation while disabling every configuration mutation" time="0.472599923">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="creates and persists a named copy, preserves the default and restores the new scheme after reload" time="0.652328001">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="keeps a failed creation visible for correction without losing the current default" time="0.392497921">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/features/robots/ProcessingConfigEditor.test.tsx" name="copies the published default instead of unvalidated changes in its draft" time="0.292504232">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" timestamp="2026-10-20T03:03:59.812Z" hostname="c44a28afeeab" tests="11" failures="0" errors="0" skipped="0" time="2.629354735">
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; requires confirmation before deleting the selected identity and explains retained uploads" time="0.419863492">
+            <system-err>
+Warning: [antd: Modal] `maskClosable` is deprecated. Please use `mask.closable` instead.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; keeps the confirmation open on failure so deletion can be retried" time="0.149741051">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; hides deletion from accounts without management permission" time="0.025930088">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; blocks repeated confirmation while deletion is pending" time="0.10063651">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; issues a credential and clears displayed plaintext on close" time="0.363863332">
+            <system-err>
+`NaN` is an invalid value for the `height` css style property.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; rotates with old-credential revocation and can revoke an active credential" time="0.477323785">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; can reveal and copy the same existing credential after closing without issuing another" time="0.533170281">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; confirms deletion of REVOKED credentials and preserves historical uploads" time="0.173772987">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; confirms deletion of EXPIRED credentials and preserves historical uploads" time="0.178578481">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; keeps credential deletion errors visible for retry" time="0.169626877">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; only grants credential viewing and deletion to managers" time="0.035422008">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" timestamp="2026-10-20T03:03:59.813Z" hostname="c44a28afeeab" tests="7" failures="0" errors="0" skipped="0" time="2.561634238">
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="shows the robot-reachable platform address in the detail drawer" time="0.437206491">
+            <system-err>
+Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="restores independent filters and card shortcuts clear business conditions while retaining sort and page size" time="0.781885163">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="query errors show unavailable cards even when old successful data is cached" time="0.209037457">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="opens overview without the configuration editor and navigates to a separate configuration tab" time="0.261940417">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="deletes the robot ID from onboarding even after its upload identity was removed" time="0.353471976">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="shows the actual rejection and never reports a historical robot as deleted" time="0.285506452">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="does not expose instance deletion to accounts with only upload management permission" time="0.231797378">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+portal@2.2.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/portal/lib/useScrollLocker.js:22:62
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+    </testsuite>
+</testsuites>

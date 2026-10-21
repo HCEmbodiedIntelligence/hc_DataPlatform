@@ -112,7 +112,7 @@ def _manifest() -> dict[str, object]:
     ).model_dump(mode="json")
 
 
-def test_admin_credential_is_returned_once_and_never_listed_as_plaintext() -> None:
+def test_admin_credential_is_returned_on_issue_and_never_listed_as_plaintext() -> None:
     service = _service()
     client = _app(service)
     root = f"/api/v1/projects/{PROJECT}/robot-ingest/identities"

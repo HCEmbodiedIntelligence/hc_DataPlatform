@@ -1,4 +1,4 @@
-"""Explicit browser configuration of labels before a native LeRobot import."""
+"""Optional label configuration bound to an independently frozen data schema."""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from hc_data_platform.core.config import get_settings
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.auth import AuthContext
+
+from .robot_eligibility import import_robots
 
 
 class NativeConfiguration(BaseModel):
@@ -34,7 +36,16 @@ def processing_configuration(
             """SELECT DISTINCT binding.schema_id, binding.dataset_schema_snapshot_id
             FROM annotation.tag_schema_bindings binding
             WHERE binding.project_id=%s AND binding.region_code=%s AND binding.dataset_id=%s
-              AND binding.task_kind='TAGGING'""",
+              AND binding.task_kind='TAGGING'
+              AND binding.dataset_schema_snapshot_id=COALESCE(
+                (SELECT schema_snapshot_id FROM episode_store.dataset_schemas s
+                 WHERE s.organization_id=binding.organization_id
+                   AND s.project_id=binding.project_id AND s.region_code=binding.region_code
+                   AND s.dataset_id=binding.dataset_id),
+                (SELECT 'capture-'||contract_sha256 FROM episode_store.dataset_capture_contracts c
+                 WHERE c.organization_id=binding.organization_id
+                   AND c.project_id=binding.project_id AND c.region_code=binding.region_code
+                   AND c.dataset_id=binding.dataset_id), 'native-lerobot-v3-v1')""",
             (project_id, region_code, dataset_id),
         )
         rows = cursor.fetchall()
@@ -45,9 +56,17 @@ def processing_configuration(
     )
 
 
-def validate_target(organization_id: str, project_id: str, region_code: str, manifest: Any) -> None:
+def validate_target(
+    organization_id: str,
+    project_id: str,
+    region_code: str,
+    manifest: Any,
+    *,
+    connection_factory: Callable[[], Any] | None = None,
+) -> None:
+    factory = connection_factory or connections()
     if manifest.processing_mode == "STORE_ONLY":
-        with connections()() as connection, connection.cursor() as cursor:
+        with factory() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """SELECT 1 FROM dataset_registry.datasets
                 WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
@@ -61,20 +80,19 @@ def validate_target(organization_id: str, project_id: str, region_code: str, man
                     detail="请先在当前项目和区域创建或选择一个数据集。",
                 )
         return
-    with connections()() as connection, connection.cursor() as cursor:
+    with factory() as connection, connection.cursor() as cursor:
         cursor.execute(
-            """SELECT dataset_id, status FROM collection_tasks.collection_tasks
-            WHERE organization_id=%s AND project_id=%s AND collection_task_id=%s""",
-            (organization_id, project_id, manifest.collection_task_id),
+            """SELECT t.dataset_id, t.status FROM collection_tasks.collection_tasks t
+            JOIN dataset_registry.datasets d ON d.organization_id=t.organization_id
+              AND d.project_id=t.project_id AND d.dataset_id=t.dataset_id
+            WHERE t.organization_id=%s AND t.project_id=%s AND t.collection_task_id=%s
+              AND d.region_code=%s AND t.upload_region_code=%s""",
+            (organization_id, project_id, manifest.collection_task_id, region_code, region_code),
         )
         row = cursor.fetchone()
-        cursor.execute(
-            """SELECT 1 FROM ingest.data_sources WHERE organization_id=%s AND project_id=%s
-            AND region_code=%s AND source_type='ROBOT' AND administrative_state='ENABLED'
-            AND source_document->'binding'->>'robot_id'=%s LIMIT 1""",
-            (organization_id, project_id, region_code, manifest.robot_id),
+        robot = import_robots(
+            connection, organization_id, project_id, region_code, manifest.robot_id
         )
-        robot = cursor.fetchone()
     if row is None or str(row[0]) != manifest.dataset_id or row[1] != "ACTIVE":
         raise problem(
             status=409,
@@ -82,20 +100,15 @@ def validate_target(organization_id: str, project_id: str, region_code: str, man
             title="LeRobot target unavailable",
             detail="请选择当前项目中与目标数据集关联的 ACTIVE 采集任务。",
         )
-    if robot is None:
+    if not robot:
         raise problem(
             status=409,
             code="LEROBOT_ROBOT_UNAVAILABLE",
             title="机器人不可用",
-            detail="请选择当前项目和区域中已启用的机器人数据源。",
+            detail="请选择当前组织的 ACTIVE 机器人，并确认项目使用资格未被停用。",
         )
-    if not processing_configuration(project_id, region_code, manifest.dataset_id).configured:
-        raise problem(
-            status=409,
-            code="LEROBOT_PROCESSING_PLAN_REQUIRED",
-            title="LeRobot 标注规则未配置",
-            detail="请先在上传确认窗口配置并发布 LeRobot 标注规则，再开始上传。",
-        )
+    # Raw intake does not depend on annotation rules. Processing separately
+    # requires the server-owned recording snapshot frozen by the upload owner.
 
 
 def configure_labels(
@@ -133,13 +146,29 @@ def configure_labels(
                 title="Dataset not found",
                 detail="目标数据集没有当前项目的有效采集任务。",
             )
+        cursor.execute(
+            """SELECT schema_snapshot_id FROM episode_store.dataset_schemas
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
+            (organization_id, project_id, region_code, dataset_id),
+        )
+        stored = cursor.fetchone()
+        if stored:
+            snapshot_id = str(stored[0])
+        else:
+            cursor.execute(
+                """SELECT contract_sha256 FROM episode_store.dataset_capture_contracts
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
+                (organization_id, project_id, region_code, dataset_id),
+            )
+            frozen = cursor.fetchone()
+            snapshot_id = "capture-" + frozen[0] if frozen else "native-lerobot-v3-v1"
     existing = processing_configuration(project_id, region_code, dataset_id)
-    if existing.configured:
+    if existing.configured and existing.schema_snapshot_id == snapshot_id:
         return existing
     identity = hashlib.sha256(
-        f"{organization_id}/{project_id}/{region_code}/{dataset_id}".encode()
+        f"{organization_id}/{project_id}/{region_code}/{dataset_id}/{snapshot_id}".encode()
     ).hexdigest()[:24]
-    schema_id, snapshot_id = f"native-lerobot-labels-{identity}", "native-lerobot-v3-v1"
+    schema_id = f"native-lerobot-labels-{identity}"
     service = get_annotation_service()
     versions = service.list_tag_schema_versions(
         project_id=project_id, schema_id=schema_id, actor=auth

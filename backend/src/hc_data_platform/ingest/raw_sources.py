@@ -7,6 +7,7 @@ locations, content identity, Episode lineage, and mutable processing state.
 from __future__ import annotations
 
 from collections.abc import Callable
+from copy import deepcopy
 from datetime import datetime
 from enum import Enum
 from threading import RLock
@@ -145,6 +146,8 @@ class CommittedRawSourceGraph(BaseModel):
     source: RawSource
     episodes: tuple[RawSourceEpisode, ...] = ()
     job: RawIngestJob
+    # Internal server receipt, not a field accepted from an upload manifest.
+    capture_snapshot: dict[str, Any] | None = None
 
 
 class RawSourceRepositoryPort(Protocol):
@@ -238,6 +241,7 @@ class InMemoryRawSourceRepository:
         self._sources: dict[tuple[str, str, str, str], RawSource] = {}
         self._episodes: dict[tuple[str, str, str, str, str], RawSourceEpisode] = {}
         self._jobs: dict[tuple[str, str, str, str], RawIngestJob] = {}
+        self._capture_snapshots: dict[tuple[str, str, str, str], dict[str, Any]] = {}
         self._lock = RLock()
 
     def register_committed(self, graph: CommittedRawSourceGraph) -> CommittedRawSourceGraph:
@@ -286,6 +290,12 @@ class InMemoryRawSourceRepository:
             existing_job = self._jobs.get(scope)
             if existing_job is not None and _job_identity(existing_job) != _job_identity(graph.job):
                 raise _identity_conflict("processing job")
+            if (
+                graph.capture_snapshot is not None
+                and scope in self._capture_snapshots
+                and self._capture_snapshots[scope] != graph.capture_snapshot
+            ):
+                raise _identity_conflict("capture snapshot")
             indexes: set[int] = set()
             for episode in graph.episodes:
                 if episode.source_episode_index in indexes:
@@ -299,6 +309,8 @@ class InMemoryRawSourceRepository:
                     raise _identity_conflict("Episode")
             self._sources.setdefault(scope, source)
             self._jobs.setdefault(scope, graph.job)
+            if graph.capture_snapshot is not None:
+                self._capture_snapshots.setdefault(scope, deepcopy(graph.capture_snapshot))
             for episode in graph.episodes:
                 self._episodes.setdefault((*scope, episode.episode_id), episode)
             return CommittedRawSourceGraph(
@@ -310,6 +322,7 @@ class InMemoryRawSourceRepository:
                     raw_source_id=source.raw_source_id,
                 ),
                 job=self._jobs[scope],
+                capture_snapshot=deepcopy(self._capture_snapshots.get(scope)),
             )
 
     def get_source(
@@ -355,8 +368,15 @@ class InMemoryRawSourceRepository:
 class PostgresRawSourceRepository:
     """Atomic PostgreSQL registration for a committed Raw source graph."""
 
-    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+    def __init__(
+        self,
+        connection_factory: Callable[[], Any],
+        *,
+        capture_snapshot_writer: Callable[[Any, tuple[str, str, str], str, dict[str, Any]], None]
+        | None = None,
+    ) -> None:
         self._connection_factory = connection_factory
+        self._capture_snapshot_writer = capture_snapshot_writer
 
     def register_committed(self, graph: CommittedRawSourceGraph) -> CommittedRawSourceGraph:
         source = graph.source
@@ -511,6 +531,20 @@ class PostgresRawSourceRepository:
                         raise _identity_conflict("Episode")
                 if len(persisted_episodes) != len(graph.episodes):
                     raise _identity_conflict("Episode set")
+                if graph.capture_snapshot is not None:
+                    if self._capture_snapshot_writer is None:
+                        raise problem(
+                            status=503,
+                            code="CAPTURE_STORE_UNAVAILABLE",
+                            title="采集快照存储未配置",
+                            detail="当前 Raw 仓储没有装配采集快照写入能力。",
+                        )
+                    self._capture_snapshot_writer(
+                        connection,
+                        (source.organization_id, source.project_id, source.region_code),
+                        source.raw_source_id,
+                        graph.capture_snapshot,
+                    )
                 if job.job_type is RawIngestJobType.LEROBOT_IMPORT and job.workflow_id:
                     event = DomainEventEnvelope(
                         event_id=str(
@@ -551,6 +585,7 @@ class PostgresRawSourceRepository:
                 source=persisted_source,
                 episodes=persisted_episodes,
                 job=persisted_job,
+                capture_snapshot=graph.capture_snapshot,
             )
         except Exception:
             connection.rollback()

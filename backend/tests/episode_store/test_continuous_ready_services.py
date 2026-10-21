@@ -317,6 +317,7 @@ def test_ready_requires_package_collection_qc_task_viewer_and_all_previews(
                 {"annotation_task_id": "another-task"},
                 {"qc_report_id": "another-qc"},
                 {"aligned_media_camera_count": 1},
+                {"aligned_media_camera_count": 0},
                 {"data_ref": ready.data.model_copy(update={"content_hash": "f" * 64})},
             ):
                 with pytest.raises(psycopg.errors.CheckViolation):

@@ -21,6 +21,8 @@ frontend:
     port: 80
   runtimeConfig:
     apiBaseUrl: /api/v1
+    # Address robots can reach, independent of the operator's browser origin.
+    robotPlatformBaseUrl: ""
     sseBaseUrl: /api/v1/events
     mockMode: "off"
     releaseEnvironment: production

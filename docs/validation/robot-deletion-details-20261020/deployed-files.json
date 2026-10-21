@@ -1,0 +1,23 @@
+{
+  "backend/src/hc_data_platform/robot_assets/deletion.py": "7da8633fa7420e611c514d9a51fdf3dd259399472e3c8dea0bfcfada4a3fb27a",
+  "backend/src/hc_data_platform/robot_assets/repository.py": "ef54ad9d15f42d95fb7d94c360763ad619c6e5bb0dea254960e44230b5e702d4",
+  "backend/src/hc_data_platform/robot_assets/service.py": "71899396c2ea2280e48e93ab308c8c76deca2accf2cf931683c64329edc0890d",
+  "backend/src/hc_data_platform/robot_assets/router.py": "91afd6fe5df8497ab8fb6812cfa7864cbe073c9d944699a94e956b4d50ad4cf2",
+  "backend/tests/robotics/test_robot_deletion_check.py": "5fabdf487a56fd02f534e450b8aab25ae139effcac818dc77761ec6dd9c126d5",
+  "backend/tests/security/BE23-PUBLIC-SECURITY-MATRIX.md": "f900cee2d4e1595efb1b1c14ce1fde994f07c5e93d888ef938ede55638e18b76",
+  "backend/openapi/robot_deletion.yaml": "93e707dbc6671be82bac207bc04083dd9c0c1af79cb7e2578b4966421a4eb90b",
+  "frontend/src/features/robots/api/deletion.ts": "3a885cca43781f3c9a9d95568f42a0ba99df1beb178357850c4155b02bb022e8",
+  "frontend/src/features/robots/RobotDeletionDialog.tsx": "5ae317d0db38871f6fcc92d8b902191a0b6646e13c3aee1478b17f519a49a3c0",
+  "frontend/src/features/robots/RobotDeletionDialog.module.css": "7dc68dbc2393ab115277d316726f867eae953ac2890592efdb87733919222bc8",
+  "frontend/src/features/robots/RobotDeletionDialog.test.tsx": "55faaa1cebac6381ab46a004471fad5f14280c3c83567f2e8ce3bb3662fcf678",
+  "frontend/src/pages/p02-data-sources/components/RobotOnboardingTab.tsx": "9abeb1ff60842efd024fc3a6ac13646ce910a57253418a9a64f6cd44a915795f",
+  "frontend/src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx": "eb4277449ea302732e5b556313ae69736cf6825cc6020ccf15dcdb39f436919e",
+  "frontend/src/pages/p15-robots/instances-page.tsx": "1f60385a9049e82c6dcc331fc73c6669ee60428da313343ab2da20fff59e115c",
+  "frontend/src/pages/p20-collection-tasks/page.tsx": "f58488c7a442098681b6df5c542f96e49a8d37da0974df26a9c7db124565e87b",
+  "frontend/src/pages/p20-collection-tasks/page.test.tsx": "e4cec4acf1962fdc3560745793132c7772e503b92c389ea5c5d0de65ec95dc6f",
+  "frontend/src/pages/p20-collection-tasks/query-codec.ts": "658c07eed7cd58b9375a9893ca010c82c76936ded0d9fd77ddfaf5ae7e0033a1",
+  "frontend/src/shared/api/generated/platform.ts": "4af301e449c6d6e1aac5439b346fa96d356f05584310e99a5533f1a0b2519c2d",
+  "frontend/src/shared/api/generated/platform-wires.ts": "6ecb5a8257c692709d450be9b8ff0b6d82046fb567945ad0e4bbecd03a9e5d5a",
+  "frontend/src/shared/api/generated/platform-operations.ts": "9de7e5e0da2e805da0b7ac3cb11e9bfdd60b17e04f4cb04f343bc7a6027b9aa7",
+  "backend/openapi.generated.yaml": "229c5bb0567605f41579db577d083235d92939ed884b8cf1469df9d4712eec9a"
+}

@@ -248,7 +248,18 @@ def test_cross_version_and_tampered_snapshots_fail_closed(snapshot, mutation):
         SubtaskProjection.freeze(doc, data, sha, track)
 
 
-def test_track_is_explicit_and_cannot_repeat_members():
-    for members in ((), ("tag", "tag")):
+def test_empty_track_keeps_annotations_without_assigning_segment_numbers(snapshot):
+    document, data, _ = snapshot
+    original = copy.deepcopy(document)
+    track = SubtaskTrack(track_id="task-segments", label="任务分段", annotation_ids=())
+    projection = freeze((document, data, track))
+    assert list(projection.iter_indexes(mapping(range(data.frame_count)))) == [-1] * 18
+    assert list(projection.rows()) == []
+    assert document == original
+    assert len(document["revision"]["tags"]) == 7
+
+
+def test_track_cannot_repeat_or_contain_blank_members():
+    for members in (("",), ("tag", "tag")):
         with pytest.raises(ValidationError):
             SubtaskTrack(track_id="selected", label="任务分段", annotation_ids=members)

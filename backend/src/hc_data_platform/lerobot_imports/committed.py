@@ -23,7 +23,7 @@ from hc_data_platform.object_storage.ports import ObjectChunks
 from .local_files import safe_relative
 from .orchestration import LeRobotImportPlanV1, build_import_plan
 from .reader import episode_metadata
-from .source_profile import validate_processing_info
+from .source_profile import validate_source_info
 
 
 class DiscoveredLeRobotV1(BaseModel):
@@ -48,7 +48,7 @@ def normalize_committed_manifest(raw: RawSource, assets: list[dict[str, Any]]) -
     return {
         "schema_version": "raw-upload-manifest/v1",
         "upload_id": raw.raw_source_id,
-        "source_format": "LEROBOT_V3",
+        "source_format": raw.source_format.value,
         "content_hash": raw.content_hash,
         "source_prefix": raw.storage_prefix,
         "files": sorted(assets, key=lambda a: a["path"]),
@@ -168,14 +168,14 @@ def discover_committed_source(storage: ObjectChunks, raw: RawSource) -> Discover
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
-        info = validate_processing_info(json.loads((root / "meta/info.json").read_text()))
+        # Discovery enumerates immutable assets. Feature interpretation belongs
+        # to the frozen adapter in prepare(), including explicit renamed sources.
+        info = validate_source_info(json.loads((root / "meta/info.json").read_text()))
         episodes = episode_metadata(root, info)
-        context_file = root / "capture-context.json"
-        if context_file.exists():
-            from .capture import verify_completion
+        from .context import verify_source_context
 
-            verify_completion(root, descriptors)
-            capture = json.loads(context_file.read_text())
+        capture = verify_source_context(root, descriptors)
+        if capture is not None and capture.get("contract_version") == "openarm-capture/v1":
             if manifest.get("robot_upload_id") and (
                 capture["robot_id"] != raw.robot_id
                 or capture["collection_task_id"] != raw.collection_task_id

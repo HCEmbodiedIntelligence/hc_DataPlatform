@@ -62,6 +62,7 @@ from .pipeline_ports import (
 )
 from .profiles import NativeProfile, quality_profile
 from .reader import read_episode, required_episode_files
+from .schema_diagnostics import schema_conflict_detail
 
 
 class NativeImportBlocked(RuntimeError):
@@ -191,7 +192,12 @@ class LeRobotPipeline:
                 and marker.is_file()
                 and marker.read_text() == descriptor["sha256"]
             ):
-                return target
+                cached_digest = hashlib.sha256()
+                with target.open("rb") as cached:
+                    for chunk in iter(lambda: cached.read(1024 * 1024), b""):
+                        cached_digest.update(chunk)
+                if cached_digest.hexdigest() == descriptor["sha256"]:
+                    return target
             with self.cache.reserve(int(descriptor["size"]) + 64):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 digest = hashlib.sha256()
@@ -236,9 +242,9 @@ class LeRobotPipeline:
             if relative in files:
                 copy(relative)
         if "capture-context.json" in files:
-            from .capture import verify_completion
+            from .context import verify_source_context
 
-            verify_completion(root, files)
+            verify_source_context(root, files)
         # Both callers hold this episode's exclusive pin. Whole-entry eviction
         # cannot remove its chunks while this episode is being read.
         # Retain shared chunks and metadata; immutable object-store Raw stays intact.
@@ -271,8 +277,8 @@ class LeRobotPipeline:
                 from hc_data_platform.core.errors import problem
 
                 code = str(exc).split(":", 1)[0]
-                if not re.fullmatch(r"(?:LEROBOT|OPENARM)_[A-Z0-9_]+", code):
-                    code = "LEROBOT_SOURCE_INVALID"
+                if not re.fullmatch(r"(?:LEROBOT|OPENARM|CAPTURE)_[A-Z0-9_]+", code):
+                    code = "CAPTURE_SOURCE_INVALID"
                 raise problem(
                     status=422,
                     code=code,
@@ -284,20 +290,48 @@ class LeRobotPipeline:
     def _prepare(
         self, task: LeRobotEpisodeTaskV1, raw: RawSource, body: bytes, root: Path
     ) -> IngestRolloutWorkflowInput:
-        if task.storage_format == "lerobot_v3":
-            from .capabilities import validate_processing_selection
+        from hc_data_platform.capture_schemes.models import OutputContract
+        from hc_data_platform.capture_schemes.processing import require_snapshot, validate_lerobot
+        from hc_data_platform.capture_schemes.schema import semantic_schema
 
-            validate_processing_selection(
-                json.loads((root / "meta/info.json").read_text()),
-                json.loads(body).get("processing_capability_revision"),
+        frozen = require_snapshot(self.planning.snapshot(task))
+        from .context import read_context
+
+        read_context(root, expected_snapshot=frozen)
+        if task.storage_format != "lerobot_v3":
+            from hc_data_platform.capture_schemes.common import reject
+
+            reject(
+                "CAPTURE_STORAGE_INCOMPATIBLE",
+                "共享方案需要原生 Episode 包以保存 presence 与逐轴 validity",
             )
+        from hc_data_platform.capture_schemes.schema import project_info
+
+        from .capabilities import validate_processing_selection
+
+        validate_processing_selection(
+            project_info(json.loads((root / "meta/info.json").read_text()), frozen),
+            json.loads(body).get("processing_capability_revision"),
+        )
+        evidence = validate_lerobot(
+            root,
+            task.source.episode_index,
+            OutputContract.model_validate(frozen["output"]),
+            frozen["effective_adapter"],
+        )
+        self.planning.freeze_contract(task, frozen)
         native_source = task.source.model_copy(
-            update={"preserve_source_features": task.storage_format == "lerobot_v3"}
+            update={
+                "preserve_source_features": task.storage_format == "lerobot_v3",
+                "capture_snapshot": frozen,
+                "capture_validation": evidence,
+            }
         )
         native_profile, layout, episode = read_episode(
             root,
             task.source.episode_index,
             preserve_features=native_source.preserve_source_features,
+            capture_snapshot=frozen,
         )
         digest = hashlib.sha256(body).hexdigest()
         rollout_id = task.source.platform_episode_id or (
@@ -365,25 +399,51 @@ class LeRobotPipeline:
             ),
         )
         profile = self.quality_profile_factory(native_profile, int(episode.fps))
-        dataset, targets = self.planning.targets(task)
-        if dataset != task.dataset_id:
-            raise ValueError("native collection task Dataset changed")
-        if len(set(targets)) != 1:
-            raise NativeImportBlocked(
-                "请先在标签体系中发布并绑定当前数据集的标注 Schema，再重试处理。"
-            )
-        schema_id = targets[0]
-        snapshot = self.schema_builder(
-            project_id=task.project_id,
-            dataset_id=dataset,
-            schema_snapshot_id=schema_id,
-            preflight=preflight,
-            profile=profile,
+        profile = profile.model_copy(
+            update={
+                "default_timing": profile.default_timing.model_copy(
+                    update={
+                        "target_frequency_hz": int(episode.fps),
+                        "minimum_frequency_hz_risk": episode.fps * 0.95,
+                        "minimum_frequency_hz_reject": episode.fps * 0.75,
+                    }
+                )
+            }
         )
-        if task.storage_format == "lerobot_v3":
-            self.native_schemas.register_schema(snapshot)
-        else:
-            self.catalog.register_schema(snapshot)
+        # Different camera/auxiliary layouts must not overwrite one generic QC
+        # profile. This policy identity is deliberately separate from data schema.
+        profile = profile.model_copy(
+            update={"profile_id": "capture-qc-" + profile.content_sha256()[:32]}
+        )
+        dataset = frozen["dataset_id"]
+        if dataset != task.dataset_id:
+            raise ValueError("CAPTURE_VERSION_MISMATCH: frozen Dataset differs from Raw")
+        snapshot = semantic_schema(
+            task.project_id,
+            dataset,
+            frozen["output"],
+            {topic: "json" for topic in native_profile.topics},
+        )
+        schema_id = snapshot.schema_snapshot_id
+        from hc_data_platform.capture_schemes.common import reject
+        from hc_data_platform.episode_store.errors import PackageConflict
+
+        try:
+            if task.storage_format == "lerobot_v3":
+                self.native_schemas.register_schema(snapshot)
+            else:
+                self.catalog.register_schema(snapshot)
+        except (PackageConflict, ValueError) as exc:
+            if not isinstance(exc, PackageConflict) and "already frozen differently" not in str(
+                exc
+            ):
+                raise
+            existing = (
+                self.native_schemas.schema_for(task.project_id, dataset)
+                if task.storage_format == "lerobot_v3"
+                else self.catalog.schema_for(task.project_id, dataset)
+            )
+            reject("CAPTURE_DATASET_INCOMPATIBLE", schema_conflict_detail(snapshot, existing))
         self.quality_profiles.put_profile(task.project_id, profile)
         manifest_key = (
             f"derived/lerobot-imports/{task.organization_id}/{dataset}/"
@@ -451,7 +511,7 @@ class LeRobotPipeline:
                         if task.storage_format == "lerobot_v3"
                         else "native-lerobot-v3/1"
                     ),
-                    frequency_hz=30 if native_profile.legacy_g1 else int(episode.fps),
+                    frequency_hz=int(episode.fps),
                     required_modalities=frozenset(native_profile.topics),
                     # Native rows already share a frame clock. Nearest preserves
                     # named joint vectors and avoids interpolating string labels.
@@ -515,12 +575,28 @@ class LeRobotPipeline:
         dataset_id: str,
         dataset_version: int,
         storage_format: str = "lance",
+        source_time_range: tuple[int, int] | None = None,
     ) -> AlignmentInputV1:
+        if storage_format == "lerobot_v3" and source_time_range is None:
+            raise ValueError("native viewer metadata requires the frozen source timeline")
         metadata = self.metadata_builder(
             source.rollout_id,
             source.source_sha256,
             ObjectStorageManifestParser(self.storage).parse(source.manifest_key),
         )
+        if source_time_range is not None:
+            start_ns, end_ns = source_time_range
+            # The native plan pins nanoseconds. The transport manifest rounds its
+            # end up to microseconds; using that rounded end can add a whole frame.
+            # Only that known representation loss is allowed, never a genuine gap.
+            if (
+                storage_format != "lerobot_v3"
+                or start_ns != metadata.start_ns
+                or not 0 <= metadata.end_ns - end_ns < 1_000
+                or end_ns <= start_ns
+            ):
+                raise ValueError("native source timeline differs from the committed manifest")
+            metadata = metadata.model_copy(update={"start_ns": start_ns, "end_ns": end_ns})
         # Streaming alignment metadata deliberately carries no sample bodies. Read
         # one committed row to retain the real numeric/event types in the viewer.
         catalog = self.native_catalog if storage_format == "lerobot_v3" else self.catalog
@@ -535,6 +611,8 @@ class LeRobotPipeline:
         if not window.steps:
             raise ValueError("native viewer metadata requires a committed Step")
         step = window.steps[0]
+        if source_time_range is not None and step.timestamp_ns != source_time_range[0]:
+            raise ValueError("native source timeline differs from the committed first Step")
         return metadata.model_copy(
             update={
                 "streams": {

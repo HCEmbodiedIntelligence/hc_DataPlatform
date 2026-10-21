@@ -1,0 +1,19 @@
+{
+  "checks": [
+    "robot page loads real organization summary",
+    "new robot creation; response-loss retry reuses robot/identity; credential issued once; replay returns no token",
+    "real credential authentication and heartbeat update online state; detail loads",
+    "disabled identity and valid credential remain independent; filters survive refresh",
+    "card clears business filters and preserves ordering/page size; tab filters remain independent",
+    "empty results; injected real network error shows unavailable without zero; retry recovers",
+    "search from a later page finds full-set match and resets page",
+    "upload record successful volume uses real API and displays timezone",
+    "mobile layout has no page overflow"
+  ],
+  "failures": [],
+  "pageTwoRows": 9,
+  "layout": {
+    "viewport": 500,
+    "document": 488
+  }
+}

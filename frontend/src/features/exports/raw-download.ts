@@ -12,7 +12,11 @@ type DownloadFile = {
 type SavePicker = (options: {
   suggestedName: string;
   types: { description: string; accept: Record<string, string[]> }[];
-}) => Promise<{ createWritable: () => Promise<DownloadFile> }>;
+}) => Promise<{ name: string; createWritable: () => Promise<DownloadFile> }>;
+
+export type RawDownloadResult =
+  | { kind: "saved"; filename: string; bytes: number }
+  | { kind: "browser"; filename: string; bytes: number; url: string };
 
 /** One archive request; supported browsers write large downloads directly to disk. */
 export async function downloadRawSources(
@@ -20,12 +24,13 @@ export async function downloadRawSources(
   importIds: readonly string[],
   signal: AbortSignal,
   onProgress: (bytes: number) => void,
-) {
+): Promise<RawDownloadResult> {
   const lease = createSessionScopeLease(scope, signal);
   const name = `原始数据-${new Date().toISOString().slice(0, 10)}.zip`;
   const picker = (window as Window & { showSaveFilePicker?: SavePicker })
     .showSaveFilePicker;
   let file: DownloadFile | undefined;
+  let filename = name;
   const chunks: BlobPart[] = [];
   try {
     lease.signal.throwIfAborted();
@@ -41,6 +46,7 @@ export async function downloadRawSources(
         ],
       });
       lease.signal.throwIfAborted();
+      filename = handle.name;
       file = await handle.createWritable();
     }
     lease.signal.throwIfAborted();
@@ -72,10 +78,15 @@ export async function downloadRawSources(
     if (file) {
       await file.close();
       file = undefined;
-    } else {
-      const url = URL.createObjectURL(
-        new Blob(chunks, { type: "application/zip" }),
-      );
+      onProgress(received);
+      return { kind: "saved", filename, bytes: received };
+    }
+    // Keep the blob available for a real user click if automatic downloading
+    // is blocked. The caller releases it when this result leaves the page.
+    const url = URL.createObjectURL(
+      new Blob(chunks, { type: "application/zip" }),
+    );
+    try {
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = name;
@@ -83,9 +94,12 @@ export async function downloadRawSources(
       document.body.append(anchor);
       anchor.click();
       anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      URL.revokeObjectURL(url);
+      throw error;
     }
     onProgress(received);
+    return { kind: "browser", filename, bytes: received, url };
   } finally {
     await file?.abort().catch(() => {});
     lease.release();

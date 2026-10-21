@@ -1,0 +1,50 @@
+{
+  "checks": [
+    "Created instance; matching model+software template filled; offline draft saved; publication disabled without sample evidence",
+    "Same organization project B sees the same robot scheme v2 without re-entry"
+  ],
+  "screenshots": [],
+  "robots": {
+    "status": 200,
+    "data": {
+      "items": [
+        {
+          "id": "synthetic-platform-robot",
+          "display_name": "关节采集验收机器人",
+          "serial_no": "synthetic",
+          "lifecycle_status": "ACTIVE",
+          "connectivity": {
+            "state": "ONLINE",
+            "observed_at": null,
+            "source": null,
+            "reason_code": null
+          }
+        },
+        {
+          "id": "robot_c3a332b74e935c08a12de27a8077fdd9",
+          "display_name": "离线模板验收机器人",
+          "serial_no": "cfg-browser-offline-20261020",
+          "lifecycle_status": "ACTIVE",
+          "connectivity": {
+            "state": "OFFLINE",
+            "observed_at": "2026-10-20T01:35:49.885016Z",
+            "source": "robot-instance-console",
+            "reason_code": "AWAITING_DEVICE_BINDING"
+          }
+        }
+      ],
+      "page_info": {
+        "has_next_page": false,
+        "has_previous_page": false,
+        "start_cursor": null,
+        "end_cursor": null
+      },
+      "snapshot_at": "2026-10-20T01:35:50.705390Z",
+      "scope": {
+        "organization_id": "raw-pin-8ff725b88c734440b9322c745bba046b"
+      },
+      "request_id": "75fea46c-3fb6-41a5-b332-afab77789a08",
+      "contract_version": "2026-08-31"
+    }
+  }
+}

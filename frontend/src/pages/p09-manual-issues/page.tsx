@@ -1441,6 +1441,7 @@ export function ManualIssuesPage() {
               problem={rawProblem}
               canManage={capabilities.has("upload.manage")}
               canReadDataset={capabilities.has("dataset.read")}
+              onDeleted={() => setRawSelection(null)}
             />
             <RecordingProcessingDetails
               showActions={false}
@@ -1466,6 +1467,7 @@ export function ManualIssuesPage() {
               problem={rawProblem}
               canManage={capabilities.has("upload.manage")}
               canReadDataset={capabilities.has("dataset.read")}
+              onDeleted={() => setRawSelection(null)}
             />
             <Suspense fallback={<PageState state="loading" label="原始数据" />}>
               <OriginalSourceBrowser

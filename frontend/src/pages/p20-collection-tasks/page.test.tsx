@@ -33,6 +33,26 @@ import {
 } from "../../shared/config/runtime";
 import type { components } from "../../shared/api/generated/platform";
 
+// The page tests isolate task HTTP/lifecycle behavior. Shared selection is covered by capture-schemes/flows.test.tsx.
+vi.mock("../../features/capture-schemes/TaskPlanSelector", async () => {
+  const { useEffect } = await import("react");
+  return {
+    TaskPlanSelector: ({ onChange }: { onChange: (p: unknown) => void }) => {
+      useEffect(() => {
+        onChange({
+          expected_revision: 0,
+          scheme: {
+            scheme_id: "shared",
+            version: 1,
+            content_sha256: "a".repeat(64),
+          },
+        });
+      }, [onChange]);
+      return <span>已选择测试方案 v1</span>;
+    },
+  };
+});
+
 const scope = {
   organizationId: "org-test",
   projectId: "project-test",
@@ -194,6 +214,33 @@ function renderPage(
   );
 }
 
+it("opens an exact linked task outside the list window, then returns to all tasks", async () => {
+  const gateway = makeGateway();
+  gateway.list.mockResolvedValue({ items: [], next_cursor: null });
+  renderPage(gateway, "manage", "/collection-tasks?taskId=task-1");
+  expect(await screen.findByText(task.name)).toBeVisible();
+  expect(gateway.detail).toHaveBeenCalledWith(
+    scope,
+    "task-1",
+    expect.any(AbortSignal),
+  );
+  expect(gateway.list).not.toHaveBeenCalled();
+  expect(screen.getByText(/已定位任务 1 条/)).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "查看全部任务" }));
+  await waitFor(() => expect(gateway.list).toHaveBeenCalled());
+  expect(screen.getByTestId("location")).not.toHaveTextContent("taskId=");
+});
+
+it("allows a read-only account to inspect an exact task without edit controls", async () => {
+  const gateway = makeGateway();
+  renderPage(gateway, "read-only", "/collection-tasks?taskId=task-1");
+  expect(await screen.findByText(task.name)).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "更多操作" }),
+  ).not.toBeInTheDocument();
+  expect(gateway.delete).not.toHaveBeenCalled();
+});
+
 function LocationProbe() {
   const location = useLocation();
   return (
@@ -220,6 +267,7 @@ async function chooseTaskAction(
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   useShellStore.getState().setScope(scope);
   useShellStore.setState({
     authorization: null,
@@ -591,9 +639,9 @@ describe("P20 collection tasks", () => {
     const moreActions = screen.getByRole("button", { name: "更多操作" });
     moreActions.focus();
     await user.keyboard("{Enter}");
-    expect(
-      await screen.findByRole("menuitem", { name: "关闭任务" }),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "关闭任务" })).toBeVisible(),
+    );
 
     await user.keyboard("{Escape}");
     await waitFor(() =>
@@ -604,9 +652,9 @@ describe("P20 collection tasks", () => {
 
     moreActions.focus();
     await user.keyboard(" ");
-    expect(
-      await screen.findByRole("menuitem", { name: "取消任务" }),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.getByRole("menuitem", { name: "取消任务" })).toBeVisible(),
+    );
     await user.click(document.body);
     await waitFor(() =>
       expect(
@@ -670,6 +718,14 @@ describe("P20 collection tasks", () => {
       {
         name: "夜班工位采集",
         dataset_id: "dataset_shared_night",
+        capture_plan: {
+          expected_revision: 0,
+          scheme: {
+            scheme_id: "shared",
+            version: 1,
+            content_sha256: "a".repeat(64),
+          },
+        },
         type: "抓取采集",
         scenario: "夜间灯光条件",
         description: "",

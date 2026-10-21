@@ -1,0 +1,104 @@
+
+> hc-data-platform-frontend@0.1.0 check:api /app
+> node --test scripts/generate-*.test.mjs
+
+TAP version 13
+# Subtest: runtime operation gate includes ordinary and explicit-complex OpenAPI path keys
+ok 1 - runtime operation gate includes ordinary and explicit-complex OpenAPI path keys
+  ---
+  duration_ms: 6.231166
+  type: 'test'
+  ...
+# Subtest: generated response parses refs, nullability and defaulted output without fabricating defaults
+ok 2 - generated response parses refs, nullability and defaulted output without fabricating defaults
+  ---
+  duration_ms: 55.419582
+  type: 'test'
+  ...
+# Subtest: contract enum/required/limit changes immediately change executable response validation
+ok 3 - contract enum/required/limit changes immediately change executable response validation
+  ---
+  duration_ms: 8.883164
+  type: 'test'
+  ...
+# Subtest: wire limits, integer precision, hash and const reject malformed receipts
+ok 4 - wire limits, integer precision, hash and const reject malformed receipts
+  ---
+  duration_ms: 2.755495
+  type: 'test'
+  ...
+# Subtest: dictionary and array constraints survive generation
+ok 5 - dictionary and array constraints survive generation
+  ---
+  duration_ms: 4.523242
+  type: 'test'
+  ...
+# Subtest: date-time offsets remain checked
+ok 6 - date-time offsets remain checked
+  ---
+  duration_ms: 3.394941
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"type":"object","unevaluatedProperties":false}
+ok 7 - unsupported or unresolved vocabulary fails generation: {"type":"object","unevaluatedProperties":false}
+  ---
+  duration_ms: 0.397127
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"type":"array","items":{"type":"string"},"uniqueItems":true}
+ok 8 - unsupported or unresolved vocabulary fails generation: {"type":"array","items":{"type":"string"},"uniqueItems":true}
+  ---
+  duration_ms: 0.154171
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"type":"string","format":"unsupported-format"}
+ok 9 - unsupported or unresolved vocabulary fails generation: {"type":"string","format":"unsupported-format"}
+  ---
+  duration_ms: 0.075633
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"oneOf":[{"type":"null"},{"type":"string"}]}
+ok 10 - unsupported or unresolved vocabulary fails generation: {"oneOf":[{"type":"null"},{"type":"string"}]}
+  ---
+  duration_ms: 0.265316
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"$ref":"https://example.invalid/schema"}
+ok 11 - unsupported or unresolved vocabulary fails generation: {"$ref":"https://example.invalid/schema"}
+  ---
+  duration_ms: 0.24612
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"$ref":"\#/components/schemas/Missing"}
+ok 12 - unsupported or unresolved vocabulary fails generation: {"$ref":"\#/components/schemas/Missing"}
+  ---
+  duration_ms: 0.093541
+  type: 'test'
+  ...
+# Subtest: unsupported or unresolved vocabulary fails generation: {"$ref":"\#/components/schemas/Receipt"}
+ok 13 - unsupported or unresolved vocabulary fails generation: {"$ref":"\#/components/schemas/Receipt"}
+  ---
+  duration_ms: 0.043604
+  type: 'test'
+  ...
+# Subtest: production OpenAPI parser callback supplies actual component constraints
+ok 14 - production OpenAPI parser callback supplies actual component constraints
+  ---
+  duration_ms: 160.683492
+  type: 'test'
+  ...
+# Subtest: UUID response fields validate their declared format
+ok 15 - UUID response fields validate their declared format
+  ---
+  duration_ms: 3.170361
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 508.055445

@@ -62,6 +62,14 @@ def test_task_dataset_opens_before_first_ingest_and_repair_preserves_metadata(
             assert after == before
 
     with request_scope(project, region):
+        progress = service.progress(
+            organization_for(project), project, task.collection_task_id, region
+        )
+        assert progress.received_package_count == 0
+        assert progress.captured_duration_seconds is None
+        assert progress.duration_observed_package_count == 0
+        assert progress.duration_unknown_package_count == 0
+        assert progress.captures.upload_count == 0
         connect = psycopg_connection_factory(isolated_dsn)
         datasets = DatasetPageService(PostgresDatasetPageRepository(connect))
         args = dict(

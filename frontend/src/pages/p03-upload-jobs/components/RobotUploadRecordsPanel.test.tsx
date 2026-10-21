@@ -1,20 +1,22 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RobotUploadSummary } from "../../../features/robot-ingest/model";
 import { RobotUploadRecordsPanel } from "./RobotUploadRecordsPanel";
 
+const data = vi.hoisted(() => ({ items: [] as Record<string, unknown>[] }));
 vi.mock("../../../features/robot-ingest/api", () => ({
   useRobotUploadEpisodes: () => ({
-    data: { items: [] },
+    data,
     isPending: false,
     isError: false,
   }),
 }));
 
 beforeEach(() => {
+  data.items = [];
   Object.defineProperty(globalThis, "ResizeObserver", {
     configurable: true,
     value: class ResizeObserver {
@@ -104,4 +106,34 @@ describe("P03 robot upload records", () => {
     expect(screen.getByText("RISK")).toBeVisible();
     expect(screen.getByText(/派生 12/u)).toBeVisible();
   });
+});
+
+it("keeps READY data separate from annotation pending configuration", () => {
+  data.items = [
+    {
+      episode_id: "episode",
+      status: "READY",
+      annotation_status: "PENDING_CONFIGURATION",
+      data_readable: true,
+      frame_count: 167,
+      sample_count: 0,
+      quality_status: "PASS",
+    },
+  ];
+  const { container } = render(
+    <RobotUploadRecordsPanel
+      scope={{ organizationId: "org", projectId: "p", regionCode: "global" }}
+      robotId="r"
+      items={[upload]}
+      loading={false}
+      errorMessage={null}
+      onClear={vi.fn()}
+      onRefresh={vi.fn()}
+    />,
+  );
+  fireEvent.click(container.querySelector(".ant-table-row-expand-icon")!);
+  expect(screen.getByText("标注待配置")).toBeVisible();
+  expect(screen.getByText("可读取")).toBeVisible();
+  expect(screen.getByText("167 / 0")).toBeVisible();
+  expect(screen.getAllByText("READY")).toHaveLength(2);
 });

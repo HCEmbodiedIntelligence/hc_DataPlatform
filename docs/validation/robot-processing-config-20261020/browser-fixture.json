@@ -1,0 +1,27 @@
+{
+  "organizationId": "raw-pin-8ff725b88c734440b9322c745bba046b",
+  "projectId": "raw-pin-project",
+  "regionCode": "raw-pin-region",
+  "robotId": "synthetic-platform-robot",
+  "taskId": "synthetic-raw-pin-6d8891b1043f457b87f61f7cbcd972e2",
+  "datasetId": "dataset_raw_pinning",
+  "modelVersionId": "browser-model-v1",
+  "sources": {
+    "rgb": {
+      "raw": "raw-0e2cce4332a05eebaab6991fa17cafa7",
+      "upload": "riu-c338904b8dbd5df5b668bd2f799a9f36",
+      "file": "rgb.mcap"
+    },
+    "joints": {
+      "raw": "raw-eb67ff69c1c55374bb3772f3ac8a3e68",
+      "upload": "riu-0b259ea810365c6c9a3eabc89c1c5d73",
+      "file": "joints.mcap"
+    },
+    "failure": {
+      "raw": "raw-8643c1a54ea95636be564452efd870c0",
+      "upload": "riu-c713c486d98b509a982188f76b03da65",
+      "file": "missing-rgb.mcap"
+    }
+  },
+  "createdRobotId": "robot_c3a332b74e935c08a12de27a8077fdd9"
+}

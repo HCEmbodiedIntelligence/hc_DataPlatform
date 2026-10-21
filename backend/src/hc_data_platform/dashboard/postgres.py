@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
+from hc_data_platform.ingest.problem_lifecycle import active_problem_sql, is_discarded
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.auth import AuthContext
 
@@ -148,18 +149,24 @@ WITH requested_scope AS (
     SELECT %s::text AS principal_id, %s::text AS project_id,
            %s::text AS region_code, %s::text AS authorized_principal_id
 ), scoped_tasks AS (
-    SELECT DISTINCT task.organization_id, task.project_id,
+    SELECT task.organization_id, task.project_id,
            task.collection_task_id, task.task_code, task.name,
            task.status, task.target_json, task.created_at
     FROM requested_scope scope
-    JOIN ingest.collection_jobs job
-      ON job.project_id = scope.project_id
-     AND job.region_code = scope.region_code
     JOIN collection_tasks.collection_tasks task
-      ON task.organization_id = job.organization_id
-     AND task.project_id = job.project_id
-     AND task.collection_task_id = job.task_id
+      ON task.organization_id = current_setting('app.organization_id', true)
+     AND task.project_id = scope.project_id
     WHERE scope.principal_id = scope.authorized_principal_id
+      AND (
+          task.upload_region_code = scope.region_code
+          OR EXISTS (
+              SELECT 1 FROM ingest.collection_jobs job
+              WHERE job.organization_id = task.organization_id
+                AND job.project_id = task.project_id
+                AND job.task_id = task.collection_task_id
+                AND job.region_code = scope.region_code
+          )
+      )
 )
 SELECT task.collection_task_id AS task_id, task.task_code, task.name,
        task.status AS lifecycle,
@@ -178,10 +185,11 @@ LEFT JOIN ingest.collection_jobs job
   ON job.organization_id = task.organization_id
  AND job.project_id = task.project_id
  AND job.task_id = task.collection_task_id
+ AND job.region_code = %s
 LEFT JOIN ingest.rollouts rollout
   ON rollout.organization_id = job.organization_id
  AND rollout.project_id = job.project_id
- AND rollout.region_code = %s
+ AND rollout.region_code = job.region_code
  AND rollout.collection_job_id = job.collection_job_id
 LEFT JOIN ingest.rollout_objects object
   ON object.organization_id = rollout.organization_id
@@ -189,7 +197,7 @@ LEFT JOIN ingest.rollout_objects object
  AND object.region_code = rollout.region_code
  AND object.rollout_id = rollout.rollout_id
 LEFT JOIN LATERAL (
-    SELECT source.upload_id AS source_import_id, episode.source_episode_index
+    SELECT source.raw_source_id AS source_import_id, episode.source_episode_index
     FROM ingest.raw_source_episodes episode
     JOIN ingest.raw_sources source
       ON source.organization_id = episode.organization_id
@@ -261,6 +269,7 @@ WITH requested_scope AS (
     FROM requested_scope scope
     JOIN ingest.collection_jobs job
       ON job.project_id = scope.project_id
+     AND job.organization_id = current_setting('app.organization_id', true)
      AND job.region_code = scope.region_code
     JOIN collection_tasks.collection_tasks task
       ON task.organization_id = job.organization_id
@@ -281,11 +290,12 @@ SELECT rollout.task_id, rollout.rollout_id, rollout.data_package_id,
        native.source_import_id, native.source_episode_index,
        native.source_episode_status, native.source_processing_status,
        verification.status AS verification_status,
-       verification.reason_code AS verification_reason_code,
+       COALESCE(verification.reason_code, native.source_processing_error)
+           AS verification_reason_code,
        qc.status AS qc_status, qc_report.report_json->'findings' AS quality_findings,
        alignment.status AS alignment_status, alignment.attempt_id AS alignment_attempt_id,
        resolution.status AS resolution_status,
-       (lineage.rollout_id IS NOT NULL) AS lance_ready,
+       (lineage.rollout_id IS NOT NULL OR native.source_episode_status = 'READY') AS lance_ready,
        annotation.task_id AS annotation_task_id,
        annotation.status AS annotation_status,
        review.decision AS review_decision,
@@ -309,9 +319,10 @@ LEFT JOIN ingest.rollout_objects object
  AND object.region_code = rollout.region_code
  AND object.rollout_id = rollout.rollout_id
 LEFT JOIN LATERAL (
-    SELECT source.upload_id AS source_import_id, episode.source_episode_index,
+    SELECT source.raw_source_id AS source_import_id, episode.source_episode_index,
            episode.status AS source_episode_status,
-           ingest_job.status AS source_processing_status
+           ingest_job.status AS source_processing_status,
+           ingest_job.last_error_code AS source_processing_error
     FROM ingest.raw_source_episodes episode
     JOIN ingest.raw_sources source
       ON source.organization_id = episode.organization_id
@@ -529,7 +540,7 @@ LIMIT %s
 """.strip()
 
 
-_PENDING_FACTS = """
+_PENDING_FACTS = f"""
 SELECT session.project_id, session.region_code,
        'UPLOAD_FAILED'::text AS item_type,
        session.session_id::text AS source_id,
@@ -547,6 +558,7 @@ JOIN ingest.upload_sessions session
  AND session.region_code = scope.region_code
 WHERE scope.principal_id = scope.authorized_principal_id
   AND session.status = 'FAILED'
+  AND {active_problem_sql("session")}
   AND session.updated_at >= scope.range_start
   AND session.updated_at < scope.range_end
 UNION ALL
@@ -571,6 +583,7 @@ JOIN ingest.upload_sessions session
  AND session.rollout_id = summary.rollout_id
 WHERE scope.principal_id = scope.authorized_principal_id
   AND summary.status IN ('RISK', 'REJECT')
+  AND {active_problem_sql("summary")}
   AND summary.updated_at >= scope.range_start
   AND summary.updated_at < scope.range_end
 UNION ALL
@@ -1030,7 +1043,12 @@ class PostgresDashboardRepository:
         )
         unavailable = (
             ("workflow_execution_state",)
-            if any(not item.technical_state_available for item in packages)
+            if any(
+                not item.technical_state_available
+                and not is_discarded(item.source_episode_status, item.resolution_status)
+                and item.duplicate_of_rollout_id is None
+                for item in packages
+            )
             else ()
         )
         return TaskStatusProjectionFacts(

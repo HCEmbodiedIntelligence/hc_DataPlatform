@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "robot page loads real organization summary",
+    "upload record successful volume uses real API and displays timezone",
+    "mobile layout has no page overflow"
+  ],
+  "failures": [],
+  "layout": {
+    "viewport": 500,
+    "document": 488
+  }
+}

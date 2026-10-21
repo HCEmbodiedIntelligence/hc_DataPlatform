@@ -35,6 +35,8 @@ from hc_data_platform.annotation.sampling import (
 )
 from hc_data_platform.collection_tasks.ingest_queries import TaskDatasetQuery, task_dataset
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.core.errors import ProblemException
+from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
 from hc_data_platform.ingest.projection_metadata import (
     AlignmentMetadataBuilder,
@@ -42,7 +44,6 @@ from hc_data_platform.ingest.projection_metadata import (
 )
 from hc_data_platform.ingest.projection_metadata import datetime_ns as _datetime_ns
 from hc_data_platform.ingest.schema_planning import DatasetSchemaBuilder, build_dataset_schema
-from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import StagedArtifactStore
 from hc_data_platform.quality.models import (
@@ -78,10 +79,8 @@ from .models import (
 class PostgresIngestWorkflowInputResolver:
     """Build a bounded workflow input from exact, tenant-scoped persisted facts.
 
-    The selected quality profile must be the only immutable profile whose required
-    topic set exactly matches the committed Manifest.  Likewise, the published Tag
-    Schema must expose exactly one compatible dataset target in the event scope.
-    Ambiguous or incomplete plans fail closed instead of selecting a newest row.
+    The capture receipt fixes structure and cadence. Annotation rules are consumed
+    only after data commit. Historical workflow inputs remain directly replayable.
     """
 
     def __init__(
@@ -113,13 +112,44 @@ class PostgresIngestWorkflowInputResolver:
         self._projection_staging_root = projection_staging_root.resolve()
         self._projection_ttl = projection_ttl
         self._package_schemas = package_schemas
-        self._task_datasets = task_datasets
-        self._schema_targets = schema_targets
-        self._schema_builder = schema_builder
+        # Retain runtime factory argument compatibility. Capture snapshots now
+        # supply the dataset and schema; annotation bindings cannot select them.
+        del task_datasets, schema_targets, schema_builder
         self._sampler_factory = sampler_factory
         self._metadata_builder = metadata_builder
 
-    def terminal_result(self, event):
+    def record_plan_failure(self, event: DomainEventEnvelope, error: ProblemException) -> object:
+        from .models import JobRecord, JobStatus, WorkflowJobPersistenceActivityInput
+        from .postgres import PostgresWorkflowJobRepository
+
+        terminal = self.terminal_result(event)
+        if terminal is not None:
+            return terminal
+        job = JobRecord(
+            workflow_id=str(event.payload["workflow_id"]),
+            job_type="IngestRolloutWorkflow",
+            project_id=event.project_id,
+            resource_id=str(event.payload["rollout_id"]),
+            status=JobStatus.TECHNICAL_FAILED,
+            stage="capture_configuration",
+            error_code=error.problem.code,
+            error_message=error.problem.detail,
+            result={"retryable": False, "data_readable": False},
+        )
+        if event.organization_id is None or event.region_code is None:
+            raise ValueError("capture rejection requires exact scope")
+        PostgresWorkflowJobRepository(self._connection_factory).put_job(
+            WorkflowJobPersistenceActivityInput(
+                organization_id=event.organization_id, region_code=event.region_code, job=job
+            ),
+            only_before_start=True,
+        )
+        return self.terminal_result(event) or {
+            "workflow_id": job.workflow_id,
+            "status": "DISPATCHED",
+        }
+
+    def terminal_result(self, event: DomainEventEnvelope) -> object | None:
         """Validate the durable trigger before launch or terminal redelivery."""
         context = current_request_context()
         if not context.service_identity or (
@@ -234,29 +264,41 @@ class PostgresIngestWorkflowInputResolver:
                     manifest_fingerprint=manifest_fingerprint,
                 )
                 profile = self._quality_profile(cursor, project_id, preflight)
-                dataset_id = self._task_datasets(
-                    cursor,
-                    organization_id=organization_id,
-                    project_id=project_id,
-                    collection_task_id=preflight.manifest.task_id,
+                frozen = self._capture_snapshot(
+                    cursor, (organization_id, project_id, region_code), preflight
                 )
-                schema_snapshot_ids = self._schema_targets(
-                    cursor,
-                    organization_id=organization_id,
-                    project_id=project_id,
-                    storage_region_code=region_code,
-                    dataset_id=dataset_id,
-                )
+                dataset_id = frozen["dataset_id"]
         finally:
             connection.close()
 
-        dataset_id, schema_snapshot_id, snapshot = self._select_dataset_schema(
-            project_id=project_id,
-            dataset_id=dataset_id,
-            schema_snapshot_ids=schema_snapshot_ids,
-            preflight=preflight,
-            profile=profile,
+        from hc_data_platform.capture_schemes.common import reject
+        from hc_data_platform.capture_schemes.schema import semantic_schema
+        from hc_data_platform.data_formats.feature_names import feature_names
+
+        if self._package_schemas is None:
+            reject("CAPTURE_STORAGE_INCOMPATIBLE", "共享方案需要原生 Episode 包")
+        mapping = feature_names(
+            sorted(preflight.manifest.actual_topics),
+            camera_topics=[c.topic for c in preflight.manifest.cameras],
         )
+        required = {
+            name for name, feature in frozen["output"]["features"].items() if feature["required"]
+        }
+        if not required.issubset(mapping.values()):
+            reject(
+                "CAPTURE_STORAGE_INCOMPATIBLE",
+                "该历史上传入口无法表达映射，请使用 Raw MCAP 标准处理入口",
+            )
+        snapshot = semantic_schema(
+            project_id,
+            dataset_id,
+            frozen["output"],
+            {topic: "json" for topic in preflight.manifest.actual_topics},
+        )
+        self._package_schemas.register_schema(snapshot)
+        schema_snapshot_id = snapshot.schema_snapshot_id
+        if profile.default_timing.target_frequency_hz != snapshot.frequency_hz:
+            reject("CAPTURE_VERSION_MISMATCH", "质检时间轴与冻结采集方案不一致")
         source = IngestProjectionSourceV1(
             organization_id=organization_id,
             project_id=project_id,
@@ -268,6 +310,7 @@ class PostgresIngestWorkflowInputResolver:
             manifest_key=manifest_key,
             manifest_fingerprint=manifest_fingerprint,
             source_sha256=source_sha256,
+            capture_snapshot=frozen,
         )
         frequency_hz = int(snapshot.frequency_hz)
         alignment_profile = AlignmentProfileV1(
@@ -276,7 +319,7 @@ class PostgresIngestWorkflowInputResolver:
             if self._package_schemas is not None
             else "mcap-source-reference/1",
             frequency_hz=frequency_hz,
-            required_modalities=frozenset(snapshot.fields),
+            required_modalities=frozenset(preflight.manifest.actual_topics),
             default_tolerance_ns=max(1, 1_000_000_000 // frequency_hz),
         )
         return IngestRolloutWorkflowInput(
@@ -605,56 +648,37 @@ class PostgresIngestWorkflowInputResolver:
             )
         return candidates[0]
 
-    def _select_dataset_schema(
-        self,
-        *,
-        project_id: str,
-        dataset_id: str,
-        schema_snapshot_ids: Sequence[str],
-        preflight: ManifestPreflightResultV1,
-        profile: QualityProfileV1,
-    ) -> tuple[str, str, DatasetSchemaSnapshot]:
-        compatible: list[tuple[str, DatasetSchemaSnapshot]] = []
-        for schema_snapshot_id in schema_snapshot_ids:
-            candidate = self._schema_builder(
-                project_id=project_id,
-                dataset_id=dataset_id,
-                schema_snapshot_id=schema_snapshot_id,
-                preflight=preflight,
-                profile=profile,
-            )
-            schemas = self._package_schemas or self._catalog
-            existing = schemas.schema_for(project_id, dataset_id)
-            if existing is None or existing == candidate:
-                compatible.append((schema_snapshot_id, candidate))
-        if len(compatible) != 1:
-            raise _blocked(
-                "the task Dataset must have exactly one compatible Tag Schema binding in "
-                "the selected storage region"
-            )
-        schema_snapshot_id, candidate = compatible[0]
-        try:
-            schemas.register_schema(candidate)
-        except Exception as exc:
-            raise _blocked("the compatible dataset schema could not be registered") from exc
-        return dataset_id, schema_snapshot_id, candidate
-
-    _task_dataset = staticmethod(task_dataset)
-    _dataset_schema_candidate = staticmethod(build_dataset_schema)
-
     @staticmethod
-    def _dataset_schema_targets(
-        cursor: Any, *, project_id: str, storage_region_code: str, dataset_id: str
-    ) -> tuple[str, ...]:
-        organization_id = current_request_context().organization_id
-        if organization_id is None:
-            raise _blocked("schema targets require an organization scope")
-        return dataset_schema_targets(
-            cursor,
-            organization_id=organization_id,
-            project_id=project_id,
-            storage_region_code=storage_region_code,
-            dataset_id=dataset_id,
+    def _capture_snapshot(
+        cursor: Any, scope: tuple[str, str, str], preflight: ManifestPreflightResultV1
+    ) -> dict[str, Any]:
+        from hc_data_platform.capture_schemes.processing import require_snapshot, validate_snapshot
+
+        manifest = preflight.manifest
+        cursor.execute(
+            """SELECT document FROM ingest.capture_recording_snapshots
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s
+            AND robot_id=%s AND recording_id=%s""",
+            (*scope, manifest.robot_id, manifest.recording_request_id),
+        )
+        row = cursor.fetchone()
+        frozen = require_snapshot(
+            row[0]
+            if row
+            else {"error": "CAPTURE_PLAN_REQUIRED", "detail": "历史上传入口缺少冻结录制方案"}
+        )
+        return require_snapshot(
+            validate_snapshot(
+                frozen,
+                scope,
+                {
+                    "dataset_id": frozen["dataset_id"],
+                    "collection_task_id": manifest.task_id,
+                    "robot_id": manifest.robot_id,
+                    "source_format": "MCAP",
+                    "recording_id": manifest.recording_request_id,
+                },
+            )
         )
 
     def _materialize_mcap(
@@ -892,6 +916,28 @@ class _LocalProjectionSession:
                 path.unlink()
             raise
         self._path = path
+        if self.source.capture_snapshot is not None:
+            from hc_data_platform.capture_schemes.models import OutputContract
+            from hc_data_platform.capture_schemes.processing import validate_mcap_output
+            from hc_data_platform.continuous_recordings.mcap_native import (
+                McapProcessingConfig,
+                prepare,
+            )
+
+            frozen = self.source.capture_snapshot
+            try:
+                with tempfile.TemporaryDirectory(prefix="capture-validation-") as directory:
+                    config = frozen["effective_adapter"]["configuration"]
+                    convert: Callable[[Path, Path, Any], Any] = prepare
+                    _, evidence = convert(path, Path(directory) / "recording", config)
+                    validate_mcap_output(
+                        OutputContract.model_validate(frozen["output"]),
+                        McapProcessingConfig.model_validate(config),
+                        evidence,
+                    )
+            except Exception:
+                self.__exit__()
+                raise
         return self
 
     def __exit__(self, *_args: object) -> None:

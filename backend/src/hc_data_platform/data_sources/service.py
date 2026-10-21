@@ -6,7 +6,7 @@ import hashlib
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
@@ -178,7 +178,7 @@ class DataSourceService:
             outcome="SUCCEEDED",
         )
         return DataSourcePage(
-            summary=self._metrics(all_items, now),
+            summary=self._metrics(all_items, now, scope),
             facets=_facets(all_items),
             items=tuple(self._summary(self._decorate(source, auth)) for source in visible),
             page_info=page_info,
@@ -486,7 +486,7 @@ class DataSourceService:
             )
             connectivity = current.connectivity.model_copy(
                 update={
-                    "state": "ONLINE" if usable else "AUTH_FAILED",
+                    "state": "UNKNOWN" if usable else "AUTH_FAILED",
                     "last_check_state": "SUCCEEDED" if usable else "FAILED",
                     "observed_config_version": current.config_version,
                     "observed_credential_version": current.credential_version,
@@ -1201,11 +1201,15 @@ class DataSourceService:
             }
         )
 
-    def _metrics(self, items: tuple[DataSourceDetail, ...], now: datetime) -> DataSourceMetrics:
+    def _metrics(
+        self, items: tuple[DataSourceDetail, ...], now: datetime, scope: DataSourceScope
+    ) -> DataSourceMetrics:
+        start = now.astimezone(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        size = self._repository.committed_bytes(scope, start, start + timedelta(days=1))
         return DataSourceMetrics(
             total_count=str(len(items)),
             online_count=str(sum(item.connectivity.state == "ONLINE" for item in items)),
-            verified_bytes_today="0",
+            verified_bytes_today=str(size) if size is not None else None,
             abnormal_count=str(
                 sum(item.connectivity.state not in {"ONLINE", "UNKNOWN"} for item in items)
             ),

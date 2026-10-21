@@ -9,15 +9,23 @@ import pytest
 from hc_data_platform.core.dbapi import psycopg_connection_factory
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.dashboard.models import DashboardPendingItemType
+from hc_data_platform.dashboard.postgres import PostgresDashboardRepository
+from hc_data_platform.dashboard.repository import DashboardScope, DashboardWindow
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
 from hc_data_platform.lerobot_imports import processing, resolutions
 from hc_data_platform.lerobot_imports.dispatch import LeRobotImportOutboxHandler
 from hc_data_platform.lerobot_imports.pipeline import LeRobotPipeline
 from hc_data_platform.lerobot_imports.resolutions import ResolveEpisode
+from hc_data_platform.robot_ingest.processing_contract import EpisodeProgress, ProcessingDocument
+from hc_data_platform.robot_ingest.processing_store import ProcessingStore
+from hc_data_platform.security.capabilities import CAPABILITY_UPLOAD_MANAGE
 from hc_data_platform.workflow.lerobot_workflow import NativeStateUpdate
 from hc_data_platform.workflow.models import JobRecord, JobStatus
 from tests.dashboard.test_dashboard_postgres import (
     NOW,
+    START,
+    actor,
     isolated_dsn,  # noqa: F401
     organization_for,
     request_scope,
@@ -144,6 +152,43 @@ def test_decision_is_scoped_idempotent_and_preserves_shared_raw(conflict, action
         ).fetchall()
     if action == "DISCARD":
         assert events == []
+        repository = PostgresDashboardRepository(connect)
+        auth = actor(scope[1], scope[2], capabilities=(CAPABILITY_UPLOAD_MANAGE,))
+        pending = repository.pending_facts(
+            auth=auth,
+            scope=DashboardScope(auth.subject_id, scope[1], scope[2]),
+            window=DashboardWindow(START, NOW, "UTC"),
+            allowed_types=(DashboardPendingItemType.QC_ANOMALY,),
+            limit=100,
+        )
+        assert pending.items == ()
+        stale = ProcessingDocument(
+            phase="DONE",
+            episodes=(
+                EpisodeProgress(
+                    source_episode_id="source",
+                    source_episode_index=1,
+                    episode_id=rollout,
+                    status="FAILED",
+                    error_code="OLD_ERROR",
+                    retryable=True,
+                ),
+                EpisodeProgress(
+                    source_episode_id="other",
+                    source_episode_index=2,
+                    episode_id="sibling-failed",
+                    status="FAILED",
+                    error_code="OTHER",
+                    retryable=True,
+                ),
+            ),
+        )
+        with connect() as connection, connection.cursor() as cursor:
+            refreshed = ProcessingStore._with_discarded(cursor, scope, stale)
+        assert refreshed.episodes[0].status == "DISCARDED"
+        assert refreshed.episodes[0].error_code is None
+        assert not refreshed.episodes[0].retryable
+        assert refreshed.episodes[1] == stale.episodes[1]
         processing.retry_processing(*scope)
         with connect() as connection:
             assert connection.execute(

@@ -134,7 +134,7 @@
   z-index: 1;
   display: grid;
   min-width: 0;
-  grid-template-rows: 22px 44px 24px 18px auto;
+  grid-template-rows: 22px 44px 24px 18px minmax(16px, auto) auto;
   align-content: start;
   justify-items: center;
   text-align: center;
@@ -224,26 +224,88 @@
   white-space: normal;
 }
 
-.issueButton {
-  margin-top: 3px;
-  padding: 2px 5px;
-  border: 0;
-  border-radius: 4px;
-  color: var(--hc-color-warning, #a26300);
-  background: transparent;
+.stageBadges {
+  display: flex;
+  max-width: calc(100% - 8px);
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  padding-top: 6px;
+}
+
+.stageBadges:empty {
+  display: none;
+}
+
+.stageBadge {
+  --badge-color: var(--hc-color-text-muted, #676b80);
+
+  display: inline-flex;
+  box-sizing: border-box;
+  min-height: 25px;
+  max-width: 100%;
+  gap: 5px;
+  align-items: center;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--badge-color) 14%, transparent);
+  border-radius: 6px;
+  color: var(--badge-color);
+  background: color-mix(
+    in srgb,
+    var(--badge-color) 5%,
+    var(--hc-color-surface, #fff)
+  );
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+.stageBadge > svg {
+  flex-shrink: 0;
+}
+
+.badgeLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badgeCount {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.issueButton {
+  --badge-color: var(--hc-color-warning, #a26300);
+
   cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .issueButton[data-tone="danger"] {
-  color: var(--hc-color-error, #b84646);
+  --badge-color: var(--hc-color-error, #b84646);
 }
 
 .issueButton:hover {
-  background: var(--hc-color-surface-muted, #f3f4f8);
+  border-color: color-mix(in srgb, var(--badge-color) 35%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--badge-color) 10%,
+    var(--hc-color-surface, #fff)
+  );
+}
+
+.issueButton:active {
+  background: color-mix(
+    in srgb,
+    var(--badge-color) 15%,
+    var(--hc-color-surface, #fff)
+  );
 }
 
 .issueButton:focus-visible {

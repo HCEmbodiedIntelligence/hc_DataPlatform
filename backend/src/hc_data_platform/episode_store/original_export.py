@@ -158,7 +158,7 @@ def original_mcap_window(package):
 
 
 def require_original_mcap(package):
-    from .delivery_repository import failure
+    from .delivery_errors import failure
 
     window = original_mcap_window(package)
     if window is None:
@@ -173,7 +173,7 @@ def require_original_mcap(package):
 def validate_original_mcap(path):
     from mcap.reader import make_reader
 
-    from .delivery_repository import failure
+    from .delivery_errors import failure
 
     with Path(path).open("rb") as stream:
         if make_reader(stream, validate_crcs=True).get_header().profile == "hc-episode-mcap/1":

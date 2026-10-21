@@ -1,4 +1,4 @@
-"""Read projection of direct uploads, receipt, recording QC and admission.
+"""Read projection of robot/web uploads, receipt, recording QC and admission.
 
 Count an upload once, and count Episodes separately. Never treat receipt or a
 successful recording preparation as training-data admission.
@@ -21,6 +21,7 @@ class CaptureProgress(BaseModel):
     dataset_id: str
     recording_id: str | None = None
     source_import_id: str | None = None
+    canonical_episode_id: str | None = None
     upload_state: str
     stage: Literal[
         "UPLOADING",
@@ -65,24 +66,62 @@ class CaptureProgressPage(BaseModel):
 
 
 def capture_counts(items):
+    unique = [item for item in items if not item.canonical_episode_id]
     return CaptureCounts(
         upload_count=len({item.upload_id for item in items}),
-        received_count=len({item.upload_id for item in items if item.received}),
-        awaiting_slice_count=sum(item.stage == "AWAITING_SLICE" for item in items),
+        received_count=len({item.upload_id for item in unique if item.received}),
+        awaiting_slice_count=sum(item.stage == "AWAITING_SLICE" for item in unique),
         processing_count=sum(
-            item.stage in {"RECEIVED", "PREPARING", "PROCESSING"} for item in items
+            item.stage in {"RECEIVED", "PREPARING", "PROCESSING"} for item in unique
         ),
-        failed_count=sum(item.stage == "FAILED" for item in items),
-        blocked_count=sum(item.stage == "BLOCKED" for item in items),
-        episode_count=sum(item.episode_count for item in items),
-        ready_episode_count=sum(item.ready_episode_count for item in items),
-        failed_episode_count=sum(item.failed_episode_count for item in items),
+        failed_count=sum(item.stage == "FAILED" for item in unique),
+        blocked_count=sum(item.stage == "BLOCKED" for item in unique),
+        episode_count=sum(item.episode_count for item in unique),
+        ready_episode_count=sum(item.ready_episode_count for item in unique),
+        failed_episode_count=sum(item.failed_episode_count for item in unique),
     )
 
 
 def read_captures(cursor, organization_id, project_id, region_code, task_id=None):
     cursor.execute(
         """
+        WITH scope AS (
+          SELECT %s::text AS organization_id, %s::text AS project_id,
+                 %s::text AS region_code, %s::text AS task_id
+        ), uploads AS (
+          SELECT u.organization_id,u.project_id,u.region_code,u.upload_id,
+                 u.collection_task_id,u.authenticated_robot_id,u.dataset_id,
+                 u.state,u.committed_at,u.created_at,u.upload_document,
+                 u.capture_mode,u.collection_job_id,u.raw_source_id
+          FROM ingest.robot_ingest_uploads u
+          JOIN scope USING (organization_id,project_id,region_code)
+          WHERE scope.task_id IS NULL OR u.collection_task_id=scope.task_id
+          UNION ALL
+          -- A native web import has a committed Raw receipt but no robot upload
+          -- or legacy rollout object. Count that receipt once across its Episodes.
+          SELECT s.organization_id,s.project_id,s.region_code,s.upload_id,
+                 s.collection_task_id,s.robot_id,s.dataset_id,
+                 s.raw_status,s.committed_at,s.created_at,'{}'::jsonb,
+                 'PRESEGMENTED',s.raw_source_id,s.raw_source_id
+          FROM ingest.raw_sources s
+          JOIN scope USING (organization_id,project_id,region_code)
+          WHERE s.source_format='LEROBOT_V3' AND s.raw_status='COMMITTED'
+            AND s.collection_task_id IS NOT NULL AND s.dataset_id IS NOT NULL
+            AND s.robot_id IS NOT NULL
+            AND (scope.task_id IS NULL OR s.collection_task_id=scope.task_id)
+            AND NOT EXISTS (
+              SELECT 1 FROM ingest.robot_ingest_uploads direct
+              WHERE direct.organization_id=s.organization_id
+                AND direct.project_id=s.project_id AND direct.region_code=s.region_code
+                AND (direct.raw_source_id=s.raw_source_id OR direct.upload_id=s.upload_id)
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM ingest.rollout_objects legacy
+              WHERE legacy.organization_id=s.organization_id
+                AND legacy.project_id=s.project_id AND legacy.region_code=s.region_code
+                AND legacy.manifest_key=s.manifest_key
+            )
+        )
         SELECT u.upload_id,u.collection_task_id,u.authenticated_robot_id,u.dataset_id,
                r.recording_id,u.state,u.committed_at,u.created_at,
                COALESCE(r.capture_started_at::text,
@@ -93,7 +132,7 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
                COALESCE(episodes.items,'[]'::jsonb), u.capture_mode,
                COALESCE(r.rollout_id,u.upload_id), COALESCE(r.data_package_id,u.upload_id),
                u.raw_source_id
-        FROM ingest.robot_ingest_uploads u
+        FROM uploads u
         LEFT JOIN ingest.continuous_recordings r
           ON r.organization_id=u.organization_id AND r.project_id=u.project_id
          AND r.region_code=u.region_code
@@ -133,21 +172,47 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
               AND s.region_code=u.region_code AND s.recording_id=r.recording_id
               AND s.revision=r.finalized_revision
             UNION ALL
-            SELECT jsonb_build_object('status',e.status,'quality',e.quality_status,
+            SELECT jsonb_build_object('status',e.status,
+                'quality',COALESCE(q.status,NULLIF(e.quality_status,'PENDING')),
                 'error',j.last_error_code)
             FROM ingest.raw_source_episodes e
+            LEFT JOIN quality_rollout_summaries q
+              ON q.organization_id=e.organization_id AND q.project_id=e.project_id
+             AND q.region_code=e.region_code
+             AND q.rollout_id=COALESCE(e.data_ref #>> '{identity,rollout_id}',e.episode_id)
             WHERE e.organization_id=u.organization_id AND e.project_id=u.project_id
               AND e.region_code=u.region_code AND e.raw_source_id=u.raw_source_id
               AND r.recording_id IS NULL
           ) combined
         ) episodes ON true
-        WHERE u.organization_id=%s AND u.project_id=%s AND u.region_code=%s
-          AND (%s::text IS NULL OR u.collection_task_id=%s)
         ORDER BY u.created_at DESC,u.upload_id
         """,
-        (organization_id, project_id, region_code, task_id, task_id),
+        (organization_id, project_id, region_code, task_id),
     )
-    return tuple(capture_from_row(row) for row in cursor.fetchall())
+    items = tuple(capture_from_row(row) for row in cursor.fetchall())
+    cursor.execute(
+        (
+            """SELECT raw_source_id,canonical_episode_id FROM ingest.recording_source_links WHERE
+            organization_id=%s AND project_id=%s AND region_code=%s"""
+        ),
+        (organization_id, project_id, region_code),
+    )
+    links = dict(cursor.fetchall())
+    return tuple(
+        item.model_copy(
+            update={
+                "canonical_episode_id": links[item.source_import_id],
+                "stage": "RECEIVED",
+                "error_code": "RECORDING_ALREADY_PROCESSED",
+                "episode_count": 0,
+                "ready_episode_count": 0,
+                "failed_episode_count": 0,
+            }
+        )
+        if item.source_import_id in links
+        else item
+        for item in items
+    )
 
 
 def capture_from_row(row):
@@ -217,6 +282,10 @@ def capture_from_row(row):
             "MCAP_MAPPING_REQUIRED",
             "MCAP_MAPPING_INVALID",
             "MCAP_DEPTH_UNITS_REQUIRED",
+            "ROBOT_PROCESSING_CONFIG_REQUIRED",
+            "ROBOT_PROCESSING_CONFIG_CONFLICT",
+            "ROBOT_PROCESSING_CONFIG_VERSION_UNKNOWN",
+            "ROBOT_TASK_DATA_INCOMPATIBLE",
         }
         else "FAILED"
         if job_status in {"FAILED", "PARTIALLY_FAILED"}

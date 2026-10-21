@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from threading import RLock
 from typing import Any, Protocol, cast
@@ -21,12 +21,14 @@ from .models import (
     UploadState,
     UploadTarget,
 )
+from .onboarding_models import OnboardingFacts
 
 
 @dataclass(frozen=True, slots=True)
 class AuthenticationResult:
     context: RobotIngestAuthContext | None
     failure_code: str | None = None
+    secret_missing: bool = False
 
 
 class RobotIngestConflict(RuntimeError):
@@ -38,9 +40,34 @@ class RobotIngestIdentityMissing(KeyError):
 
 
 class RobotIngestRepository(Protocol):
+    def onboarding_facts(
+        self, organization_id: str, *, legacy_scopes: tuple[tuple[str, str], ...] = ()
+    ) -> tuple[OnboardingFacts, ...]: ...
+
+    def heartbeat(
+        self,
+        organization_id: str,
+        identity_id: str,
+        observed_at: datetime,
+        activity_expires_at: datetime | None,
+    ) -> None: ...
+
+    def successful_volume(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        start: datetime,
+        end: datetime,
+        robot_id: str | None,
+    ) -> tuple[int, int]: ...
+
     def create_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity: ...
 
-    def save_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity: ...
+    def save_identity(
+        self, identity: RobotIngestIdentity, *, changed_fields: tuple[str, ...] | None = None
+    ) -> RobotIngestIdentity: ...
 
     def get_identity(
         self, organization_id: str, ingest_identity_id: str
@@ -61,7 +88,11 @@ class RobotIngestRepository(Protocol):
         summary: RobotCredentialSummary,
         token_digest: str,
         revoke_previous: bool,
-    ) -> None: ...
+        only_if_missing: bool = False,
+        request_key: str | None = None,
+        expected_policy: str | None = None,
+        secret_ciphertext: str | None = None,
+    ) -> tuple[RobotIngestIdentity, RobotCredentialSummary | None]: ...
 
     def revoke_credential(
         self, *, organization_id: str, ingest_identity_id: str, credential_id: str, now: datetime
@@ -70,6 +101,18 @@ class RobotIngestRepository(Protocol):
     def list_credentials(
         self, organization_id: str, ingest_identity_id: str
     ) -> tuple[RobotCredentialSummary, ...]: ...
+
+    def credential_record(
+        self, organization_id: str, ingest_identity_id: str, credential_id: str
+    ) -> _CredentialRecord | None: ...
+
+    def cache_credential_secret(
+        self, auth: RobotIngestAuthContext, token_digest: str, ciphertext: str, now: datetime
+    ) -> None: ...
+
+    def delete_credential(
+        self, organization_id: str, ingest_identity_id: str, credential_id: str, now: datetime
+    ) -> bool: ...
 
     def authenticate(
         self, *, credential_id: str, token_digest: str, now: datetime
@@ -177,10 +220,14 @@ class _CredentialRecord:
     ingest_identity_id: str
     summary: RobotCredentialSummary
     token_digest: str
+    secret_ciphertext: str | None = None
+    deleted_at: datetime | None = None
 
 
 class InMemoryRobotIngestRepository:
     def __init__(self, *, targets: tuple[UploadTarget, ...] = ()) -> None:
+        self._credential_commands: set[tuple[str, str, str]] = set()
+        self.robot_facts: dict[tuple[str, str], OnboardingFacts] = {}
         self._identities: dict[tuple[str, str], RobotIngestIdentity] = {}
         self._deleted_identities: set[tuple[str, str]] = set()
         self._robot_identity: dict[tuple[str, str], str] = {}
@@ -194,6 +241,72 @@ class InMemoryRobotIngestRepository:
         self._lock = RLock()
         for target in targets:
             self.add_target(target)
+
+    def onboarding_facts(
+        self, organization_id: str, *, legacy_scopes: tuple[tuple[str, str], ...] = ()
+    ) -> tuple[OnboardingFacts, ...]:
+        with self._lock:
+            result = []
+            for (org, robot_id), facts in self.robot_facts.items():
+                if org != organization_id:
+                    continue
+                identity = self.find_identity(org, robot_id)
+                result.append(
+                    facts.model_copy(
+                        update={
+                            "identity": identity,
+                            "legacy_sources": tuple(
+                                source
+                                for source in facts.legacy_sources
+                                if (source.project_id, source.region_code) in legacy_scopes
+                            ),
+                            "credentials": self.list_credentials(org, identity.ingest_identity_id)
+                            if identity
+                            else (),
+                        }
+                    )
+                )
+            return tuple(result)
+
+    def heartbeat(
+        self,
+        organization_id: str,
+        identity_id: str,
+        observed_at: datetime,
+        activity_expires_at: datetime | None,
+    ) -> None:
+        with self._lock:
+            identity = self.get_identity(organization_id, identity_id)
+            if identity and identity.state is IdentityState.ENABLED:
+                self._identities[(organization_id, identity_id)] = identity.model_copy(
+                    update={
+                        "last_heartbeat_at": observed_at,
+                        "activity_expires_at": activity_expires_at,
+                    }
+                )
+
+    def successful_volume(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        start: datetime,
+        end: datetime,
+        robot_id: str | None,
+    ) -> tuple[int, int]:
+        uploads = self.list_uploads(
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            robot_id=robot_id,
+        )
+        committed = [
+            u
+            for u in uploads
+            if u.state is UploadState.COMMITTED and u.committed_at and start <= u.committed_at < end
+        ]
+        return sum(u.total_bytes for u in committed), len(committed)
 
     def add_target(self, target: UploadTarget) -> None:
         with self._lock:
@@ -211,11 +324,17 @@ class InMemoryRobotIngestRepository:
             self._robot_identity[robot_key] = identity.ingest_identity_id
         return identity
 
-    def save_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity:
+    def save_identity(
+        self, identity: RobotIngestIdentity, *, changed_fields: tuple[str, ...] | None = None
+    ) -> RobotIngestIdentity:
         key = (identity.organization_id, identity.ingest_identity_id)
         with self._lock:
             if key not in self._identities or key in self._deleted_identities:
                 raise RobotIngestIdentityMissing(key)
+            if changed_fields is not None:
+                identity = self._identities[key].model_copy(
+                    update={key: getattr(identity, key) for key in changed_fields}
+                )
             self._identities[key] = identity
         return identity
 
@@ -276,10 +395,48 @@ class InMemoryRobotIngestRepository:
         summary: RobotCredentialSummary,
         token_digest: str,
         revoke_previous: bool,
-    ) -> None:
+        only_if_missing: bool = False,
+        request_key: str | None = None,
+        expected_policy: str | None = None,
+        secret_ciphertext: str | None = None,
+    ) -> tuple[RobotIngestIdentity, RobotCredentialSummary | None]:
         with self._lock:
-            if self.get_identity(identity.organization_id, identity.ingest_identity_id) is None:
+            current = self.get_identity(identity.organization_id, identity.ingest_identity_id)
+            if current is None:
                 raise RobotIngestIdentityMissing(identity.ingest_identity_id)
+            if expected_policy is not None:
+                from .connections import policy, reject
+
+                if current.state is not IdentityState.ENABLED or policy(current) != expected_policy:
+                    reject("CONNECTION_PERMISSION_CHANGED", "上传权限已变化，请重新生成连接链接")
+            receipt = (identity.organization_id, identity.ingest_identity_id, request_key or "")
+            if request_key and receipt in self._credential_commands:
+                return current, None
+            if only_if_missing and (
+                current.state is IdentityState.DISABLED
+                or any(
+                    item.state is CredentialState.ACTIVE
+                    and (item.expires_at is None or item.expires_at > summary.issued_at)
+                    for item in self.list_credentials(
+                        identity.organization_id, identity.ingest_identity_id
+                    )
+                )
+            ):
+                if request_key:
+                    self._credential_commands.add(receipt)
+                return current, None
+            summary = summary.model_copy(
+                update={
+                    "credential_version": current.credential_revision + 1,
+                    "reveal_available": secret_ciphertext is not None,
+                }
+            )
+            identity = current.model_copy(
+                update={
+                    "credential_revision": summary.credential_version,
+                    "updated_at": summary.issued_at,
+                }
+            )
             if summary.credential_id in self._credentials:
                 raise RobotIngestConflict("credential already exists")
             if revoke_previous:
@@ -289,24 +446,26 @@ class InMemoryRobotIngestRepository:
                         and record.ingest_identity_id == identity.ingest_identity_id
                         and record.summary.state is CredentialState.ACTIVE
                     ):
-                        self._credentials[key] = _CredentialRecord(
-                            organization_id=record.organization_id,
-                            ingest_identity_id=record.ingest_identity_id,
+                        self._credentials[key] = replace(
+                            record,
                             summary=record.summary.model_copy(
                                 update={
                                     "state": CredentialState.REVOKED,
                                     "revoked_at": summary.issued_at,
                                 }
                             ),
-                            token_digest=record.token_digest,
                         )
             self._credentials[summary.credential_id] = _CredentialRecord(
                 organization_id=identity.organization_id,
                 ingest_identity_id=identity.ingest_identity_id,
                 summary=summary,
                 token_digest=token_digest,
+                secret_ciphertext=secret_ciphertext,
             )
             self._identities[(identity.organization_id, identity.ingest_identity_id)] = identity
+            if request_key:
+                self._credential_commands.add(receipt)
+            return identity, summary
 
     def revoke_credential(
         self, *, organization_id: str, ingest_identity_id: str, credential_id: str, now: datetime
@@ -328,6 +487,8 @@ class InMemoryRobotIngestRepository:
                 ingest_identity_id=record.ingest_identity_id,
                 summary=summary,
                 token_digest=record.token_digest,
+                secret_ciphertext=record.secret_ciphertext,
+                deleted_at=record.deleted_at,
             )
             return summary
 
@@ -342,11 +503,79 @@ class InMemoryRobotIngestRepository:
                         for record in self._credentials.values()
                         if record.organization_id == organization_id
                         and record.ingest_identity_id == ingest_identity_id
+                        and record.deleted_at is None
                     ),
                     key=lambda item: item.credential_version,
                     reverse=True,
                 )
             )
+
+    def credential_record(
+        self, organization_id: str, ingest_identity_id: str, credential_id: str
+    ) -> _CredentialRecord | None:
+        with self._lock:
+            record = self._credentials.get(credential_id)
+            if (
+                record
+                and record.deleted_at is None
+                and (record.organization_id, record.ingest_identity_id)
+                == (organization_id, ingest_identity_id)
+            ):
+                return record
+            return None
+
+    def cache_credential_secret(
+        self, auth: RobotIngestAuthContext, token_digest: str, ciphertext: str, now: datetime
+    ) -> None:
+        with self._lock:
+            record = self.credential_record(
+                auth.organization_id, auth.ingest_identity_id, auth.credential_id
+            )
+            identity = self.get_identity(auth.organization_id, auth.ingest_identity_id)
+            if (
+                record
+                and identity
+                and identity.state is IdentityState.ENABLED
+                and record.token_digest == token_digest
+                and record.secret_ciphertext is None
+                and record.summary.state is CredentialState.ACTIVE
+                and (record.summary.expires_at is None or record.summary.expires_at > now)
+            ):
+                self._credentials[auth.credential_id] = replace(
+                    record,
+                    secret_ciphertext=ciphertext,
+                    summary=record.summary.model_copy(update={"reveal_available": True}),
+                )
+
+    def delete_credential(
+        self, organization_id: str, ingest_identity_id: str, credential_id: str, now: datetime
+    ) -> bool:
+        with self._lock:
+            record = self._credentials.get(credential_id)
+            if record is None or (record.organization_id, record.ingest_identity_id) != (
+                organization_id,
+                ingest_identity_id,
+            ):
+                return False
+            if record.deleted_at is not None:
+                return True
+            if record.summary.state is CredentialState.ACTIVE and (
+                record.summary.expires_at is None or record.summary.expires_at > now
+            ):
+                raise RobotIngestConflict("revoke credential before deleting")
+            self._credentials[credential_id] = replace(
+                record,
+                secret_ciphertext=None,
+                deleted_at=now,
+                summary=record.summary.model_copy(
+                    update={
+                        "state": CredentialState.REVOKED,
+                        "revoked_at": record.summary.revoked_at or now,
+                        "reveal_available": False,
+                    }
+                ),
+            )
+            return True
 
     def authenticate(
         self, *, credential_id: str, token_digest: str, now: datetime
@@ -358,11 +587,24 @@ class InMemoryRobotIngestRepository:
             if record is None or not hmac.compare_digest(record.token_digest, token_digest):
                 return AuthenticationResult(None, "ROBOT_CREDENTIAL_INVALID")
             summary = record.summary
-            if summary.state is CredentialState.REVOKED:
-                return AuthenticationResult(None, "ROBOT_CREDENTIAL_REVOKED")
-            if summary.expires_at is not None and summary.expires_at <= now:
-                return AuthenticationResult(None, "ROBOT_CREDENTIAL_EXPIRED")
-            identity = self._identities.get((record.organization_id, record.ingest_identity_id))
+            key = (record.organization_id, record.ingest_identity_id)
+            identity = self._identities.get(key)
+            failure = (
+                "ROBOT_CREDENTIAL_REVOKED"
+                if summary.state is CredentialState.REVOKED
+                else "ROBOT_CREDENTIAL_EXPIRED"
+                if summary.expires_at and summary.expires_at <= now
+                else None
+            )
+            if failure:
+                if identity and identity.state is IdentityState.ENABLED:
+                    self._identities[key] = identity.model_copy(
+                        update={
+                            "last_auth_failure_at": now,
+                            "last_auth_failure_code": failure,
+                        }
+                    )
+                return AuthenticationResult(None, failure)
             if identity is None or identity.state is IdentityState.DISABLED:
                 return AuthenticationResult(None, "ROBOT_IDENTITY_DISABLED")
             authenticated_summary = summary.model_copy(update={"last_authenticated_at": now})
@@ -371,6 +613,8 @@ class InMemoryRobotIngestRepository:
                 ingest_identity_id=record.ingest_identity_id,
                 summary=authenticated_summary,
                 token_digest=record.token_digest,
+                secret_ciphertext=record.secret_ciphertext,
+                deleted_at=record.deleted_at,
             )
             observed = identity.model_copy(
                 update={"last_authenticated_at": now, "last_seen_at": now, "updated_at": now}
@@ -386,7 +630,8 @@ class InMemoryRobotIngestRepository:
                     allowed_transports=observed.allowed_transports,
                     allowed_formats=observed.allowed_formats,
                     upload_policy=observed.upload_policy,
-                )
+                ),
+                secret_missing=record.secret_ciphertext is None,
             )
 
     def resolve_upload_target(self, collection_task_id: str) -> UploadTarget | None:
@@ -797,6 +1042,46 @@ class PostgresRobotIngestRepository:
 
         return cls(scoped_connection_factory, bootstrap)
 
+    def onboarding_facts(
+        self, organization_id: str, *, legacy_scopes: tuple[tuple[str, str], ...] = ()
+    ) -> tuple[OnboardingFacts, ...]:
+        from .onboarding_repository import read_facts
+
+        return read_facts(self._scoped, organization_id, legacy_scopes)
+
+    def heartbeat(
+        self,
+        organization_id: str,
+        identity_id: str,
+        observed_at: datetime,
+        activity_expires_at: datetime | None,
+    ) -> None:
+        from .onboarding_repository import heartbeat
+
+        heartbeat(self._scoped, organization_id, identity_id, observed_at, activity_expires_at)
+
+    def successful_volume(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        start: datetime,
+        end: datetime,
+        robot_id: str | None,
+    ) -> tuple[int, int]:
+        from .onboarding_repository import volume
+
+        return volume(
+            self._scoped,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            start=start,
+            end=end,
+            robot_id=robot_id,
+        )
+
     def _one(
         self, query: str, params: Sequence[object], *, bootstrap: bool = False
     ) -> dict[str, object] | None:
@@ -852,10 +1137,28 @@ class PostgresRobotIngestRepository:
             cursor.close()
             connection.close()
 
-    def save_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity:
+    def save_identity(
+        self, identity: RobotIngestIdentity, *, changed_fields: tuple[str, ...] | None = None
+    ) -> RobotIngestIdentity:
         connection = self._scoped()
         cursor = connection.cursor()
         try:
+            cursor.execute(
+                """SELECT identity_document FROM ingest.robot_ingest_identities
+                WHERE organization_id=%s AND ingest_identity_id=%s AND deleted_at IS NULL
+                FOR UPDATE""",
+                (identity.organization_id, identity.ingest_identity_id),
+            )
+            raw = cursor.fetchone()
+            if raw is None:
+                raise RobotIngestIdentityMissing(identity.ingest_identity_id)
+            if changed_fields is not None:
+                current = RobotIngestIdentity.model_validate(
+                    _json(_row(cursor, raw)["identity_document"])
+                )
+                identity = current.model_copy(
+                    update={key: getattr(identity, key) for key in changed_fields}
+                )
             cursor.execute(
                 """
                 UPDATE ingest.robot_ingest_identities
@@ -984,18 +1287,72 @@ class PostgresRobotIngestRepository:
         summary: RobotCredentialSummary,
         token_digest: str,
         revoke_previous: bool,
-    ) -> None:
+        only_if_missing: bool = False,
+        request_key: str | None = None,
+        expected_policy: str | None = None,
+        secret_ciphertext: str | None = None,
+    ) -> tuple[RobotIngestIdentity, RobotCredentialSummary | None]:
         connection = self._scoped()
         cursor = connection.cursor()
         try:
             cursor.execute(
-                """SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                """SELECT identity_document FROM ingest.robot_ingest_identities
                     WHERE organization_id = %s AND ingest_identity_id = %s
                       AND deleted_at IS NULL FOR UPDATE""",
                 (identity.organization_id, identity.ingest_identity_id),
             )
-            if cursor.fetchone() is None:
+            raw = cursor.fetchone()
+            if raw is None:
                 raise RobotIngestIdentityMissing(identity.ingest_identity_id)
+            current = RobotIngestIdentity.model_validate(
+                _json(_row(cursor, raw)["identity_document"])
+            )
+            if expected_policy is not None:
+                from .connections import policy, reject
+
+                if current.state is not IdentityState.ENABLED or policy(current) != expected_policy:
+                    reject("CONNECTION_PERMISSION_CHANGED", "上传权限已变化，请重新生成连接链接")
+            if request_key:
+                cursor.execute(
+                    """SELECT 1 FROM ingest.robot_credential_requests
+                    WHERE organization_id=%s AND ingest_identity_id=%s AND request_key=%s""",
+                    (identity.organization_id, identity.ingest_identity_id, request_key),
+                )
+                if cursor.fetchone() is not None:
+                    return current, None
+                cursor.execute(
+                    """INSERT INTO ingest.robot_credential_requests
+                    (organization_id, ingest_identity_id, request_key, created_at)
+                    VALUES (%s,%s,%s,%s)""",
+                    (
+                        identity.organization_id,
+                        identity.ingest_identity_id,
+                        request_key,
+                        summary.issued_at,
+                    ),
+                )
+            if only_if_missing:
+                cursor.execute(
+                    """SELECT 1 FROM ingest.robot_ingest_credentials
+                    WHERE organization_id=%s AND ingest_identity_id=%s AND state='ACTIVE'
+                    AND (expires_at IS NULL OR expires_at>%s) LIMIT 1""",
+                    (identity.organization_id, identity.ingest_identity_id, summary.issued_at),
+                )
+                if cursor.fetchone() is not None or current.state is IdentityState.DISABLED:
+                    connection.commit()
+                    return current, None
+            summary = summary.model_copy(
+                update={
+                    "credential_version": current.credential_revision + 1,
+                    "reveal_available": secret_ciphertext is not None,
+                }
+            )
+            identity = current.model_copy(
+                update={
+                    "credential_revision": summary.credential_version,
+                    "updated_at": summary.issued_at,
+                }
+            )
             if revoke_previous:
                 cursor.execute(
                     """UPDATE ingest.robot_ingest_credentials
@@ -1008,8 +1365,9 @@ class PostgresRobotIngestRepository:
                 """
                 INSERT INTO ingest.robot_ingest_credentials (
                     credential_id, organization_id, ingest_identity_id, credential_version,
-                    token_prefix, token_digest, state, issued_at, expires_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    token_prefix, token_digest, state, issued_at, expires_at,
+                    issuance_key, secret_ciphertext
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     summary.credential_id,
@@ -1021,6 +1379,8 @@ class PostgresRobotIngestRepository:
                     summary.state.value,
                     summary.issued_at,
                     summary.expires_at,
+                    request_key,
+                    secret_ciphertext,
                 ),
             )
             cursor.execute(
@@ -1037,6 +1397,7 @@ class PostgresRobotIngestRepository:
                 ),
             )
             connection.commit()
+            return identity, summary
         except Exception:
             connection.rollback()
             raise
@@ -1050,6 +1411,11 @@ class PostgresRobotIngestRepository:
         connection = self._scoped()
         cursor = connection.cursor()
         try:
+            cursor.execute(
+                """SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                WHERE organization_id=%s AND ingest_identity_id=%s FOR UPDATE""",
+                (organization_id, ingest_identity_id),
+            )
             cursor.execute(
                 """UPDATE ingest.robot_ingest_credentials
                       SET state = 'REVOKED', revoked_at = COALESCE(revoked_at, %s)
@@ -1077,9 +1443,11 @@ class PostgresRobotIngestRepository:
         try:
             cursor.execute(
                 """SELECT credential_id, credential_version, state, token_prefix, issued_at,
-                          expires_at, revoked_at, last_authenticated_at
+                          expires_at, revoked_at, last_authenticated_at,
+                          secret_ciphertext IS NOT NULL AS reveal_available
                      FROM ingest.robot_ingest_credentials
                     WHERE organization_id = %s AND ingest_identity_id = %s
+                      AND deleted_at IS NULL
                     ORDER BY credential_version DESC""",
                 (organization_id, ingest_identity_id),
             )
@@ -1091,11 +1459,93 @@ class PostgresRobotIngestRepository:
             cursor.close()
             connection.close()
 
+    def credential_record(
+        self, organization_id: str, ingest_identity_id: str, credential_id: str
+    ) -> _CredentialRecord | None:
+        row = self._one(
+            """SELECT * FROM ingest.robot_ingest_credentials
+            WHERE organization_id=%s AND ingest_identity_id=%s AND credential_id=%s
+              AND deleted_at IS NULL""",
+            (organization_id, ingest_identity_id, credential_id),
+        )
+        if row is None:
+            return None
+        summary = RobotCredentialSummary.model_validate(
+            {
+                **{key: row[key] for key in RobotCredentialSummary.model_fields if key in row},
+                "reveal_available": row["secret_ciphertext"] is not None,
+            }
+        )
+        return _CredentialRecord(
+            organization_id,
+            ingest_identity_id,
+            summary,
+            str(row["token_digest"]),
+            cast(str | None, row["secret_ciphertext"]),
+        )
+
+    def cache_credential_secret(
+        self, auth: RobotIngestAuthContext, token_digest: str, ciphertext: str, now: datetime
+    ) -> None:
+        # A legacy token can be encrypted only after actual authentication. Concurrent
+        # revocation/deletion wins; no old credential or identity can be reactivated.
+        with self._bootstrap() as db, db.cursor() as cursor:
+            cursor.execute(
+                """UPDATE ingest.robot_ingest_credentials c SET secret_ciphertext=%s
+                WHERE c.organization_id=%s AND c.ingest_identity_id=%s AND c.credential_id=%s
+                  AND c.token_digest=%s AND c.secret_ciphertext IS NULL AND c.deleted_at IS NULL
+                  AND c.state='ACTIVE' AND (c.expires_at IS NULL OR c.expires_at>%s)
+                  AND EXISTS (SELECT 1 FROM ingest.robot_ingest_identities i
+                    WHERE i.organization_id=c.organization_id
+                      AND i.ingest_identity_id=c.ingest_identity_id
+                      AND i.state='ENABLED' AND i.deleted_at IS NULL)""",
+                (
+                    ciphertext,
+                    auth.organization_id,
+                    auth.ingest_identity_id,
+                    auth.credential_id,
+                    token_digest,
+                    now,
+                ),
+            )
+
+    def delete_credential(
+        self, organization_id: str, ingest_identity_id: str, credential_id: str, now: datetime
+    ) -> bool:
+        with self._scoped() as db, db.cursor() as cursor:
+            cursor.execute(
+                """SELECT ingest_identity_id FROM ingest.robot_ingest_identities
+                WHERE organization_id=%s AND ingest_identity_id=%s FOR UPDATE""",
+                (organization_id, ingest_identity_id),
+            )
+            cursor.execute(
+                """SELECT state, expires_at, deleted_at FROM ingest.robot_ingest_credentials
+                WHERE organization_id=%s AND ingest_identity_id=%s AND credential_id=%s
+                FOR UPDATE""",
+                (organization_id, ingest_identity_id, credential_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+            if row[2] is not None:
+                return True
+            if row[0] == "ACTIVE" and (row[1] is None or row[1] > now):
+                raise RobotIngestConflict("revoke credential before deleting")
+            cursor.execute(
+                """UPDATE ingest.robot_ingest_credentials SET deleted_at=%s,
+                state='REVOKED', revoked_at=COALESCE(revoked_at,%s), secret_ciphertext=NULL
+                WHERE organization_id=%s AND ingest_identity_id=%s AND credential_id=%s""",
+                (now, now, organization_id, ingest_identity_id, credential_id),
+            )
+            return True
+
     def authenticate(
         self, *, credential_id: str, token_digest: str, now: datetime
     ) -> AuthenticationResult:
         row = self._one(
-            "SELECT * FROM ingest.authenticate_robot_ingest_credential(%s, %s, %s)",
+            """SELECT a.*, c.secret_ciphertext IS NULL AS secret_missing
+            FROM ingest.authenticate_robot_ingest_credential(%s, %s, %s) a
+            LEFT JOIN ingest.robot_ingest_credentials c ON c.credential_id=a.credential_id""",
             (credential_id, token_digest, now),
             bootstrap=True,
         )
@@ -1114,7 +1564,8 @@ class PostgresRobotIngestRepository:
                 allowed_transports=identity.allowed_transports,
                 allowed_formats=identity.allowed_formats,
                 upload_policy=identity.upload_policy,
-            )
+            ),
+            secret_missing=bool(row["secret_missing"]),
         )
 
     def resolve_upload_target(self, collection_task_id: str) -> UploadTarget | None:
@@ -1208,6 +1659,11 @@ class PostgresRobotIngestRepository:
         connection = self._scoped()
         cursor = connection.cursor()
         try:
+            from hc_data_platform.capture_schemes.transactions import bind_upload
+
+            upload = upload.model_copy(
+                update={"processing_config_snapshot": bind_upload(connection, upload)}
+            )
             cursor.execute(
                 """INSERT INTO ingest.robot_ingest_uploads (
                        organization_id, project_id, region_code, upload_id, ingest_identity_id,
@@ -1508,6 +1964,7 @@ class PostgresRobotIngestRepository:
                       AND episode.raw_source_id = upload.raw_source_id
                     WHERE upload.organization_id = %s AND upload.project_id = %s
                       AND upload.region_code = %s AND upload.upload_id = %s
+                      AND episode.status <> 'DISCARDED'
                     ORDER BY source_episode_index, episode_id""",
                 (organization_id, project_id, region_code, upload_id),
             )
@@ -1570,7 +2027,8 @@ class PostgresRobotIngestRepository:
                      WHERE organization_id = %s
                        AND (%s::text IS NULL OR project_id = %s)
                        AND (%s::text IS NULL OR region_code = %s)
-                       AND (%s::text IS NULL OR authenticated_robot_id = %s)
+                       AND (%s::text IS NULL OR robotics.robot_reference_owner(organization_id,
+                       'upload',project_id,region_code,upload_id,authenticated_robot_id) = %s)
                        AND (%s::text IS NULL OR collection_task_id = %s)
                        AND (%s::text IS NULL OR source_format = %s)
                        AND (%s::timestamptz IS NULL OR created_at >= %s)

@@ -6,11 +6,12 @@ from datetime import datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.ingest.processing_status import processing_interruption
+from hc_data_platform.robot_processing.models import ConfigReference
 from hc_data_platform.workflow.models import workflow_id
 
 from .configuration import connections
@@ -18,6 +19,7 @@ from .models import CreateLeRobotImportV1
 
 
 class StartStoredProcessing(BaseModel):
+    processing_config: ConfigReference | None = None
     model_config = ConfigDict(extra="forbid")
     collection_task_id: str
     robot_id: str
@@ -38,7 +40,9 @@ def start_stored_processing(
     locator = workflow_id("lerobot-import", project_id, f"{region_code}/{import_id}")
     with connections()() as connection, connection.cursor() as cursor:
         cursor.execute(
-            """SELECT processing_status, collection_task_id, robot_id FROM ingest.raw_sources
+            """SELECT processing_status, collection_task_id,
+            robotics.robot_reference_owner(organization_id,'raw',project_id,region_code,
+            raw_source_id,robot_id) FROM ingest.raw_sources
             WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
             AND raw_status='COMMITTED' AND source_format='LEROBOT_V3' FOR UPDATE""",
             scope,
@@ -60,8 +64,21 @@ def start_stored_processing(
                     detail="不能改变已经开始处理的数据归属。",
                 )
         else:
+            if any(
+                old and old != new
+                for old, new in zip(
+                    row[1:], (manifest.collection_task_id, manifest.robot_id), strict=True
+                )
+            ):
+                raise problem(
+                    status=409,
+                    code="RAW_PROCESSING_ALREADY_BOUND",
+                    title="数据已有归属",
+                    detail="请选择当前关联的机器人与采集任务。",
+                )
             cursor.execute(
-                """UPDATE ingest.raw_sources SET collection_task_id=%s, robot_id=%s,
+                """UPDATE ingest.raw_sources SET
+                collection_task_id=%s, robot_id=COALESCE(robot_id,%s),
                 processing_status='PENDING', updated_at=clock_timestamp()
                 WHERE organization_id=%s AND project_id=%s
                 AND region_code=%s AND raw_source_id=%s""",
@@ -122,6 +139,7 @@ class NativeImportProgress(BaseModel):
     ready: int
     failed: int
     last_error_code: str | None
+    last_error_detail: str | None = None
     updated_at: datetime
     source_format: str = "LEROBOT_V3"
     file_count: int = 0
@@ -129,6 +147,8 @@ class NativeImportProgress(BaseModel):
     discarded: int = 0
     resume_required: int = 0
     reprocessing_conflicts: int = 0
+    readable_episodes: int | None = Field(default=None, ge=0)
+    annotation_counts: dict[str, int] = Field(default_factory=dict)
 
 
 def _interruption_counts(
@@ -224,7 +244,7 @@ def list_progress(
             LEFT JOIN ingest.raw_source_episodes e USING
               (organization_id, project_id, region_code, raw_source_id)
             WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
-              AND (%s OR j.job_type='RAW_STORAGE' OR s.source_format IN ('LEROBOT_V3','MCAP'))
+              AND (%s OR j.job_type='RAW_STORAGE' OR s.source_format IN ('LEROBOT_V3','MCAP','CAPTURE_BUNDLE'))
               AND s.raw_status='COMMITTED'
               AND (%s::text IS NULL OR s.raw_source_id=%s)
               AND (%s::text IS NULL OR s.dataset_id=%s)

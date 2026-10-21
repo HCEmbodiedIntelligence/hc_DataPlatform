@@ -125,7 +125,9 @@ def _parse_arrow_type(type_name: str, arrow: ModuleType) -> Any:
 def compile_arrow_schema(snapshot: DatasetSchemaSnapshot) -> ArrowSchema:
     """Compile a deterministic Arrow schema suitable for a shared Lance dataset."""
 
-    expected = compute_schema_fingerprint(snapshot.fields)
+    expected = compute_schema_fingerprint(
+        snapshot.fields, semantic_contract=snapshot.semantic_contract
+    )
     if snapshot.fingerprint != expected:
         raise SchemaCompilationError(
             "schema snapshot fingerprint does not match its canonical fields"

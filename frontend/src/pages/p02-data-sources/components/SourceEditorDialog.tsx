@@ -423,6 +423,7 @@ export function SourceEditorDialog(props: {
   readonly pending: boolean;
   readonly initial?: SourceEditorInitialValue;
   readonly initialKind?: SourceEditorKind;
+  readonly externalOnly?: boolean;
   readonly canProvisionRobot?: boolean;
   readonly provisioningPhase?: RobotProvisioningPhase;
   readonly errorMessage?: string | null;
@@ -637,7 +638,9 @@ export function SourceEditorDialog(props: {
             disabled={props.pending || props.mode === "update"}
             preserveValueWhenDisabled={props.mode === "update"}
             options={[
-              { label: "机器人", value: "ROBOT" },
+              ...(!props.externalOnly
+                ? [{ label: "机器人", value: "ROBOT" }]
+                : []),
               { label: "边缘代理", value: "EDGE_AGENT" },
               { label: "OSS 导入", value: "OSS_IMPORT" },
             ]}

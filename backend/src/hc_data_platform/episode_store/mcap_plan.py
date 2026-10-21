@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
 from hc_data_platform.alignment.models import AlignmentProfileV1
+from hc_data_platform.capture_schemes.schema import capture_presence, present_fields
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.dataset_registry.models import DatasetId, EpisodeId
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
@@ -74,7 +75,10 @@ class McapEpisodePlan(FrozenModel):
         source, schema = self.input, self.schema_snapshot
         TypeAdapter(DatasetId).validate_python(source.identity.dataset_id)
         TypeAdapter(EpisodeId).validate_python(source.identity.episode_id)
-        mapping = feature_names(sorted(schema.fields), camera_topics=tuple(self.feature_mapping))
+        mapping = feature_names(
+            sorted(present_fields(schema, capture_presence(self.metadata))),
+            camera_topics=tuple(self.feature_mapping),
+        )
         clock = self.metadata.get("source", {})
         start, end = clock.get("start_ns"), clock.get("end_ns")
         if type(start) is not int or type(end) is not int or not 0 <= start < end:
@@ -101,7 +105,8 @@ class McapEpisodePlan(FrozenModel):
             or schema.project_id != source.identity.project_id
             or schema.dataset_id != source.identity.dataset_id
             or schema.schema_snapshot_id != source.schema_snapshot_id
-            or schema.fingerprint != compute_schema_fingerprint(schema.fields)
+            or schema.fingerprint
+            != compute_schema_fingerprint(schema.fields, semantic_contract=schema.semantic_contract)
             or schema.frequency_hz != self.alignment_profile.frequency_hz
             or self.source.sha256 != source.source_sha256
             or self.source.size < 1

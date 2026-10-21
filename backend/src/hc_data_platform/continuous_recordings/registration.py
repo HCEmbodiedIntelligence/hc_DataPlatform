@@ -64,8 +64,8 @@ class PostgresRecordingRegistration:
     @staticmethod
     def find_upload(cursor: Any, scope: RecordingScope, upload_id: UUID) -> RecordingUpload | None:
         cursor.execute(
-            "SELECT upload_document FROM ingest.recording_uploads "
-            "WHERE organization_id=%s AND project_id=%s AND region_code=%s AND upload_id=%s",
+            """SELECT upload_document FROM ingest.recording_uploads WHERE organization_id=%s AND
+            project_id=%s AND region_code=%s AND upload_id=%s""",
             (scope.organization_id, scope.project_id, scope.region_code, upload_id),
         )
         row = cursor.fetchone()
@@ -74,8 +74,8 @@ class PostgresRecordingRegistration:
     @staticmethod
     def object_keys(cursor: Any, scope: RecordingScope, upload_id: UUID) -> dict[str, str]:
         cursor.execute(
-            "SELECT asset_path,object_key FROM ingest.recording_upload_assets "
-            "WHERE organization_id=%s AND project_id=%s AND region_code=%s AND upload_id=%s",
+            """SELECT asset_path,object_key FROM ingest.recording_upload_assets WHERE
+            organization_id=%s AND project_id=%s AND region_code=%s AND upload_id=%s""",
             (scope.organization_id, scope.project_id, scope.region_code, upload_id),
         )
         return dict(cursor.fetchall())
@@ -85,9 +85,8 @@ class PostgresRecordingRegistration:
         cursor: Any, scope: RecordingScope, upload_id: UUID
     ) -> tuple[str, str] | None:
         cursor.execute(
-            "SELECT recording_id,status FROM ingest.continuous_recordings "
-            "WHERE organization_id=%s AND project_id=%s AND region_code=%s "
-            "AND recording_upload_id=%s",
+            """SELECT recording_id,status FROM ingest.continuous_recordings WHERE
+            organization_id=%s AND project_id=%s AND region_code=%s AND recording_upload_id=%s""",
             (scope.organization_id, scope.project_id, scope.region_code, upload_id),
         )
         row = cursor.fetchone()
@@ -126,6 +125,17 @@ class PostgresRecordingRegistration:
             (*scope, uid),
         )
         existing = cursor.fetchone()
+        if not existing and command.recording_config.collection_mode == "JOINT_ONLY":
+            from hc_data_platform.robot_processing.service import check_task, reject
+
+            check = check_task(
+                cursor,
+                scope,
+                command.collection_task_id,
+                {"configuration": {"collection_mode": "JOINT_ONLY"}},
+            )
+            if check.get("error"):
+                reject(check["error"], "该任务明确需要视觉数据，不能采用纯关节录制")
         if existing and existing[0] != recorded.manifest_sha256:
             raise RecordingRegistrationConflict("immutable recording identity conflict")
         cursor.execute(
@@ -147,9 +157,9 @@ class PostgresRecordingRegistration:
         )
         for asset in projected:
             cursor.execute(
-                "SELECT asset_document FROM ingest.recording_upload_assets "
-                "WHERE organization_id=%s AND project_id=%s AND region_code=%s "
-                "AND upload_id=%s AND asset_id=%s",
+                """SELECT asset_document FROM ingest.recording_upload_assets WHERE
+                organization_id=%s AND project_id=%s AND region_code=%s AND upload_id=%s AND
+                asset_id=%s""",
                 (*scope, uid, asset.asset_id),
             )
             prior_asset = cursor.fetchone()
@@ -195,15 +205,17 @@ class PostgresRecordingRegistration:
             updated_at=now,
         )
         cursor.execute(
-            """INSERT INTO ingest.continuous_recordings
-            (organization_id,project_id,region_code,recording_id,upload_session_id,recording_upload_id,
-             rollout_id,data_package_id,collection_task_id,collection_job_id,robot_id,device_id,
-             capture_started_at,capture_ended_at,duration_ns,source_sha256,manifest_fingerprint,
-             video_asset_count,
-             status,current_revision,finalized_revision,resource_version,recording_document,created_at,updated_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-            %s,%s,%s::jsonb,%s,%s)
-            ON CONFLICT (organization_id,project_id,region_code,recording_id) DO NOTHING""",
+            (
+                """INSERT INTO ingest.continuous_recordings
+                (organization_id,project_id,region_code,recording_id,upload_session_id,recording_upload_id,
+                rollout_id,data_package_id,collection_task_id,collection_job_id,robot_id,device_id,
+                capture_started_at,capture_ended_at,duration_ns,source_sha256,manifest_fingerprint,
+                video_asset_count,
+                status,current_revision,finalized_revision,resource_version,recording_document,created_at,updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s::jsonb,%s,%s) ON CONFLICT
+                (organization_id,project_id,region_code,recording_id) DO NOTHING"""
+            ),
             _recording_values(recording),
         )
         return recording

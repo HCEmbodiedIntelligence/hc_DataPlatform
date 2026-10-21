@@ -1,13 +1,1437 @@
 components:
   schemas:
+    AssetState:
+      enum:
+      - UPLOADING
+      - COMPLETED
+      - FAILED
+      - CANCELLED
+      title: AssetState
+      type: string
+    AttemptOutcome:
+      enum:
+      - ACCEPTED
+      - REJECTED
+      - COMMITTED
+      - FAILED
+      title: AttemptOutcome
+      type: string
+    AuthorizePartsCommand:
+      additionalProperties: false
+      properties:
+        part_numbers:
+          items:
+            type: integer
+          maxItems: 1000
+          minItems: 1
+          title: Part Numbers
+          type: array
+      required:
+      - part_numbers
+      title: AuthorizePartsCommand
+      type: object
+    CameraVerification:
+      additionalProperties: false
+      properties:
+        camera_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Camera Id
+          type: string
+        continuity_status:
+          default: PENDING
+          maxLength: 64
+          minLength: 1
+          title: Continuity Status
+          type: string
+        failure_code:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Failure Code
+        synchronization_status:
+          default: PENDING
+          maxLength: 64
+          minLength: 1
+          title: Synchronization Status
+          type: string
+        validation_status:
+          default: PENDING
+          maxLength: 64
+          minLength: 1
+          title: Validation Status
+          type: string
+        verified_duration_ns:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Verified Duration Ns
+        verified_fps:
+          anyOf:
+          - $ref: '#/components/schemas/FpsRational'
+          - type: 'null'
+        verified_frame_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Verified Frame Count
+      required:
+      - camera_id
+      title: CameraVerification
+      type: object
+    CaptureMode:
+      enum:
+      - PRESEGMENTED
+      - CONTINUOUS
+      title: CaptureMode
+      type: string
+    CompleteAssetCommand:
+      additionalProperties: false
+      properties:
+        parts:
+          items:
+            $ref: '#/components/schemas/hc_data_platform__robot_ingest__models__CompletedPart'
+          maxItems: 10000
+          minItems: 1
+          title: Parts
+          type: array
+      required:
+      - parts
+      title: CompleteAssetCommand
+      type: object
+    CreateRobotIngestIdentity:
+      additionalProperties: false
+      properties:
+        allowed_formats:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._+-]+$
+            type: string
+          title: Allowed Formats
+          type: array
+        allowed_transports:
+          default:
+          - HTTPS
+          items:
+            type: string
+          title: Allowed Transports
+          type: array
+        display_name:
+          anyOf:
+          - maxLength: 200
+            type: string
+          - type: 'null'
+          title: Display Name
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        upload_policy:
+          $ref: '#/components/schemas/RobotIngestUploadPolicy'
+      required:
+      - robot_id
+      - allowed_formats
+      title: CreateRobotIngestIdentity
+      type: object
+    CredentialState:
+      enum:
+      - ACTIVE
+      - REVOKED
+      - EXPIRED
+      title: CredentialState
+      type: string
+    EpisodeProcessingResult:
+      additionalProperties: false
+      properties:
+        annotation_status:
+          default: UNKNOWN
+          title: Annotation Status
+          type: string
+        data_readable:
+          default: false
+          title: Data Readable
+          type: boolean
+        dataset_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dataset Id
+        episode_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Episode Id
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        next_action:
+          enum:
+          - wait
+          - open_episode
+          - retry_processing
+          - repair_export
+          - review_quality
+          title: Next Action
+          type: string
+        quality_status:
+          $ref: '#/components/schemas/hc_data_platform__robot_ingest__models__QualityStatus'
+        retryable:
+          title: Retryable
+          type: boolean
+        source_episode_id:
+          maxLength: 512
+          minLength: 1
+          title: Source Episode Id
+          type: string
+        source_episode_index:
+          exclusiveMaximum: 10000.0
+          minimum: 0.0
+          title: Source Episode Index
+          type: integer
+        status:
+          enum:
+          - PENDING
+          - PROCESSING
+          - READY
+          - FAILED
+          title: Status
+          type: string
+      required:
+      - source_episode_id
+      - source_episode_index
+      - episode_id
+      - dataset_id
+      - status
+      - quality_status
+      - error_code
+      - retryable
+      - next_action
+      title: EpisodeProcessingResult
+      type: object
+    FpsRational:
+      additionalProperties: false
+      properties:
+        denominator:
+          exclusiveMinimum: 0.0
+          maximum: 1000000.0
+          title: Denominator
+          type: integer
+        numerator:
+          exclusiveMinimum: 0.0
+          maximum: 1000000.0
+          title: Numerator
+          type: integer
+      required:
+      - numerator
+      - denominator
+      title: FpsRational
+      type: object
+    IdentityState:
+      enum:
+      - ENABLED
+      - DISABLED
+      title: IdentityState
+      type: string
+    IssueCredentialCommand:
+      additionalProperties: false
+      properties:
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        idempotency_key:
+          anyOf:
+          - maxLength: 128
+            minLength: 8
+            type: string
+          - type: 'null'
+          title: Idempotency Key
+        revoke_previous:
+          default: false
+          title: Revoke Previous
+          type: boolean
+      title: IssueCredentialCommand
+      type: object
+    IssuedRobotCredential:
+      additionalProperties: false
+      properties:
+        credential_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Credential Id
+          type: string
+        credential_version:
+          minimum: 1.0
+          title: Credential Version
+          type: integer
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        issued_at:
+          format: date-time
+          title: Issued At
+          type: string
+        token:
+          maxLength: 1024
+          minLength: 32
+          title: Token
+          type: string
+        token_prefix:
+          maxLength: 96
+          minLength: 8
+          title: Token Prefix
+          type: string
+      required:
+      - credential_id
+      - credential_version
+      - token
+      - token_prefix
+      - issued_at
+      title: IssuedRobotCredential
+      type: object
+    PartAuthorizationGrant:
+      additionalProperties: false
+      properties:
+        asset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Asset Id
+          type: string
+        authorizations:
+          items:
+            $ref: '#/components/schemas/RobotPartAuthorization'
+          title: Authorizations
+          type: array
+        upload_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Upload Id
+          type: string
+        uploaded_parts:
+          items:
+            $ref: '#/components/schemas/UploadedPart'
+          title: Uploaded Parts
+          type: array
+      required:
+      - upload_id
+      - asset_id
+      - uploaded_parts
+      - authorizations
+      title: PartAuthorizationGrant
+      type: object
+    ProcessingDiagnostics:
+      additionalProperties: false
+      properties:
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        error_detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Detail
+        generation:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Generation
+        next_action:
+          title: Next Action
+          type: string
+        retryable:
+          title: Retryable
+          type: boolean
+        upload_id:
+          title: Upload Id
+          type: string
+        workflow_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workflow Id
+      required:
+      - upload_id
+      - workflow_id
+      - generation
+      - error_code
+      - retryable
+      - next_action
+      title: ProcessingDiagnostics
+      type: object
+    ProcessingResult:
+      additionalProperties: false
+      properties:
+        episodes:
+          items:
+            $ref: '#/components/schemas/EpisodeProcessingResult'
+          title: Episodes
+          type: array
+        poll_after_seconds:
+          title: Poll After Seconds
+          type: integer
+        processing_status:
+          enum:
+          - PENDING
+          - DISCOVERING_EPISODES
+          - PROCESSING
+          - READY
+          - PARTIALLY_FAILED
+          - FAILED
+          title: Processing Status
+          type: string
+        quality_status:
+          $ref: '#/components/schemas/hc_data_platform__robot_ingest__models__QualityStatus'
+        raw_source_id:
+          title: Raw Source Id
+          type: string
+        schema_version:
+          const: openarm-processing-result/v1
+          default: openarm-processing-result/v1
+          title: Schema Version
+          type: string
+        terminal:
+          title: Terminal
+          type: boolean
+        upload_id:
+          title: Upload Id
+          type: string
+      required:
+      - upload_id
+      - raw_source_id
+      - processing_status
+      - quality_status
+      - terminal
+      - poll_after_seconds
+      - episodes
+      title: ProcessingResult
+      type: object
+    RecordingResult:
+      additionalProperties: false
+      properties:
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error Code
+        page_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Page Path
+        poll_after_seconds:
+          maximum: 60.0
+          minimum: 0.0
+          title: Poll After Seconds
+          type: integer
+        raw_source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Raw Source Id
+        recording_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Id
+        registration_attempts:
+          default: 0
+          minimum: 0.0
+          title: Registration Attempts
+          type: integer
+        status:
+          enum:
+          - REGISTERING
+          - AWAITING_SLICE
+          - SLICED
+          - FAILED
+          title: Status
+          type: string
+        terminal:
+          title: Terminal
+          type: boolean
+        upload_id:
+          title: Upload Id
+          type: string
+      required:
+      - upload_id
+      - raw_source_id
+      - recording_id
+      - status
+      - page_path
+      - terminal
+      - poll_after_seconds
+      title: RecordingResult
+      type: object
     RetryProcessing:
       additionalProperties: false
       properties:
         request_id:
           format: uuid
+          title: Request Id
           type: string
       required:
       - request_id
+      title: RetryProcessing
+      type: object
+    RobotCredentialSummary:
+      additionalProperties: false
+      properties:
+        credential_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Credential Id
+          type: string
+        credential_version:
+          minimum: 1.0
+          title: Credential Version
+          type: integer
+        expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Expires At
+        issued_at:
+          format: date-time
+          title: Issued At
+          type: string
+        last_authenticated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Authenticated At
+        reveal_available:
+          default: false
+          title: Reveal Available
+          type: boolean
+        revoked_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Revoked At
+        state:
+          $ref: '#/components/schemas/CredentialState'
+        token_prefix:
+          maxLength: 96
+          minLength: 8
+          title: Token Prefix
+          type: string
+      required:
+      - credential_id
+      - credential_version
+      - state
+      - token_prefix
+      - issued_at
+      title: RobotCredentialSummary
+      type: object
+    RobotIdentityEnvelope:
+      additionalProperties: false
+      properties:
+        credential:
+          anyOf:
+          - $ref: '#/components/schemas/IssuedRobotCredential'
+          - type: 'null'
+        data:
+          $ref: '#/components/schemas/RobotIngestIdentity'
+      required:
+      - data
+      title: RobotIdentityEnvelope
+      type: object
+    RobotIdentityList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotIngestIdentity'
+          title: Items
+          type: array
+      required:
+      - items
+      title: RobotIdentityList
+      type: object
+    RobotIngestAsset:
+      additionalProperties: false
+      properties:
+        actual_crc64:
+          anyOf:
+          - pattern: ^(?:0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Actual Crc64
+        actual_sha256:
+          anyOf:
+          - pattern: ^[a-f0-9]{64}$
+            type: string
+          - type: 'null'
+          title: Actual Sha256
+        actual_size_bytes:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Actual Size Bytes
+        asset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Asset Id
+          type: string
+        completed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Completed At
+        etag:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Etag
+        expected_crc64:
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: Expected Crc64
+          type: string
+        expected_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Expected Sha256
+          type: string
+        expected_size_bytes:
+          exclusiveMinimum: 0.0
+          title: Expected Size Bytes
+          type: integer
+        media_type:
+          title: Media Type
+          type: string
+        multipart_upload_id:
+          title: Multipart Upload Id
+          type: string
+        object_key:
+          title: Object Key
+          type: string
+        path:
+          title: Path
+          type: string
+        role:
+          title: Role
+          type: string
+        state:
+          $ref: '#/components/schemas/AssetState'
+          default: UPLOADING
+      required:
+      - asset_id
+      - path
+      - role
+      - media_type
+      - object_key
+      - multipart_upload_id
+      - expected_size_bytes
+      - expected_sha256
+      - expected_crc64
+      title: RobotIngestAsset
+      type: object
+    RobotIngestAssetManifest:
+      additionalProperties: false
+      properties:
+        asset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Asset Id
+          type: string
+        camera_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Camera Id
+        crc64:
+          pattern: ^(?:0|[1-9][0-9]*)$
+          title: Crc64
+          type: string
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        metadata:
+          additionalProperties: true
+          title: Metadata
+          type: object
+        path:
+          maxLength: 1024
+          minLength: 1
+          title: Path
+          type: string
+        role:
+          default: RAW
+          maxLength: 64
+          minLength: 1
+          title: Role
+          type: string
+        sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+          type: integer
+      required:
+      - asset_id
+      - path
+      - media_type
+      - size_bytes
+      - sha256
+      - crc64
+      title: RobotIngestAssetManifest
+      type: object
+    RobotIngestAttempt:
+      additionalProperties: false
+      properties:
+        attempt_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Attempt Id
+          type: string
+        authenticated_robot_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Authenticated Robot Id
+        collection_task_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Collection Task Id
+        failure_code:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Failure Code
+        failure_stage:
+          maxLength: 64
+          minLength: 1
+          title: Failure Stage
+          type: string
+        occurred_at:
+          format: date-time
+          title: Occurred At
+          type: string
+        organization_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Organization Id
+        outcome:
+          $ref: '#/components/schemas/AttemptOutcome'
+        project_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Project Id
+        raw_source_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Raw Source Id
+        region_code:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Region Code
+        request_robot_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Request Robot Id
+        source_format:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._+-]+$
+            type: string
+          - type: 'null'
+          title: Source Format
+        upload_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Upload Id
+      required:
+      - attempt_id
+      - outcome
+      - failure_stage
+      - occurred_at
+      title: RobotIngestAttempt
+      type: object
+    RobotIngestAttemptList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotIngestAttempt'
+          title: Items
+          type: array
+      required:
+      - items
+      title: RobotIngestAttemptList
+      type: object
+    RobotIngestCameraManifest:
+      additionalProperties: false
+      properties:
+        asset_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Asset Id
+        camera_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Camera Id
+          type: string
+        capture_ended_at:
+          format: date-time
+          title: Capture Ended At
+          type: string
+        capture_started_at:
+          format: date-time
+          title: Capture Started At
+          type: string
+        clock_domain:
+          maxLength: 128
+          minLength: 1
+          title: Clock Domain
+          type: string
+        codec:
+          maxLength: 128
+          minLength: 1
+          title: Codec
+          type: string
+        declared_duration_ns:
+          minimum: 0.0
+          title: Declared Duration Ns
+          type: integer
+        declared_fps:
+          $ref: '#/components/schemas/FpsRational'
+        declared_frame_count:
+          minimum: 0.0
+          title: Declared Frame Count
+          type: integer
+        height:
+          exclusiveMinimum: 0.0
+          maximum: 65535.0
+          title: Height
+          type: integer
+        path:
+          anyOf:
+          - maxLength: 1024
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Path
+        time_base:
+          anyOf:
+          - $ref: '#/components/schemas/FpsRational'
+          - type: 'null'
+        width:
+          exclusiveMinimum: 0.0
+          maximum: 65535.0
+          title: Width
+          type: integer
+      required:
+      - camera_id
+      - codec
+      - width
+      - height
+      - declared_fps
+      - declared_frame_count
+      - declared_duration_ns
+      - clock_domain
+      - capture_started_at
+      - capture_ended_at
+      title: RobotIngestCameraManifest
+      type: object
+    RobotIngestEpisodeReadResult:
+      additionalProperties: false
+      description: Read projection; annotation progress does not change the durable data receipt.
+      properties:
+        annotation_status:
+          default: UNKNOWN
+          title: Annotation Status
+          type: string
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        data_readable:
+          title: Data Readable
+          type: boolean
+        data_ref:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        dataset_version:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Dataset Version
+        episode_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Episode Id
+          type: string
+        frame_count:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Frame Count
+        lance_version:
+          anyOf:
+          - exclusiveMinimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Lance Version
+        qc_report_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Qc Report Id
+        quality_status:
+          $ref: '#/components/schemas/hc_data_platform__robot_ingest__models__QualityStatus'
+          default: PENDING
+        sample_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Sample Count
+        source_episode_index:
+          minimum: 0.0
+          title: Source Episode Index
+          type: integer
+        status:
+          enum:
+          - PENDING
+          - PROCESSING
+          - READY
+          - FAILED
+          title: Status
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+      required:
+      - episode_id
+      - source_episode_index
+      - status
+      - created_at
+      - updated_at
+      - data_readable
+      title: RobotIngestEpisodeReadResult
+      type: object
+    RobotIngestEpisodeResultList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotIngestEpisodeReadResult'
+          title: Items
+          type: array
+        raw_source_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Raw Source Id
+          type: string
+        upload_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Upload Id
+          type: string
+      required:
+      - upload_id
+      - raw_source_id
+      - items
+      title: RobotIngestEpisodeResultList
+      type: object
+    RobotIngestIdentity:
+      additionalProperties: false
+      properties:
+        activity_expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Activity Expires At
+        allowed_formats:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._+-]+$
+            type: string
+          title: Allowed Formats
+          type: array
+        allowed_transports:
+          default:
+          - HTTPS
+          items:
+            type: string
+          title: Allowed Transports
+          type: array
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        credential_revision:
+          default: 0
+          minimum: 0.0
+          title: Credential Revision
+          type: integer
+        display_name:
+          anyOf:
+          - maxLength: 200
+            type: string
+          - type: 'null'
+          title: Display Name
+        ingest_identity_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Ingest Identity Id
+          type: string
+        last_auth_failure_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Auth Failure At
+        last_auth_failure_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Auth Failure Code
+        last_authenticated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Authenticated At
+        last_heartbeat_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Heartbeat At
+        last_seen_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Seen At
+        last_upload_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Upload At
+        observation_started_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Observation Started At
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        state:
+          $ref: '#/components/schemas/IdentityState'
+          default: ENABLED
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        upload_policy:
+          $ref: '#/components/schemas/RobotIngestUploadPolicy'
+      required:
+      - ingest_identity_id
+      - organization_id
+      - robot_id
+      - allowed_formats
+      - created_at
+      - updated_at
+      title: RobotIngestIdentity
+      type: object
+    RobotIngestProcessingStatus:
+      enum:
+      - PENDING
+      - DISCOVERING_EPISODES
+      - PROCESSING
+      - READY
+      - PARTIALLY_FAILED
+      - FAILED
+      title: RobotIngestProcessingStatus
+      type: string
+    RobotIngestStatistics:
+      additionalProperties: false
+      properties:
+        capture_duration_ns:
+          minimum: 0.0
+          title: Capture Duration Ns
+          type: integer
+        committed_raw_count:
+          minimum: 0.0
+          title: Committed Raw Count
+          type: integer
+        episode_count:
+          minimum: 0.0
+          title: Episode Count
+          type: integer
+        evaluated_episode_count:
+          minimum: 0.0
+          title: Evaluated Episode Count
+          type: integer
+        frame_count:
+          minimum: 0.0
+          title: Frame Count
+          type: integer
+        qc_pass_count:
+          minimum: 0.0
+          title: Qc Pass Count
+          type: integer
+        qc_reject_count:
+          minimum: 0.0
+          title: Qc Reject Count
+          type: integer
+        qc_risk_count:
+          minimum: 0.0
+          title: Qc Risk Count
+          type: integer
+        qualified_rate:
+          anyOf:
+          - maximum: 1.0
+            minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Qualified Rate
+        raw_bytes:
+          minimum: 0.0
+          title: Raw Bytes
+          type: integer
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        sample_count:
+          minimum: 0.0
+          title: Sample Count
+          type: integer
+        technical_failure_count:
+          minimum: 0.0
+          title: Technical Failure Count
+          type: integer
+        upload_batch_count:
+          minimum: 0.0
+          title: Upload Batch Count
+          type: integer
+      required:
+      - robot_id
+      - upload_batch_count
+      - committed_raw_count
+      - episode_count
+      - frame_count
+      - sample_count
+      - capture_duration_ns
+      - raw_bytes
+      - qc_pass_count
+      - qc_risk_count
+      - qc_reject_count
+      - technical_failure_count
+      - evaluated_episode_count
+      title: RobotIngestStatistics
+      type: object
+    RobotIngestUpload:
+      additionalProperties: false
+      properties:
+        assets:
+          items:
+            $ref: '#/components/schemas/RobotIngestAsset'
+          title: Assets
+          type: array
+        authenticated_robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Authenticated Robot Id
+          type: string
+        camera_verification:
+          default: []
+          items:
+            $ref: '#/components/schemas/CameraVerification'
+          title: Camera Verification
+          type: array
+        cameras:
+          items:
+            $ref: '#/components/schemas/RobotIngestCameraManifest'
+          title: Cameras
+          type: array
+        capture_ended_at:
+          format: date-time
+          title: Capture Ended At
+          type: string
+        capture_mode:
+          $ref: '#/components/schemas/CaptureMode'
+        capture_started_at:
+          format: date-time
+          title: Capture Started At
+          type: string
+        client_upload_id:
+          title: Client Upload Id
+          type: string
+        collection_job_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Job Id
+          type: string
+        committed_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Committed At
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        credential_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Credential Id
+          type: string
+        credential_version:
+          minimum: 1.0
+          title: Credential Version
+          type: integer
+        declared_episode_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Declared Episode Count
+        derived_episode_count:
+          default: 0
+          minimum: 0.0
+          title: Derived Episode Count
+          type: integer
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        ingest_identity_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Ingest Identity Id
+          type: string
+        manifest:
+          $ref: '#/components/schemas/RobotIngestUploadManifest'
+        manifest_fingerprint:
+          pattern: ^[a-f0-9]{64}$
+          title: Manifest Fingerprint
+          type: string
+        processing_config_snapshot:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Processing Config Snapshot
+        processing_status:
+          $ref: '#/components/schemas/RobotIngestProcessingStatus'
+          default: PENDING
+        qc_pass_episode_count:
+          default: 0
+          minimum: 0.0
+          title: Qc Pass Episode Count
+          type: integer
+        qc_reject_episode_count:
+          default: 0
+          minimum: 0.0
+          title: Qc Reject Episode Count
+          type: integer
+        qc_risk_episode_count:
+          default: 0
+          minimum: 0.0
+          title: Qc Risk Episode Count
+          type: integer
+        quality_status:
+          $ref: '#/components/schemas/hc_data_platform__robot_ingest__models__QualityStatus'
+          default: PENDING
+        raw_capture_count:
+          default: 1
+          minimum: 1.0
+          title: Raw Capture Count
+          type: integer
+        raw_source_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Raw Source Id
+        request_robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Request Robot Id
+          type: string
+        source_format:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._+-]+$
+          title: Source Format
+          type: string
+        source_format_version:
+          title: Source Format Version
+          type: string
+        state:
+          $ref: '#/components/schemas/UploadState'
+        target:
+          $ref: '#/components/schemas/UploadTarget'
+        total_bytes:
+          exclusiveMinimum: 0.0
+          title: Total Bytes
+          type: integer
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        upload_batch_count:
+          default: 1
+          minimum: 1.0
+          title: Upload Batch Count
+          type: integer
+        upload_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Upload Id
+          type: string
+        verified_episode_count:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Verified Episode Count
+        verified_frame_count:
+          default: 0
+          minimum: 0.0
+          title: Verified Frame Count
+          type: integer
+        verified_sample_count:
+          default: 0
+          minimum: 0.0
+          title: Verified Sample Count
+          type: integer
+      required:
+      - upload_id
+      - client_upload_id
+      - ingest_identity_id
+      - authenticated_robot_id
+      - request_robot_id
+      - credential_id
+      - credential_version
+      - target
+      - collection_job_id
+      - capture_mode
+      - source_format
+      - source_format_version
+      - capture_started_at
+      - capture_ended_at
+      - total_bytes
+      - state
+      - manifest_fingerprint
+      - manifest
+      - assets
+      - cameras
+      - created_at
+      - expires_at
+      - updated_at
+      title: RobotIngestUpload
       type: object
     RobotIngestUploadCapabilities:
       additionalProperties: false
@@ -39,115 +1463,1237 @@ components:
       - max_recording_assets
       title: RobotIngestUploadCapabilities
       type: object
+    RobotIngestUploadEnvelope:
+      additionalProperties: false
+      properties:
+        data:
+          $ref: '#/components/schemas/RobotIngestUpload'
+        resumed:
+          default: false
+          title: Resumed
+          type: boolean
+      required:
+      - data
+      title: RobotIngestUploadEnvelope
+      type: object
+    RobotIngestUploadManifest:
+      additionalProperties: false
+      properties:
+        assets:
+          items:
+            $ref: '#/components/schemas/RobotIngestAssetManifest'
+          maxItems: 4096
+          minItems: 1
+          title: Assets
+          type: array
+        cameras:
+          default: []
+          items:
+            $ref: '#/components/schemas/RobotIngestCameraManifest'
+          maxItems: 128
+          title: Cameras
+          type: array
+        capture_ended_at:
+          format: date-time
+          title: Capture Ended At
+          type: string
+        capture_mode:
+          $ref: '#/components/schemas/CaptureMode'
+        capture_plan:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureReference'
+          - type: 'null'
+        capture_started_at:
+          format: date-time
+          title: Capture Started At
+          type: string
+        client_upload_id:
+          pattern: ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$
+          title: Client Upload Id
+          type: string
+        collection_job_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Collection Job Id
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        declared_episode_count:
+          anyOf:
+          - maximum: 1000000.0
+            minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Declared Episode Count
+        format_metadata:
+          additionalProperties: true
+          title: Format Metadata
+          type: object
+        organization_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Organization Id
+        processing_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Processing Config
+        project_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Project Id
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        schema_version:
+          const: robot-ingest/v1
+          default: robot-ingest/v1
+          title: Schema Version
+          type: string
+        source_format:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._+-]+$
+          title: Source Format
+          type: string
+        source_format_version:
+          maxLength: 128
+          minLength: 1
+          title: Source Format Version
+          type: string
+      required:
+      - client_upload_id
+      - collection_task_id
+      - robot_id
+      - capture_mode
+      - source_format
+      - source_format_version
+      - capture_started_at
+      - capture_ended_at
+      - assets
+      title: RobotIngestUploadManifest
+      type: object
+    RobotIngestUploadPolicy:
+      additionalProperties: false
+      properties:
+        code:
+          default: STANDARD
+          maxLength: 128
+          minLength: 1
+          title: Code
+          type: string
+        max_asset_size_bytes:
+          default: 5497558138880
+          exclusiveMinimum: 0.0
+          title: Max Asset Size Bytes
+          type: integer
+        max_assets:
+          default: 4096
+          maximum: 4096.0
+          minimum: 1.0
+          title: Max Assets
+          type: integer
+        max_batch_size_bytes:
+          default: 10995116277760
+          exclusiveMinimum: 0.0
+          title: Max Batch Size Bytes
+          type: integer
+        part_authorization_ttl_seconds:
+          default: 900
+          maximum: 86400.0
+          minimum: 60.0
+          title: Part Authorization Ttl Seconds
+          type: integer
+        require_crc64:
+          default: true
+          title: Require Crc64
+          type: boolean
+        require_sha256:
+          default: true
+          title: Require Sha256
+          type: boolean
+        session_retention_hours:
+          default: 168
+          maximum: 8760.0
+          minimum: 1.0
+          title: Session Retention Hours
+          type: integer
+      title: RobotIngestUploadPolicy
+      type: object
+    RobotPartAuthorization:
+      additionalProperties: false
+      properties:
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        part_number:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Number
+          type: integer
+        url:
+          maxLength: 8192
+          minLength: 1
+          title: Url
+          type: string
+      required:
+      - part_number
+      - url
+      - expires_at
+      title: RobotPartAuthorization
+      type: object
+    UpdateRobotIngestIdentity:
+      additionalProperties: false
+      properties:
+        allowed_formats:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._+-]+$
+            type: string
+          title: Allowed Formats
+          type: array
+        allowed_transports:
+          items:
+            type: string
+          title: Allowed Transports
+          type: array
+        upload_policy:
+          $ref: '#/components/schemas/RobotIngestUploadPolicy'
+      required:
+      - allowed_transports
+      - allowed_formats
+      - upload_policy
+      title: UpdateRobotIngestIdentity
+      type: object
+    UploadList:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotIngestUpload'
+          title: Items
+          type: array
+      required:
+      - items
+      title: UploadList
+      type: object
+    UploadState:
+      enum:
+      - UPLOADING
+      - PAUSED
+      - READY_TO_COMMIT
+      - COMMITTED
+      - FAILED
+      - CANCELLED
+      title: UploadState
+      type: string
+    UploadTarget:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        dataset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+          type: string
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        processing_config:
+          additionalProperties: true
+          title: Processing Config
+          type: object
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+          type: string
+        task_status:
+          enum:
+          - ACTIVE
+          - CLOSED
+          - CANCELLED
+          title: Task Status
+          type: string
+      required:
+      - collection_task_id
+      - organization_id
+      - project_id
+      - dataset_id
+      - region_code
+      - task_status
+      title: UploadTarget
+      type: object
+    UploadedPart:
+      additionalProperties: false
+      properties:
+        crc64:
+          anyOf:
+          - pattern: ^(?:0|[1-9][0-9]*)$
+            type: string
+          - type: 'null'
+          title: Crc64
+        etag:
+          maxLength: 512
+          minLength: 1
+          title: Etag
+          type: string
+        part_number:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Number
+          type: integer
+        size_bytes:
+          minimum: 0.0
+          title: Size Bytes
+          type: integer
+      required:
+      - part_number
+      - etag
+      - size_bytes
+      title: UploadedPart
+      type: object
+    hc_data_platform__robot_ingest__models__CompletedPart:
+      additionalProperties: false
+      properties:
+        etag:
+          maxLength: 512
+          minLength: 1
+          title: Etag
+          type: string
+        part_number:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Number
+          type: integer
+      required:
+      - part_number
+      - etag
+      title: CompletedPart
+      type: object
+    hc_data_platform__robot_ingest__models__QualityStatus:
+      enum:
+      - PENDING
+      - PASS
+      - RISK
+      - REJECT
+      title: QualityStatus
+      type: string
+  securitySchemes: {}
+info:
+  title: Robot upload contracts
+  version: '2026-10-21'
+openapi: 3.1.0
 paths:
   /api/v1/projects/{project_id}/robot-ingest/attempts:
     get:
       operationId: listRobotIngestAttempts
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestAttemptList'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: List Robot Attempts
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities:
     get:
       operationId: listRobotIngestIdentities
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityList'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: List Robot Identities
+      tags:
+      - robot-ingest
     post:
       operationId: createRobotIngestIdentity
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateRobotIngestIdentity'
-      responses: {}
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Create Robot Identity
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:
     delete:
       operationId: deleteRobotIngestIdentity
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
       responses:
         '204':
-          description: Identity deleted and all credentials permanently revoked; uploaded data retained.
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Delete Robot Identity
+      tags:
+      - robot-ingest
     get:
       operationId: getRobotIngestIdentity
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Get Robot Identity
+      tags:
+      - robot-ingest
     patch:
       operationId: updateRobotIngestIdentity
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateRobotIngestIdentity'
-      responses: {}
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Update Robot Identity
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials:
     get:
       operationId: listRobotIngestCredentials
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RobotCredentialSummary'
+                title: Response Listrobotingestcredentials
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: List Robot Credentials
+      tags:
+      - robot-ingest
     post:
       operationId: issueRobotIngestCredential
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/IssueCredentialCommand'
-      responses: {}
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Issue Robot Credential
+      tags:
+      - robot-ingest
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:
+    delete:
+      operationId: deleteRobotIngestCredential
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: path
+        name: credential_id
+        required: true
+        schema:
+          title: Credential Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Delete Robot Credential
+      tags:
+      - robot-ingest
+  /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:reveal:
+    post:
+      operationId: revealRobotIngestCredential
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: path
+        name: credential_id
+        required: true
+        schema:
+          title: Credential Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IssuedRobotCredential'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Reveal Robot Credential
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:revoke:
     post:
       operationId: revokeRobotIngestCredential
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: path
+        name: credential_id
+        required: true
+        schema:
+          title: Credential Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotCredentialSummary'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Revoke Robot Credential
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:disable:
     post:
       operationId: disableRobotIngestIdentity
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Disable Robot Identity
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:enable:
     post:
       operationId: enableRobotIngestIdentity
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Enable Robot Identity
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}:rotate-credential:
     post:
       operationId: rotateRobotIngestCredential
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: ingest_identity_id
+        required: true
+        schema:
+          title: Ingest Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/IssueCredentialCommand'
-      responses: {}
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIdentityEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Rotate Robot Credential
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics:
     get:
       operationId: getRobotIngestStatistics
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: query
+        name: collection_task_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Collection Task Id
+      - in: query
+        name: source_format
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Source Format
+      - in: query
+        name: created_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created From
+      - in: query
+        name: created_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created To
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestStatistics'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Get Robot Statistics
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/uploads:
     get:
       operationId: listRobotIngestUploadHistory
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: query
+        name: collection_task_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Collection Task Id
+      - in: query
+        name: source_format
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Source Format
+      - in: query
+        name: created_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created From
+      - in: query
+        name: created_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Created To
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadList'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: List Robot Upload History
+      tags:
+      - robot-ingest
   /api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes:
     get:
       operationId: listRobotIngestUploadEpisodes
-      responses: {}
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestEpisodeResultList'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: List Robot Upload Episodes
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads:
     post:
       operationId: createRobotIngestUpload
@@ -156,101 +2702,398 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RobotIngestUploadManifest'
-      responses: {}
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Create Robot Upload
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}:
     get:
       operationId: getRobotIngestUpload
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Get Robot Upload
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:authorize-parts:
     post:
       operationId: authorizeRobotIngestParts
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: path
+        name: asset_id
+        required: true
+        schema:
+          title: Asset Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AuthorizePartsCommand'
-      responses: {}
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartAuthorizationGrant'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Authorize Robot Upload Parts
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/assets/{asset_id}:complete:
     post:
       operationId: completeRobotIngestAsset
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: path
+        name: asset_id
+        required: true
+        schema:
+          title: Asset Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/CompleteAssetCommand'
-      responses: {}
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Complete Robot Upload Asset
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/processing:
     get:
       operationId: getRobotIngestProcessing
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Get Processing
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/processing/diagnostics:
     get:
+      description: Pre-discovery failures have no source episode. Keep the G0 schema unchanged.
       operationId: getRobotIngestProcessingDiagnostics
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingDiagnostics'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Get Diagnostics
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/recording:
     get:
       operationId: getRobotIngestRecording
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Get Recording
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}/recording:retry:
     post:
       operationId: retryRobotRecordingPreparation
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/RetryProcessing'
-      responses: {}
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecordingResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Retry Recording
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}:cancel:
     post:
       operationId: cancelRobotIngestUpload
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Cancel Robot Upload
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}:commit:
     post:
       operationId: commitRobotIngestUpload
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Commit Robot Upload
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}:pause:
     post:
       operationId: pauseRobotIngestUpload
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Pause Robot Upload
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}:resume:
     post:
       operationId: resumeRobotIngestUpload
-      responses: {}
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Resume Robot Upload
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads/{upload_id}:retry-processing:
     post:
       operationId: retryRobotIngestProcessing
+      parameters:
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
       requestBody:
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/RetryProcessing'
-      responses: {}
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessingResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - robotBearerAuth: []
+      summary: Retry Processing
+      tags:
+      - robot-ingest
   /api/v1/robot-ingest/uploads:capabilities:
     get:
       operationId: getRobotIngestUploadCapabilities

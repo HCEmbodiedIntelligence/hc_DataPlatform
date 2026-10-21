@@ -261,6 +261,7 @@ components:
       - UPLOAD_PAUSED
       - UPLOAD_FAILED
       - CANCELLED
+      - RAW_COMMIT_PENDING
       - RAW_RECEIVED
       - VALIDATION_RUNNING
       - VALIDATION_FAILED
@@ -286,6 +287,11 @@ components:
       required: [stage, waiting, running, succeeded, risk, blocked, failed, unavailable]
       properties:
         stage: {$ref: '#/components/schemas/TaskProcessingStage'}
+        not_started:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Packages whose prerequisites for this stage are not met.
         waiting: {type: integer, minimum: 0, default: 0}
         running: {type: integer, minimum: 0, default: 0}
         succeeded: {type: integer, minimum: 0, default: 0}
@@ -543,6 +549,8 @@ components:
       description: >-
         Current package flow for all tasks when task_id is omitted, or for the selected task when
         task_id is present. Every package is classified exactly once in every stage.
+        Packages that have not met a stage's prerequisites are not_started, never waiting.
+        Review waiting requires a submitted annotation; publication waiting requires approval.
       properties:
         task_count: {type: integer, minimum: 0}
         package_count: {type: integer, minimum: 0}

@@ -1,4 +1,5 @@
 """A package consumes versioned producer evidence, including the new grid origin."""
+
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -6,30 +7,51 @@ from types import SimpleNamespace
 import pytest
 
 from hc_data_platform.continuous_recordings.asset_models import (
-    RecordingAssetRole, RecordingConfigurationV1,
+    RecordingAssetRole,
+    RecordingConfigurationV1,
 )
 from hc_data_platform.continuous_recordings.package import source_context, timeline
 
 
 def context(tmp_path, *, version="openarm-raw-platform/9", origin=1_010_000_123):
-    config = RecordingConfigurationV1.model_validate({
-        "recorder_version": "openarm-session/v2", "primary_clock_domain": "recording_grid",
-        "cameras": [{"camera_id": "head", "topic": "observation.images.head", "fps": 30,
-                     "width": 16, "height": 16, "codec": "h264", "clock_domain": "recording_grid",
-                     "time_base_numerator": 1, "time_base_denominator": 30,
-                     "capture_start_offset_ns": "0"}],
-    })
+    config = RecordingConfigurationV1.model_validate(
+        {
+            "recorder_version": "openarm-session/v2",
+            "primary_clock_domain": "recording_grid",
+            "cameras": [
+                {
+                    "camera_id": "head",
+                    "topic": "observation.images.head",
+                    "fps": 30,
+                    "width": 16,
+                    "height": 16,
+                    "codec": "h264",
+                    "clock_domain": "recording_grid",
+                    "time_base_numerator": 1,
+                    "time_base_denominator": 30,
+                    "capture_start_offset_ns": "0",
+                }
+            ],
+        }
+    )
     documents = {
         "recording-config.json": config.model_dump(mode="json"),
         "capture-provenance.json": {
-            "processor_version": version, "timeline_mode": "primary_camera",
-            "source_t0_ns": 1_000_000_000, "source_end_ns": 2_000_000_000,
-            "original_manifest_sha256": "a" * 64, "depth_sources": {},
+            "processor_version": version,
+            "timeline_mode": "primary_camera",
+            "source_t0_ns": 1_000_000_000,
+            "source_end_ns": 2_000_000_000,
+            "original_manifest_sha256": "a" * 64,
+            "depth_sources": {},
         },
         "source/frames.jsonl": {
-            "source_frame": 0, "offset_ns": 0,
-            "row": {"export_grid_origin_ns": origin, "export_target_time_ns": origin,
-                    "target_time_ns": origin},
+            "source_frame": 0,
+            "offset_ns": 0,
+            "row": {
+                "export_grid_origin_ns": origin,
+                "export_target_time_ns": origin,
+                "target_time_ns": origin,
+            },
         },
     }
     paths = {}
@@ -38,13 +60,25 @@ def context(tmp_path, *, version="openarm-raw-platform/9", origin=1_010_000_123)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value) + "\n")
         paths[name] = path
-    request = SimpleNamespace(recording_config=config, start_offset_ns=200_000_000,
-        end_offset_ns=1_200_000_000, assets=[
-            SimpleNamespace(relative_path="recording-config.json", role=RecordingAssetRole.RECORDING_CONFIG),
-            SimpleNamespace(relative_path="source/original/manifest.json", role=RecordingAssetRole.AUXILIARY,
-                            content_sha256="a" * 64),
-        ])
-    upload = SimpleNamespace(command=SimpleNamespace(capture_started_at=datetime.fromtimestamp(1, timezone.utc)))
+    request = SimpleNamespace(
+        recording_config=config,
+        alignment_profile=SimpleNamespace(frequency_hz=30),
+        start_offset_ns=200_000_000,
+        end_offset_ns=1_200_000_000,
+        assets=[
+            SimpleNamespace(
+                relative_path="recording-config.json", role=RecordingAssetRole.RECORDING_CONFIG
+            ),
+            SimpleNamespace(
+                relative_path="source/original/manifest.json",
+                role=RecordingAssetRole.AUXILIARY,
+                content_sha256="a" * 64,
+            ),
+        ],
+    )
+    upload = SimpleNamespace(
+        command=SimpleNamespace(capture_started_at=datetime.fromtimestamp(1, timezone.utc))
+    )
     return request, upload, paths
 
 

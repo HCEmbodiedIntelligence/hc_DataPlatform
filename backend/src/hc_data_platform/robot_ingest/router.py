@@ -14,6 +14,7 @@ from .models import (
     CreateRobotIngestIdentity,
     IdentityState,
     IssueCredentialCommand,
+    IssuedRobotCredential,
     PartAuthorizationGrant,
     RobotCredentialSummary,
     RobotIdentityEnvelope,
@@ -490,6 +491,54 @@ def list_robot_credentials(
         organization_id=organization_id,
         project_id=project_id,
         ingest_identity_id=ingest_identity_id,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:reveal",
+    response_model=IssuedRobotCredential,
+    operation_id="revealRobotIngestCredential",
+)
+def reveal_robot_credential(
+    project_id: str,
+    ingest_identity_id: str,
+    credential_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    organization_id: OrganizationId,
+    service: Service,
+) -> IssuedRobotCredential:
+    _no_store(response)
+    return service.reveal_credential(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        ingest_identity_id=ingest_identity_id,
+        credential_id=credential_id,
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}",
+    status_code=204,
+    operation_id="deleteRobotIngestCredential",
+)
+def delete_robot_credential(
+    project_id: str,
+    ingest_identity_id: str,
+    credential_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    organization_id: OrganizationId,
+    service: Service,
+) -> None:
+    _no_store(response)
+    service.delete_credential(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        ingest_identity_id=ingest_identity_id,
+        credential_id=credential_id,
     )
 
 

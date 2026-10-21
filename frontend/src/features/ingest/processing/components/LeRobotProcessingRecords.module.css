@@ -1,0 +1,149 @@
+.compact {
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: 8px;
+  background: var(--hc-color-surface);
+}
+
+.header,
+.heading,
+.headerActions {
+  display: flex;
+  align-items: center;
+}
+
+.compact :global(.ant-btn) {
+  min-height: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.header {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.heading {
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  min-width: 0;
+}
+
+.heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.headerActions {
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.summary,
+.identity,
+.compact p {
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.compact .list {
+  gap: 0;
+  padding: 0;
+  margin-top: 8px;
+  max-height: none;
+  overflow: visible;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 14px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hc-color-border);
+}
+
+.row > * {
+  min-width: 0;
+}
+
+.row > :global(.ant-tag) {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
+  white-space: normal;
+}
+
+.identity small {
+  font-size: inherit;
+}
+
+.compact .recordSummary,
+.progress {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.actions {
+  grid-column: 3;
+  grid-row: 1;
+  justify-content: flex-end;
+}
+
+.details {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+
+.details > summary {
+  width: fit-content;
+  padding: 2px 0;
+  color: var(--hc-color-text-muted);
+  cursor: pointer;
+}
+
+.details[open] > summary {
+  margin-bottom: 8px;
+}
+
+.details :global(.ant-space-item) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.details pre {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.pager {
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .actions {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 520px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.errorDetail {
+  display: block;
+  margin-top: 4px;
+}

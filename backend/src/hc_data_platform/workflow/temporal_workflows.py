@@ -197,6 +197,33 @@ async def _execute_activity(
     return cast(_ResultT, result)
 
 
+async def _create_optional_annotation(
+    request: AutomaticAnnotationActivityInput,
+) -> tuple[AutomaticAnnotationActivityOutput, dict[str, Any]]:
+    decoupled = workflow.patched("ingest-annotation-independent-v1")
+    if decoupled:
+        request = request.model_copy(update={"allow_unconfigured": True})
+    try:
+        result = await _execute_activity(
+            CREATE_ANNOTATION_TASK_ACTIVITY,
+            request,
+            AutomaticAnnotationActivityOutput,
+            STANDARD_ACTIVITY,
+        )
+    except ActivityError as exc:
+        if not decoupled or _is_cancellation(exc):
+            raise
+        result = AutomaticAnnotationActivityOutput(status="FAILED")
+    if not decoupled:
+        return result, {}
+    return result, {
+        "data_readable": True,
+        "annotation_status": result.status,
+        "annotation_retry": request.model_dump(mode="json") if result.status != "CREATED" else None,
+        "annotation_complete": False,
+    }
+
+
 def _error_code(error: BaseException) -> str:
     current: BaseException | None = error
     code = type(error).__name__
@@ -787,12 +814,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     }
                 ),
             )
-            annotation_task = await _execute_activity(
-                CREATE_ANNOTATION_TASK_ACTIVITY,
-                annotation_input,
-                AutomaticAnnotationActivityOutput,
-                STANDARD_ACTIVITY,
-            )
+            annotation_task, annotation_state = await _create_optional_annotation(annotation_input)
             return await self._finish_and_persist(
                 request,
                 JobStatus.SUCCEEDED,
@@ -803,6 +825,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                     "dataset_version": writer_result.get("dataset_version"),
                     "viewer_target": writer_result.get("viewer_target"),
                     "annotation_task": annotation_task.model_dump(mode="json"),
+                    **annotation_state,
                     "aligned_media_count": (
                         len(aligned.native_package_plan.feature_mapping)
                         if native
@@ -810,7 +833,7 @@ class IngestRolloutWorkflow(_JobLifecycle):
                         if request.parallel_preparation
                         else len(media_artifacts)
                     ),
-                    "training_eligible": not native,
+                    "training_eligible": not native if not annotation_state else False,
                     **(
                         {"data_readable": True, "model_depth_training_support": "NOT_VALIDATED"}
                         if native
@@ -1202,26 +1225,22 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
 
             self._stage("annotation_task")
             await self._persist_job(request)
-            annotation = await _execute_activity(
-                CREATE_ANNOTATION_TASK_ACTIVITY,
-                AutomaticAnnotationActivityInput(
-                    organization_id=source.organization_id,
-                    project_id=source.project_id,
-                    region_code=source.region_code,
-                    rollout_id=source.rollout_id,
-                    dataset_id=request.dataset_id,
-                    dataset_version=derived.dataset_version,
-                    lance_version=None
-                    if request.storage_format == "lerobot_v3"
-                    else derived.lance_version,
-                    data_ref=derived.data if request.storage_format == "lerobot_v3" else None,
-                    dataset_schema_snapshot_id=request.schema_snapshot_id,
-                    base_step_count=derived.step_count,
-                    source_workflow_id=workflow.info().workflow_id,
-                ),
-                AutomaticAnnotationActivityOutput,
-                STANDARD_ACTIVITY,
+            annotation_input = AutomaticAnnotationActivityInput(
+                organization_id=source.organization_id,
+                project_id=source.project_id,
+                region_code=source.region_code,
+                rollout_id=source.rollout_id,
+                dataset_id=request.dataset_id,
+                dataset_version=derived.dataset_version,
+                lance_version=None
+                if request.storage_format == "lerobot_v3"
+                else derived.lance_version,
+                data_ref=derived.data if request.storage_format == "lerobot_v3" else None,
+                dataset_schema_snapshot_id=request.schema_snapshot_id,
+                base_step_count=derived.step_count,
+                source_workflow_id=workflow.info().workflow_id,
             )
+            annotation, annotation_state = await _create_optional_annotation(annotation_input)
             await self._state(
                 request,
                 expected=ledger_status,
@@ -1252,8 +1271,11 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                     "derived_ready": derived.model_dump(mode="json"),
                     "viewer_target": committed.viewer_target.model_dump(mode="json"),
                     "annotation_task_id": annotation.task_id,
+                    **annotation_state,
                     "aligned_media_count": len(request.recording_config.cameras),
-                    "training_eligible": None if request.storage_format == "lerobot_v3" else True,
+                    "training_eligible": False
+                    if annotation_state
+                    else (None if request.storage_format == "lerobot_v3" else True),
                     **(
                         {"model_depth_training": "NOT_VALIDATED"}
                         if request.storage_format == "lerobot_v3"
@@ -1658,7 +1680,38 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
         return self._record()
 
 
+@workflow.defn(name="RetryEpisodeAnnotationWorkflow")
+class RetryEpisodeAnnotationWorkflow(_JobLifecycle):
+    """Only retry annotation for already committed data; never invoke an ingest commit."""
+
+    @workflow.run
+    async def run(self, request: AutomaticAnnotationActivityInput) -> JobRecord:
+        self._begin(
+            job_type="RetryEpisodeAnnotationWorkflow",
+            project_id=request.project_id,
+            resource_id=request.rollout_id,
+        )
+        annotation, state = await _create_optional_annotation(request)
+        result = self._finish(
+            JobStatus.SUCCEEDED,
+            result={**state, "annotation_task": annotation.model_dump(mode="json")},
+        )
+        await _execute_activity(
+            PERSIST_WORKFLOW_JOB_ACTIVITY,
+            WorkflowJobPersistenceActivityInput(
+                organization_id=request.organization_id,
+                project_id=request.project_id,
+                region_code=request.region_code,
+                job=result,
+            ),
+            JobRecord,
+            STANDARD_ACTIVITY,
+        )
+        return result
+
+
 ALL_WORKFLOWS = (
+    RetryEpisodeAnnotationWorkflow,
     IngestRolloutWorkflow,
     ContinuousRecordingEpisodeWorkflow,
     DatasetWriterWorkflow,

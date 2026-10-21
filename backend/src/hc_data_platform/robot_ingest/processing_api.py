@@ -10,6 +10,7 @@ from hc_data_platform.core.errors import problem
 
 from .models import StrictModel
 from .processing_contract import ProcessingResult, processing_result
+from .processing_errors import current_failure
 from .processing_store import ProcessingStore, eligible
 from .router import RobotToken, Service
 
@@ -73,7 +74,30 @@ def get_processing(
             title="Historical Raw needs explicit scheduling",
             detail="Use retry-processing with a persisted request_id; do not upload bytes again.",
         )
-    return processing_result(upload, document)
+    result = processing_result(upload, document)
+    receipts = {episode.episode_id: episode.receipt for episode in document.episodes}
+    deliveries = {
+        item.episode_id: item
+        for item in service.get_robot_episode_deliveries(token=token, upload_id=upload_id)
+        if (receipt := receipts.get(item.episode_id)) is not None
+        and (receipt.dataset_version, receipt.lance_version, receipt.data_ref)
+        == (item.dataset_version, item.lance_version, item.data_ref)
+    }
+    return result.model_copy(
+        update={
+            "episodes": tuple(
+                episode.model_copy(
+                    update={
+                        "annotation_status": deliveries[episode.episode_id].annotation_status,
+                        "data_readable": deliveries[episode.episode_id].data_readable,
+                    }
+                )
+                if episode.episode_id in deliveries
+                else episode
+                for episode in result.episodes
+            )
+        }
+    )
 
 
 class ProcessingDiagnostics(StrictModel):
@@ -81,6 +105,7 @@ class ProcessingDiagnostics(StrictModel):
     workflow_id: str | None
     generation: int | None
     error_code: str | None
+    error_detail: str | None = None
     retryable: bool
     next_action: str
 
@@ -97,17 +122,19 @@ def get_diagnostics(
     response.headers["Cache-Control"] = "no-store"
     upload = owned(service, token, upload_id)
     task, doc = store.read(upload)
+    failure = current_failure(doc)
     can_retry = doc.phase == "DONE" and (doc.retryable or any(ep.retryable for ep in doc.episodes))
     return ProcessingDiagnostics(
         upload_id=upload_id,
         workflow_id=task.workflow_id if task else None,
         generation=task.generation if task else None,
-        error_code=doc.error_code,
+        error_code=failure.code if failure else None,
+        error_detail=failure.detail if failure else None,
         retryable=can_retry,
         next_action="retry_processing"
         if can_retry
         else "repair_export"
-        if doc.error_code
+        if failure
         else "wait"
         if doc.phase != "DONE"
         else "inspect_episodes",

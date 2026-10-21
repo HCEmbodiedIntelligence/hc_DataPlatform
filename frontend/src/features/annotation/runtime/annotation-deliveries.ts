@@ -29,7 +29,7 @@ const wire = z
                 format: z.literal("hc-subtask-track/1"),
                 track_id: z.string().min(1),
                 label: z.string().min(1),
-                annotation_ids: z.array(z.string().min(1)).min(1),
+                annotation_ids: z.array(z.string().min(1)).max(10000),
               })
               .strict(),
           })

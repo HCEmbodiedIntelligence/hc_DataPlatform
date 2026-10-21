@@ -10,11 +10,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
+from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
 from hc_data_platform.core.errors import problem
-from hc_data_platform.ingest.router import get_service as get_ingest_service
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
-
-from hc_data_platform.continuous_recordings.mcap_native import McapProcessingConfig
 
 from .capabilities import LeRobotCapabilities, LeRobotCapabilityRequest, detect_capabilities
 from .configuration import NativeConfiguration
@@ -39,6 +37,7 @@ from .processing import (
     start_stored_processing,
 )
 from .resolutions import EpisodeResolution, ResolveEpisode, get_resolution, resolve_episode
+from .robot_eligibility import ImportRobotOption, import_robots
 from .service import LeRobotWebUploadService, read_bounded
 from .source_archive import OriginalArchiveRequest, archive_files, stream_archive
 from .source_browser import (
@@ -58,13 +57,16 @@ _PART_MEMORY_SPOOL_BYTES = 8 * 1024**2
 _MAX_PROXY_PART_BYTES = 600 * 1024**2
 
 
-def get_service() -> LeRobotWebUploadService:
-    from .configuration import validate_target
-
-    ingest = get_ingest_service()
-    return LeRobotWebUploadService(
-        ingest.storage, raw_sources=ingest.raw_sources, target_validator=validate_target
-    )
+def get_service(request: Request) -> LeRobotWebUploadService:
+    service = getattr(request.app.state, "lerobot_uploads", None)
+    if service is None:
+        raise problem(
+            status=503,
+            code="NATIVE_UPLOAD_STORE_UNAVAILABLE",
+            title="原始文件上传服务未配置",
+            detail="当前应用没有装配原始文件上传服务。",
+        )
+    return cast(LeRobotWebUploadService, service)
 
 
 Service = Annotated[LeRobotWebUploadService, Depends(get_service)]
@@ -73,6 +75,22 @@ Service = Annotated[LeRobotWebUploadService, Depends(get_service)]
 class NativeLabelsRequest(BaseModel):
     dataset_id: str = Field(min_length=1, max_length=128)
     labels: list[str] = Field(min_length=1, max_length=50)
+
+
+@router.get(
+    "/robot-options", response_model=list[ImportRobotOption], operation_id="listImportRobots"
+)
+def list_import_robots(
+    project_id: str,
+    region_code: str,
+    organization_id: OrganizationHeader,
+    auth: VerifiedAuth,
+) -> list[ImportRobotOption]:
+    from .configuration import connections
+
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    with connections()() as db:
+        return import_robots(db, organization_id, project_id, region_code)
 
 
 @router.post(":capabilities", operation_id="detectLeRobotImportCapabilities")
@@ -169,43 +187,75 @@ def process_stored_source(
 
 
 @router.get("/robots/{robot_id}/mcap-profile")
-def get_mcap_profile(project_id: str, region_code: str, robot_id: str,
-                     auth: VerifiedAuth, organization_id: OrganizationHeader) -> McapProcessingConfig:
+def get_mcap_profile(
+    project_id: str,
+    region_code: str,
+    robot_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+) -> McapProcessingConfig:
     from .mcap_processing import profile
+
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
     return profile((organization_id, project_id, region_code), robot_id)
 
 
 @router.put("/robots/{robot_id}/mcap-profile")
-def set_mcap_profile(project_id: str, region_code: str, robot_id: str,
-                     command: McapProcessingConfig, auth: VerifiedAuth,
-                     organization_id: OrganizationHeader) -> McapProcessingConfig:
+def set_mcap_profile(
+    project_id: str,
+    region_code: str,
+    robot_id: str,
+    command: McapProcessingConfig,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+) -> McapProcessingConfig:
     from .mcap_processing import profile
+
+    auth.require_organization_capability(organization_id, "robot.manage")
     authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
     return profile((organization_id, project_id, region_code), robot_id, command)
 
 
 @router.post("/{import_id}:process-mcap")
-def process_mcap(project_id: str, region_code: str, import_id: str,
-                 command: StartStoredProcessing, auth: VerifiedAuth,
-                 organization_id: OrganizationHeader, service: Service):
+def process_mcap(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    command: StartStoredProcessing,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+):
     from .mcap_processing import start
+
     authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     raw = browser.source(organization_id, project_id, region_code, import_id)
     if raw.source_format.value != "MCAP" or not raw.dataset_id:
-        raise problem(status=422, code="MCAP_SOURCE_REQUIRED", title="需要 MCAP 原始数据",
-                      detail="请选择绑定数据集的 MCAP 原始数据。")
+        raise problem(
+            status=422,
+            code="MCAP_SOURCE_REQUIRED",
+            title="需要 MCAP 原始数据",
+            detail="请选择绑定数据集的 MCAP 原始数据。",
+        )
     return start((organization_id, project_id, region_code), raw, browser.manifest(raw), command)
 
 
 @router.get("/{import_id}/mcap-processing")
-def mcap_progress(project_id: str, region_code: str, import_id: str,
-                  auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
+def mcap_progress(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+):
     from .mcap_processing import progress
+
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
-    OriginalSourceBrowser(service.storage, service.raw_sources).source(organization_id, project_id, region_code, import_id)
-    return progress((organization_id, project_id, region_code), import_id)
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    raw = browser.source(organization_id, project_id, region_code, import_id)
+    return progress((organization_id, project_id, region_code), import_id, browser.manifest(raw))
 
 
 @router.get("")
@@ -214,6 +264,7 @@ def list_native_imports(
     region_code: str,
     auth: VerifiedAuth,
     organization_id: OrganizationHeader,
+    service: Service,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     dataset_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -221,7 +272,7 @@ def list_native_imports(
     recording_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> list[NativeImportProgress]:
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
-    return list_progress(
+    items = list_progress(
         organization_id,
         project_id,
         region_code,
@@ -231,6 +282,14 @@ def list_native_imports(
         include_all_sources=include_all_sources,
         recording_id=recording_id,
     )
+    return (
+        [
+            service.delivery.enrich((organization_id, project_id, region_code), item)
+            for item in items
+        ]
+        if service.delivery is not None
+        else items
+    )
 
 
 @router.post(
@@ -238,11 +297,7 @@ def list_native_imports(
     operation_id="downloadOriginalArchive",
     response_class=StreamingResponse,
     responses={
-        200: {
-            "content": {
-                "application/zip": {"schema": {"type": "string", "format": "binary"}}
-            }
-        }
+        200: {"content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}}
     },
 )
 def download_original_archive(
@@ -310,7 +365,7 @@ def _source_local_root() -> str | None:
 
     settings = get_settings()
     if settings.environment == "local" and settings.object_store_provider == "s3":
-        return settings.object_store_browser_path
+        return settings.object_store_raw_browser_path or settings.object_store_browser_path
     return None
 
 
@@ -380,9 +435,15 @@ def get_native_processing(
     import_id: str,
     auth: VerifiedAuth,
     organization_id: OrganizationHeader,
+    service: Service,
 ) -> NativeImportProgress:
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
-    return get_progress(organization_id, project_id, region_code, import_id)
+    item = get_progress(organization_id, project_id, region_code, import_id)
+    return (
+        service.delivery.enrich((organization_id, project_id, region_code), item)
+        if service.delivery is not None
+        else item
+    )
 
 
 @router.post("/{import_id}:retry")
@@ -581,4 +642,90 @@ def commit_lerobot_import(
         region_code=region_code,
         import_id=import_id,
         command=command,
+    )
+
+
+@router.get("/{import_id}/mcap-versions", operation_id="listMcapRetryVersions")
+def mcap_versions(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    robot_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+):
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(
+        organization_id, project_id, region_code, import_id
+    )
+    if raw.source_format.value != "MCAP":
+        raise problem(
+            status=422,
+            code="MCAP_SOURCE_REQUIRED",
+            title="需要 MCAP",
+            detail="请选择 MCAP 原始文件",
+        )
+    from .configuration import connections
+
+    with connections()() as db:
+        # Only the batch's robot can be inspected using upload permissions.
+        association = db.execute(
+            """SELECT robot_id FROM ingest.mcap_processing_files
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
+            UNION SELECT authenticated_robot_id FROM ingest.robot_ingest_uploads
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
+            UNION SELECT robot_id FROM ingest.raw_sources
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
+            UNION SELECT robotics.robot_reference_owner(organization_id,'raw',project_id,
+            region_code,raw_source_id,robot_id) FROM ingest.raw_sources
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s""",
+            (organization_id, project_id, region_code, import_id) * 4,
+        ).fetchall()
+        if robot_id not in {r[0] for r in association}:
+            raise problem(
+                status=403,
+                code="ROBOT_CONFIG_SCOPE_DENIED",
+                title="机器人不属于该批次",
+                detail="只能查看本批次关联机器人的已发布配置",
+            )
+        rows = db.execute(
+            """SELECT document FROM ingest.robot_processing_versions
+            WHERE organization_id=%s AND robot_id=%s ORDER BY scheme_id,version DESC""",
+            (organization_id, robot_id),
+        ).fetchall()
+    # Do not expose validation evidence from another project to upload-only users.
+    return {
+        "items": [
+            {
+                k: r[0][k]
+                for k in ("scheme_id", "version", "content_sha256", "configuration", "name")
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/{import_id}/mcap-channels", operation_id="inspectMcapChannels")
+def mcap_channels(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    path: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+):
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    from hc_data_platform.continuous_recordings.mcap_native import inspect
+    from hc_data_platform.robot_processing.router import sample
+
+    return sample(
+        service,
+        organization_id,
+        project_id,
+        region_code,
+        import_id,
+        path,
+        lambda source, evidence: {"inventory": inspect(source), "evidence": evidence},
     )

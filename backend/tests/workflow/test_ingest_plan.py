@@ -10,11 +10,14 @@ from typing import Any
 import pytest
 from PIL import Image
 
+from hc_data_platform.capture_schemes.common import digest
+from hc_data_platform.capture_schemes.models import OutputContract
 from hc_data_platform.core.context import (
     RequestContext,
     bind_request_context,
     reset_request_context,
 )
+from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.ingest.manifest import preflight_manifest
 from hc_data_platform.ingest.models import RolloutManifestV1
 from hc_data_platform.lance_catalog import DatasetSchemaSnapshot, InMemoryLanceCatalog
@@ -26,6 +29,7 @@ from hc_data_platform.workflow.ingest_plan import (
     _image_observation,
 )
 from hc_data_platform.workflow.projection_store import LocalProjectionArtifactStore
+from tests.capture_schemes.processing_fixture import snapshot
 
 FIXTURE_ROOT = Path(__file__).parents[1] / "system/wave2/data"
 
@@ -99,6 +103,49 @@ def _profile(manifest: RolloutManifestV1) -> QualityProfileV1:
     )
 
 
+def _frozen(manifest, dataset):
+    output = OutputContract(
+        frequency_hz=30,
+        time_source="RGB_LOG_TIME",
+        features={
+            **{
+                name: {
+                    "role": role,
+                    "dtype": "float64",
+                    "shape": [2],
+                    "names": ["a", "b"],
+                    "units": ["rad", "rad"],
+                }
+                for name, role in (("observation.state", "state"), ("action", "action"))
+            },
+            "observation.images.front": {"role": "rgb", "dtype": "video", "shape": [3, 4, 3]},
+        },
+    )
+    frozen = snapshot(
+        output,
+        scope=("organization-a", "project-a", "region-a"),
+        raw={
+            "dataset_id": dataset,
+            "collection_task_id": manifest.task_id,
+            "robot_id": manifest.robot_id,
+            "source_format": "MCAP",
+        },
+    )
+    frozen["recording_id"] = manifest.recording_request_id
+    frozen["effective_adapter"] = {
+        "source_format": "MCAP",
+        "parser_version": "native-mcap-recording/2",
+        "configuration": {
+            "state_topic": "/joint_states",
+            "action_topic": "/action",
+            "primary_camera": "/camera/front/image",
+            "fps": 30,
+        },
+    }
+    frozen["snapshot_sha256"] = digest({k: v for k, v in frozen.items() if k != "snapshot_sha256"})
+    return frozen
+
+
 def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignment(
     tmp_path: Path,
 ) -> None:
@@ -114,8 +161,7 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
                 preflight.model_dump(mode="json"),
             ),
             [(_profile(manifest).model_dump(mode="json"),)],
-            ("dataset_ab",),
-            [("snapshot-a",)],
+            (_frozen(manifest, "dataset_ab"),),
         ]
     )
     projection_row = (
@@ -134,6 +180,7 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
         lambda: next(connections),
         storage,
         catalog,
+        package_schemas=catalog,
         decoder=McapRos2DecoderProbe(),
         projection_store=projection_store,
         projection_staging_root=tmp_path / "projection-staging",
@@ -156,7 +203,9 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
             data_package_id="package-a",
         )
         assert request.alignment.source is not None
-        with resolver.open_local_session(request.alignment.source) as session:
+        # A stored pre-capture input remains readable without rerunning plan selection.
+        historical = request.alignment.source.model_copy(update={"capture_snapshot": None})
+        with resolver.open_local_session(historical) as session:
             quality = session.quality_data
             quality_observations = tuple(session.quality_observations())
             alignment = session.alignment_data
@@ -182,7 +231,7 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
     assert request.dataset_id == "dataset_ab"
     assert request.organization_id == "organization-a"
     assert request.verification.organization_id == "organization-a"
-    assert request.alignment.schema_snapshot_id == "snapshot-a"
+    assert request.alignment.schema_snapshot_id.startswith("capture-")
     assert request.quality.profile.profile_id == "manifest-30hz"
     assert request.quality.data is None
     assert request.alignment.data is None
@@ -222,14 +271,11 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
     assert plan_connection._cursor.executions[2][1] == (
         "organization-a",
         "project-a",
-        manifest.task_id,
-    )
-    assert plan_connection._cursor.executions[3][1] == (
-        "project-a",
         "region-a",
-        "dataset_ab",
-        "organization-a",
+        manifest.robot_id,
+        manifest.recording_request_id,
     )
+    assert all("annotation." not in query for query, _ in plan_connection._cursor.executions)
 
 
 def test_resolver_fails_closed_when_quality_plan_is_ambiguous() -> None:
@@ -294,7 +340,7 @@ def test_resolver_uses_latest_profile_version_without_losing_immutable_history()
     assert selected == current
 
 
-def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> None:
+def test_resolver_routes_by_frozen_recording_without_annotation_binding() -> None:
     manifest = _manifest()
     preflight = preflight_manifest(manifest)
     connection = _Connection(
@@ -307,8 +353,7 @@ def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> 
                 preflight.model_dump(mode="json"),
             ),
             [(_profile(manifest).model_dump(mode="json"),)],
-            ("dataset_mcap",),
-            [("snapshot-mcap",)],
+            (_frozen(manifest, "dataset_mcap"),),
         ]
     )
     catalog = InMemoryLanceCatalog()
@@ -325,6 +370,7 @@ def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> 
         lambda: connection,
         _Storage(),
         catalog,
+        package_schemas=catalog,
     )
 
     token = bind_request_context(
@@ -347,22 +393,19 @@ def test_resolver_routes_by_manifest_task_before_validating_dataset_schema() -> 
         reset_request_context(token)
 
     assert request.dataset_id == "dataset_mcap"
-    assert request.alignment.schema_snapshot_id == "snapshot-mcap"
+    assert request.alignment.schema_snapshot_id.startswith("capture-")
     assert catalog.schema_for("project-a", "dataset_mcap") is not None
     assert connection._cursor.executions[2][1] == (
         "organization-a",
         "project-a",
-        manifest.task_id,
-    )
-    assert connection._cursor.executions[3][1] == (
-        "project-a",
         "region-a",
-        "dataset_mcap",
-        "organization-a",
+        manifest.robot_id,
+        manifest.recording_request_id,
     )
+    assert all("annotation." not in query for query, _ in connection._cursor.executions)
 
 
-def test_resolver_fails_closed_when_manifest_task_has_no_project_dataset() -> None:
+def test_resolver_fails_closed_when_recording_has_no_frozen_plan() -> None:
     manifest = _manifest()
     preflight = preflight_manifest(manifest)
     connection = _Connection(
@@ -392,7 +435,7 @@ def test_resolver_fails_closed_when_manifest_task_has_no_project_dataset() -> No
         )
     )
     try:
-        with pytest.raises(IngestWorkflowPlanBlocked, match="Manifest task"):
+        with pytest.raises(ProblemException) as error:
             resolver.resolve(
                 project_id="project-a",
                 region_code="storage-region-a",
@@ -402,6 +445,7 @@ def test_resolver_fails_closed_when_manifest_task_has_no_project_dataset() -> No
             )
     finally:
         reset_request_context(token)
+    assert error.value.problem.code == "CAPTURE_PLAN_REQUIRED"
 
 
 def test_json_jpeg_camera_envelope_projects_into_image_qc_observation() -> None:

@@ -210,6 +210,30 @@ export async function listPackageJobs(
     .parse(raw)
     .map((j) => checkedPackageJob(j, scope));
 }
+export async function loadPackageJob(
+  scope: Scope,
+  expected: PackageJob,
+  signal?: AbortSignal,
+) {
+  const pinned = checkedPackageJob(expected, scope);
+  const job = checkedPackageJob(
+    await request({
+      method: "GET",
+      path: `${base(scope)}/${encodeURIComponent(expected.job_id)}`,
+      scope,
+      signal,
+      cache: "no-store",
+    }),
+    scope,
+  );
+  if (
+    job.job_id !== expected.job_id ||
+    job.generation !== expected.generation ||
+    JSON.stringify(job.plan) !== JSON.stringify(pinned.plan)
+  )
+    throw new Error("导出任务已变化，请刷新导出记录后重试。");
+  return job;
+}
 export async function createPackageBatch(
   scope: Scope,
   members: PackageSelection[],

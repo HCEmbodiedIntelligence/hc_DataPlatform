@@ -248,6 +248,15 @@
   flex: 1 1 220px;
 }
 
+.sortField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 0;
+  color: var(--hc-color-text-muted, #64736f);
+  font-size: 12px;
+}
+
 .filterField :global(.ant-select),
 .filterField :global(.ant-input-affix-wrapper) {
   width: 100%;
@@ -767,6 +776,11 @@
   min-width: 0;
 }
 
+.credentialHistory {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 .credentialHistory > div,
 .robotUploadHistory > div {
   display: flex;
@@ -787,6 +801,8 @@
 .credentialHistory > div > span:last-child {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .credentialHistory code,
@@ -877,4 +893,8 @@
   .robotDetailColumns {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.externalMetrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }

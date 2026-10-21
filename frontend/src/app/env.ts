@@ -47,6 +47,7 @@ const gitCommitSchema = z.union([
 const environmentSchema = z
   .object({
     VITE_API_BASE_URL: publicUrlSchema,
+    VITE_ROBOT_PLATFORM_BASE_URL: z.string().trim().default(""),
     VITE_SSE_BASE_URL: publicUrlSchema,
     VITE_MOCK_MODE: z.enum(["off", "browser", "test"]),
     VITE_BUILD_VERSION: z.string().trim().min(1),
@@ -101,6 +102,7 @@ const environmentSchema = z
 
 export interface AppEnvironment {
   apiBaseUrl: string;
+  robotPlatformBaseUrl: string;
   sseBaseUrl: string;
   mockMode: "off" | "browser" | "test";
   buildVersion: string;
@@ -127,6 +129,9 @@ export function readAppEnvironment(): EnvironmentResult {
   return readEnvironment({
     VITE_API_BASE_URL:
       runtime.VITE_API_BASE_URL ?? import.meta.env.VITE_API_BASE_URL,
+    VITE_ROBOT_PLATFORM_BASE_URL:
+      runtime.VITE_ROBOT_PLATFORM_BASE_URL ??
+      import.meta.env.VITE_ROBOT_PLATFORM_BASE_URL,
     VITE_SSE_BASE_URL:
       runtime.VITE_SSE_BASE_URL ?? import.meta.env.VITE_SSE_BASE_URL,
     VITE_MOCK_MODE: runtime.VITE_MOCK_MODE ?? import.meta.env.VITE_MOCK_MODE,
@@ -158,6 +163,7 @@ export function readEnvironment(source: unknown): EnvironmentResult {
       : {};
   const result = environmentSchema.safeParse({
     VITE_API_BASE_URL: values.VITE_API_BASE_URL,
+    VITE_ROBOT_PLATFORM_BASE_URL: values.VITE_ROBOT_PLATFORM_BASE_URL,
     VITE_SSE_BASE_URL: values.VITE_SSE_BASE_URL,
     VITE_MOCK_MODE: values.VITE_MOCK_MODE,
     VITE_BUILD_VERSION: values.VITE_BUILD_VERSION,
@@ -181,6 +187,7 @@ export function readEnvironment(source: unknown): EnvironmentResult {
     ok: true,
     value: {
       apiBaseUrl: result.data.VITE_API_BASE_URL,
+      robotPlatformBaseUrl: result.data.VITE_ROBOT_PLATFORM_BASE_URL,
       sseBaseUrl: result.data.VITE_SSE_BASE_URL,
       mockMode: result.data.VITE_MOCK_MODE,
       buildVersion: result.data.VITE_BUILD_VERSION,

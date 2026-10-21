@@ -16,6 +16,7 @@ from hc_data_platform.robotics.models import (
 )
 from hc_data_platform.security.http import VerifiedAuth
 
+from .deletion import Kind, RobotDeletionCheck
 from .models import (
     BindOrganizationRobotModelRequest,
     OrganizationRobotBootstrapEnvelope,
@@ -23,6 +24,7 @@ from .models import (
     OrganizationRobotModelBindingPage,
     OrganizationRobotPage,
 )
+from .resolution import RobotResolutionCommand, RobotResolutionPlan, RobotResolutionResult
 from .service import OrganizationRobotAssetService
 
 router = APIRouter(
@@ -120,6 +122,75 @@ def create_organization_robot(
         f"/api/v1/organizations/{organization_id}/robots/{result.data.robot.id}/bootstrap"
     )
     return result
+
+
+@router.get(
+    "/{robot_id}/deletion-check",
+    operation_id="getOrganizationRobotDeletionCheck",
+    response_model=RobotDeletionCheck,
+    responses=PROBLEM_RESPONSES,
+)
+def get_robot_deletion_check(
+    organization_id: str,
+    robot_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+    kind: Annotated[Kind | None, Query()] = None,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> RobotDeletionCheck:
+    _prepare(organization_id, response)
+    return service.deletion_check(
+        auth=auth,
+        organization_id=organization_id,
+        robot_id=robot_id,
+        kind=kind,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get(
+    "/{robot_id}/deletion-actions",
+    operation_id="getRobotDeletionActions",
+    response_model=RobotResolutionPlan,
+    responses=PROBLEM_RESPONSES,
+)
+def get_robot_deletion_actions(
+    organization_id: str,
+    robot_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+) -> RobotResolutionPlan:
+    _prepare(organization_id, response)
+    return service.resolution_plan(auth=auth, organization_id=organization_id, robot_id=robot_id)
+
+
+@router.post(
+    "/{robot_id}/deletion-actions",
+    operation_id="resolveRobotDeletionAssociations",
+    response_model=RobotResolutionResult,
+    responses=PROBLEM_RESPONSES,
+)
+def resolve_robot_deletion_associations(
+    organization_id: str,
+    robot_id: str,
+    command: RobotResolutionCommand,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+    idempotency_key: IdempotencyKey,
+) -> RobotResolutionResult:
+    _prepare(organization_id, response)
+    return service.resolve(
+        auth=auth,
+        organization_id=organization_id,
+        robot_id=robot_id,
+        command=command,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.delete(

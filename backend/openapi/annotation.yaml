@@ -1833,7 +1833,7 @@ components:
           items:
             type: string
           maxItems: 10000
-          minItems: 1
+          minItems: 0
           title: Annotation Ids
           type: array
         format:

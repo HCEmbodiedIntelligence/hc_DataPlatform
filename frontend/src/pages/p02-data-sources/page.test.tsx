@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import DataSourcesPage from "./page";
+import DataSourcesPage from "./external-page";
 
 const {
   access,
@@ -229,62 +229,7 @@ describe("data sources navigation", () => {
     );
   });
 
-  it("creates the instance, binds the published model, then creates the data source", async () => {
-    access.canManage = true;
-    createRobotMutateAsync.mockResolvedValue({
-      id: "robot-created",
-      etag: "robot-etag",
-      effectiveModelBinding: null,
-    });
-    bindModelMutateAsync.mockResolvedValue({ id: "binding-created" });
-    createSourceMutateAsync.mockResolvedValue({ id: "source-created" });
-    const user = userEvent.setup();
-
-    render(
-      <MemoryRouter
-        initialEntries={["/ingest/sources?sourceType=ROBOT&intent=create"]}
-      >
-        <DataSourcesPage />
-      </MemoryRouter>,
-    );
-    const submit = screen.getByRole("button", { name: "提交机器人数据源" });
-    expect(submit).toHaveAttribute("data-initial-kind", "ROBOT");
-    await user.click(submit);
-
-    await waitFor(() => expect(createSourceMutateAsync).toHaveBeenCalled());
-    expect(createRobotMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        displayName: "装配机器人 A",
-        serialNo: "SN-001",
-        lifecycleStatus: "ACTIVE",
-      }),
-    );
-    expect(bindModelMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        versionId: "model-version-alpha",
-        robotId: "robot-created",
-        robotEtag: "robot-etag",
-      }),
-    );
-    expect(createSourceMutateAsync).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({
-          source_type: "ROBOT",
-          source_format: "MULTI_FORMAT",
-          source_format_version: null,
-          binding: { kind: "ROBOT", robot_id: "robot-created" },
-        }),
-      }),
-    );
-    expect(createRobotMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
-      bindModelMutateAsync.mock.invocationCallOrder[0]!,
-    );
-    expect(bindModelMutateAsync.mock.invocationCallOrder[0]).toBeLessThan(
-      createSourceMutateAsync.mock.invocationCallOrder[0]!,
-    );
-  });
-
-  it("offers a robot-specific creation action when the project has no sources", async () => {
+  it("offers an external connector action without creating robots", async () => {
     access.canManage = true;
     const user = userEvent.setup();
 
@@ -294,9 +239,11 @@ describe("data sources navigation", () => {
       </MemoryRouter>,
     );
 
-    await user.click(screen.getByRole("button", { name: "新建机器人数据源" }));
+    await user.click(
+      screen.getAllByRole("button", { name: "新建外部数据源" })[0]!,
+    );
     expect(
       screen.getByRole("button", { name: "提交机器人数据源" }),
-    ).toHaveAttribute("data-initial-kind", "ROBOT");
+    ).toHaveAttribute("data-initial-kind", "EDGE_AGENT");
   });
 });

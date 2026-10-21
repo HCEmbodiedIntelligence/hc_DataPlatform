@@ -185,11 +185,13 @@ def test_collection_preserves_unmeasured_depth_and_only_pools_valid_statistics(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("segment_ids", [("parent",), ()])
 def test_annotation_collection_keeps_full_tags_and_global_subtasks(
     pair,
     files,  # noqa: F811
     tmp_path,
     monkeypatch,
+    segment_ids,
 ):
     source, first, second = pair
     _, task, service, auth = files
@@ -205,11 +207,11 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
             except SnapshotBusy:
                 time.sleep(0.1)
         annotation = service.download(task.task_id, auth, revision=1, allow_unreviewed=True)
-        track = SubtaskTrack(track_id="chosen", label="任务分段", annotation_ids=("parent",))
+        track = SubtaskTrack(track_id="chosen", label="任务分段", annotation_ids=segment_ids)
         forbid_quantization(monkeypatch)
         output = (
             Path(os.getenv("HC_G1_WRITER_EVIDENCE_ROOT", str(tmp_path)))
-            / "collection-annotated"
+            / ("collection-annotated" if segment_ids else "collection-without-segments")
             / first.receipt.data.data_version_id
         )
         manifest, _ = write_collection(
@@ -226,7 +228,9 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
                 assert (
                     output / member["attachments_root"] / "hc/annotation.json"
                 ).read_bytes() == annotation.content
-                assert table["subtask_index"].to_pylist() == [0, 0, -1, -1]
+                assert table["subtask_index"].to_pylist() == (
+                    [0, 0, -1, -1] if segment_ids else [-1] * 4
+                )
                 assert table["hc.annotation.excluded"].to_pylist() == [False, False, True, False]
                 assert (
                     member["annotation"]["revision_content_hash"]
@@ -235,11 +239,15 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
             else:
                 assert table["subtask_index"].to_pylist() == [-1] * 4
                 assert table["hc.annotation.excluded"].to_pylist() == [False] * 4
-        segments = [
-            json.loads(line) for line in (output / "hc/subtasks.jsonl").read_bytes().splitlines()
-        ]
-        assert len(segments) == 1 and segments[0]["subtask_index"] == 0
-        assert segments[0]["source_subtask_index"] == 0
+        if segment_ids:
+            segments = [
+                json.loads(line)
+                for line in (output / "hc/subtasks.jsonl").read_bytes().splitlines()
+            ]
+            assert len(segments) == 1 and segments[0]["subtask_index"] == 0
+            assert segments[0]["source_subtask_index"] == 0
+        else:
+            assert not (output / "hc/subtasks.jsonl").exists()
 
 
 @pytest.mark.integration

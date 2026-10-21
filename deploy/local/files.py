@@ -167,34 +167,11 @@ def setup() -> None:
 
 
 def mount() -> None:
-    target = directory()
-    if os.path.ismount(target) or any(target.iterdir()):
-        raise RuntimeError("Browse directory is already mounted or is not empty.")
-    command = rclone(
-        "mount",
-        REMOTE,
-        str(target),
-        "--read-only",
-        "--vfs-cache-mode",
-        "off",
-        "--buffer-size",
-        "8M",
-        "--dir-cache-time",
-        "5s",
-        "--attr-timeout",
-        "1s",
-        "--file-perms",
-        "0444",
-        "--dir-perms",
-        "0555",
-        "--umask",
-        "022",
-        "--log-level",
-        "NOTICE",
-        "--volname",
-        "平台数据",
-    )
-    os.execv(command[0], command)
+    import sys
+
+    import readable_files
+
+    readable_files.mount(sys.modules[__name__])
 
 
 def install_service() -> None:
@@ -203,16 +180,16 @@ def install_service() -> None:
     unit_dir.mkdir(parents=True, exist_ok=True)
     mount_script = REPO / "deploy/local/files.sh"
     unit = f'''[Unit]
-Description=HC platform local data directory (read-only MinIO view)
+Description=HC platform readable local files
 After=network.target
 
 [Service]
 Type=simple
 ExecStart=/bin/bash "{mount_script}" mount
-ExecStop=/usr/bin/fusermount3 -u "{directory()}"
+ExecStop=-/usr/bin/fusermount3 -u "{directory()}"
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=20
+TimeoutStopSec=35
 
 [Install]
 WantedBy=default.target
@@ -235,7 +212,8 @@ def usage(prefix: str) -> None:
     if prefix.startswith("/") or any(part in {".", ".."} for part in prefix.split("/")):
         raise ValueError("Use a relative object prefix.")
     result = json.loads(output(rclone("size", REMOTE + "/" + prefix, "--json")))
-    print(f"目录：{directory() / prefix}")
+    print(f"浏览目录：{directory()}")
+    print(f"对象存储统计范围：{prefix or '全部对象'}")
     print(f"文件数量：{result['count']}")
     print(f"文件总大小：{human_size(int(result['bytes']))}（{result['bytes']} 字节）")
     print("以上为完整对象的内容大小，不含未完成分片、MinIO 元数据及数据库。")
@@ -267,6 +245,9 @@ def main() -> None:
                     "mounted": os.path.ismount(directory()),
                     "read_only": True,
                     "extra_full_copy": False,
+                    "layout": "project-task-recording",
+                    "object_mount": str(STATE / "objects"),
+                    "object_mounted": os.path.ismount(STATE / "objects"),
                 },
                 ensure_ascii=False,
                 indent=2,

@@ -118,8 +118,19 @@ class ParquetStepReader:
             raise ValueError("step window extends beyond the committed Episode")
         info = package.document("meta/info.json")
         mapping = info["hc.feature_mapping"]
-        selected = tuple(mapping) if columns is None else tuple(dict.fromkeys(columns))
-        if set(selected) - set(mapping):
+        from hc_data_platform.capture_schemes.schema import native_topic
+
+        absent = {
+            k if "/observation/state" in mapping else native_topic(k)
+            for k, v in info.get("hc.capture_presence", {}).items()
+            if not v
+        }
+        selected = (
+            tuple(mapping) + tuple(sorted(absent))
+            if columns is None
+            else tuple(dict.fromkeys(columns))
+        )
+        if set(selected) - set(mapping) - absent:
             raise ValueError("requested logical modality is absent from this data version")
         projections = ["frame_index", "hc.timestamp_ns", "hc.sample_valid"]
         media = set()
@@ -127,6 +138,8 @@ class ParquetStepReader:
         if sparse:
             projections.extend(["hc.video_frame_index", "hc.video_timestamp"])
         for name in selected:
+            if name in absent:
+                continue
             target = mapping[name]
             if info["features"][target]["dtype"] == "video":
                 media.add(target)
@@ -137,12 +150,26 @@ class ParquetStepReader:
                 f"hc.{kind}.{target}"
                 for kind in ("source_timestamps_ns", "time_error_ns", "valid", "repeated")
             )
+            if "hc.capture_contract" in info:
+                projections.append(f"hc.axis_validity.{target}")
         result = []
         with package.file(DATA_PATH) as path:
             for row in window_rows(path, start_step, end_step, projections):
-                values = {}
-                source_times, errors, valid, repeated = {}, {}, {}, {}
+                values: dict[str, Any] = {}
+                source_times, errors, valid, repeated, axis_validity, presence = (
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                    {},
+                )
                 for name in selected:
+                    if "hc.capture_contract" in info:
+                        presence[name] = name not in absent
+                    if name in absent:
+                        values[name], valid[name] = None, False
+                        continue
                     target = mapping[name]
                     if target in media:
                         # A logical reference only: no per-step image arrays or signed URLs.
@@ -151,8 +178,14 @@ class ParquetStepReader:
                             "feature": target,
                             "data_version_id": data.data_version_id,
                             "frame_index": row["frame_index"],
-                            **({"video_frame_index": row["hc.video_frame_index"],
-                                "video_timestamp": row["hc.video_timestamp"]} if sparse else {}),
+                            **(
+                                {
+                                    "video_frame_index": row["hc.video_frame_index"],
+                                    "video_timestamp": row["hc.video_timestamp"],
+                                }
+                                if sparse
+                                else {}
+                            ),
                             "source": json.loads(row["hc.source_ref." + target]),
                         }
                     else:
@@ -163,12 +196,16 @@ class ParquetStepReader:
                         row[f"hc.valid.{target}"],
                         row[f"hc.repeated.{target}"],
                     )
+                    if "hc.capture_contract" in info:
+                        axis_validity[name] = tuple(json.loads(row[f"hc.axis_validity.{target}"]))
                 result.append(
                     StepRecord(
                         rollout_id=identity.rollout_id,
                         step_index=row["frame_index"],
                         timestamp_ns=row["hc.timestamp_ns"],
                         sample_valid=row["hc.sample_valid"],
+                        presence=presence,
+                        axis_validity=axis_validity,
                         modalities=values,
                         source_timestamps_ns=source_times,
                         time_error_ns=errors,
@@ -285,9 +322,11 @@ class PhysicalDepthReader:
         if profile.sha256 != declaration["profile_sha256"]:
             raise ValueError("depth profile checksum mismatch")
         media_index = frame_index
-        if info.get('hc.training_policy') == 'drop_invalid_rows_preserve_source_time/v1':
+        if info.get("hc.training_policy") == "drop_invalid_rows_preserve_source_time/v1":
             with package.file(DATA_PATH) as path:
-                media_index = next(window_rows(path, frame_index, frame_index + 1, ['hc.video_frame_index']))['hc.video_frame_index']
+                media_index = next(
+                    window_rows(path, frame_index, frame_index + 1, ["hc.video_frame_index"])
+                )["hc.video_frame_index"]
         with package.file(f"{evidence}/frames.parquet") as path:
             source = next(window_rows(path, media_index, media_index + 1))
         with package.file(f"{evidence}/validity/flags.parquet") as path:

@@ -57,7 +57,10 @@ class IngestRolloutWorkflow:
             "qc_report": report,
             "derived": derived,
             "raw_preserved": True,
-            "training_eligible": True,
+            "data_readable": True,
+            "annotation_status": "PENDING_CONFIGURATION",
+            "annotation_complete": False,
+            "training_eligible": False,
         }
 
 

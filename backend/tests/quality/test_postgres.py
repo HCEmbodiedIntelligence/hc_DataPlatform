@@ -177,7 +177,7 @@ def test_problem_sources_resolve_native_episodes_within_the_report_scope(isolate
                     source=RawSource(
                         **scope,
                         raw_source_id=import_id,
-                        upload_id=import_id,
+                        upload_id=f"upload-{import_id}",
                         source_format=RawSourceFormat.LEROBOT_V3,
                         source_format_version="v3.0",
                         manifest_key=f"raw/{import_id}/manifest.json",
@@ -253,5 +253,17 @@ def test_problem_sources_resolve_native_episodes_within_the_report_scope(isolate
         assert rows["no-source"].source_import_id is None
         assert rows["no-source"].source_episode_index is None
         assert repository.list_problem_reports(project_id="project-a", region_code="cn-other") == ()
+        with connect() as connection:
+            connection.execute(
+                """UPDATE ingest.raw_source_episodes SET status='DISCARDED'
+                WHERE organization_id='org-a' AND project_id='project-a'
+                  AND region_code='cn-test' AND raw_source_id='native-a'
+                  AND episode_id='episode-0'"""
+            )
+        remaining = repository.list_problem_reports(project_id="project-a", region_code="cn-test")
+        assert {row.rollout_id for row in remaining} == {"episode-7", "no-source"}
+        assert repository.get_report(
+            project_id="project-a", region_code="cn-test", rollout_id="episode-0"
+        ) is not None
     finally:
         reset_request_context(token)

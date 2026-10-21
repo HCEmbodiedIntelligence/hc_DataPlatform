@@ -1,0 +1,339 @@
+
+> hc-data-platform-frontend@0.1.0 check:architecture /app
+> node scripts/check-architecture.mjs && node --test scripts/check-architecture.test.mjs
+
+Frontend shared, feature/page, page/app and cross-page boundaries passed.
+TAP version 13
+# Subtest: rejects reverse dependency: import type { Scope } from "../entities/scope";
+ok 1 - rejects reverse dependency: import type { Scope } from "../entities/scope";
+  ---
+  duration_ms: 4.629584
+  type: 'test'
+  ...
+# Subtest: rejects reverse dependency: export { something } from "../pages/something";
+ok 2 - rejects reverse dependency: export { something } from "../pages/something";
+  ---
+  duration_ms: 1.152547
+  type: 'test'
+  ...
+# Subtest: rejects reverse dependency: async function load() { return import("../features/something"); }
+ok 3 - rejects reverse dependency: async function load() { return import("../features/something"); }
+  ---
+  duration_ms: 1.477546
+  type: 'test'
+  ...
+# Subtest: rejects reverse dependency: type T = import("../entities/scope").Scope;
+ok 4 - rejects reverse dependency: type T = import("../entities/scope").Scope;
+  ---
+  duration_ms: 0.562631
+  type: 'test'
+  ...
+# Subtest: rejects reverse dependency: const x = require("../app/routes");
+ok 5 - rejects reverse dependency: const x = require("../app/routes");
+  ---
+  duration_ms: 0.58976
+  type: 'test'
+  ...
+# Subtest: rejects reverse dependency: const x = import(computedPath);
+ok 6 - rejects reverse dependency: const x = import(computedPath);
+  ---
+  duration_ms: 0.25082
+  type: 'test'
+  ...
+# Subtest: features cannot depend on application composition: import { useToast } from "../../app/providers/ToastProvider";
+ok 7 - features cannot depend on application composition: import { useToast } from "../../app/providers/ToastProvider";
+  ---
+  duration_ms: 0.427844
+  type: 'test'
+  ...
+# Subtest: features cannot depend on application composition: export type { Routes } from "../../app/router";
+ok 8 - features cannot depend on application composition: export type { Routes } from "../../app/router";
+  ---
+  duration_ms: 0.385192
+  type: 'test'
+  ...
+# Subtest: features cannot depend on application composition: const load = () => import("../../app/router");
+ok 9 - features cannot depend on application composition: const load = () => import("../../app/router");
+  ---
+  duration_ms: 0.813526
+  type: 'test'
+  ...
+# Subtest: pages cannot depend on application composition: import { useToast } from "../../app/providers/ToastProvider";
+ok 10 - pages cannot depend on application composition: import { useToast } from "../../app/providers/ToastProvider";
+  ---
+  duration_ms: 0.516712
+  type: 'test'
+  ...
+# Subtest: pages cannot depend on application composition: export type { Routes } from "../../app/router";
+ok 11 - pages cannot depend on application composition: export type { Routes } from "../../app/router";
+  ---
+  duration_ms: 0.308144
+  type: 'test'
+  ...
+# Subtest: pages cannot depend on application composition: const load = () => import("../../app/router");
+ok 12 - pages cannot depend on application composition: const load = () => import("../../app/router");
+  ---
+  duration_ms: 0.320589
+  type: 'test'
+  ...
+# Subtest: page links cannot import component route assembly
+ok 13 - page links cannot import component route assembly
+  ---
+  duration_ms: 0.263855
+  type: 'test'
+  ...
+# Subtest: pages cannot reuse another page as a feature: import { nativeRoot } from "../p03-upload-jobs/lerobot-processing";
+ok 14 - pages cannot reuse another page as a feature: import { nativeRoot } from "../p03-upload-jobs/lerobot-processing";
+  ---
+  duration_ms: 0.371007
+  type: 'test'
+  ...
+# Subtest: pages cannot reuse another page as a feature: import type { CollectionTask } from "../p20-collection-tasks/api";
+ok 15 - pages cannot reuse another page as a feature: import type { CollectionTask } from "../p20-collection-tasks/api";
+  ---
+  duration_ms: 0.212508
+  type: 'test'
+  ...
+# Subtest: pages cannot reuse another page as a feature: const load = () => import("../p03-upload-jobs/components/OriginalSourceBrowser");
+ok 16 - pages cannot reuse another page as a feature: const load = () => import("../p03-upload-jobs/components/OriginalSourceBrowser");
+  ---
+  duration_ms: 0.249928
+  type: 'test'
+  ...
+# Subtest: pages cannot reuse another page as a feature: import workspace from "../ui-011e/workspace.module.css";
+ok 17 - pages cannot reuse another page as a feature: import workspace from "../ui-011e/workspace.module.css";
+  ---
+  duration_ms: 0.377729
+  type: 'test'
+  ...
+# Subtest: pages cannot reuse another page as a feature: export { Component } from "../p04-upload-detail/formal-page";
+ok 18 - pages cannot reuse another page as a feature: export { Component } from "../p04-upload-detail/formal-page";
+  ---
+  duration_ms: 0.169898
+  type: 'test'
+  ...
+# Subtest: pages compose feature capabilities and their own private components
+ok 19 - pages compose feature capabilities and their own private components
+  ---
+  duration_ms: 0.810868
+  type: 'test'
+  ...
+# Subtest: permits shared contracts and explicitly known vendor imports
+ok 20 - permits shared contracts and explicitly known vendor imports
+  ---
+  duration_ms: 2.142263
+  type: 'test'
+  ...
+# Subtest: current source satisfies the migrated boundary
+ok 21 - current source satisfies the migrated boundary
+  ---
+  duration_ms: 1218.261169
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: import { useEffect } from "react";
+ok 22 - pure robots client rejects session coupling: import { useEffect } from "react";
+  ---
+  duration_ms: 1.024791
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: import { create } from "zustand";
+ok 23 - pure robots client rejects session coupling: import { create } from "zustand";
+  ---
+  duration_ms: 0.65181
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: import { useQuery } from "@tanstack/react-query";
+ok 24 - pure robots client rejects session coupling: import { useQuery } from "@tanstack/react-query";
+  ---
+  duration_ms: 0.198111
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: import type { Scope } from "../../../shared/scope/shell-store";
+ok 25 - pure robots client rejects session coupling: import type { Scope } from "../../../shared/scope/shell-store";
+  ---
+  duration_ms: 0.101861
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: export { getCurrentOrganizationId } from "../../../shared/scope/current-organization";
+ok 26 - pure robots client rejects session coupling: export { getCurrentOrganizationId } from "../../../shared/scope/current-organization";
+  ---
+  duration_ms: 0.101352
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: const load = () => import("../../robots/api");
+ok 27 - pure robots client rejects session coupling: const load = () => import("../../robots/api");
+  ---
+  duration_ms: 0.102574
+  type: 'test'
+  ...
+# Subtest: pure robots client rejects session coupling: type Api = import("../../robot-models/api/hooks").Api;
+ok 28 - pure robots client rejects session coupling: type Api = import("../../robot-models/api/hooks").Api;
+  ---
+  duration_ms: 0.092792
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: import { useEffect } from "react";
+ok 29 - pure robot-models client rejects session coupling: import { useEffect } from "react";
+  ---
+  duration_ms: 0.509631
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: import { create } from "zustand";
+ok 30 - pure robot-models client rejects session coupling: import { create } from "zustand";
+  ---
+  duration_ms: 0.562607
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: import { useQuery } from "@tanstack/react-query";
+ok 31 - pure robot-models client rejects session coupling: import { useQuery } from "@tanstack/react-query";
+  ---
+  duration_ms: 0.223434
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: import type { Scope } from "../../../shared/scope/shell-store";
+ok 32 - pure robot-models client rejects session coupling: import type { Scope } from "../../../shared/scope/shell-store";
+  ---
+  duration_ms: 0.097485
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: export { getCurrentOrganizationId } from "../../../shared/scope/current-organization";
+ok 33 - pure robot-models client rejects session coupling: export { getCurrentOrganizationId } from "../../../shared/scope/current-organization";
+  ---
+  duration_ms: 0.079727
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: const load = () => import("../../robots/api");
+ok 34 - pure robot-models client rejects session coupling: const load = () => import("../../robots/api");
+  ---
+  duration_ms: 0.090002
+  type: 'test'
+  ...
+# Subtest: pure robot-models client rejects session coupling: type Api = import("../../robot-models/api/hooks").Api;
+ok 35 - pure robot-models client rejects session coupling: type Api = import("../../robot-models/api/hooks").Api;
+  ---
+  duration_ms: 0.14308
+  type: 'test'
+  ...
+# Subtest: pure scoped cache keys cannot acquire active shell selection
+ok 36 - pure scoped cache keys cannot acquire active shell selection
+  ---
+  duration_ms: 0.159206
+  type: 'test'
+  ...
+# Subtest: renderer selection is independent of runtime assembly: import { useEffect } from "react";
+ok 37 - renderer selection is independent of runtime assembly: import { useEffect } from "react";
+  ---
+  duration_ms: 4.000624
+  type: 'test'
+  ...
+# Subtest: renderer selection is independent of runtime assembly: import { getShellState } from "../../shared/scope/shell-store";
+ok 38 - renderer selection is independent of runtime assembly: import { getShellState } from "../../shared/scope/shell-store";
+  ---
+  duration_ms: 0.165679
+  type: 'test'
+  ...
+# Subtest: renderer selection is independent of runtime assembly: const load = () => import("./EpisodeWorkbenchCore");
+ok 39 - renderer selection is independent of runtime assembly: const load = () => import("./EpisodeWorkbenchCore");
+  ---
+  duration_ms: 0.376947
+  type: 'test'
+  ...
+# Subtest: renderer selection is independent of runtime assembly: import { create } from "zustand";
+ok 40 - renderer selection is independent of runtime assembly: import { create } from "zustand";
+  ---
+  duration_ms: 0.289185
+  type: 'test'
+  ...
+# Subtest: composition cannot restore central modality routing: const kind = panels[stream.modality];
+ok 41 - composition cannot restore central modality routing: const kind = panels[stream.modality];
+  ---
+  duration_ms: 0.186107
+  type: 'test'
+  ...
+# Subtest: composition cannot restore central modality routing: if (stream.modality === "audio") {}
+ok 42 - composition cannot restore central modality routing: if (stream.modality === "audio") {}
+  ---
+  duration_ms: 0.064011
+  type: 'test'
+  ...
+# Subtest: composition cannot restore central modality routing: const kind = panels[stream["modality"]];
+ok 43 - composition cannot restore central modality routing: const kind = panels[stream["modality"]];
+  ---
+  duration_ms: 0.048974
+  type: 'test'
+  ...
+# Subtest: features cannot acquire contracts from pages: import type { Search } from "../../pages/p10/query-codec";
+ok 44 - features cannot acquire contracts from pages: import type { Search } from "../../pages/p10/query-codec";
+  ---
+  duration_ms: 0.099242
+  type: 'test'
+  ...
+# Subtest: features cannot acquire contracts from pages: export { Search } from "../../pages/p10/query-codec";
+ok 45 - features cannot acquire contracts from pages: export { Search } from "../../pages/p10/query-codec";
+  ---
+  duration_ms: 0.062565
+  type: 'test'
+  ...
+# Subtest: features cannot acquire contracts from pages: const load = () => import("../../pages/p10/query-codec");
+ok 46 - features cannot acquire contracts from pages: const load = () => import("../../pages/p10/query-codec");
+  ---
+  duration_ms: 0.1378
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: pages/p07-version-detail/page.tsx: import { createPublishedExport } from "./export-api";
+ok 47 - production cannot route through compatibility entries: pages/p07-version-detail/page.tsx: import { createPublishedExport } from "./export-api";
+  ---
+  duration_ms: 0.156085
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: pages/p06-dataset-detail/page.tsx: type T = import("./episode-detail").EpisodeOverview;
+ok 48 - production cannot route through compatibility entries: pages/p06-dataset-detail/page.tsx: type T = import("./episode-detail").EpisodeOverview;
+  ---
+  duration_ms: 0.091621
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: pages/p03-upload-jobs/page.tsx: const load = () => import("./formal-client");
+ok 49 - production cannot route through compatibility entries: pages/p03-upload-jobs/page.tsx: const load = () => import("./formal-client");
+  ---
+  duration_ms: 0.07322
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: app/shell/example.ts: import type { Scope } from "../../entities/scope";
+ok 50 - production cannot route through compatibility entries: app/shell/example.ts: import type { Scope } from "../../entities/scope";
+  ---
+  duration_ms: 0.05968
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: entities/example.ts: export type { Scope } from "./scope";
+ok 51 - production cannot route through compatibility entries: entities/example.ts: export type { Scope } from "./scope";
+  ---
+  duration_ms: 0.054759
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: pages/p15-robots/page.tsx: import { useRobots } from "../../features/robots/api";
+ok 52 - production cannot route through compatibility entries: pages/p15-robots/page.tsx: import { useRobots } from "../../features/robots/api";
+  ---
+  duration_ms: 0.209045
+  type: 'test'
+  ...
+# Subtest: production cannot route through compatibility entries: pages/p15-robots/page.tsx: const load = () => import("../../features/robot-models/api/index");
+ok 53 - production cannot route through compatibility entries: pages/p15-robots/page.tsx: const load = () => import("../../features/robot-models/api/index");
+  ---
+  duration_ms: 0.085283
+  type: 'test'
+  ...
+# Subtest: new production consumers use the canonical scoped hooks and clients
+ok 54 - new production consumers use the canonical scoped hooks and clients
+  ---
+  duration_ms: 0.134532
+  type: 'test'
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 54
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1515.327952

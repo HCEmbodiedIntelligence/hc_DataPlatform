@@ -118,10 +118,11 @@ function buildDatasets(filters: DatasetsRouteFilters = {}): string {
 
 function buildDatasetDetail(input: DatasetDetailRouteInput): string {
   const search = new URLSearchParams();
-  if (input.tab && input.tab !== 'overview') search.set('tab', input.tab);
+  if (input.tab) search.set('tab', input.tab === 'schema' ? 'overview' : input.tab);
   if (input.versionId) search.set('versionId', input.versionId);
   appendText(search, 'collectionTaskId', input.collectionTaskId);
-  if (input.tab === 'episodes' && input.episodeId) search.set('episodeId', input.episodeId);
+  if ((input.tab ?? 'episodes') === 'episodes' && input.episodeId)
+    search.set('episodeId', input.episodeId);
   if (input.returnTo && isSafeAppRelativeUrl(input.returnTo))
     search.set('returnTo', input.returnTo);
   return withSearch(`/datasets/${encodeURIComponent(input.datasetId)}`, search);

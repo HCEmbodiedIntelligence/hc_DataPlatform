@@ -513,3 +513,42 @@ production-like 环境持续至少 30 分钟做 E2E；不得用稀疏文件、�
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing` | `upload.read`；按当前作用域读取处理状态。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process` | `upload.manage`；校验原始导入的作用域、格式及处理目标。 |
 | `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry` | `upload.manage`；仅在当前作用域重试导入处理。 |
+
+## 2026-10-19 机器人接入 A～F 增量
+
+以下新增操作的匿名拒绝由 `tests/robot_ingest/test_onboarding.py` 独立覆盖；组织拒绝、凭据幂等、停用与跨任务边界见该文件及 `test_onboarding_postgres.py`、`test_robot_ingest_postgres.py`。本增量不代表上述历史安全差距已经关闭。
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `/api/v1/projects/{project_id}/robot-ingest/onboarding` | GET/POST 要求用户 Bearer 与精确组织、项目的 `ingest_source.read/manage`；新建与模型绑定仍分别要求机器人/模型管理权限。组织目录仅返回本组织，旧项目关联仅返回用户获授权的项目、Region；请求回执只保存标识，明文凭据仅首次返回，响应 no-store。 |
+| `/api/v1/projects/{project_id}/robot-ingest/successful-volume` | GET 要求 `upload.read` 及精确组织/项目/Region；按成功 Raw 的提交时间与指定 IANA 时区聚合，不暴露其他 scope 或对象定位器。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/robot-options` | GET 要求 `upload.read` 及精确组织/项目/Region；仅返回有效组织机器人，保留旧项目停用与撤权约束。 |
+| `/api/v1/robot-ingest/heartbeat` | OpenAPI 使用独立 robotBearerAuth（与旧矩阵 bearerAuth 判定存在 OpenAPI authn 缺口）；实际拒绝匿名、无效、过期、撤销凭据与停用身份。组织和 Robot ID 只从认证结果取得，用户不能在请求体覆盖。有效设备认证才更新观测，不接受 cookie。 |
+
+## 机器人采集配置增量（2026-10-20）
+
+仅补本轮端点。历史矩阵缺项和 annotation-file 的基线 503 问题保留，不能将全局安全套件标为通过。
+
+| Path | Methods | 验证 |
+| --- | --- | --- |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config` | GET | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config/{scheme_id}` | PUT | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config/{scheme_id}:validate` | POST | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config/{scheme_id}:publish` | POST | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/organizations/{organization_id}/robot-processing-templates` | GET/POST | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/projects/{project_id}/collection-tasks/{task_id}/data-requirements` | GET/PUT | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-versions` | GET | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+| `/api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-channels` | GET | OpenAPI authn 缺口：运行时 VerifiedAuth；test_configuration 匿名 401、上传权限不可管理实例、跨组织拒绝；数据库 RLS 与并发发布验证。 |
+
+## 2026-10-20 凭据查看与删除增量
+
+`tests/robot_ingest/test_credential_vault.py` 与 `test_credential_vault_postgres.py` 覆盖下列
+操作的匿名拒绝、管理权限、跨组织拒绝、加密持久化、删除后历史关联与重试。权限沿用组织
+机器人管理语义：同组织有授权项目的管理员可以管理该组织上传身份；上传目标仍由任务确定。
+
+| Runtime path | 当前安全合同 |
+| --- | --- |
+| `POST /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}:reveal` | 用户 Bearer、组织 `ingest_source.manage` 与当前项目作用域、凭据必须属于当前组织/身份且有效；只读能力拒绝。加密绑定组织/身份/凭据，错误密钥/篡改返回 503，旧摘要尚未补存返回 409；成功返回 no-store。查看不更新设备观测或恢复停用身份。 |
+| `DELETE /api/v1/projects/{project_id}/robot-ingest/identities/{ingest_identity_id}/credentials/{credential_id}` | 相同管理权限与归属检查；行锁内确认已撤销/过期，有效凭据返回 409。清除密文并标记删除，保留历史上传外键与幂等回执；重复删除 204，迟到的认证补存不能恢复密文。 |
+
+| `GET` | `/api/v1/organizations/{organization_id}/robots/{robot_id}/deletion-check` | bearerAuth | robot.manage in organization; project/region and data read grants filter reference details | robot deletion check API/DB tests |

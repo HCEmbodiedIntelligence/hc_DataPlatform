@@ -68,9 +68,9 @@ import { workingCollectionId } from "../../features/datasets/api/collection-rele
 const invalidDataset = "dataset_invalid" as DatasetId;
 const invalidVersion = "version_invalid" as DatasetVersionId;
 const tabs: readonly { id: DatasetDetailTab; label: string }[] = [
+  { id: "episodes", label: "Episodes" },
   { id: "overview", label: "概要" },
   { id: "versions", label: "数据版本" },
-  { id: "episodes", label: "Episodes" },
   { id: "sources", label: "来源" },
   { id: "capacity", label: "容量" },
 ];
@@ -1064,11 +1064,13 @@ export function DatasetDetailPage() {
         }
         inspectorLabel="选中 Episode"
       >
+        {tabContent}
         {rawScope &&
         capabilities.has("upload.read") &&
         ["overview", "episodes"].includes(search.tab) ? (
           <CaptureProgressPanel
             key={`captures-${datasetId}`}
+            compact
             scope={rawScope}
             datasetId={datasetId}
             taskId={search.collectionTaskId}
@@ -1079,12 +1081,12 @@ export function DatasetDetailPage() {
         ["episodes", "overview", "sources"].includes(search.tab) ? (
           <LeRobotProcessingRecords
             key={datasetId}
+            compact
             scope={rawScope}
             canManage={capabilities.has("upload.manage")}
             datasetId={datasetId}
           />
         ) : null}
-        {tabContent}
       </DetailPageScaffold>
       <EntityDrawer
         open={Boolean(selectedEpisode) && compactInspector}

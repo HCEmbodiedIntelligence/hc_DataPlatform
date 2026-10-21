@@ -19,7 +19,10 @@ class EpisodeSchemas:
         if (
             not math.isfinite(snapshot.frequency_hz)
             or snapshot.frequency_hz <= 0
-            or compute_schema_fingerprint(snapshot.fields) != snapshot.fingerprint
+            or compute_schema_fingerprint(
+                snapshot.fields, semantic_contract=snapshot.semantic_contract
+            )
+            != snapshot.fingerprint
         ):
             raise PackageConflict("logical schema fingerprint/frequency is invalid")
         return snapshot

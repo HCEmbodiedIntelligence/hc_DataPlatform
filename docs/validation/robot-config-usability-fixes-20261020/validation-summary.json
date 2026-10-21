@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "backend": {
+    "tests": 26,
+    "failed": 0,
+    "skipped": 0
+  },
+  "frontend": {
+    "tests": 7,
+    "failed": 0,
+    "skipped": 0
+  },
+  "architecture_tests": 54,
+  "current_main_typecheck": "PASS",
+  "current_main_vite_build": "PASS",
+  "eslint_changed_ui": "PASS",
+  "ruff_changed_backend": "PASS",
+  "isolated_browser": "PASS",
+  "live_lan_browser_readonly": "PASS",
+  "live_data_writes": 0,
+  "new_schema_migrations": 0,
+  "x1_014_preserved": true,
+  "boundary": "Published versions and robots with historical uploads/raw data remain protected from physical deletion."
+}

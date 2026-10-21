@@ -10,6 +10,7 @@ from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from hc_data_platform.capture_schemes.ports import RecordingPlans
 from hc_data_platform.core.context import select_organization_scope, select_request_scope
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.object_storage.checksums import crc64_ecma, normalize_etag
@@ -20,6 +21,7 @@ from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.scope import ScopeGuard
 
 from .adapters import AdapterVerification, RobotFormatAdapterRegistry
+from .episode_delivery import EpisodeDeliveries, project_episode
 from .models import (
     AssetState,
     AttemptOutcome,
@@ -40,6 +42,7 @@ from .models import (
     RobotIngestAttempt,
     RobotIngestAttemptList,
     RobotIngestAuthContext,
+    RobotIngestEpisodeReadResult,
     RobotIngestEpisodeResult,
     RobotIngestEpisodeResultList,
     RobotIngestIdentity,
@@ -77,6 +80,8 @@ class RobotIngestService:
         *,
         credential_hmac_key: str,
         adapters: RobotFormatAdapterRegistry | None = None,
+        capture_plans: RecordingPlans | None = None,
+        episode_deliveries: EpisodeDeliveries | None = None,
         clock: Clock = lambda: datetime.now(timezone.utc),
     ) -> None:
         if len(credential_hmac_key) < 16:
@@ -84,8 +89,15 @@ class RobotIngestService:
         self.repository = repository
         self.storage = storage
         self.adapters = adapters or RobotFormatAdapterRegistry()
+        self.episode_deliveries = episode_deliveries
         self._credential_key = credential_hmac_key.encode("utf-8")
+        from .credential_vault import CredentialVault
+
+        self._credential_vault = CredentialVault(self._credential_key)
         self._clock = clock
+        from .connections import Connections
+
+        self.connections = Connections(self, capture_plans=capture_plans)
 
     @classmethod
     def in_memory(
@@ -126,6 +138,7 @@ class RobotIngestService:
             upload_policy=command.upload_policy,
             created_at=now,
             updated_at=now,
+            observation_started_at=now,
         )
         try:
             saved = self.repository.create_identity(identity)
@@ -186,7 +199,17 @@ class RobotIngestService:
                 "updated_at": self._clock(),
             }
         )
-        return RobotIdentityEnvelope(data=self._save_identity(updated))
+        return RobotIdentityEnvelope(
+            data=self._save_identity(
+                updated,
+                changed_fields=(
+                    "allowed_transports",
+                    "allowed_formats",
+                    "upload_policy",
+                    "updated_at",
+                ),
+            )
+        )
 
     def set_identity_state(
         self,
@@ -202,7 +225,9 @@ class RobotIngestService:
         if current.state is state:
             return RobotIdentityEnvelope(data=current)
         updated = current.model_copy(update={"state": state, "updated_at": self._clock()})
-        return RobotIdentityEnvelope(data=self._save_identity(updated))
+        return RobotIdentityEnvelope(
+            data=self._save_identity(updated, changed_fields=("state", "updated_at"))
+        )
 
     def delete_identity(
         self,
@@ -224,6 +249,7 @@ class RobotIngestService:
         project_id: str,
         ingest_identity_id: str,
         command: IssueCredentialCommand,
+        only_if_missing: bool = False,
     ) -> RobotIdentityEnvelope:
         self._authorize_admin(auth, organization_id, project_id)
         current = self._require_identity(organization_id, ingest_identity_id)
@@ -251,19 +277,26 @@ class RobotIngestService:
         )
         updated = current.model_copy(update={"credential_revision": revision, "updated_at": now})
         try:
-            self.repository.issue_credential(
+            updated, saved_summary = self.repository.issue_credential(
                 identity=updated,
                 summary=summary,
                 token_digest=self._token_digest(token),
                 revoke_previous=command.revoke_previous,
+                only_if_missing=only_if_missing,
+                request_key=command.idempotency_key,
+                secret_ciphertext=self._credential_vault.seal(
+                    organization_id, ingest_identity_id, credential_id, token
+                ),
             )
         except RobotIngestIdentityMissing as exc:
             raise self._identity_not_found() from exc
+        if saved_summary is None:
+            return RobotIdentityEnvelope(data=updated)
         return RobotIdentityEnvelope(
             data=updated,
             credential=IssuedRobotCredential(
                 credential_id=credential_id,
-                credential_version=revision,
+                credential_version=saved_summary.credential_version,
                 token=token,
                 token_prefix=token_prefix,
                 issued_at=now,
@@ -317,6 +350,93 @@ class RobotIngestService:
             for summary in self.repository.list_credentials(organization_id, ingest_identity_id)
         )
 
+    def reveal_credential(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        ingest_identity_id: str,
+        credential_id: str,
+    ) -> IssuedRobotCredential:
+        self._authorize_admin(auth, organization_id, project_id)
+        self._require_identity(organization_id, ingest_identity_id)
+        record = self.repository.credential_record(
+            organization_id, ingest_identity_id, credential_id
+        )
+        if record is None:
+            raise problem(
+                status=404,
+                code="ROBOT_CREDENTIAL_NOT_FOUND",
+                title="凭据不存在",
+                detail="该凭据不存在或已经删除。",
+            )
+        summary = record.summary
+        if summary.state is not CredentialState.ACTIVE or (
+            summary.expires_at is not None and summary.expires_at <= self._clock()
+        ):
+            raise problem(
+                status=409,
+                code="ROBOT_CREDENTIAL_INACTIVE",
+                title="凭据已失效",
+                detail="已撤销或已过期的凭据可直接删除。",
+            )
+        if record.secret_ciphertext is None:
+            raise problem(
+                status=409,
+                code="ROBOT_CREDENTIAL_LEGACY_SECRET_UNAVAILABLE",
+                title="旧凭据尚未保存可查看内容",
+                detail="旧版只保存摘要。设备下次成功连接后可再次查看；也可主动生成新凭据，旧凭据不会自动更换。",
+            )
+        token = self._credential_vault.reveal(
+            organization_id, ingest_identity_id, credential_id, record.secret_ciphertext
+        )
+        if not hmac.compare_digest(self._token_digest(token), record.token_digest):
+            raise problem(
+                status=503,
+                code="ROBOT_CREDENTIAL_VAULT_UNAVAILABLE",
+                title="凭据暂时无法读取",
+                detail="请检查服务端凭据加密配置后重试。",
+            )
+        return IssuedRobotCredential(
+            credential_id=credential_id,
+            credential_version=summary.credential_version,
+            token=token,
+            token_prefix=summary.token_prefix,
+            issued_at=summary.issued_at,
+            expires_at=summary.expires_at,
+        )
+
+    def delete_credential(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        ingest_identity_id: str,
+        credential_id: str,
+    ) -> None:
+        self._authorize_admin(auth, organization_id, project_id)
+        self._require_identity(organization_id, ingest_identity_id)
+        try:
+            found = self.repository.delete_credential(
+                organization_id, ingest_identity_id, credential_id, self._clock()
+            )
+        except RobotIngestConflict as exc:
+            raise problem(
+                status=409,
+                code="ROBOT_CREDENTIAL_STILL_ACTIVE",
+                title="凭据仍然有效",
+                detail="请先撤销该凭据，再执行删除。",
+            ) from exc
+        if not found:
+            raise problem(
+                status=404,
+                code="ROBOT_CREDENTIAL_NOT_FOUND",
+                title="凭据不存在",
+                detail="当前身份下没有该凭据。",
+            )
+
     def authenticate(self, token: str) -> RobotIngestAuthContext:
         parsed = _TOKEN_PATTERN.fullmatch(token)
         if parsed is None:
@@ -329,6 +449,16 @@ class RobotIngestService:
         )
         if result.context is None:
             raise self._authentication_problem(result.failure_code)
+        if result.secret_missing:
+            auth = result.context
+            self.repository.cache_credential_secret(
+                auth,
+                self._token_digest(token),
+                self._credential_vault.seal(
+                    auth.organization_id, auth.ingest_identity_id, credential_id, token
+                ),
+                self._clock(),
+            )
         return result.context
 
     def create_upload(
@@ -373,6 +503,27 @@ class RobotIngestService:
                 title="Robot identity mismatch",
                 detail="The authenticated robot does not match the upload manifest.",
             )
+        # Reconcile an existing immutable session before checking new-task eligibility.
+        # In particular, a lost POST response remains recoverable after task closure.
+        from .connections import reject
+
+        select_organization_scope(auth.organization_id)
+        replay = self.repository.find_upload(
+            organization_id=auth.organization_id,
+            ingest_identity_id=auth.ingest_identity_id,
+            collection_task_id=manifest.collection_task_id,
+            client_upload_id=manifest.client_upload_id,
+        )
+        if replay is not None:
+            if replay.manifest_fingerprint != _manifest_fingerprint(manifest):
+                reject("CLIENT_UPLOAD_ID_CONFLICT", "重复请求的录制内容或归属不一致")
+            if (
+                manifest.organization_id
+                and manifest.organization_id != replay.target.organization_id
+            ) or (manifest.project_id and manifest.project_id != replay.target.project_id):
+                raise self._scope_mismatch_problem()
+            self._reject_expired_upload(auth, replay)
+            return RobotIngestUploadEnvelope(data=replay, resumed=True)
         target = self.repository.resolve_upload_target(manifest.collection_task_id)
         if target is None:
             self._record_rejection(auth, manifest, "TASK_RESOLUTION", "UPLOAD_TARGET_NOT_FOUND")
@@ -416,6 +567,13 @@ class RobotIngestService:
                 target=target,
             )
             raise self._scope_mismatch_problem()
+        snapshot = manifest.format_metadata.get("ownership_snapshot")
+        if snapshot is not None:
+            from .connections import ownership, reject
+
+            if snapshot != ownership(target):
+                reject("TASK_OWNERSHIP_CHANGED", "任务归属已变化；数据已保留，请联系平台管理员")
+            self.connections.task(auth, manifest.collection_task_id, manifest.source_format)
         if target.task_status != "ACTIVE":
             self._record_rejection(
                 auth,
@@ -605,6 +763,7 @@ class RobotIngestService:
                 declared_episode_count=manifest.declared_episode_count,
                 total_bytes=sum(item.size_bytes for item in manifest.assets),
                 state=UploadState.UPLOADING,
+                processing_config_snapshot=None,
                 manifest_fingerprint=fingerprint,
                 manifest=manifest,
                 assets=tuple(assets),
@@ -1103,12 +1262,32 @@ class RobotIngestService:
         return RobotIngestEpisodeResultList(
             upload_id=upload.upload_id,
             raw_source_id=upload.raw_source_id,
-            items=self.repository.list_episode_results(
-                organization_id=organization_id,
-                project_id=project_id,
-                region_code=region_code,
-                upload_id=upload.upload_id,
-            ),
+            items=self._episode_delivery_results(upload),
+        )
+
+    def get_robot_episode_deliveries(
+        self, *, token: str, upload_id: str
+    ) -> tuple[RobotIngestEpisodeReadResult, ...]:
+        """Current annotation delivery for an authenticated, robot-owned upload."""
+        upload = self.get_upload(token=token, upload_id=upload_id).data
+        if self.episode_deliveries is None:
+            return ()
+        return self._episode_delivery_results(upload)
+
+    def _episode_delivery_results(
+        self, upload: RobotIngestUpload
+    ) -> tuple[RobotIngestEpisodeReadResult, ...]:
+        target = upload.target
+        items = self.repository.list_episode_results(
+            organization_id=target.organization_id,
+            project_id=target.project_id,
+            region_code=target.region_code,
+            upload_id=upload.upload_id,
+        )
+        return (
+            self.episode_deliveries.project(upload, items)
+            if self.episode_deliveries is not None
+            else tuple(project_episode(item) for item in items)
         )
 
     def statistics(
@@ -1422,9 +1601,11 @@ class RobotIngestService:
             raise self._identity_not_found()
         return identity
 
-    def _save_identity(self, identity: RobotIngestIdentity) -> RobotIngestIdentity:
+    def _save_identity(
+        self, identity: RobotIngestIdentity, *, changed_fields: tuple[str, ...]
+    ) -> RobotIngestIdentity:
         try:
-            return self.repository.save_identity(identity)
+            return self.repository.save_identity(identity, changed_fields=changed_fields)
         except RobotIngestIdentityMissing as exc:
             raise self._identity_not_found() from exc
 

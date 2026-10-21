@@ -33,6 +33,42 @@ components:
       - part_numbers
       title: AuthorizeLeRobotPartsV1
       type: object
+    CameraMapping:
+      additionalProperties: false
+      properties:
+        camera_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9_-]+$
+          title: Camera Id
+          type: string
+        kind:
+          default: rgb
+          enum:
+          - rgb
+          - depth
+          title: Kind
+          type: string
+        message_type:
+          maxLength: 256
+          minLength: 1
+          title: Message Type
+          type: string
+        required:
+          default: true
+          title: Required
+          type: boolean
+        topic:
+          maxLength: 512
+          minLength: 1
+          title: Topic
+          type: string
+      required:
+      - camera_id
+      - topic
+      - message_type
+      title: CameraMapping
+      type: object
     CommitLeRobotImportV1:
       additionalProperties: false
       properties:
@@ -78,6 +114,43 @@ components:
       - size
       - part_count
       title: CompleteLeRobotAssetV1
+      type: object
+    CompletedPart-Output:
+      properties:
+        etag:
+          maxLength: 512
+          minLength: 1
+          title: Etag
+          type: string
+        part_number:
+          maximum: 10000.0
+          minimum: 1.0
+          title: Part Number
+          type: integer
+      required:
+      - part_number
+      - etag
+      title: CompletedPart
+      type: object
+    ConfigReference:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[a-f0-9]{64}$
+          title: Content Sha256
+          type: string
+        scheme_id:
+          title: Scheme Id
+          type: string
+        version:
+          minimum: 1.0
+          title: Version
+          type: integer
+      required:
+      - scheme_id
+      - version
+      - content_sha256
+      title: ConfigReference
       type: object
     CreateLeRobotImportV1:
       additionalProperties: false
@@ -468,11 +541,36 @@ components:
     McapProcessingConfig:
       additionalProperties: false
       properties:
+        action_joint_names:
+          default: []
+          items:
+            type: string
+          title: Action Joint Names
+          type: array
+        action_joint_units:
+          default: []
+          items:
+            type: string
+          title: Action Joint Units
+          type: array
         action_topic:
           anyOf:
           - type: string
           - type: 'null'
           title: Action Topic
+        cameras:
+          default: []
+          items:
+            $ref: '#/components/schemas/CameraMapping'
+          title: Cameras
+          type: array
+        collection_mode:
+          default: RGB
+          enum:
+          - RGB
+          - JOINT_ONLY
+          title: Collection Mode
+          type: string
         depth_scale_m_per_unit:
           anyOf:
           - exclusiveMinimum: 0.0
@@ -480,14 +578,20 @@ components:
             type: number
           - type: 'null'
           title: Depth Scale M Per Unit
+        depth_unit_evidence:
+          anyOf:
+          - maxLength: 2048
+            type: string
+          - type: 'null'
+          title: Depth Unit Evidence
         derive_action_from_next_state:
           default: false
           title: Derive Action From Next State
           type: boolean
         fps:
           default: 30
-          maximum: 30.0
-          minimum: 30.0
+          maximum: 240.0
+          minimum: 1.0
           title: Fps
           type: integer
         joint_names:
@@ -513,11 +617,30 @@ components:
           - type: string
           - type: 'null'
           title: Primary Camera
+        state_joint_names:
+          default: []
+          items:
+            type: string
+          title: State Joint Names
+          type: array
+        state_joint_units:
+          default: []
+          items:
+            type: string
+          title: State Joint Units
+          type: array
         state_topic:
           anyOf:
           - type: string
           - type: 'null'
           title: State Topic
+        time_source:
+          default: RGB_LOG_TIME
+          enum:
+          - RGB_LOG_TIME
+          - STATE_LOG_TIME
+          title: Time Source
+          type: string
       title: McapProcessingConfig
       type: object
     NativeConfiguration:
@@ -541,6 +664,11 @@ components:
       type: object
     NativeImportProgress:
       properties:
+        annotation_counts:
+          additionalProperties:
+            type: integer
+          title: Annotation Counts
+          type: object
         collection_task_id:
           anyOf:
           - type: string
@@ -571,6 +699,17 @@ components:
           - type: string
           - type: 'null'
           title: Last Error Code
+        last_error_detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last Error Detail
+        readable_episodes:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Readable Episodes
         ready:
           title: Ready
           type: integer
@@ -924,6 +1063,10 @@ components:
         collection_task_id:
           title: Collection Task Id
           type: string
+        processing_config:
+          anyOf:
+          - $ref: '#/components/schemas/ConfigReference'
+          - type: 'null'
         robot_id:
           title: Robot Id
           type: string
@@ -932,6 +1075,10 @@ components:
       - robot_id
       title: StartStoredProcessing
       type: object
+info:
+  title: Native uploads
+  version: '2026-10-21'
+openapi: 3.1.0
 paths:
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports:
     get:
@@ -2276,5 +2423,3 @@ paths:
       summary: Get Import Capabilities
       tags:
       - lerobot-imports
-security:
-- bearerAuth: []

@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "Instance detail loads actual configuration v1",
+    "RGB sample validation reports actual zero image messages",
+    "Changed mode, saved draft, validated real MCAP and published v2",
+    "Return path opens original upload records"
+  ],
+  "screenshots": [],
+  "body": "跳到主要内容\nHC 数据平台\n当前项目\nraw-pin-8ff725b88c734440b9322c745bba046b / 配置验收 A\n当前存储地址\n请选择存储地址\n搜索机器人\n通知\nC\nConfig test\n工作台\n采集与接收\n采集任务\n数据源\n数据上传\n数据生产\n录制切片\n数据集\n数据标注\n数据导出\n问题数据\n治理与资产\n存储容量\n生命周期\n机器人模型\n机器人实例\n安全与审计\n账户与权限\n审计日志\n平台设置\n采集与接收\n数据上传\n数据上传\n新建上传\n上传记录\n今日成功上传量\n308.1 KB\n2026-10-20 · Asia/Shanghai · 当前项目 / Region · 按成功提交时间统计原始文件字节，上传重试去重\n上传记录\n\n展示当前项目与区域的服务端持久化事实，共 0 条。\n\n刷新\n数据包 ID\n上传状态\n全部状态\n数据包 / 会话\t来源\t大小\t状态\t失败原因\t最近更新\t操作\n\n数据包 / 会话\n\t\n来源\n\t\n大小\n\t\n状态\n\t\n失败原因\n\t\n最近更新\n\t\n操作\n\n\n还没有上传记录\n采集上传与入库\n\n每次采集独立记录，接收成功后自动校验；连续录制提交切片后逐段质检入库。\n\n刷 新\n上传 3 次\n已接收 3 条录制\n待切片 1 条\n处理中 1 条\n待配置 0 条\n成片 0 条\n已入库 0 条\n未通过 0 条成片 / 1 次采集\n关节采集验收机器人\n2026/10/20 09:20:32 · 0.7 秒\n录制\n上传完成平台已接收处理未通过\n0 条成片 · 0 条已入库 · 0 条未通过\n原因：MCAP_REQUIRED_RGB_MISSING\n\n从平台已接收的原始文件重新准备录制，完成后即可进入录制切片。无需重新上传。\n\njoints.mcap · 处理失败\n\n本次配置：ROS MCAP · v1\n\nMCAP_REQUIRED_RGB_MISSING: required topic=/color; message_count=0; 文件中未录入必需的 RGB 图像\n前往机器人配置\n查看原始通道\n重试处理\n查看本批次实际配置快照\n历史处理记录与配置版本\n前往机器人配置\n刷新处理状态\n关节采集验收机器人\n2026/10/20 09:20:31 · 0.4 秒\nrgb.mcap\n上传完成平台已接收已校验，待切片\n0 条成片 · 0 条已入库 · 0 条未通过\n处理详情\n查看录制 / 切片\n关节采集验收机器人\n2026/10/20 09:20:31 · 0.7 秒\n录制\n上传完成平台已接收已接收，等待处理\n0 条成片 · 0 条已入库 · 0 条未通过\n原始数据\n刷新记录\n\n原始文件始终保留。自动质检与对齐完成后，可进入数据集可视化和标注。\n\n配置与纯关节验收\nMCAP · 2026/10/20 09:20:32\n处理失败\n0%\n\n共 0 个 Episode · 已就绪 0 · 处理未完成 0\n\n上次处理错误：MCAP_REQUIRED_RGB_MISSING\n\n准备录制 / 重试\n查看原文件与视频\n重试未完成处理\njoints.mcap · 处理失败\n\n本次配置：ROS MCAP · v1\n\nMCAP_REQUIRED_RGB_MISSING: required topic=/color; message_count=0; 文件中未录入必需的 RGB 图像\n前往机器人配置\n查看原始通道\n重试处理\n查看本批次实际配置快照\n历史处理记录与配置版本\n配置与纯关节验收\nMCAP · 2026/10/20 09:20:32\n处理完成，可人工标注\n\n共 0 个 Episode · 已就绪 0 · 处理未完成 0\n\n查看原文件与视频\nrgb.mcap · 可预览与切片\n\n本次配置：ROS MCAP · v1\n\n前往机器人配置\n查看原始通道\n重试处理\n预览与切片\n查看本批次实际配置快照\n历史处理记录与配置版本\n上一页\n下一页"
+}

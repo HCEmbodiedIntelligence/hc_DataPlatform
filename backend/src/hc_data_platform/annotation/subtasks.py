@@ -26,7 +26,9 @@ class SubtaskTrack(FrozenModel):
     format: Literal["hc-subtask-track/1"] = FORMAT
     track_id: str = Field(min_length=1, max_length=256)
     label: str = Field(min_length=1, max_length=256)
-    annotation_ids: tuple[str, ...] = Field(min_length=1, max_length=10000)
+    # Empty membership exports the saved annotation without a task segmentation.
+    # All frames then have index -1, while the full annotation attachment is retained.
+    annotation_ids: tuple[str, ...] = Field(min_length=0, max_length=10000)
 
     @field_validator("track_id", "label")
     @classmethod

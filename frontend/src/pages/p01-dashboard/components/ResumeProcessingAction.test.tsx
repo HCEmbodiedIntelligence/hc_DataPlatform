@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { request } from "../../../shared/api/http-client";
 import ResumeProcessingAction from "./ResumeProcessingAction";
 
@@ -42,12 +43,18 @@ function setup() {
   clients.push(client);
   render(
     <QueryClientProvider client={client}>
-      <ResumeProcessingAction scope={scope} importId="import-a" />
+      <MemoryRouter>
+        <ResumeProcessingAction scope={scope} importId="import-a" />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return client;
 }
 beforeEach(() => {
+  const getComputedStyle = window.getComputedStyle.bind(window);
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element) =>
+    getComputedStyle(element),
+  );
   permissions.canManage = true;
   vi.mocked(request).mockReset();
   vi.mocked(request).mockResolvedValue(progress);
@@ -124,16 +131,31 @@ it("does not submit or load processing controls without permission", () => {
 });
 
 it("shows MCAP preparation errors and retries the stored source", async () => {
+  let retried = false;
   vi.mocked(request).mockImplementation(async (input) => {
+    if (input.path.endsWith("/mcap-versions")) return { items: [] };
+    if (input.path.endsWith(":process-mcap") && input.method === "POST") {
+      retried = true;
+      return {};
+    }
     if (input.path.endsWith("/mcap-processing")) {
       return {
-        files: [{
-          processing_id: "mcap-a",
-          path: "source.mcap",
-          status: "FAILED",
-          recording_id: null,
-          error: "MCAP_DEPTH_UNITS_REQUIRED: 请设置深度单位",
-        }],
+        files: [
+          {
+            processing_id: "mcap-a",
+            path: "source.mcap",
+            status: retried ? "RUNNING" : "FAILED",
+            recording_id: null,
+            robot_id: "robot-a",
+            collection_task_id: "task-a",
+            configuration: { state_topic: "/joint_states" },
+            config_reference: null,
+            channel_inventory: null,
+            error: retried ? null : "MCAP_DEPTH_UNITS_REQUIRED: 请设置深度单位",
+          },
+        ],
+        history: [],
+        same_recording: null,
       };
     }
     return {
@@ -144,13 +166,17 @@ it("shows MCAP preparation errors and retries the stored source", async () => {
   });
   setup();
   expect(await screen.findByText(/MCAP_DEPTH_UNITS_REQUIRED/)).toBeVisible();
-  const button = await screen.findByRole("button", { name: "重试录制准备" });
+  const button = await screen.findByRole("button", { name: "重试处理" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
-  expect(await screen.findByText("已提交，正在继续处理")).toBeVisible();
-  expect(request).toHaveBeenCalledWith(expect.objectContaining({
-    method: "POST",
-    path: "/projects/project/regions/region/lerobot-imports/import-a:retry",
-  }));
-  expect(button).toBeDisabled();
+  fireEvent.click(await screen.findByRole("button", { name: "确认重试处理" }));
+  expect(await screen.findByText(/准备录制/)).toBeVisible();
+  expect(request).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      path: "/projects/project/regions/region/lerobot-imports/import-a:process-mcap",
+      body: { robot_id: "robot-a", collection_task_id: "task-a" },
+    }),
+  );
+  await waitFor(() => expect(button).toBeDisabled());
 });

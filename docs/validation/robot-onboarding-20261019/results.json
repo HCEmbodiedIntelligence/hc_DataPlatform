@@ -1,0 +1,76 @@
+{
+  "backend_full": {
+    "tests": 2542,
+    "failures": 15,
+    "skipped": 424,
+    "failure_cases": [
+      "tests.annotation.test_annotation_contract_files::test_openapi_fragment_matches_router_and_all_local_refs_resolve",
+      "tests.architecture.test_annotation_selection_boundaries::test_episode_module_imports_have_no_cycles_including_late_imports",
+      "tests.dataset_registry.test_dataset_page_contract::test_p05_runtime_openapi_has_exact_page_aggregate_contract",
+      "tests.gates.test_production_exposure::test_production_helm_has_public_deny_and_selector_bound_internal_metrics_path",
+      "tests.gates.test_production_exposure::test_production_network_policy_allows_only_selected_monitor_to_api_metrics_port",
+      "tests.ingest.test_ingest::test_native_crc64_matches_portable_fallback_on_binary_chunks",
+      "tests.platform_control.test_release_contract::test_current_release_baseline_fingerprints_are_exact_and_honestly_blocked",
+      "tests.robotics.test_model_binding_transaction_services::test_model_binding_is_one_locked_transaction_with_idempotency_and_rollback",
+      "tests.security.test_public_api_security_gate::test_every_runtime_public_resource_operation_rejects_anonymous_before_validation",
+      "tests.security.test_public_api_security_gate::test_runtime_openapi_paths_are_all_enumerated_in_the_be23_matrix",
+      "tests.security.test_public_api_security_gate::test_openapi_auth_gaps_are_runtime_protected_and_explicitly_marked",
+      "tests.storage.test_inventory_producer::test_producer_publishes_snapshot_and_facts_idempotently",
+      "tests.system.test_compose_dual_project_contract::test_development_lan_origin_exposes_only_the_gateway",
+      "tests.system.test_compose_dual_project_contract::test_two_compose_projects_have_disjoint_ports_networks_and_volumes",
+      "tests.workflow.test_workflow::test_worker_registers_every_workflow_and_activity_with_bounded_policies"
+    ]
+  },
+  "backend_related": {
+    "tests": 202,
+    "failures": 0,
+    "skipped": 12,
+    "failure_cases": []
+  },
+  "backend_baseline_failures": {
+    "tests": 15,
+    "failures": 15,
+    "skipped": 0,
+    "failure_cases": [
+      "tests.annotation.test_annotation_contract_files::test_openapi_fragment_matches_router_and_all_local_refs_resolve",
+      "tests.architecture.test_annotation_selection_boundaries::test_episode_module_imports_have_no_cycles_including_late_imports",
+      "tests.dataset_registry.test_dataset_page_contract::test_p05_runtime_openapi_has_exact_page_aggregate_contract",
+      "tests.gates.test_production_exposure::test_production_helm_has_public_deny_and_selector_bound_internal_metrics_path",
+      "tests.gates.test_production_exposure::test_production_network_policy_allows_only_selected_monitor_to_api_metrics_port",
+      "tests.ingest.test_ingest::test_native_crc64_matches_portable_fallback_on_binary_chunks",
+      "tests.platform_control.test_release_contract::test_current_release_baseline_fingerprints_are_exact_and_honestly_blocked",
+      "tests.robotics.test_model_binding_transaction_services::test_model_binding_is_one_locked_transaction_with_idempotency_and_rollback",
+      "tests.security.test_public_api_security_gate::test_every_runtime_public_resource_operation_rejects_anonymous_before_validation",
+      "tests.security.test_public_api_security_gate::test_runtime_openapi_paths_are_all_enumerated_in_the_be23_matrix",
+      "tests.security.test_public_api_security_gate::test_openapi_auth_gaps_are_runtime_protected_and_explicitly_marked",
+      "tests.storage.test_inventory_producer::test_producer_publishes_snapshot_and_facts_idempotently",
+      "tests.system.test_compose_dual_project_contract::test_development_lan_origin_exposes_only_the_gateway",
+      "tests.system.test_compose_dual_project_contract::test_two_compose_projects_have_disjoint_ports_networks_and_volumes",
+      "tests.workflow.test_workflow::test_worker_registers_every_workflow_and_activity_with_bounded_policies"
+    ]
+  },
+  "frontend_full": {
+    "numTotalTests": 1193,
+    "numPassedTests": 1192,
+    "numFailedTests": 1,
+    "failure_cases": [
+      "P21 data export page downloads original files without requiring processed or approved Episodes"
+    ],
+    "rerun": "The failing P21 test file passed all 13 tests when rerun alone; the initial aggregate run was not all-green."
+  },
+  "frontend_related": {
+    "numTotalTests": 100,
+    "numPassedTests": 100,
+    "numFailedTests": 0,
+    "failure_cases": []
+  },
+  "migration_audit": {
+    "legacy_robot_sources": 1,
+    "legacy_bindings_without_robot": 0,
+    "live_identities_without_robot": 0,
+    "duplicate_live_identities": 0,
+    "legacy_sources_without_project": 0,
+    "legacy_state_conflicts": 0,
+    "committed_raw_without_commit_time": 0
+  }
+}

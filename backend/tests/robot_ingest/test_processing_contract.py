@@ -151,6 +151,35 @@ def test_empty_discovery_failure_and_pending_polling():
     assert not processing_result(upload(), ProcessingDocument()).terminal
 
 
+def test_deleted_episode_is_history_and_does_not_surface_old_failure_or_quality():
+    removed = EpisodeProgress(
+        source_episode_id="source-0",
+        source_episode_index=0,
+        episode_id="ep-0",
+        status="DISCARDED",
+        quality_status="REJECT",
+        error_code="OLD_FAILURE",
+        retryable=True,
+    )
+    other = EpisodeProgress(
+        source_episode_id="source-1",
+        source_episode_index=1,
+        episode_id="ep-1",
+        status="FAILED",
+        error_code="KEEP_THIS_FAILURE",
+        retryable=True,
+    )
+    result = processing_result(
+        upload(), ProcessingDocument(phase="DONE", episodes=(removed, other))
+    )
+    assert [ep.episode_id for ep in result.episodes] == ["ep-1"]
+    assert result.episodes[0].error_code == "KEEP_THIS_FAILURE"
+    assert result.quality_status == "PENDING"
+    closed = processing_result(upload(), ProcessingDocument(phase="DONE", episodes=(removed,)))
+    assert closed.terminal and closed.processing_status == "READY"
+    assert closed.episodes == () and closed.quality_status == "PENDING"
+
+
 def test_pass_requires_actual_publication_receipt_but_reject_does_not():
     with pytest.raises(ValidationError):
         EpisodeReceipt(quality_status="PASS", frame_count=1, sample_count=1, qc_report_id="qc")
@@ -182,7 +211,7 @@ def package_receipt():
     )
 
 
-def test_new_receipt_uses_exact_package_and_keeps_old_public_processing_shape():
+def test_new_receipt_uses_exact_package_and_reports_annotation_separately():
     receipt = EpisodeReceipt(
         quality_status="PASS",
         frame_count=3,
@@ -217,9 +246,13 @@ def test_new_receipt_uses_exact_package_and_keeps_old_public_processing_shape():
         "error_code",
         "retryable",
         "next_action",
+        "data_readable",
+        "annotation_status",
     }
     assert "data_ref" not in result.model_dump_json() and "lance" not in result.model_dump_json()
     assert "training" not in receipt.model_dump_json()
+    assert result.episodes[0].data_readable is True
+    assert result.episodes[0].annotation_status == "UNKNOWN"
 
 
 @pytest.mark.parametrize(

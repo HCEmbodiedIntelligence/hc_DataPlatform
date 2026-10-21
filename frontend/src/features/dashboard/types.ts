@@ -101,6 +101,7 @@ export type DashboardTaskQc = Readonly<{
 
 export type DashboardTaskStage = Readonly<{
   stage: components["schemas"]["TaskProcessingStage"];
+  notStarted: number;
   waiting: number;
   running: number;
   succeeded: number;

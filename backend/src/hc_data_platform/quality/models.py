@@ -355,6 +355,7 @@ class QualityInputV1(BaseModel):
     end_ns: int = Field(gt=0)
     topic_timestamps_ns: dict[str, tuple[int, ...]]
     images: dict[str, tuple[ImageObservation, ...]] = Field(default_factory=dict)
+    image_checks_applicable: bool = True
     joints: tuple[JointObservation, ...] = ()
     actions: tuple[ActionObservation, ...] = ()
     point_clouds: dict[str, tuple[PointCloudObservation, ...]] = Field(default_factory=dict)

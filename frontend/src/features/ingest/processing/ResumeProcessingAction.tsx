@@ -1,3 +1,7 @@
+import {
+  captureProblemLabels,
+  captureError,
+} from "../../capture-schemes/presentation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Space } from "antd";
 import { useEffect } from "react";
@@ -5,15 +9,11 @@ import type { IngestScope } from "../../../entities/data-source";
 import { request } from "../../../shared/api/http-client";
 import { useCapabilities } from "../../../shared/auth/use-capabilities";
 import { nativeRoot, type NativeProgress } from "./lerobot-processing";
-import {
-  McapPreparationProgress,
-  McapRobotProfile,
-} from "./components/McapPreparation";
+import { McapPreparationProgress } from "./components/McapPreparation";
 
 export default function ResumeProcessingAction({
   scope,
   importId,
-  robotId,
 }: Readonly<{
   scope: IngestScope;
   importId: string;
@@ -39,7 +39,7 @@ export default function ResumeProcessingAction({
         scope,
         signal,
       }),
-    enabled: canManage,
+    enabled: capabilities.has("upload.read"),
     refetchInterval: (query) =>
       ["PENDING", "RUNNING"].includes(query.state.data?.status ?? "")
         ? 2_000
@@ -105,30 +105,35 @@ export default function ResumeProcessingAction({
         </span>
       ) : null}
       {isMcap && <McapPreparationProgress scope={scope} importId={importId} />}
-      {isMcap && retryable && canManage && robotId && (
-        <McapRobotProfile scope={scope} robotId={robotId} />
-      )}
+      {result?.last_error_code &&
+        captureProblemLabels[result.last_error_code] && (
+          <Alert
+            type="warning"
+            title={captureProblemLabels[result.last_error_code]}
+            description="原始数据保留。请检查采集方案及映射；标注配置独立处理。"
+          />
+        )}
       {error ? (
         <Alert
           type="error"
           title="操作未完成"
-          description={
-            error instanceof Error ? error.message : "请刷新后重试。"
-          }
+          description={captureError(error)}
         />
       ) : null}
       {!canManage ? <span>当前账户没有数据处理权限。</span> : null}
       <Space>
+        {!isMcap && (
+          <Button
+            type="primary"
+            loading={retry.isPending}
+            disabled={!canManage || busy || !retryable || progress.isPending}
+            onClick={() => retry.mutate()}
+          >
+            {recordingPreparation ? "重试录制准备" : "重试本批次未完成处理"}
+          </Button>
+        )}
         <Button
-          type="primary"
-          loading={retry.isPending}
-          disabled={!canManage || busy || !retryable || progress.isPending}
-          onClick={() => retry.mutate()}
-        >
-          {recordingPreparation ? "重试录制准备" : "重试本批次未完成处理"}
-        </Button>
-        <Button
-          disabled={!canManage}
+          disabled={!capabilities.has("upload.read")}
           loading={progress.isFetching}
           onClick={() => void progress.refetch()}
         >

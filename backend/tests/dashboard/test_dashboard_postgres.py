@@ -748,6 +748,97 @@ def test_postgres_exact_scope_event_pending_cursor_audit_lineage_and_indexes(
         } <= index_names
 
 
+def test_task_status_includes_empty_tasks_in_their_upload_region(isolated_dsn: str) -> None:
+    project, region = "project-task-discovery", "cn-east"
+    organization = organization_for(project)
+    empty_task_id = "task-discovery-active"
+    cases = (
+        (empty_task_id, organization, project, region, "ACTIVE"),
+        ("task-discovery-closed", organization, project, region, "CLOSED"),
+        ("task-discovery-cancelled", organization, project, region, "CANCELLED"),
+        ("task-discovery-west", organization, project, "cn-west", "ACTIVE"),
+        ("task-discovery-other-project", organization, "project-discovery-other", region, "ACTIVE"),
+        ("task-discovery-other-org", "organization-discovery-other", project, region, "ACTIVE"),
+        # Existing regional uploads remain visible even if the task's configured
+        # upload Region differs. Multiple jobs must not duplicate a task.
+        ("task-discovery-legacy", organization, project, "cn-west", "ACTIVE"),
+    )
+    with psycopg.connect(isolated_dsn) as connection:
+        for task_id, task_org, task_project, task_region, lifecycle in cases:
+            connection.execute(
+                """INSERT INTO registry.organization_projects
+                (organization_id, project_id, display_name)
+                VALUES (%s, %s, 'Task discovery test') ON CONFLICT DO NOTHING""",
+                (task_org, task_project),
+            )
+            digest = hashlib.sha256(task_id.encode()).hexdigest()
+            connection.execute(
+                """INSERT INTO collection_tasks.collection_tasks (
+                    organization_id, project_id, collection_task_id, dataset_id,
+                    task_code, name, task_type, scenario, description, target_json,
+                    status, version, create_fingerprint, created_at, updated_at,
+                    upload_region_code
+                ) VALUES (%s, %s, %s, %s, %s, %s, 'ROBOT', 'task-discovery', '',
+                          '{"package_count": 10}'::jsonb, %s, 1, %s, %s, %s, %s)""",
+                (
+                    task_org,
+                    task_project,
+                    task_id,
+                    f"dataset_task_{digest[:32]}",
+                    str(int(digest[:16], 16) % 100_000_000).zfill(8),
+                    task_id,
+                    lifecycle,
+                    digest,
+                    NOW - timedelta(days=30),
+                    NOW - timedelta(days=30),
+                    task_region,
+                ),
+            )
+        for job_id in ("job-discovery-legacy-1", "job-discovery-legacy-2"):
+            connection.execute(
+                """INSERT INTO ingest.collection_jobs (
+                    organization_id, project_id, region_code, task_id,
+                    collection_job_id, robot_id, status, created_at, updated_at
+                ) VALUES (%s, %s, %s, 'task-discovery-legacy', %s,
+                          'robot-discovery', 'COLLECTING', %s, %s)""",
+                (organization, project, region, job_id, NOW, NOW),
+            )
+
+    service = DashboardService(
+        PostgresDashboardRepository(psycopg_connection_factory(isolated_dsn)), clock=lambda: NOW
+    )
+    query = dict(auth=actor(project, region), project_id=project, region_code=region)
+    with request_scope(project, region):
+        result = service.task_status(**query)
+        assert {task.task_id for task in result.tasks} == {
+            empty_task_id,
+            "task-discovery-closed",
+            "task-discovery-cancelled",
+            "task-discovery-legacy",
+        }
+        assert result.pipeline.task_count == len(result.tasks) == 4
+        assert result.pipeline.package_count == 0
+        assert result.pipeline.issues == ()
+        selected = service.task_status(**query, task_id=empty_task_id)
+        assert selected.selected is not None
+        assert selected.selected.task.target.package_count == 10
+        assert selected.selected.task.registered_count == 0
+        assert selected.selected.task.received_count == 0
+        assert selected.selected.current_stage.value == "TASK_EXECUTION"
+        assert all(
+            sum(stage.model_dump(exclude={"stage"}).values()) == 0
+            for stage in selected.pipeline.stages
+        )
+        for excluded_id in (
+            "task-discovery-west",
+            "task-discovery-other-project",
+            "task-discovery-other-org",
+        ):
+            with pytest.raises(ProblemException) as excluded:
+                service.task_status(**query, task_id=excluded_id)
+            assert excluded.value.problem.code == "DASHBOARD_COLLECTION_TASK_NOT_FOUND"
+
+
 def test_native_receipt_and_issue_details_use_committed_source_in_exact_scope(
     isolated_dsn: str,
 ) -> None:

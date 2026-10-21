@@ -1,0 +1,8 @@
+{
+  "status": "PASS",
+  "checks": [
+    "Onboarding deletion removes instance, removed upload identity and draft atomically; API/DB/list/reload all confirm deletion",
+    "Overview starts without new/select scheme controls; upload identity removal is explicitly labelled; historical robot deletion remains blocked"
+  ],
+  "deleted_test_robot": "robot_46e44500ce695334a72a6d0764303dd3"
+}

@@ -97,12 +97,32 @@ export async function getAutoQualityProcessing(
       };
     return progress;
   }
-  const progress = await request<NativeProgress>({
-    method: "GET",
-    scope,
-    signal,
-    path: `${nativeRoot(scope)}/${encodeURIComponent(problem.sourceImportId!)}/processing`,
-  });
+  const root = `${nativeRoot(scope)}/${encodeURIComponent(problem.sourceImportId!)}`;
+  const [progress, resolution] = await Promise.all([
+    request<NativeProgress>({
+      method: "GET",
+      scope,
+      signal,
+      path: `${root}/processing`,
+    }),
+    request<Resolution>({
+      method: "GET",
+      scope,
+      signal,
+      path: `${root}/episodes/${problem.sourceEpisodeIndex}/resolution`,
+    }),
+  ]);
+  if (resolution.status === "DISCARDED")
+    return {
+      ...progress,
+      status: "DISCARDED",
+      episode_count: 1,
+      ready: 0,
+      failed: 0,
+      targetLabel: "当前 Episode",
+      retryable: false,
+      updated_at: resolution.updated_at ?? progress.updated_at,
+    };
   return {
     ...progress,
     targetLabel: "当前上传批次",

@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "scope": {
+    "organizationId": "raw-pin-8ff725b88c734440b9322c745bba046b",
+    "projectId": "raw-pin-project",
+    "regionCode": "raw-pin-region"
+  },
+  "checks": [
+    "new scheme matched explicit model/software template; browser saved revision1, validated actual synthetic MCAP, published default v1",
+    "editing published scheme requires save+validation; publishes v2 and retains byte-equivalent v1 document",
+    "reload restores default, configuration fields, validated sample and published version"
+  ],
+  "versions": [
+    2,
+    1
+  ]
+}

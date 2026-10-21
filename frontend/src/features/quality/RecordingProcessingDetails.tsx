@@ -1,3 +1,4 @@
+import { captureProblemLabels } from "../capture-schemes/presentation";
 import { Alert, Card, Space, Spin, Tag, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -14,6 +15,7 @@ function seconds(value: string) {
 }
 
 const dispatchErrors: Record<string, string> = {
+  ...captureProblemLabels,
   RECORDING_DATASET_SCHEMA_MISMATCH:
     "本次采集的相机 / 深度通道与当前数据集已固定的结构不同，无法加入同一个数据集。请使用通道配置匹配的采集任务；原始录制与切片已保留。",
   INGEST_WORKFLOW_PLAN_BLOCKED:
@@ -145,12 +147,14 @@ export function RecordingProcessingDetails({
                 color={
                   episode.status === "READY"
                     ? "success"
-                    : ["FAILED", "QC_FAILED"].includes(episode.status)
-                      ? "error"
-                      : "processing"
+                    : episode.status === "DISCARDED"
+                      ? "default"
+                      : ["FAILED", "QC_FAILED"].includes(episode.status)
+                        ? "error"
+                        : "processing"
                 }
               >
-                {episode.dispatch_error_code
+                {episode.status !== "DISCARDED" && episode.dispatch_error_code
                   ? "等待处理配置"
                   : labels[episode.status]}
               </Tag>
@@ -163,7 +167,7 @@ export function RecordingProcessingDetails({
               {seconds(episode.start_offset_ns)}～
               {seconds(episode.end_offset_ns)} 秒
             </Typography.Paragraph>
-            {episode.dispatch_error_code && (
+            {episode.status !== "DISCARDED" && episode.dispatch_error_code && (
               <Alert
                 type="error"
                 title="处理尚未启动"
@@ -173,7 +177,8 @@ export function RecordingProcessingDetails({
                 }
               />
             )}
-            {episode.failure_code &&
+            {episode.status !== "DISCARDED" &&
+              episode.failure_code &&
               !(episode.failure_code === "QC_REJECTED" && qc) && (
                 <Alert
                   type="warning"
@@ -181,7 +186,7 @@ export function RecordingProcessingDetails({
                   description={episode.failure_code}
                 />
               )}
-            {qc && (
+            {qc && episode.status !== "DISCARDED" && (
               <QualityEvidenceDetails
                 rules={qc.rules}
                 findingCodes={qc.finding_codes}
@@ -193,7 +198,9 @@ export function RecordingProcessingDetails({
               <Link
                 to={`/recordings/${encodeURIComponent(recordingId)}/slice?episode=${encodeURIComponent(episode.episode_id)}`}
               >
-                查看片段视频
+                {recording?.video_asset_count === 0
+                  ? "查看关节片段"
+                  : "查看片段视频"}
               </Link>
               {episode.status === "READY" && episode.dataset_id && (
                 <Link

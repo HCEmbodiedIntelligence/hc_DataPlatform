@@ -115,7 +115,9 @@ def _validate_snapshot(snapshot: DatasetSchemaSnapshot) -> None:
         validate_schema_fields(snapshot.fields)
     except ValueError as exc:
         raise SchemaIncompatibleError(str(exc)) from exc
-    expected = compute_schema_fingerprint(snapshot.fields)
+    expected = compute_schema_fingerprint(
+        snapshot.fields, semantic_contract=snapshot.semantic_contract
+    )
     if snapshot.fingerprint != expected:
         raise SchemaIncompatibleError(
             "schema snapshot fingerprint does not match its canonical fields"

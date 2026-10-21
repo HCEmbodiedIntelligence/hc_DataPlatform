@@ -1036,7 +1036,8 @@ async def test_temporal_ingest_gates_retries_duplicate_start_and_replays() -> No
             result = await handle.result()
             assert result.status is JobStatus.SUCCEEDED
             assert result.result is not None
-            assert result.result["training_eligible"] is True
+            assert result.result["training_eligible"] is False
+            assert result.result["data_readable"] is True
             assert quality.calls == 3
             assert verifier.last_required_topics == {"/camera/required"}
             assert writers.calls == 1
@@ -1439,7 +1440,8 @@ async def test_four_camera_bundle_commits_before_annotation_ready() -> None:
         assert result.status is JobStatus.SUCCEEDED
         assert result.result is not None
         assert result.result["aligned_media_count"] == 4
-        assert result.result["training_eligible"] is True
+        assert result.result["training_eligible"] is False
+        assert result.result["data_readable"] is True
         assert result.result["annotation_task"]["status"] == "CREATED"
         assert {request.camera_id for request in aligned_media.requests} == set(FOUR_CAMERAS)
         assert set(aligned_media.committed_artifact_ids) == {

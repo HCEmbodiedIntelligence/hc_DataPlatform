@@ -4,8 +4,9 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import timedelta
-from typing import BinaryIO, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
+from hc_data_platform.capture_schemes.ports import WebUploadPlans, unresolved_receipt
 from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.models import CompletedPart as WireCompletedPart
@@ -42,6 +43,9 @@ from .models import (
 )
 from .orchestration import build_import_plan
 
+if TYPE_CHECKING:
+    from .delivery import NativeDeliveryProjection
+
 
 class LeRobotWebUploadService:
     def __init__(
@@ -51,6 +55,8 @@ class LeRobotWebUploadService:
         raw_sources: RawSourceRepositoryPort | None = None,
         authorization_ttl_seconds: int = 900,
         target_validator: Callable[[str, str, str, CreateLeRobotImportV1], None] | None = None,
+        capture_plans: WebUploadPlans | None = None,
+        delivery: NativeDeliveryProjection | None = None,
     ) -> None:
         if not 1 <= authorization_ttl_seconds <= 3600:
             raise ValueError("authorization TTL must be between 1 and 3600 seconds")
@@ -58,6 +64,8 @@ class LeRobotWebUploadService:
         self.raw_sources = raw_sources or InMemoryRawSourceRepository()
         self._authorization_ttl = authorization_ttl_seconds
         self._target_validator = target_validator
+        self._capture_plans = capture_plans
+        self.delivery = delivery
 
     @property
     def storage(self) -> ObjectStoragePort:
@@ -78,8 +86,6 @@ class LeRobotWebUploadService:
             project_id=project_id,
             region_code=region_code,
         )
-        if self._target_validator is not None:
-            self._target_validator(organization_id, project_id, region_code, manifest)
         manifest_document = _canonical_manifest(manifest)
         import_id = _stable_import_id(
             organization_id=organization_id,
@@ -98,6 +104,23 @@ class LeRobotWebUploadService:
         )
         if resumed is not None:
             return resumed
+        if self._target_validator is not None:
+            self._target_validator(organization_id, project_id, region_code, manifest)
+        capture_snapshot: dict[str, Any] | None = None
+        if manifest.source_format in {"MCAP", "LEROBOT_V3"}:
+            capture_snapshot = (
+                self._capture_plans.prepare(
+                    (organization_id, project_id, region_code),
+                    import_id,
+                    dataset_id=manifest.dataset_id,
+                    task_id=manifest.collection_task_id,
+                    robot_id=manifest.robot_id,
+                    source_format=manifest.source_format,
+                    actor=auth.subject_id,
+                )
+                if self._capture_plans is not None
+                else unresolved_receipt("CAPTURE_STORE_UNAVAILABLE", "采集方案服务未配置。")
+            )
         started: list[tuple[str, str]] = []
         grants: list[LeRobotAssetUploadGrantV1] = []
         try:
@@ -123,6 +146,7 @@ class LeRobotWebUploadService:
                     "region_code": region_code,
                     "upload_identity_version": "lerobot-web-upload-identity/v1",
                     "manifest": manifest_document,
+                    "capture_snapshot": capture_snapshot,
                     "assets": [
                         {
                             "path": asset.path,
@@ -462,6 +486,18 @@ class LeRobotWebUploadService:
                     "at upload start."
                 ),
             )
+        capture_snapshot = None
+        if command.manifest.source_format in {"MCAP", "LEROBOT_V3"}:
+            stored_snapshot = session.get("capture_snapshot")
+            capture_snapshot = (
+                dict(stored_snapshot)
+                if isinstance(stored_snapshot, dict)
+                else unresolved_receipt(
+                    "CAPTURE_PLAN_REQUIRED",
+                    "旧网页上传没有冻结采集快照，需要显式迁移或配置恢复。",
+                    compatibility="LEGACY_WEB_UPLOAD_WITHOUT_SNAPSHOT",
+                )
+            )
         root = self._root(organization_id, command.manifest.dataset_id, import_id)
         raw_files: list[dict[str, object]] = []
         total_size = 0
@@ -541,6 +577,8 @@ class LeRobotWebUploadService:
             "resolved_revision": dataset_digest[:40],
             "episode_count": command.manifest.episode_count,
         }
+        if capture_snapshot is not None:
+            raw_manifest["processing_config_snapshot"] = capture_snapshot
         if command.manifest.processing_mode == "PROCESS":
             from .capabilities import NATIVE_PROCESSING_REVISION
 
@@ -553,6 +591,7 @@ class LeRobotWebUploadService:
         if command.manifest.processing_mode == "STORE_ONLY":
             self.raw_sources.register_committed(
                 CommittedRawSourceGraph(
+                    capture_snapshot=capture_snapshot,
                     source=RawSource(
                         raw_source_id=import_id,
                         organization_id=organization_id,
@@ -619,6 +658,7 @@ class LeRobotWebUploadService:
         now = utc_now()
         self.raw_sources.register_committed(
             CommittedRawSourceGraph(
+                capture_snapshot=capture_snapshot,
                 source=RawSource(
                     raw_source_id=import_id,
                     organization_id=organization_id,

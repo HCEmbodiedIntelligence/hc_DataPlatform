@@ -31,6 +31,7 @@ services:
   api:
     environment:
       HC_OBJECT_STORE_BROWSER_PATH: ${HC_LOCAL_FILES_DIRECTORY:-/home/hc_op/workspace/data-platform-files}
+      HC_OBJECT_STORE_RAW_BROWSER_PATH: /home/hc_op/workspace/.data-platform-tools/objects
       HC_OBJECT_STORE_LOCAL_PATH: ${HC_MINIO_DATA_DIRECTORY:-/home/hc_op/workspace/data-platform-storage}
   worker:
     environment:
@@ -38,4 +39,5 @@ services:
       # persisted project scopes so slicing/QC jobs are actually dispatched.
       HC_LOCAL_SCOPE_DISCOVERY: "true"
       HC_OBJECT_STORE_BROWSER_PATH: ${HC_LOCAL_FILES_DIRECTORY:-/home/hc_op/workspace/data-platform-files}
+      HC_OBJECT_STORE_RAW_BROWSER_PATH: /home/hc_op/workspace/.data-platform-tools/objects
       HC_OBJECT_STORE_LOCAL_PATH: ${HC_MINIO_DATA_DIRECTORY:-/home/hc_op/workspace/data-platform-storage}

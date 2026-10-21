@@ -886,7 +886,7 @@ class ContinuousRecordingService:
             if asset.manifest.role is RecordingAssetRole.RAW_VIDEO
             and asset.status is RecordingAssetStatus.COMMITTED
         )
-        if not sources:
+        if not sources and upload.command.recording_config.collection_mode != "JOINT_ONLY":
             raise problem(
                 status=409,
                 code="RECORDING_VIDEO_ASSETS_MISSING",
@@ -941,7 +941,7 @@ class ContinuousRecordingService:
             if asset.manifest.role is RecordingAssetRole.RAW_VIDEO
             and asset.status is RecordingAssetStatus.COMMITTED
         )
-        if not sources:
+        if not sources and upload.command.recording_config.collection_mode != "JOINT_ONLY":
             raise problem(
                 status=409,
                 code="RECORDING_VIDEO_ASSETS_MISSING",
@@ -1127,7 +1127,11 @@ class ContinuousRecordingService:
                     detail="The requested topic is not declared by this recording.",
                 )
             return sensor.topic, sensor.timestamp_mode
-        if upload.command.recording_config.recorder_version == "openarm-session/v2":
+        if upload.command.recording_config.recorder_version in {
+            "openarm-session/v2",
+            "native-mcap-recording/1",
+            "native-mcap-recording/2",
+        }:
             state = next(
                 (sensor for sensor in sensors if sensor.topic == "/observation/state"), None
             )

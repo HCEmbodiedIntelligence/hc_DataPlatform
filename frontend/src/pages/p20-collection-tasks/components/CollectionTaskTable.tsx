@@ -1,3 +1,4 @@
+import { TaskDataRequirements } from "../../../features/robots/TaskDataRequirements";
 import { CaptureProgressPanel } from "../../../features/collection-tasks/CaptureProgressPanel";
 import { useIngestScope } from "../../../features/ingest/use-ingest-scope";
 import type { CellContext, ColumnDef } from "@tanstack/react-table";
@@ -494,6 +495,7 @@ function TaskDetails({
 }>) {
   return (
     <section aria-label="任务详情">
+      <TaskDataRequirements taskId={task.collection_task_id} />
       <dl className={styles.taskDetails}>
         <dt>任务码</dt>
         <dd>

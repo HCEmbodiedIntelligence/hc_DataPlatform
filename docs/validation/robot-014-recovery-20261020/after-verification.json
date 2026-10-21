@@ -1,0 +1,214 @@
+{
+  "task_progress": {
+    "schema_version": "1",
+    "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+    "organization_id": "01",
+    "project_id": "01",
+    "status": "ACTIVE",
+    "as_of": "2026-10-20T02:36:56.791397Z",
+    "received_package_count": 1,
+    "captured_duration_seconds": 7.585906,
+    "duration_observed_package_count": 1,
+    "duration_unknown_package_count": 0,
+    "qc": {
+      "evaluated_count": 1,
+      "pass_count": 1,
+      "risk_count": 0,
+      "reject_count": 0,
+      "pending_count": 0,
+      "pass_rate": {
+        "numerator": 1,
+        "denominator": 1,
+        "value": 1.0
+      }
+    },
+    "attainment": {
+      "status": "NOT_CONFIGURED",
+      "package_count": null,
+      "duration_seconds": null,
+      "quality_threshold": null,
+      "quality_status": "NOT_CONFIGURED"
+    },
+    "captures": {
+      "upload_count": 2,
+      "received_count": 1,
+      "awaiting_slice_count": 0,
+      "processing_count": 0,
+      "failed_count": 0,
+      "blocked_count": 0,
+      "episode_count": 1,
+      "ready_episode_count": 1,
+      "failed_episode_count": 0
+    },
+    "observed_sources": {
+      "device_ids": [
+        "robot_fa73724c028e571795e06eba838738fa"
+      ],
+      "camera_ids": [],
+      "topic_names": []
+    }
+  },
+  "status": "PASS",
+  "episode": {
+    "organization_id": "01",
+    "project_id": "01",
+    "region_code": "global",
+    "raw_source_id": "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+    "episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+    "source_episode_index": 0,
+    "status": "READY",
+    "frame_count": 114,
+    "dataset_version": 1,
+    "lance_version": null,
+    "created_at": "2026-10-19 08:10:49.195102+00:00",
+    "updated_at": "2026-10-19 08:44:05.263076+00:00",
+    "sample_count": 114,
+    "quality_status": "PASS",
+    "qc_report_id": "qc_2a72552551c5aedf14915f4f5f1ba235",
+    "data_ref": {
+      "version": 1,
+      "identity": {
+        "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+        "episode_id": "episode_a753917e38c27d6782780c70126c0f84",
+        "project_id": "01",
+        "rollout_id": "rie-54102ae0b172579eafa375a28550c2b1",
+        "region_code": "global",
+        "organization_id": "01"
+      },
+      "frame_count": 114,
+      "content_hash": "5bc1ce85dc52e6544b2bb4a26f5fd779547dbe95ece2f6eabec4920a440667c1",
+      "package_prefix": "episodes/id-01/id-01/id-global/id-unknown/id-robot_fa73724c028e571795e06eba838738fa/id-286e7334-4f19-5d16-aecb-fb1d5870fed7/id-episode_a753917e38c27d6782780c70126c0f84/id-dv_c0e0d6a92bc8301bad6b6b33c9acbfe07e0c403e6d0174c79b6eb498637c124b",
+      "storage_format": "lerobot_v3",
+      "data_version_id": "dv_c0e0d6a92bc8301bad6b6b33c9acbfe07e0c403e6d0174c79b6eb498637c124b",
+      "schema_snapshot_id": "native-lerobot-v3-v1"
+    }
+  },
+  "source_links": [
+    {
+      "organization_id": "01",
+      "project_id": "01",
+      "region_code": "global",
+      "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "canonical_episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+      "evidence": {
+        "actor": "user-request-014-20261020",
+        "evidence": "User-confirmed same recording; original MCAP contains no image messages",
+        "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+        "project_id": "01",
+        "region_code": "global",
+        "candidate_id": "2bc92210da4455ba16759b897bfe054f8cef1565bf60f316c9bb13f78627d71b",
+        "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+        "organization_id": "01",
+        "inventory_sha256": "6f1bc864ea4a80ce8461e9fe04071d3124957b7855edac53b933e493fcdc2b6d",
+        "canonical_episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+        "canonical_raw_content_sha256": "5cd011c65cf57b090af8b827aec31c3d5073f63f58736aadbf77ecbf37cc1e64"
+      },
+      "created_at": "2026-10-20 02:24:21.567666+00:00"
+    }
+  ],
+  "historical_processing_snapshots": [
+    {
+      "processing_id": "3922fd18aad1d8c92036a364852f5377eab7176ddcd2e5b4d7328b05065a0071",
+      "status": "FAILED",
+      "configuration": {
+        "fps": 30,
+        "joint_names": [],
+        "joint_units": [],
+        "state_topic": null,
+        "action_topic": null,
+        "primary_camera": null,
+        "maximum_time_error_ms": 50.0,
+        "depth_scale_m_per_unit": null,
+        "derive_action_from_next_state": false
+      },
+      "recording_id": null
+    },
+    {
+      "processing_id": "5ccfab49466ba9d01a85de5e0faee42ae6782718804ba7ba7d3de47ca3d2e1f1",
+      "status": "FAILED",
+      "configuration": {
+        "fps": 30,
+        "joint_names": [],
+        "joint_units": [],
+        "state_topic": "/observation/joint_states",
+        "action_topic": "/action/joint_states",
+        "primary_camera": null,
+        "maximum_time_error_ms": 50.0,
+        "depth_scale_m_per_unit": null,
+        "derive_action_from_next_state": false
+      },
+      "recording_id": null
+    }
+  ],
+  "episodes_for_task": [
+    {
+      "episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+      "status": "READY",
+      "quality_status": "PASS"
+    }
+  ],
+  "capture_progress": {
+    "items": [
+      {
+        "upload_id": "riu-6d4efe93d7b956129e04bd8441f5f954",
+        "capture_mode": "PRESEGMENTED",
+        "rollout_id": "riu-6d4efe93d7b956129e04bd8441f5f954",
+        "data_package_id": "riu-6d4efe93d7b956129e04bd8441f5f954",
+        "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+        "robot_id": "robot_fa73724c028e571795e06eba838738fa",
+        "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+        "recording_id": null,
+        "source_import_id": "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+        "canonical_episode_id": null,
+        "upload_state": "COMMITTED",
+        "stage": "READY",
+        "received": true,
+        "duration_seconds": 7.585906,
+        "episode_count": 1,
+        "ready_episode_count": 1,
+        "failed_episode_count": 0,
+        "blocked_episode_count": 0,
+        "qc_outcome": "PASS",
+        "error_code": null,
+        "created_at": "2026-10-19T08:10:47.640934Z",
+        "received_at": "2026-10-19T08:10:48.590951Z"
+      },
+      {
+        "upload_id": "riu-445ff5ed97e8529db900a3af16cd0ff5",
+        "capture_mode": "CONTINUOUS",
+        "rollout_id": "riu-445ff5ed97e8529db900a3af16cd0ff5",
+        "data_package_id": "riu-445ff5ed97e8529db900a3af16cd0ff5",
+        "collection_task_id": "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+        "robot_id": "robot_fa73724c028e571795e06eba838738fa",
+        "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+        "recording_id": null,
+        "source_import_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+        "canonical_episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+        "upload_state": "COMMITTED",
+        "stage": "RECEIVED",
+        "received": true,
+        "duration_seconds": 7.585906,
+        "episode_count": 0,
+        "ready_episode_count": 0,
+        "failed_episode_count": 0,
+        "blocked_episode_count": 0,
+        "qc_outcome": null,
+        "error_code": "RECORDING_ALREADY_PROCESSED",
+        "created_at": "2026-10-19T07:43:34.893091Z",
+        "received_at": "2026-10-19T07:43:35.755889Z"
+      }
+    ],
+    "total": 2,
+    "counts": {
+      "upload_count": 2,
+      "received_count": 1,
+      "awaiting_slice_count": 0,
+      "processing_count": 0,
+      "failed_count": 0,
+      "blocked_count": 0,
+      "episode_count": 1,
+      "ready_episode_count": 1,
+      "failed_episode_count": 0
+    }
+  }
+}

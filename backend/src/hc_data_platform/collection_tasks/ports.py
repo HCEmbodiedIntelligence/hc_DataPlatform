@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
+from hc_data_platform.capture_schemes.references import SetTaskPlan
+
 from .models import (
     CollectionTaskPackage,
     CollectionTaskRecord,
@@ -20,7 +22,9 @@ class CollectionTaskRepositoryPort(Protocol):
         self, organization_id: str, project_id: str, collection_task_id: str
     ) -> bool: ...
 
-    def create(self, task: CollectionTaskRecord) -> CollectionTaskRecord: ...
+    def create(
+        self, task: CollectionTaskRecord, *, capture_plan: SetTaskPlan | None = None
+    ) -> CollectionTaskRecord: ...
 
     def list(
         self,

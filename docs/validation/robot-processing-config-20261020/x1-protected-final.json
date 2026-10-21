@@ -1,0 +1,38 @@
+{
+  "mode": "READ ONLY",
+  "episode": [
+    [
+      "rie-54102ae0b172579eafa375a28550c2b1",
+      "READY",
+      "PASS",
+      114,
+      1,
+      null,
+      "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+      "2026-10-19 08:44:05.263076+00"
+    ]
+  ],
+  "raw_sources": [
+    [
+      "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "riu-445ff5ed97e8529db900a3af16cd0ff5",
+      "MCAP",
+      "COMMITTED",
+      "FAILED",
+      "7fd8b24b71ca8a3dd2d752e62684e0beaaed0996e7d8ab915f2ad44eec9a8808",
+      "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "robot_fa73724c028e571795e06eba838738fa"
+    ],
+    [
+      "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+      "riu-6d4efe93d7b956129e04bd8441f5f954",
+      "LEROBOT_V3",
+      "COMMITTED",
+      "READY",
+      "5cd011c65cf57b090af8b827aec31c3d5073f63f58736aadbf77ecbf37cc1e64",
+      "286e7334-4f19-5d16-aecb-fb1d5870fed7",
+      "robot_fa73724c028e571795e06eba838738fa"
+    ]
+  ],
+  "instance_config_schema_installed": false
+}

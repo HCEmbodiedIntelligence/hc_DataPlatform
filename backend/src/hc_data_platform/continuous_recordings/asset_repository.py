@@ -113,6 +113,17 @@ class PostgresRecordingAssetRepository:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
+                if upload.command.recording_config.collection_mode == "JOINT_ONLY":
+                    from hc_data_platform.robot_processing.service import check_task, reject
+
+                    check = check_task(
+                        cursor,
+                        _scope_values(upload.scope),
+                        upload.command.collection_task_id,
+                        {"configuration": {"collection_mode": "JOINT_ONLY"}},
+                    )
+                    if check.get("error"):
+                        reject(check["error"], "该任务明确需要视觉数据，不能接收纯关节录制")
                 cursor.execute(
                     """
                     INSERT INTO ingest.recording_uploads (

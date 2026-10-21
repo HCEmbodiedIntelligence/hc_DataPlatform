@@ -13,9 +13,11 @@ from pydantic import (
     PlainSerializer,
     StringConstraints,
     WithJsonSchema,
+    model_serializer,
     model_validator,
 )
 
+from hc_data_platform.capture_schemes.references import CaptureReference
 from hc_data_platform.episode_store.models import DataVersionRef
 
 Identifier = Annotated[
@@ -204,6 +206,11 @@ class RobotIngestIdentity(StrictModel):
     last_authenticated_at: datetime | None = None
     last_seen_at: datetime | None = None
     last_upload_at: datetime | None = None
+    observation_started_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
+    activity_expires_at: datetime | None = None
+    last_auth_failure_at: datetime | None = None
+    last_auth_failure_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -243,6 +250,7 @@ class UpdateRobotIngestIdentity(StrictModel):
 
 
 class IssueCredentialCommand(StrictModel):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=128)
     expires_at: AwareDatetime | None = None
     revoke_previous: bool = False
 
@@ -265,6 +273,7 @@ class RobotCredentialSummary(StrictModel):
     expires_at: datetime | None = None
     revoked_at: datetime | None = None
     last_authenticated_at: datetime | None = None
+    reveal_available: bool = False
 
 
 class RobotIdentityEnvelope(StrictModel):
@@ -351,8 +360,19 @@ class RobotIngestUploadManifest(StrictModel):
     assets: tuple[RobotIngestAssetManifest, ...] = Field(min_length=1, max_length=4096)
     cameras: tuple[RobotIngestCameraManifest, ...] = Field(default=(), max_length=128)
     format_metadata: dict[str, Any] = Field(default_factory=dict)
+    processing_config: dict[str, Any] | None = None
+    capture_plan: CaptureReference | None = None
     organization_id: Identifier | None = None
     project_id: Identifier | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_old_client(self, handler):
+        document = handler(self)
+        if self.processing_config is None:
+            document.pop("processing_config", None)
+        if self.capture_plan is None:
+            document.pop("capture_plan", None)
+        return document
 
     @model_validator(mode="after")
     def validate_manifest(self) -> RobotIngestUploadManifest:
@@ -506,6 +526,7 @@ class RobotIngestUpload(StrictModel):
     assets: tuple[RobotIngestAsset, ...]
     cameras: tuple[RobotIngestCameraManifest, ...]
     camera_verification: tuple[CameraVerification, ...] = ()
+    processing_config_snapshot: dict[str, Any] | None = None
     raw_source_id: Identifier | None = None
     created_at: datetime
     expires_at: datetime
@@ -516,6 +537,15 @@ class RobotIngestUpload(StrictModel):
 class RobotIngestUploadEnvelope(StrictModel):
     data: RobotIngestUpload
     resumed: bool = False
+
+    @model_serializer(mode="wrap")
+    def legacy_wire(self, handler):
+        document = handler(self)
+        if self.data.manifest.processing_config is None and self.data.manifest.capture_plan is None:
+            # Old clients validate strict v1 responses. Persistence serializes
+            # RobotIngestUpload directly and retains its frozen instance snapshot.
+            document["data"].pop("processing_config_snapshot", None)
+        return document
 
 
 class RobotIngestAttempt(StrictModel):
@@ -591,10 +621,17 @@ class RobotIngestEpisodeResult(StrictModel):
         return self
 
 
+class RobotIngestEpisodeReadResult(RobotIngestEpisodeResult):
+    """Read projection; annotation progress does not change the durable data receipt."""
+
+    annotation_status: str = "UNKNOWN"
+    data_readable: bool
+
+
 class RobotIngestEpisodeResultList(StrictModel):
     upload_id: Identifier
     raw_source_id: Identifier
-    items: tuple[RobotIngestEpisodeResult, ...]
+    items: tuple[RobotIngestEpisodeReadResult, ...]
 
 
 class UploadList(StrictModel):

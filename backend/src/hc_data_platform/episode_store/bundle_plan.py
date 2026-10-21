@@ -93,7 +93,8 @@ class EpisodeBundlePlan(FrozenModel):
             or schema.project_id != source.identity.project_id
             or schema.dataset_id != source.identity.dataset_id
             or schema.schema_snapshot_id != source.schema_snapshot_id
-            or schema.fingerprint != compute_schema_fingerprint(schema.fields)
+            or schema.fingerprint
+            != compute_schema_fingerprint(schema.fields, semantic_contract=schema.semantic_contract)
         ):
             raise ValueError("Episode bundle configuration/schema differs from frozen input")
         if (

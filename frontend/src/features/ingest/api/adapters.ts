@@ -316,7 +316,7 @@ export interface DataSourcePage {
   readonly summary: {
     readonly totalCount: DecimalString;
     readonly onlineCount: DecimalString;
-    readonly verifiedBytesToday: DecimalString;
+    readonly verifiedBytesToday: DecimalString | null;
     readonly abnormalCount: DecimalString;
     readonly asOf: string;
   };
@@ -348,7 +348,7 @@ export function adaptDataSourcePage(
     summary: {
       totalCount: wire.summary.total_count as DecimalString,
       onlineCount: wire.summary.online_count as DecimalString,
-      verifiedBytesToday: wire.summary.verified_bytes_today as DecimalString,
+      verifiedBytesToday: wire.summary.verified_bytes_today as DecimalString | null,
       abnormalCount: wire.summary.abnormal_count as DecimalString,
       asOf: wire.summary.as_of,
     },

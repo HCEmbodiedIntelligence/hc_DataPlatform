@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid5
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec
 from hc_data_platform.security.idempotency import (
@@ -73,7 +74,12 @@ class CollectionTaskService:
         idempotency_key: str,
         created_by: str | None = None,
     ) -> CommandResult:
-        payload = command.model_dump(mode="json")
+        # Preserve pre-upgrade create fingerprints when the new optional field is absent.
+        payload = command.model_dump(
+            mode="json", exclude={"capture_plan"} if command.capture_plan is None else set()
+        )
+        if command.capture_plan is not None:
+            payload["capture_region_code"] = current_request_context().region_code
         fingerprint = request_fingerprint(payload)
         task_id = str(
             uuid5(_TASK_ID_NAMESPACE, f"{organization_id}\0{project_id}\0{idempotency_key}")
@@ -113,7 +119,8 @@ class CollectionTaskService:
                     target=command.target,
                     quality_threshold=command.quality_threshold,
                     create_fingerprint=fingerprint,
-                )
+                ),
+                capture_plan=command.capture_plan,
             )
 
         result = self.idempotency.execute(

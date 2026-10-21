@@ -47,7 +47,7 @@ export type DatasetDetailChanges = Partial<DatasetDetailSearch>;
 
 function parseDetail(input: string | URLSearchParams): DatasetDetailSearch {
   const params = asSearchParams(input);
-  const tab = enumValue(params.get('tab'), TABS) ?? 'overview';
+  const tab = enumValue(params.get('tab'), TABS) ?? 'episodes';
   const versionIdRaw = cleanId(params.get('versionId'), VERSION_ID);
   const versionId =
     versionIdRaw !== 'version_current' && versionIdRaw !== 'version_latest'
@@ -122,8 +122,8 @@ function parseDetail(input: string | URLSearchParams): DatasetDetailSearch {
 
 function buildDetail(input: DatasetDetailChanges): URLSearchParams {
   const params = new URLSearchParams();
-  const tab = input.tab === 'schema' ? 'overview' : (input.tab ?? 'overview');
-  if (tab !== 'overview') params.set('tab', tab);
+  const tab = input.tab === 'schema' ? 'overview' : (input.tab ?? 'episodes');
+  if (input.tab) params.set('tab', tab);
   if (input.versionId) params.set('versionId', input.versionId);
   const collectionTaskId = cleanId(input.collectionTaskId, COLLECTION_TASK_ID);
   if (collectionTaskId) params.set('collectionTaskId', collectionTaskId);
@@ -207,7 +207,8 @@ function safeViewerReturnTo(value: string | null | undefined): string | undefine
   if (!safe) return undefined;
   const parsed = new URL(safe, 'https://local.invalid');
   const p06Episodes =
-    DATASET_DETAIL_PATH.test(parsed.pathname) && parsed.searchParams.get('tab') === 'episodes';
+    DATASET_DETAIL_PATH.test(parsed.pathname) &&
+    (!parsed.searchParams.has('tab') || parsed.searchParams.get('tab') === 'episodes');
   const p07Version = VERSION_DETAIL_PATH.test(parsed.pathname);
   const p09Issues = parsed.pathname === '/manual/issues';
   return p06Episodes || p07Version || p09Issues ? `${parsed.pathname}${parsed.search}` : undefined;

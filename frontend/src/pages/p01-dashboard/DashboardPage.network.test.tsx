@@ -129,7 +129,7 @@ describe("Dashboard production client path", () => {
     resetRuntimeConfigForTests();
   });
 
-  it("preserves an open failure detail through background refresh, failure and recovery", async () => {
+  it("keeps active details during refresh but removes them when the issue is closed", async () => {
     const fixture = {
       ...dashboardTaskStatusAllTasksFixture,
       pipeline: {
@@ -217,6 +217,14 @@ describe("Dashboard production client path", () => {
       );
       expect(screen.getByText("需要保留的失败详情")).toBe(detail);
     }
+    fixture.pipeline.issues = [];
+    await act(async () => {
+      await client.refetchQueries({ queryKey });
+    });
+    await waitFor(() =>
+      expect(screen.queryByText("需要保留的失败详情")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText("package-failed")).not.toBeInTheDocument();
     client.clear();
   });
 

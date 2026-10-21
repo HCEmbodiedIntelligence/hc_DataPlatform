@@ -1,0 +1,118 @@
+{
+  "checks": [
+    "robot page loads real organization summary",
+    "upload record successful volume uses real API and displays timezone",
+    "mobile layout has no page overflow"
+  ],
+  "failures": [],
+  "layout": {
+    "viewport": 500,
+    "document": 488,
+    "wide": [
+      {
+        "tag": "TABLE",
+        "cls": "",
+        "width": 900,
+        "display": "table",
+        "min": "100%",
+        "grid": "none"
+      },
+      {
+        "tag": "THEAD",
+        "cls": "ant-table-thead",
+        "width": 900,
+        "display": "table-header-group",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TBODY",
+        "cls": "ant-table-tbody",
+        "width": 900,
+        "display": "table-row-group",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-measure-row",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      },
+      {
+        "tag": "TR",
+        "cls": "ant-table-row ant-table-row-level-0",
+        "width": 900,
+        "display": "table-row",
+        "min": "0px",
+        "grid": "none"
+      }
+    ]
+  }
+}

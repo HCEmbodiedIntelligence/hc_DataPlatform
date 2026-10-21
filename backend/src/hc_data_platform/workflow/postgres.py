@@ -58,7 +58,9 @@ class PostgresWorkflowJobRepository:
     def __init__(self, connection_factory: Callable[[], Any]) -> None:
         self._connection_factory = connection_factory
 
-    def put_job(self, request: WorkflowJobPersistenceActivityInput) -> None:
+    def put_job(
+        self, request: WorkflowJobPersistenceActivityInput, *, only_before_start: bool = False
+    ) -> None:
         context = current_request_context()
         job = request.job
         if (
@@ -72,8 +74,16 @@ class PostgresWorkflowJobRepository:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
+                statement = UPSERT_WORKFLOW_JOB
+                if only_before_start:
+                    # Dispatch rejection must never replace a concurrent started
+                    # or terminal workflow receipt.
+                    statement += (
+                        " AND workflow.jobs.status = 'PENDING'"
+                        " AND workflow.jobs.workflow_run_id IS NULL"
+                    )
                 cursor.execute(
-                    UPSERT_WORKFLOW_JOB,
+                    statement,
                     (
                         uuid5(NAMESPACE_URL, f"hc-data-platform/workflow-job/{job.workflow_id}"),
                         request.organization_id,

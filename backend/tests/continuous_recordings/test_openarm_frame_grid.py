@@ -68,6 +68,7 @@ def _align(tmp_path, first, rounded, missing_frame=None):
         microseconds=frame_time(first) // 1000
     )
     request = SimpleNamespace(
+        alignment_profile=SimpleNamespace(frequency_hz=30),
         recording_config=SimpleNamespace(
             recorder_version="openarm-session/v2",
             sensors=tuple(

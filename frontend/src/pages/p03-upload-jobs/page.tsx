@@ -1,3 +1,4 @@
+import { SuccessfulVolume } from "../../features/robot-ingest/SuccessfulVolume";
 import { CaptureProgressPanel } from "../../features/collection-tasks/CaptureProgressPanel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Modal } from "antd";
@@ -484,6 +485,8 @@ export default function UploadJobsPage() {
           上传记录
         </Link>
       </nav>
+
+      {activeTab === "records" && <SuccessfulVolume scope={scope} robotId={robotIdFilter} />}
 
       {activeTab === "new" ? (
         <section

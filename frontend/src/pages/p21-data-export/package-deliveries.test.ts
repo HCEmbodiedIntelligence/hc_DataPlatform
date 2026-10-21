@@ -5,44 +5,77 @@ import {
   createPackageBatch,
   downloadPackageJob,
   loadPackageCandidates,
+  loadPackageJob,
   loadCollectionAnnotationHistory,
 } from "../../features/exports/package-deliveries";
 import { packageDeliveryFixture } from "./testing/package-delivery-fixture";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
-it("pins annotation revision and explicit depth choice in the queued request", async () => {
-  const f = packageDeliveryFixture(true),
-    a = f.annotation.job.plan.binding;
-  const members = [
-    {
-      data: f.data,
-      annotation: {
-        task_id: a.task_id,
-        revision: a.revision,
-        track: a.track,
-        allow_unreviewed: true,
-      },
-    },
-  ];
+it("polls the exact export and rejects another job or a changed depth selection", async () => {
+  const f = packageDeliveryFixture();
   vi.mocked(request).mockResolvedValue(f.job);
-  expect(
-    await createPackageBatch(f.scope, members, "rgbd", "retry-key"),
-  ).toEqual(f.job);
+  expect(await loadPackageJob(f.scope, f.job)).toEqual(f.job);
   expect(request).toHaveBeenCalledWith(
     expect.objectContaining({
-      path: expect.stringMatching(/\/collections$/),
-      idempotencyKey: "retry-key",
-      body: { members, modalities: "rgbd" },
+      method: "GET",
+      path: expect.stringContaining(f.job.job_id),
+      cache: "no-store",
     }),
   );
-  const wrong = structuredClone(f.job);
-  wrong.plan.members[0]!.annotation!.binding.revision++;
-  vi.mocked(request).mockResolvedValue(wrong);
-  await expect(
-    createPackageBatch(f.scope, members, "rgbd", "retry-key"),
-  ).rejects.toThrow(/标注/);
+  vi.mocked(request).mockResolvedValue({
+    ...f.job,
+    job_id: "ed_" + "d".repeat(64),
+  });
+  await expect(loadPackageJob(f.scope, f.job)).rejects.toThrow(/任务已变化/);
+  const changed = structuredClone(f.job);
+  if (changed.plan.format !== "hc-collection-delivery-plan/1")
+    throw new Error("fixture");
+  changed.plan.modalities = "rgb";
+  changed.plan.members[0]!.excluded_depth_features = Object.keys(
+    changed.plan.members[0]!.selected_depth_profiles,
+  );
+  changed.plan.members[0]!.selected_depth_profiles = {};
+  vi.mocked(request).mockResolvedValue(changed);
+  await expect(loadPackageJob(f.scope, f.job)).rejects.toThrow(/任务已变化/);
 });
+it.each([{ segments: [] }, { segments: ["first"] }])(
+  "pins the saved revision with segment selection $segments",
+  async ({ segments }) => {
+    const f = packageDeliveryFixture(true),
+      a = f.annotation.job.plan.binding;
+    a.track.annotation_ids = segments;
+    f.job.plan.members[0]!.annotation!.binding.track.annotation_ids = segments;
+    const members = [
+      {
+        data: f.data,
+        annotation: {
+          task_id: a.task_id,
+          revision: a.revision,
+          track: a.track,
+          allow_unreviewed: true,
+        },
+      },
+    ];
+    vi.mocked(request).mockResolvedValue(f.job);
+    expect(
+      await createPackageBatch(f.scope, members, "rgbd", "retry-key"),
+    ).toEqual(f.job);
+    expect(request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: expect.stringMatching(/\/collections$/),
+        idempotencyKey: "retry-key",
+        body: { members, modalities: "rgbd" },
+      }),
+    );
+    const wrong = structuredClone(f.job);
+    wrong.plan.members[0]!.annotation!.binding.revision++;
+    vi.mocked(request).mockResolvedValue(wrong);
+    await expect(
+      createPackageBatch(f.scope, members, "rgbd", "retry-key"),
+    ).rejects.toThrow(/标注/);
+  },
+);
 it.each([
   "foreign tenant",
   "depth exclusion",
@@ -129,16 +162,47 @@ it("does not bind annotation history from another data version", async () => {
   ).rejects.toThrow(/不一致/);
 });
 
-it.each(["mcap", "original", "hdf5"])("requests %s using the common delivery endpoint", async mode => {
-  const f = packageDeliveryFixture(true);
-  if (f.job.plan.format !== "hc-collection-delivery-plan/1") throw new Error("fixture");
-  f.job.plan.archive_format = `${mode}_collection_zip/1`;
-  f.job.plan.processor_version = "hc-export/1";
-  f.job.plan.reader_version = mode === "mcap" ? "mcap/1" : "original-bytes/1";
-  if (mode === "hdf5") vi.mocked(request).mockResolvedValueOnce([{ id: "hdf5", title: "HDF5", archive_format: "hdf5_collection_zip/1", supports_annotations: true, requires_originals: false }]);
-  vi.mocked(request).mockResolvedValueOnce(f.job);
-  const binding = f.annotation.job.plan.binding;
-  const members = [{ data: f.data, annotation: { task_id: binding.task_id, revision: binding.revision, allow_unreviewed: true, track: binding.track } }];
-  expect(await createPackageBatch(f.scope, members, mode, "universal")).toEqual(f.job);
-  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ method: "POST", path: expect.stringMatching(/\/collections$/u), body: { members, modalities: "rgbd", output_format: mode } }));
-});
+it.each(["mcap", "original", "hdf5"])(
+  "requests %s using the common delivery endpoint",
+  async (mode) => {
+    const f = packageDeliveryFixture(true);
+    if (f.job.plan.format !== "hc-collection-delivery-plan/1")
+      throw new Error("fixture");
+    f.job.plan.archive_format = `${mode}_collection_zip/1`;
+    f.job.plan.processor_version = "hc-export/1";
+    f.job.plan.reader_version = mode === "mcap" ? "mcap/1" : "original-bytes/1";
+    if (mode === "hdf5")
+      vi.mocked(request).mockResolvedValueOnce([
+        {
+          id: "hdf5",
+          title: "HDF5",
+          archive_format: "hdf5_collection_zip/1",
+          supports_annotations: true,
+          requires_originals: false,
+        },
+      ]);
+    vi.mocked(request).mockResolvedValueOnce(f.job);
+    const binding = f.annotation.job.plan.binding;
+    const members = [
+      {
+        data: f.data,
+        annotation: {
+          task_id: binding.task_id,
+          revision: binding.revision,
+          allow_unreviewed: true,
+          track: binding.track,
+        },
+      },
+    ];
+    expect(
+      await createPackageBatch(f.scope, members, mode, "universal"),
+    ).toEqual(f.job);
+    expect(request).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        method: "POST",
+        path: expect.stringMatching(/\/collections$/u),
+        body: { members, modalities: "rgbd", output_format: mode },
+      }),
+    );
+  },
+);

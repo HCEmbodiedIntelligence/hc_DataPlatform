@@ -6,6 +6,7 @@ import io
 import itertools
 import shutil
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyarrow as pa
@@ -24,42 +25,8 @@ from hc_data_platform.data_formats.video import inspect_depth_video, inspect_vid
 from .models import PackageInput, canonical
 from .prepared_assets import PreparedAssets
 from .scope import assert_scope
+from .statistics import Moments as Moments
 from .validation import parquet_rows, validate_package
-
-
-class Moments:
-    def __init__(self):
-        self.count = 0
-        self.mean = self.m2 = self.minimum = self.maximum = None
-
-    def add(self, values):
-        array = np.asarray(values, dtype=np.float64)
-        if array.ndim == 1:
-            array = array[:, None]
-        if not np.isfinite(array).all():
-            raise ValueError("numeric feature contains nonfinite values")
-        count, mean = len(array), array.mean(axis=0)
-        m2 = np.square(array - mean).sum(axis=0)
-        minimum, maximum = array.min(axis=0), array.max(axis=0)
-        if not self.count:
-            self.count, self.mean, self.m2 = count, mean, m2
-            self.minimum, self.maximum = minimum, maximum
-            return
-        delta, total = mean - self.mean, self.count + count
-        self.m2 += m2 + np.square(delta) * self.count * count / total
-        self.mean += delta * count / total
-        self.minimum = np.minimum(self.minimum, minimum)
-        self.maximum = np.maximum(self.maximum, maximum)
-        self.count = total
-
-    def document(self):
-        return {
-            "count": [self.count],
-            "min": self.minimum.tolist(),
-            "max": self.maximum.tolist(),
-            "mean": self.mean.tolist(),
-            "std": np.sqrt(self.m2 / self.count).tolist(),
-        }
 
 
 def write_json(root, path, value):
@@ -68,19 +35,34 @@ def write_json(root, path, value):
 
 
 def capture_value(value, enabled):
-    if (enabled and isinstance(value, dict) and set(value) <= {'values', 'names', 'units', 'source_origins'}
-            and isinstance(value.get('values'), list) and value['values']
-            and all(v is None or (type(v) in (int, float) and np.isfinite(v)) for v in value['values'])):
-        return value['values'], {'encoding': 'vector', 'value_key': 'values',
-                                 'names': value.get('names'), 'units': value.get('units')}
+    if (
+        enabled
+        and isinstance(value, dict)
+        and set(value)
+        <= {"values", "names", "units", "source_origins", "validity", "source_timestamp_ns"}
+        and isinstance(value.get("values"), list)
+        and value["values"]
+        and all(v is None or (type(v) in (int, float) and np.isfinite(v)) for v in value["values"])
+    ):
+        return value["values"], {
+            "encoding": "vector",
+            "value_key": "values",
+            "names": value.get("names"),
+            "units": value.get("units"),
+        }
     return lerobot_value(value)
 
 
 def capture_type(value, encoding, name, enabled):
-    if enabled and name in {'/observation/state', '/action'} and encoding and encoding.get('encoding') == 'vector':
-        return pa.list_(pa.float64(), len(value)), 'float64', (len(value),)
-    if enabled and name == 'source.timestamp_ns' and value is None:
-        return pa.int64(), 'int64', ()
+    if (
+        enabled
+        and name in {"/observation/state", "/action"}
+        and encoding
+        and encoding.get("encoding") == "vector"
+    ):
+        return pa.list_(pa.float64(), len(value)), "float64", (len(value),)
+    if enabled and name == "source.timestamp_ns" and value is None:
+        return pa.int64(), "int64", ()
     return feature_type(value, pa)
 
 
@@ -91,7 +73,11 @@ def write_episode(
     if not np.isfinite(fps) or fps <= 0:
         raise ValueError("Episode frequency must be finite and positive")
     capture_masking = bool(metadata.get("quality", {}).get("capture_quality"))
-    iterator = iter(steps)
+    from .capture_validity import apply_validity
+
+    contract = (metadata.get("capture") or {}).get("output", {})
+    capture_values = capture_masking or bool(contract)
+    iterator = iter(apply_validity(steps, metadata))
     first = next(iterator, None)
     if first is None:
         raise ValueError("cannot write an empty Episode")
@@ -106,7 +92,7 @@ def write_episode(
     (root / "hc").mkdir()
     features, types, encodings, source_types, source_shapes = {}, {}, {}, {}, {}
     for name, target in mapping.items():
-        value, encoding = capture_value(first.modalities[name], capture_masking)
+        value, encoding = capture_value(first.modalities[name], capture_values)
         if target in cameras:
             column, value, encoding = (
                 "hc.source_ref." + target,
@@ -116,6 +102,14 @@ def write_episode(
         else:
             column = target
         arrow_type, dtype, shape = capture_type(value, encoding, name, capture_masking)
+        declaration = contract.get("features", {}).get(target)
+        if declaration and target not in cameras:
+            dtype, shape = declaration["dtype"], tuple(declaration["shape"])
+            if shape == (1,) and not isinstance(value, (list, tuple)):
+                shape = ()
+            arrow_type = pa.from_numpy_dtype(dtype)
+            for width in reversed(shape):
+                arrow_type = pa.list_(arrow_type, width)
         source_types[target], source_shapes[target] = arrow_type, list(shape)
         # Official LeRobot treats shape=(1,) as a scalar Parquet column. Keep
         # the source shape separately so platform reads reconstruct [value].
@@ -128,15 +122,20 @@ def write_episode(
             "shape": list(shape or (1,)),
             "names": (encoding or {}).get("names"),
         }
+        if declaration and target not in cameras:
+            features[column].update(
+                names=declaration.get("names"), units=declaration.get("units", [])
+            )
         if encoding:
             encodings[target] = encoding
-            if "units" in encoding:
+            if "units" in encoding and not declaration:
                 features[column]["units"] = encoding["units"]
         for suffix, kind, type_ in (
             ("source_timestamps_ns", "string", pa.string()),
             ("time_error_ns", "string", pa.string()),
             ("valid", "bool", pa.bool_()),
             ("repeated", "bool", pa.bool_()),
+            *(((("axis_validity", "string", pa.string()),)) if contract else ()),
         ):
             key = f"hc.{suffix}.{target}"
             types[key] = type_
@@ -155,8 +154,8 @@ def write_episode(
         types[key] = type_
         features[key] = {"dtype": dtype, "shape": [1], "names": None}
     if capture_masking:
-        types['hc.action_source_origins'] = pa.string()
-        features['hc.action_source_origins'] = {'dtype': 'string', 'shape': [1], 'names': None}
+        types["hc.action_source_origins"] = pa.string()
+        features["hc.action_source_origins"] = {"dtype": "string", "shape": [1], "names": None}
     schema = pa.schema(list(types.items()))
     frame_schema = pa.schema(
         [
@@ -180,9 +179,11 @@ def write_episode(
         data_writer.write_table(table)
         for key, statistics in moments.items():
             values = table[key].to_pylist()
-            mask_key = 'hc.valid.' + key
-            if capture_masking and mask_key in table.column_names:
-                values = [v for v, valid in zip(values, table[mask_key].to_pylist(), strict=True) if valid]
+            mask_key = "hc.valid." + key
+            if (capture_masking or contract) and mask_key in table.column_names:
+                values = [
+                    v for v, valid in zip(values, table[mask_key].to_pylist(), strict=True) if valid
+                ]
             if values:
                 statistics.add(values)
         frame_writer.write_table(pa.Table.from_pylist(source_rows, schema=frame_schema))
@@ -200,7 +201,7 @@ def write_episode(
                 or set(step.modalities) != set(mapping)
             ):
                 raise ValueError("aligned step identity/schema/order differs from frozen input")
-            row = {
+            row: dict[str, Any] = {
                 "index": count,
                 "frame_index": count,
                 "episode_index": 0,
@@ -213,13 +214,25 @@ def write_episode(
                 if target in cameras:
                     row["hc.source_ref." + target] = canonical(step.modalities[name]).decode()
                 else:
-                    value, encoding = capture_value(step.modalities[name], capture_masking)
+                    value, encoding = capture_value(step.modalities[name], capture_values)
                     if encoding != encodings.get(target):
                         raise ValueError("numeric semantics changed within Episode")
-                    if capture_type(value, encoding, name, capture_masking)[0] != source_types[target]:
+                    if (
+                        not contract.get("features", {}).get(target)
+                        and capture_type(value, encoding, name, capture_masking)[0]
+                        != source_types[target]
+                    ):
                         raise ValueError("numeric dtype/shape changed within Episode")
-                    if capture_masking and (value is None or isinstance(value, list) and any(v is None for v in value)) and step.valid.get(name, False):
-                        raise ValueError('missing numerical value is marked valid')
+                    if (
+                        capture_masking
+                        and (
+                            value is None
+                            or isinstance(value, list)
+                            and any(v is None for v in value)
+                        )
+                        and step.valid.get(name, False)
+                    ):
+                        raise ValueError("missing numerical value is marked valid")
                     row[target] = value[0] if source_shapes[target] == [1] else value
                 # Unknown stays unknown in the trace; never infer validity from absent evidence.
                 row[f"hc.source_timestamps_ns.{target}"] = canonical(
@@ -228,9 +241,15 @@ def write_episode(
                 row[f"hc.time_error_ns.{target}"] = canonical(step.time_error_ns.get(name)).decode()
                 row[f"hc.valid.{target}"] = step.valid.get(name, False)
                 row[f"hc.repeated.{target}"] = step.repeated.get(name, False)
+                if contract:
+                    row[f"hc.axis_validity.{target}"] = canonical(
+                        step.axis_validity.get(name, ())
+                    ).decode()
             if capture_masking:
-                action = step.modalities.get('/action', {})
-                row['hc.action_source_origins'] = canonical(action.get('source_origins', {})).decode()
+                action = step.modalities.get("/action", {})
+                row["hc.action_source_origins"] = canonical(
+                    action.get("source_origins", {})
+                ).decode()
                 if step.sample_valid:
                     training_indices.append(count)
             pending.append(row)
@@ -250,11 +269,17 @@ def write_episode(
         if pending:
             flush(output, source_output)
     if capture_masking:
-        write_json(root, 'hc/training_selection.json', {
-            'schema_version': 'hc-training-selection/v1',
-            'row_count': count, 'selected_frame_indices': training_indices,
-            'policy': 'drop_invalid_rows_preserve_source_time/v1'})
-    stats = {key: item.document() for key, item in moments.items()}
+        write_json(
+            root,
+            "hc/training_selection.json",
+            {
+                "schema_version": "hc-training-selection/v1",
+                "row_count": count,
+                "selected_frame_indices": training_indices,
+                "policy": "drop_invalid_rows_preserve_source_time/v1",
+            },
+        )
+    stats = {key: item.document() for key, item in moments.items() if item.count}
     task = metadata.get("task") or "unknown"
     episode = {
         "episode_index": 0,
@@ -341,7 +366,19 @@ def write_episode(
         "hc.structured_features": encodings,
         "hc.source_shapes": source_shapes,
         "hc.package_version": "hc-episode-package/1",
-        **({'hc.training_policy': 'drop_invalid_rows_preserve_source_time/v1'} if capture_masking else {}),
+        **(
+            {
+                "hc.capture_contract": contract,
+                "hc.capture_presence": metadata.get("capture_validation", {}).get("presence", {}),
+            }
+            if contract
+            else {}
+        ),
+        **(
+            {"hc.training_policy": "drop_invalid_rows_preserve_source_time/v1"}
+            if capture_masking
+            else {}
+        ),
     }
     for relative, value in {
         "meta/info.json": info,
@@ -405,5 +442,6 @@ def write_episode(
         shutil.copyfile(origin, target)
     if capture_masking:
         from .capture_selection import compact_capture_rows
+
         compact_capture_rows(root)
     return validate_package(root, source)

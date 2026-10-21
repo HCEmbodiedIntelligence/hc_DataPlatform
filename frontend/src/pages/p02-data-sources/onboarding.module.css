@@ -1,0 +1,58 @@
+.panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
+.panel p {
+  margin: 0;
+  color: var(--hc-color-text-muted, #6e7287);
+  font-size: 13px;
+}
+.summarySurface {
+  overflow: hidden;
+  border: 1px solid #e1e4ef;
+  border-radius: var(--hc-radius-xl, 20px);
+  box-shadow: var(--hc-shadow-md);
+}
+.metricAction {
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.metricAction:focus-visible {
+  outline: 2px solid var(--hc-color-primary, #5965d8);
+  outline-offset: -3px;
+}
+.metricAction:hover::before,
+.metricAction[aria-pressed="true"]::before {
+  background: var(--hc-color-primary, #5965d8);
+}
+.metricLabel {
+  color: #6e7287;
+  font-size: 11px;
+  font-weight: 640;
+}
+.hint {
+  font-size: 12px;
+}
+.filters :global([class*="filterFields"]) {
+  grid-template-columns: minmax(210px, 1.8fr) repeat(2, minmax(130px, 1fr));
+}
+.filters label,
+.moreFilter {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--hc-color-text-muted, #6e7287);
+}
+.moreFilter {
+  max-width: 300px;
+}
+@media (max-width: 760px) {
+  .filters :global([class*="filterFields"]) {
+    grid-template-columns: 1fr;
+  }
+}

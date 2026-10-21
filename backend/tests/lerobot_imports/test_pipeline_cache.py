@@ -21,6 +21,7 @@ def test_episode_caches_are_independent_and_idle_entries_are_evicted(tmp_path, p
         "robot_type": "unitree_g1",
         "data_path": "data/{file_index}.parquet",
         "video_path": "videos/{video_key}/{file_index}.mp4",
+        "features": {camera.feature_key: {"dtype": "video"} for camera in reader.CAMERAS},
     }
     rows = []
     for index in range(2):

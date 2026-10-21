@@ -42,7 +42,7 @@ def freeze_camera_calibration(package, connections, modalities):
 
 
 def bind_calibration(configuration, robot_id, info):
-    from .delivery_repository import failure
+    from .delivery_errors import failure
 
     mapping = info.get("hc.feature_mapping", {})
     videos = {k: v for k, v in info["features"].items() if v["dtype"] == "video"}

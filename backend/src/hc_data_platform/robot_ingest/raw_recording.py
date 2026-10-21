@@ -189,7 +189,21 @@ def materialize(
             with target.open("wb") as stream:
                 verify(storage, source.object_key, item.size, item.sha256, progress, stream)
         output = Path(directory) / "derived"
-        config, roles = prepare(root, output, command, progress)
+        session = json.loads((root / "session.json").read_text())
+        if session.get("schema_version") == "hc-topic-video/v1":
+            from hc_data_platform.continuous_recordings.topic_video import prepare as prepare_video
+
+            config, roles = prepare_video(
+                root, output, command, getattr(upload, "processing_config_snapshot", None), progress
+            )
+        else:
+            config, roles = prepare(root, output, command, progress)
+            if getattr(upload, "processing_config_snapshot", None):
+                from hc_data_platform.capture_schemes.bundles import validate_prepared
+
+                validate_prepared(
+                    root, output, config, getattr(upload, "processing_config_snapshot", None)
+                )
         declarations, assets = [], {}
         template = next(iter(originals.values()))
         for path in sorted(output.rglob("*")):

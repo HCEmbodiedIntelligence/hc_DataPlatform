@@ -1,0 +1,1216 @@
+{
+  "source_inventory_sha256": "b2acbc2700c2de273526fabc9646cb16b65663bbca6b79c64aed122ae502ff14",
+  "observed_at": "2026-10-21T00:43:06.518577+00:00",
+  "sources": [
+    {
+      "raw_source_id": "raw-c3f2e3f513795be5a0a3d5a47c8ddafe",
+      "info": {
+        "codebase_version": "v3.0",
+        "robot_type": "x1",
+        "total_episodes": 1,
+        "total_frames": 114,
+        "total_tasks": 1,
+        "chunks_size": 1000,
+        "data_files_size_in_mb": 100,
+        "video_files_size_in_mb": 200,
+        "fps": 15,
+        "splits": {
+          "train": "0:1"
+        },
+        "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+        "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        "features": {
+          "observation.state": {
+            "dtype": "float32",
+            "shape": [
+              29
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "head_1",
+              "head_2",
+              "Joint1_R",
+              "Joint2_R",
+              "Joint3_R",
+              "Joint4_R",
+              "Joint5_R",
+              "Joint6_R",
+              "Joint7_R",
+              "R_ban",
+              "Joint1_L",
+              "Joint2_L",
+              "Joint3_L",
+              "Joint4_L",
+              "Joint5_L",
+              "Joint6_L",
+              "Joint7_L",
+              "L_ban",
+              "right_wheel_1",
+              "right_wheel_2",
+              "right_wheel_3",
+              "right_wheel_4",
+              "left_wheel_1",
+              "left_wheel_2",
+              "left_wheel_3",
+              "left_wheel_4"
+            ]
+          },
+          "action": {
+            "dtype": "float32",
+            "shape": [
+              19
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "Joint1_R",
+              "Joint2_R",
+              "Joint3_R",
+              "Joint4_R",
+              "Joint5_R",
+              "Joint6_R",
+              "Joint7_R",
+              "R_ban",
+              "Joint1_L",
+              "Joint2_L",
+              "Joint3_L",
+              "Joint4_L",
+              "Joint5_L",
+              "Joint6_L",
+              "Joint7_L",
+              "L_ban"
+            ]
+          },
+          "observation.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.base.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.headset.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.base.velocity": {
+            "dtype": "float32",
+            "shape": [
+              6
+            ],
+            "names": [
+              "vx",
+              "vy",
+              "vz",
+              "wx",
+              "wy",
+              "wz"
+            ]
+          },
+          "observation.source_time": {
+            "dtype": "float64",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "observation.base.pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.recording_time": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ],
+            "names": [
+              "seconds_since_first_log_time"
+            ]
+          },
+          "observation.source_available": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "observation.base.pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.source_valid": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "observation.base.pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.source_age": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "observation.base.pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "action",
+              "observation.state"
+            ]
+          },
+          "timestamp": {
+            "dtype": "float32",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "frame_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "episode_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "task_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          }
+        }
+      },
+      "structure_sha256": "fbec40dae69ec68b1c46c79d66fdbf61e821a254a02f43be0296c0ad3faa33fc"
+    },
+    {
+      "raw_source_id": "raw-53fb2d862a3a5266b55294c5f387d64b",
+      "info": {
+        "codebase_version": "v3.0",
+        "robot_type": "x1",
+        "total_episodes": 1,
+        "total_frames": 167,
+        "total_tasks": 1,
+        "chunks_size": 1000,
+        "data_files_size_in_mb": 100,
+        "video_files_size_in_mb": 200,
+        "fps": 15,
+        "splits": {
+          "train": "0:1"
+        },
+        "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+        "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        "features": {
+          "observation.state": {
+            "dtype": "float32",
+            "shape": [
+              29
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "head_1",
+              "head_2",
+              "Joint1_R",
+              "Joint2_R",
+              "Joint3_R",
+              "Joint4_R",
+              "Joint5_R",
+              "Joint6_R",
+              "Joint7_R",
+              "R_ban",
+              "Joint1_L",
+              "Joint2_L",
+              "Joint3_L",
+              "Joint4_L",
+              "Joint5_L",
+              "Joint6_L",
+              "Joint7_L",
+              "L_ban",
+              "right_wheel_1",
+              "right_wheel_2",
+              "right_wheel_3",
+              "right_wheel_4",
+              "left_wheel_1",
+              "left_wheel_2",
+              "left_wheel_3",
+              "left_wheel_4"
+            ]
+          },
+          "action": {
+            "dtype": "float32",
+            "shape": [
+              19
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "Joint1_R",
+              "Joint2_R",
+              "Joint3_R",
+              "Joint4_R",
+              "Joint5_R",
+              "Joint6_R",
+              "Joint7_R",
+              "R_ban",
+              "Joint1_L",
+              "Joint2_L",
+              "Joint3_L",
+              "Joint4_L",
+              "Joint5_L",
+              "Joint6_L",
+              "Joint7_L",
+              "L_ban"
+            ]
+          },
+          "observation.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.base.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.headset.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.base.velocity": {
+            "dtype": "float32",
+            "shape": [
+              6
+            ],
+            "names": [
+              "vx",
+              "vy",
+              "vz",
+              "wx",
+              "wy",
+              "wz"
+            ]
+          },
+          "observation.source_time": {
+            "dtype": "float64",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "observation.state",
+              "action"
+            ]
+          },
+          "observation.recording_time": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ],
+            "names": [
+              "seconds_since_first_log_time"
+            ]
+          },
+          "observation.source_available": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "observation.state",
+              "action"
+            ]
+          },
+          "observation.source_valid": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "observation.state",
+              "action"
+            ]
+          },
+          "observation.source_age": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "action.base.velocity",
+              "observation.state",
+              "action"
+            ]
+          },
+          "timestamp": {
+            "dtype": "float32",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "frame_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "episode_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "task_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          }
+        }
+      },
+      "structure_sha256": "03b622574fd57e765b1f20ead60d614ab675480d761b4f676850f2bcf02785f1"
+    },
+    {
+      "raw_source_id": "raw-04405f9a9c555600be2939786d84c303",
+      "info": {
+        "codebase_version": "v3.0",
+        "robot_type": "x1",
+        "total_episodes": 1,
+        "total_frames": 203,
+        "total_tasks": 1,
+        "chunks_size": 1000,
+        "data_files_size_in_mb": 100,
+        "video_files_size_in_mb": 200,
+        "fps": 15,
+        "splits": {
+          "train": "0:1"
+        },
+        "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+        "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        "features": {
+          "observation.state": {
+            "dtype": "float32",
+            "shape": [
+              21
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "Joint1_L",
+              "Joint1_R",
+              "head_1",
+              "Joint2_L",
+              "Joint2_R",
+              "head_2",
+              "Joint3_L",
+              "Joint3_R",
+              "Joint4_L",
+              "Joint4_R",
+              "Joint5_L",
+              "Joint5_R",
+              "Joint6_L",
+              "Joint6_R",
+              "Joint7_L",
+              "Joint7_R",
+              "L_ban",
+              "R_ban"
+            ]
+          },
+          "action": {
+            "dtype": "float32",
+            "shape": [
+              19
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "Joint1_L",
+              "Joint1_R",
+              "Joint2_L",
+              "Joint2_R",
+              "Joint3_L",
+              "Joint3_R",
+              "Joint4_L",
+              "Joint4_R",
+              "Joint5_L",
+              "Joint5_R",
+              "Joint6_L",
+              "Joint6_R",
+              "Joint7_L",
+              "Joint7_R",
+              "L_ban",
+              "R_ban"
+            ]
+          },
+          "observation.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.base.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.headset.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.images.observation_cameras_head_color": {
+            "dtype": "video",
+            "shape": [
+              400,
+              640,
+              3
+            ],
+            "names": [
+              "height",
+              "width",
+              "channels"
+            ],
+            "info": {
+              "video.height": 400,
+              "video.width": 640,
+              "video.codec": "h264",
+              "video.pix_fmt": "yuv420p",
+              "video.is_depth_map": false,
+              "video.fps": 15,
+              "video.channels": 3,
+              "has_audio": false
+            }
+          },
+          "observation.source_time": {
+            "dtype": "float64",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.recording_time": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ],
+            "names": [
+              "seconds_since_first_log_time"
+            ]
+          },
+          "observation.source_available": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.source_valid": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.source_age": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "timestamp": {
+            "dtype": "float32",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "frame_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "episode_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "task_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          }
+        }
+      },
+      "structure_sha256": "4f50003a9437338b76e7406affbb6120350700a09724775bd0b4aa19d1085a9c"
+    },
+    {
+      "raw_source_id": "raw-11a7f1690a3d5bc5aa3e46193d4e1fd9",
+      "info": {
+        "codebase_version": "v3.0",
+        "robot_type": "x1",
+        "total_episodes": 1,
+        "total_frames": 203,
+        "total_tasks": 1,
+        "chunks_size": 1000,
+        "data_files_size_in_mb": 100,
+        "video_files_size_in_mb": 200,
+        "fps": 15,
+        "splits": {
+          "train": "0:1"
+        },
+        "data_path": "data/chunk-{chunk_index:03d}/file-{file_index:03d}.parquet",
+        "video_path": "videos/{video_key}/chunk-{chunk_index:03d}/file-{file_index:03d}.mp4",
+        "features": {
+          "observation.state": {
+            "dtype": "float32",
+            "shape": [
+              21
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "Joint1_L",
+              "Joint1_R",
+              "head_1",
+              "Joint2_L",
+              "Joint2_R",
+              "head_2",
+              "Joint3_L",
+              "Joint3_R",
+              "Joint4_L",
+              "Joint4_R",
+              "Joint5_L",
+              "Joint5_R",
+              "Joint6_L",
+              "Joint6_R",
+              "Joint7_L",
+              "Joint7_R",
+              "L_ban",
+              "R_ban"
+            ]
+          },
+          "action": {
+            "dtype": "float32",
+            "shape": [
+              19
+            ],
+            "names": [
+              "leg_1",
+              "leg_2",
+              "zhi",
+              "Joint1_L",
+              "Joint1_R",
+              "Joint2_L",
+              "Joint2_R",
+              "Joint3_L",
+              "Joint3_R",
+              "Joint4_L",
+              "Joint4_R",
+              "Joint5_L",
+              "Joint5_R",
+              "Joint6_L",
+              "Joint6_R",
+              "Joint7_L",
+              "Joint7_R",
+              "L_ban",
+              "R_ban"
+            ]
+          },
+          "observation.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.left_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "action.right_arm.ee_pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.base.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.headset.pose": {
+            "dtype": "float32",
+            "shape": [
+              7
+            ],
+            "names": [
+              "x",
+              "y",
+              "z",
+              "qx",
+              "qy",
+              "qz",
+              "qw"
+            ]
+          },
+          "observation.images.observation_cameras_head_color": {
+            "dtype": "video",
+            "shape": [
+              400,
+              640,
+              3
+            ],
+            "names": [
+              "height",
+              "width",
+              "channels"
+            ],
+            "info": {
+              "video.height": 400,
+              "video.width": 640,
+              "video.codec": "h264",
+              "video.pix_fmt": "yuv420p",
+              "video.is_depth_map": false,
+              "video.fps": 15,
+              "video.channels": 3,
+              "has_audio": false
+            }
+          },
+          "observation.source_time": {
+            "dtype": "float64",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.recording_time": {
+            "dtype": "float64",
+            "shape": [
+              1
+            ],
+            "names": [
+              "seconds_since_first_log_time"
+            ]
+          },
+          "observation.source_available": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.source_valid": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "observation.source_age": {
+            "dtype": "float32",
+            "shape": [
+              9
+            ],
+            "names": [
+              "observation.left_arm.ee_pose",
+              "observation.right_arm.ee_pose",
+              "action.left_arm.ee_pose",
+              "action.right_arm.ee_pose",
+              "observation.base.pose",
+              "observation.headset.pose",
+              "observation.images.observation_cameras_head_color",
+              "action",
+              "observation.state"
+            ]
+          },
+          "timestamp": {
+            "dtype": "float32",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "frame_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "episode_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          },
+          "task_index": {
+            "dtype": "int64",
+            "shape": [
+              1
+            ],
+            "names": null
+          }
+        }
+      },
+      "structure_sha256": "4f50003a9437338b76e7406affbb6120350700a09724775bd0b4aa19d1085a9c"
+    }
+  ]
+}

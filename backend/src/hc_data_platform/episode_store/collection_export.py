@@ -136,6 +136,8 @@ def contract(info):
         "hc.structured_features",
         "hc.source_shapes",
         "hc.training_policy",
+        "hc.capture_contract",
+        "hc.capture_presence",
     )
     result = {key: copy.deepcopy(info.get(key)) for key in fields}
     # JSON may spell the same frequency as 30 or 30.0 across ingress writers.
@@ -295,7 +297,7 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
             subtask_rows.extend(segments)
             offset += member["data"]["frame_count"]
             subtask_offset += len(segments)
-    statistics = {key: moments.document() for key, moments in numeric.items()}
+    statistics = {key: moments.document() for key, moments in numeric.items() if moments.count}
     for key, items in videos.items():
         if items:
             statistics[key] = pooled_stats(items)
@@ -344,7 +346,7 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
         root / EPISODES_PATH,
     )
     pq.write_table(make_task_table(tasks), root / "meta/tasks.parquet")
-    if annotated:
+    if subtask_rows:
         (root / "hc/subtasks.jsonl").write_bytes(
             b"".join(canonical(r) + b"\n" for r in subtask_rows)
         )
@@ -423,7 +425,7 @@ def write_member(
             r["task_index"]: tasks.index(r["task"]) for r in pq.read_table(path).to_pylist()
         }
     segments = []
-    if selection.annotation_file is not None:
+    if selection.annotation_file is not None and selection.track.annotation_ids:
         with view.file("hc/subtasks.jsonl") as path:
             for line in path.read_bytes().splitlines():
                 original = json.loads(line)
@@ -489,8 +491,18 @@ def write_member(
                 output.write_table(table)
                 for key in numeric:
                     values = table[key].to_pylist()
-                    numeric[key].add(values)
-                    episode_stats[key].add(values)
+                    validity = "hc.valid." + key
+                    if validity in table.column_names:
+                        values = [
+                            value
+                            for value, valid in zip(
+                                values, table[validity].to_pylist(), strict=True
+                            )
+                            if valid
+                        ]
+                    if values:
+                        numeric[key].add(values)
+                        episode_stats[key].add(values)
                 mapping.write_table(
                     pa.Table.from_arrays(
                         [
@@ -518,7 +530,9 @@ def write_member(
         "dataset_from_index": offset,
         "dataset_to_index": offset + seen,
     }
-    statistics = {key: moments.document() for key, moments in episode_stats.items()}
+    statistics = {
+        key: moments.document() for key, moments in episode_stats.items() if moments.count
+    }
     source_stats, media = view.document("meta/stats.json"), {}
     for feature in videos:
         original = VIDEO_PATH.format(video_key=feature, chunk_index=0, file_index=0)

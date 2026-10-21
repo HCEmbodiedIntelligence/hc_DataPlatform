@@ -1,0 +1,586 @@
+components:
+  schemas:
+    ConnectionTicket:
+      additionalProperties: false
+      properties:
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        expires_in_seconds:
+          title: Expires In Seconds
+          type: integer
+        ticket:
+          title: Ticket
+          type: string
+      required:
+      - ticket
+      - expires_at
+      - expires_in_seconds
+      title: ConnectionTicket
+      type: object
+    LocalRobot:
+      additionalProperties: false
+      properties:
+        config_fingerprint:
+          pattern: ^[a-f0-9]{64}$
+          title: Config Fingerprint
+          type: string
+        local_robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Local Robot Id
+          type: string
+        model_version_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Model Version Id
+        profile_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Profile Id
+          type: string
+        serial_no:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Serial No
+      required:
+      - local_robot_id
+      - profile_id
+      - config_fingerprint
+      title: LocalRobot
+      type: object
+    RedeemConnection:
+      additionalProperties: false
+      properties:
+        local_robot:
+          $ref: '#/components/schemas/LocalRobot'
+        request_id:
+          maxLength: 128
+          minLength: 16
+          title: Request Id
+          type: string
+        ticket:
+          maxLength: 256
+          minLength: 32
+          title: Ticket
+          type: string
+      required:
+      - ticket
+      - request_id
+      - local_robot
+      title: RedeemConnection
+      type: object
+    RedeemedConnection:
+      additionalProperties: false
+      properties:
+        allowed_formats:
+          items:
+            type: string
+          title: Allowed Formats
+          type: array
+        ingest_identity_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Ingest Identity Id
+          type: string
+        local_robot:
+          anyOf:
+          - $ref: '#/components/schemas/LocalRobot'
+          - type: 'null'
+        model_version_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Model Version Id
+          type: string
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        platform_name:
+          title: Platform Name
+          type: string
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        robot_name:
+          title: Robot Name
+          type: string
+        token:
+          title: Token
+          type: string
+      required:
+      - organization_id
+      - robot_id
+      - ingest_identity_id
+      - robot_name
+      - platform_name
+      - allowed_formats
+      - model_version_id
+      - local_robot
+      - token
+      title: RedeemedConnection
+      type: object
+    RobotConnectionInfo:
+      additionalProperties: false
+      properties:
+        allowed_formats:
+          items:
+            type: string
+          title: Allowed Formats
+          type: array
+        ingest_identity_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Ingest Identity Id
+          type: string
+        local_robot:
+          anyOf:
+          - $ref: '#/components/schemas/LocalRobot'
+          - type: 'null'
+        model_version_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Model Version Id
+          type: string
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        platform_name:
+          title: Platform Name
+          type: string
+        robot_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Robot Id
+          type: string
+        robot_name:
+          title: Robot Name
+          type: string
+      required:
+      - organization_id
+      - robot_id
+      - ingest_identity_id
+      - robot_name
+      - platform_name
+      - allowed_formats
+      - model_version_id
+      - local_robot
+      title: RobotConnectionInfo
+      type: object
+    RobotTaskPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SelectableTask'
+          title: Items
+          type: array
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        projects:
+          items:
+            $ref: '#/components/schemas/TaskProject'
+          title: Projects
+          type: array
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      - projects
+      title: RobotTaskPage
+      type: object
+    SelectableTask:
+      additionalProperties: false
+      properties:
+        capture_plan:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Capture Plan
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        description:
+          title: Description
+          type: string
+        name:
+          title: Name
+          type: string
+        ownership:
+          $ref: '#/components/schemas/TaskOwnership'
+        processing_config:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Processing Config
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        project_name:
+          title: Project Name
+          type: string
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        selectable:
+          title: Selectable
+          type: boolean
+        task_code:
+          title: Task Code
+          type: string
+      required:
+      - collection_task_id
+      - project_id
+      - name
+      - task_code
+      - description
+      - project_name
+      - selectable
+      - reason
+      - ownership
+      title: SelectableTask
+      type: object
+    TaskOwnership:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        dataset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+          type: string
+        organization_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - dataset_id
+      - region_code
+      - collection_task_id
+      title: TaskOwnership
+      type: object
+    TaskProject:
+      additionalProperties: false
+      properties:
+        id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+      required:
+      - id
+      - name
+      title: TaskProject
+      type: object
+    TaskSelection:
+      additionalProperties: false
+      properties:
+        local_robot:
+          anyOf:
+          - $ref: '#/components/schemas/LocalRobot'
+          - type: 'null'
+        require_processing_config:
+          default: false
+          title: Require Processing Config
+          type: boolean
+        source_format:
+          enum:
+          - MCAP
+          - LEROBOT_V3
+          - CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+      required:
+      - source_format
+      title: TaskSelection
+      type: object
+info:
+  title: Robot connections and task selection
+  version: '2026-10-19'
+openapi: 3.1.0
+paths:
+  /api/v1/projects/{project_id}/robot-ingest/identities/{identity_id}/connections:
+    post:
+      operationId: issueConnection
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: identity_id
+        required: true
+        schema:
+          title: Identity Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTicket'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Issue Connection
+      tags:
+      - robot-connections
+  /api/v1/robot-ingest/connections:redeem:
+    post:
+      operationId: redeemConnection
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedeemConnection'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeemedConnection'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security: []
+      summary: Redeem Connection
+      tags:
+      - robot-connections
+  /api/v1/robot-ingest/me:
+    get:
+      operationId: machineIdentity
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotConnectionInfo'
+          description: Successful Response
+      security:
+      - robotBearerAuth: []
+      summary: Machine Identity
+      tags:
+      - robot-connections
+  /api/v1/robot-ingest/tasks:
+    get:
+      operationId: machineTasks
+      parameters:
+      - in: query
+        name: source_format
+        required: false
+        schema:
+          default: MCAP
+          enum:
+          - MCAP
+          - LEROBOT_V3
+          - CAPTURE_BUNDLE
+          title: Source Format
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          default: ''
+          maxLength: 200
+          title: Q
+          type: string
+      - in: query
+        name: project_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Project Id
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 50
+          minimum: 1
+          title: Page Size
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotTaskPage'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Machine Tasks
+      tags:
+      - robot-connections
+  /api/v1/robot-ingest/tasks/{task_id}:preflight:
+    post:
+      operationId: machineTask
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskSelection'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelectableTask'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Machine Task
+      tags:
+      - robot-connections
+  /api/v1/robot-ingest/tasks/{task_id}:prepare-recording:
+    post:
+      operationId: prepareRobotTaskRecording
+      parameters:
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrepareRecording'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureRecordingSnapshot'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Prepare Task Recording
+      tags:
+      - robot-connections

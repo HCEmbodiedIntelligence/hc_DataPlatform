@@ -34,9 +34,11 @@ class OrganizationRobotAssetService:
         repository: OrganizationRobotAssetRepository,
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        resolution=None,
     ) -> None:
         self._repository = repository
         self._clock = clock
+        self._resolution = resolution
 
     @classmethod
     def in_memory(cls) -> OrganizationRobotAssetService:
@@ -205,6 +207,46 @@ class OrganizationRobotAssetService:
             request_id=request_id,
         )
 
+    def deletion_check(self, *, auth, organization_id, robot_id, kind=None, offset=0, limit=20):
+        self._authorize(auth, organization_id, "robot.manage")
+        if self._repository.get_robot(organization_id=organization_id, robot_id=robot_id) is None:
+            raise problem(
+                status=404,
+                code="ROBOT_NOT_FOUND",
+                title="机器人不存在",
+                detail="当前组织中没有这台机器人。",
+            )
+        return self._repository.deletion_check(
+            organization_id,
+            robot_id,
+            auth,
+            kind,
+            offset,
+            limit,
+        )
+
+    def resolution_plan(self, *, auth, organization_id, robot_id):
+        self._authorize(auth, organization_id, "robot.manage")
+        if self._resolution is None:
+            raise problem(
+                status=503,
+                code="ROBOT_RESOLUTION_UNAVAILABLE",
+                title="处理服务未就绪",
+                detail="机器人关联处理服务尚未配置。",
+            )
+        return self._resolution.plan(organization_id, robot_id, auth)
+
+    def resolve(self, *, auth, organization_id, robot_id, command, idempotency_key):
+        self._authorize(auth, organization_id, "robot.manage")
+        if self._resolution is None:
+            raise problem(
+                status=503,
+                code="ROBOT_RESOLUTION_UNAVAILABLE",
+                title="处理服务未就绪",
+                detail="机器人关联处理服务尚未配置。",
+            )
+        return self._resolution.execute(organization_id, robot_id, auth, command, idempotency_key)
+
     def delete_robot(
         self,
         *,
@@ -227,10 +269,7 @@ class OrganizationRobotAssetService:
                 status=409,
                 code="ROBOT_IN_USE",
                 title="Robot instance is in use",
-                detail=(
-                    "Remove the robot's data source, upload identity, project assignment, "
-                    "topology, calibration, and raw-data references before deleting it."
-                ),
+                detail=str(exc),
             ) from exc
 
     def update_robot(

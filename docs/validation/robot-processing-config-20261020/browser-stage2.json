@@ -1,0 +1,8 @@
+{
+  "checks": [
+    "Original channel inventory displays zero image counts",
+    "Selected v2 explicitly; new processing generation preserves v1 and its missing-image error"
+  ],
+  "screenshots": [],
+  "onboarding": "跳到主要内容\nHC 数据平台\n当前项目\nraw-pin-8ff725b88c734440b9322c745bba046b / 配置验收 A\n当前存储地址\n请选择存储地址\n搜索机器人\n通知\nC\nConfig test\n工作台\n采集与接收\n采集任务\n数据源\n数据上传\n数据生产\n录制切片\n数据集\n数据标注\n数据导出\n问题数据\n治理与资产\n存储容量\n生命周期\n机器人模型\n机器人实例\n安全与审计\n账户与权限\n审计日志\n平台设置\n数据接入\n数据源\n数据源\n机器人接入\n外部数据接入\n\n当前组织：raw-pin-8ff725b88c734440b9322c745bba046b · 每台设备一个 Robot ID，上传归属由采集任务决定\n\n接入机器人\nROBOTS\n机器人总数\n1\n当前组织的设备\nONLINE\n在线机器人\n0\n5 分钟内有效通信\nONBOARDING\n待完成接入\n0\n待配置或验证连接\nISSUES\n需处理设备\n0\n尚未恢复的接入故障\n\n在线依据 5 分钟内的有效设备认证或心跳。正常空闲离线、主动停用和首次配置未完成不计为故障。\n\n搜索\n连接状态\n全部\n上传权限\n全部\n重置\n应用筛选\n更多筛选\n匹配 1 台机器人\n刷 新\n排序 \n最近更新\n机器人\t上传权限\t凭据状态\t连接状态\t待处理原因\t操作\n\n机器人\n\t\n上传权限\n\t\n凭据状态\n\t\n连接状态\n\t\n待处理原因\n\t\n操作\n\n\n关节采集验收机器人\nsynthetic\nsynthetic-platform-robot\n\t已开通\t有可用凭据\t离线\n2026/10/20 09:20:32\n\t—\t\n查看接入详情\n1\n20 条/页"
+}

@@ -39,9 +39,17 @@ def freeze_native_plan(session, request, manifest, staging, quality, *, quality_
         "robot_type": info.get("robot_type", "unknown"),
         "source": {
             "format": "lerobot_v3",
-            "original_inventory": [NativeFile(relative_path=item["path"], object=FrozenObject(
-                item.get("object_key") or f"{session.raw.storage_prefix}/{item['path']}",
-                item["size"], item["sha256"])).model_dump(mode="json") for item in session.raw_manifest["files"]],
+            "original_inventory": [
+                NativeFile(
+                    relative_path=item["path"],
+                    object=FrozenObject(
+                        item.get("object_key") or f"{session.raw.storage_prefix}/{item['path']}",
+                        item["size"],
+                        item["sha256"],
+                    ),
+                ).model_dump(mode="json")
+                for item in session.raw_manifest["files"]
+            ],
             "raw_upload_id": session.raw.raw_source_id,
             "raw_manifest_sha256": session.source.source_sha256,
             "episode_index": session.source.lerobot.episode_index,
@@ -113,19 +121,34 @@ def freeze_native_plan(session, request, manifest, staging, quality, *, quality_
         episode_id="episode_" + hashlib.sha256(session.source.rollout_id.encode()).hexdigest()[:32],
         rollout_id=session.source.rollout_id,
     )
-    schema = DatasetSchemaSnapshot.create(
-        project_id=request.project_id,
-        dataset_id=request.dataset_id,
-        schema_snapshot_id=request.schema_snapshot_id,
-        frequency_hz=request.profile.frequency_hz,
-        fields={topic: "json" for topic in stream.profile.topics},
-    )
+    if session.source.lerobot.capture_snapshot is not None:
+        from hc_data_platform.capture_schemes.schema import semantic_schema
+
+        capture = session.source.lerobot.capture_snapshot
+        schema = semantic_schema(
+            request.project_id,
+            request.dataset_id,
+            capture["output"],
+            {topic: "json" for topic in stream.profile.topics},
+        )
+        metadata["capture"] = capture
+        metadata["capture_validation"] = session.source.lerobot.capture_validation
+    else:
+        schema = DatasetSchemaSnapshot.create(
+            project_id=request.project_id,
+            dataset_id=request.dataset_id,
+            schema_snapshot_id=request.schema_snapshot_id,
+            frequency_hz=request.profile.frequency_hz,
+            fields={topic: "json" for topic in stream.profile.topics},
+        )
     plan = NativeEpisodePlan.freeze(
         input=PackageInput(
             identity=identity,
             source_sha256=session.source.source_sha256,
             processor_version=request.profile.converter_version,
-            configuration_sha256="0" * 64,
+            configuration_sha256=(session.source.lerobot.capture_snapshot or {}).get(
+                "snapshot_sha256", "0" * 64
+            ),
             schema_snapshot_id=request.schema_snapshot_id,
             required_features=tuple(sorted(mapping.values())),
             required_depth_features=tuple(

@@ -186,7 +186,13 @@ _PUBLIC_API_OPERATIONS = frozenset(
     }
 )
 _SESSION_LOGOUT_OPERATION = ("/api/v1/auth/session:logout", "POST")
-_ROBOT_INGEST_UPLOAD_PREFIX = "/api/v1/robot-ingest/uploads"
+_ROBOT_INGEST_UPLOAD_PREFIX = (
+    "/api/v1/robot-ingest/uploads",
+    "/api/v1/robot-ingest/heartbeat",
+    "/api/v1/robot-ingest/connections:redeem",
+    "/api/v1/robot-ingest/me",
+    "/api/v1/robot-ingest/tasks",
+)
 _MAINTENANCE_CONTROL_PREFIX = "/api/v1/platform/maintenance-operations"
 _COMMAND_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _OPERATION_ID_OVERRIDES = {
@@ -670,7 +676,9 @@ def _normalize_operation_contracts(document: dict[str, Any]) -> None:
             operation_key = (path, normalized_method)
             _normalize_error_response_contracts(operation)
             if path.startswith("/api/v1/"):
-                if path.startswith(_ROBOT_INGEST_UPLOAD_PREFIX):
+                if path == "/api/v1/robot-ingest/connections:redeem":
+                    operation["security"] = []
+                elif path.startswith(_ROBOT_INGEST_UPLOAD_PREFIX):
                     operation["security"] = [{"robotBearerAuth": []}]
                 else:
                     operation["security"] = (
@@ -990,6 +998,8 @@ def create_app(
         configure_api(runtime)
         app.state.runtime = runtime
         app.state.episode_packages = runtime.episode_packages
+        app.state.capture_schemes = runtime.capture_schemes
+        app.state.lerobot_uploads = runtime.lerobot_uploads
         app.state.logical_data = runtime.logical_data
         app.state.annotation_logical = runtime.annotation_logical
         if runtime.episode_packages is not None:
@@ -1389,9 +1399,13 @@ def create_app(
     for module in discover_module_routers(module_package):
         app.include_router(module.router)
         if module.module_name == "robot_ingest":
+            from hc_data_platform.robot_ingest.onboarding_api import router as onboarding_router
             from hc_data_platform.robot_ingest.processing_api import router as processing_router
 
             app.include_router(processing_router)
+            app.include_router(onboarding_router)
+            from hc_data_platform.robot_ingest.connection_api import router as connection_router
+            app.include_router(connection_router)
     original_openapi = app.openapi
 
     def normalized_openapi() -> dict[str, Any]:

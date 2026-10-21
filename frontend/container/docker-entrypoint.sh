@@ -2,6 +2,7 @@
 set -eu
 
 api_base_url="${VITE_API_BASE_URL:-/api/v1}"
+robot_platform_base_url="${VITE_ROBOT_PLATFORM_BASE_URL:-}"
 sse_base_url="${VITE_SSE_BASE_URL:-/api/v1/events}"
 mock_mode="${VITE_MOCK_MODE:-off}"
 build_version="${VITE_BUILD_VERSION:-}"
@@ -25,6 +26,17 @@ validate_public_url() {
 
 validate_public_url "$api_base_url" VITE_API_BASE_URL
 validate_public_url "$sse_base_url" VITE_SSE_BASE_URL
+if [ -n "$robot_platform_base_url" ] && ! printf '%s' "$robot_platform_base_url" | grep -Eq '^https?://[][A-Za-z0-9._~:/%+-]+$'; then
+  echo "VITE_ROBOT_PLATFORM_BASE_URL must be an absolute HTTP(S) platform URL" >&2
+  exit 1
+fi
+# Shell patterns also reject embedded newlines, which grep would match line by line.
+case "$robot_platform_base_url" in
+  *[!][A-Za-z0-9._~:/%+-]*)
+    echo "VITE_ROBOT_PLATFORM_BASE_URL contains invalid URL characters" >&2
+    exit 1
+    ;;
+esac
 
 if [ "$mock_mode" != off ]; then
   echo "VITE_MOCK_MODE must be off in a container release" >&2
@@ -95,6 +107,7 @@ temporary_file="$runtime_file.tmp"
 printf '%s\n' \
   'globalThis.__HC_RUNTIME_CONFIG__ = Object.freeze({' \
   "  VITE_API_BASE_URL: \"$api_base_url\"," \
+  "  VITE_ROBOT_PLATFORM_BASE_URL: \"$robot_platform_base_url\"," \
   "  VITE_SSE_BASE_URL: \"$sse_base_url\"," \
   '  VITE_MOCK_MODE: "off",' \
   "  VITE_BUILD_VERSION: \"$build_version\"," \

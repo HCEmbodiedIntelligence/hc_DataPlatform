@@ -69,20 +69,25 @@ export function ProcessingLabels({
     return <p>已关联标注规则，处理完成后自动创建标注任务。</p>;
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
-      <p>请先配置该数据集的标注标签，或在数据规则管理中关联已有规则。</p>
-      <Input.TextArea
-        aria-label="标注标签"
-        value={labels}
-        onChange={(e) => setLabels(e.target.value)}
-        placeholder="每行一个标签"
-      />
-      <Button
-        loading={save.isPending}
-        disabled={!labels.trim()}
-        onClick={() => save.mutate()}
-      >
-        保存并发布标注规则
-      </Button>
+      <p>
+        标注待配置。符合任务采集方案的数据可先入库、查看和导出；需要标注时再配置规则。
+      </p>
+      <details>
+        <summary>可选：配置标注规则</summary>
+        <Input.TextArea
+          aria-label="标注标签"
+          value={labels}
+          onChange={(e) => setLabels(e.target.value)}
+          placeholder="每行一个标签"
+        />
+        <Button
+          loading={save.isPending}
+          disabled={!labels.trim()}
+          onClick={() => save.mutate()}
+        >
+          保存并发布标注规则
+        </Button>
+      </details>
       {configuration.isError || save.isError ? (
         <Alert
           type="error"

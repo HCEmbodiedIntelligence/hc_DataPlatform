@@ -1,0 +1,143 @@
+{
+  "checks": [
+    "Actual joint curve loaded; no video or placeholder video; time slice saved and finalized through browser"
+  ],
+  "screenshots": [],
+  "workbench": "跳到主要内容\nHC 数据平台\n当前项目\nraw-pin-8ff725b88c734440b9322c745bba046b / 配置验收 A\n当前存储地址\n请选择存储地址\n搜索机器人\n通知\nC\nConfig test\n工作台\n采集与接收\n采集任务\n数据源\n数据上传\n数据生产\n录制切片\n数据集\n数据标注\n数据导出\n问题数据\n治理与资产\n存储容量\n生命周期\n机器人模型\n机器人实例\n安全与审计\n账户与权限\n审计日志\n平台设置\n原始录制\n2 条 · 待切片 2 条\n仅当前采集任务\n全部\n待切片\n已成片\n上一条\n下一条\n下一条待切片\n1970/1/1 08:00:01\n待切片\njoints.mcap\n关节采集验收机器人 · 任务 78581016 · 0 秒\n1970/1/1 08:00:01\n待切片\nrgb.mcap\n关节采集验收机器人 · 任务 78581016 · 0 秒\n录制切片\n\njoints.mcap · 0 秒 · 0 路相机 · 关节采集验收机器人 · 任务 78581016\n\n可编辑\n录制切片\n/\njoints.mcap\n\n直接读取存储中的原视频与原始关节角；视频、时间轴与 URDF 使用同一录制时钟。\n\n原始文件\n已保存 r0\n保存草稿\n提交成片\n无相机数据 · 使用关节曲线与时间切片\n数据清单中未发现相机。关节、动作与质检轨道仍可独立诊断。\n机器人姿态\n共享时间轴\n3D 姿态暂不可用\n当前已发布模型没有可用的 URDF 资产。\n0.00s / 0.40s\n0.5x\n1x\n2x\nEpisode\n0\n新增 Episode\n设为入点\nI\n开始标记\nO\n播放头拆分\n边界有效\n还没有 Episode\n不分段可直接提交完整录制；需要多段时，在时间轴空白处拖拽新增 Episode。\n0.00s\n全部相机、关节、动作与质检共享此光标\n设为入点\n设为出点\n−\n1x\n＋\n0.00s\n0.04s\n0.08s\n0.12s\n0.16s\n0.20s\n0.24s\n0.28s\n0.32s\n0.36s\n0.40s\nEpisode\n当前时间范围无可用信号\n所有相机、关节状态、动作指令与自动质检共享的时间轴文字摘要\n轨道\t区间与事件\nEpisode\t当前时间范围无可用信号\n方向键微调 0.10s · Home / End 跳转边界 · 只有一条视频播放时间轴\n关节位置变化\n0.00s · /robot/joint_states\n0.19rad-0.080.00s0.40s\njoint\n0.00 rad\n\n12 个真实样本 · 8 秒滑动窗口 · 橙色竖线为共享光标",
+  "inputs": [
+    {
+      "tag": "INPUT",
+      "label": "当前项目",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "INPUT",
+      "label": "当前存储地址",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "全局搜索",
+      "placeholder": null,
+      "text": "搜索机器人",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "通知",
+      "placeholder": null,
+      "text": "通知",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "账户菜单",
+      "placeholder": null,
+      "text": "CConfig test",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "折叠导航",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "收起原始录制",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "INPUT",
+      "label": "搜索原始录制",
+      "placeholder": "搜索录制",
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "切换到录制 joints.mcap",
+      "placeholder": null,
+      "text": "1970/1/1 08:00:01待切片joints.mcap关节采集验收机器人 · 任务 78581016 · 0 秒",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "切换到录制 rgb.mcap",
+      "placeholder": null,
+      "text": "1970/1/1 08:00:01待切片rgb.mcap关节采集验收机器人 · 任务 78581016 · 0 秒",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "返回录制列表",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "播放",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "暂停",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "后退 0.10s",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "前进 0.10s",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "切片快捷键",
+      "placeholder": null,
+      "text": "",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "缩小时间轴",
+      "placeholder": null,
+      "text": "−",
+      "value": ""
+    },
+    {
+      "tag": "BUTTON",
+      "label": "放大时间轴",
+      "placeholder": null,
+      "text": "＋",
+      "value": ""
+    },
+    {
+      "tag": "DIV",
+      "label": "共享播放位置",
+      "placeholder": null,
+      "text": "",
+      "value": null
+    }
+  ],
+  "onboarding": "跳到主要内容\nHC 数据平台\n当前项目\nraw-pin-8ff725b88c734440b9322c745bba046b / 配置验收 A\n当前存储地址\n请选择存储地址\n搜索机器人\n通知\nC\nConfig test\n工作台\n采集与接收\n采集任务\n数据源\n数据上传\n数据生产\n录制切片\n数据集\n数据标注\n数据导出\n问题数据\n治理与资产\n存储容量\n生命周期\n机器人模型\n机器人实例\n安全与审计\n账户与权限\n审计日志\n平台设置\n数据接入\n数据源\n数据源\n机器人接入\n外部数据接入\n\n当前组织：raw-pin-8ff725b88c734440b9322c745bba046b · 每台设备一个 Robot ID，上传归属由采集任务决定\n\n接入机器人\nROBOTS\n机器人总数\n1\n当前组织的设备\nONLINE\n在线机器人\n0\n5 分钟内有效通信\nONBOARDING\n待完成接入\n0\n待配置或验证连接\nISSUES\n需处理设备\n0\n尚未恢复的接入故障\n\n在线依据 5 分钟内的有效设备认证或心跳。正常空闲离线、主动停用和首次配置未完成不计为故障。\n\n搜索\n连接状态\n全部\n上传权限\n全部\n重置\n应用筛选\n更多筛选\n匹配 1 台机器人\n刷 新\n排序 \n最近更新\n机器人\t上传权限\t凭据状态\t连接状态\t待处理原因\t操作\n\n机器人\n\t\n上传权限\n\t\n凭据状态\n\t\n连接状态\n\t\n待处理原因\n\t\n操作\n\n\n关节采集验收机器人\nsynthetic\nsynthetic-platform-robot\n\t已开通\t有可用凭据\t离线\n2026/10/20 09:20:32\n\t—\t\n查看接入详情\n1\n20 条/页\n关节采集验收机器人\nRobot ID\nsynthetic-platform-robot\n\t\n序列号\nsynthetic\n\n\n模型\nbrowser-model-v1\n\t\n连接验证\n离线\n\n\n最近设备通信\n2026/10/20 09:20:32\n\t\n服务地址\nhttp://127.0.0.1:5180/api/v1\n采集与解析配置\n按组织和机器人维护。发布仅影响后续录制；历史作业保留原配置。\n采集方案\nROS MCAP · 默认\n配置版本 v2 · 草稿修订 2\n样本验证通过（录制前仍需在线检查）\n型号及采集软件模板\n无匹配模板时填写实际通道，不从模型推测\n方案名称\n采集软件\n采集类型\n无相机纯关节\n状态通道\n动作通道\n训练关节顺序（逗号分隔）\n关节单位（按上述顺序）\n主时间来源\n关节状态的 MCAP 原始时间\n匹配容差（毫秒）\n保存草稿\n验证样本（原始数据编号）\n样本文件路径\n验证配置\n发布为默认\n发布为可选方案\n实际通道与验证证据\n版本记录与修改审计\n连接采集端\n在机器人页面粘贴连接链接并点击“连接”，然后按名称选择采集任务。链接有效期为 10 分钟。\n复制连接链接\nsynthetic-platform-robot\nrii-c1d408b90d384c089640fce67632e3dd\n格式与策略\n停 用\n删除\n最近认证\n10/20 09:20\n最近设备通信\n10/20 09:20\n最近上传\n10/20 09:20\n允许格式\nMCAP\n上传批次\n3\n成功 Raw\n3\n技术失败\n0\nEpisode\n0\n合格 Episode\n0\n风险 / 不合格\n0\n今日成功上传量 · Asia/Shanghai\n308.1 KB\n累计 Raw 数据量\n308.1 KB\nQC 合格率\n未评估\n帧 / 样本\n0 / 0\n总采集时长\n0 分钟\n平台凭据\n生成上传凭据\n更换上传凭据\nv3\nhcri_fb262dd0a0ab43068f09ed53edcbb1c1.tzlWjeMd…\n有效\n查看凭据\n撤销\nv2\nhcri_22c9caccd54d4301aab3dc1f50b56f6f.L2FWXQuL…\n有效\n查看凭据\n撤销\nv1\nhcri_046a2bbfa95a48d2a955a158a02cba99.WQj0szAQ…\n有效\n查看凭据\n撤销\n当前项目近期上传\n打开记录\nsynthetic-raw-pin-6d8891b1043f457b87f61f7cbcd972e2\nMCAP · 10/20 09:20\nCOMMITTED\nsynthetic-raw-pin-6d8891b1043f457b87f61f7cbcd972e2\nMCAP · 10/20 09:20\nCOMMITTED\nsynthetic-raw-pin-6d8891b1043f457b87f61f7cbcd972e2\nCAPTURE_BUNDLE · 10/20 09:20\nCOMMITTED"
+}

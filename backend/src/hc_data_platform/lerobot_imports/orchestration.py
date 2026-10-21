@@ -1,8 +1,15 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
 
 from hc_data_platform.ingest.models import Identifier
 
@@ -23,6 +30,16 @@ class LeRobotEpisodeSourceRefV1(BaseModel):
     # Robot processing owns the stable identity; browser imports retain their IDs.
     platform_episode_id: str | None = Field(default=None, pattern=r"^rie-[a-f0-9]{32}$")
     preserve_source_features: bool = False
+    capture_snapshot: dict[str, Any] | None = None
+    capture_validation: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize_capture(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        for key in ("capture_snapshot", "capture_validation"):
+            if document.get(key) is None:
+                document.pop(key, None)
+        return document
 
 
 class LeRobotEpisodeTaskV1(BaseModel):

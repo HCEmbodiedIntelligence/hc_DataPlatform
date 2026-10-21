@@ -89,6 +89,7 @@ def _prepare_app_role(dsn: str) -> None:
             "GRANT USAGE ON SCHEMA core, ingest, registry, robotics TO p02_data_source_writer"
         )
         cursor.execute("GRANT SELECT ON registry.organization_projects TO p02_data_source_writer")
+        cursor.execute("GRANT SELECT ON ingest.raw_sources TO p02_data_source_writer")
         cursor.execute(
             "GRANT SELECT ON robotics.robot_assets, robotics.project_robot_assignments "
             "TO p02_data_source_writer"

@@ -1,0 +1,6 @@
+{
+  "checks": [
+    "Task visual requirement checkbox persisted through API and reload; restored isolated task afterward"
+  ],
+  "screenshots": []
+}

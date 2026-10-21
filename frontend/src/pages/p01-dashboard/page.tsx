@@ -243,6 +243,7 @@ export function DashboardPage() {
           qc: { waiting: 0, passed: 0, risk: 0, rejected: 0, unavailable: 0 },
           stages: taskStageOrder.map((stage) => ({
             stage,
+            notStarted: 0,
             waiting: 0,
             running: 0,
             succeeded: 0,

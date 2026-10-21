@@ -244,6 +244,64 @@ def check_source(module: str, source: str, *, is_package: bool = False) -> list[
                 and any(table in node.value.lower() for table in binding_tables[module])
             ):
                 failures.add(f"{node.lineno}: binding must use the owned transaction query")
+    capture_consumers = {
+        "hc_data_platform.collection_tasks.postgres",
+        "hc_data_platform.robot_ingest.repository",
+        "hc_data_platform.robot_ingest.connections",
+    }
+    if module in capture_consumers:
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and any(
+                    table in node.value.lower()
+                    for table in (
+                        "collection_tasks.capture_plan",
+                        "ingest.capture_scheme",
+                        "ingest.capture_mapping",
+                        "ingest.capture_recording_snapshots",
+                        "episode_store.dataset_capture_contracts",
+                    )
+                )
+            ):
+                failures.add(f"{node.lineno}: capture consumers must use owned transaction APIs")
+            if (
+                module == "hc_data_platform.robot_ingest.connections"
+                and isinstance(node, ast.Attribute)
+                and node.attr in {"_scoped", "_connection_factory"}
+            ):
+                failures.add(f"{node.lineno}: recording preparation must use injected plan ports")
+    for line, target in imports(tree, package):
+        if module == "hc_data_platform.capture_schemes.router" and (
+            (target.startswith("hc_data_platform.") and ".router" in target)
+            or matches(target, "hc_data_platform.core.config")
+            or matches(target, "hc_data_platform.core.dbapi")
+        ):
+            failures.add(f"{line}: capture HTTP must use explicit application dependencies")
+        if module in capture_consumers and any(
+            matches(target, "hc_data_platform.capture_schemes." + name)
+            for name in ("plans", "schemes", "associations", "uploads", "common", "postgres")
+        ):
+            failures.add(f"{line}: capture consumers cannot depend on internal {target}")
+        if (
+            module
+            in {
+                "hc_data_platform.capture_schemes.references",
+                "hc_data_platform.capture_schemes.ports",
+            }
+            and target.startswith("hc_data_platform.")
+            and not any(
+                matches(target, "hc_data_platform.capture_schemes." + name)
+                for name in ("references", "ports")
+            )
+        ):
+            failures.add(f"{line}: capture references and ports must remain pure")
+        if module in {
+            "hc_data_platform.collection_tasks.models",
+            "hc_data_platform.robot_ingest.models",
+        } and matches(target, "hc_data_platform.capture_schemes.models"):
+            failures.add(f"{line}: task/upload models must consume pure capture references")
     if module == "hc_data_platform.dataset_registry.tag_projection":
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute) and node.attr.startswith("_"):

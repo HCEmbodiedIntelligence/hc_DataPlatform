@@ -29,7 +29,7 @@ from hc_data_platform.quality.models import (
 
 from .orchestration import LeRobotEpisodeSourceRefV1
 from .profiles import profile_for_info
-from .reader import read_episode
+from .reader import GenericEpisode, read_episode
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,20 +73,35 @@ class EpisodeStream:
             topic_timestamps_ns={},
             actions=tuple(
                 ActionObservation(timestamp_ns=timestamp, values=values)
-                for timestamp, values in zip(
-                    self.episode.relative_timestamps_ns, self.episode.target_joints, strict=True
+                for index, (timestamp, values) in enumerate(
+                    zip(
+                        self.episode.relative_timestamps_ns, self.episode.target_joints, strict=True
+                    )
                 )
+                if self._numeric_valid("action", index)
             ),
             joints=tuple(
                 JointObservation(
                     timestamp_ns=timestamp,
                     positions=dict(zip(self.profile.state_names, values, strict=True)),
                 )
-                for timestamp, values in zip(
-                    self.episode.relative_timestamps_ns, self.episode.joints, strict=True
+                for index, (timestamp, values) in enumerate(
+                    zip(self.episode.relative_timestamps_ns, self.episode.joints, strict=True)
                 )
+                if self._numeric_valid("observation.state", index)
             ),
         )
+
+    def _numeric_valid(self, name: str, index: int) -> bool:
+        contract = (self.source.capture_snapshot or {}).get("output", {})
+        if not contract:
+            return True
+        if not isinstance(self.episode, GenericEpisode):
+            raise ValueError("CAPTURE_VALIDITY_INVALID: legacy source has no validity channel")
+        from hc_data_platform.episode_store.capture_validity import feature_mask
+
+        values = {key: rows[index] for key, rows in self.episode.extra_values.items()}
+        return all(feature_mask(name, contract, values))
 
     @property
     def alignment_input(self) -> AlignmentInputV1:
@@ -366,7 +381,10 @@ class LeRobotAdapter:
         ):
             raise ValueError("Raw manifest SHA-256 must be lowercase hexadecimal")
         profile, layout, episode = read_episode(
-            source_root, source.episode_index, preserve_features=source.preserve_source_features
+            source_root,
+            source.episode_index,
+            preserve_features=source.preserve_source_features,
+            capture_snapshot=source.capture_snapshot,
         )
         originals: dict[str, OriginalVideoReferenceV1] = {}
         for camera in profile.cameras:

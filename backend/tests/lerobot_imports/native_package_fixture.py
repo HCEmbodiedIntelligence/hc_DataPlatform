@@ -12,10 +12,9 @@ from hc_data_platform.publishing.depth_evidence import DepthEvidenceVideo
 from hc_data_platform.publishing.holobrain_depth import DEFAULT_PROFILE
 
 
-def make_native_rgbd(root, *, depth_source_profile=None, fps=25):
+def make_native_rgbd(root, *, depth_source_profile=None, fps=25, count=6):
     for directory in ("meta/episodes/chunk-000", "data/chunk-000"):
         (root / directory).mkdir(parents=True)
-    count = 6
     features = {
         "observation.state": {"dtype": "float64", "shape": [2], "names": ["x", "y"]},
         "action": {"dtype": "float64", "shape": [2], "names": ["x", "y"]},
@@ -80,7 +79,7 @@ def make_native_rgbd(root, *, depth_source_profile=None, fps=25):
                     "x265-params": "bframes=0:pools=none:frame-threads=1:log-level=error"
                 }
                 for index in range(count):
-                    pixels = np.full((16, 16, 3), 60 + index * 20, dtype=np.uint8)
+                    pixels = np.full((16, 16, 3), 60 + (index % 8) * 20, dtype=np.uint8)
                     frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
                     frame.pts, frame.time_base = index, Fraction(1, fps)
                     for packet in encoder.encode(frame):

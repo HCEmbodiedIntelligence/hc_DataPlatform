@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol
 
+from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.ingest.planning_errors import (
     IngestWorkflowPlanBlocked as IngestWorkflowPlanBlocked,
@@ -24,6 +25,9 @@ class IngestWorkflowInputResolver(Protocol):
     """Resolve immutable, persisted processing inputs; never infer them from UI fixtures."""
 
     def terminal_result(self, event: DomainEventEnvelope) -> object | None: ...
+    def record_plan_failure(
+        self, event: DomainEventEnvelope, error: ProblemException
+    ) -> object: ...
 
     def resolve(
         self,
@@ -44,6 +48,9 @@ class BlockingIngestWorkflowInputResolver:
     """Fail visibly until deployment injects a persisted ingest-plan resolver."""
 
     def terminal_result(self, event: DomainEventEnvelope) -> object | None:
+        raise IngestWorkflowPlanBlocked("no persisted ingest-plan resolver is configured")
+
+    def record_plan_failure(self, event: DomainEventEnvelope, error: ProblemException) -> object:
         raise IngestWorkflowPlanBlocked("no persisted ingest-plan resolver is configured")
 
     def resolve(
@@ -98,14 +105,19 @@ class IngestOutboxHandler:
         terminal = await asyncio.to_thread(self._resolver.terminal_result, event)
         if terminal is not None:
             return terminal
-        request = await asyncio.to_thread(
-            self._resolver.resolve,
-            project_id=event.project_id,
-            region_code=region_code,
-            session_id=session_id,
-            rollout_id=rollout_id,
-            data_package_id=data_package_id,
-        )
+        try:
+            request = await asyncio.to_thread(
+                self._resolver.resolve,
+                project_id=event.project_id,
+                region_code=region_code,
+                session_id=session_id,
+                rollout_id=rollout_id,
+                data_package_id=data_package_id,
+            )
+        except ProblemException as exc:
+            if not exc.problem.code.startswith("CAPTURE_") or exc.problem.retryable:
+                raise
+            return await asyncio.to_thread(self._resolver.record_plan_failure, event, exc)
         if (
             request.organization_id != event.organization_id
             or request.project_id != event.project_id

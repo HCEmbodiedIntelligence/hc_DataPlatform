@@ -1278,3 +1278,17 @@ Helm expand Job 可作为 pre-install/pre-upgrade hook，contract Job 默认关�
 普通迁移各自在事务中执行并把校验值写入 `core.schema_migrations`；需要 concurrent index/backfill
 的专用 executor 使用相同 session lock 和分阶段事务。迁移只向前：已应用文件不得重排或修改，
 contract 后也没有盲目 down migration。
+
+## 机器人上传凭据查看与删除（2026-10-20）
+
+`ingest/023_robot_credential_vault.sql` 对 `ingest.robot_ingest_credentials` 增加两个可空字段：
+
+| 字段 | 用途与约束 |
+| --- | --- |
+| `secret_ciphertext text` | 认证加密后的完整凭据，密文绑定组织、上传身份和凭据 ID。仅管理权限的专用接口解密返回；普通查询只返回是否可查看。历史摘要保留，不尝试反解。 |
+| `deleted_at timestamptz` | 从管理列表移除的时间。检查约束要求已删除行必须为 `REVOKED` 且密文为 NULL。保留行与现有外键，历史上传及签发请求回执不受影响。 |
+
+该迁移不改原 ID、摘要、有效期或身份启停状态，沿用原组织 RLS。删除操作按组织/身份
+锁定行，仅允许已撤销或已过期凭据。有效旧凭据下次成功设备认证后补存密文，条件更新
+不会恢复已撤销、删除或过期凭据。服务使用原 `HC_DATA_SOURCE_CREDENTIAL_KEY` 派生独立
+用途的加密密钥；迁移及重启应保留该配置。

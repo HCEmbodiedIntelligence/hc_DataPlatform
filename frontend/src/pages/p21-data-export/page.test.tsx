@@ -265,7 +265,21 @@ describe("P21 data export page", () => {
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({ type: "application/zip", size: 4 }),
     );
-    expect(await screen.findByText("所选原始数据已下载为 ZIP")).toBeVisible();
+    expect(
+      await screen.findByText("ZIP 已准备好，已向浏览器请求下载"),
+    ).toBeVisible();
+    const retry = screen.getByRole("link", { name: "点击下载 ZIP" });
+    expect(retry).toHaveAttribute("href", "blob:raw-archive");
+    expect(retry).toHaveAttribute("download", expect.stringMatching(/\.zip$/));
+    // An explicit click reuses the received bytes, without re-exporting them.
+    retry.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    await user.click(retry);
+    expect(archives).toHaveLength(1);
+    expect(
+      screen.queryByText("所选原始数据已下载为 ZIP"),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "全选筛选结果" }));
     expect(screen.getByText(/已选 22 个批次 · 66 个文件/u)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "清空选择" }));
@@ -443,6 +457,16 @@ describe("P21 data export page", () => {
       dataset_id: datasetIds.dataset,
       episode_id: "standard-episode",
     });
+    if (f.job.plan.format !== "hc-collection-delivery-plan/1")
+      throw new Error("fixture");
+    f.job.plan.modalities = "rgb";
+    f.job.plan.members[0]!.selected_depth_profiles = {};
+    f.job.plan.members[0]!.excluded_depth_features = [
+      "observation.images.head_depth",
+    ];
+    const downloadClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
     const legacyEligibility = vi.fn(),
       queued = vi.fn();
     server.use(
@@ -460,6 +484,16 @@ describe("P21 data export page", () => {
         }),
       ),
       http.get("*/episode-deliveries", () => HttpResponse.json([])),
+      http.get("*/episode-deliveries/:jobId", () => HttpResponse.json(f.job)),
+      http.post("*/episode-deliveries/:jobId/download", () =>
+        HttpResponse.json({
+          job_id: f.job.job_id,
+          artifact_sha256: f.job.artifact_sha256,
+          size_bytes: f.job.size_bytes,
+          url: "https://objects.example/rgb.zip",
+          expires_seconds: 300,
+        }),
+      ),
       http.post("*/episode-deliveries/collections", async ({ request }) => {
         queued(await request.json());
         return HttpResponse.json({
@@ -494,14 +528,14 @@ describe("P21 data export page", () => {
       await screen.findByRole("checkbox", { name: /standard-episode/ }),
     );
     await user.click(
-      screen.getByRole("radio", { name: "LeRobot RGB 子集（排除深度）" }),
+      screen
+        .getByRole("radio", { name: "LeRobot RGB 子集（排除深度）" })
+        .closest("label")!,
     );
     expect(
-      screen.getByText("RGB 子集将排除深度视频、深度像素掩码及相关数据特征"),
-    ).toBeVisible();
-    await user.click(
-      screen.getByRole("button", { name: "创建标准包交付任务" }),
-    );
+      screen.getByRole("radio", { name: "LeRobot RGB 子集（排除深度）" }),
+    ).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "导出" }));
     await waitFor(() =>
       expect(queued).toHaveBeenCalledWith({
         modalities: "rgb",
@@ -510,6 +544,7 @@ describe("P21 data export page", () => {
     );
     expect(legacyEligibility).not.toHaveBeenCalled();
     expect(postedExports).toHaveLength(0);
+    await waitFor(() => expect(downloadClick).toHaveBeenCalledOnce());
   });
   it("switches processing stages, clears selections, and sends the selected stage", async () => {
     server.use(

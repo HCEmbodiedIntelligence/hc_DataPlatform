@@ -223,7 +223,34 @@ def test_organization_robot_assets_enforce_membership_and_capability() -> None:
     )
     assert denied.status_code == 403
     assert denied.json()["code"] == "ORGANIZATION_CAPABILITY_REQUIRED"
+    assert (
+        client.delete(
+            f"/api/v1/organizations/{ORGANIZATION_ID}/robots/any", headers=headers
+        ).status_code
+        == 403
+    )
+    assert (
+        client.delete("/api/v1/organizations/org-foreign/robots/any", headers=headers).status_code
+        == 403
+    )
 
     foreign = client.get("/api/v1/organizations/org-foreign/robots", headers=headers)
     assert foreign.status_code == 403
     assert foreign.json()["code"] == "ORGANIZATION_SCOPE_DENIED"
+
+
+def test_delete_reports_the_actual_blocking_references() -> None:
+    class InUseRepository(InMemoryOrganizationRobotAssetRepository):
+        def delete_robot(self, **kwargs):
+            raise ValueError("无法删除：原始数据 2 条；已发布采集配置 1 条。可将实例停用或退役。")
+
+    repository = InUseRepository((ORGANIZATION_ID,))
+    configure_organization_robot_assets(OrganizationRobotAssetService(repository))
+    client = TestClient(_app({"value": _auth(manage=True)}))
+    response = client.delete(
+        f"/api/v1/organizations/{ORGANIZATION_ID}/robots/in-use",
+        headers={"Authorization": "Bearer test"},
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "ROBOT_IN_USE"
+    assert "原始数据 2 条" in response.json()["detail"]

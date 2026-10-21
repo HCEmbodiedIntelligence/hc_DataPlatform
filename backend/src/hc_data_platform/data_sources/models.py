@@ -275,7 +275,7 @@ class DataSourceFacets(_ContractModel):
 class DataSourceMetrics(_ContractModel):
     total_count: DecimalString
     online_count: DecimalString
-    verified_bytes_today: DecimalString
+    verified_bytes_today: DecimalString | None = Field(deprecated=True)
     abnormal_count: DecimalString
     as_of: datetime
     timezone: str = "UTC"

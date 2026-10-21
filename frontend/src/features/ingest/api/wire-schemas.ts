@@ -183,7 +183,7 @@ const dataSourceMetricsWireSchema = z
   .object({
     total_count: decimalStringWireSchema,
     online_count: decimalStringWireSchema,
-    verified_bytes_today: decimalStringWireSchema,
+    verified_bytes_today: decimalStringWireSchema.nullable(),
     abnormal_count: decimalStringWireSchema,
     as_of: isoDateTimeWireSchema,
     timezone: z.string().min(1),

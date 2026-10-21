@@ -39,18 +39,31 @@ export function QualityEvidenceDetails({
   findings?: readonly Finding[];
   verdict?: string;
 }) {
-  const riskBlocks = findingCodes.includes("QUALITY_RISK") || verdict === "RISK";
+  const riskBlocks =
+    findingCodes.includes("QUALITY_RISK") || verdict === "RISK";
   const failedRules = rules.filter(
-    (rule) => rule.status === "fail" ||
-      (riskBlocks && rule.status === "warn" && rule.participates_in_verdict !== false),
+    (rule) =>
+      rule.status === "fail" ||
+      (riskBlocks &&
+        rule.status === "warn" &&
+        rule.participates_in_verdict !== false),
   );
   const unlistedFindings = findings.filter(
-    (finding) => finding.severity !== "info" && (finding.severity !== "warning" || riskBlocks) &&
-      !failedRules.some((rule) => rule.code === finding.code && rule.topic === finding.topic),
+    (finding) =>
+      finding.severity !== "info" &&
+      (finding.severity !== "warning" || riskBlocks) &&
+      !failedRules.some(
+        (rule) => rule.code === finding.code && rule.topic === finding.topic,
+      ),
   );
   const hasRuleDetails = failedRules.length + unlistedFindings.length > 0;
+  const notApplicable = rules.filter(
+    (rule) =>
+      rule.status === "skip" && rule.reason === "NOT_APPLICABLE_NO_IMAGES",
+  );
   const codes = [...new Set(findingCodes)].filter(
-    (code) => !(hasRuleDetails && ["QUALITY_REJECT", "QUALITY_RISK"].includes(code)),
+    (code) =>
+      !(hasRuleDetails && ["QUALITY_REJECT", "QUALITY_RISK"].includes(code)),
   );
   const details = (finding: Finding) => (
     <span>
@@ -58,42 +71,77 @@ export function QualityEvidenceDetails({
       实测 {valueText(finding.observed)} · 阈值 {valueText(finding.threshold)}
     </span>
   );
-  if (!hasRuleDetails && codes.length === 0) {
-    return verdict === "PASS" ? (
-      <Typography.Paragraph>未发现失败项。</Typography.Paragraph>
-    ) : verdict === "REJECT" ? (
-      <Typography.Paragraph>质检未通过，但当前报告未提供失败明细。</Typography.Paragraph>
-    ) : null;
-  }
   return (
-    <ul aria-label="质检失败项目" style={{ paddingInlineStart: 20 }}>
-      {codes.map((code) => (
-        <li key={code} style={{ marginBlock: 12 }}>
-          {recordingReasons[code] ?? qualityRuleLabels[code] ?? code}
-        </li>
-      ))}
-      {failedRules.map((rule) => {
-        const evidence = rule.detector_findings.length
-          ? rule.detector_findings
-          : rule.report_finding_indexes.flatMap((index) => findings[index] ? [findings[index]] : []);
-        return (
-          <li key={`${rule.code}:${rule.topic}`} style={{ marginBlock: 12 }}>
-            <strong>{qualityRuleLabels[rule.code] ?? rule.code}</strong>
-            {rule.topic && <span> · {rule.topic}</span>}
-            {rule.reason && <div>{qualityReasonLabels[rule.reason] ?? rule.reason}</div>}
-            {evidence.map((finding, index) => <div key={index}>{details(finding)}</div>)}
-            {!evidence.length && (Object.keys(rule.observed).length > 0 || Object.keys(rule.thresholds).length > 0) && (
-              <div>实测 {valueText(rule.observed)} · 阈值 {valueText(rule.thresholds)}</div>
-            )}
-          </li>
-        );
-      })}
-      {unlistedFindings.map((finding, index) => (
-        <li key={`${finding.code}:${finding.topic}:${index}`} style={{ marginBlock: 12 }}>
-          <strong>{qualityRuleLabels[finding.code] ?? finding.message}</strong>
-          <div>{details(finding)}</div>
-        </li>
-      ))}
-    </ul>
+    <>
+      {!hasRuleDetails &&
+        codes.length === 0 &&
+        (verdict === "PASS" ? (
+          <Typography.Paragraph>未发现失败项。</Typography.Paragraph>
+        ) : verdict === "REJECT" ? (
+          <Typography.Paragraph>
+            质检未通过，但当前报告未提供失败明细。
+          </Typography.Paragraph>
+        ) : null)}
+      {(hasRuleDetails || codes.length > 0) && (
+        <ul aria-label="质检失败项目" style={{ paddingInlineStart: 20 }}>
+          {codes.map((code) => (
+            <li key={code} style={{ marginBlock: 12 }}>
+              {recordingReasons[code] ?? qualityRuleLabels[code] ?? code}
+            </li>
+          ))}
+          {failedRules.map((rule) => {
+            const evidence = rule.detector_findings.length
+              ? rule.detector_findings
+              : rule.report_finding_indexes.flatMap((index) =>
+                  findings[index] ? [findings[index]] : [],
+                );
+            return (
+              <li
+                key={`${rule.code}:${rule.topic}`}
+                style={{ marginBlock: 12 }}
+              >
+                <strong>{qualityRuleLabels[rule.code] ?? rule.code}</strong>
+                {rule.topic && <span> · {rule.topic}</span>}
+                {rule.reason && (
+                  <div>{qualityReasonLabels[rule.reason] ?? rule.reason}</div>
+                )}
+                {evidence.map((finding, index) => (
+                  <div key={index}>{details(finding)}</div>
+                ))}
+                {!evidence.length &&
+                  (Object.keys(rule.observed).length > 0 ||
+                    Object.keys(rule.thresholds).length > 0) && (
+                    <div>
+                      实测 {valueText(rule.observed)} · 阈值{" "}
+                      {valueText(rule.thresholds)}
+                    </div>
+                  )}
+              </li>
+            );
+          })}
+          {unlistedFindings.map((finding, index) => (
+            <li
+              key={`${finding.code}:${finding.topic}:${index}`}
+              style={{ marginBlock: 12 }}
+            >
+              <strong>
+                {qualityRuleLabels[finding.code] ?? finding.message}
+              </strong>
+              <div>{details(finding)}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {notApplicable.length > 0 && (
+        <ul aria-label="不适用的质检项目" style={{ paddingInlineStart: 20 }}>
+          {notApplicable.map((rule) => (
+            <li key={`${rule.code}:${rule.topic}`}>
+              {qualityRuleLabels[rule.code] ?? rule.code}：
+              {qualityReasonLabels.NOT_APPLICABLE_NO_IMAGES}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }

@@ -24,6 +24,7 @@ async function bootstrap(): Promise<void> {
 
   configureRuntime({
     apiBaseUrl: environment.value.apiBaseUrl,
+    robotPlatformBaseUrl: environment.value.robotPlatformBaseUrl,
     sseBaseUrl: environment.value.sseBaseUrl,
     buildVersion: environment.value.buildVersion,
     releaseEnv: environment.value.releaseEnv,

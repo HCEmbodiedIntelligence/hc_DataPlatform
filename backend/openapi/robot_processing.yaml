@@ -1,0 +1,547 @@
+components:
+  schemas:
+    Draft:
+      additionalProperties: false
+      properties:
+        configuration:
+          $ref: '#/components/schemas/McapProcessingConfig'
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        software:
+          maxLength: 120
+          minLength: 1
+          title: Software
+          type: string
+        source_format:
+          const: MCAP
+          default: MCAP
+          title: Source Format
+          type: string
+        template_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Template Id
+      required:
+      - expected_revision
+      - name
+      - software
+      - configuration
+      title: Draft
+      type: object
+    Publish:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 1.0
+          title: Expected Revision
+          type: integer
+        make_default:
+          default: true
+          title: Make Default
+          type: boolean
+      required:
+      - expected_revision
+      title: Publish
+      type: object
+    TaskRequirements:
+      additionalProperties: false
+      properties:
+        allows_derived_action:
+          default: false
+          title: Allows Derived Action
+          type: boolean
+        requires_rgb:
+          title: Requires Rgb
+          type: boolean
+      required:
+      - requires_rgb
+      title: TaskRequirements
+      type: object
+    Template:
+      additionalProperties: false
+      properties:
+        configuration:
+          $ref: '#/components/schemas/McapProcessingConfig'
+        model_version_id:
+          maxLength: 128
+          minLength: 1
+          title: Model Version Id
+          type: string
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        software:
+          maxLength: 120
+          minLength: 1
+          title: Software
+          type: string
+        template_id:
+          pattern: ^[a-zA-Z0-9._-]{1,128}$
+          title: Template Id
+          type: string
+      required:
+      - template_id
+      - name
+      - model_version_id
+      - software
+      - configuration
+      title: Template
+      type: object
+    Validation:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 1.0
+          title: Expected Revision
+          type: integer
+        project_id:
+          title: Project Id
+          type: string
+        raw_source_id:
+          title: Raw Source Id
+          type: string
+        region_code:
+          title: Region Code
+          type: string
+        source_path:
+          title: Source Path
+          type: string
+      required:
+      - expected_revision
+      - project_id
+      - region_code
+      - raw_source_id
+      - source_path
+      title: Validation
+      type: object
+info:
+  title: Robot processing configurations
+  version: '2026-10-20'
+openapi: 3.1.0
+paths:
+  /api/v1/organizations/{organization_id}/robot-processing-templates:
+    get:
+      operationId: listRobotProcessingTemplates
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Templates
+      tags:
+      - robot-processing-config
+    post:
+      operationId: createRobotProcessingTemplate
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Template'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Template
+      tags:
+      - robot-processing-config
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config:
+    get:
+      operationId: getRobotProcessingConfig
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Config
+      tags:
+      - robot-processing-config
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config/{scheme_id}:
+    put:
+      operationId: saveRobotProcessingDraft
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Draft'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Config
+      tags:
+      - robot-processing-config
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config/{scheme_id}:publish:
+    post:
+      operationId: publishRobotProcessingConfig
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Publish'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Publish Config
+      tags:
+      - robot-processing-config
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/processing-config/{scheme_id}:validate:
+    post:
+      operationId: validateRobotProcessingDraft
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: scheme_id
+        required: true
+        schema:
+          title: Scheme Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Validation'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Validate Config
+      tags:
+      - robot-processing-config
+  /api/v1/projects/{project_id}/collection-tasks/{task_id}/data-requirements:
+    get:
+      operationId: getTaskDataRequirements
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Task Requirements
+      tags:
+      - robot-processing-config
+    put:
+      operationId: setTaskDataRequirements
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskRequirements'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Task Requirements
+      tags:
+      - robot-processing-config
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-channels:
+    get:
+      operationId: inspectMcapChannels
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          title: Import Id
+          type: string
+      - in: query
+        name: path
+        required: true
+        schema:
+          title: Path
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Mcap Channels
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-versions:
+    get:
+      operationId: listMcapRetryVersions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          title: Import Id
+          type: string
+      - in: query
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Mcap Versions
+      tags:
+      - lerobot-imports

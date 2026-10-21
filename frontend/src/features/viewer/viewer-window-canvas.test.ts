@@ -63,6 +63,31 @@ describe("viewer window canvas", () => {
     ).toContain("真实数值样本");
   });
 
+  it("keeps a missing numeric sample separate from a real zero and breaks the line", () => {
+    const { context } = draw({
+      generation: 0,
+      timestampsNs: ["10", "50", "90"],
+      values: [[0], [NaN], [2]],
+    });
+    // The last path is the playhead; the numeric path has two moveTo calls and no interpolated segment.
+    expect(context.moveTo).toHaveBeenCalledWith(0, 180);
+    expect(context.moveTo).toHaveBeenCalledWith(320, 0);
+    expect(
+      viewerWindowSummary({
+        generation: 0,
+        timestampsNs: ["10"],
+        values: [[NaN]],
+      }),
+    ).toBe("未采集");
+    expect(
+      viewerWindowSummary({
+        generation: 0,
+        timestampsNs: ["10"],
+        values: [[0]],
+      }),
+    ).toContain("真实数值样本");
+  });
+
   it("selects and draws the nearest real pointcloud sample for the current clock", () => {
     const { fillRect } = draw({
       generation: 0,

@@ -1,0 +1,30 @@
+[
+  {
+    "episode_id": "episode_ff099b18da71fec02275115833a5e49a",
+    "frames": 9,
+    "qc": {
+      "report_id": "crqc_6d531d7be573520e918649e316350852",
+      "status": "PASS",
+      "finding_codes": [],
+      "inspected_video_count": 0,
+      "inspected_sensor_message_count": 36
+    },
+    "exports": [
+      {
+        "format": "lerobot",
+        "status": "READY",
+        "job_id": "ed_0b476019c58d7e44896587abd5a2d0e2d575837cc2f63b80d47358c6f73f169e"
+      },
+      {
+        "format": "mcap",
+        "status": "READY",
+        "job_id": "ed_1c347509ce8f319181fc8d8aad2cab1cbd1dd55489422cd398bdb32a40b28603"
+      },
+      {
+        "format": "original",
+        "status": "READY",
+        "job_id": "ed_147ad1ae9cac9f1b17b3555b67ffe4eb0ecd2db098576efe8c87a28b16c74101"
+      }
+    ]
+  }
+]

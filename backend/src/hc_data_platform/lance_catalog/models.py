@@ -9,7 +9,9 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     field_serializer,
+    model_serializer,
 )
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
@@ -27,6 +29,15 @@ class DatasetSchemaSnapshot(BaseModel):
     frequency_hz: float = Field(gt=0)
     fields: dict[str, str] = Field(min_length=1)
     fingerprint: str = Field(pattern=SHA256_PATTERN)
+    # Absent on historical v1 documents; never infer semantics from topic -> json.
+    semantic_contract: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def legacy_document(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        if self.semantic_contract is None:
+            document.pop("semantic_contract", None)
+        return document
 
     @classmethod
     def create(
@@ -37,6 +48,7 @@ class DatasetSchemaSnapshot(BaseModel):
         schema_snapshot_id: str,
         frequency_hz: float,
         fields: dict[str, str],
+        semantic_contract: dict[str, Any] | None = None,
     ) -> DatasetSchemaSnapshot:
         """Create a snapshot with its deterministic compiled-schema fingerprint."""
 
@@ -48,7 +60,9 @@ class DatasetSchemaSnapshot(BaseModel):
             schema_snapshot_id=schema_snapshot_id,
             frequency_hz=frequency_hz,
             fields=fields,
-            fingerprint=compute_schema_fingerprint(fields),
+            schema_version="2" if semantic_contract is not None else "1",
+            semantic_contract=semantic_contract,
+            fingerprint=compute_schema_fingerprint(fields, semantic_contract=semantic_contract),
         )
 
 
@@ -74,6 +88,16 @@ class StepRecord(BaseModel):
     valid: dict[str, bool] = Field(default_factory=dict)
     repeated: dict[str, bool] = Field(default_factory=dict)
     sample_valid: bool = True
+    presence: dict[str, bool] = Field(default_factory=dict)
+    axis_validity: dict[str, tuple[bool, ...]] = Field(default_factory=dict)
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_step_hash(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        document: dict[str, Any] = handler(self)
+        for name in ("presence", "axis_validity"):
+            if not getattr(self, name):
+                document.pop(name, None)
+        return document
 
     @field_serializer("timestamp_ns", when_used="json")
     def serialize_timestamp_ns(self, value: int) -> str:

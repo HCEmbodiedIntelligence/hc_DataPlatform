@@ -72,9 +72,9 @@ class NativeLeRobotProcessor:
             return discover_committed_source(source.storage, raw)
         except (ValueError, KeyError, IndexError) as exc:
             code = str(exc).split(":", 1)[0]
-            if not re.fullmatch(r"(?:LEROBOT|OPENARM)_[A-Z0-9_]+", code):
+            if not re.fullmatch(r"(?:LEROBOT|OPENARM|CAPTURE)_[A-Z0-9_]+", code):
                 code = "LEROBOT_SOURCE_INVALID"
-            raise ProcessingFailure(code) from None
+            raise ProcessingFailure(code, detail=str(exc)) from None
 
     def discover(self, source: CommittedSource) -> tuple[SourceEpisode, ...]:
         return tuple(
@@ -99,16 +99,17 @@ class NativeLeRobotProcessor:
         derived = result.get("derived") or {}
         package_receipt = None
         native = derived.get("data") is not None
-        has_cameras = bool((result.get("frame_selection") or {}).get("camera_set") or metadata.get("cameras"))
+        has_cameras = bool(
+            (result.get("frame_selection") or {}).get("camera_set") or metadata.get("cameras")
+        )
         if status == "SUCCEEDED" and (
             report.status.value != "PASS"
             or (
                 result.get("data_readable") is not True
                 if native
-                else not result.get("training_eligible")
+                else not (result.get("data_readable") or result.get("training_eligible"))
             )
             or derived.get("rollout_id") != episode_id
-            or not result.get("annotation_task")
             or (result.get("aligned_media_count", 0) < 1 if has_cameras else False)
         ):
             raise ProcessingFailure("ROBOT_PUBLICATION_RECEIPT_INCOMPLETE", retryable=True)
@@ -131,6 +132,10 @@ class NativeLeRobotProcessor:
                     "ROBOT_PUBLICATION_RECEIPT_INCOMPLETE", retryable=True
                 ) from None
         return EpisodeReceipt(
+            annotation_status=result.get(
+                "annotation_status", "CREATED" if result.get("annotation_task") else "UNKNOWN"
+            ),
+            annotation_task_id=(result.get("annotation_task") or {}).get("task_id"),
             quality_status=report.status.value,
             frame_count=metadata["length"],
             sample_count=derived.get("step_count", 0),
@@ -171,7 +176,9 @@ class NativeLeRobotProcessor:
         try:
             request = self.pipeline.prepare(task)
         except ProblemException as exc:
-            raise ProcessingFailure(exc.problem.code, retryable=exc.problem.retryable) from None
+            raise ProcessingFailure(
+                exc.problem.code, retryable=exc.problem.retryable, detail=exc.problem.detail
+            ) from None
 
         async def execute() -> JobRecord:
             identity = f"robot-native-{episode_id}-{attempt_id}"
@@ -208,5 +215,5 @@ class NativeLeRobotProcessor:
             code = job.error_code or "ROBOT_NATIVE_PROCESSING_FAILED"
             if not re.fullmatch(r"[A-Z0-9_]{1,128}", code):
                 code = "ROBOT_NATIVE_PROCESSING_FAILED"
-            raise ProcessingFailure(code, retryable=True)
+            raise ProcessingFailure(code, retryable=not code.startswith("CAPTURE_"))
         return self._receipt(task, episode_id, metadata, job.status.value, job.result or {})

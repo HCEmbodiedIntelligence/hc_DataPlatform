@@ -1,0 +1,681 @@
+components:
+  schemas:
+    ImportRobotOption:
+      properties:
+        display_name:
+          title: Display Name
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+        serial_no:
+          title: Serial No
+          type: string
+      required:
+      - robot_id
+      - display_name
+      - serial_no
+      title: ImportRobotOption
+      type: object
+    LegacyRobotSource:
+      additionalProperties: false
+      properties:
+        administrative_state:
+          title: Administrative State
+          type: string
+        project_id:
+          title: Project Id
+          type: string
+        region_code:
+          title: Region Code
+          type: string
+        source_id:
+          title: Source Id
+          type: string
+      required:
+      - source_id
+      - project_id
+      - region_code
+      - administrative_state
+      title: LegacyRobotSource
+      type: object
+    OnboardRobotCommand:
+      additionalProperties: false
+      properties:
+        allowed_formats:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._+-]+$
+            type: string
+          title: Allowed Formats
+          type: array
+        allowed_transports:
+          default:
+          - HTTPS
+          items:
+            type: string
+          title: Allowed Transports
+          type: array
+        display_name:
+          anyOf:
+          - maxLength: 200
+            type: string
+          - type: 'null'
+          title: Display Name
+        generate_credential:
+          default: false
+          title: Generate Credential
+          type: boolean
+        idempotency_key:
+          maxLength: 128
+          minLength: 8
+          title: Idempotency Key
+          type: string
+        model_version_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Model Version Id
+        robot_id:
+          default: ''
+          title: Robot Id
+          type: string
+        serial_no:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Serial No
+        upload_policy:
+          $ref: '#/components/schemas/RobotIngestUploadPolicy'
+      required:
+      - allowed_formats
+      - idempotency_key
+      title: OnboardRobotCommand
+      type: object
+    OnboardRobotResult:
+      additionalProperties: false
+      properties:
+        identity:
+          $ref: '#/components/schemas/RobotIdentityEnvelope'
+        robot:
+          $ref: '#/components/schemas/OnboardingRobot'
+      required:
+      - robot
+      - identity
+      title: OnboardRobotResult
+      type: object
+    OnboardingFault:
+      additionalProperties: false
+      properties:
+        action:
+          title: Action
+          type: string
+        code:
+          title: Code
+          type: string
+        occurred_at:
+          format: date-time
+          title: Occurred At
+          type: string
+        reason:
+          title: Reason
+          type: string
+      required:
+      - code
+      - reason
+      - occurred_at
+      - action
+      title: OnboardingFault
+      type: object
+    OnboardingPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/OnboardingRobot'
+          title: Items
+          type: array
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        online_timeout_seconds:
+          title: Online Timeout Seconds
+          type: integer
+        page:
+          title: Page
+          type: integer
+        page_size:
+          title: Page Size
+          type: integer
+        summary:
+          $ref: '#/components/schemas/OnboardingSummary'
+        total:
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      - page
+      - page_size
+      - summary
+      - observed_at
+      - online_timeout_seconds
+      title: OnboardingPage
+      type: object
+    OnboardingRobot:
+      additionalProperties: false
+      properties:
+        connection_state:
+          enum:
+          - ONLINE
+          - OFFLINE
+          - UNVERIFIED
+          - UNKNOWN
+          title: Connection State
+          type: string
+        credential_availability:
+          enum:
+          - NOT_ISSUED
+          - AVAILABLE
+          - UNAVAILABLE
+          title: Credential Availability
+          type: string
+        credentials:
+          default: []
+          items:
+            $ref: '#/components/schemas/RobotCredentialSummary'
+          title: Credentials
+          type: array
+        display_name:
+          title: Display Name
+          type: string
+        faults:
+          default: []
+          items:
+            $ref: '#/components/schemas/OnboardingFault'
+          title: Faults
+          type: array
+        identity:
+          anyOf:
+          - $ref: '#/components/schemas/RobotIngestIdentity'
+          - type: 'null'
+        last_communication_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Last Communication At
+        legacy_sources:
+          default: []
+          items:
+            $ref: '#/components/schemas/LegacyRobotSource'
+          title: Legacy Sources
+          type: array
+        lifecycle_status:
+          title: Lifecycle Status
+          type: string
+        model_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version Id
+        pending:
+          title: Pending
+          type: boolean
+        robot_id:
+          title: Robot Id
+          type: string
+        serial_no:
+          title: Serial No
+          type: string
+        updated_at:
+          format: date-time
+          title: Updated At
+          type: string
+        upload_permission:
+          enum:
+          - NOT_ENABLED
+          - ENABLED
+          - DISABLED
+          title: Upload Permission
+          type: string
+      required:
+      - robot_id
+      - display_name
+      - serial_no
+      - lifecycle_status
+      - updated_at
+      - upload_permission
+      - credential_availability
+      - connection_state
+      - pending
+      title: OnboardingRobot
+      type: object
+    OnboardingSummary:
+      additionalProperties: false
+      properties:
+        attention_count:
+          title: Attention Count
+          type: integer
+        online_count:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Online Count
+        pending_count:
+          title: Pending Count
+          type: integer
+        total_count:
+          title: Total Count
+          type: integer
+        unknown_count:
+          title: Unknown Count
+          type: integer
+      required:
+      - total_count
+      - online_count
+      - pending_count
+      - attention_count
+      - unknown_count
+      title: OnboardingSummary
+      type: object
+    RobotHeartbeat:
+      additionalProperties: false
+      properties:
+        activity:
+          default: IDLE
+          enum:
+          - IDLE
+          - COLLECTING
+          - UPLOADING
+          title: Activity
+          type: string
+      title: RobotHeartbeat
+      type: object
+    RobotHeartbeatReceipt:
+      additionalProperties: false
+      properties:
+        activity_expires_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Activity Expires At
+        observed_at:
+          format: date-time
+          title: Observed At
+          type: string
+        online_timeout_seconds:
+          title: Online Timeout Seconds
+          type: integer
+        robot_id:
+          title: Robot Id
+          type: string
+      required:
+      - robot_id
+      - observed_at
+      - online_timeout_seconds
+      - activity_expires_at
+      title: RobotHeartbeatReceipt
+      type: object
+    SuccessfulUploadVolume:
+      additionalProperties: false
+      properties:
+        day:
+          format: date
+          title: Day
+          type: string
+        from_inclusive:
+          format: date-time
+          title: From Inclusive
+          type: string
+        raw_bytes:
+          title: Raw Bytes
+          type: integer
+        timezone:
+          title: Timezone
+          type: string
+        to_exclusive:
+          format: date-time
+          title: To Exclusive
+          type: string
+        upload_count:
+          title: Upload Count
+          type: integer
+      required:
+      - day
+      - timezone
+      - from_inclusive
+      - to_exclusive
+      - raw_bytes
+      - upload_count
+      title: SuccessfulUploadVolume
+      type: object
+paths:
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/robot-options:
+    get:
+      operationId: listImportRobots
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ImportRobotOption'
+                title: Response Listimportrobots
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Import Robots
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/robot-ingest/onboarding:
+    get:
+      operationId: listRobotOnboarding
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: q
+        required: false
+        schema:
+          default: ''
+          maxLength: 200
+          title: Q
+          type: string
+      - in: query
+        name: connection
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - ONLINE
+            - OFFLINE
+            - UNVERIFIED
+            - UNKNOWN
+            type: string
+          - type: 'null'
+          title: Connection
+      - in: query
+        name: permission
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - NOT_ENABLED
+            - ENABLED
+            - DISABLED
+            type: string
+          - type: 'null'
+          title: Permission
+      - in: query
+        name: credential
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - NOT_ISSUED
+            - AVAILABLE
+            - UNAVAILABLE
+            type: string
+          - type: 'null'
+          title: Credential
+      - in: query
+        name: segment
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - online
+            - pending
+            - attention
+            type: string
+          - type: 'null'
+          title: Segment
+      - in: query
+        name: sort
+        required: false
+        schema:
+          default: updated
+          enum:
+          - updated
+          - name
+          - communication
+          title: Sort
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          enum:
+          - 10
+          - 20
+          - 50
+          maximum: 50
+          minimum: 10
+          title: Page Size
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: X-Region-Code
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingPage'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Onboarding
+      tags:
+      - robot-onboarding
+    post:
+      operationId: onboardRobot
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OnboardRobotCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardRobotResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Onboard Robot
+      tags:
+      - robot-onboarding
+  /api/v1/projects/{project_id}/robot-ingest/successful-volume:
+    get:
+      operationId: getSuccessfulUploadVolume
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: query
+        name: day
+        required: false
+        schema:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Day
+      - in: query
+        name: tz
+        required: false
+        schema:
+          default: Asia/Shanghai
+          title: Tz
+          type: string
+      - in: query
+        name: robot_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Robot Id
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessfulUploadVolume'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Successful Volume
+      tags:
+      - robot-onboarding
+  /api/v1/robot-ingest/heartbeat:
+    post:
+      operationId: recordRobotHeartbeat
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotHeartbeat'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotHeartbeatReceipt'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Robot Heartbeat
+      tags:
+      - robot-onboarding

@@ -20,6 +20,9 @@ const {
   stateMutate,
   deleteMutate,
   deletion,
+  revealMutate,
+  credentialDeleteMutate,
+  credentialState,
 } = vi.hoisted(() => ({
   issueMutate: vi.fn(),
   issueReset: vi.fn(),
@@ -27,6 +30,9 @@ const {
   stateMutate: vi.fn(),
   deleteMutate: vi.fn(),
   deletion: { isPending: false, error: null as unknown },
+  revealMutate: vi.fn(),
+  credentialDeleteMutate: vi.fn(),
+  credentialState: { state: "ACTIVE", error: null as unknown },
 }));
 
 const identity: RobotIdentity = {
@@ -64,6 +70,10 @@ function mutation(mutate = vi.fn()) {
   };
 }
 
+vi.mock("../../../features/robot-ingest/onboarding", () => ({
+  useSuccessfulVolume: () => ({ data: { raw_bytes: 1024 }, isError: false }),
+}));
+
 vi.mock("../../../features/robot-ingest/api", () => ({
   useRobotIdentities: () => ({
     data: { items: [identity] },
@@ -80,7 +90,7 @@ vi.mock("../../../features/robot-ingest/api", () => ({
       {
         credential_id: "ric-a",
         credential_version: 1,
-        state: "ACTIVE",
+        state: credentialState.state,
         token_prefix: "hcri_prefix",
         issued_at: "2026-09-01T00:00:00Z",
         expires_at: null,
@@ -122,6 +132,11 @@ vi.mock("../../../features/robot-ingest/api", () => ({
     error: null,
   }),
   useRevokeRobotCredential: () => mutation(revokeMutate),
+  useRevealRobotCredential: () => mutation(revealMutate),
+  useDeleteRobotCredential: () => ({
+    ...mutation(credentialDeleteMutate),
+    error: credentialState.error,
+  }),
   useDeleteRobotIdentity: () => ({ ...mutation(deleteMutate), ...deletion }),
 }));
 
@@ -135,6 +150,20 @@ vi.mock("../../../features/robots/api/hooks", () => ({
 }));
 
 beforeEach(() => {
+  credentialState.state = "ACTIVE";
+  credentialState.error = null;
+  credentialDeleteMutate.mockReset();
+  revealMutate.mockReset();
+  revealMutate.mockImplementation((_input, options) =>
+    options.onSuccess({
+      credential_id: "ric-a",
+      credential_version: 1,
+      token: "hcri_0123456789abcdef0123456789abcdef.existing-secret-value",
+      token_prefix: "hcri_prefix",
+      issued_at: "2026-09-01T00:00:00Z",
+      expires_at: null,
+    }),
+  );
   deletion.isPending = false;
   deletion.error = null;
   deleteMutate.mockReset();
@@ -210,20 +239,21 @@ describe("P02 robot credential lifecycle", () => {
   it("requires confirmation before deleting the selected identity and explains retained uploads", async () => {
     const user = userEvent.setup();
     renderConsole();
-    await user.click(screen.getByRole("button", { name: "删除" }));
-    const dialog = screen.getByRole("dialog", { name: "删除机器人上传身份" });
+    await user.click(screen.getByRole("button", { name: "移除上传身份" }));
+    const dialog = screen.getByRole("dialog", { name: "移除上传身份" });
     await waitFor(() =>
-      expect(within(dialog).getByText(/确定删除“采集机器人 A”/)).toBeVisible(),
+      expect(within(dialog).getByText(/确定移除“采集机器人 A”/)).toBeVisible(),
     );
     expect(
       within(dialog).getByText(/已上传的数据、采集任务和历史记录保留/),
     ).toBeVisible();
+    expect(within(dialog).getByText(/这不会删除机器人实例/)).toBeVisible();
     expect(deleteMutate).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: /取\s*消/ }));
     expect(deleteMutate).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "删除" }));
+    await user.click(screen.getByRole("button", { name: "移除上传身份" }));
     deleteMutate.mockImplementation((_input, options) => options.onSuccess());
-    await user.click(screen.getByRole("button", { name: "确认删除" }));
+    await user.click(screen.getByRole("button", { name: "仅移除上传身份" }));
     expect(deleteMutate).toHaveBeenCalledExactlyOnceWith(
       {
         scope: {
@@ -236,9 +266,7 @@ describe("P02 robot credential lifecycle", () => {
       expect.any(Object),
     );
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "删除机器人上传身份" }),
-      ).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: "移除上传身份" })).toBeNull(),
     );
   });
 
@@ -246,46 +274,55 @@ describe("P02 robot credential lifecycle", () => {
     const user = userEvent.setup();
     renderConsole();
     deletion.error = new Error("offline");
-    await user.click(screen.getByRole("button", { name: "删除" }));
-    await user.click(screen.getByRole("button", { name: "确认删除" }));
-    const dialog = screen.getByRole("dialog", { name: "删除机器人上传身份" });
+    await user.click(screen.getByRole("button", { name: "移除上传身份" }));
+    await user.click(screen.getByRole("button", { name: "仅移除上传身份" }));
+    const dialog = screen.getByRole("dialog", { name: "移除上传身份" });
     await waitFor(() =>
       expect(within(dialog).getByText("删除未完成")).toBeVisible(),
     );
     expect(deleteMutate).toHaveBeenCalledTimes(1);
-    await user.click(within(dialog).getByRole("button", { name: "确认删除" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: "仅移除上传身份" }),
+    );
     expect(deleteMutate).toHaveBeenCalledTimes(2);
   });
 
   it("hides deletion from accounts without management permission", () => {
     renderConsole(false);
-    expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "移除上传身份" })).toBeNull();
   });
 
   it("blocks repeated confirmation while deletion is pending", async () => {
     const user = userEvent.setup();
     renderConsole();
     deletion.isPending = true;
-    await user.click(screen.getByRole("button", { name: "删除" }));
-    const dialog = screen.getByRole("dialog", { name: "删除机器人上传身份" });
+    await user.click(screen.getByRole("button", { name: "移除上传身份" }));
+    const dialog = screen.getByRole("dialog", { name: "移除上传身份" });
     expect(
       within(dialog).getByRole("button", { name: /取\s*消/ }),
     ).toBeDisabled();
-    await user.click(within(dialog).getByRole("button", { name: /确认删除/ }));
+    await user.click(
+      within(dialog).getByRole("button", { name: /仅移除上传身份/ }),
+    );
     expect(deleteMutate).not.toHaveBeenCalled();
   });
 
-  it("issues a credential, reveals it once, and clears plaintext on close", async () => {
+  it("issues a credential and clears displayed plaintext on close", async () => {
     const user = userEvent.setup();
     renderConsole();
 
-    await user.click(screen.getByRole("button", { name: "签发" }));
-    await user.click(screen.getByRole("button", { name: "签发凭据" }));
+    await user.click(screen.getByRole("button", { name: "生成上传凭据" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "签发平台凭据" })).getByRole(
+        "button",
+        { name: "签发凭据" },
+      ),
+    );
 
     const token =
       "hcri_0123456789abcdef0123456789abcdef.once-only-secret-value";
     expect(screen.getByDisplayValue(token)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "我已安全保存" }));
+    await user.click(screen.getByRole("button", { name: /关\s*闭/ }));
 
     await waitFor(() =>
       expect(screen.queryByDisplayValue(token)).not.toBeInTheDocument(),
@@ -297,13 +334,13 @@ describe("P02 robot credential lifecycle", () => {
     const user = userEvent.setup();
     renderConsole();
 
-    await user.click(screen.getByRole("button", { name: "轮换" }));
+    await user.click(screen.getByRole("button", { name: "更换上传凭据" }));
     await user.click(screen.getByRole("button", { name: "轮换并撤销旧凭据" }));
     expect(issueMutate).toHaveBeenCalledWith(
       expect.objectContaining({ rotate: true, identityId: "rii-a" }),
       expect.any(Object),
     );
-    await user.click(screen.getByRole("button", { name: "我已安全保存" }));
+    await user.click(screen.getByRole("button", { name: /关\s*闭/ }));
 
     await user.click(screen.getByRole("button", { name: "撤销" }));
     await user.click(screen.getByRole("button", { name: "确认撤销" }));
@@ -311,5 +348,89 @@ describe("P02 robot credential lifecycle", () => {
       expect.objectContaining({ credentialId: "ric-a", identityId: "rii-a" }),
       expect.any(Object),
     );
+  });
+
+  it("can reveal and copy the same existing credential after closing without issuing another", async () => {
+    const user = userEvent.setup();
+    renderConsole();
+    const token = "hcri_0123456789abcdef0123456789abcdef.existing-secret-value";
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await user.click(screen.getByRole("button", { name: "查看凭据" }));
+      await waitFor(() =>
+        expect(screen.getByDisplayValue(token)).toBeVisible(),
+      );
+      await user.click(screen.getByRole("button", { name: "复制 Token" }));
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "已复制" })).toBeVisible(),
+      );
+      await user.click(screen.getByRole("button", { name: /关\s*闭/ }));
+      await waitFor(() => expect(screen.queryByDisplayValue(token)).toBeNull());
+    }
+    expect(revealMutate).toHaveBeenCalledTimes(2);
+    expect(issueMutate).not.toHaveBeenCalled();
+  });
+
+  it.each(["REVOKED", "EXPIRED"])(
+    "confirms deletion of %s credentials and preserves historical uploads",
+    async (state) => {
+      const user = userEvent.setup();
+      credentialState.state = state;
+      renderConsole();
+      expect(screen.queryByRole("button", { name: "查看凭据" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "删除凭据" }));
+      const dialog = screen.getByRole("dialog", { name: "删除上传凭据" });
+      await waitFor(() =>
+        expect(within(dialog).getByText(/历史上传/)).toBeVisible(),
+      );
+      expect(credentialDeleteMutate).not.toHaveBeenCalled();
+      credentialDeleteMutate.mockImplementation((_input, options) =>
+        options.onSuccess(),
+      );
+      await user.click(
+        within(dialog).getByRole("button", { name: "确认删除凭据" }),
+      );
+      expect(credentialDeleteMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ identityId: "rii-a", credentialId: "ric-a" }),
+        expect.any(Object),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: "删除上传凭据" }),
+        ).toBeNull(),
+      );
+    },
+  );
+
+  it("keeps credential deletion errors visible for retry", async () => {
+    const user = userEvent.setup();
+    credentialState.state = "REVOKED";
+    credentialState.error = new Error("credential deletion failed");
+    renderConsole();
+    await user.click(screen.getByRole("button", { name: "删除凭据" }));
+    await user.click(screen.getByRole("button", { name: "确认删除凭据" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("dialog", { name: "删除上传凭据" }),
+      ).toBeVisible(),
+    );
+    expect(screen.getByText("操作未完成，请稍后重试。")).toBeVisible();
+  });
+
+  it("only grants credential viewing and deletion to managers", () => {
+    const view = renderConsole(false);
+    expect(screen.queryByRole("button", { name: "查看凭据" })).toBeNull();
+    credentialState.state = "REVOKED";
+    view.rerender(
+      <RobotIdentityConsole
+        scope={{
+          organizationId: "org-a",
+          projectId: "project-a",
+          regionCode: "cn-east-1",
+        }}
+        canRead
+        canManage={false}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "删除凭据" })).toBeNull();
   });
 });

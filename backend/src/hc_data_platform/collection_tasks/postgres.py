@@ -8,11 +8,12 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+from hc_data_platform.capture_schemes.references import SetTaskPlan
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.audit import canonical_hash
 
-from .dataset import ensure_task_dataset
+from .dataset import ensure_task_dataset, task_upload_region
 from .models import (
     CollectionTarget,
     CollectionTaskPackage,
@@ -41,9 +42,16 @@ class PostgresCollectionTaskRepository:
                           FROM dataset_registry.datasets
                          WHERE organization_id = %s AND project_id = %s
                            AND dataset_id = %s AND availability = 'ACTIVE'
+                           AND (%s::text IS NULL OR region_code = %s)
                     )
                     """,
-                    (organization_id, project_id, dataset_id),
+                    (
+                        organization_id,
+                        project_id,
+                        dataset_id,
+                        current_request_context().region_code,
+                        current_request_context().region_code,
+                    ),
                 )
                 row = cursor.fetchone()
                 return bool(row and row[0])
@@ -80,21 +88,26 @@ class PostgresCollectionTaskRepository:
         finally:
             connection.close()
 
-    def create(self, task: CollectionTaskRecord) -> CollectionTaskRecord:
+    def create(
+        self, task: CollectionTaskRecord, *, capture_plan: SetTaskPlan | None = None
+    ) -> CollectionTaskRecord:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
+                region = task_upload_region(
+                    cursor, task, region_code=current_request_context().region_code
+                )
                 cursor.execute(
                     """
                     INSERT INTO collection_tasks.collection_tasks (
                         collection_task_id, organization_id, project_id, created_by,
                         dataset_id, task_code, name, task_type,
                         scenario, description, target_json, quality_threshold, status,
-                        version, create_fingerprint, created_at, updated_at
+                        version, create_fingerprint, created_at, updated_at, upload_region_code
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         lpad(nextval('collection_tasks.task_code_sequence')::text, 8, '0'),
-                        %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s
                     )
                     ON CONFLICT (organization_id, project_id, collection_task_id) DO NOTHING
                     """,
@@ -120,6 +133,7 @@ class PostgresCollectionTaskRepository:
                         task.create_fingerprint,
                         task.created_at,
                         task.updated_at,
+                        region,
                     ),
                 )
                 inserted = cursor.rowcount == 1
@@ -142,9 +156,21 @@ class PostgresCollectionTaskRepository:
                     self._audit(cursor, action="collection_task.created", before=None, after=record)
                 # Task creation is project-scoped. Its persisted upload Region
                 # supplies the Dataset scope when the caller has no Region.
-                ensure_task_dataset(
-                    cursor, record, region_code=current_request_context().region_code
-                )
+                ensure_task_dataset(cursor, record, region_code=region)
+                if inserted and capture_plan is not None:
+                    from hc_data_platform.capture_schemes.transactions import bind_task_plan
+
+                    bind_task_plan(
+                        connection,
+                        (
+                            task.organization_id,
+                            task.project_id,
+                            region,
+                        ),
+                        task.collection_task_id,
+                        capture_plan,
+                        task.created_by or current_request_context().subject_id or "task-service",
+                    )
             connection.commit()
             return record
         except Exception:
@@ -248,6 +274,12 @@ class PostgresCollectionTaskRepository:
                     raise task_cancelled()
                 if current.version != expected_version:
                     raise version_conflict(current.version)
+                if changes.get("dataset_id", current.dataset_id) != current.dataset_id:
+                    from hc_data_platform.capture_schemes.transactions import require_unbound_task
+
+                    require_unbound_task(
+                        connection, organization_id, project_id, collection_task_id
+                    )
                 cursor.execute(
                     f"""
                     UPDATE collection_tasks.collection_tasks

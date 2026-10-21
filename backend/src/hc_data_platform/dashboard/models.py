@@ -69,6 +69,7 @@ class TaskPackageMainState(str, Enum):
     UPLOAD_PAUSED = "UPLOAD_PAUSED"
     UPLOAD_FAILED = "UPLOAD_FAILED"
     CANCELLED = "CANCELLED"
+    RAW_COMMIT_PENDING = "RAW_COMMIT_PENDING"
     RAW_RECEIVED = "RAW_RECEIVED"
     VALIDATION_RUNNING = "VALIDATION_RUNNING"
     VALIDATION_FAILED = "VALIDATION_FAILED"
@@ -112,6 +113,9 @@ class TaskStageCounts(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     stage: TaskProcessingStage
+    not_started: int = Field(
+        default=0, ge=0, description="Packages whose prerequisites for this stage are not met."
+    )
     waiting: int = Field(default=0, ge=0)
     running: int = Field(default=0, ge=0)
     succeeded: int = Field(default=0, ge=0)
@@ -286,7 +290,8 @@ class TaskPipelineStatus(BaseModel):
             raise ValueError("task pipeline stages must cover the fixed business catalog in order")
         for stage in self.stages:
             counted = (
-                stage.waiting
+                stage.not_started
+                + stage.waiting
                 + stage.running
                 + stage.succeeded
                 + stage.risk

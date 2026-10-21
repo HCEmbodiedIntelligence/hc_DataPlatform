@@ -218,13 +218,13 @@ def evidence(name, data):
 def assert_g0_result_contract(result):
     # Compare wire keys/enums against E's frozen schema, without maintaining a C copy.
     schema = json.loads((G0 / "schemas/processing-result-proposed.schema.json").read_text())
-    assert set(result) == set(schema["required"]) == set(schema["properties"])
+    assert set(schema["required"]) <= set(result) <= set(schema["properties"])
     assert result["schema_version"] == schema["properties"]["schema_version"]["const"]
     for key in ("processing_status", "quality_status"):
         assert result[key] in schema["properties"][key]["enum"]
     episode_schema = schema["properties"]["episodes"]["items"]
     for ep in result["episodes"]:
-        assert set(ep) == set(episode_schema["required"]) == set(episode_schema["properties"])
+        assert set(episode_schema["required"]) <= set(ep) <= set(episode_schema["properties"])
         for key in ("status", "quality_status", "next_action"):
             assert ep[key] in episode_schema["properties"][key]["enum"]
         assert ep["source_episode_id"] and ep["source_episode_index"] >= 0
@@ -523,6 +523,7 @@ def test_orchestration_receipt_double_partial_retry_atomicity(system, quality, m
             "task": task.model_dump(),
             "index": 1,
             "error_code": "TEST_TRANSIENT_FAILURE",
+            "detail": "第 2 个 Episode 的关节维度不匹配",
             "retryable": True,
         },
     )
@@ -530,6 +531,13 @@ def test_orchestration_receipt_double_partial_retry_atomicity(system, quality, m
     result = api.get(root + "/processing", headers=headers).json()
     assert result["processing_status"] == "PARTIALLY_FAILED" and result["terminal"]
     assert result["episodes"][0]["status"] == "READY"
+    diagnostic = api.get(root + "/processing/diagnostics", headers=headers).json()
+    assert diagnostic["error_code"] == "TEST_TRANSIENT_FAILURE"
+    assert diagnostic["error_detail"] == "第 2 个 Episode 的关节维度不匹配"
+    failure = store.for_source(scope=task.scope[:3], raw_source_id=task.raw_source_id)
+    assert failure.detail == diagnostic["error_detail"]
+    with pytest.raises(ValueError, match="scope differs"):
+        store.for_source(scope=("other-org", PROJECT_A, REGION_A), raw_source_id=task.raw_source_id)
     # A projection failure after all SQL writes rolls back every projection.
     write = store._write
     with monkeypatch.context() as patch:
@@ -546,6 +554,8 @@ def test_orchestration_receipt_double_partial_retry_atomicity(system, quality, m
     command = {"request_id": str(uuid4())}
     assert api.post(root + ":retry-processing", json=command, headers=headers).status_code == 200
     retry_task, _ = store.read(upload)
+    assert store.for_source(scope=task.scope[:3], raw_source_id=task.raw_source_id) is None
+    assert store.read(upload)[1].episodes[1].error_detail is None
     processor.fail_second = False
     assert env.run(activities.discover, {"task": retry_task.model_dump()}) == [1]
     env.run(activities.episode, {"task": retry_task.model_dump(), "index": 1})
@@ -556,6 +566,7 @@ def test_orchestration_receipt_double_partial_retry_atomicity(system, quality, m
     done = api.get(root + "/processing", headers=headers).json()
     assert_g0_result_contract(done)
     assert done["processing_status"] == "READY" and done["quality_status"] == quality
+    assert api.get(root + "/processing/diagnostics", headers=headers).json()["error_detail"] is None
     assert done["episodes"][0]["episode_id"] == result["episodes"][0]["episode_id"]
     assert done["episodes"][1]["episode_id"] == result["episodes"][1]["episode_id"]
     assert api.post(root + ":retry-processing", json=command, headers=headers).status_code == 200

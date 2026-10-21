@@ -160,3 +160,15 @@ episode_store/0019_export_adapters.sql
 robotics/0007_camera_calibration.sql
 collection_tasks/0006_task_deletion.sql
 ingest/020_robot_identity_deletion.sql
+ingest/021_robot_onboarding.sql
+ingest/022_robot_connections.sql
+ingest/023_robot_credential_vault.sql
+ingest/024_robot_processing_configs.sql
+ingest/025_joint_only_recordings.sql
+ingest/026_mcap_stored_binding.sql
+
+robotics/0007_robot_deletion_actions.sql
+ingest/027_shared_capture_schemes.sql
+ingest/028_raw_capture_snapshots.sql
+ingest/029_independent_annotation.sql
+ingest/030_capture_bundle_scheme_format.sql

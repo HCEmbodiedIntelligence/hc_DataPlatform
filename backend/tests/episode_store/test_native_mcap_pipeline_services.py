@@ -34,11 +34,14 @@ from tests.robot_ingest.test_raw_derivation_services import uploaded_raw  # noqa
 
 @pytest.mark.integration
 @pytest.mark.parametrize("ingress", ["browser", "robot"])
+@pytest.mark.parametrize("joint_only,rgb_only", [(False, False), (False, True), (True, False)])
 def test_bare_mcap_to_slice_package_and_all_exports(
     uploaded_raw,  # noqa: F811
     tmp_path,
     monkeypatch,
     ingress,
+    joint_only,
+    rgb_only,
 ):
     repository, storage, old_upload, _, old_command, _ = uploaded_raw
     target = old_upload.target
@@ -69,11 +72,83 @@ def test_bare_mcap_to_slice_package_and_all_exports(
         service = LeRobotWebUploadService(
             storage, raw_sources=PostgresRawSourceRepository(repository.connections)
         )
-        raw_bytes = synthetic_mcap(tmp_path / "source.mcap").read_bytes()
+        raw_bytes = synthetic_mcap(
+            tmp_path / "source.mcap", joint_only=joint_only, rgb_only=rgb_only
+        ).read_bytes()
+        from hc_data_platform.continuous_recordings.mcap_native import inspect
+        from hc_data_platform.robot_processing import service as configs
+        from hc_data_platform.robot_processing.models import Draft, Publish
+
+        configuration = dict(
+            state_topic="/joint_states",
+            action_topic="/joint_cmd",
+            joint_names=["joint"],
+            joint_units=["rad"],
+            collection_mode="JOINT_ONLY" if joint_only else "RGB",
+            time_source="STATE_LOG_TIME" if joint_only else "RGB_LOG_TIME",
+            primary_camera=None if joint_only else "/color",
+            depth_scale_m_per_unit=None if joint_only else 0.001,
+            depth_unit_evidence=None if joint_only else "synthetic fixture 1000=1m",
+            cameras=[]
+            if joint_only
+            else [
+                dict(
+                    camera_id="head",
+                    topic="/color",
+                    message_type="sensor_msgs/msg/CompressedImage",
+                    kind="rgb",
+                    required=True,
+                ),
+                dict(
+                    camera_id="head_depth",
+                    topic="/depth",
+                    message_type="sensor_msgs/msg/CompressedImage",
+                    kind="depth",
+                    required=True,
+                ),
+            ],
+        )
+        if rgb_only:
+            configuration["cameras"] = configuration["cameras"][:1]
+            configuration["depth_scale_m_per_unit"] = None
+            configuration["depth_unit_evidence"] = None
+        with repository.connections() as db:
+            configs.save(
+                db,
+                identity.organization_id,
+                old_command.robot_id,
+                "test",
+                Draft(
+                    expected_revision=0,
+                    name="Test",
+                    software="fixture",
+                    configuration=configuration,
+                ),
+                "test",
+            )
+            configs.validate(
+                db,
+                identity.organization_id,
+                old_command.robot_id,
+                "test",
+                1,
+                inspect(tmp_path / "source.mcap"),
+                {"fixture": True},
+                "test",
+            )
+            configs.publish(
+                db,
+                identity.organization_id,
+                old_command.robot_id,
+                "test",
+                Publish(expected_revision=1),
+                "test",
+            )
+            db.commit()
         slice_end, expected_frames = 10, 9
         if ingress == "robot":
             robot_upload = upload_robot_mcap(
-                repository, storage, old_upload, old_command, raw_bytes
+                repository, storage, old_upload, old_command, raw_bytes, configure=False
             )
             raw_id = robot_upload.raw_source_id
         else:
@@ -177,9 +252,9 @@ def test_bare_mcap_to_slice_package_and_all_exports(
         )
         with repository.transaction() as cursor:
             cursor.execute(
-                "SELECT envelope FROM core.outbox_events "
-                "WHERE envelope->'payload'->>'mcap_processing_id'=%s "
-                "AND envelope->'payload'->>'attempt'='1'",
+                """SELECT envelope FROM core.outbox_events WHERE
+                envelope->'payload'->>'mcap_processing_id'=%s AND
+                envelope->'payload'->>'attempt'='1'""",
                 (processing_id,),
             )
             event = b.DomainEventEnvelope.model_validate(cursor.fetchone()[0])
@@ -204,11 +279,69 @@ def test_bare_mcap_to_slice_package_and_all_exports(
         # Both RGB and physical depth are committed MP4 media, not loose source images.
 
         declarations = {a.path: a for a in upload.command.assets}
-        assert {c.codec for c in upload.command.recording_config.cameras} == {"h264", "hevc"}
-        assert len([a for a in declarations.values() if a.role.value == "RAW_VIDEO"]) == 2
-        assert any(p.endswith("_depth.mp4") for p in declarations)
-        assert any(p.endswith("validity/flags.parquet") for p in declarations)
-        assert any(p.endswith("report.json") for p in declarations)
+        if joint_only:
+            assert not upload.command.recording_config.cameras
+            assert upload.command.schema_version == "continuous-recording-upload/v3"
+            assert not any(a.role.value == "RAW_VIDEO" for a in declarations.values())
+            # A caller cannot bypass the task's visual requirement through either
+            # direct asset creation or the worker registration port.
+            from uuid import uuid5
+
+            from hc_data_platform.continuous_recordings.registration import VerifiedRecordingFacts
+            from hc_data_platform.core.errors import ProblemException
+            from hc_data_platform.security.audit import canonical_hash
+
+            blocked_id = uuid4()
+            blocked_command = upload.command.model_copy(
+                update={"recording_id": "blocked-" + blocked_id.hex}
+            )
+            blocked_upload = upload.model_copy(
+                update={
+                    "upload_id": blocked_id,
+                    "command": blocked_command,
+                    "manifest_sha256": canonical_hash(blocked_command.model_dump(mode="json")),
+                }
+            )
+            blocked_assets = tuple(
+                a.model_copy(
+                    update={
+                        "upload_id": blocked_id,
+                        "asset_id": uuid5(blocked_id, a.manifest.path),
+                    }
+                )
+                for a in assets.list_assets(scope, upload.upload_id)
+            )
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    "INSERT INTO ingest.robot_task_data_requirements "
+                    "VALUES(%s,%s,%s,true,false,'test',now())",
+                    (identity.organization_id, identity.project_id, old_command.collection_task_id),
+                )
+            with pytest.raises(ProblemException) as rejected:
+                assets.create_upload(blocked_upload, blocked_assets)
+            assert rejected.value.problem.code == "ROBOT_TASK_DATA_INCOMPATIBLE"
+            with pytest.raises(ProblemException) as rejected, repository.transaction() as cursor:
+                handler.registrations.register(
+                    cursor, VerifiedRecordingFacts(blocked_upload, blocked_assets)
+                )
+            assert rejected.value.problem.code == "ROBOT_TASK_DATA_INCOMPATIBLE"
+            assert assets.get_upload(scope, blocked_id) is None
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    "DELETE FROM ingest.robot_task_data_requirements "
+                    "WHERE organization_id=%s AND project_id=%s AND collection_task_id=%s",
+                    (identity.organization_id, identity.project_id, old_command.collection_task_id),
+                )
+        else:
+            assert {c.codec for c in upload.command.recording_config.cameras} == (
+                {"h264"} if rgb_only else {"h264", "hevc"}
+            )
+            assert len([a for a in declarations.values() if a.role.value == "RAW_VIDEO"]) == (
+                1 if rgb_only else 2
+            )
+            assert any(p.endswith("_depth.mp4") for p in declarations) == (not rgb_only)
+            assert any(p.endswith("validity/flags.parquet") for p in declarations) == (not rgb_only)
+            assert any(p.endswith("report.json") for p in declarations) == (not rgb_only)
         with repository.transaction() as cursor:
             cursor.execute(
                 "SELECT source_document FROM ingest.mcap_processing_files WHERE processing_id=%s",
@@ -247,7 +380,28 @@ def test_bare_mcap_to_slice_package_and_all_exports(
                 model_query=published_model_inputs,
             ),
         )
-        recording_service = b.ContinuousRecordingService(records, None, assets, storage)
+        recording_service = b.ContinuousRecordingService(
+            records,
+            None,
+            assets,
+            storage,
+            decoder=b.RegisteredDecoderProbe({("json", "jsonschema"): lambda _, m: json.loads(m)}),
+        )
+        preview = recording_service.authorize_recording_videos(
+            auth=auth, **scope.model_dump(), recording_id=record.recording_id
+        )
+        assert len(preview.sources) == (0 if joint_only else 1 if rgb_only else 2)
+        window = recording_service.read_recording_sensor_window(
+            auth=auth,
+            **scope.model_dump(),
+            recording_id=record.recording_id,
+            topic=None,
+            start_offset_ns=0,
+            end_offset_ns=record.duration_ns,
+            maximum_samples=100,
+        )
+        assert window.topic == "/observation/state" and len(window.samples) == 12
+        assert window.samples[0].value["names"] == ["joint"]
         args = dict(
             auth=auth,
             **scope.model_dump(),
@@ -281,16 +435,20 @@ def test_bare_mcap_to_slice_package_and_all_exports(
         b.publish_schema(source, annotation)
         config = upload.command.recording_config
         profile = b.QualityProfileV1(
-            profile_id="mcap-quality",
+            profile_id="mcap-quality-joints"
+            if joint_only
+            else "mcap-quality-rgb-only"
+            if rgb_only
+            else "mcap-quality-declared-cameras",
             required_topics=frozenset(
                 [c.modality_key for c in config.cameras] + [s.topic for s in config.sensors]
             ),
         )
         with repository.transaction() as cursor:
             cursor.execute(
-                "INSERT INTO quality_profiles(project_id,profile_id,profile_version,"
-                "schema_version,profile_sha256,profile_json) "
-                "VALUES (%s,%s,1,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
+                """INSERT INTO
+                quality_profiles(project_id,profile_id,profile_version,schema_version,profile_sha256,profile_json)
+                VALUES (%s,%s,1,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
                 (
                     identity.project_id,
                     profile.profile_id,
@@ -324,6 +482,28 @@ def test_bare_mcap_to_slice_package_and_all_exports(
         state(b.Status.PENDING_QC, b.Status.QC_RUNNING)
         qc = processor.qc(request)
         assert qc.status == "PASS", qc
+        if joint_only:
+            assert qc.inspected_video_count == 0
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    (
+                        """SELECT report_document FROM ingest.recording_episode_qc_reports WHERE
+                        organization_id=%s AND project_id=%s AND region_code=%s AND
+                        report_id=%s"""
+                    ),
+                    (*identity.scope, qc.report_id),
+                )
+                image_rules = [
+                    r
+                    for r in cursor.fetchone()[0]["rule_evidence"]["rules"]
+                    if r["code"].startswith("QC_IMAGE_")
+                ]
+                assert image_rules and all(
+                    r["status"] == "skip"
+                    and r["reason"] == "NOT_APPLICABLE_NO_IMAGES"
+                    and not r["participates_in_verdict"]
+                    for r in image_rules
+                )
         state(b.Status.QC_RUNNING, b.Status.PENDING_ALIGNMENT, qc_report_id=qc.report_id)
         state(
             b.Status.PENDING_ALIGNMENT,
@@ -481,13 +661,16 @@ def test_bare_mcap_to_slice_package_and_all_exports(
                         ]
 
                     assert evidence(messages) == evidence(expected)
-                    assert {c.topic for _, c, _ in messages} == {
-                        "/color",
-                        "/depth",
-                        "/joint_states",
-                        "/joint_cmd",
-                    }
-                    assert len(messages) == expected_frames * 4
+                    assert {c.topic for _, c, _ in messages} == (
+                        {"/joint_states", "/joint_cmd"}
+                        if joint_only
+                        else {"/color", "/joint_states", "/joint_cmd"}
+                        if rgb_only
+                        else {"/color", "/depth", "/joint_states", "/joint_cmd"}
+                    )
+                    assert len(messages) == expected_frames * (
+                        2 if joint_only else 3 if rgb_only else 4
+                    )
                     if annotated:
                         document = json.loads(
                             next(
@@ -523,6 +706,8 @@ def upload_robot_mcap(
     configure=True,
     asset_path="source.mcap",
     queued=True,
+    reference=None,
+    after_create=None,
 ):
     from hc_data_platform.robot_ingest.models import (
         CompleteAssetCommand,
@@ -575,11 +760,23 @@ def upload_robot_mcap(
         with repository.transaction() as cursor:
             cursor.execute(
                 "INSERT INTO ingest.mcap_robot_profiles VALUES (%s,%s,%s,%s,%s::jsonb,now())",
-                (*scope, command.robot_id, '{"depth_scale_m_per_unit":0.001}'),
+                (
+                    *scope,
+                    command.robot_id,
+                    json.dumps(
+                        dict(
+                            state_topic="/joint_states",
+                            action_topic="/joint_cmd",
+                            primary_camera="/color",
+                            depth_scale_m_per_unit=0.001,
+                        )
+                    ),
+                ),
             )
     upload = service.create_upload(
         token=token,
         manifest=RobotIngestUploadManifest(
+            processing_config=reference,
             client_upload_id=str(uuid4()),
             collection_task_id=command.collection_task_id,
             robot_id=command.robot_id,
@@ -600,6 +797,8 @@ def upload_robot_mcap(
             ),
         ),
     ).data
+    if after_create:
+        after_create()
     asset = upload.assets[0]
     part = storage.upload_part_stream(
         asset.object_key, asset.multipart_upload_id, 1, io.BytesIO(content), len(content)
@@ -617,8 +816,8 @@ def upload_robot_mcap(
     )
     with repository.transaction() as cursor:
         cursor.execute(
-            "SELECT count(*) FROM core.outbox_events WHERE organization_id=%s "
-            "AND project_id=%s AND region_code=%s AND envelope->>'aggregate_id'=%s",
+            """SELECT count(*) FROM core.outbox_events WHERE organization_id=%s AND project_id=%s
+            AND region_code=%s AND envelope->>'aggregate_id'=%s""",
             (*scope, committed.raw_source_id),
         )
         assert cursor.fetchone()[0] == int(queued)
@@ -631,7 +830,6 @@ def test_robot_mcap_missing_mapping_settles_and_retries_original(
     tmp_path,
     monkeypatch,
 ):
-    from hc_data_platform.collection_tasks.captures import read_captures
     from hc_data_platform.lerobot_imports.recording_recovery import retry_recording_source
     from hc_data_platform.robot_ingest.processing_dispatch import mcap_result
 
@@ -639,55 +837,96 @@ def test_robot_mcap_missing_mapping_settles_and_retries_original(
     scope = (old.target.organization_id, old.target.project_id, old.target.region_code)
     monkeypatch.setattr(mcap_processing, "connections", lambda: repository.connections)
     content = synthetic_mcap(tmp_path / "source.mcap").read_bytes()
-    upload = upload_robot_mcap(repository, storage, old, command, content, configure=False)
+    upload = upload_robot_mcap(
+        repository, storage, old, command, content, configure=False, queued=False
+    )
+    original = mcap_processing.progress(scope, upload.raw_source_id)["files"][0]
+    assert original["error"] == "ROBOT_PROCESSING_CONFIG_REQUIRED"
+    assert mcap_result(repository.connections, upload)["status"] == "FAILED"
+    assert retry_recording_source(*scope, upload.raw_source_id, factory=repository.connections)
+    assert mcap_processing.progress(scope, upload.raw_source_id)["files"][0] == original
+    from hc_data_platform.continuous_recordings.mcap_native import inspect
+    from hc_data_platform.robot_processing import service as configs
+    from hc_data_platform.robot_processing.models import Draft, Publish
 
-    def queued_event():
-        progress = mcap_processing.progress(scope, upload.raw_source_id)["files"][0]
-        with repository.transaction() as cursor:
-            cursor.execute(
-                "SELECT envelope FROM core.outbox_events "
-                "WHERE envelope->'payload'->>'mcap_processing_id'=%s ORDER BY occurred_at DESC",
-                (progress["processing_id"],),
+    configuration = dict(
+        state_topic="/joint_states",
+        action_topic="/joint_cmd",
+        primary_camera="/color",
+        joint_names=["joint"],
+        joint_units=["rad"],
+        depth_scale_m_per_unit=0.001,
+        depth_unit_evidence="fixture 1000=1m",
+        cameras=[
+            dict(
+                camera_id="head",
+                topic="/color",
+                message_type="sensor_msgs/msg/CompressedImage",
+                kind="rgb",
+                required=True,
             )
-            return b.DomainEventEnvelope.model_validate(cursor.fetchone()[0])
-
+        ],
+    )
+    with repository.connections() as db:
+        configs.save(
+            db,
+            scope[0],
+            command.robot_id,
+            "fixed",
+            Draft(
+                expected_revision=0, name="Fixed", software="fixture", configuration=configuration
+            ),
+            "test",
+        )
+        configs.validate(
+            db,
+            scope[0],
+            command.robot_id,
+            "fixed",
+            1,
+            inspect(tmp_path / "source.mcap"),
+            {"fixture": True},
+            "test",
+        )
+        version = configs.publish(
+            db, scope[0], command.robot_id, "fixed", Publish(expected_revision=1), "test"
+        )["versions"][0]
+        db.commit()
+    # Publishing a default cannot change an existing rejected snapshot.
+    assert retry_recording_source(*scope, upload.raw_source_id, factory=repository.connections)
+    assert mcap_processing.progress(scope, upload.raw_source_id)["files"][0] == original
+    browser = OriginalSourceBrowser(storage, PostgresRawSourceRepository(repository.connections))
+    raw = browser.source(*scope, upload.raw_source_id)
+    monkeypatch.setattr(mcap_processing, "validate_target", lambda *args: None)
+    result = mcap_processing.start(
+        scope,
+        raw,
+        browser.manifest(raw),
+        StartStoredProcessing(
+            robot_id=command.robot_id,
+            collection_task_id=command.collection_task_id,
+            processing_config={k: version[k] for k in ("scheme_id", "version", "content_sha256")},
+        ),
+    )
+    assert (
+        len(result["history"]) == 2
+        and result["files"][0]["processing_id"] != original["processing_id"]
+    )
+    with repository.transaction() as cursor:
+        cursor.execute(
+            (
+                "SELECT envelope FROM core.outbox_events WHERE "
+                "envelope->'payload'->>'mcap_processing_id'=%s"
+            ),
+            (result["files"][0]["processing_id"],),
+        )
+        current = b.DomainEventEnvelope.model_validate(cursor.fetchone()[0])
     handler = b.RecordingOutboxHandler(
         repository.connections, storage, registrations=b.PostgresRecordingRegistration()
     )
-    old_event = queued_event()
-    with pytest.raises(ValueError, match="MCAP_DEPTH_UNITS_REQUIRED"):
-        handler.adopt(old_event)
-    status = mcap_result(repository.connections, upload)
-    assert status["terminal"] and status["status"] == "FAILED"
-    assert status["error_code"] == "MCAP_DEPTH_UNITS_REQUIRED"
-    with repository.transaction() as cursor:
-        item = next(c for c in read_captures(cursor, *scope) if c.upload_id == upload.upload_id)
-    assert item.stage == "BLOCKED" and item.qc_outcome is None
-    assert not retry_recording_source(
-        scope[0], scope[1], "foreign-region", upload.raw_source_id, factory=repository.connections
-    )
-    # This robot came through robot ingest, without a separate browser data-source row.
-    for config, expected in (
-        ({"state_topic": "/absent"}, "MCAP_MAPPING_INVALID"),
-        ({}, "MCAP_DEPTH_UNITS_REQUIRED"),
-    ):
-        mcap_processing.profile(scope, command.robot_id, config)
-        assert retry_recording_source(*scope, upload.raw_source_id, factory=repository.connections)
-        event = queued_event()
-        assert event.event_id != old_event.event_id
-        with pytest.raises(ValueError, match=expected):
-            handler.adopt(event)
-        assert mcap_result(repository.connections, upload)["error_code"] == expected
-    mcap_processing.profile(scope, command.robot_id, {"depth_scale_m_per_unit": 0.001})
-    assert retry_recording_source(*scope, upload.raw_source_id, factory=repository.connections)
-    current = queued_event()
-    assert current.event_id != old_event.event_id
-    handler.adopt(old_event)  # A superseded configuration cannot run after repair.
-    assert mcap_processing.progress(scope, upload.raw_source_id)["files"][0]["status"] == "PENDING"
     handler.adopt(current)
     assert mcap_result(repository.connections, upload)["status"] == "AWAITING_SLICE"
-    asset = upload.assets[0]
-    assert b"".join(storage.read_chunks(asset.object_key)) == content
+    assert b"".join(storage.read_chunks(upload.assets[0].object_key)) == content
 
 
 @pytest.mark.integration
@@ -717,3 +956,109 @@ def test_unsupported_mcap_layout_retains_receipt_and_reports_failure(
     assert item.stage == "FAILED" and item.error_code == "ROBOT_PROCESSOR_UNAVAILABLE"
     assert item.received and item.qc_outcome is None
     assert b"".join(storage.read_chunks(upload.assets[0].object_key)) == content
+
+
+@pytest.mark.integration
+def test_recording_snapshot_fixed_before_commit_and_unknown_version_retains_raw(
+    uploaded_raw,  # noqa: F811
+    tmp_path,
+):
+    from hc_data_platform.continuous_recordings.mcap_native import inspect
+    from hc_data_platform.robot_ingest.models import RobotIngestUploadEnvelope
+    from hc_data_platform.robot_processing import service as configs
+    from hc_data_platform.robot_processing.models import Draft, Publish
+
+    repo, storage, old, _, command, _ = uploaded_raw
+    scope = (old.target.organization_id, old.target.project_id, old.target.region_code)
+    source = synthetic_mcap(tmp_path / "source.mcap", joint_only=True)
+    cfg = dict(
+        collection_mode="JOINT_ONLY",
+        time_source="STATE_LOG_TIME",
+        state_topic="/joint_states",
+        action_topic="/joint_cmd",
+        joint_names=["joint"],
+        joint_units=["rad"],
+    )
+
+    def version(revision):
+        with repo.connections() as db:
+            configs.save(
+                db,
+                scope[0],
+                command.robot_id,
+                "fixed",
+                Draft(
+                    expected_revision=revision - 1,
+                    name="Fixed",
+                    software="fixture",
+                    configuration={**cfg, "maximum_time_error_ms": 50 - revision},
+                ),
+                "test",
+            )
+            configs.validate(
+                db,
+                scope[0],
+                command.robot_id,
+                "fixed",
+                revision,
+                inspect(source),
+                {"fixture": True},
+                "test",
+            )
+            v = configs.publish(
+                db, scope[0], command.robot_id, "fixed", Publish(expected_revision=revision), "test"
+            )["versions"][0]
+            db.commit()
+            return v
+
+    first = version(1)
+    uploaded = upload_robot_mcap(
+        repo,
+        storage,
+        old,
+        command,
+        source.read_bytes(),
+        configure=False,
+        after_create=lambda: version(2),
+    )
+    assert uploaded.processing_config_snapshot["version"] == 1
+    with repo.connections() as db:
+        assert (
+            db.execute(
+                (
+                    """SELECT config_reference FROM ingest.mcap_processing_files WHERE
+                    organization_id=%s AND raw_source_id=%s"""
+                ),
+                (scope[0], uploaded.raw_source_id),
+            ).fetchone()[0]["version"]
+            == 1
+        )
+    assert (
+        "processing_config_snapshot"
+        not in RobotIngestUploadEnvelope(data=uploaded).model_dump(mode="json")["data"]
+    )
+    assert "processing_config_snapshot" in uploaded.model_dump(
+        mode="json"
+    )  # persistence retains it
+    next_upload = upload_robot_mcap(
+        repo, storage, old, command, source.read_bytes(), configure=False
+    )
+    assert next_upload.processing_config_snapshot["version"] == 2
+    old_reference = {k: first[k] for k in ("scheme_id", "version", "content_sha256")}
+    fixed = upload_robot_mcap(
+        repo, storage, old, command, source.read_bytes(), configure=False, reference=old_reference
+    )
+    assert fixed.processing_config_snapshot["version"] == 1
+    unknown = upload_robot_mcap(
+        repo,
+        storage,
+        old,
+        command,
+        source.read_bytes(),
+        configure=False,
+        reference={**old_reference, "version": 999},
+        queued=False,
+    )
+    assert unknown.state.value == "COMMITTED"
+    assert unknown.processing_config_snapshot["error"] == "ROBOT_PROCESSING_CONFIG_VERSION_UNKNOWN"
+    assert b"".join(storage.read_chunks(unknown.assets[0].object_key)) == source.read_bytes()

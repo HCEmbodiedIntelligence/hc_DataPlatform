@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from typing import Any
 
 
 class SchemaCompilationError(ValueError):
@@ -170,12 +171,18 @@ def validate_schema_fields(fields: dict[str, str]) -> None:
     canonical_schema_spec(fields)
 
 
-def compute_schema_fingerprint(fields: dict[str, str]) -> str:
+def compute_schema_fingerprint(
+    fields: dict[str, str], *, semantic_contract: dict[str, Any] | None = None
+) -> str:
     """Hash the canonical logical schema without depending on a PyArrow release."""
 
-    payload = {
-        "compiler": "hc-arrow-schema/v1",
+    payload: dict[str, Any] = {
+        "compiler": "hc-capture-schema/v2"
+        if semantic_contract is not None
+        else "hc-arrow-schema/v1",
         "fields": canonical_schema_spec(fields),
     }
+    if semantic_contract is not None:
+        payload["semantics"] = semantic_contract
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()

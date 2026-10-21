@@ -17,7 +17,7 @@ const statusLabels: Record<string, string> = {
   RUNNING: "正在重新处理并入库",
   SUCCEEDED: "已重新处理并入库，可前往数据集查看",
   FAILED: "本次处理未完成，可查看错误原因后再次处理",
-  DISCARDED: "已移除这条未入库记录，原始文件与历史处理结果已保留",
+  DISCARDED: "已移除这条未入库记录，原始文件与已有处理结果已保留",
 };
 
 export default function DuplicateIssueActions({
@@ -181,7 +181,7 @@ export default function DuplicateIssueActions({
         <p>
           {choice?.action === "DISCARD"
             ? "确认后，这条记录会从待处理问题中移除，不再继续入库。原始文件和历史结果会保留，同批其他数据不受影响。"
-            : "只重新处理当前 Episode。通过质检后写入数据集；原始文件和历史处理结果会保留，不会新增一份重复的原始数据。"}
+            : "只重新处理当前 Episode。通过质检后写入数据集；原始文件和已有处理结果会保留，不会新增一份重复的原始数据。"}
         </p>
         {mutation.error ? (
           <Alert

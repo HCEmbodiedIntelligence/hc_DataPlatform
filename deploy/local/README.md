@@ -15,6 +15,14 @@ bash deploy/local/compose.sh current stop
 ```
 
 入口为 <http://127.0.0.1:8088>，配置在根目录 `.env`。
+局域网机器人接入时，将 `.env` 中的 `HC_PUBLIC_ORIGIN` 设置为机器人可达的平台
+IP 或域名（例如 `http://192.168.1.10:8088`），并设置 `HC_GATEWAY_BIND_ADDRESS=0.0.0.0`。
+该地址同时用于机器人连接链接和对象存储上传/下载地址；即使操作员从
+`127.0.0.1` 打开平台，复制出的机器人连接链接也使用这个对外地址。
+修改后执行 `bash deploy/local/compose.sh current up -d --no-deps api worker frontend gateway`
+使环境配置生效。没有配置对外地址时，连接链接使用浏览器 API 地址，但拒绝生成
+指向 `localhost`、`127.*`、`::1` 或监听通配地址的链接。独立前端或 Helm 部署通过
+`VITE_ROBOT_PLATFORM_BASE_URL` / `frontend.runtimeConfig.robotPlatformBaseUrl` 配置相同地址。
 首次打开页面并注册账号：第一个成功注册的账号自动获得平台管理员权限，
 后续注册账号为普通账号。新环境不预置管理员用户名或密码。
 前后端镜像由当前源码构建；本机数据库、对象存储和 Temporal 使用已安装的基础镜像。
@@ -30,9 +38,27 @@ bash deploy/local/compose.sh current stop
 ## 直接查看文件及容量
 
 用系统文件管理器打开 `/home/hc_op/workspace/data-platform-files`。
-这个目录通过 rclone/FUSE 直接读取 MinIO，是同一份数据的只读视图，**不额外复制整份数据**。
-新上传和处理产物通常在 5 秒目录缓存更新后可见，未完成上传的分片不会伪装成完整文件。
-可以直接查看、播放和复制；没有启用 OSS，也没有把 MinIO 当成可删除的中转缓存。
+目录按“项目名 → 任务名和任务号 → 录制时间与机器人”展示，可直接双击文件、复制粘贴
+单个文件或整个录制文件夹。复制出来的是普通文件，可脱离平台使用；源目录只读。
+
+```text
+openarmx（项目01）/
+  pick and place（任务00000014）/
+    2026-10-20_14-19-08_X1-001（录制8位编号）/
+      录制说明.txt
+      原始文件/
+      处理后的文件/
+      切片/片段001_00分00.000秒至00分09.300秒/版本001/
+```
+
+日期和时间使用北京时间，缺少采集时间的批次明确标注“导入于”。短编号稳定区分同秒录制；
+名称中的路径分隔符等字符会替换为下划线。原始文件及 LeRobot 包内的文件名、相对路径保持
+原样，切片范围来自该版本冻结的来源记录，不随后续切片编辑改变。
+
+这是同一份 MinIO 数据的只读视图，**不额外复制整份数据**。索引每 10 秒自动刷新，目录缓存
+为 5 秒；通常 15 秒内可见已提交的新文件。未完成上传或未提交的处理包不会展示成完整文件。
+少量历史记录若缺少清单，会在 `目录状态说明.txt` 列明；数据库暂不可达时保留上次完整索引并
+显示 `目录刷新状态.txt`。不启用 OSS，不把 MinIO 当成可删除的中转缓存。
 
 ```bash
 # 全部文件数量、内容总大小；也可追加 raw/ 等实际前缀
@@ -81,6 +107,13 @@ systemctl --user start hc-platform-files.service
 `HC_LOCAL_FILES_DIRECTORY` 可以指定一个独立的空目录。更改后先停止上述服务，重新执行
 `setup` 和 `install-service`，并重建 API/Worker 容器以更新页面路径。挂载账号只有目标桶
 的读取权限，没有覆盖或删除权限。不会启用整桶镜像、双向同步或额外的 OSS 同步。
+
+服务内部将对象挂载在 `.data-platform-tools/objects`，通过仅监听回环地址、带随机凭据的
+只读目录服务提供业务名称，再挂载到 `data-platform-files`。网页“存储位置”使用
+`HC_OBJECT_STORE_RAW_BROWSER_PATH` 指向内部对象挂载；平台展示的浏览入口仍为可读目录。
+`local_file_catalog` 在 API 容器内使用只读数据库事务及已提交清单构建索引，不写业务数据。
+若更改 API 容器名，可在 `.env` 设置 `HC_LOCAL_FILES_API_CONTAINER`。
+平台管理员统计命令 `usage/list` 仍按对象存储实际前缀统计，包含历史对象，口径与业务目录不同。
 
 旧开发副本的未提交修改、独有文件及提交索引保存在
 `/home/hc_op/workspace/diagnostics/workspace-consolidation-20261009/`。

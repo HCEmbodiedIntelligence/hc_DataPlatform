@@ -1,0 +1,43 @@
+{
+  "backend": {
+    "tests": 266,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 266,
+    "sources": [
+      "backend-final.xml",
+      "legacy-temporal-final.xml",
+      "parallel-final.xml",
+      "runtime-worker-final.xml",
+      "backend-dependency-final.xml",
+      "migration-cli-final.xml",
+      "visual-task-guard-final.xml",
+      "ready-guards-final.xml",
+      "capture-package-final.xml",
+      "capture-package-temporal-final.xml"
+    ]
+  },
+  "frontend": {
+    "tests": 178,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 178,
+    "sources": [
+      "frontend-final.xml",
+      "frontend-gap-final.xml",
+      "frontend-dependency-final.xml"
+    ]
+  },
+  "robot": {
+    "tests": 117,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 3,
+    "passed": 114,
+    "sources": [
+      "robot-supported-final.xml"
+    ]
+  }
+}

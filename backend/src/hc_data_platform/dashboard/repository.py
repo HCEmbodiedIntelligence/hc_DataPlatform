@@ -169,6 +169,7 @@ class TaskStatusPackageFact:
     resolution_status: str | None = None
     quality_findings: tuple[TaskIssueFinding, ...] = ()
     recording_id: str | None = None
+    episode_facts: tuple[TaskStatusPackageFact, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

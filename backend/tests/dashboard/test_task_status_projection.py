@@ -18,7 +18,7 @@ from hc_data_platform.dashboard.repository import (
     TaskStatusProjectionFacts,
     TaskStatusTaskFact,
 )
-from hc_data_platform.dashboard.service import DashboardService
+from hc_data_platform.dashboard.service import DashboardService, _data_issues
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import CAPABILITY_DASHBOARD_READ
 
@@ -100,6 +100,47 @@ def test_discarded_conflict_is_counted_without_active_failure_or_waiting() -> No
     assert result.main_state_counts[TaskPackageMainState.DISCARDED] == 1
     assert result.blockers == ()
     assert result.standardization.lance_writing == 0
+
+
+@pytest.mark.parametrize("status_field", ["resolution_status", "source_episode_status"])
+@pytest.mark.parametrize("quality", [None, "PASS", "RISK", "REJECT"])
+def test_discarded_data_closes_every_problem_counter_and_action(status_field, quality):
+    removed = package(
+        **{status_field: "DISCARDED"},
+        verification_status="RAW_VERIFIED",
+        qc_status=quality,
+        alignment_status="ABORTED",
+        workflow_status="TECHNICAL_FAILED",
+        workflow_stage="alignment",
+        workflow_error_code="OLD_FAILURE",
+    )
+    result = status(removed)
+    assert result.qc.discarded == 1
+    assert (result.qc.waiting, result.qc.passed, result.qc.risk, result.qc.rejected) == (0, 0, 0, 0)
+    assert result.standardization.isolated_by_quality == 0
+    assert result.blocker_count == 0
+    assert [action.action for action in result.actions] == ["VIEW_TASK"]
+    assert all(
+        not (stage.waiting or stage.running or stage.failed or stage.blocked)
+        for stage in result.stages
+    )
+    sibling = package(rollout_id="sibling", data_package_id="other", qc_status="REJECT")
+    assert [issue.rollout_id for issue in _data_issues((removed, sibling))] == ["sibling"]
+
+
+def test_commit_projection_failure_is_not_reported_as_an_alignment_failure():
+    failed = package(
+        qc_status="PASS",
+        alignment_status="READY",
+        workflow_status="TECHNICAL_FAILED",
+        workflow_stage="episode_commit",
+        workflow_error_code="DATASET_INGEST_PROJECTION_CONFLICT",
+    )
+    result = status(failed)
+    assert result.standardization.alignment_failed == 0
+    assert result.standardization.lance_failed == 1
+    assert result.blockers[0].label == "数据集登记失败"
+    assert _data_issues((failed,))[0].label == "数据集登记失败"
 
 
 def status(
@@ -414,7 +455,7 @@ def test_quality_findings_are_isolated_without_blocking_the_task(outcome: str) -
     assert all(action.action != "RETRY_TECHNICAL_PROCESSING" for action in selected.actions)
 
 
-def test_historical_duplicate_source_episode_is_visible_and_isolated() -> None:
+def test_historical_duplicate_source_episode_is_closed_without_current_problems() -> None:
     selected = status(
         package(
             duplicate_of_rollout_id="rollout-canonical",
@@ -430,10 +471,10 @@ def test_historical_duplicate_source_episode_is_visible_and_isolated() -> None:
     assert selected.qc.duplicate == 1
     assert selected.qc.passed == 0
     assert selected.standardization.ready == 0
-    assert selected.standardization.isolated_by_quality == 1
+    assert selected.standardization.isolated_by_quality == 0
     assert selected.blocker_count == 0
     assert selected.blockers == ()
-    assert selected.actions[0].action == "VIEW_QC_ANOMALIES"
+    assert selected.actions[0].action == "VIEW_TASK"
     downstream = {
         item.stage: item
         for item in selected.stages
@@ -485,6 +526,7 @@ def test_multiple_tasks_require_explicit_selection_and_preserve_individual_cohor
     assert all(
         sum(
             (
+                stage.not_started,
                 stage.waiting,
                 stage.running,
                 stage.succeeded,

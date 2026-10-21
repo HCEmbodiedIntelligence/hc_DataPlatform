@@ -31,6 +31,7 @@ from .processing_contract import (
     ProcessorUnavailable,
     SourceEpisode,
 )
+from .processing_errors import safe_processing_detail
 from .processing_store import EVENT_TYPE, WORKFLOW_NAME, ProcessingStore, ProcessingTask
 
 
@@ -82,9 +83,12 @@ class RobotProcessingActivities:
             except ProcessingFailure as exc:
                 # Controlled business failure is persisted by the workflow. Transient
                 # storage/database exceptions use Temporal's bounded activity retry.
+                details: dict[str, Any] = {"retryable": exc.retryable}
+                if exc.detail is not None:
+                    details["detail"] = exc.detail
                 raise ApplicationError(
-                    exc.code, {"retryable": exc.retryable}, type=exc.code, non_retryable=True
-                ) from exc
+                    exc.code, details, type=exc.code, non_retryable=True
+                ) from None
             except Exception:
                 # Third-party exceptions may embed signed URLs. Temporal persists
                 # and logs activity failures, so cross that boundary with a code only.
@@ -156,7 +160,7 @@ class RobotProcessingActivities:
             index = int(request["index"])
             upload, doc = self.store.load(task)
             ep = next(e for e in doc.episodes if e.source_episode_index == index)
-            if ep.status in {"READY", "FAILED"}:
+            if ep.status in {"READY", "FAILED", "DISCARDED"}:
                 return
 
             def running(d: ProcessingDocument) -> ProcessingDocument:
@@ -200,10 +204,12 @@ class RobotProcessingActivities:
                                     "quality_status": QualityStatus(receipt.quality_status),
                                     "receipt": receipt,
                                     "error_code": None,
+                                    "error_detail": None,
                                     "retryable": False,
                                 }
                             )
-                            if e.source_episode_index == index and e.status != "READY"
+                            if e.source_episode_index == index
+                            and e.status not in {"READY", "DISCARDED"}
                             else e
                             for e in d.episodes
                         )
@@ -220,23 +226,27 @@ class RobotProcessingActivities:
                 if doc.phase == "DONE":
                     return doc
                 error = request["error_code"]
-                # Never persist exception text (may contain credentials/signed URLs).
+                detail = safe_processing_detail(request.get("detail"))
+                # Never persist third-party exception text or signed URLs.
                 import re
 
                 if not isinstance(error, str) or not re.fullmatch(r"[A-Z0-9_]{1,128}", error):
                     error = "ROBOT_PROCESSING_TECHNICAL_FAILURE"
+                    detail = None
                 retryable = bool(request["retryable"])
                 if request.get("index") is None:
                     return doc.model_copy(
                         update={
                             "phase": "DONE",
                             "error_code": error,
+                            "error_detail": detail,
                             "retryable": retryable,
                             "episodes": tuple(
                                 ep.model_copy(
                                     update={
                                         "status": "FAILED",
                                         "error_code": error,
+                                        "error_detail": detail,
                                         "retryable": retryable,
                                     }
                                 )
@@ -253,10 +263,12 @@ class RobotProcessingActivities:
                                 update={
                                     "status": "FAILED",
                                     "error_code": error,
+                                    "error_detail": detail,
                                     "retryable": retryable,
                                 }
                             )
-                            if ep.source_episode_index == request["index"] and ep.status != "READY"
+                            if ep.source_episode_index == request["index"]
+                            and ep.status not in {"READY", "DISCARDED"}
                             else ep
                             for ep in doc.episodes
                         )

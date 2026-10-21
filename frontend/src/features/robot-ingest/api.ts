@@ -197,6 +197,7 @@ async function issueCredential(options: {
   identityId: string;
   rotate: boolean;
   expiresAt: string | null;
+  idempotencyKey?: string;
 }) {
   const base = identityPath(options.scope, options.identityId);
   const path = options.rotate
@@ -207,13 +208,15 @@ async function issueCredential(options: {
     path,
     scope: options.scope,
     body: {
+      idempotency_key: options.idempotencyKey,
       expires_at: options.expiresAt,
       revoke_previous: options.rotate,
     },
     cache: "no-store",
   });
   const envelope = parse(robotIdentityEnvelopeSchema, raw, path);
-  if (!envelope.credential) throw new Error("ROBOT_CREDENTIAL_NOT_RETURNED");
+  if (!envelope.credential)
+    throw new Error("该请求已完成，凭据保持不变。请在凭据列表点击“查看凭据”。");
   return {
     identity: envelope.data,
     credential: parse(issuedCredentialSchema, envelope.credential, path),
@@ -419,6 +422,7 @@ export function useRobotIdentityMutation(
       }),
     onSuccess: (_result, input) => {
       void client.invalidateQueries({ queryKey: queryRoot });
+      void client.invalidateQueries({ queryKey: ["robot-onboarding"] });
       if (input.identityId) {
         void client.invalidateQueries({
           queryKey: identityQueryKey(input.scope, input.identityId),
@@ -433,6 +437,9 @@ export function useDeleteRobotIdentity() {
   return useMutation({
     mutationFn: deleteRobotIdentity,
     onSuccess: async (_result, input) => {
+      void client.invalidateQueries({
+        queryKey: ["robot-onboarding", input.scope.organizationId],
+      });
       const organizationQueries = [...queryRoot, input.scope.organizationId];
       await client.cancelQueries({ queryKey: organizationQueries });
       client.setQueriesData<{ items: readonly RobotIdentity[] }>(
@@ -472,6 +479,7 @@ export function useIssueRobotCredential() {
         queryKey: identityQueryKey(input.scope, input.identityId),
       });
       void client.invalidateQueries({ queryKey: queryRoot });
+      void client.invalidateQueries({ queryKey: ["robot-onboarding"] });
     },
   });
 }
@@ -482,7 +490,56 @@ export function useRevokeRobotCredential() {
     mutationFn: revokeCredential,
     onSuccess: (_result, input) => {
       void client.invalidateQueries({
+        queryKey: ["robot-onboarding", input.scope.organizationId],
+      });
+      void client.invalidateQueries({
         queryKey: identityQueryKey(input.scope, input.identityId),
+      });
+    },
+  });
+}
+
+type CredentialInput = {
+  scope: IngestScope;
+  identityId: string;
+  credentialId: string;
+};
+
+export function useRevealRobotCredential() {
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async (input: CredentialInput) => {
+      const path = `${identityPath(input.scope, input.identityId)}/credentials/${encodeURIComponent(input.credentialId)}:reveal`;
+      const raw = await request<unknown>({
+        method: "POST",
+        path,
+        scope: input.scope,
+        scopeMode: "explicit",
+        cache: "no-store",
+      });
+      return parse(issuedCredentialSchema, raw, path);
+    },
+  });
+}
+
+export function useDeleteRobotCredential() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CredentialInput) => {
+      await request<void>({
+        method: "DELETE",
+        path: `${identityPath(input.scope, input.identityId)}/credentials/${encodeURIComponent(input.credentialId)}`,
+        scope: input.scope,
+        scopeMode: "explicit",
+        cache: "no-store",
+      });
+    },
+    onSuccess: (_result, input) => {
+      void client.invalidateQueries({
+        queryKey: identityQueryKey(input.scope, input.identityId),
+      });
+      void client.invalidateQueries({
+        queryKey: ["robot-onboarding", input.scope.organizationId],
       });
     },
   });

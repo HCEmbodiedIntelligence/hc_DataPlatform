@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
+from hc_data_platform.ingest.problem_lifecycle import is_discarded
 from hc_data_platform.ingest.processing_status import processing_interruption
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import (
@@ -846,7 +847,7 @@ def _is_reprocessing_conflict(fact: TaskStatusPackageFact) -> bool:
 
 
 def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
-    if fact.resolution_status == "DISCARDED":
+    if _discarded(fact):
         return TaskPackageMainState.DISCARDED
     if fact.duplicate_of_rollout_id is not None:
         return TaskPackageMainState.DUPLICATE
@@ -868,28 +869,36 @@ def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
         return TaskPackageMainState.REPROCESSING_CONFLICT
     if _processing_interruption(fact) == "RESUME_REQUIRED":
         return TaskPackageMainState.PROCESSING_RESUME_REQUIRED
-    if fact.resolution_status in {"PENDING", "RUNNING"} or (
-        fact.source_episode_status == "PENDING"
-        and fact.source_processing_status in {"PENDING", "RUNNING"}
+    if fact.qc_status == "PASS" and (
+        fact.resolution_status in {"PENDING", "RUNNING"}
+        or (
+            fact.source_episode_status == "PENDING"
+            and fact.source_processing_status in {"PENDING", "RUNNING"}
+        )
     ):
         return TaskPackageMainState.STANDARDIZATION_WAITING
+    if fact.source_episode_status == "FAILED" and fact.qc_status is None:
+        return TaskPackageMainState.VALIDATION_FAILED
     if not fact.technical_state_available and fact.qc_status == "PASS":
         return TaskPackageMainState.UNKNOWN
-    if fact.workflow_status in {"PENDING", "RUNNING"}:
+    if fact.workflow_status == "RUNNING":
         stage = (fact.workflow_stage or "").lower()
-        if "lance" in stage:
+        if "lance" in stage or stage == "episode_commit":
             return TaskPackageMainState.LANCE_WRITING
         if "align" in stage:
             return TaskPackageMainState.ALIGNING
     if fact.workflow_status == "TECHNICAL_FAILED":
         stage = (fact.workflow_stage or "").lower()
         error = (fact.workflow_error_code or "").upper()
-        if "lance" in stage or any(
-            token in error for token in ("LANCE", "CATALOG", "DATASET_WRITER")
+        if (
+            "lance" in stage
+            or stage == "episode_commit"
+            or any(token in error for token in ("LANCE", "CATALOG", "DATASET_WRITER"))
         ):
             return TaskPackageMainState.LANCE_FAILED
         if "align" in stage or fact.qc_status == "PASS":
             return TaskPackageMainState.ALIGNMENT_FAILED
+        return TaskPackageMainState.VALIDATION_FAILED
     if fact.alignment_status == "ABORTED":
         return TaskPackageMainState.ALIGNMENT_FAILED
     if fact.alignment_status == "WRITING":
@@ -904,10 +913,30 @@ def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
         return TaskPackageMainState.VALIDATION_FAILED
     if fact.workflow_stage == "awaiting_slice":
         return TaskPackageMainState.AWAITING_SLICE
+    if (
+        fact.raw_committed
+        and fact.qc_status is None
+        and (
+            (
+                fact.workflow_status == "RUNNING"
+                and fact.workflow_stage
+                in {
+                    "manifest",
+                    "verification",
+                    "qc",
+                }
+            )
+            or (
+                fact.source_episode_status == "PROCESSING"
+                and fact.source_processing_status in {"RUNNING", "PROCESSING"}
+            )
+        )
+    ):
+        return TaskPackageMainState.VALIDATION_RUNNING
     if fact.verification_status == "RAW_VERIFIED":
         return TaskPackageMainState.QC_WAITING
     if fact.raw_committed:
-        if fact.workflow_status in {"PENDING", "RUNNING"} and fact.workflow_stage in {
+        if fact.workflow_status == "RUNNING" and fact.workflow_stage in {
             "manifest",
             "verification",
         }:
@@ -919,6 +948,7 @@ def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
         "PAUSED": TaskPackageMainState.UPLOAD_PAUSED,
         "FAILED": TaskPackageMainState.UPLOAD_FAILED,
         "CANCELLED": TaskPackageMainState.CANCELLED,
+        "MULTIPART_COMPLETED": TaskPackageMainState.RAW_COMMIT_PENDING,
     }.get(state, TaskPackageMainState.REGISTERED)
 
 
@@ -961,8 +991,17 @@ def _increment(
     counts[stage][bucket] += 1
 
 
+def _discarded(fact: TaskStatusPackageFact) -> bool:
+    return is_discarded(fact.resolution_status, fact.source_episode_status)
+
+
+def _closed(fact: TaskStatusPackageFact) -> bool:
+    return _discarded(fact) or fact.duplicate_of_rollout_id is not None
+
+
 def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStageCounts, ...]:
     buckets = (
+        "not_started",
         "waiting",
         "running",
         "succeeded",
@@ -974,6 +1013,18 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
     )
     counts = {stage: {bucket: 0 for bucket in buckets} for stage in TASK_PROCESSING_STAGES}
     for fact in packages:
+        if _closed(fact):
+            # Receipt totals are historical; closed records have no downstream work.
+            _increment(counts, TaskProcessingStage.TASK_EXECUTION, "succeeded")
+            if fact.raw_committed:
+                _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, "succeeded")
+                _increment(counts, TaskProcessingStage.RAW_RECEIPT, "succeeded")
+            else:
+                _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, "isolated")
+                _increment(counts, TaskProcessingStage.RAW_RECEIPT, "isolated")
+            for stage in TASK_PROCESSING_STAGES[3:]:
+                _increment(counts, stage, "isolated")
+            continue
         main = _package_main_state(fact)
         duplicate = fact.duplicate_of_rollout_id is not None
         downstream_isolated = (
@@ -986,6 +1037,9 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
         if fact.raw_committed:
             _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, "succeeded")
             _increment(counts, TaskProcessingStage.RAW_RECEIPT, "succeeded")
+        elif main is TaskPackageMainState.RAW_COMMIT_PENDING:
+            _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, "succeeded")
+            _increment(counts, TaskProcessingStage.RAW_RECEIPT, "waiting")
         else:
             upload_bucket = (
                 "failed"
@@ -997,12 +1051,37 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
                 else "waiting"
             )
             _increment(counts, TaskProcessingStage.PACKAGE_UPLOAD, upload_bucket)
-            _increment(counts, TaskProcessingStage.RAW_RECEIPT, "waiting")
+            _increment(counts, TaskProcessingStage.RAW_RECEIPT, "not_started")
+
+        if fact.episode_facts:
+            # A recording can have slices in different queues. Count the package
+            # once per stage, using actual slice work; completion requires all
+            # active slices. An unsubmitted sibling must not hide a submitted one.
+            episode_stages = [_stage_counts((episode,)) for episode in fact.episode_facts]
+            for index, stage in enumerate(TASK_PROCESSING_STAGES[3:], start=3):
+                members = [stages[index] for stages in episode_stages]
+                # A submitted slice is an actionable review even when a sibling
+                # has been returned. Keep the package in the same review queue.
+                priority = (
+                    ("waiting", "blocked", "failed", "unavailable", "running")
+                    if stage is TaskProcessingStage.REVIEW
+                    else ("failed", "blocked", "unavailable", "running", "waiting")
+                )
+                bucket = next(
+                    (
+                        candidate
+                        for candidate in (*priority, "risk", "not_started", "isolated")
+                        if any(getattr(member, candidate) for member in members)
+                    ),
+                    "succeeded",
+                )
+                _increment(counts, stage, bucket)
+            continue
 
         if fact.duplicate_of_rollout_id is not None:
             validation_bucket = "isolated"
         elif not fact.raw_committed:
-            validation_bucket = "waiting"
+            validation_bucket = "not_started"
         elif (
             fact.verification_status == "REJECTED" or main is TaskPackageMainState.VALIDATION_FAILED
         ):
@@ -1021,10 +1100,7 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
             standard_bucket = "isolated"
         elif not fact.technical_state_available and fact.qc_status == "PASS":
             standard_bucket = "unavailable"
-        elif (
-            fact.verification_status == "REJECTED"
-            or main is TaskPackageMainState.PROCESSING_RESUME_REQUIRED
-        ):
+        elif main is TaskPackageMainState.PROCESSING_RESUME_REQUIRED:
             standard_bucket = "blocked"
         elif main in {TaskPackageMainState.ALIGNMENT_FAILED, TaskPackageMainState.LANCE_FAILED}:
             standard_bucket = "failed"
@@ -1032,12 +1108,16 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
             standard_bucket = "running"
         elif fact.lance_ready:
             standard_bucket = "succeeded"
+        elif fact.qc_status != "PASS":
+            standard_bucket = "not_started"
         else:
             standard_bucket = "waiting"
         _increment(counts, TaskProcessingStage.STANDARDIZATION, standard_bucket)
 
         if downstream_isolated:
             annotation_bucket = "isolated"
+        elif not fact.lance_ready:
+            annotation_bucket = "not_started"
         elif fact.annotation_task_id is None:
             annotation_bucket = "waiting"
         elif fact.annotation_status == "APPROVED" or fact.annotation_status == "SUBMITTED":
@@ -1047,17 +1127,25 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
         _increment(counts, TaskProcessingStage.ANNOTATION, annotation_bucket)
         if downstream_isolated:
             review_bucket = "isolated"
+        elif not fact.lance_ready or fact.annotation_task_id is None:
+            review_bucket = "not_started"
         elif fact.annotation_status == "SUBMITTED":
             review_bucket = "waiting"
         elif fact.annotation_status == "APPROVED":
             review_bucket = "succeeded"
-        elif fact.review_decision in {"NEEDS_REVISION", "REJECT"}:
+        elif fact.annotation_status in {"NEEDS_REVISION", "REJECTED"}:
             review_bucket = "blocked"
         else:
-            review_bucket = "waiting"
+            review_bucket = "not_started"
         _increment(counts, TaskProcessingStage.REVIEW, review_bucket)
         publication_bucket = (
-            "isolated" if downstream_isolated else "succeeded" if fact.published else "waiting"
+            "isolated"
+            if downstream_isolated
+            else "succeeded"
+            if fact.published
+            else "waiting"
+            if fact.lance_ready and fact.annotation_status == "APPROVED"
+            else "not_started"
         )
         _increment(counts, TaskProcessingStage.PUBLICATION, publication_bucket)
     return tuple(TaskStageCounts(stage=stage, **counts[stage]) for stage in TASK_PROCESSING_STAGES)
@@ -1067,17 +1155,21 @@ def _qc_counts(
     packages: tuple[TaskStatusPackageFact, ...],
     unavailable_sources: tuple[str, ...],
 ) -> TaskQcCounts:
-    received = tuple(item for item in packages if item.raw_committed)
+    received = tuple(item for item in packages if item.raw_committed and not _discarded(item))
     canonical = tuple(item for item in received if item.duplicate_of_rollout_id is None)
     qc_eligible = tuple(item for item in canonical if item.verification_status == "RAW_VERIFIED")
     return TaskQcCounts(
-        waiting=sum(item.qc_status is None for item in qc_eligible),
+        waiting=next(
+            stage.waiting
+            for stage in _stage_counts(packages)
+            if stage.stage is TaskProcessingStage.AUTOMATIC_VALIDATION
+        ),
         passed=sum(item.qc_status == "PASS" for item in canonical),
         risk=sum(item.qc_status == "RISK" for item in canonical),
         rejected=sum(item.qc_status == "REJECT" for item in canonical),
         duplicate=sum(item.duplicate_of_rollout_id is not None for item in received),
         reprocessing_conflicts=sum(_is_reprocessing_conflict(item) for item in packages),
-        discarded=sum(item.resolution_status == "DISCARDED" for item in packages),
+        discarded=sum(_discarded(item) for item in packages),
         unavailable=(len(qc_eligible) if "quality_rollout_summaries" in unavailable_sources else 0),
     )
 
@@ -1102,13 +1194,18 @@ def _blockers(
 ) -> tuple[TaskStatusBlocker, ...]:
     grouped: dict[tuple[str, str, str, bool], int] = {}
     for fact in packages:
-        if fact.resolution_status in {"DISCARDED", "PENDING", "RUNNING", "FAILED"}:
+        if _closed(fact) or fact.resolution_status in {"PENDING", "RUNNING", "FAILED"}:
             continue
         if fact.duplicate_of_rollout_id is not None:
             continue
         main = _package_main_state(fact)
         value: tuple[str, str, str, bool] | None = None
-        if main is TaskPackageMainState.UPLOAD_FAILED:
+        from hc_data_platform.quality.processing_errors import PROCESSING_ERRORS
+
+        code = fact.workflow_error_code or fact.verification_reason_code
+        if code in PROCESSING_ERRORS:
+            value = (code, PROCESSING_ERRORS[code], "RAW_VALIDATION", False)
+        elif main is TaskPackageMainState.UPLOAD_FAILED:
             value = (fact.upload_failure_code or "UPLOAD_FAILED", "上传失败", "UPLOAD", True)
         elif main is TaskPackageMainState.VALIDATION_FAILED:
             value = (
@@ -1124,14 +1221,18 @@ def _blockers(
         elif main is TaskPackageMainState.ALIGNMENT_FAILED:
             value = (
                 fact.workflow_error_code or "ALIGNMENT_TECHNICAL_FAILED",
-                "30 Hz对齐技术失败",
+                "时间对齐失败",
                 "TECHNICAL",
                 True,
             )
         elif main is TaskPackageMainState.LANCE_FAILED:
             value = (
                 fact.workflow_error_code or "LANCE_WRITE_FAILED",
-                "Lance写入技术失败",
+                "数据集登记失败"
+                if fact.workflow_error_code == "DATASET_INGEST_PROJECTION_CONFLICT"
+                else "入库提交失败"
+                if fact.workflow_stage == "episode_commit"
+                else "Lance写入技术失败",
                 "TECHNICAL",
                 True,
             )
@@ -1168,16 +1269,13 @@ def _blockers(
 def _data_issues(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskDataIssue, ...]:
     issues: list[TaskDataIssue] = []
     for fact in packages:
-        if fact.resolution_status == "DISCARDED":
+        if _closed(fact):
             continue
         category: Literal[
             "DUPLICATE", "QUALITY", "TECHNICAL", "PROCESSING_CONFLICT", "RESUME_REQUIRED"
         ]
         stage = TaskProcessingStage.AUTOMATIC_VALIDATION
-        if fact.duplicate_of_rollout_id is not None:
-            category, code, label = "DUPLICATE", "DUPLICATE_SOURCE_EPISODE", "重复上传"
-            description = "此数据包与已有数据重复，已保留原数据，不重复入库。"
-        elif _is_reprocessing_conflict(fact):
+        if _is_reprocessing_conflict(fact):
             category, code, label = (
                 "PROCESSING_CONFLICT",
                 "ALIGNMENT_ATTEMPT_IMMUTABLE",
@@ -1251,6 +1349,7 @@ def _actions(
     attainment: TaskAttainment,
 ) -> tuple[TaskStatusAction, ...]:
     task_query = quote(task.task_id, safe="")
+    packages = tuple(item for item in packages if not _closed(item))
     actions: list[TaskStatusAction] = []
     categories = {item.category for item in blockers}
     quality_problem_count = sum(
@@ -1291,10 +1390,16 @@ def _actions(
                 deep_link=f"/ingest/uploads/records?task_id={task_query}",
             )
         )
+    annotation_packages = tuple(
+        episode
+        for package in packages
+        for episode in (package.episode_facts or (package,))
+        if not _closed(episode) and episode.lance_ready
+    )
     annotation = next(
         (
             item.annotation_task_id
-            for item in packages
+            for item in annotation_packages
             if item.annotation_task_id and item.annotation_status != "APPROVED"
         ),
         None,
@@ -1307,7 +1412,7 @@ def _actions(
                 deep_link=f"/annotations/tasks/{quote(annotation, safe='')}",
             )
         )
-    if any(item.annotation_status == "SUBMITTED" for item in packages):
+    if any(item.annotation_status == "SUBMITTED" for item in annotation_packages):
         actions.append(
             TaskStatusAction(
                 action="VIEW_PENDING_REVIEW",
@@ -1342,7 +1447,7 @@ def _selected_task_status(
     facts: TaskStatusProjectionFacts,
 ) -> SelectedTaskStatus:
     packages = tuple(item for item in facts.packages if item.task_id == task.task_id)
-    canonical_packages = tuple(item for item in packages if item.duplicate_of_rollout_id is None)
+    canonical_packages = tuple(item for item in packages if not _closed(item))
     main_counts: dict[TaskPackageMainState, int] = {}
     for fact in packages:
         state = _package_main_state(fact)
@@ -1375,8 +1480,7 @@ def _selected_task_status(
         ),
         ready=sum(item.lance_ready for item in canonical_packages),
         isolated_by_quality=sum(
-            item.duplicate_of_rollout_id is not None or item.qc_status in {"RISK", "REJECT"}
-            for item in packages
+            item.qc_status in {"RISK", "REJECT"} for item in canonical_packages
         ),
         unavailable=len(canonical_packages)
         if any(
@@ -1392,12 +1496,24 @@ def _selected_task_status(
     blockers = _blockers(packages, task.task_id)
     attainment = _task_attainment(task)
     stages = _stage_counts(packages)
-    active_stage = TaskProcessingStage.TASK_EXECUTION
-    for stage in TASK_PROCESSING_STAGES:
-        item = next(value for value in stages if value.stage is stage)
-        if item.waiting or item.running or item.blocked or item.failed:
-            active_stage = stage
-            break
+    problem_stages = {item.stage for item in _data_issues(packages)}
+    active = next(
+        (
+            item.stage
+            for item in stages
+            if item.waiting
+            or item.running
+            or item.blocked
+            or item.failed
+            or item.unavailable
+            or item.stage in problem_stages
+        ),
+        None,
+    )
+    active_stage = active or next(
+        (item.stage for item in reversed(stages) if item.succeeded),
+        TaskProcessingStage.TASK_EXECUTION,
+    )
     labels = {
         TaskProcessingStage.TASK_EXECUTION: "任务执行",
         TaskProcessingStage.PACKAGE_UPLOAD: "数据包登记与上传",
@@ -1415,7 +1531,9 @@ def _selected_task_status(
             "任务已达标，生命周期仍为ACTIVE，请确认后关闭任务。"
             if attainment in {TaskAttainment.ATTAINED, TaskAttainment.EXCEEDED}
             and task.lifecycle is TaskLifecycle.ACTIVE
-            else f"继续处理“{labels[active_stage]}”阶段的等待项。"
+            else "当前没有待处理项。"
+            if active is None
+            else f"继续处理“{labels[active_stage]}”阶段的数据。"
         )
     )
     return SelectedTaskStatus(

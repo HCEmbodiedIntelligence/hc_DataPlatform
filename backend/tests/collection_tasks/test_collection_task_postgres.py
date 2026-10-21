@@ -128,7 +128,7 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
         connection.execute(
             sql.SQL(
                 "GRANT USAGE ON SCHEMA access_control, core, collection_tasks, ingest, "
-                "registry, dataset_registry, public TO {}"
+                "registry, dataset_registry, annotation, public TO {}"
             ).format(sql.Identifier(role_name))
         )
         for relation, privileges in (
@@ -136,7 +136,11 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
             ("core.audit_events", "INSERT"),
             ("access_control.account_notifications", "SELECT, INSERT"),
             ("collection_tasks.collection_tasks", "SELECT, INSERT, UPDATE"),
+            # Dataset reassignment must also honor an already bound capture plan.
+            ("collection_tasks.capture_plan_heads", "SELECT"),
             ("dataset_registry.datasets", "SELECT, INSERT"),
+            ("annotation.tag_schema_bindings", "SELECT, INSERT"),
+            ("annotation.tag_schema_versions", "SELECT, INSERT"),
             ("registry.organization_projects", "SELECT"),
             ("ingest.collection_jobs", "SELECT"),
             ("ingest.rollouts", "SELECT"),
@@ -144,9 +148,11 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
             ("ingest.manifest_discoveries", "SELECT"),
             ("ingest.robot_ingest_uploads", "SELECT"),
             ("ingest.continuous_recordings", "SELECT"),
+            ("ingest.raw_sources", "SELECT"),
             ("ingest.raw_ingest_jobs", "SELECT"),
             ("ingest.mcap_processing_files", "SELECT"),
             ("ingest.raw_source_episodes", "SELECT"),
+            ("ingest.recording_source_links", "SELECT"),
             ("ingest.recording_episode_slices", "SELECT"),
             ("ingest.recording_episode_processing", "SELECT"),
             ("core.outbox_events", "SELECT"),
@@ -393,6 +399,16 @@ def race_insert(
 
 
 def cleanup(dsn: str, project_id: str) -> None:
+    # Task creation also publishes an immutable annotation binding. Remove only
+    # this fixture's rows in the disposable test database before its project.
+    with psycopg.connect(dsn) as connection:
+        connection.execute("SET LOCAL session_replication_role = replica")
+        connection.execute(
+            "DELETE FROM annotation.tag_schema_bindings WHERE project_id = %s", (project_id,)
+        )
+        connection.execute(
+            "DELETE FROM annotation.tag_schema_versions WHERE project_id = %s", (project_id,)
+        )
     with psycopg.connect(dsn) as connection:
         set_scope(connection, project_id)
         connection.execute(

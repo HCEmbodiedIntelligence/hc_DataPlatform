@@ -1,0 +1,502 @@
+components:
+  schemas:
+    DeletionBlocker:
+      properties:
+        count:
+          title: Count
+          type: integer
+        kind:
+          enum:
+          - raw
+          - upload
+          - configuration
+          - component
+          - calibration
+          - source
+          title: Kind
+          type: string
+        label:
+          title: Label
+          type: string
+        resolution:
+          title: Resolution
+          type: string
+      required:
+      - kind
+      - label
+      - count
+      - resolution
+      title: DeletionBlocker
+      type: object
+    DeletionReference:
+      properties:
+        collection_task_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Id
+        dataset_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Dataset Id
+        id:
+          title: Id
+          type: string
+        kind:
+          enum:
+          - raw
+          - upload
+          - configuration
+          - component
+          - calibration
+          - source
+          title: Kind
+          type: string
+        name:
+          title: Name
+          type: string
+        origin_robot_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Origin Robot Id
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        raw_source_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Raw Source Id
+        region_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Region Code
+        scheme_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Scheme Id
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        task_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Task Code
+        task_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Task Name
+        version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Version
+      required:
+      - kind
+      - id
+      - name
+      title: DeletionReference
+      type: object
+    ResolutionTarget:
+      properties:
+        id:
+          title: Id
+          type: string
+        name:
+          title: Name
+          type: string
+        serial_no:
+          title: Serial No
+          type: string
+      required:
+      - id
+      - name
+      - serial_no
+      title: ResolutionTarget
+      type: object
+    ResolutionTask:
+      properties:
+        can_delete:
+          title: Can Delete
+          type: boolean
+        etag:
+          title: Etag
+          type: string
+        name:
+          title: Name
+          type: string
+        other_robot_raw_count:
+          title: Other Robot Raw Count
+          type: integer
+        project_id:
+          title: Project Id
+          type: string
+        raw_count:
+          title: Raw Count
+          type: integer
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        region_code:
+          title: Region Code
+          type: string
+        retry_key:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Retry Key
+        task_code:
+          title: Task Code
+          type: string
+        task_id:
+          title: Task Id
+          type: string
+      required:
+      - project_id
+      - region_code
+      - task_id
+      - task_code
+      - name
+      - etag
+      - raw_count
+      - other_robot_raw_count
+      - can_delete
+      title: ResolutionTask
+      type: object
+    RobotDeletionCheck:
+      properties:
+        blockers:
+          items:
+            $ref: '#/components/schemas/DeletionBlocker'
+          title: Blockers
+          type: array
+        can_delete:
+          title: Can Delete
+          type: boolean
+        items:
+          items:
+            $ref: '#/components/schemas/DeletionReference'
+          title: Items
+          type: array
+        limit:
+          default: 20
+          title: Limit
+          type: integer
+        offset:
+          default: 0
+          title: Offset
+          type: integer
+        organization_id:
+          title: Organization Id
+          type: string
+        restricted_count:
+          default: 0
+          title: Restricted Count
+          type: integer
+        robot_id:
+          title: Robot Id
+          type: string
+        total:
+          default: 0
+          title: Total
+          type: integer
+      required:
+      - organization_id
+      - robot_id
+      - can_delete
+      title: RobotDeletionCheck
+      type: object
+    RobotResolutionCommand:
+      additionalProperties: false
+      properties:
+        action:
+          enum:
+          - TRANSFER
+          - DELETE_TASK
+          - CLEAN_CONFIG
+          title: Action
+          type: string
+        project_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Project Id
+        revision:
+          maxLength: 128
+          minLength: 1
+          title: Revision
+          type: string
+        target_robot_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Target Robot Id
+        task_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Task Id
+      required:
+      - action
+      - revision
+      title: RobotResolutionCommand
+      type: object
+    RobotResolutionPlan:
+      properties:
+        can_clean_config:
+          title: Can Clean Config
+          type: boolean
+        can_transfer:
+          title: Can Transfer
+          type: boolean
+        cleanup_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cleanup Reason
+        config_count:
+          title: Config Count
+          type: integer
+        organization_id:
+          title: Organization Id
+          type: string
+        revision:
+          title: Revision
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+        targets:
+          items:
+            $ref: '#/components/schemas/ResolutionTarget'
+          title: Targets
+          type: array
+        tasks:
+          items:
+            $ref: '#/components/schemas/ResolutionTask'
+          title: Tasks
+          type: array
+        transfer_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Transfer Reason
+      required:
+      - organization_id
+      - robot_id
+      - revision
+      - can_transfer
+      - can_clean_config
+      - config_count
+      title: RobotResolutionPlan
+      type: object
+    RobotResolutionResult:
+      properties:
+        action:
+          title: Action
+          type: string
+        message:
+          title: Message
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+        target_robot_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Target Robot Id
+      required:
+      - action
+      - robot_id
+      - message
+      title: RobotResolutionResult
+      type: object
+info:
+  title: Robot deletion actions
+  version: '2026-10-20'
+openapi: 3.1.0
+paths:
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/deletion-actions:
+    get:
+      operationId: getRobotDeletionActions
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotResolutionPlan'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Robot Deletion Actions
+      tags:
+      - organization-robot-assets
+    post:
+      operationId: resolveRobotDeletionAssociations
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Idempotency-Key
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotResolutionCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotResolutionResult'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Resolve Robot Deletion Associations
+      tags:
+      - organization-robot-assets
+  /api/v1/organizations/{organization_id}/robots/{robot_id}/deletion-check:
+    get:
+      operationId: getOrganizationRobotDeletionCheck
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: query
+        name: kind
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - raw
+            - upload
+            - configuration
+            - component
+            - calibration
+            - source
+            type: string
+          - type: 'null'
+          title: Kind
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotDeletionCheck'
+          description: Successful Response
+        '401':
+          description: The organization robot asset request could not be completed.
+        '403':
+          description: The organization robot asset request could not be completed.
+        '404':
+          description: The organization robot asset request could not be completed.
+        '409':
+          description: The organization robot asset request could not be completed.
+        '412':
+          description: The organization robot asset request could not be completed.
+        '422':
+          description: The organization robot asset request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Get Robot Deletion Check
+      tags:
+      - organization-robot-assets

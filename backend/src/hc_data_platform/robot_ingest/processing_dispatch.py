@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from hc_data_platform.continuous_recordings.mcap_native import McapProcessingConfig
+from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
 from hc_data_platform.lerobot_imports.mcap_processing import (
     enqueue_files,
     lock_source,
@@ -32,13 +32,37 @@ def enqueue(cursor, upload):
         return
     scope = (upload.target.organization_id, upload.target.project_id, upload.target.region_code)
     if mcap_eligible(upload):
-        cursor.execute(
-            """SELECT configuration FROM ingest.mcap_robot_profiles
-            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND robot_id=%s""",
-            (*scope, upload.authenticated_robot_id),
-        )
-        row = cursor.fetchone()
-        cfg = McapProcessingConfig.model_validate(row[0] if row else {})
+        from hc_data_platform.capture_schemes.processing import resolve_raw_snapshot
+
+        frozen = resolve_raw_snapshot(cursor, scope, upload.raw_source_id)
+        if frozen.get("error"):
+            from hc_data_platform.lerobot_imports.mcap_processing import record_rejection
+
+            record_rejection(
+                cursor,
+                scope,
+                SimpleNamespace(
+                    raw_source_id=upload.raw_source_id, dataset_id=upload.target.dataset_id
+                ),
+                {
+                    "files": [
+                        {
+                            "path": a.path,
+                            "size": a.expected_size_bytes,
+                            "sha256": a.expected_sha256,
+                            "object_key": a.object_key,
+                        }
+                        for a in upload.assets
+                    ]
+                },
+                SimpleNamespace(
+                    collection_task_id=upload.target.collection_task_id,
+                    robot_id=upload.authenticated_robot_id,
+                ),
+                frozen,
+            )
+            return
+        cfg = McapProcessingConfig.model_validate(frozen["effective_adapter"]["configuration"])
         enqueue_files(
             cursor,
             scope,
@@ -61,6 +85,7 @@ def enqueue(cursor, upload):
                 robot_id=upload.authenticated_robot_id,
             ),
             cfg,
+            reference=frozen,
         )
         return
     # Receipt success does not imply that a processor exists for this format/mode.
@@ -88,8 +113,13 @@ def retry_mcap(connections, upload):
             )
             if cursor.fetchone():
                 return
-        enqueue(cursor, upload)
+        from hc_data_platform.lerobot_imports.mcap_processing import retry_source
+
         db.commit()
+    if not retry_source(scope, upload.raw_source_id, connections):
+        with recording_bridge.scope_context(*scope), connections() as db, db.cursor() as cursor:
+            enqueue(cursor, upload)
+            db.commit()
 
 
 def mcap_result(connections, upload):

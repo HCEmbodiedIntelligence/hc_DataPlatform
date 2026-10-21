@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     storage_inventory_interval_seconds: float = Field(default=3_600, ge=10, le=86_400)
     object_store_local_path: str | None = Field(default=None, max_length=4096)
     object_store_browser_path: str | None = Field(default=None, max_length=4096)
+    object_store_raw_browser_path: str | None = Field(default=None, max_length=4096)
     object_store_provider: Literal["s3", "oss"] = "s3"
     object_store_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_public_endpoint: str = Field(default="http://localhost:9000", repr=False)

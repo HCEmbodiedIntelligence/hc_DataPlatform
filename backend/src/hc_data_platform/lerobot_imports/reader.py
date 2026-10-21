@@ -13,6 +13,7 @@ from typing import Any
 
 from hc_data_platform.data_formats import lerobot_g1 as g1
 
+from .column_validation import validate_columns
 from .local_files import format_path as format_path
 from .local_files import local_file as local_file
 from .local_files import safe_relative as safe_relative
@@ -59,12 +60,14 @@ def required_episode_files(info: dict[str, Any], metadata: dict[str, Any]) -> se
             file_index=metadata["data/file_index"],
         )
     }
-    for camera in profile_for_info(info, preserve_features=True).cameras:
-        prefix = f"videos/{camera.feature_key}"
+    for name, feature in info["features"].items():
+        if feature.get("dtype") != "video":
+            continue
+        prefix = f"videos/{name}"
         required.add(
             format_path(
                 info["video_path"],
-                video_key=camera.feature_key,
+                video_key=name,
                 chunk_index=metadata[f"{prefix}/chunk_index"],
                 file_index=metadata[f"{prefix}/file_index"],
             )
@@ -93,13 +96,16 @@ class GenericEpisode:
 
 
 def read_episode(
-    root: Path, index: int, *, preserve_features=False
+    root: Path, index: int, *, preserve_features=False, capture_snapshot=None
 ) -> tuple[NativeProfile, Any, Any]:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from hc_data_platform.capture_schemes.schema import project_info
+
+    source_info = json.loads(local_file(root, "meta/info.json").read_text())
     info = validate_processing_info(
-        json.loads(local_file(root, "meta/info.json").read_text()),
+        project_info(source_info, capture_snapshot),
         preserve_features=preserve_features,
     )
     profile = profile_for_info(info, preserve_features=preserve_features)
@@ -124,6 +130,25 @@ def read_episode(
     )
     data_file = local_file(root, relative)
     table = pq.read_table(data_file, filters=[("episode_index", "=", index)])
+    sources = (capture_snapshot or {}).get("effective_adapter", {}).get("feature_sources", {})
+    source_features = dict(source_info["features"])
+    for name, feature in (capture_snapshot or {}).get("output", {}).get("features", {}).items():
+        original_name = sources.get(name, name)
+        if original_name in source_features:
+            source_features[original_name] = {
+                **source_features[original_name],
+                "required": feature["required"],
+                "role": feature["role"],
+            }
+    validate_columns(table, source_features)
+    if capture_snapshot is not None:
+        projected_names = [
+            name for name, feature in info["features"].items() if feature["dtype"] != "video"
+        ]
+        table = table.select([sources.get(name, name) for name in projected_names]).rename_columns(
+            projected_names
+        )
+        validate_columns(table, info["features"])
     required = {
         "observation.state",
         "action",
@@ -188,17 +213,22 @@ def read_episode(
         raise ValueError("LEROBOT_TASK_MAPPING: inconsistent task metadata")
     context, source_episode, mappings = {}, {}, ()
     if (root / "capture-context.json").exists():
-        from .capture import read_capture_episode
+        from .context import read_context
 
-        context, source_episode, mappings = read_capture_episode(root, info, metadata, rows)
+        context = read_context(root) or {}
+        if context.get("contract_version") == "openarm-capture/v1":
+            from .capture import read_capture_episode
+
+            context, source_episode, mappings = read_capture_episode(root, info, metadata, rows)
     elif profile.profile_id == "openarmx-v1":
         raise ValueError("OPENARM_CONTEXT_MISSING: capture-context.json is required")
     videos = {}
     for camera in profile.cameras:
-        prefix = f"videos/{camera.feature_key}"
+        source_feature = sources.get(camera.feature_key, camera.feature_key)
+        prefix = f"videos/{source_feature}"
         relative_video = format_path(
             info["video_path"],
-            video_key=camera.feature_key,
+            video_key=source_feature,
             chunk_index=metadata[f"{prefix}/chunk_index"],
             file_index=metadata[f"{prefix}/file_index"],
         )
@@ -253,7 +283,7 @@ def _validate_video(video: Any, feature: dict[str, Any], count: int, fps: float)
             "-show_frames",
             "-show_streams",
             "-show_entries",
-            "frame=best_effort_timestamp,width,height:stream=time_base",
+            "frame=best_effort_timestamp,width,height:stream=time_base,codec_name,pix_fmt,avg_frame_rate,width,height",
             "-of",
             "json",
             str(video.file),
@@ -263,6 +293,21 @@ def _validate_video(video: Any, feature: dict[str, Any], count: int, fps: float)
         timeout=120,
     )
     probe = json.loads(result.stdout)
+    if result.stderr.strip():
+        raise ValueError("LEROBOT_VIDEO_DECODE: decoder reported invalid media")
+    stream = probe["streams"][0]
+    actual_info = {
+        "video.codec": stream["codec_name"],
+        "video.pix_fmt": stream["pix_fmt"],
+        "video.fps": float(Fraction(stream["avg_frame_rate"])),
+        "video.width": stream["width"],
+        "video.height": stream["height"],
+    }
+    if any(
+        key in feature.get("info", {}) and feature["info"][key] != value
+        for key, value in actual_info.items()
+    ):
+        raise ValueError("LEROBOT_VIDEO_METADATA: decoded stream differs from declared media")
     time_base = Fraction(probe["streams"][0]["time_base"])
     frames = [
         f

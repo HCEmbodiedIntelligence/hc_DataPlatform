@@ -396,14 +396,18 @@ def test_schema_selection_fails_closed_on_incompatible_lance_schema() -> None:
             fields={"legacy": "json"},
         )
     )
-    resolver = PostgresContinuousEpisodeWorkflowInputResolver(lambda: None, catalog)
+    # A processing schema remains immutable even with no annotation binding.
+    from hc_data_platform.lance_catalog.service import SchemaIncompatibleError
 
-    with pytest.raises(IngestWorkflowPlanBlocked, match="compatible TAGGING Schema"):
-        resolver._select_schema(  # noqa: SLF001
-            project_id="project-schema",
-            dataset_id="dataset_schema",
-            schema_ids=("schema-continuous",),
-            modality_keys=frozenset({"camera_front", "joint_state"}),
+    with pytest.raises(SchemaIncompatibleError, match="schema"):
+        catalog.register_schema(
+            DatasetSchemaSnapshot.create(
+                project_id="project-schema",
+                dataset_id="dataset_schema",
+                schema_snapshot_id="schema-continuous",
+                frequency_hz=30,
+                fields={"camera_front": "json", "joint_state": "json"},
+            )
         )
 
 

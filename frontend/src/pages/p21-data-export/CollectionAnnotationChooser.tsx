@@ -1,7 +1,7 @@
 import { ResourceLabel } from "../../shared/lib/resource-labels";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, Button, Checkbox, Input, Select, Space } from "antd";
+import { Alert, Button, Checkbox, Select, Space, Tag } from "antd";
 import type { Scope } from "../../shared/scope/model";
 import { loadEpisodeOverview } from "../../features/datasets/episodes/episode-detail";
 import {
@@ -9,6 +9,7 @@ import {
   type AnnotationSelection,
   type PackageData,
 } from "../../features/exports/package-deliveries";
+import styles from "./CollectionAnnotationChooser.module.css";
 
 export function CollectionAnnotationChooser({
   scope,
@@ -20,10 +21,10 @@ export function CollectionAnnotationChooser({
   onChange: (value: AnnotationSelection | null) => void;
 }) {
   const [taskId, setTaskId] = useState<string>();
-  const [members, setMembers] = useState<string[]>([]);
-  const [label, setLabel] = useState("任务分段");
-  const [allowUnreviewed, setAllowUnreviewed] = useState(false);
-  const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [trackSelection, setTrackSelection] = useState<{
+    key: string;
+    members: string[];
+  }>();
   const overview = useQuery({
     queryKey: ["batch-annotation-overview", scope, data],
     queryFn: ({ signal }) => loadEpisodeOverview(scope, data, {}, signal),
@@ -36,16 +37,15 @@ export function CollectionAnnotationChooser({
       loadCollectionAnnotationHistory(scope, data, chosenTask!, signal),
   });
   const selected = history.data?.task.current_revision;
+  const selectionKey = JSON.stringify([chosenTask, selected]);
+  const members = useMemo(
+    () => (trackSelection?.key === selectionKey ? trackSelection.members : []),
+    [trackSelection, selectionKey],
+  );
   const changeRef = useRef(onChange);
   useEffect(() => {
     changeRef.current = onChange;
   }, [onChange]);
-  useEffect(() => {
-    changeRef.current(null);
-    setConfirmation(null);
-    setMembers([]);
-    setAllowUnreviewed(false);
-  }, [chosenTask, selected]);
   const saved = history.data?.revisions.find((r) => r.revision === selected);
   const approved =
     selected !== undefined && selected === history.data?.task.approved_revision;
@@ -55,29 +55,75 @@ export function CollectionAnnotationChooser({
   const overlap = tags.some(
     (t, i) => i > 0 && t.start_step < tags[i - 1]!.end_step,
   );
-  function reset() {
-    onChange(null);
-    setConfirmation(null);
-  }
+  const loading = overview.isFetching || history.isFetching;
+  const ready = Boolean(
+    chosenTask &&
+      saved &&
+      !overview.error &&
+      !history.error &&
+      !loading &&
+      !overlap,
+  );
+  useEffect(() => {
+    changeRef.current(
+      ready && chosenTask && selected !== undefined
+        ? {
+            task_id: chosenTask,
+            revision: selected,
+            allow_unreviewed: !approved,
+            track: {
+              format: "hc-subtask-track/1",
+              track_id: "task-segments",
+              label: "任务分段",
+              annotation_ids: [...members].sort(),
+            },
+          }
+        : null,
+    );
+  }, [ready, chosenTask, selected, approved, members]);
   return (
     <Space orientation="vertical" style={{ width: "100%" }}>
-      <strong>
-        <ResourceLabel
-          kind="episode"
-          id={data.identity.episode_id}
-          datasetId={data.identity.dataset_id}
-        />{" "}
-        · 使用当前保存的标注
-      </strong>
+      <div className={styles.heading}>
+        <strong>
+          <ResourceLabel
+            kind="episode"
+            id={data.identity.episode_id}
+            datasetId={data.identity.dataset_id}
+          />
+        </strong>
+        {saved && !loading && !overview.error && !history.error && (
+          <span role="status">
+            已保存 {saved.tags.length} 个标签{" "}
+            <Tag color={approved ? "success" : "default"}>
+              {approved ? "已审核" : "未审核 · 将按当前内容导出"}
+            </Tag>
+          </span>
+        )}
+      </div>
+      {loading && <span role="status">正在读取已保存的标注…</span>}
       {(overview.error || history.error) && (
         <Alert
           type="error"
           title="标注读取失败"
           description={(overview.error ?? history.error)?.message}
+          action={
+            <Button
+              size="small"
+              onClick={() => {
+                void overview.refetch();
+                if (chosenTask) void history.refetch();
+              }}
+            >
+              重新读取
+            </Button>
+          }
         />
       )}
       {overview.data?.annotation.availability === "NOT_CREATED" && (
-        <Alert type="warning" title="此数据版本尚无标注任务" />
+        <Alert
+          type="warning"
+          title="此 Episode 尚无标注，请先保存标注，或选择不带标注的数据导出。"
+        />
       )}
       {overview.data?.annotation.availability === "FORBIDDEN" && (
         <Alert type="warning" title="缺少标注读取权限" />
@@ -92,83 +138,62 @@ export function CollectionAnnotationChooser({
             value: t.task_id,
             label: <ResourceLabel kind="annotation_task" id={t.task_id} />,
           }))}
-          onChange={(value) => {
-            reset();
-            setTaskId(value);
-            setAllowUnreviewed(false);
-            setMembers([]);
-          }}
+          onChange={setTaskId}
         />
       )}
-      {history.data && !history.error && !overview.error && (
+      {history.data && !saved && !loading && !history.error && (
+        <Alert
+          type="warning"
+          title="未找到当前已保存的标注，请重新读取。"
+          action={
+            <Button size="small" onClick={() => void history.refetch()}>
+              重新读取
+            </Button>
+          }
+        />
+      )}
+      {saved && !history.error && !overview.error && !loading && (
         <>
-          <span>导出使用当前保存的标注，无需选择版本。</span>
-          <Input
-            aria-label={`分段轨道名称 ${data.identity.episode_id}`}
-            value={label}
-            onChange={(e) => {
-              reset();
-              setLabel(e.target.value);
-            }}
-          />
-          <span>
-            勾选组成任务分段轨道的标签；全部标签仍随包保留，未覆盖帧编号为 -1。
-          </span>
-          <Checkbox.Group
-            value={members}
-            onChange={(values) => {
-              reset();
-              setMembers(values as string[]);
-            }}
-            options={(saved?.tags ?? []).map((t) => ({
-              value: t.annotation_id,
-              label: `${t.label || t.tag_id} [${t.start_step}, ${t.end_step})`,
-            }))}
-          />
+          {saved.tags.length > 0 && (
+            <details className={styles.segments}>
+              <summary>
+                任务分段（可选）
+                {members.length > 0 && ` · 已选 ${members.length} 段`}
+              </summary>
+              <p>
+                全部标签都会导出。需要为数据帧添加动作分段编号时，再勾选对应标签；不选也可直接导出。
+              </p>
+              <Checkbox.Group
+                className={styles.tags}
+                aria-label={`任务分段 ${data.identity.episode_id}`}
+                value={members}
+                onChange={(values) =>
+                  setTrackSelection({
+                    key: selectionKey,
+                    members: values as string[],
+                  })
+                }
+                options={saved.tags.map((t) => ({
+                  value: t.annotation_id,
+                  label: `${t.label || t.tag_id} [${t.start_step}, ${t.end_step})`,
+                }))}
+              />
+            </details>
+          )}
           {overlap && (
-            <Alert type="error" title="选定轨道的区间重叠，请调整标签选择" />
+            <Alert
+              type="error"
+              title="所选分段有重叠，请取消重叠标签，或清空分段直接导出。"
+              action={
+                <Button
+                  size="small"
+                  onClick={() => setTrackSelection(undefined)}
+                >
+                  清空分段
+                </Button>
+              }
+            />
           )}
-          {!approved && (
-            <Checkbox
-              checked={allowUnreviewed}
-              onChange={(e) => {
-                reset();
-                setAllowUnreviewed(e.target.checked);
-              }}
-            >
-              包含尚未审核的当前标注
-            </Checkbox>
-          )}
-          <Button
-            disabled={
-              !chosenTask ||
-              selected === undefined ||
-              !members.length ||
-              !label.trim() ||
-              overlap ||
-              (!approved && !allowUnreviewed)
-            }
-            onClick={() => {
-              if (!chosenTask || selected === undefined) return;
-              onChange({
-                task_id: chosenTask,
-                revision: selected,
-                allow_unreviewed: !approved && allowUnreviewed,
-                track: {
-                  format: "hc-subtask-track/1",
-                  track_id: "task-segments",
-                  label: label.trim(),
-                  annotation_ids: [...members].sort(),
-                },
-              });
-              setConfirmation(
-                "已确认当前标注及分段；导出任务将保存本次使用的标注内容。",
-              );
-            }}
-          >
-            确认当前标注和分段
-          </Button>
-          {confirmation && <span role="status">{confirmation}</span>}
         </>
       )}
     </Space>

@@ -90,6 +90,14 @@ function useRobotMutation<T, V>(
     {
       onSuccess: (_data, _intent, binding) => {
         void invalidateScopedDomain(client, binding, "robots");
+        if (binding.scope) {
+          void client.invalidateQueries({
+            queryKey: ["robot-onboarding", binding.scope.organizationId],
+          });
+          void client.invalidateQueries({
+            queryKey: ["robot-ingest", binding.scope.organizationId],
+          });
+        }
       },
     },
   );

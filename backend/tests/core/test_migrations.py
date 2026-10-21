@@ -208,6 +208,23 @@ EXPECTED_MANIFEST = (
     "episode_store/0013_package_deliveries.sql",
     "episode_store/0014_collection_deliveries.sql",
     "episode_store/0015_tag_derivations.sql",
+    "episode_store/0016_migration_batches.sql",
+    "episode_store/0017_annotation_migrations.sql",
+    "episode_store/0018_collection_releases.sql",
+    "robotics/0006_data_scene_snapshots.sql",
+    "ingest/018_recording_episode_discard.sql",
+    "ingest/019_mcap_processing.sql",
+    "episode_store/0019_export_adapters.sql",
+    "robotics/0007_camera_calibration.sql",
+    "collection_tasks/0006_task_deletion.sql",
+    "ingest/020_robot_identity_deletion.sql",
+    "ingest/021_robot_onboarding.sql",
+    "ingest/022_robot_connections.sql",
+    "ingest/023_robot_credential_vault.sql",
+    "ingest/024_robot_processing_configs.sql",
+    "ingest/025_joint_only_recordings.sql",
+    "ingest/026_mcap_stored_binding.sql",
+    "robotics/0007_robot_deletion_actions.sql",
 )
 
 

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { readEnvironment } from "./env";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readAppEnvironment, readEnvironment } from "./env";
 import {
   configureReleaseIdentity,
   getReleaseIdentity,
@@ -20,7 +20,29 @@ const productionEnvironment = {
   VITE_COMPONENT_IMAGE_DIGEST: `sha256:${"c".repeat(64)}`,
 } as const;
 
-afterEach(() => resetReleaseIdentityForTests());
+afterEach(() => {
+  resetReleaseIdentityForTests();
+  vi.unstubAllGlobals();
+});
+
+it("keeps the robot's public platform URL independent of browser API requests", () => {
+  vi.stubGlobal("__HC_RUNTIME_CONFIG__", {
+    ...productionEnvironment,
+    VITE_ROBOT_PLATFORM_BASE_URL: "http://192.168.1.20:8088",
+  });
+  const result = readAppEnvironment();
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.issues.join(", "));
+  expect(result.value.robotPlatformBaseUrl).toBe("http://192.168.1.20:8088");
+  expect(result.value.apiBaseUrl).toBe("/api/v1");
+});
+
+it("allows deployments without an explicit robot platform URL", () => {
+  const result = readEnvironment(productionEnvironment);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(result.issues.join(", "));
+  expect(result.value.robotPlatformBaseUrl).toBe("");
+});
 
 describe("frontend release identity", () => {
   it("materializes the exact immutable production identity once", () => {

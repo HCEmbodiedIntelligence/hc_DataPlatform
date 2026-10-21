@@ -1,0 +1,104 @@
+{
+  "schema_version": "robot-config-migration/v1",
+  "candidates": [
+    {
+      "candidate_id": "afc9ead66ee08d8cbb1c5330649319b7c228db6ad2a1eb3053e462315ff1e3ff",
+      "organization_id": "01",
+      "robot_id": "robot_fa73724c028e571795e06eba838738fa",
+      "scheme_id": "legacy-5066c0a445c270ed85c74a82",
+      "configuration": {
+        "fps": 30,
+        "joint_names": [],
+        "joint_units": [],
+        "state_topic": "/observation/joint_states",
+        "action_topic": "/action/joint_states",
+        "primary_camera": null,
+        "maximum_time_error_ms": 50.0,
+        "depth_scale_m_per_unit": null,
+        "derive_action_from_next_state": false
+      },
+      "sources": [
+        {
+          "project_id": "01",
+          "region_code": "global",
+          "configuration": {
+            "fps": 30,
+            "joint_names": [],
+            "joint_units": [],
+            "state_topic": "/observation/joint_states",
+            "action_topic": "/action/joint_states",
+            "primary_camera": null,
+            "maximum_time_error_ms": 50.0,
+            "depth_scale_m_per_unit": null,
+            "derive_action_from_next_state": false
+          },
+          "updated_at": "2026-10-19T07:51:56.607331+00:00"
+        }
+      ],
+      "conflict": false,
+      "state": "NEEDS_VALIDATION",
+      "processing_snapshots": [
+        {
+          "project_id": "01",
+          "region_code": "global",
+          "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+          "processing_id": "3922fd18aad1d8c92036a364852f5377eab7176ddcd2e5b4d7328b05065a0071",
+          "status": "FAILED",
+          "configuration": {
+            "fps": 30,
+            "joint_names": [],
+            "joint_units": [],
+            "state_topic": null,
+            "action_topic": null,
+            "primary_camera": null,
+            "maximum_time_error_ms": 50.0,
+            "depth_scale_m_per_unit": null,
+            "derive_action_from_next_state": false
+          },
+          "recording_id": null
+        },
+        {
+          "project_id": "01",
+          "region_code": "global",
+          "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+          "processing_id": "5ccfab49466ba9d01a85de5e0faee42ae6782718804ba7ba7d3de47ca3d2e1f1",
+          "status": "FAILED",
+          "configuration": {
+            "fps": 30,
+            "joint_names": [],
+            "joint_units": [],
+            "state_topic": "/observation/joint_states",
+            "action_topic": "/action/joint_states",
+            "primary_camera": null,
+            "maximum_time_error_ms": 50.0,
+            "depth_scale_m_per_unit": null,
+            "derive_action_from_next_state": false
+          },
+          "recording_id": null
+        }
+      ]
+    }
+  ],
+  "source_links": [
+    {
+      "organization_id": "01",
+      "project_id": "01",
+      "region_code": "global",
+      "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "dataset_id": "dataset_task_eb015818ce07a378b4594ea7db3b245f",
+      "canonical_episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+      "canonical_raw_content_sha256": "5cd011c65cf57b090af8b827aec31c3d5073f63f58736aadbf77ecbf37cc1e64",
+      "evidence": "User-confirmed same recording; original MCAP contains no image messages",
+      "candidate_id": "2bc92210da4455ba16759b897bfe054f8cef1565bf60f316c9bb13f78627d71b"
+    }
+  ],
+  "protected_recovery": [
+    {
+      "raw_upload_id": "riu-445ff5ed97e8529db900a3af16cd0ff5",
+      "raw_source_id": "raw-4909658c01345e0ab025fb0c0ec6d433",
+      "canonical_episode_id": "rie-54102ae0b172579eafa375a28550c2b1",
+      "reason": "confirmed same recording; original MCAP has no image messages; retain successful LeRobot result"
+    }
+  ],
+  "inventory_sha256": "6f1bc864ea4a80ce8461e9fe04071d3124957b7855edac53b933e493fcdc2b6d"
+}

@@ -113,7 +113,7 @@ it("shows a discard receipt instead of claiming data was ingested", async () => 
   fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
   expect(
     await screen.findByText(
-      "已移除这条未入库记录，原始文件与历史处理结果已保留",
+      "已移除这条未入库记录，原始文件与已有处理结果已保留",
     ),
   ).toBeVisible();
   expect(screen.getByRole("button", { name: "重新处理并入库" })).toBeDisabled();

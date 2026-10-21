@@ -4,6 +4,7 @@ import styles from "./layout.module.css";
 
 export interface StandardPageScaffoldProps {
   header: PageHeaderProps;
+  headerContent?: ReactNode;
   summary?: ReactNode;
   filters?: ReactNode;
   state?: ReactNode;
@@ -13,6 +14,7 @@ export interface StandardPageScaffoldProps {
 
 export function StandardPageScaffold({
   header,
+  headerContent,
   summary,
   filters,
   state,
@@ -21,7 +23,7 @@ export function StandardPageScaffold({
 }: Readonly<StandardPageScaffoldProps>) {
   return (
     <div className={styles.standardPage} data-layout="standard-page">
-      <PageHeader {...header} />
+      {headerContent ?? <PageHeader {...header} />}
       {summary ? (
         <section className={styles.summaryRegion} aria-label="页面摘要">
           {summary}

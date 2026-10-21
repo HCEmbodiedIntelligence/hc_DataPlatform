@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "deleted_robot": {
+    "name": "223",
+    "serial_no": "23",
+    "robot_id": "robot_194fb76c7d4d5085a873ef8c39220f23"
+  },
+  "remaining_rows": {
+    "robotics.robot_assets": 0,
+    "ingest.robot_ingest_identities": 0,
+    "ingest.robot_processing_schemes": 0,
+    "registry.organization_robot_model_bindings": 0
+  },
+  "bootstrap_http_status": 404,
+  "onboarding_matches": 0,
+  "both_lists_absent_after_reload": true,
+  "014_episode_unchanged": true,
+  "other_robots_retained": true,
+  "deletion_audit": [
+    [
+      "robot.asset.deleted",
+      "c94d45b7-e462-4981-b2c1-33c3b6cca0b9",
+      "81ac9f09-f883-4956-b420-8bdcdd7871a4",
+      "2026-10-20 03:06:37.082557+00:00"
+    ]
+  ],
+  "default_overview_has_no_scheme_controls": true
+}

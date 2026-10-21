@@ -7,6 +7,7 @@ from typing import Any
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
+from hc_data_platform.ingest.problem_lifecycle import active_problem_sql
 
 from .models import AutoQualityProblemV1, QcReportV1, QualityProfileV1, QualitySummaryV1
 
@@ -213,7 +214,7 @@ class PostgresQualityRepository:
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    """
+                    f"""
                     SELECT report.report_json,
                            session.session_id,
                            COALESCE(session.data_package_id, native.episode_id),
@@ -237,7 +238,7 @@ class PostgresQualityRepository:
                             LIMIT 1
                       ) AS session ON TRUE
                       LEFT JOIN LATERAL (
-                           SELECT source.upload_id AS source_import_id,
+                           SELECT source.raw_source_id AS source_import_id,
                                   episode.source_episode_index, episode.episode_id
                              FROM ingest.raw_source_episodes AS episode
                              JOIN ingest.raw_sources AS source
@@ -257,23 +258,7 @@ class PostgresQualityRepository:
                      WHERE summary.project_id = %s
                        AND summary.region_code = %s
                        AND summary.status IN ('RISK', 'REJECT')
-                       AND NOT EXISTS (
-                           SELECT 1 FROM ingest.raw_source_episodes removed
-                           WHERE removed.organization_id=summary.organization_id
-                             AND removed.project_id=summary.project_id
-                             AND removed.region_code=summary.region_code
-                             AND removed.episode_id=summary.rollout_id
-                             AND removed.status='DISCARDED'
-                       )
-                       AND NOT EXISTS (
-                           SELECT 1 FROM ingest.recording_episode_processing removed
-                           WHERE removed.organization_id=summary.organization_id
-                             AND removed.project_id=summary.project_id
-                             AND removed.region_code=summary.region_code
-                             AND removed.recording_id || ':' || removed.episode_id
-                                 = summary.rollout_id
-                             AND removed.status='DISCARDED'
-                       )
+                       AND {active_problem_sql("summary")}
                      ORDER BY summary.updated_at DESC, summary.rollout_id DESC
                      LIMIT 1000
                     """,

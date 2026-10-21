@@ -27,7 +27,7 @@ describe("raw recording joint-angle stream", () => {
     });
     expect(
       recordingJointVector({ values: [null], names: ["arm"], units: ["rad"] }),
-    ).toBeNull();
+    ).toEqual({ values: [Number.NaN], names: ["arm"], units: ["rad"] });
   });
   it("reads original MCAP windows and drives the shared robot frame source", async () => {
     const sensorWindow = vi.fn(
@@ -81,8 +81,8 @@ describe("raw recording joint-angle stream", () => {
         [0.5, -1],
       ],
       series: [
-        { displayName: "shoulder", unit: "rad" },
-        { displayName: "elbow", unit: "rad" },
+        { displayName: "shoulder", unit: "未声明" },
+        { displayName: "elbow", unit: "未声明" },
       ],
     });
 

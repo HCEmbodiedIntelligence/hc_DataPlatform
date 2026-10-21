@@ -996,29 +996,7 @@ export function DataExportPage() {
         }}
         state={
           <div className={styles.workspace}>
-            <Card
-              className={styles.sourceCard}
-              title={
-                <span className={styles.cardTitle}>
-                  <FileArchive aria-hidden="true" size={18} />
-                  {dataStage === "raw" ? "导出原始数据" : "创建导出任务"}
-                </span>
-              }
-              extra={
-                <span className={styles.selectionCount} aria-live="polite">
-                  {dataStage === "raw" ? (
-                    "保留上传时的原文件"
-                  ) : standardMode ? (
-                    "使用所选数据与当前标注"
-                  ) : (
-                    <>
-                      已选 {selectedSources.length} 个数据集 ·{" "}
-                      {selectedEpisodeCount.toLocaleString("zh-CN")} 个 Episode
-                    </>
-                  )}
-                </span>
-              }
-            >
+            <Card className={styles.sourceCard}>
               {!canRead && !capabilities.loading ? (
                 <PageState
                   state="forbidden"
@@ -1037,7 +1015,7 @@ export function DataExportPage() {
                   <div
                     className={`${styles.filterSection} ${styles.stageSelector}`}
                   >
-                    <strong>导出数据类型</strong>
+                    <strong>类型</strong>
                     <Radio.Group
                       aria-label="导出数据类型"
                       optionType="button"
@@ -1059,60 +1037,38 @@ export function DataExportPage() {
                         );
                       }}
                     />
-                  </div>
-                  {dataStage !== "raw" && (
-                    <Radio.Group
-                      className={styles.deliverySwitch}
-                      optionType="button"
-                      aria-label="导出交付方式"
-                      value={standardMode ? "standard" : "legacy"}
-                      options={[
-                        {
-                          value: "standard",
-                          label: "完整标准包 / LeRobot 集合",
-                        },
-                        { value: "legacy", label: "历史格式" },
-                      ]}
-                      onChange={(event) => {
-                        setSelectedSourceKeys([]);
-                        setBatchFeedback(null);
-                        setParams(
-                          (current) => {
-                            const next = new URLSearchParams(current);
-                            next.set("delivery", event.target.value);
-                            return next;
+                    {dataStage !== "raw" && (
+                      <Radio.Group
+                        className={styles.deliverySwitch}
+                        optionType="button"
+                        aria-label="导出交付方式"
+                        value={standardMode ? "standard" : "legacy"}
+                        options={[
+                          {
+                            value: "standard",
+                            label: "标准格式",
                           },
-                          { replace: true },
-                        );
-                      }}
-                    />
-                  )}
+                          { value: "legacy", label: "历史格式" },
+                        ]}
+                        onChange={(event) => {
+                          setSelectedSourceKeys([]);
+                          setBatchFeedback(null);
+                          setParams(
+                            (current) => {
+                              const next = new URLSearchParams(current);
+                              next.set("delivery", event.target.value);
+                              return next;
+                            },
+                            { replace: true },
+                          );
+                        }}
+                      />
+                    )}
+                  </div>
                   <section
-                    aria-labelledby="export-scope-title"
+                    aria-label="选择数据范围"
                     className={styles.filterSection}
                   >
-                    <div className={styles.sectionHeader}>
-                      <div>
-                        <span className={styles.stepBadge}>1</span>
-                        <span>
-                          <strong id="export-scope-title">选择数据范围</strong>
-                          <small>
-                            {dataStage === "raw"
-                              ? "按任务或数据集查找，勾选原始批次后批量下载"
-                              : "先按任务或数据集查找，再勾选 Episode"}
-                          </small>
-                        </span>
-                      </div>
-                      <Button
-                        disabled={activeSourceFilterCount === 0}
-                        icon={<RefreshCcw aria-hidden="true" size={14} />}
-                        size="small"
-                        type="text"
-                        onClick={resetSourceSearch}
-                      >
-                        清空筛选
-                      </Button>
-                    </div>
                     <div className={styles.filterGrid}>
                       <div className={styles.filterField}>
                         <label htmlFor="export-dataset-filter">数据集</label>
@@ -1137,9 +1093,7 @@ export function DataExportPage() {
                         />
                       </div>
                       <div className={styles.filterField}>
-                        <label htmlFor="export-task-filter">
-                          {standardMode ? "任务所属数据集" : "任务"}
-                        </label>
+                        <label htmlFor="export-task-filter">任务</label>
                         <Select
                           allowClear
                           showSearch
@@ -1165,7 +1119,21 @@ export function DataExportPage() {
                           }
                         />
                       </div>
+                      <Button
+                        disabled={activeSourceFilterCount === 0}
+                        icon={<RefreshCcw aria-hidden="true" size={14} />}
+                        size="small"
+                        type="text"
+                        onClick={resetSourceSearch}
+                      >
+                        清空筛选
+                      </Button>
                     </div>
+                    {standardMode && appliedTasks.length > 0 && (
+                      <span className={styles.filterHint}>
+                        显示任务所属数据集内的数据
+                      </span>
+                    )}
                   </section>
 
                   {dataStage === "raw" ? (
@@ -1185,12 +1153,6 @@ export function DataExportPage() {
                     </Suspense>
                   ) : standardMode ? (
                     <>
-                      {appliedTasks.length > 0 && (
-                        <Alert
-                          type="info"
-                          title="以下列出所选任务所属数据集的标准包，请逐条选择要交付的 Episode。"
-                        />
-                      )}
                       <PackageBatchPanel
                         key={`${scopeKey}:${dataStage}:${requestedSources.map((s) => s.datasetId).join(",")}:${appliedTasks.join(",")}:${activeSourceFilterCount}`}
                         scope={scope!}

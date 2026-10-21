@@ -1,4 +1,10 @@
 import {
+  clearDraft,
+  draftKey,
+  readDraft,
+  saveDraft,
+} from "../../features/capture-schemes/navigation";
+import {
   keepPreviousData,
   useMutation,
   useQueries,
@@ -147,7 +153,10 @@ export function CollectionTaskPage({
   const [lifecycleTarget, setLifecycleTarget] =
     useState<LifecycleTarget | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
-  const createIdempotencyKey = useRef(newIdempotencyKey("create"));
+  const intentStorage = shellScope ? draftKey("task-intent", shellScope) : "";
+  const createIdempotencyKey = useRef(
+    readDraft<string>(intentStorage) ?? newIdempotencyKey("create"),
+  );
   const lifecycleAttempt = useRef<{
     readonly taskId: string;
     readonly etag: string;
@@ -182,10 +191,19 @@ export function CollectionTaskPage({
       scopeKey,
       serverStatus ?? "ALL",
       search.cursor ?? "FIRST",
+      search.taskId ?? null,
       pageSize,
     ],
-    queryFn: ({ signal }) =>
-      gateway.list(
+    queryFn: async ({ signal }) => {
+      if (search.taskId) {
+        const { task } = await gateway.detail(
+          scope as CollectionTaskScope,
+          search.taskId,
+          signal,
+        );
+        return { items: [task], next_cursor: null };
+      }
+      return gateway.list(
         scope as CollectionTaskScope,
         {
           status: serverStatus,
@@ -193,9 +211,10 @@ export function CollectionTaskPage({
           cursor: search.cursor,
         },
         signal,
-      ),
+      );
+    },
     enabled: listEnabled,
-    placeholderData: keepPreviousData,
+    placeholderData: search.taskId ? undefined : keepPreviousData,
     retry: false,
   });
 
@@ -284,6 +303,7 @@ export function CollectionTaskPage({
     mutationFn: async (request: SaveRequest) => {
       if (scope === null) throw new Error("Missing collection-task scope");
       if (request.mode === "create") {
+        saveDraft(intentStorage, request.idempotencyKey);
         return gateway.create(
           scope,
           request.command,
@@ -298,6 +318,7 @@ export function CollectionTaskPage({
       );
     },
     onSuccess: async (task) => {
+      clearDraft(intentStorage);
       await queryClient.invalidateQueries({
         queryKey: ["collection-task-detail", scopeKey, task.collection_task_id],
         exact: true,
@@ -389,6 +410,11 @@ export function CollectionTaskPage({
         queryKey: ["collection-tasks", scopeKey],
       });
       if (request.action === "delete") {
+        if (search.taskId === request.task.collection_task_id) {
+          setParams(
+            collectionTaskQueryCodec.build({ ...search, taskId: undefined }),
+          );
+        }
         queryClient.removeQueries({
           queryKey: [
             "collection-task-detail",
@@ -417,7 +443,7 @@ export function CollectionTaskPage({
       const next: CollectionTaskSearch = { ...search, ...patch };
       if (resetCursor) {
         setCursorTrail([]);
-        const { cursor: _cursor, ...withoutCursor } = next;
+        const { cursor: _cursor, taskId: _taskId, ...withoutCursor } = next;
         setParams(collectionTaskQueryCodec.build(withoutCursor));
         return;
       }
@@ -438,7 +464,8 @@ export function CollectionTaskPage({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    createIdempotencyKey.current = newIdempotencyKey("create");
+    createIdempotencyKey.current =
+      readDraft<string>(intentStorage) ?? newIdempotencyKey("create");
     save.reset();
     changeSearch({ drawer: { mode: "create" } });
   }, [canManage, changeSearch, save]);
@@ -524,7 +551,8 @@ export function CollectionTaskPage({
   };
 
   const locallyFiltered = Boolean(search.query || search.type);
-  const filtered = search.status !== "ALL" || locallyFiltered;
+  const filtered =
+    search.status !== "ALL" || locallyFiltered || Boolean(search.taskId);
   const authorizationState: PageStateKind | "ready" =
     capabilities.loading && capabilityOverride === undefined
       ? "loading"
@@ -628,7 +656,8 @@ export function CollectionTaskPage({
           </div>
           <div className={styles.toolbarStatus}>
             <output className={styles.windowCount} aria-live="polite">
-              当前窗口 {visibleTasks.length} 条
+              {search.taskId ? "已定位任务" : "当前窗口"} {visibleTasks.length}{" "}
+              条
             </output>
             {filtered ? (
               <Button
@@ -638,7 +667,7 @@ export function CollectionTaskPage({
                   changeSearch({ status: "ALL", query: "", type: "" }, true)
                 }
               >
-                重置
+                {search.taskId ? "查看全部任务" : "重置"}
               </Button>
             ) : null}
             <Button
@@ -667,7 +696,7 @@ export function CollectionTaskPage({
           ) : null}
           {table}
         </div>
-        {list.data ? (
+        {list.data && !search.taskId ? (
           <nav
             className={styles.paginationBar}
             aria-label="采集任务数据窗口分页"
@@ -778,7 +807,7 @@ export function CollectionTaskPage({
           key={
             drawerMode === "edit"
               ? `edit:${editingTaskId ?? "unknown"}`
-              : "create"
+              : `create:${scopeKey}`
           }
           error={save.error ?? drawerLoadError}
           datasetError={assignableDatasets.error}
@@ -792,10 +821,12 @@ export function CollectionTaskPage({
           mode={drawerMode}
           pending={save.isPending}
           projectId={scope?.projectId ?? ""}
+          scope={scope ?? undefined}
           onClose={closeDrawer}
           onFormChanged={() => {
             if (drawerMode === "create") {
               createIdempotencyKey.current = newIdempotencyKey("create");
+              saveDraft(intentStorage, createIdempotencyKey.current);
             }
             if (save.error) save.reset();
           }}

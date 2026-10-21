@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "origin": "http://192.168.2.23:8088",
+  "checks": [
+    "LAN page: robot list > X1-001 > 采集配置 opens default v1 summary; channels and joint form initially hidden",
+    "Create dialog prefilled and cancellable; advanced settings/navigation and return path work; live configuration unchanged"
+  ],
+  "configuration_unchanged": true
+}

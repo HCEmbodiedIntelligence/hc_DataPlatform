@@ -1,0 +1,8 @@
+{
+  "inventory_sha256": "6f1bc864ea4a80ce8461e9fe04071d3124957b7855edac53b933e493fcdc2b6d",
+  "candidate_ids": [],
+  "source_link_ids": [
+    "2bc92210da4455ba16759b897bfe054f8cef1565bf60f316c9bb13f78627d71b"
+  ],
+  "authorization": "User requested processing task 014 and explicitly selected its existing 19 controlled joints; preserve successful Episode and associate same recording."
+}

@@ -59,7 +59,12 @@ assert annotation["revision"]["content_hash"] == manifest["subtasks"]["revision_
 assert annotation["data_binding"]["data_ref"] == manifest["base_data"]
 rows = pq.read_table(root / "data").to_pylist()
 source_frames = pq.read_table(root / "hc/annotation_source_frames.parquet").to_pylist()
-segments = [json.loads(line) for line in (root / "hc/subtasks.jsonl").read_text().splitlines()]
+segment_file = root / "hc/subtasks.jsonl"
+segments = (
+    [json.loads(line) for line in segment_file.read_text().splitlines()]
+    if segment_file.exists()
+    else []
+)
 assert [segment["subtask_index"] for segment in segments] == list(range(len(segments)))
 modalities = json.loads((root / "hc/modalities.json").read_text())
 masks = {

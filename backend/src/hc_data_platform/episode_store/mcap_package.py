@@ -74,6 +74,16 @@ def freeze_mcap_plan(
         frequency_hz=request.profile.frequency_hz,
         fields={topic: "json" for topic in original.actual_topics},
     )
+    capture = getattr(source, "capture_snapshot", None)
+    if capture is not None:
+        from hc_data_platform.capture_schemes.schema import semantic_schema
+
+        schema = semantic_schema(
+            request.project_id,
+            request.dataset_id,
+            capture["output"],
+            {topic: "json" for topic in original.actual_topics},
+        )
     plan = McapEpisodePlan.freeze(
         input=PackageInput(
             identity=identity,
@@ -95,6 +105,18 @@ def freeze_mcap_plan(
         ),
         schema_snapshot=schema,
         metadata={
+            **(
+                {
+                    "capture": capture,
+                    "capture_validation": {
+                        "presence": {
+                            name: name in mapping.values() for name in capture["output"]["features"]
+                        }
+                    },
+                }
+                if capture
+                else {}
+            ),
             "task": original.task_id,
             "camera_topics": sorted(topics),
             **({"numeric_projection": numeric} if numeric else {}),

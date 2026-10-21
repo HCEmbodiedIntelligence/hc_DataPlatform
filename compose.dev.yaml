@@ -351,6 +351,7 @@ services:
       target: frontend-dev
     environment:
       VITE_API_BASE_URL: /api/v1
+      VITE_ROBOT_PLATFORM_BASE_URL: ${HC_PUBLIC_ORIGIN:-}
       VITE_LEROBOT_UPLOAD_TRANSPORT: proxy
       VITE_SSE_BASE_URL: /api/v1/events
       VITE_MOCK_MODE: ${HC_FRONTEND_MOCK_MODE:-off}

@@ -29,6 +29,20 @@ import type {
   CreateCollectionTask,
 } from "../../../features/collection-tasks/api";
 import styles from "../styles.module.css";
+import type { CollectionTaskScope } from "../../../features/collection-tasks/api";
+import type { SetTaskPlan } from "../../../features/capture-schemes/contracts";
+import {
+  TaskPlanSelector,
+  type TaskPlanSelection,
+} from "../../../features/capture-schemes/TaskPlanSelector";
+import {
+  clearDraft,
+  draftKey,
+  readDraft,
+  saveDraft,
+} from "../../../features/capture-schemes/navigation";
+import { captureError } from "../../../features/capture-schemes/presentation";
+import { TaskPlanManager } from "../../../features/capture-schemes/TaskPlanManager";
 
 interface TaskFormValues {
   name: string;
@@ -44,6 +58,7 @@ interface TaskFormValues {
 export interface CollectionTaskDrawerProps {
   readonly mode: "create" | "edit";
   readonly projectId: string;
+  readonly scope?: CollectionTaskScope;
   readonly initialTask?: CollectionTask;
   readonly loading?: boolean;
   readonly pending?: boolean;
@@ -238,8 +253,21 @@ export function CollectionTaskDrawer({
   onSubmit,
   pending = false,
   projectId,
+  scope,
 }: Readonly<CollectionTaskDrawerProps>) {
   const [form] = Form.useForm<TaskFormValues>();
+  const storageKey = scope ? draftKey("task-create", scope) : "";
+  const restored =
+    mode === "create"
+      ? readDraft<{ values: TaskFormValues; selection: TaskPlanSelection }>(
+          storageKey,
+        )
+      : null;
+  const [selection, setSelection] = useState<TaskPlanSelection>(
+    restored?.selection ?? { versionKey: "" },
+  );
+  const [capturePlan, setCapturePlan] = useState<SetTaskPlan | null>(null);
+  const [planError, setPlanError] = useState("");
   const [dirty, setDirty] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const headingId = useId();
@@ -252,7 +280,12 @@ export function CollectionTaskDrawer({
 
   useEffect(() => {
     form.resetFields();
-    form.setFieldsValue(initialValues(initialTask));
+    form.setFieldsValue(
+      mode === "create"
+        ? (readDraft<{ values: TaskFormValues }>(storageKey)?.values ??
+            initialValues(initialTask))
+        : initialValues(initialTask),
+    );
     setDirty(false);
     submitLock.current = false;
   }, [
@@ -268,6 +301,7 @@ export function CollectionTaskDrawer({
     initialTask?.task_code,
     initialTask?.type,
     mode,
+    storageKey,
   ]);
 
   useEffect(() => {
@@ -308,7 +342,17 @@ export function CollectionTaskDrawer({
     if (submitLock.current || pending) return;
     submitLock.current = true;
     try {
-      await onSubmit(commandFromValues(values));
+      if (mode === "create" && scope && !capturePlan) {
+        setPlanError("请选择已发布的采集方案。");
+        return;
+      }
+      await onSubmit({
+        ...commandFromValues(values),
+        ...(mode === "create" && capturePlan
+          ? { capture_plan: capturePlan }
+          : {}),
+      });
+      if (mode === "create") clearDraft(storageKey);
       setDirty(false);
     } catch {
       // The parent mutation owns the visible RFC 9457 error state.
@@ -390,6 +434,11 @@ export function CollectionTaskDrawer({
             onValuesChange={() => {
               setDirty(true);
               onFormChanged?.();
+              if (mode === "create")
+                saveDraft(storageKey, {
+                  values: form.getFieldsValue(),
+                  selection,
+                });
             }}
           >
             <Form.Item label="项目" required>
@@ -473,6 +522,36 @@ export function CollectionTaskDrawer({
               {mode === "edit" ? " 任务收到首个数据包后不能改关联。" : ""}
             </div>
 
+            {mode === "create" && scope && (
+              <>
+                <TaskPlanSelector
+                  organizationId={scope.organizationId}
+                  value={selection}
+                  disabled={pending}
+                  onSelectionChange={(value) => {
+                    setSelection(value);
+                    setCapturePlan(null);
+                    setPlanError("");
+                    setDirty(true);
+                    onFormChanged?.();
+                    saveDraft(storageKey, {
+                      values: form.getFieldsValue(),
+                      selection: value,
+                    });
+                  }}
+                  onChange={setCapturePlan}
+                />
+                {planError && <Alert type="warning" title={planError} />}
+              </>
+            )}
+            {mode === "edit" && scope && initialTask && (
+              <TaskPlanManager
+                key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}/${initialTask.collection_task_id}`}
+                scope={scope}
+                taskId={initialTask.collection_task_id}
+                active={initialTask.status === "ACTIVE"}
+              />
+            )}
             <Form.Item
               label="采集类型"
               name="type"
@@ -627,9 +706,7 @@ export function CollectionTaskDrawer({
                 title={errorTitle(error)}
                 description={
                   <Space orientation="vertical" size={4}>
-                    <span>
-                      {isDomainError(error) ? error.message : "请稍后重试。"}
-                    </span>
+                    <span>{captureError(error)}</span>
                     {isDomainError(error) && error.fieldErrors.length > 0 ? (
                       <ul className={styles.fieldErrorList}>
                         {error.fieldErrors.map((fieldError) => (
@@ -699,6 +776,7 @@ export function CollectionTaskDrawer({
         onOk={() => {
           setDiscardOpen(false);
           setDirty(false);
+          if (mode === "create") clearDraft(storageKey);
           onClose();
         }}
       >

@@ -1,3 +1,4 @@
+import { annotationStatusLabel } from "../../../features/capture-schemes/presentation";
 import { Alert, Button, Empty, Spin, Table, Tag, Typography } from "antd";
 import type { IngestScope } from "../../../entities/data-source";
 import { useRobotUploadEpisodes } from "../../../features/robot-ingest/api";
@@ -49,6 +50,21 @@ function EpisodeLineage({
           render: (value: string) => <code>{value}</code>,
         },
         { title: "处理状态", dataIndex: "status", width: 120 },
+        {
+          title: "数据读取",
+          width: 120,
+          render: (_, item) =>
+            item.data_readable === true
+              ? "可读取"
+              : item.data_readable === false
+                ? "尚不可读取"
+                : "状态未提供",
+        },
+        {
+          title: "标注状态",
+          width: 180,
+          render: (_, item) => annotationStatusLabel(item.annotation_status),
+        },
         {
           title: "帧 / 样本",
           width: 150,

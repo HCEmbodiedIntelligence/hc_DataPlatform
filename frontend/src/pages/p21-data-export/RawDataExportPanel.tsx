@@ -5,7 +5,11 @@ import { Alert, Button, Space, Table } from "antd";
 import type { Scope } from "../../shared/scope/model";
 import { request } from "../../shared/api/http-client";
 import { PageState } from "../../shared/ui";
-import { downloadRawSources } from "../../features/exports/raw-download";
+import { BrowserDownloadHelp } from "../../features/exports/BrowserDownloadHelp";
+import {
+  downloadRawSources,
+  type RawDownloadResult,
+} from "../../features/exports/raw-download";
 import { formatBytes } from "../../features/ingest/upload/upload-contract";
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import {
@@ -53,9 +57,17 @@ function RawDataSelection({
   const [downloading, setDownloading] = useState(false);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [downloadComplete, setDownloadComplete] = useState(false);
+  const [downloadResult, setDownloadResult] =
+    useState<RawDownloadResult | null>(null);
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => controller.current?.abort(), []);
+  useEffect(() => {
+    if (downloadResult?.kind !== "browser") return;
+    // Allow a just-started browser download to consume the URL before cleanup.
+    return () => {
+      window.setTimeout(() => URL.revokeObjectURL(downloadResult.url), 60_000);
+    };
+  }, [downloadResult]);
   const ingestScope =
     scope?.projectId && scope.regionCode
       ? {
@@ -123,7 +135,7 @@ function RawDataSelection({
   );
   function select(ids: string[]) {
     setSelectedIds(ids);
-    setDownloadComplete(false);
+    setDownloadResult(null);
     setDownloadError(null);
   }
   async function download() {
@@ -134,15 +146,16 @@ function RawDataSelection({
     setDownloading(true);
     setDownloadedBytes(0);
     setDownloadError(null);
-    setDownloadComplete(false);
+    setDownloadResult(null);
     try {
-      await downloadRawSources(
+      const result = await downloadRawSources(
         ingestScope,
         selected.map((item) => item.import_id),
         current.signal,
         setDownloadedBytes,
       );
-      if (!current.signal.aborted) setDownloadComplete(true);
+      if (!current.signal.aborted) setDownloadResult(result);
+      else if (result.kind === "browser") URL.revokeObjectURL(result.url);
     } catch (error) {
       if (
         !current.signal.aborted &&
@@ -224,8 +237,44 @@ function RawDataSelection({
           description={downloadError}
         />
       ) : null}
-      {downloadComplete ? (
-        <Alert type="success" showIcon title="所选原始数据已下载为 ZIP" />
+      {downloadResult ? (
+        <Alert
+          type={downloadResult.kind === "saved" ? "success" : "info"}
+          showIcon
+          title={
+            downloadResult.kind === "saved"
+              ? "ZIP 已保存到所选位置"
+              : "ZIP 已准备好，已向浏览器请求下载"
+          }
+          description={
+            <Space orientation="vertical" size={4}>
+              <span>
+                {downloadResult.filename} · {formatBytes(downloadResult.bytes)}
+              </span>
+              {downloadResult.kind === "saved" ? (
+                <span>
+                  请到你选择的文件夹查看；这次保存不会出现在浏览器下载列表中。
+                </span>
+              ) : (
+                <Space orientation="vertical" size={4}>
+                  <Space wrap>
+                    <span>若下载列表中没有记录，请点击下载：</span>
+                    <Button
+                      size="small"
+                      type="primary"
+                      href={downloadResult.url}
+                      download={downloadResult.filename}
+                      rel="noopener noreferrer"
+                    >
+                      点击下载 ZIP
+                    </Button>
+                  </Space>
+                  {window.isSecureContext === false && <BrowserDownloadHelp />}
+                </Space>
+              )}
+            </Space>
+          }
+        />
       ) : null}
       <Table<NativeProgress>
         aria-label="原始数据批次"

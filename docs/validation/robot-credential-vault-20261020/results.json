@@ -1,0 +1,29 @@
+{
+  "backend": {
+    "passed": 122,
+    "skipped": 3,
+    "last_credential_and_api_recheck": 18
+  },
+  "frontend": {
+    "passed": 25,
+    "typecheck": "passed",
+    "build": "passed",
+    "architecture_passed": 54,
+    "client_generator_passed": 15
+  },
+  "runtime_contract": "passed",
+  "generated_client": "passed",
+  "development_migrations": {
+    "applied": 162,
+    "expected": 162,
+    "missing": [],
+    "checksum_drift": []
+  },
+  "browser": "credential-browser.json",
+  "development_browser": "current-browser.json",
+  "unverified": [
+    "dedicated G1 database integration",
+    "G0 processing fixtures",
+    "physical robot and live OSS/edge connector end-to-end"
+  ]
+}

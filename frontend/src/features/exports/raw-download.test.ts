@@ -11,7 +11,10 @@ const scope = {
 };
 const file = { write: vi.fn(), close: vi.fn(), abort: vi.fn() };
 const createWritable = vi.fn(async () => file);
-const picker = vi.fn(async () => ({ createWritable }));
+const picker = vi.fn(async () => ({
+  name: "我的原始数据.zip",
+  createWritable,
+}));
 
 beforeEach(() => {
   vi.stubGlobal("window", { showSaveFilePicker: picker });
@@ -55,7 +58,7 @@ it("writes the archive to the chosen file and commits it only after the full res
     return undefined as never;
   });
   const progress = vi.fn();
-  await downloadRawSources(
+  const result = await downloadRawSources(
     scope,
     ["raw-a", "raw-b"],
     new AbortController().signal,
@@ -66,6 +69,11 @@ it("writes the archive to the chosen file and commits it only after the full res
   expect(file.close).toHaveBeenCalledOnce();
   expect(file.abort).not.toHaveBeenCalled();
   expect(progress).toHaveBeenLastCalledWith(4);
+  expect(result).toEqual({
+    kind: "saved",
+    filename: "我的原始数据.zip",
+    bytes: 4,
+  });
 });
 
 it("does not request an archive when the save dialog is cancelled", async () => {

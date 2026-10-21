@@ -1,0 +1,400 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="144" failures="1" errors="0" time="23.557985">
+    <testsuite name="src/features/quality/QualityEvidenceDetails.test.tsx" timestamp="2026-10-20T01:57:24.069Z" hostname="5388e64ad3bc" tests="4" failures="0" errors="0" skipped="0" time="0.111194825">
+        <testcase classname="src/features/quality/QualityEvidenceDetails.test.tsx" name="shows recorder rejection even when all general checks pass, without counts" time="0.045971325">
+        </testcase>
+        <testcase classname="src/features/quality/QualityEvidenceDetails.test.tsx" name="retains blocking risks and old report errors while hiding informational findings" time="0.007171889">
+        </testcase>
+        <testcase classname="src/features/quality/QualityEvidenceDetails.test.tsx" name="shows image checks as not applicable alongside PASS" time="0.047749631">
+        </testcase>
+        <testcase classname="src/features/quality/QualityEvidenceDetails.test.tsx" name="shows image checks as not applicable alongside REJECT" time="0.009091124">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/quality/RecordingProcessingDetails.test.tsx" timestamp="2026-10-20T01:57:24.071Z" hostname="5388e64ad3bc" tests="2" failures="0" errors="0" skipped="0" time="0.329053529">
+        <testcase classname="src/features/quality/RecordingProcessingDetails.test.tsx" name="identifies the task, original recording and slice next to the rejection reasons" time="0.267771388">
+        </testcase>
+        <testcase classname="src/features/quality/RecordingProcessingDetails.test.tsx" name="retains the recording ID and failure reasons when source lookup fails" time="0.060634196">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/DataVisualizationWorkbench.test.tsx" timestamp="2026-10-20T01:57:24.071Z" hostname="5388e64ad3bc" tests="17" failures="0" errors="0" skipped="0" time="0.723605983">
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; adapts the Manifest camera grid for 0 cameras" time="0.061286861">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; adapts the Manifest camera grid for 1 cameras" time="0.067707427">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; adapts the Manifest camera grid for 2 cameras" time="0.027162048">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; adapts the Manifest camera grid for 4 cameras" time="0.037911097">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; adapts the Manifest camera grid for 8 cameras" time="0.03958141">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; isolates missing and slow camera streams without clearing healthy panels" time="0.034573761">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; authorizes and decodes video only while its panel is near the viewport" time="0.025387697">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; follows the video playback clock without seeking it on every animation frame" time="0.023393756">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; does not authorize media for StrictMode&apos;s discarded effect" time="0.028301721">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; refreshes a direct MP4 grant before its signed URL expires" time="0.031477799">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench camera composition &gt; refreshes a failed signed media descriptor once, then keeps the failure local to its panel" time="0.037983202">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench shared clock and boundaries &gt; allows issue-range selection in a read-only compact preview without desynchronizing cameras" time="0.030942817">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench shared clock and boundaries &gt; drives every camera probe and the only video timeline from one clock" time="0.119165612">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench shared clock and boundaries &gt; keeps static navigation and inspector slots outside clock updates" time="0.038662793">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench shared clock and boundaries &gt; marks normal boundaries as information and lets reviewers seek each interval" time="0.041726985">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench shared clock and boundaries &gt; makes Raw status read-only and exposes no artificial PASS action" time="0.0464059">
+        </testcase>
+        <testcase classname="src/features/viewer/DataVisualizationWorkbench.test.tsx" name="DataVisualizationWorkbench shared clock and boundaries &gt; invokes only explicitly supplied capability-gated commands" time="0.030258727">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/EpisodeWorkbenchCore.test.tsx" timestamp="2026-10-20T01:57:24.073Z" hostname="5388e64ad3bc" tests="19" failures="1" errors="0" skipped="0" time="0.880024767">
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="formats all viewer time readouts as seconds with two decimals" time="0.00412367">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; scrubs a read-only timeline without creating an annotation or exposing edit controls" time="0.112624131">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; distinguishes a new drag from resizing an existing selection" time="0.051237102">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; creates a precise range by dragging across the filmstrip" time="0.029213355">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; supports keyboard trimming, zooming, and nested track labels" time="0.033949606">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ClipTimeline &gt; starts the shared playback clock at an interactive segment boundary" time="0.117042139">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; scrubs while moving a Tag, commits on release, and suppresses the drag&apos;s click" time="0.033230114">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; drags the start edge directly and follows that boundary" time="0.023653474">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; drags the end edge directly and follows that boundary" time="0.034566165">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; keeps the interval length inside the timeline bounds" time="0.037869915">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; cancels without writing on Escape" time="0.018320404">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; cancels without writing on pointercancel" time="0.021234414">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; selects a right-clicked Tag and offers deletion at the pointer" time="0.026600709">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="direct Tag manipulation &gt; does not expose direct editing or deletion when read-only" time="0.008641799">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="EpisodeWorkbenchCore immutable window data &gt; loads a bound non-camera stream only when visible and exposes a real-data summary" time="0.017918462">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; breaks the joint curve at missing observations instead of connecting across the gap" time="0.036219682">
+            <failure message="expected [ &apos;M&apos; ] to have a length of 2 but got 1" type="AssertionError">
+AssertionError: expected [ &apos;M&apos; ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ src/features/viewer/EpisodeWorkbenchCore.test.tsx:430:31
+            </failure>
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; keeps a slow window request alive and updates the cursor and values when time changes" time="0.210346983">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; renders all 29 G1 joints including the right wrist" time="0.038049794">
+        </testcase>
+        <testcase classname="src/features/viewer/EpisodeWorkbenchCore.test.tsx" name="ViewerJointAngleCurvePanel recovery &gt; keeps the last successful chart visible when a window refresh is transiently rejected" time="0.023430965">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/PlaybackClock.test.ts" timestamp="2026-10-20T01:57:24.074Z" hostname="5388e64ad3bc" tests="3" failures="0" errors="0" skipped="0" time="0.005297458">
+        <testcase classname="src/features/viewer/PlaybackClock.test.ts" name="video-driven playback clock &gt; holds time while the master buffers and resumes from the decoded frame" time="0.003499462">
+        </testcase>
+        <testcase classname="src/features/viewer/PlaybackClock.test.ts" name="video-driven playback clock &gt; switches to the next visible video when the master is detached" time="0.0004207">
+        </testcase>
+        <testcase classname="src/features/viewer/PlaybackClock.test.ts" name="video-driven playback clock &gt; ends at the episode boundary and retains wall-clock playback without videos" time="0.000321903">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/RegisteredViewerPanel.test.tsx" timestamp="2026-10-20T01:57:24.075Z" hostname="5388e64ad3bc" tests="10" failures="0" errors="0" skipped="0" time="0.522761314">
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; routes asynchronous source errors through the same cancellation and panel-local failure path" time="0.077846403">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; releases a source payload that arrives after its renderer has unmounted" time="0.061884337">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; contains component initialization errors and releases already registered resources" time="0.02206147">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; lazy loads a real extension module, without a robot, sharing source and playback clock" time="0.128319969">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; passes the same catalog through the reusable data visualization shell and keeps slots" time="0.021285133">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; cancels a pending loader on owner replacement and never mounts its late result" time="0.109533021">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; disposes old resources on stream replacement, and immediately disposes late registrations" time="0.020995525">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; does not load unknown schemas or unavailable streams" time="0.004406046">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; limits loader errors to one panel and retries through the same frozen registration" time="0.07001623">
+        </testcase>
+        <testcase classname="src/features/viewer/RegisteredViewerPanel.test.tsx" name="registered renderers in the unchanged workbench &gt; aborts and disposes an extension when its panel becomes invisible" time="0.005252122">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/SynchronizedEpisodeWorkbench.test.tsx" timestamp="2026-10-20T01:57:24.075Z" hostname="5388e64ad3bc" tests="2" failures="0" errors="0" skipped="0" time="0.274256159">
+        <testcase classname="src/features/viewer/SynchronizedEpisodeWorkbench.test.tsx" name="switches to actual action windows, cancels the previous source and keeps values synchronized without assuming angular units" time="0.229861348">
+        </testcase>
+        <testcase classname="src/features/viewer/SynchronizedEpisodeWorkbench.test.tsx" name="removes selected values when a fixed snapshot no longer exposes any numeric stream" time="0.04352445">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/ViewerCompositionResolver.test.ts" timestamp="2026-10-20T01:57:24.075Z" hostname="5388e64ad3bc" tests="3" failures="0" errors="0" skipped="0" time="0.008736695">
+        <testcase classname="src/features/viewer/ViewerCompositionResolver.test.ts" name="ViewerCompositionResolver joint-state fallback &gt; keeps camera panels in the supplied Manifest slot order" time="0.003963882">
+        </testcase>
+        <testcase classname="src/features/viewer/ViewerCompositionResolver.test.ts" name="ViewerCompositionResolver joint-state fallback &gt; keeps a real generic time-series panel when immutable data exists but axis metadata is absent" time="0.000557077">
+        </testcase>
+        <testcase classname="src/features/viewer/ViewerCompositionResolver.test.ts" name="ViewerCompositionResolver joint-state fallback &gt; uses detailed axis cards only when their contract is internally consistent" time="0.003296413">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/buffered-joint-window-source.test.ts" timestamp="2026-10-20T01:57:24.076Z" hostname="5388e64ad3bc" tests="3" failures="0" errors="0" skipped="0" time="0.016456109">
+        <testcase classname="src/features/viewer/buffered-joint-window-source.test.ts" name="buffered joint playback &gt; shares in-flight reads across the curve and robot, even when one consumer aborts" time="0.007988328">
+        </testcase>
+        <testcase classname="src/features/viewer/buffered-joint-window-source.test.ts" name="buffered joint playback &gt; prefetches the next robot chunk and reuses it for the curve and boundary crossing" time="0.002062335">
+        </testcase>
+        <testcase classname="src/features/viewer/buffered-joint-window-source.test.ts" name="buffered joint playback &gt; retries failed reads without caching the rejection" time="0.00276015">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/renderer-catalog.test.ts" timestamp="2026-10-20T01:57:24.076Z" hostname="5388e64ad3bc" tests="12" failures="0" errors="0" skipped="0" time="0.023089611">
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; routes a new authorized-media modality without authorizing it during selection" time="0.004398488">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; routes a new modality without loading its code or modifying the resolver" time="0.002137662">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; keeps unknown modalities and unsupported schema versions explicit" time="0.000340023">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; requires declared input capabilities and degrades only the affected panel" time="0.002196641">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; retains exact old versions but selects only an explicit default" time="0.000508719">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; rejects duplicate references and multiple defaults instead of replacing a registration" time="0.002520066">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; selects the best available priority and refuses equal matches" time="0.000343208">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; freezes capabilities so callers cannot change routing after assembly" time="0.000199518">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; retains stream availability media-preparing" time="0.000295367">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; retains stream availability partial" time="0.000232848">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; retains stream availability missing" time="0.000090041">
+        </testcase>
+        <testcase classname="src/features/viewer/renderer-catalog.test.ts" name="viewer-local renderer catalog &gt; retains stream availability unsupported" time="0.000063455">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/use-episode-robot-scene.test.tsx" timestamp="2026-10-20T01:57:24.076Z" hostname="5388e64ad3bc" tests="7" failures="0" errors="0" skipped="0" time="0.144813067">
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; uses adapter provenance and never loads an unavailable model reference" time="0.016229401">
+        </testcase>
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; loads equal robot/version IDs in two workspaces without touching the active scope" time="0.063017589">
+        </testcase>
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; disables null-scoped replay instead of selecting the shell organization" time="0.00507396">
+        </testcase>
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; removes scene data immediately when an organization grant is revoked" time="0.057286617">
+        </testcase>
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; rejects a well-shaped response from another organization" time="0.001377037">
+        </testcase>
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; rejects a well-shaped response from another organization" time="0.000484442">
+        </testcase>
+        <testcase classname="src/features/viewer/use-episode-robot-scene.test.tsx" name="explicit organization replay &gt; rejects a well-shaped response from another organization" time="0.000448186">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/viewer-window-canvas.test.ts" timestamp="2026-10-20T01:57:24.077Z" hostname="5388e64ad3bc" tests="3" failures="0" errors="0" skipped="0" time="0.007996114">
+        <testcase classname="src/features/viewer/viewer-window-canvas.test.ts" name="viewer window canvas &gt; draws real numeric samples rather than only the shared playhead" time="0.005268024">
+        </testcase>
+        <testcase classname="src/features/viewer/viewer-window-canvas.test.ts" name="viewer window canvas &gt; selects and draws the nearest real pointcloud sample for the current clock" time="0.000579904">
+        </testcase>
+        <testcase classname="src/features/viewer/viewer-window-canvas.test.ts" name="viewer window canvas &gt; draws event timestamps and gives each supported payload an accessible summary" time="0.000263863">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p15-robots/model-file-selection.test.ts" timestamp="2026-10-20T01:57:24.078Z" hostname="5388e64ad3bc" tests="3" failures="0" errors="0" skipped="0" time="0.02288554">
+        <testcase classname="src/pages/p15-robots/model-file-selection.test.ts" name="robot model file selection &gt; classifies a selected folder and preserves its relative paths" time="0.011122432">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/model-file-selection.test.ts" name="robot model file selection &gt; reads a dropped directory recursively" time="0.000885606">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/model-file-selection.test.ts" name="robot model file selection &gt; rejects unsafe, empty, unsupported, or ambiguous URDF selections" time="0.007118761">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p15-robots/page.test.tsx" timestamp="2026-10-20T01:57:24.078Z" hostname="5388e64ad3bc" tests="10" failures="0" errors="0" skipped="0" time="6.522899242">
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="P15 robot model asset page &gt; lists published model resources without robot connectivity semantics" time="0.2732042">
+            <system-err>
+Warning: Instance created by `useForm` is not connected to any Form element. Forget to pass `form` prop?
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="P15 robot model asset page &gt; keeps local preview object URLs alive through the StrictMode lifecycle probe" time="1.100880689">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="P15 robot model asset page &gt; publishes the edited configuration as a model version without binding a robot" time="1.100012593">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="P15 robot model asset page &gt; discards the draft and server files after a failed import" time="0.74517213">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="reusable robot import feature &gt; runs without a page or router and refresh failure never discards a published version" time="0.559812374">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="reusable robot import feature &gt; ignores late URDF parsing after closing and opening a fresh import" time="0.832153766">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="reusable robot import feature &gt; discards a local preview when its session changes before saving" time="0.470059944">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="reusable robot import feature &gt; discards a local preview when its grant changes before saving" time="0.508751808">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="reusable robot import feature &gt; discards a local preview when its capability changes before saving" time="0.446714303">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/page.test.tsx" name="reusable robot import feature &gt; aborts the entire save when the session is replaced between commands" time="0.484803467">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p15-robots/query-codec.test.ts" timestamp="2026-10-20T01:57:24.078Z" hostname="5388e64ad3bc" tests="2" failures="0" errors="0" skipped="0" time="0.006270106">
+        <testcase classname="src/pages/p15-robots/query-codec.test.ts" name="robotsQueryCodec &gt; round-trips model asset search and selection" time="0.002638431">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/query-codec.test.ts" name="robotsQueryCodec &gt; ignores legacy robot connectivity filters" time="0.0027737">
+            <system-err>
+query_codec_diagnostic { code: [32m&apos;UNKNOWN_QUERY_KEY&apos;[39m, key: [32m&apos;lifecycleStatus&apos;[39m }
+query_codec_diagnostic { code: [32m&apos;UNKNOWN_QUERY_KEY&apos;[39m, key: [32m&apos;connectivityState&apos;[39m }
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p15-robots/urdf-import.test.ts" timestamp="2026-10-20T01:57:24.080Z" hostname="5388e64ad3bc" tests="4" failures="0" errors="0" skipped="0" time="0.090495414">
+        <testcase classname="src/pages/p15-robots/urdf-import.test.ts" name="robot URDF import &gt; parses URDF, resolves model resources and completes missing mappings" time="0.079267739">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/urdf-import.test.ts" name="robot URDF import &gt; preserves custom configuration while writing model identity and edited mappings" time="0.003834925">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/urdf-import.test.ts" name="robot URDF import &gt; rejects malformed URDF before preview or save" time="0.002800063">
+        </testcase>
+        <testcase classname="src/pages/p15-robots/urdf-import.test.ts" name="maps a coupled gripper with one recorded axis and preserves its mimic" time="0.003407787">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/model.test.ts" timestamp="2026-10-20T01:57:24.080Z" hostname="5388e64ad3bc" tests="4" failures="0" errors="0" skipped="0" time="0.005820126">
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; formats three-hour source positions without rolling hours over" time="0.001381272">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; detects overlap and recording-boundary violations" time="0.002212967">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; clamps dragged boundaries against adjacent episodes and one-frame minimum" time="0.000347432">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/model.test.ts" name="recording segmentation model &gt; creates stable unique ids and sends sorted canonical nanosecond strings" time="0.000575967">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/page.test.tsx" timestamp="2026-10-20T01:57:24.081Z" hostname="5388e64ad3bc" tests="12" failures="0" errors="0" skipped="0" time="9.22682027">
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; switches original recordings in place, resets the player and keeps the chosen task filter" time="1.149166886">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; keeps unsaved slices when switching is cancelled, then saves the current source before switching" time="1.649133381">
+            <system-err>
+`NaN` is an invalid value for the `height` css style property.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; stays on the original recording after a save failure and supports explicit discard" time="1.176453433">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; previews generated lerobot_v3 episodes without loading QC or admission details" time="0.600145912">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; previews generated legacy_lance episodes without loading QC or admission details" time="0.59844114">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; uses the shared workflow queue for pending, review, and sliced recordings" time="0.072415108">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; opens the manual cutter from the continuous-recording list" time="0.148695087">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; creates an I/O slice and saves canonical nanosecond boundaries" time="0.777912644">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; saves an empty draft without requiring markers or labels" time="0.227543802">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; creates a second Episode independently of the first" time="1.176348616">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; shows RGB and depth together with the annotation camera selector and one timeline" time="0.992743292">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/page.test.tsx" name="P23 recording segmentation &gt; generates the whole recording without marks and finalizes the saved ETag" time="0.656630609">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts" timestamp="2026-10-20T01:57:24.087Z" hostname="5388e64ad3bc" tests="2" failures="0" errors="0" skipped="0" time="0.006125329">
+        <testcase classname="src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts" name="raw recording joint-angle stream &gt; preserves OpenArm joint names and mixed arm/gripper units" time="0.001817559">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/raw-joint-angle-stream.test.ts" name="raw recording joint-angle stream &gt; reads original MCAP windows and drives the shared robot frame source" time="0.003315898">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p23-recording-segmentation/workbench-adapter.test.ts" timestamp="2026-10-20T01:57:24.090Z" hostname="5388e64ad3bc" tests="2" failures="0" errors="0" skipped="0" time="0.007898304">
+        <testcase classname="src/pages/p23-recording-segmentation/workbench-adapter.test.ts" name="recording segmentation workbench adapter &gt; adapts original recording videos to the shared viewer contract" time="0.005855494">
+        </testcase>
+        <testcase classname="src/pages/p23-recording-segmentation/workbench-adapter.test.ts" name="recording segmentation workbench adapter &gt; renders Episode slices as shared timeline segments" time="0.000756511">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/runtime/authorized-media.test.ts" timestamp="2026-10-20T01:57:24.090Z" hostname="5388e64ad3bc" tests="1" failures="0" errors="0" skipped="0" time="0.038617162">
+        <testcase classname="src/features/viewer/runtime/authorized-media.test.ts" name="attachAuthorizedMedia &gt; attaches MP4 directly and detaches its failure listener on disposal" time="0.037318022">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" timestamp="2026-10-20T01:57:24.090Z" hostname="5388e64ad3bc" tests="6" failures="0" errors="0" skipped="0" time="0.008227989">
+        <testcase classname="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" name="URDF joint-frame synchronization &gt; maps source joint radians to URDF joints and ignores invalid samples" time="0.00201302">
+        </testcase>
+        <testcase classname="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" name="URDF dependency URL resolution &gt; maps URDF-relative mesh and texture requests to their own signed URLs" time="0.000974162">
+        </testcase>
+        <testcase classname="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" name="URDF dependency URL resolution &gt; prefers an exact full asset path over a shorter relative suffix" time="0.000195974">
+        </testcase>
+        <testcase classname="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" name="URDF ground placement &gt; anchors a sufficiently large ground plane at the initial lowest point" time="0.000232079">
+        </testcase>
+        <testcase classname="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" name="URDF ground placement &gt; keeps the initial contact plane fixed and moves only the robot root" time="0.001600951">
+        </testcase>
+        <testcase classname="src/features/viewer/runtime/threeRobotSceneRuntime.test.ts" name="URDF ground placement &gt; tracks a foot plane instead of only its lowest point" time="0.002120387">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" timestamp="2026-10-20T01:57:24.091Z" hostname="5388e64ad3bc" tests="11" failures="0" errors="0" skipped="0" time="3.170757004">
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; requires confirmation before deleting the selected identity and explains retained uploads" time="0.47723542">
+            <system-err>
+Warning: [antd: Modal] `maskClosable` is deprecated. Please use `mask.closable` instead.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; keeps the confirmation open on failure so deletion can be retried" time="0.16681614">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; hides deletion from accounts without management permission" time="0.047229298">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; blocks repeated confirmation while deletion is pending" time="0.14857832">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; issues a credential and clears displayed plaintext on close" time="0.401354685">
+            <system-err>
+`NaN` is an invalid value for the `height` css style property.
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; rotates with old-credential revocation and can revoke an active credential" time="0.56415578">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; can reveal and copy the same existing credential after closing without issuing another" time="0.699891035">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; confirms deletion of REVOKED credentials and preserves historical uploads" time="0.191992117">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; confirms deletion of EXPIRED credentials and preserves historical uploads" time="0.237151337">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; keeps credential deletion errors visible for retry" time="0.192627079">
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotIdentityConsole.test.tsx" name="P02 robot credential lifecycle &gt; only grants credential viewing and deletion to managers" time="0.042725182">
+        </testcase>
+    </testsuite>
+    <testsuite name="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" timestamp="2026-10-20T01:57:24.091Z" hostname="5388e64ad3bc" tests="2" failures="0" errors="0" skipped="0" time="1.403882883">
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="restores independent filters and card shortcuts clear business conditions while retaining sort and page size" time="1.185525201">
+            <system-err>
+Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+        <testcase classname="src/pages/p02-data-sources/components/RobotOnboardingTab.test.tsx" name="query errors show unavailable cards even when old successful data is cached" time="0.217716504">
+            <system-err>
+Error: Not implemented: window.getComputedStyle(elt, pseudoElt)
+    at module.exports (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/not-implemented.js:9:17)
+    at window.getComputedStyle (/app/node_modules/.pnpm/jsdom@26.1.0/node_modules/jsdom/lib/jsdom/browser/Window.js:895:7)
+    at measureScrollbarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:35:34)
+    at getTargetScrollBarSize (/app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/getScrollBarSize.js:87:10)
+    at /app/node_modules/.pnpm/@rc-component+table@1.11.1_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/table/lib/Table.js:401:59
+    at /app/node_modules/.pnpm/@rc-component+util@1.12.0_react-dom@19.1.1_react@19.1.1__react@19.1.1/node_modules/@rc-component/util/lib/hooks/useLayoutEffect.js:19:12
+    at Object.react_stack_bottom_frame (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:23953:20)
+    at runWithFiberInDEV (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:1522:13)
+    at commitHookEffectListMount (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11905:29)
+    at commitHookLayoutEffects (/app/node_modules/.pnpm/react-dom@19.1.1_react@19.1.1/node_modules/react-dom/cjs/react-dom-client.development.js:11857:11) [90mundefined[39m
+
+            </system-err>
+        </testcase>
+    </testsuite>
+</testsuites>

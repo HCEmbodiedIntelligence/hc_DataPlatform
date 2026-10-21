@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="6" time="11.919" timestamp="2026-10-20T05:03:19.594810+00:00" hostname="5e0f3e8b5af9"><testcase classname="tests.security.test_public_api_security_gate" name="test_every_runtime_public_resource_operation_rejects_anonymous_before_validation" time="4.419"><failure message="AssertionError: (('GET', '/api/v1/annotation-tasks/{task_id}/annotation-file'), 503, '{&quot;type&quot;:&quot;https://hc-data-platform.invalid/proble...annotation-file&quot;,&quot;code&quot;:&quot;HTTP_503&quot;,&quot;request_id&quot;:&quot;6d0d9fb3-bb50-4704-854b-e3420b3163ee&quot;,&quot;retryable&quot;:true,&quot;details&quot;:{}}')&#10;assert 503 == 401&#10; +  where 503 = &lt;Response [503 Service Unavailable]&gt;.status_code">def test_every_runtime_public_resource_operation_rejects_anonymous_before_validation() -&gt; None:
+        app = create_app(settings=_settings())
+        operations = list(_operations(app.openapi()))
+        assert operations
+        assert {(method, path) for method, path, _ in operations} &gt;= ANONYMOUS_OPERATIONS
+
+        with TestClient(app, raise_server_exceptions=False) as client:
+            for method, path, _ in operations:
+                key = (method, path)
+                response = client.request(
+                    method,
+                    _concrete_path(path),
+                    headers={"Content-Type": "application/json"},
+                    content=b"{}",
+                )
+                if key in ANONYMOUS_OPERATIONS:
+                    assert response.status_code != 401, key
+                    continue
+&gt;               assert response.status_code == 401, (key, response.status_code, response.text)
+E               AssertionError: (('GET', '/api/v1/annotation-tasks/{task_id}/annotation-file'), 503, '{"type":"https://hc-data-platform.invalid/proble...annotation-file","code":"HTTP_503","request_id":"6d0d9fb3-bb50-4704-854b-e3420b3163ee","retryable":true,"details":{}}')
+E               assert 503 == 401
+E                +  where 503 = &lt;Response [503 Service Unavailable]&gt;.status_code
+
+tests/security/test_public_api_security_gate.py:108: AssertionError</failure></testcase><testcase classname="tests.security.test_public_api_security_gate" name="test_runtime_openapi_paths_are_all_enumerated_in_the_be23_matrix" time="2.778"><failure message="AssertionError: assert ['/api/v1/ann...}/retry', ...] == []&#10;  &#10;  Left contains 66 more items, first extra item: '/api/v1/annotation-tasks/{task_id}/annotation-file'&#10;  Use -v to get more diff">def test_runtime_openapi_paths_are_all_enumerated_in_the_be23_matrix() -&gt; None:
+        schema = create_app(settings=_settings()).openapi()
+        matrix = (Path(__file__).with_name("BE23-PUBLIC-SECURITY-MATRIX.md")).read_text(
+            encoding="utf-8"
+        )
+        missing = [path for path in sorted(schema["paths"]) if f"`{path}`" not in matrix]
+&gt;       assert missing == []
+E       AssertionError: assert ['/api/v1/ann...}/retry', ...] == []
+E
+E         Left contains 66 more items, first extra item: '/api/v1/annotation-tasks/{task_id}/annotation-file'
+E         Use -v to get more diff
+
+tests/security/test_public_api_security_gate.py:126: AssertionError</failure></testcase><testcase classname="tests.security.test_public_api_security_gate" name="test_openapi_auth_gaps_are_runtime_protected_and_explicitly_marked" time="2.647"><failure message="StopIteration">def test_openapi_auth_gaps_are_runtime_protected_and_explicitly_marked() -&gt; None:
+        app = create_app(settings=_settings())
+        schema = app.openapi()
+        matrix = Path(__file__).with_name("BE23-PUBLIC-SECURITY-MATRIX.md").read_text(encoding="utf-8")
+        gaps = [
+            (method, path)
+            for method, path, operation in _operations(schema)
+            if (method, path) not in ANONYMOUS_OPERATIONS
+            and operation.get("security") != [{"bearerAuth": []}]
+        ]
+        for method, path in gaps:
+&gt;           row = next(line for line in matrix.splitlines() if f"`{path}`" in line)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           StopIteration
+
+tests/security/test_public_api_security_gate.py:140: StopIteration</failure></testcase><testcase classname="tests.security.test_public_api_security_gate" name="test_cross_origin_preflight_is_not_permissive_and_cookie_cannot_authenticate" time="0.602" /><testcase classname="tests.security.test_public_api_security_gate" name="test_unexpected_exception_response_and_log_do_not_echo_sensitive_values" time="0.596" /><testcase classname="tests.security.test_public_api_security_gate" name="test_http_problem_dependency_validation_and_headers_never_echo_sensitive_values" time="0.476" /></testsuite></testsuites>

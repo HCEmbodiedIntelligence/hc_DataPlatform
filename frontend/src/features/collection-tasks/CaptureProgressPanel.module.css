@@ -59,8 +59,88 @@
   justify-content: center;
   gap: 8px;
 }
+.headerActions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+}
+.compact {
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+.compact header {
+  align-items: center;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+}
+.compact .heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  min-width: 0;
+}
+.compact h2 {
+  font-size: 14px;
+  white-space: nowrap;
+}
+.compact :global(.ant-btn) {
+  min-height: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--hc-color-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.summary b {
+  color: var(--hc-color-text);
+}
+.summary .issue {
+  color: var(--hc-color-error, #c04444);
+}
+.chevronOpen {
+  transform: rotate(180deg);
+}
+.compact .counts {
+  gap: 6px 18px;
+  padding: 12px 0 8px;
+  font-size: 12px;
+  color: var(--hc-color-text-muted);
+}
+.compact .counts b {
+  font-size: 13px;
+}
+.compact .rows {
+  gap: 0;
+  margin-block: 4px;
+}
+.compact .row {
+  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1.6fr) auto;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--hc-color-border);
+  border-radius: 0;
+  font-size: 13px;
+}
+.compact .actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
 @media (max-width: 720px) {
-  .row {
+  .row,
+  .compact .row {
     grid-template-columns: 1fr;
+  }
+  .compact .actions {
+    justify-content: start;
   }
 }
