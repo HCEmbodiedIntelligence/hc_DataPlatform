@@ -66,13 +66,29 @@ def capture_type(value, encoding, name, enabled):
     return feature_type(value, pa)
 
 
+def missing_value(value):
+    return (
+        value is None
+        or isinstance(value, (list, tuple))
+        and any(missing_value(item) for item in value)
+    )
+
+
 def write_episode(
     root: Path, source: PackageInput, steps, assets: PreparedAssets, *, fps: float, metadata: dict
 ):
     assert_scope(source.identity)
     if not np.isfinite(fps) or fps <= 0:
         raise ValueError("Episode frequency must be finite and positive")
-    capture_masking = bool(metadata.get("quality", {}).get("capture_quality"))
+    capture = metadata.get("capture") or {}
+    shared_projection = (
+        capture.get("effective_adapter", {}).get("configuration", {}).get("semantic_output")
+    )
+    # Shared schemes preserve their complete frame grid and explicit validity
+    # fields, like LeRobot input. Legacy recordings retain their row selection.
+    capture_masking = bool(metadata.get("quality", {}).get("capture_quality")) and not bool(
+        shared_projection
+    )
     from .capture_validity import apply_validity
 
     contract = (metadata.get("capture") or {}).get("output", {})
@@ -101,15 +117,19 @@ def write_episode(
             )
         else:
             column = target
-        arrow_type, dtype, shape = capture_type(value, encoding, name, capture_masking)
         declaration = contract.get("features", {}).get(target)
         if declaration and target not in cameras:
+            # The frozen definition supplies the type even when the first
+            # frame precedes a source's first sample. Preserve nulls and their
+            # validity instead of inferring a type from an absent value.
             dtype, shape = declaration["dtype"], tuple(declaration["shape"])
             if shape == (1,) and not isinstance(value, (list, tuple)):
                 shape = ()
             arrow_type = pa.from_numpy_dtype(dtype)
             for width in reversed(shape):
                 arrow_type = pa.list_(arrow_type, width)
+        else:
+            arrow_type, dtype, shape = capture_type(value, encoding, name, capture_masking)
         source_types[target], source_shapes[target] = arrow_type, list(shape)
         # Official LeRobot treats shape=(1,) as a scalar Parquet column. Keep
         # the source shape separately so platform reads reconstruct [value].
@@ -223,16 +243,18 @@ def write_episode(
                         != source_types[target]
                     ):
                         raise ValueError("numeric dtype/shape changed within Episode")
-                    if (
-                        capture_masking
-                        and (
-                            value is None
-                            or isinstance(value, list)
-                            and any(v is None for v in value)
-                        )
-                        and step.valid.get(name, False)
-                    ):
+                    if capture_masking and missing_value(value) and step.valid.get(name, False):
                         raise ValueError("missing numerical value is marked valid")
+                    if contract.get("features", {}).get(target):
+                        axes = value if isinstance(value, (list, tuple)) else [value]
+                        mask = step.axis_validity[name]
+                        if len(axes) != len(mask) or any(
+                            valid and missing_value(axis)
+                            for axis, valid in zip(axes, mask, strict=True)
+                        ):
+                            raise ValueError(
+                                "missing numerical value is marked valid or shape differs"
+                            )
                     row[target] = value[0] if source_shapes[target] == [1] else value
                 # Unknown stays unknown in the trace; never infer validity from absent evidence.
                 row[f"hc.source_timestamps_ns.{target}"] = canonical(

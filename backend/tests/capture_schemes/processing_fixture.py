@@ -77,6 +77,56 @@ def snapshot(output, *, scope=("org", "project", "global"), raw=None):
     return {**content, "snapshot_sha256": digest(content)}
 
 
+def register_adopted_schema(runtime, connect, scope, dataset, task, output):
+    """Only a fixture for receipt consumption; production adoption verifies Raw bytes."""
+    from hc_data_platform.capture_schemes.adoption import adoption_key
+    from hc_data_platform.capture_schemes.plans import check_dataset
+    from hc_data_platform.capture_schemes.schema import native_topic, semantic_schema
+    from hc_data_platform.episode_store.models import digest as physical_digest
+    from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
+
+    document = output.model_dump(mode="json")
+    proposed = semantic_schema(
+        scope[1],
+        dataset,
+        document,
+        {**{native_topic(name): "json" for name in output.features}, "/metadata/source": "json"},
+    )
+    legacy = DatasetSchemaSnapshot.create(
+        project_id=scope[1],
+        dataset_id=dataset,
+        schema_snapshot_id="reviewed-legacy",
+        frequency_hz=output.frequency_hz,
+        fields=proposed.fields,
+    )
+    with connect() as db:
+        check_dataset(db, scope, dataset, task, document, freeze=True)
+        db.execute(
+            """INSERT INTO ingest.capture_schemes
+            (organization_id,scheme_id,revision,draft) VALUES(%s,'review-fixture',1,'{}')""",
+            (scope[0],),
+        )
+        db.execute(
+            """INSERT INTO ingest.capture_legacy_references
+            (organization_id,legacy_kind,legacy_key,source_sha256,scheme_id,document)
+            VALUES(%s,'DATASET_CONTRACT',%s,%s,'review-fixture',%s::jsonb)""",
+            (
+                scope[0],
+                adoption_key(scope, dataset),
+                physical_digest(legacy.model_dump(mode="json")),
+                json.dumps(
+                    {
+                        "legacy_schema_sha256": physical_digest(legacy.model_dump(mode="json")),
+                        "output_contract_sha256": digest(document),
+                        "test_fixture": True,
+                    }
+                ),
+            ),
+        )
+    runtime.episode_packages.schemas.register_schema(legacy)
+    return legacy
+
+
 def make_source(root, variant=0, *, count=167):
     root.mkdir(parents=True)
     info = copy.deepcopy(SOURCES[variant]["info"])

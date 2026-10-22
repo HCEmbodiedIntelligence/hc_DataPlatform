@@ -125,3 +125,31 @@ def test_unknown_axis_semantics_cannot_be_published_as_a_dimension_guess():
         value["output"]["features"]["action"].update(change)
         with pytest.raises(ValidationError):
             SchemeDraft.model_validate(value)
+
+
+def test_automatic_inputs_share_one_definition_and_one_ros_mapping():
+    from hc_data_platform.capture_schemes.draft_frequency import with_frequency
+
+    value = draft(fps=None).model_dump(mode="json")
+    value["input_mode"] = "AUTO"
+    auto = SchemeDraft.model_validate(value).model_dump(mode="json")
+    assert {a["source_format"] for a in auto["adapters"]} == {
+        "MCAP",
+        "CAPTURE_BUNDLE",
+        "LEROBOT_V3",
+    }
+    resolved = with_frequency(auto, 15)
+    assert resolved["adapters"][1]["configuration"] == resolved["adapters"][2]["configuration"]
+    assert resolved["adapters"][1]["configuration"]["semantic_output"] == resolved["output"]
+    mapping = DeviceMapping(sources={"MCAP": {"state": "/actual/state"}})
+    for fmt in ("MCAP", "CAPTURE_BUNDLE"):
+        assert (
+            effective_adapter(resolved, fmt, mapping)["configuration"]["state_topic"]
+            == "/actual/state"
+        )
+    with pytest.raises(ProblemException):
+        effective_adapter(
+            resolved,
+            "MCAP",
+            DeviceMapping(sources={"MCAP": {"state": "/one"}, "CAPTURE_BUNDLE": {"state": "/two"}}),
+        )

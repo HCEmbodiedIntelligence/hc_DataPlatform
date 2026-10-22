@@ -305,6 +305,11 @@ components:
       additionalProperties: false
       required: [waiting, passed, risk, rejected, unavailable]
       properties:
+        awaiting_slice:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Recordings awaiting slice submission before automatic quality checks.
         waiting: {type: integer, minimum: 0}
         passed: {type: integer, minimum: 0}
         risk: {type: integer, minimum: 0}

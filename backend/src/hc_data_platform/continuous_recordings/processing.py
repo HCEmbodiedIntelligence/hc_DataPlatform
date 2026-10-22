@@ -399,10 +399,16 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                             AND authenticated_robot_id=%s AND source_format='CAPTURE_BUNDLE'""",
                             (*scope, recording_id, recording.robot_id),
                         )
-                        from hc_data_platform.robot_ingest.recording_bridge import recording_upload_id
+                        from hc_data_platform.robot_ingest.recording_bridge import (
+                            recording_upload_id,
+                        )
+
                         bundle = next(
-                            (row for row in cursor.fetchall()
-                             if str(recording_upload_id(row[0])) == str(upload.upload_id)),
+                            (
+                                row
+                                for row in cursor.fetchall()
+                                if str(recording_upload_id(row[0])) == str(upload.upload_id)
+                            ),
                             None,
                         )
                         if bundle:
@@ -426,6 +432,11 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                         )
                     )
                 dataset_id = _DATASET_ID.validate_python(frozen["dataset_id"])
+                if frozen["effective_adapter"].get("configuration", {}).get("semantic_output"):
+                    from hc_data_platform.capture_schemes.schema import native_topic
+
+                    logical = {native_topic(name) for name in frozen["output"]["features"]}
+                    modality_keys = frozenset(modality_keys & (logical | {"/metadata/source"}))
                 from hc_data_platform.capture_schemes.plans import check_dataset
 
                 check_dataset(
@@ -450,6 +461,8 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             connection.close()
 
         schemas = self._package_schemas or self._catalog
+        if self._package_schemas is not None and frozen is not None:
+            snapshot = schemas.resolve_capture_schema(snapshot)
         schemas.register_schema(snapshot)
         source_sha256 = canonical_hash(
             {
@@ -694,7 +707,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
     def _quality_profile(
         cursor: Any, project_id: str, topics: frozenset[str], fps: float = 30
     ) -> Any:
-        from hc_data_platform.quality.models import QualityProfileV1
+        from hc_data_platform.quality.models import QualityProfileV1, canonical_json_bytes
 
         cursor.execute(
             """SELECT profile_json FROM quality_profiles WHERE project_id = %s ORDER BY
@@ -730,9 +743,17 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                     "minimum_frequency_hz_reject": fps * 0.75,
                 },
             )
-        if len(candidates) != 1:
+        # Native imports and capture-scheme setup may persist the same rules
+        # under different names. They are not conflicting policies: compare all
+        # decision fields, including the engine, and pin one existing identity.
+        # Any actual rule difference remains ambiguous and requires review.
+        rules = {
+            canonical_json_bytes(profile.model_dump(exclude={"profile_id", "profile_version"}))
+            for profile in candidates
+        }
+        if len(rules) != 1:
             raise _blocked("the recording must match exactly one QC policy")
-        return candidates[0]
+        return min(candidates, key=lambda profile: (profile.profile_id, profile.profile_version))
 
 
 class ContinuousEpisodeProcessingService:
@@ -1024,6 +1045,14 @@ class ContinuousEpisodeProcessingService:
                 for sensor in request.recording_config.sensors
             }
         )
+        if request.capture_snapshot and request.capture_snapshot["effective_adapter"].get(
+            "configuration", {}
+        ).get("semantic_output"):
+            stream_kinds = {
+                key: value
+                for key, value in stream_kinds.items()
+                if key in request.alignment_profile.required_modalities
+            }
         attempt_id = f"continuous-{request.projection.source_sha256[:24]}"
         data = AlignmentInputV1(
             rollout_id=request.projection.rollout_id,
@@ -1116,7 +1145,14 @@ class ContinuousEpisodeProcessingService:
             finally:
                 connection.close()
             plan = freeze_plan(
-                request, alignment_request, manifest, staging, upload, paths, quality
+                request,
+                alignment_request,
+                manifest,
+                staging,
+                upload,
+                paths,
+                quality,
+                schemas=self._episode_packages.schemas,
             )
             if self._robot_scenes is None:
                 raise RuntimeError("robot scene snapshot port is not configured")
@@ -1859,6 +1895,14 @@ class ContinuousEpisodeProcessingService:
                 raise ContinuousEpisodeProcessingError(
                     "sensor MCAP topic inventory differs from recording config"
                 )
+            if (
+                request.capture_snapshot
+                and request.capture_snapshot["effective_adapter"]
+                .get("configuration", {})
+                .get("semantic_output")
+                and topic not in request.alignment_profile.required_modalities
+            ):
+                continue
             if schema is None or not self._decoder.supports(
                 channel.message_encoding, schema.encoding
             ):

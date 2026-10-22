@@ -21,6 +21,7 @@ from hc_data_platform.data_formats.lerobot_format import make_task_table
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
 from .annotated_delivery import write_annotated_delivery
+from .collection_metadata import NORMALIZED_PROCESSOR, normalize_capture_metadata
 from .models import FileEntry, canonical, digest
 from .scope import assert_scope
 from .writer import Moments, write_json
@@ -52,6 +53,13 @@ class CollectionSource:
             raise ValueError("annotation collection selection needs a revision and explicit track")
         if self.annotation_file is None and self.review_document is not None:
             raise ValueError("a review cannot be selected without its annotation revision")
+
+
+@dataclass(frozen=True)
+class CollectionMetadata:
+    info: dict
+    processor_version: str
+    normalization: dict | None
 
 
 class LocalDerivative:
@@ -162,7 +170,7 @@ def differing_field(left, right, path):
     return path
 
 
-def preflight(selections, modalities):
+def preflight(selections, modalities, *, processor_version=None):
     if modalities not in {"rgb", "rgbd"} or not 1 <= len(selections) <= 100:
         raise ValueError("collection requires 1..100 Episodes and explicit rgb/rgbd selection")
     sources = sorted(selections, key=lambda s: s.package.receipt.data.data_version_id)
@@ -171,11 +179,24 @@ def preflight(selections, modalities):
         raise PermissionError("collection must stay in one tenant/project/region")
     if len({d.identity.key for d in data}) != len(data):
         raise ValueError("select at most one version of each Episode")
-    baseline, profiles, tasks = None, None, set()
+    if processor_version not in {None, PROCESSOR, NORMALIZED_PROCESSOR}:
+        raise ValueError("unsupported collection processor")
     for selection in sources:
+        assert_scope(selection.package.receipt.data.identity)
+    selected = [selected_info(s.package, modalities) for s in sources]
+    infos = [item[0] for item in selected]
+    normalization = None
+    if processor_version == NORMALIZED_PROCESSOR or (
+        processor_version is None
+        and any(contract(info) != contract(infos[0]) for info in infos[1:])
+    ):
+        normalization = normalize_capture_metadata(sources, infos)
+        if processor_version == NORMALIZED_PROCESSOR and normalization is None:
+            raise CollectionIncompatible("metadata normalization evidence")
+    processor_version = processor_version or (NORMALIZED_PROCESSOR if normalization else PROCESSOR)
+    baseline, profiles, tasks = None, None, set()
+    for selection, (info, depth, _) in zip(sources, selected, strict=True):
         package = selection.package
-        assert_scope(package.receipt.data.identity)
-        info, depth, _ = selected_info(package, modalities)
         current = contract(info)
         if baseline is None:
             baseline = current
@@ -201,7 +222,7 @@ def preflight(selections, modalities):
         if not rows or len({row["task_index"] for row in rows}) != len(rows):
             raise CollectionIncompatible("task table")
         tasks.update(row["task"] for row in rows)
-    return sources, sorted(tasks)
+    return sources, sorted(tasks), CollectionMetadata(infos[0], processor_version, normalization)
 
 
 def copy_member(root, view, entry, relative, checkpoint):
@@ -234,16 +255,20 @@ def pooled_stats(items):
     }
 
 
-def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
+def write_collection(
+    root, selections, *, modalities, checkpoint=lambda: None, processor_version=None
+):
     """Rebuild indexes, task/subtask tables, metadata, moments and media offsets.
 
     Per-Episode videos remain separate MP4s with their original zero-based PTS.
     No frame selection, resampling, requantization or transcoding occurs here.
     """
-    sources, tasks = preflight(selections, modalities)
+    sources, tasks, metadata = preflight(
+        selections, modalities, processor_version=processor_version
+    )
     root = Path(root)
     root.mkdir(parents=True, exist_ok=False)
-    info, _, _ = selected_info(sources[0].package, modalities)
+    info = metadata.info
     annotated = any(s.annotation_file is not None for s in sources)
     if annotated:
         info["features"].update(ANNOTATION_FEATURES)
@@ -264,6 +289,9 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
         ]
     )
     (root / "hc").mkdir()
+    if metadata.normalization is not None:
+        info["hc.metadata_normalization"] = "hc/metadata_normalization.json"
+        write_json(root, info["hc.metadata_normalization"], metadata.normalization)
     with pq.ParquetWriter(root / "hc/collection_frames.parquet", mapping_schema) as mapping:
         for index, selection in enumerate(sources):
             checkpoint()
@@ -316,7 +344,7 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
             "splits": {"train": f"0:{len(sources)}"},
             "data_path": DATA_TEMPLATE,
             "video_path": VIDEO_PATH if videos else None,
-            "hc.package_version": PROCESSOR,
+            "hc.package_version": metadata.processor_version,
             "hc.collection": "hc/collection.json",
         }
     )
@@ -354,7 +382,7 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
         "meta/info.json": info,
         "meta/stats.json": statistics,
         "hc/collection.json": {
-            "format": PROCESSOR,
+            "format": metadata.processor_version,
             "members": members,
             "modalities": modalities,
             "is_reassembled_collection": True,
@@ -368,7 +396,7 @@ def write_collection(root, selections, *, modalities, checkpoint=lambda: None):
     }.items():
         write_json(root, path, document)
     manifest = {
-        "format": PROCESSOR,
+        "format": metadata.processor_version,
         "reader_version": "lerobot/0.6.1",
         "modalities": modalities,
         "members": members,

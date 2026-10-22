@@ -6,7 +6,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DefinitionFields } from "./DefinitionFields";
 import { AdapterFields } from "./AdapterFields";
-import { candidateFromInfo, validateEditor } from "./editor-model";
+import {
+  candidateFromInfo,
+  validateEditor,
+  normalizeAdapters,
+  emptyDocument,
+} from "./editor-model";
 import { fixtureDocument } from "./fixtures.test-support";
 import { documentSchema, type SchemeDocument } from "./contracts";
 
@@ -30,6 +35,44 @@ beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
 });
 afterEach(cleanup);
+
+it("starts with all formats and edits shared ROS sources only once", async () => {
+  expect(emptyDocument().input_mode).toBe("AUTO");
+  expect(emptyDocument().adapters).toHaveLength(3);
+  const user = userEvent.setup();
+  let current = normalizeAdapters({ ...fixtureDocument(), input_mode: "AUTO" });
+  function Editor() {
+    const [doc, set] = useState(current);
+    return (
+      <AdapterFields
+        document={doc}
+        onChange={(next) => {
+          current = next;
+          set(next);
+        }}
+      />
+    );
+  }
+  render(<Editor />);
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(
+    screen.getByText("选择一次方案即可上传，无需分别配置三种格式。"),
+  ).toBeVisible();
+  expect(screen.getByLabelText("MCAP 状态话题")).not.toBeVisible();
+  await user.click(screen.getByText("高级来源设置（通常无需修改）"));
+  await user.clear(screen.getByLabelText("MCAP 状态话题"));
+  await user.type(screen.getByLabelText("MCAP 状态话题"), "/custom/state");
+  expect(
+    screen.queryByLabelText("CAPTURE_BUNDLE 状态话题"),
+  ).not.toBeInTheDocument();
+  const inputs = current.adapters.filter(
+    (a) => a.source_format !== "LEROBOT_V3",
+  );
+  expect(inputs.map((a) => a.configuration.state_topic)).toEqual([
+    "/custom/state",
+    "/custom/state",
+  ]);
+});
 
 it("selects all three original formats and edits bundle topics independently", async () => {
   const user = userEvent.setup();

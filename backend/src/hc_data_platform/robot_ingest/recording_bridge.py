@@ -292,6 +292,25 @@ class RecordingOutboxHandler:
             if raw:
                 from .raw_recording import materialize
 
+                if (
+                    (upload.processing_config_snapshot or {}).get("error")
+                    == "CAPTURE_FORMAT_UNSUPPORTED"
+                ):
+                    from hc_data_platform.capture_schemes.processing import (
+                        require_snapshot,
+                        resolve_raw_snapshot,
+                    )
+
+                    # Use the separately recorded recovery for this processing
+                    # attempt; the original upload document stays unchanged.
+                    upload = upload.model_copy(
+                        update={
+                            "processing_config_snapshot": require_snapshot(
+                                resolve_raw_snapshot(cursor, scope, upload.raw_source_id)
+                            )
+                        }
+                    )
+
                 # Replaying an already registered recording must preserve its
                 # committed derivation even when the running encoder has changed.
                 pinned = self.registrations.find_upload(
@@ -441,6 +460,10 @@ def result(connections, upload):
 
 def retry(connections, upload, request_id):
     """One retry event per request ID; retain the Raw and derivation receipt."""
+    from hc_data_platform.capture_schemes.recovery import recover_for_retry
+    from hc_data_platform.core.context import current_request_context
+
+    actor = current_request_context().subject_id or "processing-retry"
     scope = (upload.target.organization_id, upload.target.project_id, upload.target.region_code)
     with scope_context(*scope), connections() as db:
         job = db.execute(
@@ -461,6 +484,8 @@ def retry(connections, upload, request_id):
             payload={"upload_id": upload.upload_id},
         )
         if job and job[0] == "FAILED":
+            if upload.processing_config_snapshot is not None:
+                recover_for_retry(db, scope, upload.raw_source_id, actor)
             inserted = db.execute(
                 """INSERT INTO core.outbox_events
                 (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)

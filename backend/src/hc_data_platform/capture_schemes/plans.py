@@ -106,10 +106,28 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
     ):
         return current
     check_revision(current["revision"] if current else 0, command.expected_revision)
-    if current and current["locked_at"]:
-        reject("CAPTURE_PLAN_LOCKED", "任务已开始采集，更改输出结构请新建任务")
     lock(db, "scheme", scope[0], command.scheme.scheme_id)
     document = schemes.version(db, scope[0], command.scheme, new_use=True)
+    previous = None
+    if current and current["locked_at"]:
+        previous = schemes.version(db, scope[0], VersionReference.model_validate(current["scheme"]))
+        old_adapters = {a["source_format"]: a for a in previous["adapters"]}
+        new_adapters = {a["source_format"]: a for a in document["adapters"]}
+        if (
+            command.scheme.scheme_id != current["scheme"]["scheme_id"]
+            or command.scheme.version <= current["scheme"]["version"]
+            or document["output"] != current["output"]
+            or document["quality_policy"] != previous["quality_policy"]
+            or document["model_version_ids"] != previous["model_version_ids"]
+            or not old_adapters.keys() < new_adapters.keys()
+            or any(new_adapters.get(k) != v for k, v in old_adapters.items())
+            or {p.robot_id for p in command.participants}
+            != {p["robot_id"] for p in current["participants"]}
+        ):
+            reject(
+                "CAPTURE_PLAN_LOCKED",
+                "任务已开始采集，只能在保持原输出和已有格式不变时补充上传格式",
+            )
     participants = []
     for participant in sorted(command.participants, key=lambda p: p.robot_id):
         lock(db, "robot", scope[0], participant.robot_id)
@@ -118,6 +136,25 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
         mapping = associations.require_mapping(
             db, scope[0], participant.robot_id, document, participant.mapping_version, new_use=True
         )
+        if previous is not None:
+            old_participant = next(
+                p for p in current["participants"] if p["robot_id"] == participant.robot_id
+            )
+            old_mapping = associations.mapping_version(
+                db,
+                scope[0],
+                participant.robot_id,
+                command.scheme.scheme_id,
+                old_participant["mapping_version"],
+            )
+            for adapter in previous["adapters"]:
+                fmt = adapter["source_format"]
+                if effective_adapter(
+                    previous, fmt, DeviceMapping.model_validate(old_mapping["mapping"])
+                ) != effective_adapter(
+                    document, fmt, DeviceMapping.model_validate(mapping["mapping"])
+                ):
+                    reject("CAPTURE_PLAN_LOCKED", "追加格式不能改变已有格式的设备映射")
         participants.append(
             {
                 "robot_id": participant.robot_id,
@@ -145,7 +182,7 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
     plan = {**content, "plan_sha256": digest(content)}
     store_plan(db, scope, task, plan)
     audit(db, scope[0], command.scheme.scheme_id, actor, "SET_TASK_PLAN", plan)
-    return {**plan, "locked_at": None}
+    return {**plan, "locked_at": current["locked_at"] if current else None}
 
 
 def store_plan(db: Any, scope: Scope, task: str, plan: Document) -> None:

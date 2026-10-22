@@ -76,7 +76,11 @@ class McapEpisodePlan(FrozenModel):
         TypeAdapter(DatasetId).validate_python(source.identity.dataset_id)
         TypeAdapter(EpisodeId).validate_python(source.identity.episode_id)
         mapping = feature_names(
-            sorted(present_fields(schema, capture_presence(self.metadata))),
+            sorted(
+                present_fields(
+                    schema, capture_presence(self.metadata), self.metadata.get("capture")
+                )
+            ),
             camera_topics=tuple(self.feature_mapping),
         )
         clock = self.metadata.get("source", {})

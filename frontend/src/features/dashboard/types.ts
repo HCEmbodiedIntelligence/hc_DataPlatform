@@ -89,6 +89,7 @@ export type DashboardTaskListItem = Readonly<{
 }>;
 
 export type DashboardTaskQc = Readonly<{
+  awaitingSlice: number;
   waiting: number;
   passed: number;
   risk: number;

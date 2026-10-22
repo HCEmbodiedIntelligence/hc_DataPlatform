@@ -709,7 +709,13 @@ def retry_source(scope, raw_id, factory):
             if status != "FAILED":
                 continue
             if reference and reference.get("error"):
-                continue  # A rejected snapshot needs an explicitly chosen published version.
+                from hc_data_platform.capture_schemes.recovery import recover_for_retry
+                from hc_data_platform.core.context import current_request_context
+
+                reference = recover_for_retry(
+                    db, scope, raw_id, current_request_context().subject_id or "processing-retry"
+                )
+                previous_config = reference["effective_adapter"]["configuration"]
             cfg = previous_config
             enqueue_files(
                 db,

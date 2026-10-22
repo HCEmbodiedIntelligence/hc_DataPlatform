@@ -217,12 +217,17 @@ def test_registered_derivation_survives_newer_receipt_concurrent_retry_and_missi
     uploaded_raw, monkeypatch
 ):
     repository, storage, upload, marker, command, event = uploaded_raw
+    # Seed a pre-capture-plan derivation receipt explicitly. A newly committed
+    # upload without a plan now carries CAPTURE_PLAN_REQUIRED; it must not be
+    # mistaken for the historical no-snapshot fixture exercised by this test.
+    # The DB upload is left unchanged: replay below must use the checked receipt.
+    historical = upload.model_copy(update={"processing_config_snapshot": None})
     originals = {asset.path: asset for asset in upload.assets}
     # A real prepared/encoded fixture is saved under an older recipe label. This
     # tests cache/DB binding, and deliberately does not claim an old binary run.
     current = raw_recording.VERSION
     monkeypatch.setattr(raw_recording, "VERSION", "openarm-raw-platform/3")
-    old, old_assets = raw_recording.materialize(storage, upload, marker, command, originals)
+    old, old_assets = raw_recording.materialize(storage, historical, marker, command, originals)
     monkeypatch.setattr(raw_recording, "VERSION", current)
     old_key = raw_recording.receipt_prefix(upload, "openarm-raw-platform/3") + "/receipt.json"
     receipt = json.loads(b"".join(storage.read_chunks(old_key)))
@@ -254,7 +259,7 @@ def test_registered_derivation_survives_newer_receipt_concurrent_retry_and_missi
     # Simulate a newer orphaned derivation while the registered command pins /3.
     with monkeypatch.context() as patch:
         patch.setattr(raw_recording, "READABLE_VERSIONS", (current,))
-        newer, _ = raw_recording.materialize(storage, upload, marker, command, originals)
+        newer, _ = raw_recording.materialize(storage, historical, marker, command, originals)
     # Equal bytes/manifests in two recipes still have distinct frozen locators.
     assert newer.recording_id == old.recording_id
     with monkeypatch.context() as patch:

@@ -71,7 +71,11 @@ def validate_snapshot(snapshot: Document, scope: Scope, raw: Document) -> Docume
             return unresolved("CAPTURE_FORMAT_UNSUPPORTED", "快照适配器与 Raw 格式不一致")
         if adapter.source_format in {"MCAP", "CAPTURE_BUNDLE"} and (
             adapter.configuration.fps != output.frequency_hz
-            or adapter.configuration.time_source != output.time_source
+            or (
+                adapter.configuration.semantic_output != output.model_dump(mode="json")
+                if adapter.configuration.semantic_output is not None
+                else adapter.configuration.time_source != output.time_source
+            )
         ):
             return unresolved("CAPTURE_VERSION_MISMATCH", "快照的时间轴与输出合同不一致")
     except (ValidationError, KeyError, TypeError):
@@ -108,7 +112,15 @@ def resolve_raw_snapshot(db: Any, scope: Scope, raw_source_id: str) -> Document:
         return unresolved()
     if saved and robot and robot[0] and saved[0] != robot[0]:
         return unresolved("CAPTURE_VERSION_MISMATCH", "同一 Raw 存在不同冻结快照")
-    return validate_snapshot(dict(snapshot), scope, raw)
+    result = validate_snapshot(dict(snapshot), scope, raw)
+    if (
+        result.get("source") == "TASK_PLAN_UNRESOLVED"
+        and result.get("error") == "CAPTURE_FORMAT_UNSUPPORTED"
+    ):
+        from .recovery import resolved_recovery
+
+        return resolved_recovery(db, scope, raw_source_id, raw, result)
+    return result
 
 
 def save_raw_snapshot(db: Any, scope: Scope, raw_source_id: str, snapshot: Document) -> None:
@@ -163,7 +175,8 @@ def validate_mcap_output(output: OutputContract, config: Any, provenance: Docume
     """Compare all supported output semantics with full-file MCAP decode evidence."""
     differences: list[Document] = []
     presence: Document = {}
-    if output.frequency_hz != config.fps or output.time_source != config.time_source:
+    actual_clock = (config.semantic_output or {}).get("time_source", config.time_source)
+    if output.frequency_hz != config.fps or output.time_source != actual_clock:
         differences.append(
             {
                 "path": "time_source/frequency_hz",
@@ -175,7 +188,11 @@ def validate_mcap_output(output: OutputContract, config: Any, provenance: Docume
             }
         )
     observed_fps = provenance.get("source_frequency_hz")
-    if observed_fps is not None and abs(observed_fps / output.frequency_hz - 1) > 0.01:
+    if (
+        config.alignment_policy == "PRESERVE"
+        and observed_fps is not None
+        and abs(observed_fps / output.frequency_hz - 1) > 0.01
+    ):
         differences.append(
             {"path": "frequency_hz", "expected": output.frequency_hz, "actual": observed_fps}
         )

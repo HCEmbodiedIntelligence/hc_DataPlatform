@@ -15,8 +15,16 @@ def with_frequency(document: Document, frequency: float) -> Document:
     if result["output"].get("frequency_hz") is None:
         result["output"]["frequency_hz"] = frequency
     for adapter in result["adapters"]:
-        if adapter["source_format"] in {"MCAP", "CAPTURE_BUNDLE"} and adapter["configuration"].get("fps") is None:
+        if (
+            adapter["source_format"] in {"MCAP", "CAPTURE_BUNDLE"}
+            and adapter["configuration"].get("fps") is None
+        ):
             adapter["configuration"]["fps"] = result["output"]["frequency_hz"]
+        if (
+            adapter["source_format"] in {"MCAP", "CAPTURE_BUNDLE"}
+            and adapter["configuration"].get("semantic_output") is not None
+        ):
+            adapter["configuration"]["semantic_output"] = copy.deepcopy(result["output"])
         if (
             adapter["source_format"] in {"MCAP", "CAPTURE_BUNDLE"}
             and adapter["configuration"]["fps"] != result["output"]["frequency_hz"]

@@ -126,6 +126,7 @@ export function adaptDashboardTaskStatus(
       taskCount: wire.pipeline.task_count,
       packageCount: wire.pipeline.package_count,
       qc: {
+        awaitingSlice: wire.pipeline.qc.awaiting_slice ?? 0,
         waiting: wire.pipeline.qc.waiting,
         passed: wire.pipeline.qc.passed,
         risk: wire.pipeline.qc.risk,
@@ -152,6 +153,7 @@ export function adaptDashboardTaskStatus(
           currentStageLabel: selected.current_stage_label,
           nextStep: selected.next_step,
           qc: {
+            awaitingSlice: selected.qc.awaiting_slice ?? 0,
             waiting: selected.qc.waiting,
             passed: selected.qc.passed,
             risk: selected.qc.risk,

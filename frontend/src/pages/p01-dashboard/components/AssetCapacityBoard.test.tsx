@@ -161,7 +161,7 @@ describe("AssetCapacityBoard", () => {
     expect(screen.getByText("8 个数据包")).toBeVisible();
     expect(screen.getByText("3 个数据包")).toBeVisible();
     expect(screen.getAllByText("1 个数据包")).toHaveLength(3);
-    expect(screen.getByText("当前 · 未质检 1")).toBeVisible();
+    expect(screen.getByText("当前 · 待质检 1")).toBeVisible();
     expect(screen.getByText("等待 1 · 运行 2")).toBeVisible();
     expect(screen.getByRole("button", { name: "处理失败 2" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "质检问题 3" })).toHaveLength(
@@ -175,6 +175,51 @@ describe("AssetCapacityBoard", () => {
     expect(screen.queryByText("CAPTURED 12")).not.toBeInTheDocument();
     expect(screen.queryByText("建议操作")).not.toBeInTheDocument();
   });
+
+  it.each([
+    {
+      fixture: dashboardTaskStatusAllTasksFixture,
+      awaitingSlice: 3,
+      waiting: 0,
+    },
+    { fixture: dashboardTaskStatusFixture, awaitingSlice: 2, waiting: 1 },
+  ])(
+    "separates recordings awaiting slice submission from the quality queue ($awaitingSlice / $waiting)",
+    ({ fixture, awaitingSlice, waiting }) => {
+      const taskStatus = adaptDashboardTaskStatus({
+        ...fixture,
+        pipeline: {
+          ...fixture.pipeline,
+          qc: {
+            ...fixture.pipeline.qc,
+            awaiting_slice: awaitingSlice,
+            waiting,
+          },
+          stages: fixture.pipeline.stages.map((stage) =>
+            stage.stage === "AUTOMATIC_VALIDATION"
+              ? { ...stage, not_started: awaitingSlice, waiting }
+              : stage,
+          ),
+        },
+      });
+      render(
+        <MemoryRouter>
+          <AssetCapacityBoard taskStatus={taskStatus} onTaskChange={vi.fn()} />
+        </MemoryRouter>,
+      );
+      const validation = screen.getByText("自动校验").closest("li")!;
+      expect(validation).toHaveTextContent(`待分片 ${awaitingSlice}`);
+      if (waiting) {
+        expect(validation).toHaveTextContent(`待质检 ${waiting}`);
+      } else {
+        expect(validation).not.toHaveTextContent("待质检");
+      }
+      expect(screen.queryByText(/未质检/u)).not.toBeInTheDocument();
+      for (const item of screen.getAllByRole("listitem")) {
+        if (item !== validation) expect(item).not.toHaveTextContent("待分片");
+      }
+    },
+  );
 
   it("separates approved packages from upstream packages that have not reached review", () => {
     const taskStatus = adaptDashboardTaskStatus(dashboardTaskStatusFixture);
@@ -202,9 +247,13 @@ describe("AssetCapacityBoard", () => {
     expect(review.getByText("审核通过")).toBeVisible();
     expect(review.getByText("1 个数据包")).toBeVisible();
     expect(review.queryByText(/等待/)).not.toBeInTheDocument();
-    const publication = within(screen.getByText("发布", { exact: true }).closest("li")!);
+    const publication = within(
+      screen.getByText("发布", { exact: true }).closest("li")!,
+    );
     expect(publication.getByText("等待 1")).toBeVisible();
-    expect(screen.getByText("按数据包统计；等待只包含已进入该阶段的数据。")).toBeVisible();
+    expect(
+      screen.getByText("按数据包统计；等待只包含已进入该阶段的数据。"),
+    ).toBeVisible();
   });
 
   it("keeps the rail visible for an empty task range", () => {

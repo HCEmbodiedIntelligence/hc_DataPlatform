@@ -34,6 +34,7 @@ import type {
 } from "./contracts";
 import { draftKey, saveDraft } from "./navigation";
 import { versionSchema } from "./contracts";
+import { normalizeAdapters } from "./editor-model";
 const flags = vi.hoisted(() => ({ manage: true, taskManage: true }));
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 vi.mock("../../shared/auth/use-capabilities", () => ({
@@ -389,6 +390,29 @@ it("saves an empty frame rate, reads it during validation and publishes without 
   expect(state.versions[0]?.software).toBe("");
   expect(screen.queryByLabelText("方案名称")).not.toBeInTheDocument();
 });
+it("publishes an automatic scheme after one actual sample while retaining three adapters", async () => {
+  const user = userEvent.setup();
+  state.draft = normalizeAdapters({ ...state.draft, input_mode: "AUTO" });
+  mount(<Library />, "/settings/capture-schemes/shared?edit=1");
+  await user.type(await screen.findByLabelText("方案名称"), " 自动");
+  await user.click(screen.getByText("自动识别上传"));
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  await user.click(screen.getByText("确认与保存"));
+  await user.click(screen.getByRole("button", { name: "保存方案" }));
+  await waitFor(() => expect(state.revision).toBe(2));
+  await user.click(screen.getByText("确认与保存"));
+  expect(screen.getByRole("button", { name: "发布新版本" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "选择测试样本" }));
+  await user.click(screen.getByRole("button", { name: "验证采集方案" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled(),
+  );
+  expect(state.validations).toHaveLength(1);
+  expect(state.draft.adapters).toHaveLength(3);
+  await user.click(screen.getByRole("button", { name: "发布新版本" }));
+  expect(await screen.findByText("已发布 v2 · 只读")).toBeVisible();
+});
+
 it("keeps read-only versions and management actions unavailable to a reader", async () => {
   flags.manage = false;
   mount(<Library />, "/settings/capture-schemes/shared?edit=1");

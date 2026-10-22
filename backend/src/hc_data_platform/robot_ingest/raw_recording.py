@@ -257,7 +257,9 @@ def materialize(
         derived = CreateRecordingUploadCommand.model_validate(
             {
                 **command.model_dump(mode="json"),
-                "schema_version": "continuous-recording-upload/v2",
+                "schema_version": "continuous-recording-upload/v3"
+                if config.get("collection_mode") == "JOINT_ONLY"
+                else "continuous-recording-upload/v2",
                 "assets": sorted(declarations, key=lambda a: a["path"]),
                 "recording_config": config,
             }

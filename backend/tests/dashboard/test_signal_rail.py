@@ -45,7 +45,7 @@ from tests.dashboard.test_task_status_projection import NOW, auth, package, stat
         (
             {"verification_status": "RAW_VERIFIED", "workflow_stage": "awaiting_slice"},
             "AUTOMATIC_VALIDATION",
-            "waiting",
+            "not_started",
         ),
         ({"verification_status": "REJECTED"}, "AUTOMATIC_VALIDATION", "failed"),
         (
@@ -142,6 +142,56 @@ def test_only_the_reached_stage_has_active_work(changes, stage, bucket):
             assert item.waiting == item.running == item.failed == item.blocked == 0
         if item.stage.value == stage:
             later = True
+
+
+@pytest.mark.parametrize(
+    ("task_id", "awaiting_slice", "waiting"),
+    [(None, 3, 1), ("task-a", 1, 1), ("task-b", 2, 0)],
+)
+def test_unsubmitted_recordings_and_queued_quality_checks_have_separate_counts(
+    task_id, awaiting_slice, waiting
+):
+    unsliced = recording_package(capture())
+    queued = recording_package(
+        capture(status="SLICED", episodes=[{"status": "PENDING_QC", "quality": None}]),
+        episodes=(RecordingEpisodeWorkflow(processing_status="PENDING_QC", qc_status=None),),
+    )
+    packages = tuple(
+        replace(fact, task_id=task, rollout_id=identity, data_package_id=identity)
+        for task, identity, fact in (
+            ("task-a", "unsliced-a", unsliced),
+            ("task-b", "unsliced-b", unsliced),
+            ("task-b", "unsliced-c", unsliced),
+            ("task-a", "queued", queued),
+            ("task-a", "discarded", replace(unsliced, resolution_status="DISCARDED")),
+            ("task-a", "duplicate", replace(unsliced, duplicate_of_rollout_id="unsliced-a")),
+        )
+    )
+    service = DashboardService(
+        InMemoryDashboardRepository(
+            task_status_projection=TaskStatusProjectionFacts(
+                tasks=(
+                    task("task-a", registered=4, received=4),
+                    task("task-b", registered=2, received=2),
+                ),
+                packages=packages,
+            )
+        ),
+        clock=lambda: NOW,
+    )
+    result = service.task_status(
+        auth=auth(), project_id="project-a", region_code="cn-east", task_id=task_id
+    )
+    assert result.pipeline.qc.awaiting_slice == awaiting_slice
+    assert result.pipeline.qc.waiting == waiting
+    validation = result.pipeline.stages[3]
+    assert validation.not_started == awaiting_slice
+    assert validation.waiting == waiting
+    assert validation.failed == validation.running == 0
+    if task_id:
+        assert result.selected.qc == result.pipeline.qc
+        assert result.selected.current_stage is TaskProcessingStage.AUTOMATIC_VALIDATION
+        assert "提交成片" in result.selected.next_step
 
 
 def test_task_14_cohort_counts_approved_draft_and_parse_failure_separately():

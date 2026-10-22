@@ -615,6 +615,15 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
         expected_modalities = set(projection.camera_modality_keys) | {
             sensor.topic for sensor in self.recording_config.sensors
         }
+        if self.capture_snapshot and self.capture_snapshot["effective_adapter"].get(
+            "configuration", {}
+        ).get("semantic_output"):
+            from hc_data_platform.capture_schemes.schema import native_topic
+
+            expected_modalities &= {
+                *(native_topic(name) for name in self.capture_snapshot["output"]["features"]),
+                "/metadata/source",
+            }
         if self.quality_profile.required_topics != expected_modalities:
             raise ValueError("quality profile must exactly match configured Episode modalities")
         if self.alignment_profile.required_modalities != expected_modalities:

@@ -147,6 +147,7 @@ export const dashboardTaskStatusFixture = {
     task_count: 1,
     package_count: 12,
     qc: {
+      awaiting_slice: 0,
       waiting: 1,
       passed: 8,
       risk: 2,
@@ -181,6 +182,7 @@ export const dashboardTaskStatusFixture = {
     current_stage_label: "自动校验",
     next_step: "处理质量风险并安排重新采集。",
     qc: {
+      awaiting_slice: 0,
       waiting: 1,
       passed: 8,
       risk: 2,
@@ -274,6 +276,7 @@ export const dashboardTaskStatusAllTasksFixture = {
     task_count: 2,
     package_count: 14,
     qc: {
+      awaiting_slice: 0,
       waiting: 1,
       passed: 10,
       risk: 2,
@@ -327,6 +330,7 @@ export const dashboardTaskStatusEmptyFixture = {
     task_count: 0,
     package_count: 0,
     qc: {
+      awaiting_slice: 0,
       waiting: 0,
       passed: 0,
       risk: 0,

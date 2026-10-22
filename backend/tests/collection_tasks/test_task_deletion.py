@@ -7,7 +7,7 @@ import psycopg
 import pytest
 
 from hc_data_platform.collection_tasks.deletion import PostgresTaskDeletion, TaskObjectPurger
-from hc_data_platform.collection_tasks.deletion_plan import registered_locators
+from hc_data_platform.collection_tasks.deletion_plan import locators, registered_locators
 from hc_data_platform.collection_tasks.models import CreateCollectionTask
 from hc_data_platform.collection_tasks.postgres import PostgresCollectionTaskRepository
 from hc_data_platform.collection_tasks.service import CollectionTaskService
@@ -15,6 +15,14 @@ from hc_data_platform.core.errors import ProblemException
 from tests.episode_store.test_commit_services import EpisodePackageCommitter, scoped
 
 pytest_plugins = ["tests.episode_store.test_commit_services"]
+
+
+def test_unrelated_external_storage_does_not_block_scoped_object_reference_check():
+    document = {"staging_uri": "file:///tmp/unrelated.arrow", "object_key": "raw/shared/file"}
+    assert locators(document, "bucket", ignore_external=True) == ({"raw/shared/file"}, set())
+    with pytest.raises(ProblemException) as blocked:
+        locators(document, "bucket")
+    assert blocked.value.problem.code == "TASK_DELETE_EXTERNAL_STORAGE"
 
 
 def test_task_metadata_cannot_supply_deletion_locators():

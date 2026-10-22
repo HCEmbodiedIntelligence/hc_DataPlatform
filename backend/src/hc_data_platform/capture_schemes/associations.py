@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import schemes
+from .automatic import validation_coverage
 from .common import Document, audit, check_revision, digest, encoded, lock, now, reject
 from .contracts import effective_adapter
 from .models import AssociateScheme
@@ -62,7 +63,9 @@ def list_links(db: Any, org: str, robot: str) -> list[Document]:
                 "mapping": row[6],
                 "scheme": row[7],
                 "archived": row[8],
-                "status": "READY" if formats <= passed else "MAPPING_UNVERIFIED",
+                "status": "READY"
+                if formats <= validation_coverage(row[7], passed)
+                else "MAPPING_UNVERIFIED",
                 "validated_formats": sorted(passed),
                 "validations": [v[0] for v in validations],
             }
@@ -254,7 +257,7 @@ def require_mapping(
         if v[0]["status"] == "PASSED" and v[0]["mapping_sha256"] == mapping["content_sha256"]
     }
     required = {a["source_format"] for a in document["adapters"]}
-    if required - passed:
+    if required - validation_coverage(document, passed):
         reject(
             "CAPTURE_MAPPING_UNVERIFIED",
             "实例映射尚未通过实际样本验证",

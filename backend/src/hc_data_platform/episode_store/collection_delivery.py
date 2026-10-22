@@ -107,13 +107,12 @@ class CollectionDelivery:
             )
             sources.append(CollectionSource(package))
         if adapter.homogeneous:
-            preflight(sources, body.modalities)
-        info, _, _ = selected_info(sources[0].package, body.modalities)
+            _, _, metadata = preflight(sources, body.modalities)
         return (
             CollectionDeliveryPlan(
                 members=tuple(members),
                 modalities=body.modalities,
-                contract_sha256=digest(contract(info))
+                contract_sha256=digest(contract(metadata.info))
                 if adapter.homogeneous
                 else digest(
                     [
@@ -121,7 +120,7 @@ class CollectionDelivery:
                         for m in members
                     ]
                 ),
-                processor_version="hc-lerobot-collection/1"
+                processor_version=metadata.processor_version
                 if adapter.homogeneous
                 else "hc-export/1",
                 reader_version=adapter.reader_version,
@@ -175,14 +174,7 @@ class CollectionDelivery:
                     if selected.submission
                     else None,
                 }
-            info, depth, _ = selected_info(package, plan.modalities)
-            from .export_formats import from_archive
-
-            if (
-                from_archive(plan.archive_format).homogeneous
-                and digest(contract(info)) != plan.contract_sha256
-            ):
-                raise PackageConflict("collection contract differs from frozen plan")
+            _, depth, _ = selected_info(package, plan.modalities)
             evidence = package.document("hc/modalities.json")["depth"]
             profiles = {
                 feature: package.document(evidence[feature]["evidence_path"] + "/profile.json")[
@@ -200,6 +192,12 @@ class CollectionDelivery:
             result.append(
                 CollectionSource(package, annotation, track, review, member.camera_calibration)
             )
+        if from_archive(plan.archive_format).homogeneous:
+            _, _, metadata = preflight(
+                result, plan.modalities, processor_version=plan.processor_version
+            )
+            if digest(contract(metadata.info)) != plan.contract_sha256:
+                raise PackageConflict("collection contract differs from frozen plan")
         return result
 
     def build(self, plan, directory, archive_path, row, checkpoint):
@@ -207,12 +205,14 @@ class CollectionDelivery:
         root = directory / "collection"
         from .export_formats import from_archive
 
-        manifest, _ = from_archive(plan.archive_format).writer(
+        adapter = from_archive(plan.archive_format)
+        manifest, _ = adapter.writer(
             root,
             self.sources(plan),
             storage=self.owner.storage,
             modalities=plan.modalities,
             checkpoint=checkpoint,
+            **({"processor_version": plan.processor_version} if adapter.homogeneous else {}),
         )
         extra = {
             "collection/hc/collection_manifest.json": canonical(manifest),

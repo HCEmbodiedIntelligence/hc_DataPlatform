@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .automatic import validation_coverage
 from .common import Document, audit, check_revision, digest, encoded, lock, now, reject
 from .contracts import output_hash
 from .draft_frequency import with_frequency
@@ -186,11 +187,14 @@ def publish(db: Any, org: str, scheme: str, revision: int, actor: str) -> Docume
         ):
             evidence.setdefault(item["source_format"], item)
     required = {adapter["source_format"] for adapter in document["adapters"]}
-    if required - evidence.keys():
+    covered = validation_coverage(document, evidence.keys())
+    if required - covered:
         reject(
             "CAPTURE_SAMPLE_VALIDATION_REQUIRED",
-            "请用实际样本验证当前草稿的每种输入格式",
-            missing_formats=sorted(required - evidence.keys()),
+            "请用实际样本验证当前方案"
+            if document.get("input_mode") == "AUTO"
+            else "请用实际样本验证当前草稿的每种输入格式",
+            missing_formats=sorted(required - covered),
         )
     if document["output"].get("frequency_hz") is None or any(
         adapter["source_format"] == "MCAP" and adapter["configuration"].get("fps") is None

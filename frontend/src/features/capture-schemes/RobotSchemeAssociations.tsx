@@ -227,8 +227,12 @@ export function RobotSchemeAssociations({
       ];
     });
   const sources =
-    version?.adapters.flatMap<{ format: string; name: string; source: string }>(
-      (adapter) =>
+    version?.adapters
+      .filter(
+        (a) =>
+          version.input_mode !== "AUTO" || a.source_format !== "CAPTURE_BUNDLE",
+      )
+      .flatMap<{ format: string; name: string; source: string }>((adapter) =>
         adapter.source_format === "LEROBOT_V3"
           ? Object.keys(version.output.features).map((name) => ({
               format: adapter.source_format,
@@ -251,8 +255,15 @@ export function RobotSchemeAssociations({
                 name: c.camera_id,
                 source: c.topic,
               })),
+              ...Object.entries(
+                adapter.configuration.numeric_sources ?? {},
+              ).map(([name, signal]) => ({
+                format: adapter.source_format,
+                name,
+                source: signal.topic,
+              })),
             ],
-    ) ?? [];
+      ) ?? [];
   const verified =
     validating && links.data?.find((l) => l.scheme_id === validating.scheme_id);
   if (!read)
@@ -458,34 +469,44 @@ export function RobotSchemeAssociations({
                   />
                 </details>
               )}
-              {sources.map((source) => (
-                <Form.Item
-                  key={`${source.format}:${source.name}`}
-                  label={`${source.format === "MCAP" ? "MCAP 话题" : "LeRobot 字段"} · ${source.name}`}
-                >
-                  <Input
-                    aria-label={`${source.format} ${source.name} 设备来源`}
-                    placeholder={source.source}
-                    value={
-                      edit.mapping.sources[source.format]?.[source.name] ?? ""
-                    }
-                    onChange={(e) => {
-                      const map = { ...edit.mapping.sources[source.format] };
-                      if (e.target.value) map[source.name] = e.target.value;
-                      else delete map[source.name];
-                      change({
-                        ...edit,
-                        mapping: {
-                          sources: {
-                            ...edit.mapping.sources,
-                            [source.format]: map,
+              <details
+                open={
+                  version.input_mode !== "AUTO" ||
+                  Object.values(edit.mapping.sources).some(
+                    (s) => Object.keys(s).length > 0,
+                  )
+                }
+              >
+                <summary>高级设备来源（留空沿用方案）</summary>
+                {sources.map((source) => (
+                  <Form.Item
+                    key={`${source.format}:${source.name}`}
+                    label={`${source.format === "MCAP" ? "MCAP 话题" : "LeRobot 字段"} · ${source.name}`}
+                  >
+                    <Input
+                      aria-label={`${source.format} ${source.name} 设备来源`}
+                      placeholder={source.source}
+                      value={
+                        edit.mapping.sources[source.format]?.[source.name] ?? ""
+                      }
+                      onChange={(e) => {
+                        const map = { ...edit.mapping.sources[source.format] };
+                        if (e.target.value) map[source.name] = e.target.value;
+                        else delete map[source.name];
+                        change({
+                          ...edit,
+                          mapping: {
+                            sources: {
+                              ...edit.mapping.sources,
+                              [source.format]: map,
+                            },
                           },
-                        },
-                      });
-                    }}
-                  />
-                </Form.Item>
-              ))}
+                        });
+                      }}
+                    />
+                  </Form.Item>
+                ))}
+              </details>
             </>
           )}
           <Checkbox

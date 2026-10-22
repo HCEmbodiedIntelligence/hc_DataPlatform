@@ -129,6 +129,11 @@ class TaskStageCounts(BaseModel):
 class TaskQcCounts(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    awaiting_slice: int = Field(
+        default=0,
+        ge=0,
+        description="Recordings awaiting slice submission before automatic quality checks.",
+    )
     waiting: int = Field(ge=0)
     passed: int = Field(ge=0)
     risk: int = Field(ge=0)

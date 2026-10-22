@@ -5,7 +5,11 @@ import pytest
 
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.robot_ingest.connections import LocalRobot, RedeemConnection
-from hc_data_platform.robot_ingest.models import IdentityState, UpdateRobotIngestIdentity
+from hc_data_platform.robot_ingest.models import (
+    IdentityState,
+    IssueCredentialCommand,
+    UpdateRobotIngestIdentity,
+)
 from hc_data_platform.robot_ingest.onboarding_models import OnboardingFacts
 from hc_data_platform.robot_ingest.service import RobotIngestService
 from tests.robot_ingest.test_robot_ingest_service import (
@@ -56,6 +60,80 @@ def command(ticket, request="request-id-at-least-16"):
     return RedeemConnection(ticket=ticket["ticket"], request_id=request, local_robot=LOCAL)
 
 
+def revoke(h, credential_id=None):
+    h.service.revoke_credential(
+        auth=_admin(),
+        organization_id=ORG,
+        project_id=PROJECT_A,
+        ingest_identity_id=h.identity_id,
+        credential_id=credential_id or h.credential_id,
+    )
+
+
+def test_copying_and_reconnecting_with_new_links_reuses_existing_credential():
+    h = harness()
+    before = h.repository.list_credentials(ORG, h.identity_id)
+    tickets = [issue(h) for _ in range(5)]
+    assert h.repository.list_credentials(ORG, h.identity_id) == before
+    for ticket in tickets:
+        assert h.service.connections.redeem(command(ticket))["token"] == h.token
+    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 1
+    assert h.repository.get_identity(ORG, h.identity_id).credential_revision == 1
+
+
+def test_different_links_concurrently_create_only_one_missing_credential():
+    h = harness()
+    revoke(h)
+    commands = [command(issue(h)) for _ in range(12)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(h.service.connections.redeem, commands))
+    assert len({result["token"] for result in results}) == 1
+    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 2
+
+
+def test_reused_credential_is_fixed_for_retries_and_never_resurrected():
+    h = harness()
+    cmd = command(issue(h))
+    assert h.service.connections.redeem(cmd)["token"] == h.token
+    newer = h.service.issue_credential(
+        auth=_admin(),
+        organization_id=ORG,
+        project_id=PROJECT_A,
+        ingest_identity_id=h.identity_id,
+        command=IssueCredentialCommand(),
+    ).credential
+    assert h.service.connections.redeem(cmd)["token"] == h.token
+    revoke(h)
+    with pytest.raises(ProblemException):
+        h.service.connections.redeem(cmd)
+    assert h.service.connections.redeem(command(issue(h)))["token"] == newer.token
+    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 2
+
+
+def test_legacy_secret_creates_once_and_expired_credentials_are_not_reused():
+    from dataclasses import replace
+
+    h = harness()
+    record = h.repository._credentials[h.credential_id]
+    h.repository._credentials[h.credential_id] = replace(
+        record,
+        secret_ciphertext=None,
+        summary=record.summary.model_copy(update={"reveal_available": False}),
+    )
+    connected = h.service.connections.redeem(command(issue(h)))
+    assert connected["token"] != h.token
+    assert h.service.connections.redeem(command(issue(h)))["token"] == connected["token"]
+    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 2
+
+    h = harness()
+    record = h.repository._credentials[h.credential_id]
+    h.repository._credentials[h.credential_id] = replace(
+        record,
+        summary=record.summary.model_copy(update={"expires_at": NOW}),
+    )
+    assert h.service.connections.redeem(command(issue(h)))["token"] != h.token
+
+
 def test_ticket_ttl_retry_after_restart_and_non_revocation():
     h = harness()
     ticket = issue(h)
@@ -74,7 +152,7 @@ def test_ticket_ttl_retry_after_restart_and_non_revocation():
         clock=lambda: h.now,
     )
     assert restored.connections.redeem(cmd)["token"] == first["token"]
-    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 2
+    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 1
     assert h.service.authenticate(h.token).authenticated_robot_id == ROBOT
     with pytest.raises(ProblemException) as error:
         restored.connections.redeem(command(ticket, "different-request-id"))
@@ -90,9 +168,15 @@ def test_production_routes_use_machine_auth_and_never_echo_ticket_in_errors():
     from hc_data_platform.security.auth import JwtVerifier
 
     h = harness()
-    app = create_app(settings=Settings(environment="test", runtime_backend="memory"),
-                     jwt_verifier=JwtVerifier(issuer="test", audience="test", algorithms=("HS256",),
-                                              key="synthetic-connection-test-key-123456789"))
+    app = create_app(
+        settings=Settings(environment="test", runtime_backend="memory"),
+        jwt_verifier=JwtVerifier(
+            issuer="test",
+            audience="test",
+            algorithms=("HS256",),
+            key="synthetic-connection-test-key-123456789",
+        ),
+    )
     app.dependency_overrides[get_robot_ingest_service] = lambda: h.service
     ticket = issue(h)
     with TestClient(app) as client:
@@ -146,6 +230,7 @@ def test_expired_unused_ticket_and_disabled_identity_are_rejected():
 
 def test_concurrent_redemption_and_crash_before_issuance(monkeypatch):
     h = harness()
+    revoke(h)
     cmd = command(issue(h))
     original = h.repository.issue_credential
     monkeypatch.setattr(
@@ -185,7 +270,7 @@ def test_ticket_scope_policy_and_local_mapping_cannot_change():
     with pytest.raises(ProblemException) as error:
         h.service.connections.redeem(cmd)
     assert error.value.problem.code == "LOCAL_ROBOT_MISMATCH"
-    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 2
+    assert len(h.repository.list_credentials(ORG, h.identity_id)) == 1
 
 
 def test_task_search_projects_pagination_and_cross_organization():

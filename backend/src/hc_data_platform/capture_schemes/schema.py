@@ -59,14 +59,28 @@ def native_topic(name: str) -> str:
     return native_feature_topic(name)
 
 
-def present_fields(schema: DatasetSchemaSnapshot, presence: Document) -> dict[str, str]:
+def present_fields(
+    schema: DatasetSchemaSnapshot, presence: Document, capture: Document | None = None
+) -> dict[str, str]:
     from hc_data_platform.data_formats.feature_names import feature_names
 
     fields = dict(schema.fields)
-    if schema.semantic_contract is not None:
+    # Reviewed legacy datasets keep their original physical schema. Their new
+    # package still carries the server-frozen output and per-upload presence.
+    contract = schema.semantic_contract or (capture or {}).get("output")
+    if contract is not None:
+        from .models import OutputContract
+
+        contract = OutputContract.model_validate(contract).model_dump(mode="json")
+        if (
+            schema.semantic_contract is not None
+            and capture is not None
+            and capture.get("output") != contract
+        ):
+            raise ValueError("capture output differs from the frozen semantic schema")
         mapping = feature_names(sorted(fields))
         for topic, name in mapping.items():
-            feature = schema.semantic_contract["features"].get(name)
+            feature = contract["features"].get(name)
             if feature and not feature["required"] and presence.get(name) is False:
                 fields.pop(topic)
     return fields
@@ -83,6 +97,8 @@ def project_info(info: Document, snapshot: Document | None) -> Document:
     """A derived interpretation; never rewrite source metadata or source files."""
     if snapshot is None:
         return info
+    from .axes import source_axis_order
+
     adapter, output = snapshot["effective_adapter"], snapshot["output"]
     sources = adapter.get("feature_sources", {})
     features = {
@@ -101,6 +117,8 @@ def project_info(info: Document, snapshot: Document | None) -> Document:
                     if k in declaration
                 },
             }
+            if source_axis_order(name, declaration, original) is not None:
+                features[name]["names"] = declaration["names"]
     if info.get("robot_type") == "unitree_g1":
         if not {"observation.state", "action"}.issubset(features):
             raise ValueError(

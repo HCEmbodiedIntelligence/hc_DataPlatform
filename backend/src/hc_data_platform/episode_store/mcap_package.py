@@ -37,7 +37,15 @@ def encoding_configuration():
 
 
 def freeze_mcap_plan(
-    session, request, manifest, staging, quality, *, quality_evidence=None, numeric_profile=None
+    session,
+    request,
+    manifest,
+    staging,
+    quality,
+    *,
+    quality_evidence=None,
+    numeric_profile=None,
+    schemas=None,
 ):
     source, original = session.source, session.preflight.manifest
     version = request.profile.converter_version
@@ -84,6 +92,8 @@ def freeze_mcap_plan(
             capture["output"],
             {topic: "json" for topic in original.actual_topics},
         )
+        if schemas is not None:
+            schema = schemas.resolve_capture_schema(schema)
     plan = McapEpisodePlan.freeze(
         input=PackageInput(
             identity=identity,

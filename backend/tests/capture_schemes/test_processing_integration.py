@@ -46,12 +46,12 @@ from hc_data_platform.workflow.lerobot_workflow import (
 from hc_data_platform.workflow.models import JobRecord
 from hc_data_platform.workflow.worker import discover_temporal_registrations
 
-from .processing_fixture import make_source, output_for, snapshot
+from .processing_fixture import make_source, output_for, register_adopted_schema, snapshot
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-@pytest.mark.parametrize("variant", [0, 1, 2, "optional"])
+@pytest.mark.parametrize("variant", [0, 1, 2, "optional", "adopted"])
 async def test_frozen_x1_without_annotation_roundtrip(tmp_path, monkeypatch, variant):
     if os.getenv("HC_CAPTURE_PROCESSING_INFRA") != "1":
         pytest.skip("explicit isolated infrastructure required")
@@ -60,14 +60,15 @@ async def test_frozen_x1_without_annotation_roundtrip(tmp_path, monkeypatch, var
     dataset, task, robot = "dataset_capture_" + suffix, "task-" + suffix, "x1"
     queue = "capture-" + suffix
     scope = (org, project, region)
+    infrastructure = Settings()
     settings = Settings(
         environment="test",
         postgres_dsn=os.environ["HC_TEST_POSTGRES_DSN"],
         auth_abuse_enabled=False,
         object_store_endpoint="http://minio:9000",
         object_store_public_endpoint="http://minio:9000",
-        object_store_access_key="minioadmin",
-        object_store_secret_key="minioadmin",
+        object_store_access_key=infrastructure.object_store_access_key,
+        object_store_secret_key=infrastructure.object_store_secret_key,
         object_store_bucket="processing-tests",
         lance_root_uri=str(tmp_path / "lance"),
         alignment_staging_root=str(tmp_path / "alignment"),
@@ -111,7 +112,7 @@ async def test_frozen_x1_without_annotation_roundtrip(tmp_path, monkeypatch, var
                 (org, project, task, dataset, "f" * 64),
             )
         optional = variant == "optional"
-        index = 0 if optional else variant
+        index = 0 if optional or variant == "adopted" else variant
         info = make_source(tmp_path / "source", index, count=167 if index < 2 else 30)
         if optional:
             table_path = tmp_path / "source/data/chunk-000/file-000.parquet"
@@ -150,6 +151,8 @@ async def test_frozen_x1_without_annotation_roundtrip(tmp_path, monkeypatch, var
                 "required": False,
             }
             output = OutputContract(**document)
+        if variant == "adopted":
+            register_adopted_schema(runtime, connect, scope, dataset, task, output)
         frozen = snapshot(
             output,
             scope=scope,

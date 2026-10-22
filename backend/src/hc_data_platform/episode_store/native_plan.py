@@ -96,7 +96,9 @@ class NativeEpisodePlan(FrozenModel):
         TypeAdapter(DatasetId).validate_python(source.identity.dataset_id)
         TypeAdapter(EpisodeId).validate_python(source.identity.episode_id)
         presence = capture_presence(self.metadata)
-        mapping = feature_names(sorted(present_fields(schema, presence)))
+        mapping = feature_names(
+            sorted(present_fields(schema, presence, self.metadata.get("capture")))
+        )
         cameras = {
             key: target
             for key, target in mapping.items()

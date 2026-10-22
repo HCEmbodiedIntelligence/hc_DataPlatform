@@ -340,7 +340,7 @@ describe("P23 recording segmentation", () => {
     const user = userEvent.setup();
     renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
     await markFirstSlice(user);
-    await user.click(screen.getByRole("button", { name: "下一条待切片" }));
+    await user.click(screen.getByRole("button", { name: "下一条待分片" }));
     await user.click(screen.getByRole("button", { name: "继续编辑" }));
     expect(screen.getByTestId("location")).toHaveTextContent(
       recording.recording_id,

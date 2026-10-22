@@ -6097,6 +6097,13 @@ components:
           maxLength: 10000
           title: Description
           type: string
+        input_mode:
+          default: EXPLICIT
+          enum:
+          - EXPLICIT
+          - AUTO
+          title: Input Mode
+          type: string
         model_version_ids:
           default: []
           items:
@@ -6851,6 +6858,13 @@ components:
           minimum: 1.0
           title: Draft Revision
           type: integer
+        input_mode:
+          default: EXPLICIT
+          enum:
+          - EXPLICIT
+          - AUTO
+          title: Input Mode
+          type: string
         model_version_ids:
           default: []
           items:
@@ -8768,6 +8782,7 @@ components:
           default: hc-lerobot-collection/1
           enum:
           - hc-lerobot-collection/1
+          - hc-lerobot-collection/2
           - hc-export/1
           title: Processor Version
           type: string
@@ -22432,6 +22447,13 @@ components:
           - type: string
           - type: 'null'
           title: Action Topic
+        alignment_policy:
+          default: PRESERVE
+          enum:
+          - PRESERVE
+          - FIXED_GRID
+          title: Alignment Policy
+          type: string
         cameras:
           default: []
           items:
@@ -22487,11 +22509,22 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        numeric_sources:
+          additionalProperties:
+            $ref: '#/components/schemas/NumericMapping'
+          title: Numeric Sources
+          type: object
         primary_camera:
           anyOf:
           - type: string
           - type: 'null'
           title: Primary Camera
+        semantic_output:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Semantic Output
         state_joint_names:
           default: []
           items:
@@ -22538,6 +22571,13 @@ components:
           - type: string
           - type: 'null'
           title: Action Topic
+        alignment_policy:
+          default: PRESERVE
+          enum:
+          - PRESERVE
+          - FIXED_GRID
+          title: Alignment Policy
+          type: string
         cameras:
           default: []
           items:
@@ -22592,11 +22632,22 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        numeric_sources:
+          additionalProperties:
+            $ref: '#/components/schemas/NumericMapping'
+          title: Numeric Sources
+          type: object
         primary_camera:
           anyOf:
           - type: string
           - type: 'null'
           title: Primary Camera
+        semantic_output:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Semantic Output
         state_joint_names:
           default: []
           items:
@@ -22898,6 +22949,32 @@ components:
       - dataset_id
       - labels
       title: NativeLabelsRequest
+      type: object
+    NumericMapping:
+      additionalProperties: false
+      properties:
+        fields:
+          items:
+            type: string
+          maxItems: 256
+          minItems: 1
+          title: Fields
+          type: array
+        message_type:
+          maxLength: 256
+          minLength: 1
+          title: Message Type
+          type: string
+        topic:
+          maxLength: 512
+          minLength: 1
+          title: Topic
+          type: string
+      required:
+      - topic
+      - message_type
+      - fields
+      title: NumericMapping
       type: object
     ObjectRelationConstraint:
       properties:
@@ -30912,6 +30989,13 @@ components:
           minimum: 0.0
           title: Expected Revision
           type: integer
+        input_mode:
+          default: EXPLICIT
+          enum:
+          - EXPLICIT
+          - AUTO
+          title: Input Mode
+          type: string
         model_version_ids:
           default: []
           items:
@@ -32507,6 +32591,11 @@ components:
     TaskQcCounts:
       additionalProperties: false
       properties:
+        awaiting_slice:
+          default: 0
+          description: Recordings awaiting slice submission before automatic quality checks.
+          minimum: 0
+          type: integer
         discarded:
           default: 0
           minimum: 0

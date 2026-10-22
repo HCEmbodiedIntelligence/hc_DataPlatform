@@ -1080,7 +1080,7 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
 
         if fact.duplicate_of_rollout_id is not None:
             validation_bucket = "isolated"
-        elif not fact.raw_committed:
+        elif not fact.raw_committed or main is TaskPackageMainState.AWAITING_SLICE:
             validation_bucket = "not_started"
         elif (
             fact.verification_status == "REJECTED" or main is TaskPackageMainState.VALIDATION_FAILED
@@ -1159,6 +1159,9 @@ def _qc_counts(
     canonical = tuple(item for item in received if item.duplicate_of_rollout_id is None)
     qc_eligible = tuple(item for item in canonical if item.verification_status == "RAW_VERIFIED")
     return TaskQcCounts(
+        awaiting_slice=sum(
+            _package_main_state(item) is TaskPackageMainState.AWAITING_SLICE for item in canonical
+        ),
         waiting=next(
             stage.waiting
             for stage in _stage_counts(packages)
@@ -1507,6 +1510,7 @@ def _selected_task_status(
             or item.failed
             or item.unavailable
             or item.stage in problem_stages
+            or (item.stage is TaskProcessingStage.AUTOMATIC_VALIDATION and qc.awaiting_slice)
         ),
         None,
     )
@@ -1527,6 +1531,8 @@ def _selected_task_status(
     next_step = (
         blockers[0].label
         if blockers
+        else "请在录制切片中确认区间并提交成片，提交后开始自动质检。"
+        if active_stage is TaskProcessingStage.AUTOMATIC_VALIDATION and qc.awaiting_slice
         else (
             "任务已达标，生命周期仍为ACTIVE，请确认后关闭任务。"
             if attainment in {TaskAttainment.ATTAINED, TaskAttainment.EXCEEDED}

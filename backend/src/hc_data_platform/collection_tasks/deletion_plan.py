@@ -184,7 +184,7 @@ def contains(value, selector):
     )
 
 
-def locators(document, bucket):
+def locators(document, bucket, *, ignore_external=False):
     """Use typed, persisted locator fields; never treat arbitrary strings as keys."""
     keys, prefixes = set(), set()
     if isinstance(document, list):
@@ -203,6 +203,8 @@ def locators(document, bucket):
             elif name in URI_FIELDS and "://" in value:
                 uri = urlsplit(value)
                 if uri.scheme not in {"s3", "oss"} or uri.netloc != bucket:
+                    if ignore_external:
+                        continue
                     raise conflict(
                         "TASK_DELETE_EXTERNAL_STORAGE", "数据包含外部存储引用，请先处理这些引用。"
                     )
@@ -214,7 +216,7 @@ def locators(document, bucket):
     else:
         return keys, prefixes
     for child in children:
-        child_keys, child_prefixes = locators(child, bucket)
+        child_keys, child_prefixes = locators(child, bucket, ignore_external=ignore_external)
         keys.update(child_keys)
         prefixes.update(child_prefixes)
     if any(not k or k.startswith("/") or ".." in k.split("/") for k in keys | prefixes):
@@ -222,7 +224,7 @@ def locators(document, bucket):
     return keys, prefixes
 
 
-def registered_locators(table, row, bucket):
+def registered_locators(table, row, bucket, *, ignore_external=False):
     # Do not walk arbitrary upload commands, annotation plans, provenance or
     # Dataset metadata. Those documents can contain caller-supplied strings.
     direct = {
@@ -253,7 +255,7 @@ def registered_locators(table, row, bucket):
         document["package_prefix"] = row["receipt_document"]["data"]["package_prefix"]
     if table == "episode_store.media_previews" and row.get("receipt"):
         document["object_key"] = row["receipt"].get("object_key")
-    return locators(document, bucket)
+    return locators(document, bucket, ignore_external=ignore_external)
 
 
 def metadata(cursor):
@@ -493,7 +495,7 @@ def build_plan(cursor, task, scope, bucket, objects):
         for index, row in enumerate(rows):
             if index in selected[table]:
                 continue
-            keys, prefixes = registered_locators(table, row, bucket)
+            keys, prefixes = registered_locators(table, row, bucket, ignore_external=True)
             if keys & plan.objects.keys() or any(
                 k.startswith(p) for p in prefixes for k in plan.objects
             ):

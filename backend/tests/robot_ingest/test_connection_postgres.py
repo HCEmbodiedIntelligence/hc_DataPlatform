@@ -119,7 +119,23 @@ def test_durable_connection_claim_concurrent_retry_task_projection_and_old_crede
     with ThreadPoolExecutor(max_workers=6) as workers:
         results = list(workers.map(lambda _: service().connections.redeem(cmd), range(10)))
     assert len({r["token"] for r in results}) == 1
-    assert len(s.repository.list_credentials(org, identity.ingest_identity_id)) == 2
+    assert len(s.repository.list_credentials(org, identity.ingest_identity_id)) == 1
+    assert results[0]["token"] == old.token
+    commands = [
+        cmd.model_copy(
+            update={
+                "ticket": s.connections.issue(auth, org, projects[0], identity.ingest_identity_id)[
+                    "ticket"
+                ],
+                "request_id": uuid4().hex,
+            }
+        )
+        for _ in range(8)
+    ]
+    with ThreadPoolExecutor(max_workers=6) as workers:
+        reconnected = list(workers.map(lambda c: service().connections.redeem(c), commands))
+    assert {r["token"] for r in reconnected} == {old.token}
+    assert len(s.repository.list_credentials(org, identity.ingest_identity_id)) == 1
     assert s.authenticate(old.token).authenticated_robot_id == robot
     machine = s.authenticate(results[0]["token"])
     page = s.connections.tasks(machine, "MCAP", page_size=1)
@@ -146,3 +162,29 @@ def test_durable_connection_claim_concurrent_retry_task_projection_and_old_crede
     assert ticket["ticket"] not in str(documents) and results[0]["token"] not in str(documents)
     with pytest.raises(ProblemException):
         s.connections.task(machine, tasks[0], "MCAP")
+
+    s.revoke_credential(
+        auth=auth,
+        organization_id=org,
+        project_id=projects[0],
+        ingest_identity_id=identity.ingest_identity_id,
+        credential_id=old.credential_id,
+    )
+    with pytest.raises(ProblemException):
+        service().connections.redeem(cmd)
+    commands = [
+        cmd.model_copy(
+            update={
+                "ticket": s.connections.issue(auth, org, projects[0], identity.ingest_identity_id)[
+                    "ticket"
+                ],
+                "request_id": uuid4().hex,
+            }
+        )
+        for _ in range(8)
+    ]
+    with ThreadPoolExecutor(max_workers=6) as workers:
+        fresh = list(workers.map(lambda c: service().connections.redeem(c), commands))
+    assert len({r["token"] for r in fresh}) == 1
+    assert fresh[0]["token"] != old.token
+    assert len(s.repository.list_credentials(org, identity.ingest_identity_id)) == 2

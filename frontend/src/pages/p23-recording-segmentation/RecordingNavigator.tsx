@@ -135,7 +135,7 @@ export function RecordingNavigator({
         className={styles.navigatorContent}
       >
         <span className={styles.navigatorCount}>
-          {recordings.length} 条 · 待切片{" "}
+          {recordings.length} 条 · 待分片{" "}
           {recordings.filter((item) => item.status !== "SLICED").length} 条
         </span>
         <Input.Search
@@ -162,7 +162,7 @@ export function RecordingNavigator({
           value={filter.stage}
           options={[
             { label: "全部", value: "all" },
-            { label: "待切片", value: "pending" },
+            { label: "待分片", value: "pending" },
             { label: "已成片", value: "sliced" },
           ]}
           onChange={(stage) => onFilterChange({ ...filter, stage })}
@@ -186,7 +186,7 @@ export function RecordingNavigator({
           disabled={disabled || !nextPending}
           onClick={() => nextPending && onSelect(nextPending.recording_id)}
         >
-          下一条待切片
+          下一条待分片
         </Button>
         {list.isPending && <p role="status">正在读取录制列表…</p>}
         {list.isError && (
@@ -240,7 +240,7 @@ export function RecordingNavigator({
                     ? "已成片"
                     : item.current_revision > 0
                       ? "草稿"
-                      : "待切片"}
+                      : "待分片"}
                 </Tag>
               </span>
               <strong title={recordingFileName(item)}>

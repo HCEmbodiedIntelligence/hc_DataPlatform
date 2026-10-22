@@ -21,7 +21,7 @@ def restore(root, destination, progress=lambda: None):
     if session.get("schema_version") != VERSION:
         raise ValueError("unsupported topic video bundle")
     declarations = {entry["path"]: entry["frame_count"] for entry in session["videos"]}
-    if not declarations or len(declarations) != len(session["videos"]):
+    if len(declarations) != len(session["videos"]):
         raise ValueError("invalid video inventory")
     counts, readers, channels, schemas = {}, {}, {}, {}
     with ExitStack() as stack:

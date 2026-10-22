@@ -240,7 +240,14 @@ export function DashboardPage() {
         pipeline: {
           taskCount: 0,
           packageCount: 0,
-          qc: { waiting: 0, passed: 0, risk: 0, rejected: 0, unavailable: 0 },
+          qc: {
+            awaitingSlice: 0,
+            waiting: 0,
+            passed: 0,
+            risk: 0,
+            rejected: 0,
+            unavailable: 0,
+          },
           stages: taskStageOrder.map((stage) => ({
             stage,
             notStarted: 0,

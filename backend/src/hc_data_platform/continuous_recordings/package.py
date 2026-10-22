@@ -326,7 +326,7 @@ def timeline(request, origin):
     return origin + request.start_offset_ns, request.end_offset_ns - request.start_offset_ns
 
 
-def freeze_plan(request, alignment, manifest, staging, upload, paths, quality):
+def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *, schemas=None):
     source = request.projection
     files = {file.relative_path: file for file in inventory(request)}
     origin, clock, declared = source_context(request, upload, paths)
@@ -429,6 +429,10 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality):
             request.capture_snapshot["output"],
             {key: "json" for key in mapping},
         )
+        if schemas is not None:
+            # Resolve against the immutable server receipt again at packaging.
+            # A caller-supplied legacy ID alone never authorizes schema reuse.
+            schema = schemas.resolve_capture_schema(schema)
     metadata = {
         "capture": request.capture_snapshot,
         "capture_validation": request.capture_validation,

@@ -54,11 +54,13 @@ pytest_plugins = ["tests.episode_store.test_commit_services"]
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize("include_camera", [False, True])
+@pytest.mark.parametrize("shared_output", [False, True, "adopted_legacy"])
 async def test_mcap_temporal_without_annotation(
     uploaded_raw,  # noqa: F811
     tmp_path,
     monkeypatch,
     include_camera,
+    shared_output,
 ):
     if os.getenv("HC_CAPTURE_PROCESSING_INFRA") != "1":
         pytest.skip("explicit isolated infrastructure required")
@@ -107,6 +109,86 @@ async def test_mcap_temporal_without_annotation(
             output.features["observation.images.head"] = output.features[
                 "observation.images.head"
             ].model_copy(update={"required": True})
+        if shared_output:
+            from hc_data_platform.capture_schemes.models import OutputContract
+
+            fields = output.model_dump(mode="json")
+            fields["time_source"] = "FRAME_TIMESTAMP"
+            fields["features"]["observation.recording_time"] = {
+                "dtype": "float64",
+                "shape": [1],
+                "names": ["seconds_since_first_log_time"],
+                "role": "timestamp",
+            }
+            output = OutputContract.model_validate(fields)
+            configuration["semantic_output"] = output.model_dump(mode="json")
+            # A previous LeRobot upload has already frozen this exact dataset
+            # structure. Adding MCAP must reuse it, including optional cameras.
+            from hc_data_platform.capture_schemes.plans import check_dataset
+            from hc_data_platform.capture_schemes.schema import native_topic, semantic_schema
+
+            with repository.connections() as db:
+                check_dataset(db, scope, dataset, task, output.model_dump(mode="json"), freeze=True)
+            proposed = semantic_schema(
+                project,
+                dataset,
+                output.model_dump(mode="json"),
+                {
+                    **{native_topic(name): "json" for name in output.features},
+                    "/metadata/source": "json",
+                },
+            )
+            if shared_output == "adopted_legacy":
+                from hc_data_platform.capture_schemes.adoption import adoption_key
+                from hc_data_platform.episode_store.models import digest as physical_digest
+                from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
+
+                legacy = DatasetSchemaSnapshot.create(
+                    project_id=project,
+                    dataset_id=dataset,
+                    schema_snapshot_id="reviewed-legacy",
+                    frequency_hz=output.frequency_hz,
+                    fields=proposed.fields,
+                )
+                runtime.episode_packages.schemas.register_schema(legacy)
+                with repository.connections() as db:
+                    # This isolated fixture tests reuse only; the operator adoption
+                    # separately verifies original sample bytes before issuing a receipt.
+                    db.execute(
+                        """INSERT INTO ingest.capture_schemes
+                        (organization_id,scheme_id,revision,draft)
+                        VALUES(%s,'review-fixture',1,'{}')""",
+                        (org,),
+                    )
+                    db.execute(
+                        """INSERT INTO ingest.capture_legacy_references
+                        (organization_id,legacy_kind,legacy_key,source_sha256,scheme_id,document)
+                        VALUES(%s,'DATASET_CONTRACT',%s,%s,'review-fixture',%s::jsonb)""",
+                        (
+                            org,
+                            adoption_key(scope, dataset),
+                            physical_digest(legacy.model_dump(mode="json")),
+                            json.dumps(
+                                {
+                                    "legacy_schema_sha256": physical_digest(
+                                        legacy.model_dump(mode="json")
+                                    ),
+                                    "output_contract_sha256": digest(
+                                        output.model_dump(mode="json")
+                                    ),
+                                    "test_fixture": True,
+                                }
+                            ),
+                        ),
+                    )
+                assert runtime.episode_packages.schemas.resolve_capture_schema(proposed) == legacy
+                changed = proposed.model_copy(update={"frequency_hz": 30})
+                from hc_data_platform.core.errors import ProblemException
+
+                with pytest.raises(ProblemException):
+                    runtime.episode_packages.schemas.resolve_capture_schema(changed)
+            else:
+                runtime.episode_packages.schemas.register_schema(proposed)
         frozen = snapshot(
             output,
             scope=scope,
@@ -261,8 +343,17 @@ async def test_mcap_temporal_without_annotation(
         window = ParquetStepReader(runtime.episode_packages.files).read_steps(
             data.identity, data.data_version_id, 0, 2
         )
-        assert len(window.steps[0].modalities["/observation/state"]["values"]) == 29
-        assert len(window.steps[0].modalities["/action"]["values"]) == 19
+        prefix = "/humanoid" if shared_output else ""
+        assert len(window.steps[0].modalities[prefix + "/observation/state"]["values"]) == 29
+        assert len(window.steps[0].modalities[prefix + "/action"]["values"]) == 19
+        if shared_output:
+            from hc_data_platform.capture_schemes.schema import native_topic
+
+            assert window.steps[1].modalities[native_topic("observation.recording_time")]
+            assert set(window.steps[0].modalities) <= {
+                *(native_topic(name) for name in output.features),
+                "/metadata/source",
+            }
         package = runtime.episode_packages.files.open(data.identity, data.data_version_id)
         write_collection(tmp_path / "export", [CollectionSource(package)], modalities="rgb")
         assert json.loads((tmp_path / "export/meta/info.json").read_text())["total_frames"] == 167

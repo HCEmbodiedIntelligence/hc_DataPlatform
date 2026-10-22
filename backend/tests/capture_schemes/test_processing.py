@@ -31,13 +31,17 @@ def test_complete_x1_definitions_and_exact_timeline(tmp_path, variant):
     assert bool(profile.cameras) == (variant >= 2)
 
 
-@pytest.mark.parametrize("change", ["action_order", "source_valid_order", "unit", "shape", "dtype"])
+@pytest.mark.parametrize(
+    "change", ["action_order", "source_valid_duplicate", "unit", "shape", "dtype"]
+)
 def test_metadata_semantics_are_not_dimension_or_client_fingerprint(tmp_path, change):
     info = make_source(tmp_path / "source", 0, count=8)
     expected = output_for(info)
     if change.endswith("order"):
-        name = "action" if change == "action_order" else "observation.source_valid"
-        info["features"][name]["names"].reverse()
+        info["features"]["action"]["names"].reverse()
+    elif change == "source_valid_duplicate":
+        names = info["features"]["observation.source_valid"]["names"]
+        names[0] = names[1]
     elif change == "unit":
         info["features"]["action"]["units"] = ["wrong"] * 19
     else:
@@ -47,6 +51,38 @@ def test_metadata_semantics_are_not_dimension_or_client_fingerprint(tmp_path, ch
     with pytest.raises(ProblemException) as error:
         validate_lerobot(tmp_path / "source", 0, expected, snapshot(expected)["effective_adapter"])
     assert error.value.problem.code == "CAPTURE_STRUCTURE_MISMATCH"
+
+
+def test_source_axis_permutation_reorders_values_and_preserves_raw_bytes(tmp_path):
+    info = make_source(tmp_path / "source", 0, count=8)
+    expected = output_for(info)
+    path = tmp_path / "source/data/chunk-000/file-000.parquet"
+    table = pq.read_table(path)
+    from hc_data_platform.capture_schemes.axes import SOURCE_AXES
+
+    for name in SOURCE_AXES:
+        info["features"][name]["names"].reverse()
+        values = [
+            [i % 2 if name.endswith(("valid", "available")) else i / 10 for i in range(9)]
+            for _ in range(8)
+        ]
+        table = table.set_column(
+            table.schema.get_field_index(name), name, pa.array(values, type=table[name].type)
+        )
+    pq.write_table(table, path)
+    meta = tmp_path / "source/meta/info.json"
+    meta.write_text(json.dumps(info))
+    before = (meta.read_bytes(), path.read_bytes())
+    frozen = snapshot(expected)
+    evidence = validate_lerobot(tmp_path / "source", 0, expected, frozen["effective_adapter"])
+    assert set(evidence["axis_reorders"]) == SOURCE_AXES
+    _, layout, episode = read_episode(
+        tmp_path / "source", 0, preserve_features=True, capture_snapshot=frozen
+    )
+    for name in SOURCE_AXES:
+        assert episode.extra_values[name][0] == list(reversed(table[name].to_pylist()[0]))
+        assert layout.info["features"][name]["names"] == list(expected.features[name].names)
+    assert (meta.read_bytes(), path.read_bytes()) == before
 
 
 @pytest.mark.parametrize("corruption", ["aux_dtype", "aux_shape", "validity", "timeline"])

@@ -558,6 +558,13 @@ components:
           - type: string
           - type: 'null'
           title: Action Topic
+        alignment_policy:
+          default: PRESERVE
+          enum:
+          - PRESERVE
+          - FIXED_GRID
+          title: Alignment Policy
+          type: string
         cameras:
           default: []
           items:
@@ -612,11 +619,22 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        numeric_sources:
+          additionalProperties:
+            $ref: '#/components/schemas/NumericMapping'
+          title: Numeric Sources
+          type: object
         primary_camera:
           anyOf:
           - type: string
           - type: 'null'
           title: Primary Camera
+        semantic_output:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Semantic Output
         state_joint_names:
           default: []
           items:

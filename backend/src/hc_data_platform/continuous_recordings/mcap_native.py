@@ -233,6 +233,11 @@ def depth_contract(encoding, scale):
 
 
 def prepare(path, destination, config, progress=lambda: None):
+    config = McapProcessingConfig.model_validate(config)
+    if config.semantic_output is not None:
+        from .mcap_semantic import prepare_semantic
+
+        return prepare_semantic(path, destination, config, progress)
     path, destination = Path(path), Path(destination)
     with path.open("rb") as stream:
         if make_reader(stream).get_header().profile == "hc-episode-mcap/1":
@@ -350,12 +355,21 @@ def prepare(path, destination, config, progress=lambda: None):
         )
         start = primary[0]
         # Nanosecond rounding at fractional periods must not manufacture a frame.
-        count = round((primary[-1] - start) * cfg.fps / 1e9) + 1
+        duration_ns = primary[-1] - start
+        count = (
+            (2 * duration_ns * cfg.fps + cfg.fps) // 2_000_000_000
+            if cfg.alignment_policy == "FIXED_GRID"
+            else round(duration_ns * cfg.fps / 1e9)
+        ) + 1
         if count > 24 * 3600 * cfg.fps:
             raise ValueError("MCAP_DURATION_LIMIT: split recordings exceeding 24 hours")
         limit = round(cfg.maximum_time_error_ms * 1e6)
 
         def nearest(stamps, target):
+            if cfg.alignment_policy == "FIXED_GRID":
+                # Shared outputs use causal hold; source age/validity retain gaps.
+                index = bisect.bisect_right(stamps, target) - 1
+                return index if index >= 0 else None
             i = bisect.bisect_left(stamps, target)
             candidates = [j for j in (i - 1, i) if 0 <= j < len(stamps)]
             j = min(candidates, key=lambda j: (abs(stamps[j] - target), stamps[j]))
@@ -397,7 +411,11 @@ def prepare(path, destination, config, progress=lambda: None):
                     reasons, images = [], {}
                     p = nearest(primary, target)
                     stamp = primary[p] if p is not None else target
-                    if p is None or stamp == previous_primary:
+                    stale = stamp == previous_primary
+                    if cfg.alignment_policy == "FIXED_GRID":
+                        stale = p is not None and target - primary[p] > 200_000_000
+                        stamp = target
+                    if p is None or stale:
                         reasons.append(
                             "primary_camera_missing_or_repeated"
                             if cfg.primary_camera

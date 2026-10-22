@@ -117,6 +117,7 @@ DraftAdapter = Annotated[
 
 
 class CaptureDraftDefinition(Strict):
+    input_mode: Literal["EXPLICIT", "AUTO"] = "EXPLICIT"
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=10000)
     software: str = Field(default="", max_length=120)
@@ -130,6 +131,16 @@ class CaptureDraftDefinition(Strict):
         formats = [a.source_format for a in self.adapters]
         if len(formats) != len(set(formats)):
             raise ValueError("each input format must have exactly one adapter")
+        if self.input_mode == "AUTO":
+            if set(formats) != {"MCAP", "CAPTURE_BUNDLE", "LEROBOT_V3"}:
+                raise ValueError("automatic schemes require all three input formats")
+            configs = [a.configuration for a in self.adapters if not isinstance(a, LeRobotAdapter)]
+            if configs[0] != configs[1] or configs[0].semantic_output is None:
+                raise ValueError("automatic schemes share one MCAP source configuration")
+            if self.output.time_source != "FRAME_TIMESTAMP":
+                raise ValueError("automatic schemes use the shared frame timestamp")
+            if not {"observation.state", "action"} <= self.output.features.keys():
+                raise ValueError("automatic schemes require observation.state and action")
         for adapter in self.adapters:
             if isinstance(adapter, LeRobotAdapter):
                 if set(adapter.feature_sources) - set(self.output.features):
@@ -140,6 +151,10 @@ class CaptureDraftDefinition(Strict):
                 and adapter.configuration.fps != self.output.frequency_hz
             ):
                 raise ValueError("MCAP frame rate must agree with the output contract")
+            if not isinstance(adapter, LeRobotAdapter) and adapter.configuration.semantic_output:
+                declared = DraftOutputContract.model_validate(adapter.configuration.semantic_output)
+                if declared.model_dump(mode="json") != self.output.model_dump(mode="json"):
+                    raise ValueError("MCAP semantic output must match the shared output contract")
         return self
 
 
@@ -150,6 +165,13 @@ class CaptureDefinition(CaptureDraftDefinition):
 
 class SchemeDraft(CaptureDraftDefinition):
     expected_revision: int = Field(ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def automatic_inputs(cls, value):
+        from .automatic import complete_adapters
+
+        return complete_adapters(value) if isinstance(value, dict) else value
 
 
 class Revision(Strict):

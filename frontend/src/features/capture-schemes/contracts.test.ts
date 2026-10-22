@@ -14,6 +14,7 @@ import {
 } from "./presentation";
 import { safeReturnTo, schemeLibraryPath, draftKey } from "./navigation";
 import { fixtureDocument } from "./fixtures.test-support";
+import { documentSchema } from "./contracts";
 import { buildPageCatalog } from "../../shared/routing/page-descriptor";
 import { page as schemes } from "../../pages/p24-capture-schemes/routes";
 import { page as models } from "../../pages/p14-robot-models/routes";
@@ -165,3 +166,62 @@ it("keeps camera requirements and adapter sources aligned when definitions chang
   });
   expect(validateEditor(normalized).join()).toContain("请选择状态消息记录时间");
 });
+
+it.each(["MCAP", "CAPTURE_BUNDLE"] as const)(
+  "retains %s shared output and numeric sources through load, edit and save",
+  (format) => {
+    const doc = fixtureDocument();
+    const feature = "observation.base_pose";
+    doc.output.features[feature] = newFeature("numeric");
+    const mapping = {
+      topic: "/base/pose",
+      message_type: "geometry_msgs/msg/PoseStamped",
+      fields: ["pose.position.x"],
+    };
+    const configuration = {
+      ...mcapConfiguration(doc),
+      joint_names: [],
+      joint_units: [],
+      state_topic: "/state",
+      action_topic: "/action",
+      semantic_output: structuredClone(doc.output),
+      numeric_sources: { [feature]: mapping },
+      alignment_policy: "FIXED_GRID" as const,
+    };
+    doc.adapters.push(
+      format === "MCAP"
+        ? {
+            source_format: format,
+            parser_version: "native-mcap-recording/2",
+            configuration,
+          }
+        : {
+            source_format: format,
+            parser_version: "capture-bundle/1",
+            configuration,
+          },
+    );
+    const loaded = documentSchema.parse(doc);
+    loaded.output.frequency_hz = 30;
+    loaded.output.features[feature]!.units = ["m"];
+    const saved = documentSchema.parse(normalizeAdapters(loaded));
+    expect(saved.adapters[1]).toMatchObject({
+      configuration: {
+        fps: 30,
+        joint_names: [],
+        joint_units: [],
+        alignment_policy: "FIXED_GRID",
+        numeric_sources: { [feature]: mapping },
+        semantic_output: saved.output,
+      },
+    });
+    expect(validateEditor(saved)).toEqual([]);
+    delete loaded.output.features[feature];
+    expect(normalizeAdapters(loaded).adapters[1]).toMatchObject({
+      configuration: {
+        numeric_sources: {},
+        semantic_output: loaded.output,
+      },
+    });
+  },
+);

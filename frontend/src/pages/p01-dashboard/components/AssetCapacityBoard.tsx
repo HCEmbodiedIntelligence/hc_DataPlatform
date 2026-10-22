@@ -94,13 +94,17 @@ const issueLabels: Record<DashboardDataIssue["category"], string> = {
 
 function stageMeta(
   stage: TaskStage,
+  awaitingSlice: number,
   currentStage?: TaskStageCode,
 ): string | null {
   const parts: string[] = [];
   if (currentStage && stage.stage === currentStage) parts.push("当前");
+  if (stage.stage === "AUTOMATIC_VALIDATION" && awaitingSlice > 0) {
+    parts.push(`待分片 ${countFormatter.format(awaitingSlice)}`);
+  }
   if (stage.waiting > 0) {
     const waitingLabel =
-      stage.stage === "AUTOMATIC_VALIDATION" ? "未质检" : "等待";
+      stage.stage === "AUTOMATIC_VALIDATION" ? "待质检" : "等待";
     parts.push(`${waitingLabel} ${countFormatter.format(stage.waiting)}`);
   }
   if (stage.running > 0)
@@ -223,7 +227,13 @@ export function AssetCapacityBoard({
         {stageOrder.map((stageCode) => {
           const stage = stagesByCode.get(stageCode);
           const { label, eyebrow, Icon } = stagePresentation[stageCode];
-          const meta = stage ? stageMeta(stage, selected?.currentStage) : null;
+          const meta = stage
+            ? stageMeta(
+                stage,
+                pipeline.qc.awaitingSlice,
+                selected?.currentStage,
+              )
+            : null;
           const tone = !stage
             ? undefined
             : stage.blocked + stage.failed + stage.unavailable > 0

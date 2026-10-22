@@ -60,10 +60,16 @@ def formats():
     ]
 
 
-def lerobot(root, selections, *, storage, modalities, checkpoint):
+def lerobot(root, selections, *, storage, modalities, checkpoint, processor_version=None):
     from .collection_export import write_collection
 
-    return write_collection(root, selections, modalities=modalities, checkpoint=checkpoint)
+    return write_collection(
+        root,
+        selections,
+        modalities=modalities,
+        checkpoint=checkpoint,
+        processor_version=processor_version,
+    )
 
 
 def mcap(root, selections, *, storage, modalities, checkpoint):

@@ -29,6 +29,16 @@ export const featureSchema = z.object({
     .default({}),
 });
 export type Feature = z.infer<typeof featureSchema>;
+export const outputSchema = z.object({
+  algorithm: z.literal("capture-structure/v1"),
+  frequency_hz: z.number().positive().max(1000),
+  frequency_policy: z.literal("PRESERVE"),
+  time_source: z.enum(["FRAME_TIMESTAMP", "STATE_LOG_TIME", "RGB_LOG_TIME"]),
+  features: z.record(z.string(), featureSchema),
+});
+const draftOutputSchema = outputSchema.extend({
+  frequency_hz: z.number().positive().max(1000).nullable().default(null),
+});
 export const mcapConfigSchema = z.object({
   collection_mode: z.enum(["RGB", "JOINT_ONLY"]),
   time_source: z.enum(["RGB_LOG_TIME", "STATE_LOG_TIME"]),
@@ -55,6 +65,18 @@ export const mcapConfigSchema = z.object({
   derive_action_from_next_state: z.boolean(),
   maximum_time_error_ms: z.number(),
   fps: z.number().int().positive().max(240).nullable().default(null),
+  semantic_output: draftOutputSchema.nullable().optional(),
+  numeric_sources: z
+    .record(
+      z.string(),
+      z.object({
+        topic: z.string().min(1).max(512),
+        message_type: z.string().min(1).max(256),
+        fields: z.array(z.string()).min(1).max(256),
+      }),
+    )
+    .optional(),
+  alignment_policy: z.enum(["PRESERVE", "FIXED_GRID"]).default("PRESERVE"),
 });
 export type McapConfig = z.infer<typeof mcapConfigSchema>;
 export const adapterSchema = z.discriminatedUnion("source_format", [
@@ -75,17 +97,8 @@ export const adapterSchema = z.discriminatedUnion("source_format", [
     feature_sources: z.record(z.string(), z.string()),
   }),
 ]);
-export const outputSchema = z.object({
-  algorithm: z.literal("capture-structure/v1"),
-  frequency_hz: z.number().positive().max(1000),
-  frequency_policy: z.literal("PRESERVE"),
-  time_source: z.enum(["FRAME_TIMESTAMP", "STATE_LOG_TIME", "RGB_LOG_TIME"]),
-  features: z.record(z.string(), featureSchema),
-});
-const draftOutputSchema = outputSchema.extend({
-  frequency_hz: z.number().positive().max(1000).nullable().default(null),
-});
 export const documentSchema = z.object({
+  input_mode: z.enum(["EXPLICIT", "AUTO"]).default("EXPLICIT"),
   name: z.string().min(1).max(120),
   description: z.string(),
   software: z.string().max(120).default(""),

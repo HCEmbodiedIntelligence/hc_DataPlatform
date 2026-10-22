@@ -33,6 +33,20 @@ class ConnectionStore:
                 )
 
     @contextmanager
+    def credential_lock(self, organization_id, identity_id):
+        """Serialize pairing across different tickets for the same identity."""
+        if self.memory:
+            with self.repo._lock:
+                yield
+        else:
+            with self.repo._scoped() as db, db.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+                    (json.dumps(["robot-connection", organization_id, identity_id]),),
+                )
+                yield
+
+    @contextmanager
     def locked(self, key):
         if self.memory:
             with self.repo._lock:

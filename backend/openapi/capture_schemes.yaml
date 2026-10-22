@@ -114,6 +114,13 @@ components:
           maxLength: 10000
           title: Description
           type: string
+        input_mode:
+          default: EXPLICIT
+          enum:
+          - EXPLICIT
+          - AUTO
+          title: Input Mode
+          type: string
         model_version_ids:
           default: []
           items:
@@ -727,6 +734,13 @@ components:
           minimum: 1.0
           title: Draft Revision
           type: integer
+        input_mode:
+          default: EXPLICIT
+          enum:
+          - EXPLICIT
+          - AUTO
+          title: Input Mode
+          type: string
         model_version_ids:
           default: []
           items:
@@ -1214,6 +1228,13 @@ components:
           - type: string
           - type: 'null'
           title: Action Topic
+        alignment_policy:
+          default: PRESERVE
+          enum:
+          - PRESERVE
+          - FIXED_GRID
+          title: Alignment Policy
+          type: string
         cameras:
           default: []
           items:
@@ -1269,11 +1290,22 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        numeric_sources:
+          additionalProperties:
+            $ref: '#/components/schemas/NumericMapping'
+          title: Numeric Sources
+          type: object
         primary_camera:
           anyOf:
           - type: string
           - type: 'null'
           title: Primary Camera
+        semantic_output:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Semantic Output
         state_joint_names:
           default: []
           items:
@@ -1299,6 +1331,32 @@ components:
           title: Time Source
           type: string
       title: McapDraftConfig
+      type: object
+    NumericMapping:
+      additionalProperties: false
+      properties:
+        fields:
+          items:
+            type: string
+          maxItems: 256
+          minItems: 1
+          title: Fields
+          type: array
+        message_type:
+          maxLength: 256
+          minLength: 1
+          title: Message Type
+          type: string
+        topic:
+          maxLength: 512
+          minLength: 1
+          title: Topic
+          type: string
+      required:
+      - topic
+      - message_type
+      - fields
+      title: NumericMapping
       type: object
     OutputContract:
       additionalProperties: false
@@ -1466,6 +1524,13 @@ components:
           minimum: 0.0
           title: Expected Revision
           type: integer
+        input_mode:
+          default: EXPLICIT
+          enum:
+          - EXPLICIT
+          - AUTO
+          title: Input Mode
+          type: string
         model_version_ids:
           default: []
           items:

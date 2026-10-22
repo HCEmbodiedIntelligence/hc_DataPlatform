@@ -68,6 +68,7 @@ export function SchemeEditor({
   const currentRevision = baseRevision;
   const dirty = !detail || JSON.stringify(doc) !== JSON.stringify(detail.draft);
   const change = (next: SchemeDocument) => {
+    if (next.input_mode === "AUTO") next = normalizeAdapters(next);
     setDoc(next);
     setLocalError("");
     saveDraft(key, { document: next, revision: currentRevision, step });
@@ -121,7 +122,9 @@ export function SchemeEditor({
   const latest = detail?.versions[0];
   const allValidated =
     !dirty &&
-    doc.adapters.every((a) =>
+    (doc.input_mode === "AUTO"
+      ? doc.adapters.some.bind(doc.adapters)
+      : doc.adapters.every.bind(doc.adapters))((a) =>
       detail?.validations.some(
         (v) =>
           v.source_format === a.source_format &&
@@ -140,9 +143,12 @@ export function SchemeEditor({
         onChange={(value) => {
           if (!action.isPending) goToStep(value);
         }}
-        items={["适用范围", "数据定义", "原始文件配置", "确认与保存"].map(
-          (title) => ({ title }),
-        )}
+        items={[
+          "适用范围",
+          "数据定义",
+          doc.input_mode === "AUTO" ? "自动识别上传" : "原始文件配置",
+          "确认与保存",
+        ].map((title) => ({ title }))}
       />
       <div style={{ marginTop: 24 }}>
         {detail && baseRevision !== detail.revision && (
@@ -166,7 +172,11 @@ export function SchemeEditor({
         {dirty && detail?.validations.length ? (
           <Alert
             type="warning"
-            title="方案已修改，保存后请重新验证每种输入格式。"
+            title={
+              doc.input_mode === "AUTO"
+                ? "方案已修改，保存后请用一个实际样本重新验证。"
+                : "方案已修改，保存后请重新验证每种输入格式。"
+            }
           />
         ) : null}
         {(localError || action.error) && (
@@ -234,9 +244,11 @@ export function SchemeEditor({
         )}
         {step === 2 && (
           <>
-            <p>
-              设置方案如何读取设备上传的原始文件：选择文件格式，并在字段名称不同时设置对应关系。
-            </p>
+            {doc.input_mode !== "AUTO" && (
+              <p>
+                设置方案如何读取设备上传的原始文件：选择文件格式，并在字段名称不同时设置对应关系。
+              </p>
+            )}
             <AdapterFields document={doc} onChange={change} />
           </>
         )}
@@ -268,7 +280,9 @@ export function SchemeEditor({
             {!dirty && <p>方案已保存。验证通过并发布后，即可用于采集任务。</p>}
             <h3>验证与发布</h3>
             <p>
-              保存完整配置后，为每种原始文件格式选择真实样本验证。未填写的帧率会在验证通过后自动读取；也可以保存后稍后再验证。
+              {doc.input_mode === "AUTO"
+                ? "任选一种格式的实际样本验证方案，平台自动读取未填写的帧率。发布后接收三种格式，每次上传仍会检查实际字段和数据完整性。"
+                : "保存完整配置后，为每种原始文件格式选择真实样本验证。未填写的帧率会在验证通过后自动读取；也可以保存后稍后再验证。"}
             </p>
             <SamplePicker
               formats={doc.adapters.map((a) => a.source_format)}
@@ -279,7 +293,7 @@ export function SchemeEditor({
               disabled={dirty || !sample?.source_path || action.isPending}
               onClick={() => action.mutate("validate")}
             >
-              验证当前格式
+              {doc.input_mode === "AUTO" ? "验证采集方案" : "验证当前格式"}
             </Button>
             {!dirty && <EvidenceView items={detail?.validations ?? []} />}
             {latest && (

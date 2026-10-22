@@ -18,7 +18,8 @@ export function newFeature(role: Feature["role"]): Feature {
   };
 }
 export function emptyDocument(): SchemeDocument {
-  return {
+  return normalizeAdapters({
+    input_mode: "AUTO",
     name: "",
     description: "",
     software: "",
@@ -42,13 +43,16 @@ export function emptyDocument(): SchemeDocument {
       },
     },
     quality_policy: {},
-  };
+  });
 }
 export function mcapConfiguration(
   doc: SchemeDocument,
   format: "MCAP" | "CAPTURE_BUNDLE" = "MCAP",
 ): McapConfig {
-  const old = doc.adapters.find((a) => a.source_format === format);
+  const automatic = doc.input_mode === "AUTO";
+  const old = doc.adapters.find(
+    (a) => a.source_format === (automatic ? "MCAP" : format),
+  );
   const previous =
     old && old.source_format !== "LEROBOT_V3" ? old.configuration : null;
   const cameras: McapConfig["cameras"] = Object.entries(doc.output.features)
@@ -60,8 +64,20 @@ export function mcapConfiguration(
       );
       return {
         camera_id: id,
-        topic: mapping?.topic ?? "",
-        message_type: mapping?.message_type ?? "",
+        topic:
+          mapping?.topic ??
+          (automatic
+            ? id.startsWith("observation_cameras_") && id.endsWith("_color")
+              ? `/observation/cameras/${id.slice(20, -6)}/color/compressed`
+              : `/camera/${id}/image`
+            : ""),
+        message_type:
+          mapping?.message_type ??
+          (automatic
+            ? id.startsWith("observation_cameras_") && id.endsWith("_color")
+              ? "sensor_msgs/msg/CompressedImage"
+              : "sensor_msgs/msg/Image"
+            : ""),
         kind: feature.role as "rgb" | "depth",
         required: feature.required,
       };
@@ -86,7 +102,18 @@ export function mcapConfiguration(
           depth_unit_evidence: null,
           derive_action_from_next_state: false,
           maximum_time_error_ms: 50,
+          alignment_policy: "PRESERVE" as const,
         }),
+    ...(previous?.semantic_output || automatic
+      ? {
+          semantic_output: doc.output,
+          numeric_sources: Object.fromEntries(
+            Object.entries(previous?.numeric_sources ?? {}).filter(
+              ([name]) => name in doc.output.features,
+            ),
+          ),
+        }
+      : {}),
     fps: doc.output.frequency_hz,
     cameras,
     collection_mode: cameras.length ? "RGB" : "JOINT_ONLY",
@@ -96,15 +123,101 @@ export function mcapConfiguration(
     )
       ? previous!.primary_camera
       : null,
-    joint_names: Array.isArray(state?.names) ? state.names : [],
-    joint_units: state?.units ?? [],
+    joint_names:
+      previous?.joint_names ?? (Array.isArray(state?.names) ? state.names : []),
+    joint_units: previous?.joint_units ?? state?.units ?? [],
     state_joint_names: Array.isArray(state?.names) ? state.names : [],
     state_joint_units: state?.units ?? [],
     action_joint_names: Array.isArray(action?.names) ? action.names : [],
     action_joint_units: action?.units ?? [],
+    ...(automatic
+      ? {
+          state_topic: previous?.state_topic ?? "/observation/joint_states",
+          action_topic: previous?.action_topic ?? "/action/joint_states",
+          time_source: "STATE_LOG_TIME" as const,
+          alignment_policy: "FIXED_GRID" as const,
+          primary_camera: null,
+          numeric_sources: Object.fromEntries(
+            Object.entries(doc.output.features)
+              .filter(
+                ([name, f]) =>
+                  !["state", "action", "rgb", "depth"].includes(f.role) &&
+                  ![
+                    "observation.source_time",
+                    "observation.source_age",
+                    "observation.source_available",
+                    "observation.source_valid",
+                    "observation.recording_time",
+                  ].includes(name),
+              )
+              .map(([name, f]) => [
+                name,
+                previous?.numeric_sources?.[name] ?? {
+                  topic: "/" + name.replaceAll(".", "/"),
+                  message_type:
+                    name === "action.base.velocity"
+                      ? "geometry_msgs/msg/TwistStamped"
+                      : name.endsWith(".pose") || name.endsWith(".ee_pose")
+                        ? "geometry_msgs/msg/PoseStamped"
+                        : "std_msgs/msg/Float64MultiArray",
+                  fields:
+                    name === "action.base.velocity"
+                      ? ["linear", "angular"].flatMap((part) =>
+                          ["x", "y", "z"].map(
+                            (axis) => `twist.${part}.${axis}`,
+                          ),
+                        )
+                      : name.endsWith(".pose") || name.endsWith(".ee_pose")
+                        ? [
+                            "pose.position.x",
+                            "pose.position.y",
+                            "pose.position.z",
+                            "pose.orientation.x",
+                            "pose.orientation.y",
+                            "pose.orientation.z",
+                            "pose.orientation.w",
+                          ]
+                        : Array.from(
+                            { length: f.shape[0] ?? 1 },
+                            (_, i) => `data.${i}`,
+                          ),
+                },
+              ]),
+          ),
+        }
+      : {}),
   };
 }
 export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
+  if (doc.input_mode === "AUTO") {
+    const configuration = mcapConfiguration(doc);
+    const lerobot = doc.adapters.find((a) => a.source_format === "LEROBOT_V3");
+    return {
+      ...doc,
+      adapters: [
+        {
+          source_format: "LEROBOT_V3",
+          parser_version: "lerobot-v3/1",
+          codebase_version: "v3.0",
+          feature_sources: Object.fromEntries(
+            Object.entries(lerobot?.feature_sources ?? {}).filter(
+              ([name]) => name in doc.output.features,
+            ),
+          ),
+        },
+        {
+          source_format: "MCAP",
+          parser_version: "native-mcap-recording/2",
+          configuration,
+        },
+        {
+          source_format: "CAPTURE_BUNDLE",
+          parser_version: "capture-bundle/1",
+          configuration: structuredClone(configuration),
+        },
+      ],
+    };
+  }
   return {
     ...doc,
     adapters: doc.adapters.map((adapter) =>
@@ -172,9 +285,7 @@ export function validateEditor(doc: SchemeDocument): string[] {
       (!Number.isInteger(doc.output.frequency_hz) ||
         doc.output.frequency_hz > 240)
     )
-      errors.push(
-        "MCAP 原始帧率须为 1–240 Hz 的整数；不支持的频率不能改填其他值",
-      );
+      errors.push("MCAP 输出帧率须为 1–240 Hz 的整数");
     if (!mcap.configuration.state_topic || !mcap.configuration.action_topic)
       errors.push("请明确 MCAP 状态和动作来源话题");
     if (
@@ -250,7 +361,7 @@ export function candidateFromInfo(
       media: (raw.info ?? {}) as Feature["media"],
     };
   }
-  return {
+  return normalizeAdapters({
     ...doc,
     adapters: [
       {
@@ -266,5 +377,5 @@ export function candidateFromInfo(
       time_source: "FRAME_TIMESTAMP",
       features,
     },
-  };
+  });
 }

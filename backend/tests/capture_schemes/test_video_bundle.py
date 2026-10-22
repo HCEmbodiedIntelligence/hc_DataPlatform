@@ -23,7 +23,7 @@ from tests.capture_schemes.test_transactions import environment as environment
 from tests.continuous_recordings.test_mcap_native import synthetic_mcap
 
 
-def build(tmp_path):
+def build(tmp_path, *, include_camera=True):
     # The integration run mounts the real collector source, not a reimplementation.
     from middleware.core.video_bundle import prepare
 
@@ -51,6 +51,17 @@ def build(tmp_path):
             ],
         }
     )
+    if not include_camera:
+        from .test_mcap_processing import config, joint_source
+
+        source = joint_source(tmp_path / "joints.mcap")
+        cfg = McapProcessingConfig.model_validate(
+            {
+                **config(),
+                "collection_mode": "JOINT_ONLY",
+                "cameras": [],
+            }
+        )
     _, provenance = prepare_mcap(source, tmp_path / "baseline", cfg)
     from hc_data_platform.capture_schemes.models import OutputContract
 
@@ -69,7 +80,7 @@ def build(tmp_path):
             k: v for k, v in feature.items() if k in ("dtype", "shape", "names", "units")
         }
         fields[name]["role"] = role
-    output = OutputContract(frequency_hz=30, time_source="RGB_LOG_TIME", features=fields)
+    output = OutputContract(frequency_hz=cfg.fps, time_source=cfg.time_source, features=fields)
     adapter = {
         "source_format": "CAPTURE_BUNDLE",
         "parser_version": "capture-bundle/1",
@@ -82,7 +93,7 @@ def build(tmp_path):
         "recording_id": "recording",
         "started_at": "2026-10-21T00:00:00Z",
         "ended_at": "2026-10-21T00:00:01Z",
-        "video_fps": 30,
+        "video_fps": cfg.fps,
         "capture_snapshot": frozen,
         "binding": {"robot_id": "x1", "collection_task_id": "task"},
         "local_robot": {"local_robot_id": "local-x1"},
@@ -179,6 +190,56 @@ def test_video_frame_inventory_corruption_is_rejected(tmp_path):
         restore(target, tmp_path / "corrupt.mcap")
 
 
+@pytest.mark.parametrize("include_camera", [False, True])
+def test_bundle_materialization_commits_matching_command_and_reuses_receipt(
+    tmp_path, include_camera
+):
+    from types import SimpleNamespace
+
+    from hc_data_platform.robot_ingest.models import RobotIngestAsset
+    from hc_data_platform.robot_ingest.raw_recording import materialize
+    from hc_data_platform.robot_ingest.recording_contract import OpenArmRecordingComplete
+
+    _, target, job, _, _, _ = build(tmp_path, include_camera=include_camera)
+    _, _, storage = stored(target, "CAPTURE_BUNDLE")
+    marker = json.loads((target / "recording-complete.json").read_text())
+    command = OpenArmRecordingComplete.model_validate(marker).recording_upload
+    originals = {
+        item.path: RobotIngestAsset(
+            asset_id=f"asset-{index}",
+            path=item.path,
+            role=item.role.value,
+            media_type=item.media_type,
+            object_key="source/" + item.path,
+            multipart_upload_id="completed",
+            expected_size_bytes=item.size,
+            expected_sha256=item.sha256,
+            expected_crc64=item.crc64,
+            actual_size_bytes=item.size,
+            actual_sha256=item.sha256,
+            actual_crc64=item.crc64,
+            state="COMPLETED",
+        )
+        for index, item in enumerate(command.assets)
+    }
+    upload = SimpleNamespace(
+        target=SimpleNamespace(organization_id="org", project_id="p", region_code="global"),
+        raw_source_id="bundle-materialization",
+        processing_config_snapshot=job["capture_snapshot"],
+    )
+    derived, assets = materialize(storage, upload, marker, command, originals)
+    assert derived.schema_version == (
+        "continuous-recording-upload/v2" if include_camera else "continuous-recording-upload/v3"
+    )
+    assert bool(derived.recording_config.cameras) is include_camera
+    assert {a.path for a in derived.assets} == set(assets)
+    assert all(
+        storage.objects["source/" + name] == (target / name).read_bytes() for name in originals
+    )
+    repeated, repeated_assets = materialize(storage, upload, marker, command, originals)
+    assert repeated == derived and repeated_assets == assets
+
+
 def test_native_package_still_validates_its_actual_axis_units(tmp_path):
     from hc_data_platform.capture_schemes.bundles import validate_prepared
     from hc_data_platform.capture_schemes.models import OutputContract
@@ -229,7 +290,7 @@ def test_native_package_still_validates_its_actual_axis_units(tmp_path):
         validate_prepared(root, destination, cfg, frozen)
 
 
-def test_bundle_sample_publishes_and_freezes_a_real_task_plan(environment, tmp_path):
+def test_bundle_sample_publishes_and_freezes_a_real_task_plan(environment, tmp_path):  # noqa: F811
     from types import SimpleNamespace
 
     import psycopg

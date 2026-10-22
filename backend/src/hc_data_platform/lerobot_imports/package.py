@@ -31,7 +31,9 @@ def raw_files(raw, manifest):
     }
 
 
-def freeze_native_plan(session, request, manifest, staging, quality, *, quality_evidence=None):
+def freeze_native_plan(
+    session, request, manifest, staging, quality, *, quality_evidence=None, schemas=None
+):
     root, stream = session.root, session.stream
     files = raw_files(session.raw, session.raw_manifest)
     info = stream.layout.info
@@ -131,6 +133,8 @@ def freeze_native_plan(session, request, manifest, staging, quality, *, quality_
             capture["output"],
             {topic: "json" for topic in stream.profile.topics},
         )
+        if schemas is not None:
+            schema = schemas.resolve_capture_schema(schema)
         metadata["capture"] = capture
         metadata["capture_validation"] = session.source.lerobot.capture_validation
     else:

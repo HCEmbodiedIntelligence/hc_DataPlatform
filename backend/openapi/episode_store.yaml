@@ -102,6 +102,7 @@ components:
           default: hc-lerobot-collection/1
           enum:
           - hc-lerobot-collection/1
+          - hc-lerobot-collection/2
           - hc-export/1
           title: Processor Version
           type: string

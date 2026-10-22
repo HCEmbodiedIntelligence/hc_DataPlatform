@@ -12,6 +12,7 @@ from hc_data_platform.capture_schemes.common import digest
 from hc_data_platform.capture_schemes.models import (
     AssociateScheme,
     PrepareRecording,
+    SchemeDraft,
     SetTaskPlan,
     VersionReference,
 )
@@ -115,6 +116,163 @@ def selection(reference, *robots, revision=0):
         scheme=reference,
         participants=[{"robot_id": robot, "mapping_version": 1} for robot in robots],
     )
+
+
+def test_automatic_scheme_uses_one_real_sample_without_fabricating_other_format_evidence(
+    environment,
+):
+    dsn, scope, tasks = environment
+    org = scope[0]
+    with psycopg.connect(dsn) as db:
+        value = draft().model_dump(mode="json")
+        value["input_mode"] = "AUTO"
+        saved = schemes.save(db, org, "auto", SchemeDraft.model_validate(value), "tester")
+        with pytest.raises(ProblemException):
+            schemes.publish(db, org, "auto", 1, "tester")
+        schemes.record_validation(
+            db,
+            org,
+            "auto",
+            1,
+            {
+                "source_format": "LEROBOT_V3",
+                "parser_version": "lerobot-v3/1",
+                "sample_sha256": "1" * 64,
+                "draft_sha256": digest(saved["draft"]),
+                "status": "PASSED",
+                "test_fixture": True,
+            },
+            "tester",
+        )
+        published = schemes.publish(db, org, "auto", 1, "tester")
+        assert set(published["validations"]) == {"LEROBOT_V3"}
+        reference = VersionReference.model_validate(
+            {k: published[k] for k in ("scheme_id", "version", "content_sha256")}
+        )
+        associate(db, org, "robot-1", reference)
+        plans.save_plan(db, scope, tasks[0], selection(reference, "robot-1"), "tester")
+        for fmt in ("MCAP", "CAPTURE_BUNDLE", "LEROBOT_V3"):
+            result = plans.prepare_recording(
+                db,
+                scope,
+                tasks[0],
+                "robot-1",
+                PrepareRecording(
+                    expected_plan_revision=1, recording_id="auto-" + fmt, source_format=fmt
+                ),
+                "tester",
+            )
+            assert result["source_format"] == fmt
+        link = associations.list_links(db, org, "robot-1")[0]
+        assert link["status"] == "READY"
+        assert link["validated_formats"] == ["LEROBOT_V3"]
+
+
+@pytest.mark.parametrize("change_existing", [False, True])
+def test_locked_plan_can_add_format_without_changing_old_recordings(environment, change_existing):
+    dsn, scope, tasks = environment
+    org = scope[0]
+    with psycopg.connect(dsn) as db:
+        ref = publish(db, org)
+        associate(db, org, "robot-1", ref)
+        plans.save_plan(db, scope, tasks[0], selection(ref, "robot-1"), "tester")
+        command = PrepareRecording(
+            expected_plan_revision=1, recording_id="before", source_format="LEROBOT_V3"
+        )
+        original = plans.prepare_recording(db, scope, tasks[0], "robot-1", command, "tester")
+        definition = draft(1).model_dump(mode="json")
+        if change_existing:
+            definition["adapters"][0]["feature_sources"] = {"action": "different.action"}
+        definition["adapters"].append(
+            {
+                "source_format": "MCAP",
+                "configuration": {
+                    "collection_mode": "JOINT_ONLY",
+                    "time_source": "STATE_LOG_TIME",
+                    "fps": 15,
+                    "state_topic": "/state",
+                    "action_topic": "/command",
+                    "semantic_output": definition["output"],
+                    "state_joint_names": ["left", "right"],
+                    "state_joint_units": ["rad", "rad"],
+                    "action_joint_names": ["right", "left"],
+                    "action_joint_units": ["rad", "rad"],
+                },
+            }
+        )
+        saved = schemes.save(db, org, "joints", SchemeDraft.model_validate(definition), "tester")
+        for adapter in saved["draft"]["adapters"]:
+            schemes.record_validation(
+                db,
+                org,
+                "joints",
+                saved["revision"],
+                {
+                    "source_format": adapter["source_format"],
+                    "status": "PASSED",
+                    "parser_version": adapter["parser_version"],
+                    "sample_sha256": "1" * 64,
+                    "draft_sha256": digest(saved["draft"]),
+                    "test_fixture": True,
+                },
+                "tester",
+            )
+        version = schemes.publish(db, org, "joints", saved["revision"], "tester")
+        upgraded = VersionReference.model_validate({k: version[k] for k in ref.model_fields})
+        current = associations.list_links(db, org, "robot-1")[0]
+        linked = associations.associate(
+            db,
+            org,
+            "robot-1",
+            AssociateScheme(
+                expected_revision=current["revision"],
+                scheme=upgraded,
+            ),
+            "tester",
+        )[0]
+        for adapter in version["adapters"]:
+            associations.record_validation(
+                db,
+                org,
+                "robot-1",
+                "joints",
+                linked["mapping_version"],
+                {
+                    "source_format": adapter["source_format"],
+                    "status": "PASSED",
+                    "parser_version": adapter["parser_version"],
+                    "sample_sha256": "1" * 64,
+                    "sample_robot_id": "robot-1",
+                    "mapping_sha256": linked["mapping"]["content_sha256"],
+                    "test_fixture": True,
+                },
+                "tester",
+            )
+        selection2 = SetTaskPlan(
+            expected_revision=1,
+            scheme=upgraded,
+            participants=[
+                {
+                    "robot_id": "robot-1",
+                    "mapping_version": linked["mapping_version"],
+                }
+            ],
+        )
+        if change_existing:
+            with pytest.raises(ProblemException, match="CAPTURE_PLAN_LOCKED"):
+                plans.save_plan(db, scope, tasks[0], selection2, "tester")
+            assert plans.get_plan(db, scope, tasks[0])["revision"] == 1
+        else:
+            updated = plans.save_plan(db, scope, tasks[0], selection2, "tester")
+            assert updated["revision"] == 2 and updated["locked_at"] is not None
+            assert updated["output"] == original["output"]
+            assert (
+                plans.for_robot(db, scope, tasks[0], "robot-1", "MCAP")["scheme"]
+                == upgraded.model_dump()
+            )
+        assert (
+            plans.prepare_recording(db, scope, tasks[0], "robot-1", command, "tester") == original
+        )
 
 
 def test_cross_instance_reuse_independent_tasks_and_immutable_snapshots(environment):

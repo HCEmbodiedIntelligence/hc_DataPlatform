@@ -283,7 +283,7 @@ function ReceivedProgress({
           </span>
           {data.captures && data.captures.awaiting_slice_count > 0 ? (
             <span className={styles.qualityPending}>
-              {numberFormat.format(data.captures.awaiting_slice_count)} 待切片
+              {numberFormat.format(data.captures.awaiting_slice_count)} 待分片
             </span>
           ) : data.attainment.status !== "NOT_CONFIGURED" ? (
             <span
@@ -310,7 +310,7 @@ function ReceivedProgress({
         <span className={styles.captureCounts}>
           <b>{data.captures.received_count} 条录制</b>
           <span>
-            {data.captures.awaiting_slice_count} 待切片 ·{" "}
+            {data.captures.awaiting_slice_count} 待分片 ·{" "}
             {data.captures.episode_count} 条成片
           </span>
           <span>

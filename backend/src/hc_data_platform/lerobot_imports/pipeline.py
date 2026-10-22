@@ -424,12 +424,12 @@ class LeRobotPipeline:
             frozen["output"],
             {topic: "json" for topic in native_profile.topics},
         )
-        schema_id = snapshot.schema_snapshot_id
         from hc_data_platform.capture_schemes.common import reject
         from hc_data_platform.episode_store.errors import PackageConflict
 
         try:
             if task.storage_format == "lerobot_v3":
+                snapshot = self.native_schemas.resolve_capture_schema(snapshot)
                 self.native_schemas.register_schema(snapshot)
             else:
                 self.catalog.register_schema(snapshot)
@@ -444,6 +444,7 @@ class LeRobotPipeline:
                 else self.catalog.schema_for(task.project_id, dataset)
             )
             reject("CAPTURE_DATASET_INCOMPATIBLE", schema_conflict_detail(snapshot, existing))
+        schema_id = snapshot.schema_snapshot_id
         self.quality_profiles.put_profile(task.project_id, profile)
         manifest_key = (
             f"derived/lerobot-imports/{task.organization_id}/{dataset}/"

@@ -71,3 +71,12 @@ class EpisodeSchemas:
             row = cursor.fetchone()
             if row is None or row[0] != document or row[1] != digest(document):
                 raise PackageConflict("dataset logical schema is already frozen differently")
+
+    def resolve_capture_schema(self, snapshot):
+        """Retain reviewed legacy physical identities while enforcing the new contract."""
+        from hc_data_platform.capture_schemes.adoption import physical_schema
+
+        scope = collection_scope(snapshot.dataset_id, snapshot.project_id)
+        self.validate(snapshot)
+        with self.repository.transaction() as cursor:
+            return self.validate(physical_schema(cursor.connection, scope[:3], snapshot))

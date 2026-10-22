@@ -82,6 +82,92 @@ def test_streaming_numeric_precision_and_row_group_boundary(tmp_path):
     assert table["hc.timestamp_ns"][2050].as_py() == 1_790_000_000_000_000_001 + 2050 * 33_333_333
 
 
+@pytest.mark.parametrize("false_validity", [False, True])
+def test_frozen_numeric_type_keeps_initial_missing_axes_and_rejects_false_validity(
+    tmp_path, false_validity
+):
+    from hc_data_platform.capture_schemes.models import OutputContract
+
+    ident = identity()
+    source = PackageInput(
+        identity=ident,
+        source_sha256="1" * 64,
+        processor_version="test/1",
+        configuration_sha256="2" * 64,
+        schema_snapshot_id="schema-1",
+        required_features=("observation.state",),
+    )
+    contract = OutputContract(
+        frequency_hz=15,
+        time_source="FRAME_TIMESTAMP",
+        features={
+            "observation.state": {
+                "dtype": "float32",
+                "shape": [2],
+                "names": ["a", "b"],
+                "units": ["rad", "rad"],
+                "role": "state",
+            },
+        },
+    ).model_dump(mode="json")
+    rows = [
+        StepRecord(
+            rollout_id=ident.rollout_id,
+            step_index=i,
+            timestamp_ns=round(i * 1e9 / 15),
+            modalities={
+                "/humanoid/observation/state": {
+                    "values": [None, 0.0] if i == 0 else [0.5, 0.0],
+                    "names": ["a", "b"],
+                    "units": ["rad", "rad"],
+                    "validity": [false_validity or i > 0, True],
+                }
+            },
+            valid={"/humanoid/observation/state": True},
+        )
+        for i in range(3)
+    ]
+    token = bind_request_context(
+        RequestContext(
+            organization_id=ident.organization_id,
+            project_id=ident.project_id,
+            region_code=ident.region_code,
+        )
+    )
+    root = tmp_path / "episode"
+    try:
+        if false_validity:
+            with pytest.raises(ValueError, match="missing numerical value is marked valid"):
+                write_episode(
+                    root,
+                    source,
+                    rows,
+                    PreparedAssets(ident, "attempt", {}),
+                    fps=15,
+                    metadata={"capture": {"output": contract}},
+                )
+            return
+        write_episode(
+            root,
+            source,
+            rows,
+            PreparedAssets(ident, "attempt", {}),
+            fps=15,
+            metadata={"capture": {"output": contract}},
+        )
+    finally:
+        reset_request_context(token)
+    table = pq.read_table(root / DATA_PATH)
+    assert table["observation.state"].to_pylist() == [[None, 0.0], [0.5, 0.0], [0.5, 0.0]]
+    assert str(table["observation.state"].type) == "fixed_size_list<element: float>[2]"
+    assert table["hc.valid.observation.state"].to_pylist() == [False, True, True]
+    assert json.loads(table["hc.axis_validity.observation.state"][0].as_py()) == [False, True]
+    assert json.loads((root / "meta/stats.json").read_text())["observation.state"]["mean"] == [
+        0.5,
+        0.0,
+    ]
+
+
 def build_rgbd_package(
     tmp_path,
     ident=None,

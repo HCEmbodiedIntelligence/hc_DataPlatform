@@ -1,6 +1,6 @@
 """Pure MCAP configuration contracts, independent of decoding and media dependencies."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
@@ -23,6 +23,13 @@ class CameraMapping(BaseModel):
         return self
 
 
+class NumericMapping(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    topic: str = Field(min_length=1, max_length=512)
+    message_type: str = Field(min_length=1, max_length=256)
+    fields: tuple[str, ...] = Field(min_length=1, max_length=256)
+
+
 class McapDraftConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     collection_mode: Literal["RGB", "JOINT_ONLY"] = "RGB"
@@ -43,6 +50,11 @@ class McapDraftConfig(BaseModel):
     derive_action_from_next_state: bool = False
     maximum_time_error_ms: float = Field(default=50, gt=0, le=1000)
     fps: int | None = Field(default=None, ge=1, le=240)
+    # Explicit logical output for shared schemes, including auxiliary signals.
+    # Kept absent for legacy adapters; its identity is checked against the scheme.
+    semantic_output: dict[str, Any] | None = None
+    numeric_sources: dict[str, NumericMapping] = Field(default_factory=dict)
+    alignment_policy: Literal["PRESERVE", "FIXED_GRID"] = "PRESERVE"
 
     @model_validator(mode="after")
     def axes(self) -> Self:

@@ -982,6 +982,7 @@ async def process_ingest_source(
                         quality_report,
                         quality_evidence=quality_evidence,
                         numeric_profile=request.quality.profile,
+                        schemas=_require(_dependencies.episode_packages, "episode_store").schemas,
                     )
                 else:
                     from hc_data_platform.lerobot_imports.package import freeze_native_plan
@@ -993,6 +994,7 @@ async def process_ingest_source(
                         staging,
                         quality_report,
                         quality_evidence=quality_evidence,
+                        schemas=_require(_dependencies.episode_packages, "episode_store").schemas,
                     )
                 native_plan = _require(
                     _dependencies.robot_scenes, "robotics.scene_snapshots"
@@ -1483,7 +1485,6 @@ def _file_sha256(path: Path) -> str:
 async def commit_aligned_bundle(
     request: AlignedBundleCommitActivityInput,
 ) -> AlignedBundleCommitActivityOutput:
-
     source = _require(request.alignment.source, "workflow.IngestProjectionSourceV1")
     with _worker_scope(
         request.alignment.project_id,

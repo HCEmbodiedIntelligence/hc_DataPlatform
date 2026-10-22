@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import secrets
+from contextlib import ExitStack
 from datetime import datetime, timedelta
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -180,13 +181,22 @@ class Connections:
         return {"ticket": ticket, "expires_at": expires, "expires_in_seconds": 600}
 
     def redeem(self, command: RedeemConnection):
+        # Keep the identity lock until credential issuance and authentication
+        # finish, even after the durable ticket claim has committed.
+        with ExitStack() as locks:
+            return self._redeem(command, locks)
+
+    def _redeem(self, command: RedeemConnection, locks: ExitStack):
         s = self.service
-        now = s._clock()
         local = command.local_robot.model_dump(mode="json")
         with self.store.locked(digest(command.ticket)) as ticket:
             if ticket is None:
                 reject("CONNECTION_TICKET_INVALID", "连接链接无效", 401)
             select_organization_scope(ticket["organization_id"])
+            locks.enter_context(
+                self.store.credential_lock(ticket["organization_id"], ticket["identity_id"])
+            )
+            now = s._clock()
             identity = s._require_identity(ticket["organization_id"], ticket["identity_id"])
             facts = robot_info(s, identity)
             if (
@@ -216,7 +226,35 @@ class Connections:
                     "local_robot": local,
                     "issued_at": now.isoformat(),
                 }
+                for credential in s.repository.list_credentials(
+                    identity.organization_id, identity.ingest_identity_id
+                ):
+                    if (
+                        credential.state is CredentialState.ACTIVE
+                        and (credential.expires_at is None or credential.expires_at > now)
+                        and credential.reveal_available
+                    ):
+                        claim["reused_credential_id"] = credential.credential_id
+                        break
                 ticket["claim"] = claim
+        if credential_id := claim.get("reused_credential_id"):
+            record = s.repository.credential_record(
+                identity.organization_id, identity.ingest_identity_id, credential_id
+            )
+            if record is None or record.secret_ciphertext is None:
+                raise s._authentication_problem()
+            token = s._credential_vault.reveal(
+                identity.organization_id,
+                identity.ingest_identity_id,
+                credential_id,
+                record.secret_ciphertext,
+            )
+            if not hmac.compare_digest(s._token_digest(token), record.token_digest):
+                raise s._authentication_problem()
+            # Authentication rechecks expiry, revocation, deletion and identity
+            # state. An exact retry must never replace its chosen credential.
+            machine = s.authenticate(token)
+            return {"token": token, **self.me(machine), "local_robot": local}
         # This deterministic secret is never stored in the ticket table. Both
         # issuance and all exact retries return the same credential after restart.
         seed = ticket["ticket_id"] + ":" + command.request_id
@@ -240,6 +278,12 @@ class Connections:
             revoke_previous=False,
             request_key="connection:" + ticket["ticket_id"],
             expected_policy=ticket["policy"],
+            secret_ciphertext=s._credential_vault.seal(
+                identity.organization_id,
+                identity.ingest_identity_id,
+                summary.credential_id,
+                token,
+            ),
         )
         # Disabled/revoked credentials are never resurrected by retrying a ticket.
         machine = s.authenticate(token)

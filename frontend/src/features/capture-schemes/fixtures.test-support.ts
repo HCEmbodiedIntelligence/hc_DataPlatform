@@ -3,6 +3,8 @@ import type { SchemeDetail, SchemeLink, SchemeVersion } from "./contracts";
 import { versionSchema } from "./contracts";
 export function fixtureDocument() {
   const doc = emptyDocument();
+  doc.input_mode = "EXPLICIT";
+  doc.adapters = doc.adapters.filter((a) => a.source_format === "LEROBOT_V3");
   doc.name = "X1 关节方案";
   doc.software = "X1 SDK";
   doc.output.frequency_hz = 15;

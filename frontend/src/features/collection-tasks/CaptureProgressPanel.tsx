@@ -16,7 +16,7 @@ const labels: Record<string, string> = {
   UPLOADING: "上传中",
   RECEIVED: "已接收，等待处理",
   PREPARING: "自动校验与预处理",
-  AWAITING_SLICE: "已校验，待切片",
+  AWAITING_SLICE: "待分片",
   PROCESSING: "逐段质检与入库",
   READY: "已入库",
   FAILED: "处理未通过",
@@ -92,7 +92,7 @@ export function CaptureProgressPanel({
                   </span>
                   {counts.awaiting_slice_count > 0 && (
                     <span>
-                      待切片 <b>{counts.awaiting_slice_count}</b>
+                      待分片 <b>{counts.awaiting_slice_count}</b>
                     </span>
                   )}
                   {counts.processing_count > 0 && (
@@ -172,7 +172,7 @@ export function CaptureProgressPanel({
               已接收 <b>{counts.received_count}</b> 条录制
             </span>
             <span>
-              待切片 <b>{counts.awaiting_slice_count}</b> 条
+              待分片 <b>{counts.awaiting_slice_count}</b> 条
             </span>
             <span>
               处理中 <b>{counts.processing_count}</b> 条

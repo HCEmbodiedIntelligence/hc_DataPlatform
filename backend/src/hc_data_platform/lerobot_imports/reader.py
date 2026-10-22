@@ -148,6 +148,17 @@ def read_episode(
         table = table.select([sources.get(name, name) for name in projected_names]).rename_columns(
             projected_names
         )
+        from hc_data_platform.capture_schemes.axes import source_axis_order
+
+        for name, declaration in capture_snapshot["output"]["features"].items():
+            original = source_info["features"].get(sources.get(name, name))
+            order = source_axis_order(name, declaration, original or {})
+            if order is not None:
+                column = table[name]
+                reordered = pa.array(
+                    [[value[i] for i in order] for value in column.to_pylist()], type=column.type
+                )
+                table = table.set_column(table.schema.get_field_index(name), name, reordered)
         validate_columns(table, info["features"])
     required = {
         "observation.state",
