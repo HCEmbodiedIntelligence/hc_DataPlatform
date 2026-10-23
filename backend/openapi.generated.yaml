@@ -5997,7 +5997,7 @@ components:
       additionalProperties: false
       properties:
         configuration:
-          $ref: '#/components/schemas/McapProcessingConfig'
+          $ref: '#/components/schemas/McapDraftConfig'
         parser_version:
           const: capture-bundle/1
           default: capture-bundle/1
@@ -22412,7 +22412,7 @@ components:
       additionalProperties: false
       properties:
         configuration:
-          $ref: '#/components/schemas/McapProcessingConfig'
+          $ref: '#/components/schemas/McapDraftConfig'
         parser_version:
           const: native-mcap-recording/2
           default: native-mcap-recording/2
@@ -23939,6 +23939,7 @@ components:
       type: object
     OutputContract:
       additionalProperties: false
+      description: Shared structure; historical frequency values are informational only.
       properties:
         algorithm:
           const: capture-structure/v1
@@ -23952,10 +23953,12 @@ components:
           title: Features
           type: object
         frequency_hz:
-          exclusiveMinimum: 0.0
-          maximum: 1000.0
+          anyOf:
+          - exclusiveMinimum: 0.0
+            maximum: 1000.0
+            type: number
+          - type: 'null'
           title: Frequency Hz
-          type: number
         frequency_policy:
           const: PRESERVE
           default: PRESERVE
@@ -23969,7 +23972,6 @@ components:
           title: Time Source
           type: string
       required:
-      - frequency_hz
       - time_source
       - features
       title: OutputContract

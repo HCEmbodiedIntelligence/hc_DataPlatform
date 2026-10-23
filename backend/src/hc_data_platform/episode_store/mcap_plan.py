@@ -111,7 +111,10 @@ class McapEpisodePlan(FrozenModel):
             or schema.schema_snapshot_id != source.schema_snapshot_id
             or schema.fingerprint
             != compute_schema_fingerprint(schema.fields, semantic_contract=schema.semantic_contract)
-            or schema.frequency_hz != self.alignment_profile.frequency_hz
+            or (
+                not self.metadata.get("capture")
+                and schema.frequency_hz != self.alignment_profile.frequency_hz
+            )
             or self.source.sha256 != source.source_sha256
             or self.source.size < 1
             or not self.source.key
@@ -150,7 +153,7 @@ class McapEpisodePlan(FrozenModel):
             or manifest.source_sha256 != self.input.source_sha256
             or manifest.converter_version != self.input.processor_version
             or manifest.profile_id != self.alignment_profile.profile_id
-            or manifest.frequency_hz != self.schema_snapshot.frequency_hz
+            or manifest.frequency_hz != self.alignment_profile.frequency_hz
             or manifest.row_count != self.frame_count
             or staging.row_count != self.frame_count
             or staging.content_sha256 != self.alignment_sha256

@@ -114,7 +114,9 @@ class EpisodePackageService:
         staging.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(prefix="attempt-", dir=staging) as temporary:
             root = Path(temporary) / "episode"
-            write_episode(root, source, steps, assets, fps=schema.frequency_hz, metadata=metadata)
+            # Capture rates belong to each recording, not the shared logical schema.
+            fps = metadata.get("frequency_hz", schema.frequency_hz)
+            write_episode(root, source, steps, assets, fps=fps, metadata=metadata)
             receipt = self.committer.commit(root, source)
         return self._publish_committed(receipt, source, schema)
 

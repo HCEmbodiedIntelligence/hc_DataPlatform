@@ -70,12 +70,9 @@ def validate_snapshot(snapshot: Document, scope: Scope, raw: Document) -> Docume
         if adapter.source_format != raw["source_format"]:
             return unresolved("CAPTURE_FORMAT_UNSUPPORTED", "快照适配器与 Raw 格式不一致")
         if adapter.source_format in {"MCAP", "CAPTURE_BUNDLE"} and (
-            adapter.configuration.fps != output.frequency_hz
-            or (
-                adapter.configuration.semantic_output != output.model_dump(mode="json")
-                if adapter.configuration.semantic_output is not None
-                else adapter.configuration.time_source != output.time_source
-            )
+            adapter.configuration.semantic_output != output.model_dump(mode="json")
+            if adapter.configuration.semantic_output is not None
+            else adapter.configuration.time_source != output.time_source
         ):
             return unresolved("CAPTURE_VERSION_MISMATCH", "快照的时间轴与输出合同不一致")
     except (ValidationError, KeyError, TypeError):
@@ -176,25 +173,13 @@ def validate_mcap_output(output: OutputContract, config: Any, provenance: Docume
     differences: list[Document] = []
     presence: Document = {}
     actual_clock = (config.semantic_output or {}).get("time_source", config.time_source)
-    if output.frequency_hz != config.fps or output.time_source != actual_clock:
+    if output.time_source != actual_clock:
         differences.append(
             {
-                "path": "time_source/frequency_hz",
-                "expected": {
-                    "time_source": output.time_source,
-                    "frequency_hz": output.frequency_hz,
-                },
+                "path": "time_source",
+                "expected": output.time_source,
                 "actual": provenance.get("config"),
             }
-        )
-    observed_fps = provenance.get("source_frequency_hz")
-    if (
-        config.alignment_policy == "PRESERVE"
-        and observed_fps is not None
-        and abs(observed_fps / output.frequency_hz - 1) > 0.01
-    ):
-        differences.append(
-            {"path": "frequency_hz", "expected": output.frequency_hz, "actual": observed_fps}
         )
     actual = provenance.get("output_features", {})
     for name, feature in output.features.items():
@@ -221,6 +206,8 @@ def validate_mcap_output(output: OutputContract, config: Any, provenance: Docume
                     }
                 )
         for key, value in feature.media.items():
+            if key == "video.fps":
+                continue
             if observed.get("info", {}).get(key) != value:
                 differences.append(
                     {

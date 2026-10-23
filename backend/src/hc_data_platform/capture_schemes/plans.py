@@ -11,6 +11,7 @@ from .common import Document, audit, check_revision, digest, encoded, lock, now,
 from .contracts import effective_adapter
 from .models import DeviceMapping, PrepareRecording, SetTaskPlan, VersionReference
 from .references import AddParticipants
+from .schema import structure_contract
 
 Scope = tuple[str, str, str]  # organization, project, region
 
@@ -53,7 +54,10 @@ def check_dataset(
         WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
         (*scope, dataset),
     ).fetchone()
-    if existing and (existing[0] != signature or existing[1] != contract):
+    if existing and (
+        existing[0] != digest(existing[1])
+        or structure_contract(existing[1]) != structure_contract(contract)
+    ):
         reject(
             "CAPTURE_DATASET_INCOMPATIBLE",
             "任务数据结构与已有数据集不兼容",
@@ -82,8 +86,8 @@ def check_dataset(
         AND p.collection_task_id<>%s AND p.document->>'dataset_id'=%s""",
         (*scope, task, dataset),
     ).fetchall()
-    if any(r[0]["output_contract_sha256"] != signature for r in other):
-        reject("CAPTURE_DATASET_INCOMPATIBLE", "同一数据集的任务必须采用相同字段语义与帧率")
+    if any(structure_contract(r[0]["output"]) != structure_contract(contract) for r in other):
+        reject("CAPTURE_DATASET_INCOMPATIBLE", "同一数据集的任务必须采用相同字段语义")
     if freeze and not existing:
         db.execute(
             """INSERT INTO episode_store.dataset_capture_contracts

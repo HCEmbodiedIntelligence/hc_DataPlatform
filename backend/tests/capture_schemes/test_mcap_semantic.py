@@ -12,7 +12,15 @@ from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessing
 from hc_data_platform.continuous_recordings.mcap_native import prepare
 
 
-def example(tmp_path, *, missing=False, corrupt=False, count=4):
+def example(
+    tmp_path,
+    *,
+    missing=False,
+    corrupt=False,
+    count=4,
+    interventions=None,
+    intervention_dtype="bool",
+):
     features = {
         name: dict(role=role, dtype="float32", shape=[1], names=["joint"], units=["rad"])
         for name, role in (("observation.state", "state"), ("action", "action"))
@@ -35,6 +43,10 @@ def example(tmp_path, *, missing=False, corrupt=False, count=4):
     features["observation.recording_time"] = dict(
         role="timestamp", dtype="float64", shape=[1], names=["seconds_since_first_log_time"]
     )
+    if interventions is not None:
+        features["intervention"] = dict(
+            role="validity", dtype=intervention_dtype, shape=[1], names=["intervention"]
+        )
     output = OutputContract(frequency_hz=15, time_source="FRAME_TIMESTAMP", features=features)
     cfg = McapProcessingConfig(
         collection_mode="JOINT_ONLY",
@@ -53,6 +65,19 @@ def example(tmp_path, *, missing=False, corrupt=False, count=4):
             }
         },
     )
+    if interventions is not None:
+        cfg = cfg.model_copy(
+            update={
+                "numeric_sources": {
+                    **cfg.numeric_sources,
+                    "intervention": type(cfg.numeric_sources["observation.base.pose"])(
+                        topic="/events/control/action_evidence",
+                        message_type="teleop_event",
+                        fields=["intervention"],
+                    ),
+                }
+            }
+        )
     source = tmp_path / "source.mcap"
     with source.open("wb") as stream:
         writer = Writer(stream, enable_crcs=True)
@@ -65,8 +90,21 @@ def example(tmp_path, *, missing=False, corrupt=False, count=4):
             "json",
             writer.register_schema("geometry_msgs/msg/PoseStamped", "jsonschema", b"{}"),
         )
+        intervention = writer.register_channel(
+            "/events/control/action_evidence",
+            "json",
+            writer.register_schema("teleop_event", "jsonschema", b"{}"),
+        )
         for i in range(count):
             stamp = 10**12 + round(i * 1e9 / 15)
+            if interventions is not None:
+                writer.add_message(
+                    intervention,
+                    stamp,
+                    json.dumps({"intervention": interventions[i]}).encode(),
+                    stamp,
+                    i,
+                )
             if not missing:
                 value = {
                     "pose": {
@@ -141,7 +179,7 @@ def test_embedded_adapter_output_cannot_override_shared_contract(tmp_path):
         CaptureDefinition.model_validate(changed)
 
 
-def test_fixed_grid_uses_causal_samples_and_records_the_actual_source_age(tmp_path):
+def test_historical_fixed_grid_scheme_preserves_actual_samples(tmp_path):
     source, cfg, output = example(tmp_path)
     output = output.model_copy(update={"frequency_hz": 10})
     cfg = cfg.model_copy(
@@ -158,12 +196,14 @@ def test_fixed_grid_uses_causal_samples_and_records_the_actual_source_age(tmp_pa
     assert [v["values"] for k, v in rows if k == native_topic("observation.state")] == [
         [0],
         [0.125],
+        [0.25],
         [0.375],
     ]
     times = [v for k, v in rows if k == native_topic("observation.source_time")]
     assert times[1] == pytest.approx([1 / 15] * 3, abs=1e-9)
     ages = [v for k, v in rows if k == native_topic("observation.source_age")]
-    assert ages[1] == pytest.approx([0.1 - 1 / 15] * 3)
+    assert ages[1] == pytest.approx([0] * 3)
+    assert evidence["frames"] == 4
 
 
 def test_joint_only_bundle_requires_no_dummy_video(tmp_path):
@@ -187,3 +227,34 @@ def test_fixed_grid_keeps_fractional_period_last_frame(tmp_path):
     cfg = cfg.model_copy(update={"alignment_policy": "FIXED_GRID"})
     _, evidence = prepare(source, tmp_path / "out", cfg)
     assert evidence["frames"] == 3
+
+
+def test_dagger_boolean_labels_survive_semantic_projection(tmp_path):
+    labels = [True, False, True, False]
+    source, cfg, output = example(tmp_path, interventions=labels)
+    original = source.read_bytes()
+    _, evidence = prepare(source, tmp_path / "out", cfg)
+    assert validate_mcap_output(output, cfg, evidence)["presence"]["intervention"]
+    with (tmp_path / "out/sensors/robot.mcap").open("rb") as stream:
+        rows = [
+            json.loads(m.data)
+            for _, c, m in make_reader(stream).iter_messages()
+            if c.topic == native_topic("intervention")
+        ]
+    assert rows == [[v] for v in labels]
+    assert all(type(row[0]) is bool for row in rows)
+    assert evidence["output_features"]["intervention"]["dtype"] == "bool"
+    assert source.read_bytes() == original
+
+
+@pytest.mark.parametrize("invalid", [0, 1, "false", None])
+def test_boolean_label_rejects_implicit_truth_conversion(tmp_path, invalid):
+    source, cfg, _ = example(tmp_path, interventions=[True, False, invalid, True])
+    with pytest.raises(ValueError, match="MCAP_BOOLEAN_INVALID"):
+        prepare(source, tmp_path / "out", cfg)
+
+
+def test_numeric_feature_still_rejects_boolean_source(tmp_path):
+    source, cfg, _ = example(tmp_path, interventions=[True] * 4, intervention_dtype="float32")
+    with pytest.raises(ValueError, match="MCAP_NUMERIC_INVALID"):
+        prepare(source, tmp_path / "out", cfg)

@@ -2,7 +2,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 
 
@@ -81,3 +81,9 @@ class McapDraftConfig(BaseModel):
 
 class McapProcessingConfig(McapDraftConfig):
     fps: int = Field(default=30, ge=1, le=240)
+
+    @field_validator("fps", mode="before")
+    @classmethod
+    def nominal_rate(cls, value):
+        # Scheme adapters omit rates. The decoder resolves the actual source clock.
+        return 30 if value is None else value

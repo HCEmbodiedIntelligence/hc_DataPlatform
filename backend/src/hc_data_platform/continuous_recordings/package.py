@@ -428,12 +428,14 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
             request.dataset_id,
             request.capture_snapshot["output"],
             {key: "json" for key in mapping},
+            frequency_hz=request.alignment_profile.frequency_hz,
         )
         if schemas is not None:
             # Resolve against the immutable server receipt again at packaging.
             # A caller-supplied legacy ID alone never authorizes schema reuse.
             schema = schemas.resolve_capture_schema(schema)
     metadata = {
+        "frequency_hz": request.alignment_profile.frequency_hz,
         "capture": request.capture_snapshot,
         "capture_validation": request.capture_validation,
         "task": source.collection_task_id,

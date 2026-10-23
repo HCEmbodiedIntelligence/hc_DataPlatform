@@ -209,7 +209,7 @@ function InputSourceFields({
                 text={
                   adapter.configuration.alignment_policy === "FIXED_GRID"
                     ? "平台按方案帧率对齐消息，并保留来源时间和有效性。话题设置用于读取设备消息。"
-                    : "按原始帧率读取，支持 1–240 Hz 整数。状态与动作可分别配置；话题设置用于读取设备消息。"
+                    : "按原始数据读取。状态与动作可分别配置；话题设置用于读取设备消息。"
                 }
               />
             </h3>

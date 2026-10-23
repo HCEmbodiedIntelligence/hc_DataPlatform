@@ -372,7 +372,8 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 from hc_data_platform.capture_schemes.schema import semantic_schema
 
                 cursor.execute(
-                    """SELECT raw_source_id, config_reference FROM ingest.mcap_processing_files
+                    """SELECT raw_source_id, config_reference, channel_inventory
+                    FROM ingest.mcap_processing_files
                     WHERE organization_id=%s AND project_id=%s AND region_code=%s
                     AND recording_id=%s AND status='READY' ORDER BY created_at LIMIT 1""",
                     (organization_id, project_id, region_code, recording_id),
@@ -447,14 +448,33 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                     frozen["output"],
                     freeze=True,
                 )
+                # Use this recording's observed clock, including old 15 Hz schemes.
+                frequency_hz = round(configuration.cameras[0].fps) if configuration.cameras else 30
+                if receipt and len(receipt) > 2:
+                    adapter = frozen["effective_adapter"].get("configuration", {})
+                    clock = adapter.get(
+                        "primary_camera"
+                        if adapter.get("time_source") == "RGB_LOG_TIME"
+                        else "state_topic"
+                    )
+                    observed = (receipt[2] or {}).get(clock, {})
+                    first, last = (
+                        observed.get("first_log_time_ns"),
+                        observed.get("last_log_time_ns"),
+                    )
+                    if first is not None and last is not None and last > first:
+                        frequency_hz = max(
+                            1, round((observed["message_count"] - 1) * 1e9 / (last - first))
+                        )
                 snapshot = semantic_schema(
                     project_id,
                     dataset_id,
                     frozen["output"],
                     {topic: "json" for topic in modality_keys},
+                    frequency_hz=frequency_hz,
                 )
                 quality_profile = self._quality_profile(
-                    cursor, project_id, modality_keys, snapshot.frequency_hz
+                    cursor, project_id, modality_keys, frequency_hz
                 )
                 connection.commit()
         finally:
@@ -554,7 +574,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 converter_version="continuous-episode-package/3"
                 if self._package_schemas is not None
                 else "continuous-mp4-sensor/1",
-                frequency_hz=int(snapshot.frequency_hz),
+                frequency_hz=frequency_hz,
                 required_modalities=modality_keys,
                 stream_strategies={key: _strategy_for(key, configuration) for key in modality_keys},
                 default_tolerance_ns=20_000_000,

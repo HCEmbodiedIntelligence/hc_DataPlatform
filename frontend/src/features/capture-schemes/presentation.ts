@@ -42,11 +42,7 @@ export function captureError(error: unknown): string {
 }
 export function dataSummary(doc: SchemeDocument) {
   const parts = Object.values(doc.output.features);
-  const frequency =
-    doc.output.frequency_hz == null
-      ? "帧率从样本自动读取"
-      : `${doc.output.frequency_hz} Hz（保留）`;
-  return `${parts.filter((f) => f.role === "state").reduce((n, f) => n + (f.shape[0] ?? 0), 0)} 维状态 · ${parts.filter((f) => f.role === "action").reduce((n, f) => n + (f.shape[0] ?? 0), 0)} 维动作 · ${parts.filter((f) => ["rgb", "depth"].includes(f.role)).length} 路相机 · ${frequency}`;
+  return `${parts.filter((f) => f.role === "state").reduce((n, f) => n + (f.shape[0] ?? 0), 0)} 维状态 · ${parts.filter((f) => f.role === "action").reduce((n, f) => n + (f.shape[0] ?? 0), 0)} 维动作 · ${parts.filter((f) => ["rgb", "depth"].includes(f.role)).length} 路相机`;
 }
 export function structureDiff(
   before: unknown,

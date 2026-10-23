@@ -35,6 +35,42 @@ IP 或域名（例如 `http://192.168.1.10:8088`），并设置 `HC_GATEWAY_BIND
 账号、项目、索引、任务、模型资源和版本关系存入 PostgreSQL。
 `stop` 保留数据；`down -v` 会删除 PostgreSQL 等命名卷，但不会清空上述宿主机绑定目录。
 
+## Cloudflare 临时外网访问
+
+本机已安装官方 `cloudflared`，位于工作区 `.data-platform-tools/cloudflared`。
+平台运行后，可使用以下命令管理临时 HTTPS 地址，无需 Cloudflare 账号或域名：
+
+```bash
+cd /home/hc_op/workspace/hc_DataPlatform
+python3 deploy/local/cloudflare.py start
+python3 deploy/local/cloudflare.py status
+python3 deploy/local/cloudflare.py logs
+python3 deploy/local/cloudflare.py build
+python3 deploy/local/cloudflare.py stop
+```
+
+隧道由当前用户的 `hc-platform-cloudflare` systemd 服务在后台运行，进程失败会自动重试。
+这是本次开机的临时服务，机器重启后需要重新执行 `start`。`status` 显示当前访问地址和连接状态。
+首次连接或隧道进程重启后，脚本自动将 `.env` 的 `HC_PUBLIC_ORIGIN` 和
+`HC_TUNNEL_HOSTNAME` 更新为新地址，并重建 API、Worker 和前端容器使配置生效；
+这几项服务会短暂重启。视频、下载及机器人连接链接随后使用临时 HTTPS 地址。
+`stop` 关闭隧道并恢复之前的内网地址；期间手动修改的地址配置会保留。
+运行状态和日志在工作区 `.data-platform-tools/cloudflare/`，不进入 Git。
+
+外网域名使用 `frontend-public` 提供的打包前端，启用压缩、按页面加载和带哈希资源的长期缓存。
+内网 IP 入口继续使用 Vite 热更新。首次启动隧道时若没有构建产物，会复用正在运行的
+前端容器及其依赖完成 TypeScript 检查和生产构建，无需重新安装依赖。
+修改前端代码后，执行 `python3 deploy/local/cloudflare.py build` 更新外网页面；
+此命令只更新外网前端和网关，不重启隧道，当前访问地址继续有效。
+构建失败时保留之前的页面，发布时先写入资源再切换首页，并保留旧哈希资源供已打开的标签页使用。
+`stop` 同时停止外网静态前端服务。构建产物位于工作区 `.data-platform-tools/cloudflare/frontend/`。
+
+外部访问使用平台原有账号登录。临时域名每次新建隧道都会变化，需要重新分享链接；
+旧的下载链接或机器人接入链接也需要重新生成。
+[Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)
+不保证可用性、不支持 SSE，且限制为 200 个同时在途请求；平台任务状态已有轮询回退。
+需要长期固定地址时，改为 Cloudflare 账号下的命名隧道和自有域名。
+
 ## 直接查看文件及容量
 
 用系统文件管理器打开 `/home/hc_op/workspace/data-platform-files`。

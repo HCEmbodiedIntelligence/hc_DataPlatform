@@ -75,7 +75,11 @@ def freeze_tag_episode(
     tag = verify_annotation(package, annotation, snapshot)
     EpisodeSchemas.validate(schema)
     info = package.document("meta/info.json")
-    if info["fps"] != schema.frequency_hz:
+    if (
+        info["fps"] != schema.frequency_hz
+        and schema.semantic_contract is None
+        and not package.manifest.input.metadata.get("capture")
+    ):
         raise PackageConflict("parent package frequency differs from its logical schema")
     with package.file(DATA_PATH) as path:
 

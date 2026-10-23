@@ -28,7 +28,7 @@ GENERATED = {
 }
 
 
-def _number(value, path):
+def _number(value, path, *, dtype=None):
     for part in path.split("."):
         if isinstance(value, (list, tuple, np.ndarray)) and part.isdigit():
             if int(part) >= len(value):
@@ -36,6 +36,10 @@ def _number(value, path):
             value = value[int(part)]
         else:
             value = get_field(value, part)
+    if dtype == "bool":
+        if type(value) is not bool:
+            raise ValueError(f"MCAP_BOOLEAN_INVALID: {path}")
+        return value
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError(f"MCAP_NUMERIC_INVALID: {path}")
     return value
@@ -43,10 +47,14 @@ def _number(value, path):
 
 def _cast(values, feature):
     dtype = feature.dtype
-    if dtype not in {"float32", "float64", "int32", "int64", "uint32", "uint64"}:
+    if dtype not in {"bool", "float32", "float64", "int32", "int64", "uint32", "uint64"}:
         raise ValueError(f"MCAP_NUMERIC_DTYPE_UNSUPPORTED: {dtype}")
     if len(feature.shape) != 1 or len(values) != feature.shape[0]:
         raise ValueError("MCAP_NUMERIC_LAYOUT_MISMATCH")
+    if dtype == "bool":
+        if any(v is not None and type(v) is not bool for v in values):
+            raise ValueError("MCAP_BOOLEAN_INVALID")
+        return values
     if any(v is None for v in values):
         return values
     if dtype.startswith(("int", "uint")):
@@ -74,13 +82,13 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
 
     path, destination = Path(path), Path(destination)
     output = OutputContract.model_validate(cfg.semantic_output)
-    if output.frequency_hz != cfg.fps:
-        raise ValueError("MCAP_FREQUENCY_MISMATCH")
     # FRAME_TIMESTAMP means the preserved state timeline for this ROS adapter.
     if output.time_source == "FRAME_TIMESTAMP" and cfg.time_source != "STATE_LOG_TIME":
         raise ValueError("MCAP_FRAME_CLOCK_REQUIRES_STATE")
-    base = cfg.model_copy(update={"semantic_output": None, "numeric_sources": {}})
-    recording, evidence = prepare(path, destination, base, progress)
+    base = cfg.model_copy(
+        update={"semantic_output": None, "numeric_sources": {}, "alignment_policy": "PRESERVE"}
+    )
+    recording, evidence = prepare(path, destination, base, progress, preserve_source=True)
     features = output.features
     cameras = {"observation.images." + camera.camera_id: camera for camera in cfg.cameras}
     supported = {"observation.state", "action", *cameras, *cfg.numeric_sources, *GENERATED}
@@ -120,7 +128,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
                 frame = get_field(header, "frame_id", "") if header is not None else ""
                 if reference_frames.setdefault(name, frame) != frame:
                     raise ValueError(f"MCAP_REFERENCE_FRAME_CHANGED: {name}")
-                numbers = [_number(value, field) for field in mapping.fields]
+                numbers = [
+                    _number(value, field, dtype=features[name].dtype) for field in mapping.fields
+                ]
                 values[name].append(_cast(numbers, features[name]))
     if origin is None:
         raise ValueError("MCAP_EMPTY_REQUIRED_TOPIC")
@@ -229,9 +239,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
                             if name == "observation.source_time"
                             else age
                             if name == "observation.source_age"
-                            else float(pos >= 0)
+                            else pos >= 0
                             if name == "observation.source_available"
-                            else float(pos >= 0 and age <= (0.25 if key in cameras else 0.2))
+                            else pos >= 0 and age <= (0.25 if key in cameras else 0.2)
                         )
                 emit(native_topic(name), _cast(row, feature), message)
             emit("/metadata/source", {"format": "MCAP", "source_timestamp_ns": stamp}, message)
@@ -254,7 +264,11 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     for camera in recording["cameras"]:
         camera["topic"] = native_topic(camera["topic"])
     evidence.update(
-        config=cfg.model_dump(mode="json"),
+        config={
+            **cfg.model_dump(mode="json"),
+            "fps": evidence["config"]["fps"],
+            "alignment_policy": "PRESERVE",
+        },
         output_features=actual,
         semantic_projection="explicit-ros-features/v1",
         source_reference_frames=reference_frames,

@@ -116,7 +116,12 @@ class NativeEpisodePlan(FrozenModel):
             or schema.schema_snapshot_id != source.schema_snapshot_id
             or schema.fingerprint
             != compute_schema_fingerprint(schema.fields, semantic_contract=schema.semantic_contract)
-            or schema.frequency_hz != self.alignment_profile.frequency_hz
+            or (
+                not self.metadata.get("capture")
+                and schema.frequency_hz != self.alignment_profile.frequency_hz
+            )
+            or self.metadata.get("frequency_hz", self.alignment_profile.frequency_hz)
+            != self.alignment_profile.frequency_hz
             or source.processor_version != self.alignment_profile.converter_version
             or cameras != self.feature_mapping
             or set(self.videos) != set(cameras.values())
@@ -148,7 +153,7 @@ class NativeEpisodePlan(FrozenModel):
             or manifest.source_sha256 != self.input.source_sha256
             or manifest.converter_version != self.input.processor_version
             or manifest.profile_id != self.alignment_profile.profile_id
-            or manifest.frequency_hz != self.schema_snapshot.frequency_hz
+            or manifest.frequency_hz != self.alignment_profile.frequency_hz
             or manifest.row_count != self.frame_count
             or staging.row_count != self.frame_count
             or staging.content_sha256 != self.alignment_sha256
@@ -166,7 +171,7 @@ class NativeEpisodePlan(FrozenModel):
                 raise ValueError("native video differs from its alignment source")
             if (
                 original.start_seconds != 0
-                or original.fps != self.schema_snapshot.frequency_hz
+                or original.fps != self.alignment_profile.frequency_hz
                 or abs(original.end_seconds - self.frame_count / original.fps) > 1e-6
             ):
                 raise ValueError("LEROBOT_VIDEO_WINDOW_REQUIRED: materialize the aligned window")

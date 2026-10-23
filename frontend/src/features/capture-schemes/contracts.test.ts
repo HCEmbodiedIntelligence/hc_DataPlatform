@@ -77,7 +77,7 @@ describe("shared capture contracts", () => {
     });
     expect(candidate.output.features.action?.names).toEqual(["b", "a"]);
     expect(candidate.output.features.action?.units).toEqual(["", ""]);
-    expect(candidate.output.frequency_hz).toBe(15);
+    expect(candidate.output.frequency_hz).toBeNull();
     expect(Object.keys(candidate.output.features)).toEqual(["action"]);
   });
   it("shows ordered names, units and required camera changes explicitly", () => {

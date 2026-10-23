@@ -40,7 +40,7 @@ class RecordingEpisodePlan(NativeEpisodePlan):
             window = self.windows[feature]
             if (
                 window.frame_count != self.frame_count
-                or window.frequency_hz != self.schema_snapshot.frequency_hz
+                or window.frequency_hz != self.alignment_profile.frequency_hz
             ):
                 raise ValueError("recording camera window differs from canonical Episode grid")
         return self
@@ -67,7 +67,7 @@ class RecordingEpisodePlan(NativeEpisodePlan):
             or manifest.source_sha256 != self.input.source_sha256
             or manifest.converter_version != self.input.processor_version
             or manifest.profile_id != self.alignment_profile.profile_id
-            or manifest.frequency_hz != self.schema_snapshot.frequency_hz
+            or manifest.frequency_hz != self.alignment_profile.frequency_hz
             or manifest.row_count != self.frame_count
             or staging.row_count != self.frame_count
             or staging.content_sha256 != self.alignment_sha256

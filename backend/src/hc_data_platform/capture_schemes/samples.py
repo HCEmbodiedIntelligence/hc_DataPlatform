@@ -167,13 +167,13 @@ def validate_sample(
                             resolved, sample.source_format, mapping or DeviceMapping()
                         )["configuration"]
                     )
-                    _, decoded = prepare(path, root / "decoded", cfg)
+                    _, decoded = prepare(path, root / "decoded", cfg, preserve_source=True)
                     evidence.update(
                         validate_mcap_output(
                             OutputContract.model_validate(resolved["output"]), cfg, decoded
                         ),
                         frame_count=decoded["frames"],
-                        frequency_hz=cfg.fps,
+                        frequency_hz=decoded["config"]["fps"],
                     )
                 else:
                     from .bundles import decode_sample
@@ -216,11 +216,11 @@ def validate_sample(
                 if cfg.depth_scale_m_per_unit is not None and not cfg.depth_unit_evidence:
                     reject("CAPTURE_STRUCTURE_MISMATCH", "深度单位换算必须有明确依据")
                 cfg = resolve(cfg, inventory)  # type: ignore[no-untyped-call]
-                _, decoded = prepare(path, root / "decoded", cfg)  # type: ignore[no-untyped-call]
+                _, decoded = prepare(path, root / "decoded", cfg, preserve_source=True)  # type: ignore[no-untyped-call]
                 evidence.update(
                     inventory=inventory,
                     frame_count=decoded["frames"],
-                    frequency_hz=cfg.fps,
+                    frequency_hz=decoded["config"]["fps"],
                 )
                 evidence.update(validate_mcap_output(output, cfg, decoded))
             evidence["status"] = "FAILED" if evidence["differences"] else "PASSED"

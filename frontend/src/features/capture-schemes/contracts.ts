@@ -31,7 +31,7 @@ export const featureSchema = z.object({
 export type Feature = z.infer<typeof featureSchema>;
 export const outputSchema = z.object({
   algorithm: z.literal("capture-structure/v1"),
-  frequency_hz: z.number().positive().max(1000),
+  frequency_hz: z.number().positive().max(1000).nullable().default(null),
   frequency_policy: z.literal("PRESERVE"),
   time_source: z.enum(["FRAME_TIMESTAMP", "STATE_LOG_TIME", "RGB_LOG_TIME"]),
   features: z.record(z.string(), featureSchema),
@@ -147,21 +147,7 @@ export const evidenceSchema = z.object({
 export type Evidence = z.infer<typeof evidenceSchema>;
 export const versionSchema = documentSchema.extend({
   output: outputSchema,
-  adapters: z.array(
-    z.discriminatedUnion("source_format", [
-      adapterSchema.options[1].extend({
-        configuration: mcapConfigSchema.extend({
-          fps: z.number().int().positive().max(240),
-        }),
-      }),
-      adapterSchema.options[2],
-      adapterSchema.options[0].extend({
-        configuration: mcapConfigSchema.extend({
-          fps: z.number().int().positive().max(240),
-        }),
-      }),
-    ]),
-  ),
+  adapters: z.array(adapterSchema),
   ...referenceSchema.shape,
   draft_revision: z.number(),
   published_at: z.string(),

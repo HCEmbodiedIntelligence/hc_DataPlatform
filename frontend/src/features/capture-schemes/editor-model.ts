@@ -240,11 +240,6 @@ export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
 export function validateEditor(doc: SchemeDocument): string[] {
   const errors: string[] = [];
   if (!doc.name.trim()) errors.push("请输入方案名称");
-  if (
-    doc.output.frequency_hz !== null &&
-    !(doc.output.frequency_hz > 0 && doc.output.frequency_hz <= 1000)
-  )
-    errors.push("采样帧率填写时须大于 0 且不超过 1000 Hz");
   if (!doc.adapters.length) errors.push("至少选择一种输入格式");
   if (!Object.keys(doc.output.features).length)
     errors.push("至少定义一个数据字段");
@@ -280,12 +275,6 @@ export function validateEditor(doc: SchemeDocument): string[] {
   }
   for (const mcap of doc.adapters) {
     if (mcap.source_format === "LEROBOT_V3") continue;
-    if (
-      doc.output.frequency_hz !== null &&
-      (!Number.isInteger(doc.output.frequency_hz) ||
-        doc.output.frequency_hz > 240)
-    )
-      errors.push("MCAP 输出帧率须为 1–240 Hz 的整数");
     if (!mcap.configuration.state_topic || !mcap.configuration.action_topic)
       errors.push("请明确 MCAP 状态和动作来源话题");
     if (
@@ -373,7 +362,7 @@ export function candidateFromInfo(
     ],
     output: {
       ...doc.output,
-      frequency_hz: info.fps == null ? null : Number(info.fps),
+      frequency_hz: null,
       time_source: "FRAME_TIMESTAMP",
       features,
     },

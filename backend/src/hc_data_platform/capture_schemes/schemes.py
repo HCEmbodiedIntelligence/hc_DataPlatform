@@ -7,7 +7,6 @@ from typing import Any
 from .automatic import validation_coverage
 from .common import Document, audit, check_revision, digest, encoded, lock, now, reject
 from .contracts import output_hash
-from .draft_frequency import with_frequency
 from .models import CaptureDefinition, SchemeDraft, VersionReference
 
 
@@ -124,25 +123,6 @@ def record_validation(
         reject("CAPTURE_SCHEME_ARCHIVED", "已归档方案不能验证")
     if evidence.get("draft_sha256") != digest(current["draft"]):
         reject("CAPTURE_REVISION_CONFLICT", "样本验证期间草稿已改变")
-    if evidence["status"] == "PASSED" and evidence.get("frequency_hz") is not None:
-        resolved = with_frequency(current["draft"], evidence["frequency_hz"])
-        if resolved != current["draft"]:
-            # Freeze only values established by the full, server-side sample validation.
-            CaptureDefinition.model_validate(resolved)
-            saved = save(
-                db,
-                org,
-                scheme,
-                SchemeDraft.model_validate({**resolved, "expected_revision": revision}),
-                actor,
-            )
-            evidence = {
-                **evidence,
-                "inferred_from_revision": revision,
-                "inferred_from_draft_sha256": evidence["draft_sha256"],
-                "draft_sha256": digest(saved["draft"]),
-            }
-            revision = saved["revision"]
     identity = digest({"revision": revision, "evidence": evidence})
     document = {
         **evidence,
@@ -196,11 +176,6 @@ def publish(db: Any, org: str, scheme: str, revision: int, actor: str) -> Docume
             else "请用实际样本验证当前草稿的每种输入格式",
             missing_formats=sorted(required - covered),
         )
-    if document["output"].get("frequency_hz") is None or any(
-        adapter["source_format"] == "MCAP" and adapter["configuration"].get("fps") is None
-        for adapter in document["adapters"]
-    ):
-        reject("CAPTURE_SAMPLE_VALIDATION_REQUIRED", "请通过样本验证读取原始帧率后再发布")
     CaptureDefinition.model_validate(document)
     version = (current["latest_version"] or 0) + 1
     published = {

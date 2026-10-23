@@ -232,7 +232,7 @@ def depth_contract(encoding, scale):
     }
 
 
-def prepare(path, destination, config, progress=lambda: None):
+def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False):
     config = McapProcessingConfig.model_validate(config)
     if config.semantic_output is not None:
         from .mcap_semantic import prepare_semantic
@@ -356,12 +356,23 @@ def prepare(path, destination, config, progress=lambda: None):
         start = primary[0]
         # Nanosecond rounding at fractional periods must not manufacture a frame.
         duration_ns = primary[-1] - start
-        count = (
-            (2 * duration_ns * cfg.fps + cfg.fps) // 2_000_000_000
-            if cfg.alignment_policy == "FIXED_GRID"
-            else round(duration_ns * cfg.fps / 1e9)
-        ) + 1
-        if count > 24 * 3600 * cfg.fps:
+        if preserve_source:
+            # A scheme's historical sample rate must not downsample this Raw.
+            # Retain every source frame; fps is only nominal media metadata.
+            if any(b <= a for a, b in zip(primary, primary[1:], strict=False)):
+                raise ValueError("MCAP_TIME_DISCONTINUITY: duplicate primary timestamps")
+            if duration_ns:
+                cfg = cfg.model_copy(
+                    update={"fps": max(1, round((len(primary) - 1) * 1e9 / duration_ns))}
+                )
+            count = len(primary)
+        else:
+            count = (
+                (2 * duration_ns * cfg.fps + cfg.fps) // 2_000_000_000
+                if cfg.alignment_policy == "FIXED_GRID"
+                else round(duration_ns * cfg.fps / 1e9)
+            ) + 1
+        if duration_ns > 24 * 3600 * 1_000_000_000:
             raise ValueError("MCAP_DURATION_LIMIT: split recordings exceeding 24 hours")
         limit = round(cfg.maximum_time_error_ms * 1e6)
 
@@ -406,10 +417,14 @@ def prepare(path, destination, config, progress=lambda: None):
             try:
                 for index in range(count):
                     progress()
-                    offset = round(index * 10**9 / cfg.fps)
+                    offset = (
+                        primary[index] - start
+                        if preserve_source
+                        else round(index * 10**9 / cfg.fps)
+                    )
                     target = start + offset
                     reasons, images = [], {}
-                    p = nearest(primary, target)
+                    p = index if preserve_source else nearest(primary, target)
                     stamp = primary[p] if p is not None else target
                     stale = stamp == previous_primary
                     if cfg.alignment_policy == "FIXED_GRID":

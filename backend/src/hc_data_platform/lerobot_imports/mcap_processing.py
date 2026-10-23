@@ -490,7 +490,16 @@ def process_file(handler, event, checkpoint):
                             (json.dumps(channels), *scope, ident),
                         )
                         evidence_db.commit()
-                    config, provenance = prepare(source, output, cfg, checkpoint)
+                    config, provenance = prepare(
+                        source,
+                        output,
+                        cfg,
+                        checkpoint,
+                        preserve_source=bool(
+                            row[8]
+                            and row[8].get("schema_version") == "capture-recording-snapshot/v1"
+                        ),
+                    )
                     if row[8] and row[8].get("schema_version") == "capture-recording-snapshot/v1":
                         from hc_data_platform.capture_schemes.models import OutputContract
                         from hc_data_platform.capture_schemes.processing import validate_mcap_output

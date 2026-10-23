@@ -12,7 +12,12 @@ if TYPE_CHECKING:
 
 
 def semantic_schema(
-    project_id: str, dataset_id: str, output: Document, fields: dict[str, str]
+    project_id: str,
+    dataset_id: str,
+    output: Document,
+    fields: dict[str, str],
+    *,
+    frequency_hz: float | None = None,
 ) -> DatasetSchemaSnapshot:
     from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
@@ -41,7 +46,7 @@ def semantic_schema(
         project_id=project_id,
         dataset_id=dataset_id,
         schema_snapshot_id="capture-" + digest(contract),
-        frequency_hz=contract["frequency_hz"],
+        frequency_hz=frequency_hz or contract["frequency_hz"] or 30,
         fields=fields,
         semantic_contract=contract,
     )
@@ -75,7 +80,7 @@ def present_fields(
         if (
             schema.semantic_contract is not None
             and capture is not None
-            and capture.get("output") != contract
+            and structure_contract(capture.get("output", {})) != structure_contract(contract)
         ):
             raise ValueError("capture output differs from the frozen semantic schema")
         mapping = feature_names(sorted(fields))
@@ -84,6 +89,17 @@ def present_fields(
             if feature and not feature["required"] and presence.get(name) is False:
                 fields.pop(topic)
     return fields
+
+
+def structure_contract(output: Document) -> Document:
+    """Compare field semantics without historical capture or media rate hints."""
+    import copy
+
+    result = copy.deepcopy(output)
+    result.pop("frequency_hz", None)
+    for feature in result.get("features", {}).values():
+        feature.get("media", {}).pop("video.fps", None)
+    return result
 
 
 def capture_presence(metadata: Document) -> Document:

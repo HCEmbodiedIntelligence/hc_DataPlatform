@@ -116,7 +116,7 @@ def prepare(root, destination, command, snapshot, progress=lambda: None):
         raise ValueError("CAPTURE_SNAPSHOT_MISMATCH: original bundle has a different frozen plan")
     source = restore(root, root.parent / "decoded-topic-video.mcap", progress)
     cfg = McapProcessingConfig.model_validate(snapshot["effective_adapter"]["configuration"])
-    config, evidence = prepare_mcap(source, destination, cfg, progress)
+    config, evidence = prepare_mcap(source, destination, cfg, progress, preserve_source=True)
     validation = validate_mcap_output(
         OutputContract.model_validate(snapshot["output"]), cfg, evidence
     )

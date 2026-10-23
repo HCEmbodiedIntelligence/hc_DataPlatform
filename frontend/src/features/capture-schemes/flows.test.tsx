@@ -252,10 +252,6 @@ beforeEach(() => {
       return version;
     }
     if (options.path.endsWith(":validate")) {
-      if (state.draft.output.frequency_hz === null) {
-        state.draft.output.frequency_hz = 15;
-        state.revision += 1;
-      }
       state.validations = [
         {
           status: "PASSED",
@@ -343,9 +339,10 @@ afterEach(() => {
   client?.clear();
   vi.restoreAllMocks();
 });
-it("saves an empty frame rate, reads it during validation and publishes without changing v1", async () => {
+it("has no frequency input or requirement and publishes without changing v1", async () => {
   const user = userEvent.setup();
   state.draft.software = "";
+  state.draft.output.frequency_hz = null;
   mount(<Library />, "/settings/capture-schemes/shared?edit=1");
   const input = await screen.findByLabelText("方案名称");
   expect(screen.queryByLabelText("采集软件")).not.toBeInTheDocument();
@@ -355,12 +352,8 @@ it("saves an empty frame rate, reads it during validation and publishes without 
     screen.queryByRole("button", { name: "保存方案" }),
   ).not.toBeInTheDocument();
   await user.click(screen.getByText("数据定义"));
-  const fps = screen.getByLabelText("实际原始帧率");
-  await user.clear(fps);
-  expect(fps).toHaveValue("");
-  expect(
-    fps.closest(".ant-form-item")?.querySelector(".ant-form-item-required"),
-  ).toBeNull();
+  expect(screen.queryByLabelText("实际原始帧率")).not.toBeInTheDocument();
+  expect(screen.queryByText(/采样频率|Hz（保留）/)).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "保存方案" }),
   ).not.toBeInTheDocument();
@@ -378,15 +371,15 @@ it("saves an empty frame rate, reads it during validation and publishes without 
   await user.click(screen.getByRole("button", { name: "选择测试样本" }));
   await user.click(screen.getByRole("button", { name: "验证当前格式" }));
   expect(await screen.findByText("未采集")).toBeVisible();
-  expect(state.revision).toBe(3);
-  expect(state.draft.output.frequency_hz).toBe(15);
+  expect(state.revision).toBe(2);
+  expect(state.draft.output.frequency_hz).toBeNull();
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled(),
   );
   await user.click(screen.getByRole("button", { name: "发布新版本" }));
   expect(await screen.findByText("已发布 v2 · 只读")).toBeVisible();
   expect(state.versions.find((v) => v.version === 1)?.name).toBe("X1 关节方案");
-  expect(state.versions[0]?.output.frequency_hz).toBe(15);
+  expect(state.versions[0]?.output.frequency_hz).toBeNull();
   expect(state.versions[0]?.software).toBe("");
   expect(screen.queryByLabelText("方案名称")).not.toBeInTheDocument();
 });
@@ -716,9 +709,9 @@ it("reuses an older definition as an optional shortcut while keeping the new sch
   expect(screen.getByLabelText("方案名称")).toHaveValue("新采集方案");
   expect(screen.getByLabelText("方案说明")).toHaveValue("新工位配置");
   await user.click(screen.getByText("数据定义"));
-  expect(screen.getByLabelText("实际原始帧率")).toHaveValue("15");
-  fireEvent.change(screen.getByLabelText("实际原始帧率"), {
-    target: { value: "20" },
+  expect(screen.queryByLabelText("实际原始帧率")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("observation.state 第1轴单位"), {
+    target: { value: "deg" },
   });
   expect(
     screen.queryByRole("button", { name: "选择测试样本" }),
@@ -744,7 +737,16 @@ it("reuses an older definition as an optional shortcut while keeping the new sch
     description: "新工位配置",
     adapters: originalVersion.adapters,
     quality_policy: originalVersion.quality_policy,
-    output: { ...originalVersion.output, frequency_hz: 20 },
+    output: {
+      ...originalVersion.output,
+      features: {
+        ...originalVersion.output.features,
+        "observation.state": {
+          ...originalVersion.output.features["observation.state"],
+          units: ["deg", ...originalVersion.output.features["observation.state"]!.units.slice(1)],
+        },
+      },
+    },
   });
   expect(created!.versions).toEqual([]);
   expect(created!.validations).toEqual([]);
@@ -769,6 +771,7 @@ it.each([true, false])(
     state.draft.name = "待发布的双臂方案";
     state.draft.description = "草稿中的新说明";
     state.draft.output.frequency_hz = 22;
+    state.draft.output.features["observation.state"]!.units[0] = "m";
     if (!published) {
       state.latest_version = null;
       state.versions = [];
@@ -788,12 +791,12 @@ it.each([true, false])(
     );
     if (published) {
       await user.click(screen.getByRole("button", { name: "填入配置" }));
-      expect(screen.getByLabelText("实际原始帧率")).toHaveValue("15");
+      expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("rad");
       await user.click(screen.getByLabelText("来源版本"));
       await user.click(await screen.findByText("当前已保存草稿"));
     }
     await user.click(screen.getByRole("button", { name: "填入配置" }));
-    expect(screen.getByLabelText("实际原始帧率")).toHaveValue("22");
+    expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("m");
     await user.click(screen.getByText("适用范围"));
     expect(screen.getByLabelText("方案名称")).toHaveValue("");
     expect(screen.getByLabelText("方案说明")).toHaveValue("");
@@ -812,6 +815,7 @@ it("preserves current edits when another source fails and loads it only after a 
   other.versions[0]!.name = "另一套方案";
   other.versions[0]!.scheme_id = "other";
   other.versions[0]!.output.frequency_hz = 30;
+  other.versions[0]!.output.features["observation.state"]!.units[0] = "m";
   const fallback = vi.mocked(request).getMockImplementation()!;
   let failed = true;
   vi.mocked(request).mockImplementation(async (options) => {
@@ -838,22 +842,22 @@ it("preserves current edits when another source fails and loads it only after a 
     expect(screen.getByRole("button", { name: "填入配置" })).toBeEnabled(),
   );
   await user.click(screen.getByRole("button", { name: "填入配置" }));
-  fireEvent.change(screen.getByLabelText("实际原始帧率"), {
-    target: { value: "20" },
+  fireEvent.change(screen.getByLabelText("observation.state 第1轴单位"), {
+    target: { value: "deg" },
   });
   await user.click(screen.getByLabelText("已有方案"));
   await user.click(await screen.findByText("另一套方案"));
   expect(await screen.findByText(/方案配置读取失败/)).toBeVisible();
-  expect(screen.getByLabelText("实际原始帧率")).toHaveValue("20");
+  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("deg");
   expect(screen.getByRole("button", { name: "填入配置" })).toBeDisabled();
   failed = false;
   await user.click(screen.getByRole("button", { name: "重新读取" }));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "填入配置" })).toBeEnabled(),
   );
-  expect(screen.getByLabelText("实际原始帧率")).toHaveValue("20");
+  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("deg");
   await user.click(screen.getByRole("button", { name: "填入配置" }));
-  expect(screen.getByLabelText("实际原始帧率")).toHaveValue("30");
+  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("m");
 });
 
 it("searches the list and archives only after confirmation, retaining published references", async () => {

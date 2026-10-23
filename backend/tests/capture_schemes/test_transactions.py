@@ -53,8 +53,11 @@ def environment():
     return dsn, scope, tasks
 
 
-def publish(db, org, name="joints", revision=0, *, fps=15):
-    value = schemes.save(db, org, name, draft(revision, fps=fps), "tester")
+def publish(db, org, name="joints", revision=0, *, fps=15, units="rad"):
+    payload = draft(revision, fps=fps).model_dump(mode="json")
+    payload["output"]["features"]["action"]["units"] = [units, units]
+    command = SchemeDraft.model_validate(payload)
+    value = schemes.save(db, org, name, command, "tester")
     evidence = {
         "source_format": "LEROBOT_V3",
         "parser_version": "lerobot-v3/1",
@@ -446,11 +449,16 @@ def test_stale_validation_cannot_publish_and_lost_publication_is_idempotent(envi
         schemes.publish(db, org, "joints", 2, "tester")
 
 
-def test_two_tasks_cannot_claim_incompatible_structure_in_same_dataset(environment):
+@pytest.mark.parametrize(
+    "fps,units,compatible", [(99.5, "rad", True), (None, "rad", True), (15, "degree", False)]
+)
+def test_same_dataset_checks_structure_without_requiring_a_shared_rate(
+    environment, fps, units, compatible
+):
     dsn, scope, tasks = environment
     with psycopg.connect(dsn) as db:
         ref = publish(db, scope[0])
-        other = publish(db, scope[0], "other", fps=30)
+        other = publish(db, scope[0], "other", fps=fps, units=units)
         associate(db, scope[0], "robot-1", ref)
         associate(db, scope[0], "robot-1", other, make_default=False)
         db.execute(
@@ -459,8 +467,10 @@ def test_two_tasks_cannot_claim_incompatible_structure_in_same_dataset(environme
             ("dataset_capture_" + tasks[0], scope[0], tasks[1]),
         )
         plans.save_plan(db, scope, tasks[0], selection(ref, "robot-1"), "tester")
-    with (
-        psycopg.connect(dsn) as db,
-        pytest.raises(ProblemException, match="CAPTURE_DATASET_INCOMPATIBLE"),
-    ):
-        plans.save_plan(db, scope, tasks[1], selection(other, "robot-1"), "tester")
+    with psycopg.connect(dsn) as db:
+        if compatible:
+            saved = plans.save_plan(db, scope, tasks[1], selection(other, "robot-1"), "tester")
+            assert saved["output"]["frequency_hz"] == fps
+        else:
+            with pytest.raises(ProblemException, match="CAPTURE_DATASET_INCOMPATIBLE"):
+                plans.save_plan(db, scope, tasks[1], selection(other, "robot-1"), "tester")

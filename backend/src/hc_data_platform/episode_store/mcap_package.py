@@ -194,7 +194,7 @@ def prepared_mcap_assets(plan, steps, attempt_id):
     type(plan).model_validate(plan.model_dump(mode="json"))
     if plan.encoding != encoding_configuration():
         raise ValueError("MCAP package encoding dependencies differ from its frozen plan")
-    fps = plan.schema_snapshot.frequency_hz
+    fps = plan.alignment_profile.frequency_hz
     if fps != int(fps):
         raise ValueError("MCAP package requires an integer canonical frequency")
     fps = int(fps)

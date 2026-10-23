@@ -80,7 +80,6 @@ def compare_lerobot(output: OutputContract, adapter: Document, info: Document) -
             differences.append({"path": path, "expected": expected, "actual": actual})
 
     compare("codebase_version", adapter["codebase_version"], info.get("codebase_version"))
-    compare("fps", output.frequency_hz, info.get("fps"))
     presence, axis_reorders = {}, {}
     for name, feature in output.features.items():
         source = adapter.get("feature_sources", {}).get(name, name)
@@ -119,6 +118,8 @@ def compare_lerobot(output: OutputContract, adapter: Document, info: Document) -
                 units = [units[i] for i in order]
             compare(f"features.{name}.units", expected["units"], units)
         for field, value in feature.media.items():
+            if field == "video.fps":
+                continue  # A sample's media rate is not a capture requirement.
             compare(f"features.{name}.info.{field}", value, observed.get("info", {}).get(field))
     return {
         "differences": differences,

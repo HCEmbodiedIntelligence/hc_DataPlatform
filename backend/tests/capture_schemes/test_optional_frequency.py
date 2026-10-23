@@ -1,4 +1,6 @@
-"""Empty frame rates are saved, then resolved only by complete sample validation."""
+"""Sample rates describe recordings and never become scheme requirements."""
+
+# ruff: noqa: F811 -- pytest injects the imported environment fixture by name.
 
 import copy
 
@@ -22,7 +24,7 @@ from .test_transactions import environment as environment
 
 
 @pytest.mark.parametrize("omit", [False, True])
-def test_draft_accepts_empty_rate_but_published_contract_stays_concrete(omit):
+def test_draft_and_published_contract_accept_empty_rate(omit):
     document = draft().model_dump(mode="json", exclude={"expected_revision"})
     if omit:
         document["output"].pop("frequency_hz")
@@ -31,8 +33,7 @@ def test_draft_accepts_empty_rate_but_published_contract_stays_concrete(omit):
     assert (
         SchemeDraft.model_validate({**document, "expected_revision": 0}).output.frequency_hz is None
     )
-    with pytest.raises(ValidationError):
-        CaptureDefinition.model_validate(document)
+    assert CaptureDefinition.model_validate(document).output.frequency_hz is None
 
 
 @pytest.mark.parametrize("frequency", [0, -1, 1001, float("nan"), float("inf")])
@@ -68,14 +69,14 @@ def test_http_empty_rate_save_reload_validate_publish_preserves_old_version(envi
         checked = client.post(path + ":validate", json=validation)
         assert checked.status_code == 200, checked.text
         result = checked.json()
-        assert result["revision"] == 3 and result["draft"]["output"]["frequency_hz"] == 15
+        assert result["revision"] == 2 and result["draft"]["output"]["frequency_hz"] is None
         evidence = result["validations"][0]
         assert evidence["status"] == "PASSED" and evidence["frame_count"] == 3
-        assert evidence["revision"] == 3 and evidence["inferred_from_revision"] == 2
+        assert evidence["revision"] == 2 and "inferred_from_revision" not in evidence
         assert evidence["draft_sha256"] == digest(result["draft"])
-        published = client.post(path + ":publish", json={"expected_revision": 3})
+        published = client.post(path + ":publish", json={"expected_revision": 2})
         assert published.status_code == 200, published.text
-        assert published.json()["output"]["frequency_hz"] == 15
+        assert published.json()["output"]["frequency_hz"] is None
         assert published.json()["content_sha256"] == digest(result["draft"])
         assert client.get(path).json()["versions"][1] == first
 
@@ -96,7 +97,7 @@ def test_failed_sample_does_not_fill_rate_or_advance_revision(environment, tmp_p
         assert result["revision"] == 1 and result["draft"]["output"]["frequency_hz"] is None
 
 
-def test_mcap_empty_output_and_adapter_rates_resolve_from_real_clock(environment, tmp_path):
+def test_mcap_observed_rate_stays_in_evidence_without_changing_scheme(environment, tmp_path):
     dsn, scope, _ = environment
     joint_source(tmp_path / "source.mcap")
     validator, sample, _ = stored(tmp_path, "MCAP", organization_id=scope[0])
@@ -112,9 +113,9 @@ def test_mcap_empty_output_and_adapter_rates_resolve_from_real_clock(environment
         assert evidence["status"] == "PASSED", evidence
         assert evidence["frequency_hz"] == 15 and evidence["frame_count"] == 167
         result = schemes.record_validation(db, scope[0], "mcap-auto", 1, evidence, "tester")
-        assert result["draft"]["output"]["frequency_hz"] == 15
-        assert result["draft"]["adapters"][0]["configuration"]["fps"] == 15
-        published = schemes.publish(db, scope[0], "mcap-auto", 2, "tester")
+        assert result["draft"]["output"]["frequency_hz"] is None
+        assert result["draft"]["adapters"][0]["configuration"]["fps"] is None
+        published = schemes.publish(db, scope[0], "mcap-auto", 1, "tester")
         CaptureDefinition.model_validate({k: published[k] for k in result["draft"]})
 
 

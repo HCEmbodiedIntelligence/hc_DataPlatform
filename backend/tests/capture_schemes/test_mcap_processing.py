@@ -14,7 +14,7 @@ from hc_data_platform.continuous_recordings.mcap_native import McapProcessingCon
 from hc_data_platform.core.errors import ProblemException
 
 
-def joint_source(path, *, bad_last=False, reverse_order=False, include_camera=False):
+def joint_source(path, *, bad_last=False, reverse_order=False, include_camera=False, fps=15):
     with path.open("wb") as stream:
         writer = Writer(stream, enable_crcs=True, enable_data_crcs=True)
         writer.start()
@@ -35,7 +35,7 @@ def joint_source(path, *, bad_last=False, reverse_order=False, include_camera=Fa
             camera_schema = writer.register_schema(SCHEMA.name, SCHEMA.encoding, SCHEMA.data)
             camera = writer.register_channel("/optional/head", "cdr", camera_schema)
         for index in range(167):
-            stamp = 10**12 + round(index * 10**9 / 15)
+            stamp = 10**12 + round(index * 10**9 / fps)
             if include_camera:
                 writer.add_message(
                     camera, stamp, message(image.getvalue(), "jpeg", index).data, stamp, index
@@ -117,6 +117,24 @@ def test_camera_recording_keeps_explicit_state_clock_on_serialization(tmp_path):
     legacy = parsed.model_copy(update={"time_source": "RGB_LOG_TIME"})
     assert "time_source" not in legacy.model_dump(mode="json")
     assert RecordingConfigurationV1.model_validate_json(legacy.model_dump_json()) == legacy
+
+
+def test_fractional_source_rate_does_not_require_15hz_or_drop_frames(tmp_path):
+    from hc_data_platform.capture_schemes.draft_frequency import mcap_frequency
+
+    source = joint_source(tmp_path / "source.mcap", fps=99.5)
+    assert mcap_frequency(source, config()) == 100
+    _, evidence = prepare(source, tmp_path / "recording", config(), preserve_source=True)
+    validate_mcap_output(contract(), McapProcessingConfig(**config()), evidence)
+    assert evidence["source_frequency_hz"] == pytest.approx(99.5)
+    assert evidence["frames"] == 167
+    with (tmp_path / "recording/sensors/robot.mcap").open("rb") as stream:
+        stamps = [
+            m.log_time
+            for _, c, m in make_reader(stream).iter_messages()
+            if c.topic == "/observation/state"
+        ]
+    assert stamps == [round(i * 1e9 / 99.5) for i in range(167)]
 
 
 @pytest.mark.parametrize("reverse_order", [False, True])

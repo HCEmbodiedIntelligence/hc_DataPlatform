@@ -137,9 +137,11 @@ def derived_streams(
         raise DatasetIngestProjectionConflict("child time range differs from the parent interval")
     info = package.document("meta/info.json")
     mapping = info["hc.feature_mapping"]
-    if info["fps"] != plan.schema_snapshot.frequency_hz or set(mapping) != {
-        s.channel_path for s in parent_revision.streams
-    }:
+    if (
+        info["fps"] != plan.schema_snapshot.frequency_hz
+        and plan.schema_snapshot.semantic_contract is None
+        and not plan.parent_input.metadata.get("capture")
+    ) or set(mapping) != {s.channel_path for s in parent_revision.streams}:
         raise DatasetIngestProjectionConflict("child channels differ from its parent projection")
     streams = []
     for stream in parent_revision.streams:

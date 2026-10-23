@@ -294,11 +294,11 @@ class PostgresIngestWorkflowInputResolver:
             dataset_id,
             frozen["output"],
             {topic: "json" for topic in preflight.manifest.actual_topics},
+            frequency_hz=profile.default_timing.target_frequency_hz,
         )
+        snapshot = self._package_schemas.resolve_capture_schema(snapshot)
         self._package_schemas.register_schema(snapshot)
         schema_snapshot_id = snapshot.schema_snapshot_id
-        if profile.default_timing.target_frequency_hz != snapshot.frequency_hz:
-            reject("CAPTURE_VERSION_MISMATCH", "质检时间轴与冻结采集方案不一致")
         source = IngestProjectionSourceV1(
             organization_id=organization_id,
             project_id=project_id,
@@ -312,7 +312,7 @@ class PostgresIngestWorkflowInputResolver:
             source_sha256=source_sha256,
             capture_snapshot=frozen,
         )
-        frequency_hz = int(snapshot.frequency_hz)
+        frequency_hz = int(profile.default_timing.target_frequency_hz)
         alignment_profile = AlignmentProfileV1(
             profile_id=f"dataset-schema:{snapshot.schema_snapshot_id}",
             converter_version="mcap-episode-package/2"

@@ -423,6 +423,7 @@ class LeRobotPipeline:
             dataset,
             frozen["output"],
             {topic: "json" for topic in native_profile.topics},
+            frequency_hz=episode.fps,
         )
         from hc_data_platform.capture_schemes.common import reject
         from hc_data_platform.episode_store.errors import PackageConflict

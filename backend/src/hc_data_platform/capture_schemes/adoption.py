@@ -15,7 +15,7 @@ from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 from . import plans, schemes
 from .common import audit, digest, encoded, lock, now, reject
 from .models import Sample
-from .schema import native_topic
+from .schema import native_topic, structure_contract
 
 
 def adoption_key(scope, dataset):
@@ -29,7 +29,17 @@ def physical_schema(db, scope, proposed):
         WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
         (*scope, proposed.dataset_id),
     ).fetchone()
-    if not row or row[0].get("semantic_contract") is not None:
+    if not row:
+        return proposed
+    if row[0].get("semantic_contract") is not None:
+        old = DatasetSchemaSnapshot.model_validate(row[0])
+        if (
+            package_digest(row[0]) == row[1]
+            and old.fields == proposed.fields
+            and structure_contract(old.semantic_contract)
+            == structure_contract(proposed.semantic_contract)
+        ):
+            return old
         return proposed
     proof = db.execute(
         """SELECT document FROM ingest.capture_legacy_references
@@ -42,10 +52,8 @@ def physical_schema(db, scope, proposed):
     old = DatasetSchemaSnapshot.model_validate(row[0])
     if (
         package_digest(row[0]) != row[1]
-        or proof[0]["output_contract_sha256"] != digest(proposed.semantic_contract)
         or proof[0]["legacy_schema_sha256"] != row[1]
         or old.fields != proposed.fields
-        or old.frequency_hz != proposed.frequency_hz
     ):
         reject("CAPTURE_DATASET_INCOMPATIBLE", "上传数据与已核验的历史数据集结构不同")
     frozen = db.execute(
@@ -53,7 +61,12 @@ def physical_schema(db, scope, proposed):
         WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
         (*scope, proposed.dataset_id),
     ).fetchone()
-    if not frozen or frozen != (digest(proposed.semantic_contract), proposed.semantic_contract):
+    if (
+        not frozen
+        or frozen[0] != digest(frozen[1])
+        or proof[0]["output_contract_sha256"] != frozen[0]
+        or structure_contract(frozen[1]) != structure_contract(proposed.semantic_contract)
+    ):
         reject("CAPTURE_DATASET_INCOMPATIBLE", "历史数据集缺少一致的采集方案约束")
     return old
 
@@ -74,8 +87,8 @@ def adopt_dataset(db, scope, task, reference, samples, read_object, actor):
         reject("CAPTURE_DATASET_REVIEW_REQUIRED", "需要可核验的历史物理数据结构")
     expected = {native_topic(name): "json" for name in output["features"]}
     expected["/metadata/source"] = "json"
-    if row[0]["fields"] != expected or row[0]["frequency_hz"] != output["frequency_hz"]:
-        reject("CAPTURE_DATASET_INCOMPATIBLE", "历史话题或频率与方案不一致，不能直接绑定")
+    if row[0]["fields"] != expected:
+        reject("CAPTURE_DATASET_INCOMPATIBLE", "历史话题与方案不一致，不能直接绑定")
     key = adoption_key(scope, dataset)
     prior = db.execute(
         """SELECT document FROM ingest.capture_legacy_references WHERE organization_id=%s

@@ -9,7 +9,6 @@ from typing_extensions import Self
 
 from hc_data_platform.continuous_recordings.mcap_contracts import (
     McapDraftConfig,
-    McapProcessingConfig,
 )
 
 from .references import AddParticipants as AddParticipants
@@ -76,7 +75,7 @@ class DraftOutputContract(Strict):
 
 
 class OutputContract(DraftOutputContract):
-    frequency_hz: float = Field(gt=0, le=1000, allow_inf_nan=False)
+    """Shared structure; historical frequency values are informational only."""
 
 
 class DraftMcapAdapter(Strict):
@@ -86,7 +85,7 @@ class DraftMcapAdapter(Strict):
 
 
 class McapAdapter(DraftMcapAdapter):
-    configuration: McapProcessingConfig
+    pass
 
 
 class LeRobotAdapter(Strict):
@@ -104,7 +103,7 @@ class DraftCaptureBundleAdapter(Strict):
 
 
 class CaptureBundleAdapter(DraftCaptureBundleAdapter):
-    configuration: McapProcessingConfig
+    pass
 
 
 Adapter = Annotated[
@@ -142,15 +141,10 @@ class CaptureDraftDefinition(Strict):
             if not {"observation.state", "action"} <= self.output.features.keys():
                 raise ValueError("automatic schemes require observation.state and action")
         for adapter in self.adapters:
-            if isinstance(adapter, LeRobotAdapter):
-                if set(adapter.feature_sources) - set(self.output.features):
-                    raise ValueError("source mappings must name output features")
-            elif (
-                adapter.configuration.fps is not None
-                and self.output.frequency_hz is not None
-                and adapter.configuration.fps != self.output.frequency_hz
+            if isinstance(adapter, LeRobotAdapter) and set(adapter.feature_sources) - set(
+                self.output.features
             ):
-                raise ValueError("MCAP frame rate must agree with the output contract")
+                raise ValueError("source mappings must name output features")
             if not isinstance(adapter, LeRobotAdapter) and adapter.configuration.semantic_output:
                 declared = DraftOutputContract.model_validate(adapter.configuration.semantic_output)
                 if declared.model_dump(mode="json") != self.output.model_dump(mode="json"):

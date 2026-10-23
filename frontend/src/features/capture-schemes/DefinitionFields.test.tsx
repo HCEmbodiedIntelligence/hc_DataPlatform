@@ -240,7 +240,7 @@ it("shows published fields without allowing edits or reordering", async () => {
       onChange={changed}
     />,
   );
-  expect(screen.getByLabelText("实际原始帧率")).toBeDisabled();
+  expect(screen.queryByLabelText("实际原始帧率")).not.toBeInTheDocument();
   await userEvent.click(screen.getByText("查看 2 个关节（按记录顺序）"));
   expect(screen.getByLabelText("observation.state 第1轴名称")).toBeDisabled();
   expect(screen.getByLabelText("observation.state 第2轴上移")).toBeDisabled();

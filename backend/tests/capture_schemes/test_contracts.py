@@ -89,10 +89,8 @@ def test_semantic_comparison_preserves_axis_order_units_and_batch_independent_ha
         assert any(d["path"] == "features.action." + field for d in delta["differences"])
     assert structure_summary(info()) == structure_summary({**info(), "total_frames": 1000})
     changed = info()
-    changed["fps"] = 30
-    assert compare_lerobot(command.output, adapter, changed)["differences"] == [
-        {"path": "fps", "expected": 15, "actual": 30},
-    ]
+    changed["fps"] = 99.5
+    assert compare_lerobot(command.output, adapter, changed)["differences"] == []
 
 
 def test_device_mapping_cannot_override_units_layout_or_unknown_features():

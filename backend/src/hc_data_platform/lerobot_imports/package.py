@@ -38,6 +38,7 @@ def freeze_native_plan(
     files = raw_files(session.raw, session.raw_manifest)
     info = stream.layout.info
     metadata = {
+        "frequency_hz": request.profile.frequency_hz,
         "robot_type": info.get("robot_type", "unknown"),
         "source": {
             "format": "lerobot_v3",
@@ -132,6 +133,7 @@ def freeze_native_plan(
             request.dataset_id,
             capture["output"],
             {topic: "json" for topic in stream.profile.topics},
+            frequency_hz=request.profile.frequency_hz,
         )
         if schemas is not None:
             schema = schemas.resolve_capture_schema(schema)

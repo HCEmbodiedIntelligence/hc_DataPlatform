@@ -255,30 +255,6 @@ export function DefinitionFields({
   return (
     <div className={styles.definition}>
       <div className={styles.overview}>
-        <Form.Item
-          label="采样频率（每秒多少帧）"
-          extra={
-            disabled
-              ? "按原始频率处理，保留全部帧。"
-              : "选填。留空将在样本验证时自动读取原始帧率，保留全部帧。"
-          }
-        >
-          <InputNumber
-            aria-label="实际原始帧率"
-            disabled={disabled}
-            min={0.01}
-            max={1000}
-            addonAfter="Hz"
-            placeholder="从样本自动读取"
-            value={doc.output.frequency_hz || null}
-            onChange={(value) =>
-              onChange({
-                ...doc,
-                output: { ...doc.output, frequency_hz: value },
-              })
-            }
-          />
-        </Form.Item>
         <Space wrap>
           <Tag>
             {joints.find(([, f]) => f.role === "state")?.[1].shape[0] ?? 0}{" "}
