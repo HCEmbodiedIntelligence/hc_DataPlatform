@@ -78,6 +78,7 @@ import {
 } from "./navigation-manifest";
 import hangchaLogo from "../../assets/hangcha-logo.png";
 import styles from "./PlatformShell.module.css";
+import { preloadNavigationPage } from "../router/page-catalog";
 import { ShellLoadingPage } from "./ShellLoadingPage";
 import { datasetContextKind } from "./dataset-context";
 import { useUnreadNotificationCount } from "../../features/notifications/api";
@@ -310,6 +311,9 @@ function NavigationMenu({
           label: (
             <Link
               to={item.path}
+              onPointerEnter={() => preloadNavigationPage(item.path)}
+              onFocus={() => preloadNavigationPage(item.path)}
+              onTouchStart={() => preloadNavigationPage(item.path)}
               title={
                 item.pageId === "P03" && activeUploadCount > 0
                   ? `${activeUploadCount} 个上传任务${uploadNeedsAttention ? "需要处理" : "正在进行"}`

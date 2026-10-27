@@ -11,7 +11,7 @@ from .common import Document, audit, check_revision, digest, encoded, lock, now,
 from .contracts import effective_adapter
 from .models import DeviceMapping, PrepareRecording, SetTaskPlan, VersionReference
 from .references import AddParticipants
-from .schema import structure_contract
+from .schema import format_version, structure_contract
 
 Scope = tuple[str, str, str]  # organization, project, region
 
@@ -48,6 +48,26 @@ def check_dataset(
     db: Any, scope: Scope, dataset: str, task: str, contract: Document, *, freeze: bool = False
 ) -> None:
     lock(db, "dataset", *scope, dataset)
+    if contract.get("algorithm") in {"capture-structure/v2", "capture-structure/v3"}:
+        # Each semantic format has its own immutable admission contract. Historical
+        # contracts, packages and collections retain their original identities.
+        version = format_version(contract)
+        normalized = structure_contract(contract)
+        row = db.execute(
+            """SELECT document,content_hash FROM episode_store.dataset_capture_formats
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s
+            AND format_version=%s""", (*scope, dataset, version),
+        ).fetchone()
+        if row and (row[0] != normalized or row[1] != digest(normalized)):
+            reject("CAPTURE_VERSION_MISMATCH", "格式版本校验失败")
+        if freeze and not row:
+            db.execute(
+                """INSERT INTO episode_store.dataset_capture_formats
+                (organization_id,project_id,region_code,dataset_id,format_version,document,content_hash)
+                VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s)""",
+                (*scope, dataset, version, encoded(normalized), digest(normalized)),
+            )
+        return
     signature = digest(contract)
     existing = db.execute(
         """SELECT contract_sha256,document FROM episode_store.dataset_capture_contracts
@@ -112,26 +132,6 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
     check_revision(current["revision"] if current else 0, command.expected_revision)
     lock(db, "scheme", scope[0], command.scheme.scheme_id)
     document = schemes.version(db, scope[0], command.scheme, new_use=True)
-    previous = None
-    if current and current["locked_at"]:
-        previous = schemes.version(db, scope[0], VersionReference.model_validate(current["scheme"]))
-        old_adapters = {a["source_format"]: a for a in previous["adapters"]}
-        new_adapters = {a["source_format"]: a for a in document["adapters"]}
-        if (
-            command.scheme.scheme_id != current["scheme"]["scheme_id"]
-            or command.scheme.version <= current["scheme"]["version"]
-            or document["output"] != current["output"]
-            or document["quality_policy"] != previous["quality_policy"]
-            or document["model_version_ids"] != previous["model_version_ids"]
-            or not old_adapters.keys() < new_adapters.keys()
-            or any(new_adapters.get(k) != v for k, v in old_adapters.items())
-            or {p.robot_id for p in command.participants}
-            != {p["robot_id"] for p in current["participants"]}
-        ):
-            reject(
-                "CAPTURE_PLAN_LOCKED",
-                "任务已开始采集，只能在保持原输出和已有格式不变时补充上传格式",
-            )
     participants = []
     for participant in sorted(command.participants, key=lambda p: p.robot_id):
         lock(db, "robot", scope[0], participant.robot_id)
@@ -140,25 +140,6 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
         mapping = associations.require_mapping(
             db, scope[0], participant.robot_id, document, participant.mapping_version, new_use=True
         )
-        if previous is not None:
-            old_participant = next(
-                p for p in current["participants"] if p["robot_id"] == participant.robot_id
-            )
-            old_mapping = associations.mapping_version(
-                db,
-                scope[0],
-                participant.robot_id,
-                command.scheme.scheme_id,
-                old_participant["mapping_version"],
-            )
-            for adapter in previous["adapters"]:
-                fmt = adapter["source_format"]
-                if effective_adapter(
-                    previous, fmt, DeviceMapping.model_validate(old_mapping["mapping"])
-                ) != effective_adapter(
-                    document, fmt, DeviceMapping.model_validate(mapping["mapping"])
-                ):
-                    reject("CAPTURE_PLAN_LOCKED", "追加格式不能改变已有格式的设备映射")
         participants.append(
             {
                 "robot_id": participant.robot_id,
@@ -166,7 +147,11 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
                 "mapping_sha256": mapping["content_sha256"],
             }
         )
-    check_dataset(db, scope, record["dataset_id"], task, document["output"])
+    # A task's selected plan is editable even after recordings have pinned an
+    # older revision. Dataset admission is checked again when preparing a new
+    # recording; editing the selection must not rewrite or unlock old receipts.
+    if current is None:
+        check_dataset(db, scope, record["dataset_id"], task, document["output"])
     content = {
         "schema_version": "capture-task-plan/v1",
         "organization_id": scope[0],
@@ -179,6 +164,7 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
         "selection": payload,
         "participants": participants,
         "output": document["output"],
+        "quality_policy": document.get("quality_policy", {}),
         "output_contract_sha256": document["output_contract_sha256"],
         "created_by": actor,
         "created_at": now(),
@@ -190,7 +176,7 @@ def save_plan(db: Any, scope: Scope, task: str, command: SetTaskPlan, actor: str
 
 
 def store_plan(db: Any, scope: Scope, task: str, plan: Document) -> None:
-    """Append immutable history and advance the head without clearing its lock."""
+    """Append history; locked_at retains the first preparation time, not an edit lock."""
     db.execute(
         """INSERT INTO collection_tasks.capture_plans
         (organization_id,project_id,collection_task_id,region_code,revision,scheme_id,
@@ -280,10 +266,18 @@ def add_participants(
     return {**plan, "locked_at": current["locked_at"]}
 
 
-def for_robot(db: Any, scope: Scope, task: str, robot: str, source_format: str) -> Document:
+def for_robot(db: Any, scope: Scope, task: str, robot: str, source_format: str, *, plan_revision: int | None = None) -> Document:
     """Read-only preflight; never lock or change a task."""
     record = task_record(db, scope, task)
     plan = get_plan(db, scope, task)
+    if plan_revision is not None:
+        row = db.execute(
+            """SELECT document FROM collection_tasks.capture_plans
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s
+            AND collection_task_id=%s AND revision=%s""",
+            (*scope, task, plan_revision),
+        ).fetchone()
+        plan = {**row[0], "locked_at": (plan or {}).get("locked_at")} if row else None
     if plan is None:
         reject(
             "CAPTURE_PLAN_REQUIRED",
@@ -323,6 +317,7 @@ def for_robot(db: Any, scope: Scope, task: str, robot: str, source_format: str) 
         "mapping": mapping,
         "adapter": adapter,
         "output": plan["output"],
+        "quality_policy": document.get("quality_policy", {}),
         "source_format": source_format,
     }
 
@@ -375,7 +370,9 @@ def prepare_recording(
         "output": plan["output"],
         "output_contract_sha256": plan["output_contract_sha256"],
         "source": "TASK_PLAN",
+        "quality_policy": resolved["quality_policy"],
         "prepared_at": now(),
+        "task_instruction": db.execute("SELECT name FROM collection_tasks.collection_tasks WHERE organization_id=%s AND project_id=%s AND collection_task_id=%s", (*scope[:2], task)).fetchone()[0],
     }
     snapshot = {**content, "snapshot_sha256": digest(content)}
     db.execute(

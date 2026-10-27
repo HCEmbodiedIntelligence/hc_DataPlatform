@@ -41,7 +41,7 @@ class EpisodeDeliveryPlan(FrozenModel):
     archive_format: ArchiveKind
     modalities: Literal["all_collected"] = "all_collected"
     annotation_selection: Literal["package_contents_only"] = "package_contents_only"
-    processor_version: Literal["hc-episode-archive/1"] = "hc-episode-archive/1"
+    processor_version: Literal["hc-episode-archive/1", "hc-episode-archive/2"] = "hc-episode-archive/2"
     reader_version: Literal["lerobot/0.6.1"] = "lerobot/0.6.1"
 
     @model_validator(mode="after")

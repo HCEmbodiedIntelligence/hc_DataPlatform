@@ -32,8 +32,13 @@ class TaskDeletionResult(BaseModel):
 
 
 class TaskObjectPurger:
-    def __init__(self, client, bucket):
+    def __init__(self, client, bucket, *, alignment_staging_root=None):
         self.client, self.bucket = client, bucket
+        from .deletion_local import TaskLocalArtifacts
+
+        self.local_artifacts = (
+            TaskLocalArtifacts(alignment_staging_root) if alignment_staging_root else None
+        )
 
     def list(self, prefix):
         if not prefix or prefix.count("/") < 2 or not prefix.endswith("/"):
@@ -83,6 +88,10 @@ class TaskObjectPurger:
 
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(remove, manifest["objects"]))
+        if manifest.get("local_files"):
+            if self.local_artifacts is None:
+                raise RuntimeError("alignment staging storage is not configured")
+            self.local_artifacts.purge(manifest["local_files"])
 
 
 class PostgresTaskDeletion:
@@ -139,12 +148,13 @@ class PostgresTaskDeletion:
                         collection_task_id=task_id,
                         task_code=task["task_code"],
                         deleted_rows=sum(plan.counts.values()),
-                        deleted_objects=plan.present_objects,
-                        deleted_bytes=sum(plan.objects.values()),
+                        deleted_objects=plan.present_objects + plan.present_local_files,
+                        deleted_bytes=sum(plan.objects.values()) + sum(plan.local_files.values()),
                     ).model_dump()
                     manifest = {
                         "objects": plan.objects,
                         "multiparts": plan.multiparts,
+                        "local_files": plan.local_files,
                         "counts": plan.counts,
                     }
                     cursor.execute(

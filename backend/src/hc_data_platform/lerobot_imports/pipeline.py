@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -34,7 +34,7 @@ from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import ArtifactWorkspace
 from hc_data_platform.object_storage.checksums import crc64_ecma
 from hc_data_platform.object_storage.ports import JsonObjectStore
-from hc_data_platform.quality.models import QualityProfileV1, QualityStreamObservationV1
+from hc_data_platform.quality.models import QualityStreamObservationV1
 from hc_data_platform.quality.ports import QualityProfileWriter
 from hc_data_platform.verification.models import (
     RawVerificationReportV1,
@@ -60,7 +60,6 @@ from .pipeline_ports import (
     NativeStateChange,
     SourceRolloutRegistration,
 )
-from .profiles import NativeProfile, quality_profile
 from .reader import read_episode, required_episode_files
 from .schema_diagnostics import schema_conflict_detail
 
@@ -84,14 +83,12 @@ class LeRobotPipeline:
         quality_profiles: QualityProfileWriter,
         cache_max_bytes: int = 5 * 1024**3,
         cache_ttl_hours: int = 24,
-        quality_profile_factory: Callable[[NativeProfile, int], QualityProfileV1] = quality_profile,
         native_schemas: NativeSchemaRegistry,
         native_catalog: NativeSampleCatalog,
         schema_builder: DatasetSchemaBuilder = build_dataset_schema,
         sampler_factory: SamplerFactory = FrameSelectionSampler,
         metadata_builder: AlignmentMetadataBuilder = build_alignment_metadata,
     ) -> None:
-        self.quality_profile_factory = quality_profile_factory
         self.sampler_factory = sampler_factory
         self.metadata_builder = metadata_builder
         self.state = state
@@ -398,23 +395,11 @@ class LeRobotPipeline:
                 status=RolloutStatus.RAW_COMMITTED,
             ),
         )
-        profile = self.quality_profile_factory(native_profile, int(episode.fps))
-        profile = profile.model_copy(
-            update={
-                "default_timing": profile.default_timing.model_copy(
-                    update={
-                        "target_frequency_hz": int(episode.fps),
-                        "minimum_frequency_hz_risk": episode.fps * 0.95,
-                        "minimum_frequency_hz_reject": episode.fps * 0.75,
-                    }
-                )
-            }
-        )
-        # Different camera/auxiliary layouts must not overwrite one generic QC
-        # profile. This policy identity is deliberately separate from data schema.
-        profile = profile.model_copy(
-            update={"profile_id": "capture-qc-" + profile.content_sha256()[:32]}
-        )
+        from hc_data_platform.capture_schemes.quality import from_snapshot
+
+        profile = from_snapshot(frozen, native_profile.topics, episode.fps,
+            joint_topic=native_profile.joint_topic, action_topic=native_profile.action_topic,
+            feature_topics={camera.feature_key: camera.topic for camera in native_profile.cameras})
         dataset = frozen["dataset_id"]
         if dataset != task.dataset_id:
             raise ValueError("CAPTURE_VERSION_MISMATCH: frozen Dataset differs from Raw")

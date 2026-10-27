@@ -26,14 +26,13 @@ from hc_data_platform.aligned_media.models import (
 )
 from hc_data_platform.aligned_media.ports import AlignedMediaRepositoryPort
 from hc_data_platform.alignment.models import (
-    AlignedRowV1,
     AlignmentInputV1,
     AlignmentProfileV1,
     ModalityKind,
     ModalityStreamV1,
     TimedSampleV1,
 )
-from hc_data_platform.alignment.ports import AlignmentPort, FragmentWriterPort
+from hc_data_platform.alignment.ports import AlignmentPort
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.dataset_registry.models import DatasetId, DatasetIngestViewerTarget
@@ -296,7 +295,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 cursor.execute(
                     """
                     SELECT processing.episode_document, recording.recording_document,
-                           upload.upload_document
+                           upload.upload_document, slice.episode_document
                       FROM ingest.recording_episode_processing processing
                       JOIN ingest.continuous_recordings recording
                         ON recording.organization_id = processing.organization_id
@@ -308,6 +307,13 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                        AND upload.project_id = recording.project_id
                        AND upload.region_code = recording.region_code
                        AND upload.upload_id = recording.recording_upload_id
+                      JOIN ingest.recording_episode_slices slice
+                        ON slice.organization_id = processing.organization_id
+                       AND slice.project_id = processing.project_id
+                       AND slice.region_code = processing.region_code
+                       AND slice.recording_id = processing.recording_id
+                       AND slice.episode_id = processing.episode_id
+                       AND slice.revision = processing.finalized_revision
                      WHERE processing.organization_id = %s AND processing.project_id = %s
                        AND processing.region_code = %s AND processing.recording_id = %s
                        AND processing.episode_id = %s AND upload.status = 'COMMITTED'
@@ -327,6 +333,12 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                     raise _blocked("the continuous Episode workflow differs from its scoped ledger")
                 recording = ContinuousRecording.model_validate(row[1])
                 upload = RecordingUpload.model_validate(row[2])
+                from .models import EpisodeSlice
+
+                saved_slice = EpisodeSlice.model_validate(row[3])
+                task_labels = saved_slice.task_labels
+                if task_labels is None and saved_slice.task_label:
+                    task_labels = (saved_slice.task_label,)
                 if processing.finalized_revision != finalized_revision:
                     raise _blocked("the continuous Episode finalized revision has changed")
                 if processing.status in {
@@ -381,9 +393,8 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                 receipt = cursor.fetchone()
                 scope = (organization_id, project_id, region_code)
                 if receipt:
-                    frozen = require_snapshot(resolve_raw_snapshot(cursor, scope, receipt[0]))
-                    if frozen != receipt[1]:
-                        raise _blocked("recording processing snapshot differs from its Raw")
+                    from hc_data_platform.capture_schemes.reprocess import execution_snapshot
+                    frozen = execution_snapshot(cursor, scope, receipt[0], receipt[1])
                 else:
                     cursor.execute(
                         """SELECT document FROM ingest.capture_recording_snapshots
@@ -473,9 +484,9 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                     {topic: "json" for topic in modality_keys},
                     frequency_hz=frequency_hz,
                 )
-                quality_profile = self._quality_profile(
-                    cursor, project_id, modality_keys, frequency_hz
-                )
+                from hc_data_platform.capture_schemes.quality import from_snapshot
+
+                quality_profile = from_snapshot(frozen, modality_keys, frequency_hz)
                 connection.commit()
         finally:
             connection.close()
@@ -561,6 +572,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             schema_snapshot_id=snapshot.schema_snapshot_id,
             recording_config=configuration,
             capture_snapshot=frozen,
+            task_labels=task_labels,
             capture_validation={
                 "presence": {
                     name: name in feature_names(sorted(modality_keys)).values()
@@ -571,7 +583,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             quality_profile=quality_profile,
             alignment_profile=AlignmentProfileV1(
                 profile_id=f"continuous:{snapshot.schema_snapshot_id}",
-                converter_version="continuous-episode-package/3"
+                converter_version=("continuous-episode-package/4" if configuration.recorder_version in {"native-mcap-recording/3", "native-mcap-recording/4"} else "continuous-episode-package/3")
                 if self._package_schemas is not None
                 else "continuous-mp4-sensor/1",
                 frequency_hz=frequency_hz,
@@ -723,57 +735,6 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             raise _blocked("the recording collection task has an invalid Dataset") from exc
         return dataset_id
 
-    @staticmethod
-    def _quality_profile(
-        cursor: Any, project_id: str, topics: frozenset[str], fps: float = 30
-    ) -> Any:
-        from hc_data_platform.quality.models import QualityProfileV1, canonical_json_bytes
-
-        cursor.execute(
-            """SELECT profile_json FROM quality_profiles WHERE project_id = %s ORDER BY
-            profile_id, profile_version""",
-            (project_id,),
-        )
-        # Versions are immutable evidence. Select each profile's latest version
-        # before matching topics, so publishing a revision neither creates an
-        # ambiguity nor silently falls back to a superseded topic contract.
-        latest: dict[str, QualityProfileV1] = {}
-        for row in cursor.fetchall():
-            profile = QualityProfileV1.model_validate(row[0])
-            previous = latest.get(profile.profile_id)
-            if previous is None or profile.profile_version > previous.profile_version:
-                latest[profile.profile_id] = profile
-        candidates = [
-            profile
-            for profile in latest.values()
-            if profile.required_topics == topics
-            and profile.default_timing.target_frequency_hz == fps
-        ]
-        if not candidates and not latest:
-            return QualityProfileV1(
-                profile_id="capture-default-" + canonical_hash(sorted(topics))[:16] + f"-{fps}hz",
-                profile_version=1,
-                engine_version="be06-qc/3",
-                required_topics=topics,
-                joint_topic="/observation/state",
-                action={"topic": "/action"},
-                default_timing={
-                    "target_frequency_hz": int(fps),
-                    "minimum_frequency_hz_risk": fps * 0.95,
-                    "minimum_frequency_hz_reject": fps * 0.75,
-                },
-            )
-        # Native imports and capture-scheme setup may persist the same rules
-        # under different names. They are not conflicting policies: compare all
-        # decision fields, including the engine, and pin one existing identity.
-        # Any actual rule difference remains ambiguous and requires review.
-        rules = {
-            canonical_json_bytes(profile.model_dump(exclude={"profile_id", "profile_version"}))
-            for profile in candidates
-        }
-        if len(rules) != 1:
-            raise _blocked("the recording must match exactly one QC policy")
-        return min(candidates, key=lambda profile: (profile.profile_id, profile.profile_version))
 
 
 class ContinuousEpisodeProcessingService:
@@ -916,7 +877,7 @@ class ContinuousEpisodeProcessingService:
 
             if (
                 request.recording_config.recorder_version
-                in {"openarm-session/v2", "native-mcap-recording/1", "native-mcap-recording/2"}
+                in {"openarm-session/v2", "native-mcap-recording/1", "native-mcap-recording/2", "native-mcap-recording/3", "native-mcap-recording/4"}
                 and request.storage_format == "lerobot_v3"
             ):
                 from .capture_quality import summarize
@@ -929,6 +890,7 @@ class ContinuousEpisodeProcessingService:
                     request.start_offset_ns,
                     request.end_offset_ns,
                     request.quality_profile,
+                    output=(request.capture_snapshot or {}).get("output"),
                 )
                 findings.update(capture_quality["reject_codes"])
                 warning_codes.update(capture_quality["warning_codes"])
@@ -962,6 +924,12 @@ class ContinuousEpisodeProcessingService:
             joints, actions = self._openarm_numeric_quality(
                 request, localized, findings, capture_quality
             )
+            from .capture_quality import alignment_offsets
+
+            measured_offsets = alignment_offsets(
+                [localized[a.asset_id] for a in _assets_for_role(request.assets, RecordingAssetRole.SENSOR_DATA)],
+                request.start_offset_ns, request.end_offset_ns,
+            ) if capture_quality is not None else {}
             quality_data = QualityInputV1(
                 rollout_id=request.projection.rollout_id,
                 source_sha256=request.projection.source_sha256,
@@ -971,6 +939,7 @@ class ContinuousEpisodeProcessingService:
                 image_checks_applicable=request.recording_config.collection_mode != "JOINT_ONLY",
                 joints=joints,
                 actions=actions,
+                modality_offsets_ns=measured_offsets,
                 complete_step_ratio=capture_quality["valid_ratio"] if capture_quality else 1.0,
             )
             rule_evidence = None
@@ -1034,15 +1003,17 @@ class ContinuousEpisodeProcessingService:
         return self._align(request)
 
     def _align(self, request, *, package_source=None):
+        preserved = None
         start_ns = _datetime_ns(request.projection.started_at)
         end_ns = _datetime_ns(request.projection.ended_at)
         if package_source is not None:
-            from .package import source_context, timeline
+            from .package import preserved_frames, source_context, timeline
 
             upload, paths = package_source
             origin, _, _ = source_context(request, upload, paths)
             start_ns, duration_ns = timeline(request, origin)
             end_ns = start_ns + duration_ns
+            preserved = preserved_frames(request, paths)
         shift_ns = start_ns - _datetime_ns(request.projection.started_at)
         if request.recording_config.recorder_version in {
             "openarm-session/v2",
@@ -1107,17 +1078,11 @@ class ContinuousEpisodeProcessingService:
                 for item in sensor_assets
             ]
             iterators.extend(
-                self._camera_alignment_samples(request, camera, shift_ns=shift_ns)
+                self._camera_alignment_samples(request, camera, shift_ns=shift_ns, preserved=preserved)
                 for camera in request.recording_config.cameras
             )
             merged = heapq.merge(*iterators, key=lambda item: (item[0], item[1]))
             writer = self._fragment_writers.create(alignment_request)
-            if not (
-                package_source is not None
-                and request.recording_config.recorder_version
-                in {"openarm-session/v2", "native-mcap-recording/1", "native-mcap-recording/2"}
-            ):
-                writer = _CompleteFrameWriter(writer)
             manifest = self._alignment.align_stream_to_writer(
                 rollout_id=data.rollout_id,
                 source_sha256=data.source_sha256,
@@ -1128,6 +1093,8 @@ class ContinuousEpisodeProcessingService:
                 samples=((topic, sample) for _timestamp, topic, sample in merged),
                 profile=request.alignment_profile,
                 writer=writer,
+                drop_invalid=package_source is None,
+                **({"target_timestamps": (origin + stamp for _, stamp in preserved)} if preserved else {}),
             )
         staging = self._publish_staging(request, manifest)
         if package_source is not None:
@@ -1566,6 +1533,8 @@ class ContinuousEpisodeProcessingService:
             "openarm-session/v2",
             "native-mcap-recording/1",
             "native-mcap-recording/2",
+            "native-mcap-recording/3",
+            "native-mcap-recording/4",
         }:
             return (), ()
         configured = {s.topic: s for s in request.recording_config.sensors}
@@ -1628,7 +1597,7 @@ class ContinuousEpisodeProcessingService:
                         continue
                     if topic == "/action":
                         actions.append(
-                            ActionObservation(timestamp_ns=timestamp, values=tuple(values))
+                            ActionObservation(timestamp_ns=timestamp, values=tuple(values), validity=body.get("validity"))
                         )
                     else:
                         joints.append(
@@ -1916,7 +1885,7 @@ class ContinuousEpisodeProcessingService:
                     "sensor MCAP topic inventory differs from recording config"
                 )
             if (
-                request.capture_snapshot
+                getattr(request, "capture_snapshot", None)
                 and request.capture_snapshot["effective_adapter"]
                 .get("configuration", {})
                 .get("semantic_output")
@@ -1958,10 +1927,18 @@ class ContinuousEpisodeProcessingService:
 
     @staticmethod
     def _camera_alignment_samples(
-        request: ContinuousEpisodeWorkflowInput, camera: Any, *, shift_ns: int = 0
+        request: ContinuousEpisodeWorkflowInput, camera: Any, *, shift_ns: int = 0, preserved=None
     ) -> Iterator[tuple[int, str, TimedSampleV1]]:
         start_ns = _datetime_ns(request.projection.started_at)
         end_ns = _datetime_ns(request.projection.ended_at)
+        if preserved is not None:
+            for index, offset in preserved:
+                stamp = start_ns + offset - request.start_offset_ns + shift_ns
+                yield stamp, camera.modality_key, TimedSampleV1(timestamp_ns=stamp, value={
+                    "camera_id": camera.camera_id, "source_frame_index": index,
+                    "source_pts_ns": round(index * 1e9 / camera.fps),
+                })
+            return
         source_start_ns = request.start_offset_ns - camera.capture_start_offset_ns
         fps_out = request.alignment_profile.frequency_hz
         frame_count = round((end_ns - start_ns) * fps_out / 1_000_000_000)
@@ -2181,34 +2158,6 @@ def _bounded_value(value: object) -> object:
     if len(json.dumps(result, separators=(",", ":")).encode()) > 1024 * 1024:
         raise ContinuousEpisodeProcessingError("decoded sensor value exceeds one MiB")
     return result
-
-
-class _CompleteFrameWriter:
-    """Never publish an aligned fragment with absent required samples."""
-
-    def __init__(self, writer: FragmentWriterPort) -> None:
-        self.writer = writer
-
-    def begin(self, *, rollout_id: str, attempt_id: str) -> None:
-        self.writer.begin(rollout_id=rollout_id, attempt_id=attempt_id)
-
-    def write_row(self, row: AlignedRowV1) -> None:
-        if not row.sample_valid:
-            missing = sorted(name for name, value in row.modalities.items() if not value.valid)
-            raise ContinuousEpisodeProcessingError(
-                f"aligned frame {row.step_index} has missing required samples: {missing}"
-            )
-        self.writer.write_row(row)
-
-    def commit(self, *, row_count: int, content_sha256: str, schema_sha256: str) -> str:
-        if row_count == 0:
-            raise ContinuousEpisodeProcessingError("aligned Episode has no frames")
-        return self.writer.commit(
-            row_count=row_count, content_sha256=content_sha256, schema_sha256=schema_sha256
-        )
-
-    def abort(self) -> None:
-        self.writer.abort()
 
 
 def _episode_sensor_timestamp(

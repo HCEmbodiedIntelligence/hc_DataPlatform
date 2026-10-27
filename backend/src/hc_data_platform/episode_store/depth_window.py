@@ -73,10 +73,11 @@ def prepare_depth_window(
     entries, original_report, source_fps = _verify_source(media)
     if preserve_parent_times and (
         Fraction(str(window.frequency_hz)) != source_fps
-        or window.frame_count != window.stop_source_frame - window.first_source_frame
+        or (window.source_frames is None
+            and window.frame_count != window.stop_source_frame - window.first_source_frame)
         or window.source_start_offset_ns is not None
     ):
-        raise ValueError("parent timestamps require consecutive frames without resampling")
+        raise ValueError("parent timestamps require explicit frame selection without resampling")
     source_count = original_report["frames"]
     if (
         window.stop_source_frame > source_count

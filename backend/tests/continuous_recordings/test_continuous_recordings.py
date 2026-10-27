@@ -198,6 +198,41 @@ def test_continuous_capture_manifest_requires_one_whole_bundle() -> None:
         )
 
 
+def test_task_descriptions_default_once_and_survive_finalization(monkeypatch) -> None:
+    service, _, _, session_id = _committed_services()
+    recording = _register(service, session_id).data
+    description = "将桌面上的物体抓起，放入指定容器，最后让机械臂回到初始位置。" * 30
+    monkeypatch.setattr(service._repository, "present", lambda items: tuple(
+        item.model_copy(update={"default_task_labels": (description,)}) for item in items
+    ))
+    scope = dict(auth=_auth(), organization_id="org-a", project_id="project-a",
+                 region_code="cn-hz", recording_id=recording.recording_id,
+                 actor_id="operator-a", request_id="task-description-defaults")
+    draft = service.save_draft(
+        **scope, if_match=recording.etag,
+        command=SaveSliceDraftCommand.model_validate({"slices": [
+            {"episode_id": "episode_default", "start_offset_ns": "0", "end_offset_ns": "1000000000"},
+            {"episode_id": "episode_multiple", "start_offset_ns": "1000000000", "end_offset_ns": "2000000000",
+             "task_labels": [description, " 保持夹爪朝向不变 ", description]},
+            {"episode_id": "episode_cleared", "start_offset_ns": "2000000000", "end_offset_ns": "3000000000",
+             "task_labels": [], "task_label": "stale legacy value"},
+            {"episode_id": "episode_legacy", "start_offset_ns": "3000000000", "end_offset_ns": "4000000000",
+             "task_label": "已编辑的标签"},
+        ]}),
+    )
+    labels = [item.task_labels for item in draft.revision.slices]
+    assert labels == [(description,), (description, "保持夹爪朝向不变"), (), ("已编辑的标签",)]
+    assert draft.revision.slices[2].task_label is None
+    assert draft.revision.slices[0].task_label == description
+    finalized = service.finalize(
+        **scope, if_match=draft.recording.etag,
+        expected_draft_revision=draft.revision.revision,
+    )
+    assert [item.task_labels for item in finalized.revision.slices] == labels
+    assert finalized.revision.slices[0].start_offset_ns == 0
+    assert finalized.revision.slices[0].end_offset_ns == 1_000_000_000
+
+
 def test_manual_slice_draft_finalizes_virtual_episodes_without_copying_source() -> None:
     service, _ingest, _persistence, session_id = _committed_services()
     registered = _register(service, session_id)

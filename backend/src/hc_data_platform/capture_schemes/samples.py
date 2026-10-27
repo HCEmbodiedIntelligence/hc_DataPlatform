@@ -191,7 +191,9 @@ def validate_sample(
                     )
             else:
                 path = root / sample.source_path
-                inventory = inspect(path)  # type: ignore[no-untyped-call]
+                from hc_data_platform.continuous_recordings.mcap_selection import selected_topics
+                initial_cfg = McapProcessingConfig.model_validate(adapter["configuration"])
+                inventory = inspect(path, selected_topics=selected_topics(initial_cfg))
                 frequency = document["output"].get("frequency_hz")
                 if frequency is None:
                     frequency = adapter["configuration"].get("fps")
@@ -215,7 +217,8 @@ def validate_sample(
                     reject("CAPTURE_FORMAT_UNSUPPORTED", "发布方案需要明确的动作来源")
                 if cfg.depth_scale_m_per_unit is not None and not cfg.depth_unit_evidence:
                     reject("CAPTURE_STRUCTURE_MISMATCH", "深度单位换算必须有明确依据")
-                cfg = resolve(cfg, inventory)  # type: ignore[no-untyped-call]
+                if output.algorithm not in {"capture-structure/v2", "capture-structure/v3"}:
+                    cfg = resolve(cfg, inventory)  # type: ignore[no-untyped-call]
                 _, decoded = prepare(path, root / "decoded", cfg, preserve_source=True)  # type: ignore[no-untyped-call]
                 evidence.update(
                     inventory=inventory,

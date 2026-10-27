@@ -30,11 +30,13 @@ import type {
   SchemeDetail,
   SchemeLink,
   SchemeDraft,
+  SchemeDocument,
   TaskPlan,
 } from "./contracts";
 import { draftKey, saveDraft } from "./navigation";
 import { versionSchema } from "./contracts";
 import { normalizeAdapters } from "./editor-model";
+import { QualityFields } from "./QualityFields";
 const flags = vi.hoisted(() => ({ manage: true, taskManage: true }));
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 vi.mock("../../shared/auth/use-capabilities", () => ({
@@ -286,12 +288,18 @@ beforeEach(() => {
     return structuredClone(state);
   });
 });
-it("shows a locked scheme without participant enrollment or mapping controls", async () => {
+it("shows only the selected scheme and allows changing a started task directly", async () => {
   mount(<TaskPlanManager scope={scope} taskId="task" active />);
-  await screen.findByText(/已经开始采集/);
-  expect(screen.getByText(/使用同一采集方案的机器人均可/)).toBeVisible();
+  expect(await screen.findByText("X1 关节方案")).toBeVisible();
+  expect(screen.getByRole("combobox", { name: "任务采集方案" })).toBeEnabled();
   expect(
-    screen.queryByRole("button", { name: "更换采集方案" }),
+    screen.queryByText(/已经开始采集|维状态|每次保存生成新版本/),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("link", { name: "查看共享方案" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "保存任务采集方案" }),
   ).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "追加参与实例" }),
@@ -300,28 +308,80 @@ it("shows a locked scheme without participant enrollment or mapping controls", a
   expect(
     vi.mocked(request).mock.calls.some(([o]) => o.path.includes("/robots/")),
   ).toBe(false);
-});
-it("permits explicit replacement only before the first recording and respects task permissions", async () => {
-  taskPlan.locked_at = null;
-  const view = mount(<TaskPlanManager scope={scope} taskId="task" active />);
-  expect(
-    await screen.findByRole("button", { name: "更换采集方案" }),
-  ).toBeVisible();
-  flags.taskManage = false;
-  view.rerender(
-    <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <TaskPlanManager scope={scope} taskId="task" active />
-      </MemoryRouter>
-    </QueryClientProvider>,
+  expect(vi.mocked(request).mock.calls.some(([o]) => o.method === "PUT")).toBe(
+    false,
   );
-  await screen.findByText(/尚未开始采集/);
+});
+it.each([null, "2026-10-21T00:00:00Z"])(
+  "respects task permissions when first preparation is %s",
+  async (startedAt) => {
+    taskPlan.locked_at = startedAt;
+    const view = mount(<TaskPlanManager scope={scope} taskId="task" active />);
+    expect(
+      await screen.findByRole("combobox", { name: "任务采集方案" }),
+    ).toBeVisible();
+    flags.taskManage = false;
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <TaskPlanManager scope={scope} taskId="task" active />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("X1 关节方案");
+    expect(
+      screen.queryByRole("combobox", { name: "任务采集方案" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "追加参与实例" }),
+    ).not.toBeInTheDocument();
+  },
+);
+it("saves a new task plan revision after recording has started", async () => {
+  const user = userEvent.setup();
+  state.latest_version = 2;
+  state.versions.push(fixtureVersion(2));
+  mount(<TaskPlanManager scope={scope} taskId="task" active />);
+  await screen.findByText("X1 关节方案");
+  expect(taskPlan.scheme.version).toBe(1);
   expect(
-    screen.queryByRole("button", { name: "更换采集方案" }),
+    screen.queryByRole("button", { name: "保存任务采集方案" }),
   ).not.toBeInTheDocument();
+  await user.click(
+    await screen.findByRole("combobox", { name: "任务采集方案" }),
+  );
+  await user.click(
+    await screen.findByText("X1 关节方案", {
+      selector: ".ant-select-item-option-content",
+    }),
+  );
+  const saveButton = await screen.findByRole("button", {
+    name: "保存任务采集方案",
+  });
+  await waitFor(() => expect(saveButton).toBeEnabled());
+  expect(taskPlan.scheme.version).toBe(1);
+  expect(taskPlan.revision).toBe(2);
+  await user.click(saveButton);
+  await waitFor(() => expect(taskPlan.revision).toBe(3));
+  expect(taskPlan.scheme.version).toBe(2);
+  expect(taskPlan.locked_at).toBe("2026-10-21T00:00:00Z");
   expect(
-    screen.queryByRole("button", { name: "追加参与实例" }),
-  ).not.toBeInTheDocument();
+    vi
+      .mocked(request)
+      .mock.calls.some(
+        ([options]) =>
+          options.method === "PUT" &&
+          options.path.includes("/capture-plan") &&
+          (options.body as { expected_revision: number }).expected_revision ===
+            2,
+      ),
+  ).toBe(true);
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "保存任务采集方案" }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole("combobox", { name: "任务采集方案" })).toBeVisible();
 });
 it("rejects a task plan response from another project or task", async () => {
   taskPlan.project_id = "other-project";
@@ -438,7 +498,7 @@ it("selects the latest published scheme without looking up any robots or mapping
     );
   }
   mount(<Form />);
-  expect(await screen.findByText(/2 维状态/)).toBeVisible();
+  expect(await screen.findByText("X1 关节方案")).toBeVisible();
   await waitFor(() =>
     expect(changed).toHaveBeenLastCalledWith({
       expected_revision: 0,
@@ -454,19 +514,10 @@ it("selects the latest published scheme without looking up any robots or mapping
   expect(
     vi.mocked(request).mock.calls.some(([o]) => o.path.includes("/robots/")),
   ).toBe(false);
-  await userEvent.click(screen.getByRole("button", { name: "更换版本" }));
-  fireEvent.mouseDown(screen.getByLabelText("任务采集方案版本"));
-  await userEvent.click(await screen.findByText("v1"));
-  await waitFor(() =>
-    expect(changed).toHaveBeenLastCalledWith({
-      expected_revision: 0,
-      scheme: {
-        scheme_id: "shared",
-        version: 1,
-        content_sha256: fixtureVersion(1).content_sha256,
-      },
-    }),
-  );
+  expect(
+    screen.queryByRole("button", { name: "更换版本" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText(/2 维状态/)).not.toBeInTheDocument();
 });
 it.each(["archived", "unpublished"])(
   "rejects a restored %s scheme without inventing a task plan",
@@ -539,7 +590,7 @@ it("restores task form and submits capture_plan in the creation command", async 
     />,
   );
   expect(screen.getByDisplayValue("保留任务")).toBeVisible();
-  await screen.findByText(/2 维状态/);
+  await screen.findByText("X1 关节方案");
   fireEvent.click(screen.getByRole("button", { name: "创建任务" }));
   await waitFor(() => expect(onSubmit).toHaveBeenCalled());
   expect(onSubmit.mock.calls[0]![0]).toMatchObject({
@@ -636,7 +687,7 @@ it("reuses an older definition as an optional shortcut while keeping the new sch
   const originalVersion = state.versions[0]!;
   originalVersion.description = "包含双臂关节配置";
   originalVersion.model_version_ids = ["model-v1"];
-  originalVersion.quality_policy = { missing_required: "reject" };
+  originalVersion.quality_policy = { missing_required: "reject", joint_out_of_range_is_reject: true };
   originalVersion.adapters[0] = {
     source_format: "LEROBOT_V3",
     parser_version: "lerobot-v3/1",
@@ -739,11 +790,17 @@ it("reuses an older definition as an optional shortcut while keeping the new sch
     quality_policy: originalVersion.quality_policy,
     output: {
       ...originalVersion.output,
+      algorithm: "capture-structure/v2",
       features: {
         ...originalVersion.output.features,
         "observation.state": {
           ...originalVersion.output.features["observation.state"],
-          units: ["deg", ...originalVersion.output.features["observation.state"]!.units.slice(1)],
+          units: [
+            "deg",
+            ...originalVersion.output.features[
+              "observation.state"
+            ]!.units.slice(1),
+          ],
         },
       },
     },
@@ -791,12 +848,16 @@ it.each([true, false])(
     );
     if (published) {
       await user.click(screen.getByRole("button", { name: "填入配置" }));
-      expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("rad");
+      expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue(
+        "rad",
+      );
       await user.click(screen.getByLabelText("来源版本"));
       await user.click(await screen.findByText("当前已保存草稿"));
     }
     await user.click(screen.getByRole("button", { name: "填入配置" }));
-    expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("m");
+    expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue(
+      "m",
+    );
     await user.click(screen.getByText("适用范围"));
     expect(screen.getByLabelText("方案名称")).toHaveValue("");
     expect(screen.getByLabelText("方案说明")).toHaveValue("");
@@ -848,14 +909,18 @@ it("preserves current edits when another source fails and loads it only after a 
   await user.click(screen.getByLabelText("已有方案"));
   await user.click(await screen.findByText("另一套方案"));
   expect(await screen.findByText(/方案配置读取失败/)).toBeVisible();
-  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("deg");
+  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue(
+    "deg",
+  );
   expect(screen.getByRole("button", { name: "填入配置" })).toBeDisabled();
   failed = false;
   await user.click(screen.getByRole("button", { name: "重新读取" }));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "填入配置" })).toBeEnabled(),
   );
-  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("deg");
+  expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue(
+    "deg",
+  );
   await user.click(screen.getByRole("button", { name: "填入配置" }));
   expect(screen.getByLabelText("observation.state 第1轴单位")).toHaveValue("m");
 });
@@ -873,7 +938,10 @@ it("searches the list and archives only after confirmation, retaining published 
       }),
     ),
   );
-  await user.click(await screen.findByRole("button", { name: /归\s*档/ }));
+  await user.click(
+    screen.getByRole("button", { name: "更多操作：X1 关节方案" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: "归档方案" }));
   expect(state.archived).toBe(false);
   await user.click(screen.getAllByRole("button", { name: /归\s*档/ }).at(-1)!);
   await waitFor(() => expect(state.archived).toBe(true));
@@ -952,4 +1020,19 @@ it("provides a visible parent route on create and calls editing a scheme", async
   await user.click(screen.getByText("确认与保存"));
   expect(screen.getByRole("button", { name: "保存方案" })).toBeVisible();
   expect(screen.queryByText(/草稿/)).not.toBeInTheDocument();
+});
+
+it("edits QC as part of the capture document and preserves other rules", async () => {
+  function Editor() {
+    const initial = fixtureDocument();
+    const [doc, setDoc] = useState<SchemeDocument>({...initial, quality_policy: {...initial.quality_policy, joint_limits: {left: [-1, 1]}}});
+    return <><QualityFields document={doc} onChange={setDoc} />
+      <output data-testid="quality-value">{JSON.stringify(doc.quality_policy)}</output></>;
+  }
+  mount(<Editor />);
+  await userEvent.click(screen.getByText('完整帧'));
+  fireEvent.change(screen.getByLabelText('最小完整帧比例 · 拒绝'), {target: {value: '0.6'}});
+  await waitFor(() => expect(JSON.parse(screen.getByTestId('quality-value').textContent!)).toMatchObject({
+    completeness: {minimum_ratio_reject: .6}, joint_limits: {left: [-1, 1]},
+  }));
 });

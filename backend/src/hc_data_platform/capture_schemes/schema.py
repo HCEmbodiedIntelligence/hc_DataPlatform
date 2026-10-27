@@ -11,6 +11,10 @@ if TYPE_CHECKING:
     from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
 
+def format_version(output: Document) -> str:
+    return "capture-format-" + digest(structure_contract(output))
+
+
 def semantic_schema(
     project_id: str,
     dataset_id: str,
@@ -24,12 +28,18 @@ def semantic_schema(
     from .models import OutputContract
 
     contract = OutputContract.model_validate(output).model_dump(mode="json")
+    versioned = contract["algorithm"] in {"capture-structure/v2", "capture-structure/v3"}
+    if versioned:
+        # Nominal sample rate is batch metadata, never a different format.
+        contract["frequency_hz"] = None
+        for feature in contract["features"].values():
+            feature["media"].pop("video.fps", None)
     # Optional features belong to the logical schema even when this batch omitted
     # them. Presence is stored with the Episode, never in the schema identity.
     fields = dict(fields)
     recording = "/observation/state" in fields
     for name, feature in contract["features"].items():
-        if not feature["required"]:
+        if versioned or not feature["required"]:
             topic = (
                 (
                     "/observation/state"
@@ -45,8 +55,8 @@ def semantic_schema(
     return DatasetSchemaSnapshot.create(
         project_id=project_id,
         dataset_id=dataset_id,
-        schema_snapshot_id="capture-" + digest(contract),
-        frequency_hz=frequency_hz or contract["frequency_hz"] or 30,
+        schema_snapshot_id=format_version(contract) if versioned else "capture-" + digest(contract),
+        frequency_hz=30 if versioned else frequency_hz or contract["frequency_hz"] or 30,
         fields=fields,
         semantic_contract=contract,
     )
@@ -96,9 +106,17 @@ def structure_contract(output: Document) -> Document:
     import copy
 
     result = copy.deepcopy(output)
+    if result.get("normalization") is None:
+        result.pop("normalization", None)
+    if not result.get("metadata_features"):
+        result.pop("metadata_features", None)
+    if result.get("algorithm") not in {"capture-structure/v2", "capture-structure/v3"}:
+        result.pop("validity_max_age_ms", None)
     result.pop("frequency_hz", None)
     for feature in result.get("features", {}).values():
         feature.get("media", {}).pop("video.fps", None)
+        if feature.get("required_axes") is None:
+            feature.pop("required_axes", None)
     return result
 
 

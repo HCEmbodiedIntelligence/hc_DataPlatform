@@ -4,7 +4,7 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.dataset_registry.models import DatasetPageEpisodeRevision
 from hc_data_platform.episode_store.files import PackageFiles
-from hc_data_platform.logical_data.models import LogicalRobotAssetGrant, LogicalRobotScene
+from hc_data_platform.logical_data.models import LogicalRobotAssetGrant, LogicalRobotPreviewGrant, LogicalRobotScene
 from hc_data_platform.registry.service import RegistryService
 from hc_data_platform.robotics.scene_models import FrozenRobotScene
 from hc_data_platform.security.auth import AuthContext
@@ -69,6 +69,20 @@ class LogicalSceneReader:
             asset_id=asset_id,
             request_id=current_request_context().request_id,
         )
+        return self._asset_grant(view, asset, grant)
+
+    def authorize_assets(self, revision, view, auth, preview_format="stl"):
+        if view.scene is None or view.scene.model_version_id is None:
+            return []
+        assets = tuple(a for a in view.scene.assets if a.role in {"URDF", "MESH", "TEXTURE"})
+        grants = self.registry.authorize_published_asset_downloads(
+            auth=auth, organization_id=revision.scope.organization_id,
+            project_id=revision.scope.project_id, version_id=view.scene.model_version_id,
+            asset_ids=tuple(a.asset_id for a in assets), request_id=current_request_context().request_id,
+        )
+        return [self._asset_grant(view, asset, grant, preview_format) for asset, grant in zip(assets, grants, strict=True)]
+
+    def _asset_grant(self, view, asset, grant, preview_format="stl"):
         if grant.sha256 != asset.sha256 or grant.media_type != asset.media_type:
             raise problem(
                 status=409,
@@ -76,9 +90,13 @@ class LogicalSceneReader:
                 title="Frozen model asset differs",
                 detail="The authorized asset no longer matches the data snapshot.",
             )
+        shared_preview = self.registry.preview_authorization(asset, grant, preview_format)
+        preview = (LogicalRobotPreviewGrant.model_validate(shared_preview.model_dump())
+                   if shared_preview else None)
         return LogicalRobotAssetGrant(
             snapshot_id=view.snapshot_id,
             scene_sha256=view.scene_sha256,
             asset=asset,
             authorization=grant,
+            preview=preview,
         )

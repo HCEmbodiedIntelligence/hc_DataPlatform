@@ -9,12 +9,12 @@ from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
 from .models import DataVersionRef, FrozenModel, PackageInput, digest
 
-VERSION = "hc-tag-episode/1"
+VERSION = "hc-tag-episode/2"
 
 
 class TagEpisodePlan(FrozenModel):
     format: Literal["hc-tag-episode-plan/1"] = "hc-tag-episode-plan/1"
-    processor_version: Literal["hc-tag-episode/1"] = VERSION
+    processor_version: Literal["hc-tag-episode/1", "hc-tag-episode/2"] = VERSION
     parent: DataVersionRef
     parent_input: PackageInput
     annotation: AnnotationDeliveryPlan

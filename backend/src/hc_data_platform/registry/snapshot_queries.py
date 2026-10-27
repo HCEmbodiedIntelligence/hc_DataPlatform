@@ -89,3 +89,22 @@ class PublishedModelAssetReader:
                 ),
                 None if row[9] is None else bytes(row[9]),
             )
+
+    def find_many(self, organization_id: str, version_id: str, asset_ids: tuple[str, ...]):
+        """Authorize immutable metadata in one read, without pulling mesh blobs from PostgreSQL."""
+        with self.connections() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT a.project_id,a.asset_id,a.relative_path,a.role,a.media_type,
+                a.size_bytes,a.sha256,a.created_at
+                FROM registry.robot_model_assets a JOIN registry.robot_model_versions v
+                  ON (a.organization_id,a.version_id)=(v.organization_id,v.version_id)
+                WHERE a.organization_id=%s AND a.version_id=%s AND a.asset_id::text=ANY(%s)
+                  AND v.lifecycle='PUBLISHED'""",
+                (organization_id, version_id, list(asset_ids)),
+            )
+            return {
+                str(row[1]): (row[0], RobotModelAsset(
+                    asset_id=str(row[1]), relative_path=row[2], role=row[3], media_type=row[4],
+                    size_bytes=row[5], sha256=row[6], created_at=row[7],
+                )) for row in cursor.fetchall()
+            }

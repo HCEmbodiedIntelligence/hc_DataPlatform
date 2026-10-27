@@ -8,7 +8,7 @@ export function VideoPreviewModal(
   return (
     <Modal
       {...props}
-      width="min(800px, calc(100vw - 32px), max(560px, calc(100dvh - 200px)))"
+      width="min(1120px, calc(100vw - 32px))"
       style={{ top: 24 }}
       styles={{
         body: { maxHeight: "calc(100dvh - 136px)", overflowY: "auto" },

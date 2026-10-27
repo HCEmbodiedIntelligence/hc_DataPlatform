@@ -47,7 +47,7 @@ const phases = {
 function formatName(job: PackageJob) {
   const { plan } = job;
   if (plan.archive_format === "original_collection_zip/1") return "原始文件";
-  if (plan.archive_format === "mcap_collection_zip/1") return "MCAP 集合";
+  if (plan.archive_format.startsWith("mcap_collection_zip/")) return "MCAP 集合";
   if (plan.archive_format === "lerobot_collection_zip/1")
     return plan.modalities === "rgb"
       ? "LeRobot RGB（不含深度）"

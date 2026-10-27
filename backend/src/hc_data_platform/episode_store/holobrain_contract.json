@@ -1,0 +1,141 @@
+{
+  "features": {
+    "joints": {
+      "_type": "BatchJointsStateFeature"
+    },
+    "actions": {
+      "_type": "BatchJointsStateFeature"
+    },
+    "head": {
+      "_type": "BatchCameraDataEncodedFeature"
+    },
+    "head_depth": {
+      "_type": "BatchCameraDataEncodedFeature"
+    },
+    "index": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "episode_index": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "frame_index": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "task_index": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "robot_index": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "instruction_index": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "timestamp_min": {
+      "dtype": "int64",
+      "_type": "Value"
+    },
+    "timestamp_max": {
+      "dtype": "int64",
+      "_type": "Value"
+    }
+  },
+  "database": {
+    "tables": [
+      [
+        "episode",
+        "CREATE TABLE episode(\"index\" BIGINT, robot_index INTEGER, task_index INTEGER, prev_episode_index BIGINT, dataset_begin_index BIGINT NOT NULL, frame_num INTEGER NOT NULL, truncated BOOLEAN, success BOOLEAN, info JSON, PRIMARY KEY(\"index\"), FOREIGN KEY (robot_index) REFERENCES robot(\"index\"), FOREIGN KEY (task_index) REFERENCES task(\"index\"), );"
+      ],
+      [
+        "instruction",
+        "CREATE TABLE instruction(\"index\" BIGINT, \"name\" VARCHAR, json_content JSON, md5 BLOB NOT NULL, PRIMARY KEY(\"index\"));"
+      ],
+      [
+        "robot",
+        "CREATE TABLE robot(\"index\" INTEGER, \"name\" VARCHAR NOT NULL, \"content\" VARCHAR, content_format VARCHAR, md5 BLOB NOT NULL, PRIMARY KEY(\"index\"));"
+      ],
+      [
+        "table_info",
+        "CREATE TABLE table_info(table_name VARCHAR, table_version VARCHAR NOT NULL, app_version VARCHAR NOT NULL, creation_statement VARCHAR NOT NULL, PRIMARY KEY(table_name));"
+      ],
+      [
+        "task",
+        "CREATE TABLE task(\"index\" INTEGER, \"name\" VARCHAR NOT NULL, description VARCHAR, info JSON, md5 BLOB NOT NULL, PRIMARY KEY(\"index\"));"
+      ]
+    ],
+    "indexes": [
+      [
+        "ix_episode_prev_episode_index",
+        "CREATE INDEX ix_episode_prev_episode_index ON episode(prev_episode_index);"
+      ],
+      [
+        "ix_episode_robot_index",
+        "CREATE INDEX ix_episode_robot_index ON episode(robot_index);"
+      ],
+      [
+        "ix_episode_task_index",
+        "CREATE INDEX ix_episode_task_index ON episode(task_index);"
+      ],
+      [
+        "ix_instruction_md5",
+        "CREATE INDEX ix_instruction_md5 ON instruction(md5);"
+      ],
+      [
+        "ix_robot_md5",
+        "CREATE INDEX ix_robot_md5 ON robot(md5);"
+      ],
+      [
+        "ix_task_md5",
+        "CREATE INDEX ix_task_md5 ON task(md5);"
+      ],
+      [
+        "ix_task_name",
+        "CREATE INDEX ix_task_name ON task(\"name\");"
+      ]
+    ],
+    "table_info_columns": [
+      "table_name",
+      "table_version",
+      "app_version",
+      "creation_statement"
+    ],
+    "table_info": [
+      [
+        "episode",
+        "0.0.2",
+        "0.5.0.dev0",
+        "\nCREATE TABLE episode (\n\tindex BIGINT NOT NULL, \n\trobot_index INTEGER, \n\ttask_index INTEGER, \n\tprev_episode_index BIGINT, \n\tdataset_begin_index BIGINT NOT NULL, \n\tframe_num INTEGER NOT NULL, \n\ttruncated BOOLEAN, \n\tsuccess BOOLEAN, \n\tinfo JSON, \n\tPRIMARY KEY (index), \n\tFOREIGN KEY(robot_index) REFERENCES robot (index), \n\tFOREIGN KEY(task_index) REFERENCES task (index), \n\tFOREIGN KEY(prev_episode_index) REFERENCES episode (index)\n)\n\n"
+      ],
+      [
+        "instruction",
+        "0.0.1",
+        "0.5.0.dev0",
+        "\nCREATE TABLE instruction (\n\tindex BIGINT NOT NULL, \n\tname TEXT, \n\tjson_content JSON, \n\tmd5 BLOB NOT NULL, \n\tPRIMARY KEY (index)\n)\n\n"
+      ],
+      [
+        "robot",
+        "0.0.1",
+        "0.5.0.dev0",
+        "\nCREATE TABLE robot (\n\tindex INTEGER NOT NULL, \n\tname TEXT NOT NULL, \n\tcontent TEXT, \n\tcontent_format VARCHAR(12), \n\tmd5 BLOB NOT NULL, \n\tPRIMARY KEY (index)\n)\n\n"
+      ],
+      [
+        "table_info",
+        "0.0.1",
+        "0.5.0.dev0",
+        "\nCREATE TABLE table_info (\n\ttable_name VARCHAR(32) NOT NULL, \n\ttable_version VARCHAR(16) NOT NULL, \n\tapp_version VARCHAR(48) NOT NULL, \n\tcreation_statement VARCHAR(2048) NOT NULL, \n\tPRIMARY KEY (table_name)\n)\n\n"
+      ],
+      [
+        "task",
+        "0.0.2",
+        "0.5.0.dev0",
+        "\nCREATE TABLE task (\n\tindex INTEGER NOT NULL, \n\tname TEXT NOT NULL, \n\tdescription TEXT, \n\tinfo JSON, \n\tmd5 BLOB NOT NULL, \n\tPRIMARY KEY (index)\n)\n\n"
+      ]
+    ]
+  },
+  "source": "RoboOrchardLab 0.5.0.dev0 official Features / DatasetDBEngine; dataset format 0.1.0"
+}

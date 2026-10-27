@@ -15,6 +15,7 @@ export interface RobotSceneCoreProps {
   runtimeLoader?: RobotSceneRuntimeLoader;
   onIncompatible?: (reason: 'JOINT_MAPPING'|'MODEL_VERSION'|'CALIBRATION_VERSION'|'FRAME_GRAPH') => void;
   onContextLost?: (recovered: boolean) => void;
+  onLoadProgress?: (loaded: number, total: number, bytes?: number, totalBytes?: number) => void;
 }
 
 export interface RobotJointFrameSource {
@@ -80,6 +81,8 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
   const hostRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'incompatible' | 'context-lost'>('loading');
   const [reason, setReason] = useState<string>('');
+  const [retry, setRetry] = useState(0);
+  const [slow, setSlow] = useState(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -89,15 +92,21 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
     let recoveryAttempted = false;
     setStatus('loading');
     setReason('');
+    setSlow(false);
+    const slowTimer = setTimeout(() => setSlow(true), 20_000);
+    resources.add(() => clearTimeout(slowTimer));
 
     const activeRuntimeLoader = providedRuntimeLoader ?? runtimeLoader;
     if (!activeRuntimeLoader) {
       setStatus('unavailable');
       setReason('3D runtime provider 未安装；视频与曲线仍可使用。');
-      return () => controller.abort();
+      return () => { controller.abort(); resources.dispose(); };
     }
 
-    const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible };
+    const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible,
+      onLoadProgress: (loaded, total, bytes, totalBytes) => { if (!controller.signal.aborted) setReason(
+        totalBytes ? `模型 ${Math.min(100, Math.round((bytes ?? 0) / totalBytes * 100))}%` : `正在加载模型（${loaded}/${total}）…`
+      ); } };
     activeRuntimeLoader(host, runtimeProps, controller.signal).then(async ({ manifest, createRuntime, runtime: eagerRuntime }) => {
       if (controller.signal.aborted) { eagerRuntime?.dispose(); return; }
       const mismatch = incompatible(manifest, runtimeProps);
@@ -134,10 +143,13 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       runtime.canvas.addEventListener('webglcontextlost', contextLost);
       resources.add(() => runtime.canvas.removeEventListener('webglcontextlost', contextLost));
       setStatus('ready');
-    }).catch(() => {
+    }).catch((error: unknown) => {
       if (!controller.signal.aborted) {
         setStatus('unavailable');
-        setReason('3D 资源加载失败；视频与曲线仍可使用。');
+        setReason(error instanceof Error && error.message === 'WEBGL_UNAVAILABLE'
+          ? '浏览器无法创建 WebGL 画布，请检查 Chrome 图形加速设置后重试。'
+          : error instanceof Error && error.name === 'ModelAssetLoadError' ? error.message
+          : '模型加载失败，请检查网络后重试。视频与曲线仍可使用。');
       }
     });
 
@@ -146,12 +158,16 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       resources.dispose();
       host.replaceChildren();
     };
-  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible, providedRuntimeLoader]);
+  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible, providedRuntimeLoader, retry]);
 
   return (
     <section className="robot-scene-core" data-status={status} aria-label="机器人 3D 场景">
       <div ref={hostRef} className="robot-scene-viewport" />
-      {status !== 'ready' ? <div role={status === 'incompatible' ? 'alert' : 'status'}>{reason || '正在加载 3D 场景…'}</div> : null}
+      {status !== 'ready' ? <div role={status === 'incompatible' ? 'alert' : 'status'}>
+        <span>{reason || '正在加载 3D 场景…'}</span>
+        {status === 'unavailable' || status === 'context-lost' || (status === 'loading' && slow)
+          ? <button type="button" onClick={() => setRetry((value) => value + 1)}>重新加载模型</button> : null}
+      </div> : null}
     </section>
   );
 }

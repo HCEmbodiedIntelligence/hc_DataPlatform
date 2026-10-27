@@ -257,10 +257,11 @@ def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
         ),
         (*scope, raw.raw_source_id),
     ).fetchone()
-    if linked:
+    reprocessing = bool(reference and reference.get("reprocessing"))
+    if linked and not reprocessing:
         set_source_status(db, scope, raw.raw_source_id, "FAILED", "RECORDING_ALREADY_PROCESSED")
         return
-    if ready:
+    if ready and not reprocessing:
         return  # Replays and new defaults never produce a second recording.
     db.execute(
         """UPDATE ingest.raw_ingest_jobs SET job_type='CONTINUOUS_RECORDING_DISCOVERY',
@@ -431,6 +432,13 @@ def process_file(handler, event, checkpoint):
                 sync_source(db, scope, event.aggregate_id)
                 db.commit()
             original, cfg, task, robot, dataset = row[:5]
+            parser = VERSION if cfg.get("normalization") else "native-mcap-recording/3"
+            if row[8] and row[8].get("effective_adapter", {}).get("parser_version") != parser:
+                raise ValueError("CAPTURE_PARSER_UPGRADE_REQUIRED: select a plan using " + parser)
+            if row[8] and row[8].get("reprocessing"):
+                from hc_data_platform.capture_schemes.reprocess import execution_snapshot
+                with handler.connections() as db:
+                    execution_snapshot(db, scope, event.aggregate_id, row[8])
             prefix = "/".join(("derived-mcap", *scope, ident))
             receipt_key = prefix + "/receipt.json"
             uid = uuid5(NAMESPACE_URL, "native-mcap:" + ident)
@@ -479,7 +487,7 @@ def process_file(handler, event, checkpoint):
                     output = root / "derived"
                     from hc_data_platform.continuous_recordings.mcap_native import inspect
 
-                    channels = inspect(source, checkpoint)
+                    channels = inspect(source, checkpoint, selected_topics=set())
                     with handler.connections() as evidence_db:
                         evidence_db.execute(
                             (

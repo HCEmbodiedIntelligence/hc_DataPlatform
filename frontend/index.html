@@ -4,10 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
+    <link rel="icon" type="image/png" href="/src/assets/hangcha-logo.png" />
     <title>具身智能数据平台</title>
+    <style>
+      #app-startup { max-width: 32rem; margin: 15vh auto; padding: 2rem;
+        font: 16px/1.6 system-ui, sans-serif; color: #273047; background: #fff;
+        border: 1px solid #dce1ee; border-radius: 12px; }
+      #app-startup[hidden] { display: none; }
+      #app-startup a { color: #414bc4; }
+    </style>
   </head>
   <body>
+    <section id="app-startup" role="alert" aria-live="polite" hidden>
+      <h1 id="app-startup-title">页面加载失败</h1>
+      <p id="app-startup-message">请重新加载页面。</p>
+      <a href="">重新加载</a>
+    </section>
+    <noscript><p>请启用 JavaScript 后重新加载页面。</p></noscript>
     <div id="root"></div>
+    <script src="/startup.js"></script>
     <script src="/config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

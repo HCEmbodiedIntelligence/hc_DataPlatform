@@ -21,6 +21,7 @@ class CaptureProgress(BaseModel):
     dataset_id: str
     recording_id: str | None = None
     source_import_id: str | None = None
+    source_path: str | None = None
     canonical_episode_id: str | None = None
     upload_state: str
     stage: Literal[
@@ -102,10 +103,11 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
           SELECT s.organization_id,s.project_id,s.region_code,s.upload_id,
                  s.collection_task_id,s.robot_id,s.dataset_id,
                  s.raw_status,s.committed_at,s.created_at,'{}'::jsonb,
-                 'PRESEGMENTED',s.raw_source_id,s.raw_source_id
+                 CASE WHEN s.source_format='MCAP' THEN 'CONTINUOUS'
+                      ELSE 'PRESEGMENTED' END,s.raw_source_id,s.raw_source_id
           FROM ingest.raw_sources s
           JOIN scope USING (organization_id,project_id,region_code)
-          WHERE s.source_format='LEROBOT_V3' AND s.raw_status='COMMITTED'
+          WHERE s.source_format IN ('LEROBOT_V3','MCAP') AND s.raw_status='COMMITTED'
             AND s.collection_task_id IS NOT NULL AND s.dataset_id IS NOT NULL
             AND s.robot_id IS NOT NULL
             AND (scope.task_id IS NULL OR s.collection_task_id=scope.task_id)
@@ -128,25 +130,28 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
                         u.upload_document #>> '{manifest,capture_started_at}'),
                COALESCE(r.capture_ended_at::text,
                         u.upload_document #>> '{manifest,capture_ended_at}'),
-               r.status,j.status,j.last_error_code,
+               r.status,COALESCE(m.status,j.status),
+               CASE WHEN m.processing_id IS NOT NULL THEN split_part(m.error,':',1)
+                    ELSE j.last_error_code END,
                COALESCE(episodes.items,'[]'::jsonb), u.capture_mode,
-               COALESCE(r.rollout_id,u.upload_id), COALESCE(r.data_package_id,u.upload_id),
-               u.raw_source_id
+               COALESCE(r.rollout_id,m.processing_id,u.upload_id),
+               COALESCE(r.data_package_id,m.processing_id,u.upload_id),
+               u.raw_source_id,
+               COALESCE(m.source_path,u.upload_document #>> '{manifest,assets,0,path}')
         FROM uploads u
+        LEFT JOIN LATERAL (
+          SELECT DISTINCT ON (source_path) processing_id,recording_id,status,error,source_path
+          FROM ingest.mcap_processing_files m
+          WHERE m.organization_id=u.organization_id AND m.project_id=u.project_id
+            AND m.region_code=u.region_code AND m.raw_source_id=u.raw_source_id
+          ORDER BY source_path,created_at DESC,processing_id
+        ) m ON true
         LEFT JOIN ingest.continuous_recordings r
           ON r.organization_id=u.organization_id AND r.project_id=u.project_id
          AND r.region_code=u.region_code
-         AND ((r.collection_job_id=u.collection_job_id
+         AND ((m.processing_id IS NULL AND r.collection_job_id=u.collection_job_id
            AND r.recording_id=u.upload_document #>> '{manifest,format_metadata,recording_id}')
-           OR r.recording_id IN (
-             SELECT latest.recording_id FROM (
-               SELECT DISTINCT ON (m.source_path) m.recording_id
-               FROM ingest.mcap_processing_files m
-               WHERE m.organization_id=u.organization_id AND m.project_id=u.project_id
-                 AND m.region_code=u.region_code AND m.raw_source_id=u.raw_source_id
-               ORDER BY m.source_path,m.created_at DESC,m.processing_id
-             ) latest
-           ))
+           OR r.recording_id=m.recording_id)
         LEFT JOIN ingest.raw_ingest_jobs j
           ON j.organization_id=u.organization_id AND j.project_id=u.project_id
          AND j.region_code=u.region_code AND j.raw_source_id=u.raw_source_id
@@ -308,6 +313,7 @@ def capture_from_row(row):
         dataset_id=dataset,
         recording_id=recording,
         source_import_id=source[0] if source else None,
+        source_path=source[1] if len(source) > 1 else None,
         upload_state=state,
         stage=stage,
         received=received,

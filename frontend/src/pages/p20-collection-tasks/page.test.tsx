@@ -141,7 +141,7 @@ function makeGateway() {
     create: vi.fn(async (_scope, command, _idempotencyKey: string) => ({
       ...task,
       name: command.name,
-      type: command.type,
+      type: command.type ?? "",
       scenario: command.scenario,
       description: command.description,
       target: command.target ?? null,
@@ -186,6 +186,61 @@ it("permanently deletes task data only after confirmation and retains the retry 
     expect.stringMatching(/^delete-/u),
   );
   await screen.findByText("采集任务及数据已删除");
+});
+
+it("reloads the task version after a deletion conflict and shows deletion while pending", async () => {
+  const gateway = makeGateway();
+  gateway.detail
+    .mockResolvedValueOnce({ task, etag: '"v1"' })
+    .mockResolvedValueOnce({ task, etag: '"v2"' });
+  let finishDeletion!: (
+    result: Awaited<ReturnType<CollectionTaskGateway["delete"]>>,
+  ) => void;
+  gateway.delete
+    .mockRejectedValueOnce(
+      createDomainError({
+        code: "PRECONDITION_FAILED",
+        problemCode: "ETAG_MISMATCH",
+        message: "The resource changed after it was read.",
+        fieldErrors: [],
+        operationErrors: [],
+        blockedReasons: [],
+        requestId: "delete-conflict",
+        retryable: false,
+        httpStatus: 412,
+      }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishDeletion = resolve;
+        }),
+    );
+  const user = userEvent.setup();
+  renderPage(gateway);
+  await screen.findByText(task.name);
+  await chooseTaskAction(user, "删除任务及数据");
+  await user.click(screen.getByRole("button", { name: "永久删除任务及数据" }));
+  expect(await screen.findByText("任务删除未完成")).toBeVisible();
+  expect(gateway.delete).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole("button", { name: "重新加载并删除" }));
+  await waitFor(() => expect(gateway.delete).toHaveBeenCalledTimes(2));
+  expect(gateway.detail).toHaveBeenCalledTimes(2);
+  expect(gateway.delete).toHaveBeenNthCalledWith(
+    2,
+    scope,
+    task.collection_task_id,
+    '"v2"',
+    expect.stringMatching(/^delete-/u),
+  );
+  expect(
+    await screen.findByRole("button", { name: /正在删除…/u }),
+  ).toBeDisabled();
+  expect(gateway.close).not.toHaveBeenCalled();
+  await act(async () =>
+    finishDeletion({ status: "DELETED", deleted_objects: 0, deleted_bytes: 0 }),
+  );
+  expect(await screen.findByText("采集任务及数据已删除")).toBeVisible();
 });
 
 function renderPage(
@@ -254,7 +309,7 @@ function LocationProbe() {
 async function fillMinimumCreateForm(user: ReturnType<typeof userEvent.setup>) {
   const drawer = screen.getByRole("dialog", { name: "新建采集任务" });
   await user.type(within(drawer).getByLabelText("任务名称"), "夜班工位采集");
-  await user.type(within(drawer).getByLabelText("采集类型"), "抓取采集");
+  await user.type(within(drawer).getByLabelText("任务分类（选填）"), "抓取采集");
   await user.type(within(drawer).getByLabelText("采集场景"), "夜间灯光条件");
 }
 
@@ -576,7 +631,7 @@ describe("P20 collection tasks", () => {
     });
 
     await user.type(
-      screen.getByRole("textbox", { name: "当前窗口筛选采集类型" }),
+      screen.getByRole("textbox", { name: "当前窗口筛选任务分类" }),
       "抓取",
     );
     await waitFor(() =>
@@ -660,6 +715,25 @@ describe("P20 collection tasks", () => {
       expect(
         screen.queryByRole("menuitem", { name: "取消任务" }),
       ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("creates a task without a category", async () => {
+    const user = userEvent.setup();
+    const gateway = makeGateway();
+    renderPage(gateway);
+    await screen.findByText(task.name);
+    await user.click(screen.getByRole("button", { name: "新建采集任务" }));
+    const drawer = screen.getByRole("dialog", { name: "新建采集任务" });
+    await user.type(within(drawer).getByLabelText("任务名称"), "未分类任务");
+    await user.type(within(drawer).getByLabelText("采集场景"), "桌面抓取");
+    expect(within(drawer).getByLabelText("任务分类（选填）")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "创建任务" }));
+    await waitFor(() => expect(gateway.create).toHaveBeenCalledTimes(1));
+    expect(gateway.create).toHaveBeenCalledWith(
+      scope,
+      expect.objectContaining({ name: "未分类任务", type: "", scenario: "桌面抓取" }),
+      expect.any(String),
     );
   });
 

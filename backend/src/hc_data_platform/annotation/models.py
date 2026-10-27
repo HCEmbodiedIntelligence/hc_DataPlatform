@@ -295,7 +295,7 @@ class AnnotationTag(BaseModel):
     annotation_id: str = Field(min_length=1, max_length=256)
     tag_id: str = Field(min_length=1, max_length=256)
     path: tuple[str, ...] = Field(min_length=1)
-    label: str | None = Field(default=None, min_length=1, max_length=256)
+    label: str | None = Field(default=None, min_length=1, max_length=10_000)
     parent_annotation_id: str | None = Field(default=None, min_length=1, max_length=256)
     start_step: int = Field(ge=0)
     end_step: int = Field(gt=0)

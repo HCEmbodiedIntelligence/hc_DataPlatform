@@ -10,7 +10,7 @@ import {
 } from "./use-logical-robot-scene";
 import {
   loadLogicalRobotScene,
-  authorizeLogicalRobotAsset,
+  authorizeLogicalRobotAssets,
   type LogicalRobotScene,
 } from "../api/logical-robot-scene";
 import { currentBindingPreview } from "../../viewer/robot-scene-provenance";
@@ -23,7 +23,7 @@ const calls = vi.hoisted(() => ({
 }));
 vi.mock("../api/logical-robot-scene", () => ({
   loadLogicalRobotScene: vi.fn(),
-  authorizeLogicalRobotAsset: vi.fn(),
+  authorizeLogicalRobotAssets: vi.fn(),
 }));
 vi.mock("../../viewer/use-episode-robot-scene", () => ({
   useEpisodeRobotScene: (...args: unknown[]) => {
@@ -137,13 +137,13 @@ function mount(robot = "current-robot") {
 beforeEach(() => {
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.mocked(loadLogicalRobotScene).mockResolvedValue(view);
-  vi.mocked(authorizeLogicalRobotAsset).mockResolvedValue({
+  vi.mocked(authorizeLogicalRobotAssets).mockResolvedValue([{ asset, sizeBytes: asset.size_bytes, grant: {
     asset_id: "urdf",
     download_url: "https://assets.test/fixed.urdf",
     sha256: asset.sha256,
     media_type: asset.media_type,
     expires_at: "2099-01-01T00:00:00Z",
-  });
+  }}]);
   const store = useShellStore.getState();
   store.setSession(
     { actorId: "reader", displayName: "Reader", roleIds: [] },
@@ -201,10 +201,9 @@ it("uses fixed identity, mapping direction, calibration and asset grants even wh
     modelVersion: "version-old",
     requiredJoints: ["q1"],
   });
-  expect(authorizeLogicalRobotAsset).toHaveBeenCalledWith(
+  expect(authorizeLogicalRobotAssets).toHaveBeenCalledWith(
     target.selection,
     view,
-    asset,
     expect.any(AbortSignal),
   );
   rerender({ robotId: "robot-with-new-binding" });

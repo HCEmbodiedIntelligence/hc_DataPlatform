@@ -182,7 +182,9 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const search = dashboardQueryCodec.parse(searchParams);
   const [anchor, setAnchor] = useState(
-    () => new Date(Math.floor(Date.now() / 1_000) * 1_000),
+    // Match the one-minute freshness budget so a quick return can reuse data.
+    // Explicit refresh still uses the exact current second below.
+    () => new Date(Math.floor(Date.now() / 60_000) * 60_000),
   );
   const [pendingOpen, setPendingOpen] = useState(false);
   const [pendingCursor, setPendingCursor] = useState<
@@ -256,6 +258,7 @@ export function DashboardPage() {
             succeeded: 0,
             risk: 0,
             isolated: 0,
+            cancelled: 0,
             blocked: 0,
             failed: 0,
             unavailable: 0,
@@ -463,8 +466,15 @@ export function DashboardPage() {
                 disabled={!scope}
                 loading={refreshing}
                 onClick={() => {
-                  setAnchor(new Date(Math.floor(Date.now() / 1_000) * 1_000));
-                  void Promise.all(queries.map((query) => query.refetch()));
+                  const next = new Date(Math.floor(Date.now() / 1_000) * 1_000);
+                  if (search.range === "custom" || next.getTime() === anchor.getTime()) {
+                    void Promise.all(queries.map((query) => query.refetch()));
+                  } else {
+                    // A new window already fetches activity/pending; refetching
+                    // their old keys as well would duplicate both requests.
+                    setAnchor(next);
+                    void taskStatus.refetch();
+                  }
                 }}
               >
                 刷新

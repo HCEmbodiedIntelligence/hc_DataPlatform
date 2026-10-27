@@ -65,7 +65,10 @@ services:
     volumes:
       - ./deploy/local/cloudflare-route.inc:/etc/nginx/conf.d/frontend-route-cloudflare.inc:ro
   api:
+    volumes:
+      - ../.data-platform-tools/robot-previews:/var/cache/hc-robot-previews:ro
     environment:
+      HC_ROBOT_MODEL_PREVIEW_ROOT: /var/cache/hc-robot-previews
       HC_OBJECT_STORE_BROWSER_PATH: ${HC_LOCAL_FILES_DIRECTORY:-/home/hc_op/workspace/data-platform-files}
       HC_OBJECT_STORE_RAW_BROWSER_PATH: /home/hc_op/workspace/.data-platform-tools/objects
       HC_OBJECT_STORE_LOCAL_PATH: ${HC_MINIO_DATA_DIRECTORY:-/home/hc_op/workspace/data-platform-storage}

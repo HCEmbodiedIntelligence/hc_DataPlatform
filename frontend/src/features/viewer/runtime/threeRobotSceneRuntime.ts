@@ -19,9 +19,11 @@ import {
 } from 'three';
 import type { Material, Object3D } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import URDFLoader from 'urdf-loader';
 import type { RobotSceneRuntime } from '../RobotSceneCore';
 import type { RobotSceneAssets } from '../lazy-three-loader';
+import { ParsedRobotCache, clearOnAuthorizationChange } from './parsed-robot-cache';
 
 type JointDrivenRobot = Object3D & {
   setJointValue(name: string, value: number): boolean;
@@ -295,13 +297,21 @@ function disposeObject(root: Object3D): void {
   });
 }
 
+const parsedRobots = new ParsedRobotCache<JointDrivenRobot>(disposeObject);
+clearOnAuthorizationChange(parsedRobots);
+
 export async function createThreeRobotSceneRuntime(
   host: HTMLElement,
   assets: RobotSceneAssets,
   signal: AbortSignal,
 ): Promise<RobotSceneRuntime> {
   if (signal.aborted) throw abortError();
-  const renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  let renderer: WebGLRenderer;
+  try {
+    renderer = new WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  } catch {
+    throw new Error('WEBGL_UNAVAILABLE');
+  }
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
   const canvas = renderer.domElement;
@@ -330,9 +340,6 @@ export async function createThreeRobotSceneRuntime(
       failedAssetCount += 1;
     };
   });
-  manager.setURLModifier(
-    createRobotAssetUrlResolver(assets.urdfPath, assets.assetUrls),
-  );
   const loader = new URDFLoader(manager);
   loader.fetchOptions = { signal, credentials: 'same-origin' };
   if (assets.packages) loader.packages = assets.packages;
@@ -340,21 +347,51 @@ export async function createThreeRobotSceneRuntime(
     loader.packages = (packageName) =>
       `https://robot-assets.invalid/${encodeURIComponent(packageName)}`;
   let robot: JointDrivenRobot | null = null;
+  let parsedLease = assets.parsedCacheKey ? parsedRobots.acquire(assets.parsedCacheKey) : undefined;
+  let prepared: Awaited<ReturnType<NonNullable<RobotSceneAssets['prepare']>>> | undefined;
   try {
-    robot = await loader.loadAsync(assets.urdfUrl) as JointDrivenRobot;
-    await assetLoadComplete;
-    if (failedAssetCount > 0)
-      throw new Error('One or more robot model dependencies failed to load');
+    if (!parsedLease) {
+      prepared = await assets.prepare?.(signal);
+      const resolveAsset = createRobotAssetUrlResolver(assets.urdfPath, prepared?.assetUrls ?? assets.assetUrls);
+      manager.setURLModifier(resolveAsset);
+      const glbUrls = new Set(prepared?.glbUrls ?? []);
+      const defaultMeshLoader = loader.loadMeshCb;
+      loader.loadMeshCb = (path, meshManager, done) => {
+        if (!glbUrls.has(resolveAsset(path))) { defaultMeshLoader(path, meshManager, done); return; }
+        new GLTFLoader(meshManager).load(path, gltf => {
+          let mesh: Mesh | undefined;
+          gltf.scene.traverse(object => { if (object instanceof Mesh) mesh = object; });
+          if (!mesh) { meshManager.itemError(path); done(new Group(), new Error('Preview contains no mesh')); return; }
+          // One indexed mesh per display asset; the URDF loader reapplies its
+          // original material, placement and scale to this Mesh instance.
+          if (!mesh.geometry.attributes.normal) mesh.geometry.computeVertexNormals();
+          mesh.material instanceof Array ? mesh.material.forEach(disposeMaterial) : disposeMaterial(mesh.material);
+          done(mesh);
+        }, undefined, error => done(new Group(), error instanceof Error ? error : new Error(String(error))));
+      };
+      robot = await loader.loadAsync(prepared?.urdfUrl ?? assets.urdfUrl) as JointDrivenRobot;
+      await assetLoadComplete;
+      if (failedAssetCount > 0)
+        throw new Error('One or more robot model dependencies failed to load');
+      signal.throwIfAborted();
+      if (assets.parsedCacheKey) parsedLease = parsedRobots.put(assets.parsedCacheKey, robot);
+    }
+    if (parsedLease) robot = parsedLease.robot;
+    canvas.dataset.modelCache = parsedLease && !prepared ? 'parsed' : 'loaded';
   } catch (error) {
-    if (robot) disposeObject(robot);
+    if (parsedLease) parsedLease.release();
+    else if (robot) disposeObject(robot);
     controls.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
     throw error;
+  } finally {
+    prepared?.release();
   }
   if (!robot) throw new Error('URDF loader did not return a robot model');
   if (signal.aborted) {
-    disposeObject(robot);
+    if (parsedLease) parsedLease.release();
+    else disposeObject(robot);
     controls.dispose();
     renderer.dispose();
     renderer.forceContextLoss();
@@ -397,7 +434,7 @@ export async function createThreeRobotSceneRuntime(
 
   const groundGrid = new GridHelper(
     groundPlacement.size,
-    24,
+    10,
     0x78909b,
     0x324851,
   );
@@ -522,7 +559,8 @@ export async function createThreeRobotSceneRuntime(
       observer?.disconnect();
       controls.removeEventListener('change', scheduleRender);
       controls.dispose();
-      disposeObject(robot);
+      if (parsedLease) parsedLease.release();
+      else disposeObject(robot);
       disposeObject(ground);
       renderer.renderLists.dispose();
       renderer.dispose();

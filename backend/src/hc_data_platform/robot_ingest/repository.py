@@ -39,6 +39,18 @@ class RobotIngestIdentityMissing(KeyError):
     pass
 
 
+def _require_writable_upload(current: UploadState, target: UploadState) -> None:
+    if current in {UploadState.COMMITTED, UploadState.CANCELLED} and current != target:
+        from hc_data_platform.core.errors import problem
+
+        raise problem(
+            status=409,
+            code="ROBOT_UPLOAD_TERMINAL_STATE",
+            title="上传状态已改变",
+            detail="上传已提交或已取消，请刷新记录后重试。",
+        )
+
+
 class RobotIngestRepository(Protocol):
     def onboarding_facts(
         self, organization_id: str, *, legacy_scopes: tuple[tuple[str, str], ...] = ()
@@ -133,6 +145,13 @@ class RobotIngestRepository(Protocol):
     def create_upload(self, upload: RobotIngestUpload) -> RobotIngestUpload: ...
 
     def save_upload(self, upload: RobotIngestUpload) -> RobotIngestUpload: ...
+
+    def cancel_upload_locked(
+        self,
+        scope: tuple[str, str, str],
+        upload_id: str,
+        cancel: Callable[[RobotIngestUpload], RobotIngestUpload],
+    ) -> RobotIngestUpload | None: ...
 
     def get_upload(
         self, organization_id: str, upload_id: str, ingest_identity_id: str
@@ -677,8 +696,31 @@ class InMemoryRobotIngestRepository:
         with self._lock:
             if upload.upload_id not in self._uploads:
                 raise KeyError(upload.upload_id)
+            _require_writable_upload(self._uploads[upload.upload_id].state, upload.state)
             self._uploads[upload.upload_id] = upload
         return upload
+
+    def cancel_upload_locked(
+        self,
+        scope: tuple[str, str, str],
+        upload_id: str,
+        cancel: Callable[[RobotIngestUpload], RobotIngestUpload],
+    ) -> RobotIngestUpload | None:
+        with self._lock:
+            current = self._uploads.get(upload_id)
+            if (
+                current is None
+                or (
+                    current.target.organization_id,
+                    current.target.project_id,
+                    current.target.region_code,
+                )
+                != scope
+            ):
+                return None
+            updated = cancel(current)
+            self._uploads[upload_id] = updated
+            return updated
 
     def get_upload(
         self, organization_id: str, upload_id: str, ingest_identity_id: str
@@ -764,6 +806,7 @@ class InMemoryRobotIngestRepository:
             current = self._uploads[upload.upload_id]
             if current.state is UploadState.COMMITTED:
                 return current
+            _require_writable_upload(current.state, UploadState.COMMITTED)
             committed = upload.model_copy(
                 update={
                     "raw_source_id": raw_source_id,
@@ -1751,6 +1794,21 @@ class PostgresRobotIngestRepository:
         cursor = connection.cursor()
         try:
             cursor.execute(
+                """SELECT state FROM ingest.robot_ingest_uploads
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                  AND upload_id=%s FOR UPDATE""",
+                (
+                    upload.target.organization_id,
+                    upload.target.project_id,
+                    upload.target.region_code,
+                    upload.upload_id,
+                ),
+            )
+            current = cursor.fetchone()
+            if current is None:
+                raise KeyError(upload.upload_id)
+            _require_writable_upload(UploadState(_row(cursor, current)["state"]), upload.state)
+            cursor.execute(
                 """UPDATE ingest.robot_ingest_uploads
                       SET state = %s, upload_document = %s::jsonb, updated_at = %s,
                           committed_at = %s, raw_source_id = %s
@@ -1854,6 +1912,58 @@ class PostgresRobotIngestRepository:
                 )
             connection.commit()
             return upload
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
+    def cancel_upload_locked(
+        self,
+        scope: tuple[str, str, str],
+        upload_id: str,
+        cancel: Callable[[RobotIngestUpload], RobotIngestUpload],
+    ) -> RobotIngestUpload | None:
+        connection = self._scoped()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """SELECT upload_document FROM ingest.robot_ingest_uploads
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                  AND upload_id=%s FOR UPDATE""",
+                (*scope, upload_id),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                connection.commit()
+                return None
+            current = RobotIngestUpload.model_validate(_json(_row(cursor, row)["upload_document"]))
+            # Hold the same row lock as commit/save while cancelling storage parts.
+            # A concurrent commit can never publish Raw after cancellation succeeds.
+            updated = cancel(current)
+            cursor.execute(
+                """UPDATE ingest.robot_ingest_uploads
+                SET state=%s,upload_document=%s::jsonb,updated_at=%s
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND upload_id=%s""",
+                (updated.state.value, _document(updated), updated.updated_at, *scope, upload_id),
+            )
+            for asset in updated.assets:
+                cursor.execute(
+                    """UPDATE ingest.robot_ingest_assets SET state=%s,asset_document=%s::jsonb,
+                    updated_at=%s WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                    AND upload_id=%s AND asset_id=%s""",
+                    (
+                        asset.state.value,
+                        _document(asset),
+                        updated.updated_at,
+                        *scope,
+                        upload_id,
+                        asset.asset_id,
+                    ),
+                )
+            connection.commit()
+            return updated
         except Exception:
             connection.rollback()
             raise
@@ -2104,6 +2214,7 @@ class PostgresRobotIngestRepository:
                 if latest.state is UploadState.COMMITTED:
                     connection.commit()
                     return latest
+                _require_writable_upload(latest.state, UploadState.COMMITTED)
             cursor.execute(
                 """INSERT INTO ingest.raw_sources (
                        organization_id, project_id, region_code, raw_source_id, upload_id,

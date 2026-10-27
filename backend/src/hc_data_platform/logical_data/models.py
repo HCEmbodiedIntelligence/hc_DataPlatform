@@ -71,6 +71,8 @@ class LogicalSnapshotView(FrozenModel):
 class AnnotationLogicalSnapshot(LogicalSnapshotView):
     task_id: str
     snapshot_token: str = Field(min_length=16, max_length=2048)
+    robot: LogicalRobotScene | None = None
+    robot_assets: tuple[LogicalRobotAssetGrant, ...] = ()
 
 
 class LogicalSample(FrozenModel):
@@ -143,9 +145,16 @@ class LogicalRobotScene(BaseModel):
         return self
 
 
+class LogicalRobotPreviewGrant(RobotModelAssetDownloadAuthorization):
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(gt=0)
+    policy: Literal["mesh-qem-v1", "mesh-indexed-glb-v2"]
+
+
 class LogicalRobotAssetGrant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     snapshot_id: str
     scene_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     asset: RobotModelAsset
     authorization: RobotModelAssetDownloadAuthorization
+    preview: LogicalRobotPreviewGrant | None = None

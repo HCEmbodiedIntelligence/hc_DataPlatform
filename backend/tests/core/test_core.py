@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY, Gauge
 from pydantic import ValidationError
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 
 from hc_data_platform.backup.catalog import (
     InMemoryBackupCatalogRepository,
@@ -153,6 +153,7 @@ def test_etag_is_canonical_and_enforces_preconditions() -> None:
     current = make_etag({"revision": 2, "id": "dataset-1"})
     assert ETag.parse(str(current)) == current
     assert etag_matches(str(current), current)
+    assert not etag_matches(f"W/{current}", current)
 
     with pytest.raises(ProblemException) as missing:
         require_if_match(None, current)
@@ -162,9 +163,54 @@ def test_etag_is_canonical_and_enforces_preconditions() -> None:
         require_if_match('"stale"', current)
     assert stale.value.problem.status == 412
 
+    with pytest.raises(ProblemException) as weak:
+        require_if_match(f"W/{current}", current)
+    assert weak.value.problem.status == 412
+
     for invalid_value in ("contains\x7fdelete", "contains-unicode-🙂"):
         with pytest.raises(ValueError, match="invalid characters"):
             ETag(invalid_value)
+
+
+@pytest.mark.parametrize(
+    ("etag", "cache_control", "expected"),
+    [
+        ('"v1"', None, "no-transform"),
+        ('"v1"', "private, no-store", "private, no-store, no-transform"),
+        ('"v1"', "public, max-age=60", "public, max-age=60, no-transform"),
+        ('"v1"', "no-store, no-transform", "no-store, no-transform"),
+        ('"v1"', "no-store, No-Transform", "no-store, No-Transform"),
+        ('W/"v1"', "no-store", "no-store"),
+        (None, "no-store", "no-store"),
+        (None, None, None),
+    ],
+)
+def test_app_preserves_strong_etags_and_existing_cache_policy(
+    etag: str | None,
+    cache_control: str | None,
+    expected: str | None,
+) -> None:
+    app = create_app(
+        settings=_settings(),
+        readiness_probes=_probes(),
+        module_package=_empty_package(),
+    )
+    headers = {}
+    if etag is not None:
+        headers["ETag"] = etag
+    if cache_control is not None:
+        headers["Cache-Control"] = cache_control
+
+    @app.get("/versioned-resource")
+    async def resource() -> Response:
+        return JSONResponse({"value": "unchanged"}, headers=headers)
+
+    with TestClient(app) as client:
+        response = client.get("/versioned-resource", headers={"Accept-Encoding": "gzip, br"})
+    assert response.status_code == 200
+    assert response.headers.get("ETag") == etag
+    assert response.headers.get("Cache-Control") == expected
+    assert response.json() == {"value": "unchanged"}
 
 
 def test_invalid_configuration_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

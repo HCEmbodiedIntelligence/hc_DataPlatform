@@ -112,6 +112,7 @@ from .context import (
 )
 from .discovery import discover_module_routers
 from .errors import ProblemDetails, ProblemException
+from .etag import preserve_strong_etag
 from .health import (
     ReadinessProbe,
     check_readiness,
@@ -1197,6 +1198,7 @@ def create_app(
                 )
             if auth is not None and response.status_code >= 400:
                 response.headers["Cache-Control"] = "private, no-store"
+            preserve_strong_etag(response.headers)
             response.headers["X-Request-ID"] = context.request_id
             return response
         finally:

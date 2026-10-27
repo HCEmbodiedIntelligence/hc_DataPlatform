@@ -713,6 +713,7 @@
 }
 
 .compactTagField input,
+.compactTagField textarea,
 .compactTagField select {
   width: 100%;
   min-width: 0;
@@ -727,6 +728,7 @@
 }
 
 .compactTagField input:disabled,
+.compactTagField textarea:disabled,
 .compactTagField select:disabled {
   color: var(--hc-color-text-muted);
   background: var(--hc-color-surface-muted);

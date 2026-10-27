@@ -49,7 +49,6 @@ from hc_data_platform.object_storage.artifacts import StagedArtifactStore
 from hc_data_platform.quality.models import (
     ImageObservation,
     QualityInputV1,
-    QualityProfileV1,
     QualityStreamObservationV1,
 )
 from hc_data_platform.verification.ports import (
@@ -263,7 +262,6 @@ class PostgresIngestWorkflowInputResolver:
                     source_sha256=source_sha256,
                     manifest_fingerprint=manifest_fingerprint,
                 )
-                profile = self._quality_profile(cursor, project_id, preflight)
                 frozen = self._capture_snapshot(
                     cursor, (organization_id, project_id, region_code), preflight
                 )
@@ -281,6 +279,11 @@ class PostgresIngestWorkflowInputResolver:
             sorted(preflight.manifest.actual_topics),
             camera_topics=[c.topic for c in preflight.manifest.cameras],
         )
+        from hc_data_platform.capture_schemes.quality import from_snapshot
+
+        profile = from_snapshot(frozen, frozenset(preflight.manifest.expected_topics),
+                                frozen["output"].get("frequency_hz") or 30,
+                                feature_topics={name: topic for topic, name in mapping.items()})
         required = {
             name for name, feature in frozen["output"]["features"].items() if feature["required"]
         }
@@ -620,33 +623,6 @@ class PostgresIngestWorkflowInputResolver:
         ):
             raise _blocked("the persisted Manifest lineage does not match the outbox event")
 
-    @staticmethod
-    def _quality_profile(
-        cursor: Any,
-        project_id: str,
-        preflight: ManifestPreflightResultV1,
-    ) -> QualityProfileV1:
-        cursor.execute(
-            """
-            SELECT profile_json FROM quality_profiles
-            WHERE project_id = %s AND organization_id = %s
-            ORDER BY profile_id, profile_version
-            """,
-            (project_id, current_request_context().organization_id),
-        )
-        expected = frozenset(preflight.manifest.expected_topics)
-        latest: dict[str, QualityProfileV1] = {}
-        for row in cursor.fetchall():
-            profile = QualityProfileV1.model_validate(row[0])
-            previous = latest.get(profile.profile_id)
-            if previous is None or profile.profile_version > previous.profile_version:
-                latest[profile.profile_id] = profile
-        candidates = [profile for profile in latest.values() if profile.required_topics == expected]
-        if len(candidates) != 1:
-            raise _blocked(
-                "the project must persist exactly one quality profile for the Manifest topic set"
-            )
-        return candidates[0]
 
     @staticmethod
     def _capture_snapshot(

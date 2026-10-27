@@ -465,7 +465,9 @@ export async function requestWithResponse<T>(
     }
   }
   assertExplicitAccess();
-  assertRuntimeOperation(opts.method, opts.path);
+  // API inventory drift is a development/build check. Re-scanning the generated
+  // OpenAPI inventory for every production request adds no server authorization.
+  if (import.meta.env.DEV) assertRuntimeOperation(opts.method, opts.path);
   const headers = new Headers({
     Accept: "application/json",
     "Accept-Language": resolveAcceptLanguage(),

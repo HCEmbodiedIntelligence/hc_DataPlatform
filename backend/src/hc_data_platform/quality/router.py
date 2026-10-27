@@ -1,4 +1,4 @@
-"""Tenant-scoped API for immutable quality profiles and reports."""
+"""Tenant-scoped historical QC execution evidence; configuration belongs to schemes."""
 
 from __future__ import annotations
 
@@ -58,6 +58,7 @@ def _no_store(response: Response) -> None:
     "/projects/{project_id}/quality-profiles",
     response_model=QualityProfileV1,
     status_code=201,
+    deprecated=True,
 )
 def create_quality_profile(
     project_id: str,
@@ -67,8 +68,12 @@ def create_quality_profile(
 ) -> QualityProfileV1:
     _no_store(response)
     authorize_scope(auth, project_id, "upload.manage")
-    _required_repository().put_profile(project_id, profile)
-    return profile
+    raise problem(
+        status=409,
+        code="CAPTURE_SCHEME_REQUIRED",
+        title="Quality rules belong to the capture scheme",
+        detail="请在采集方案中配置质检规则并发布版本；不再单独创建项目 QC 配置。",
+    )
 
 
 @router.get(

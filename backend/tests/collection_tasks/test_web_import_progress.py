@@ -54,7 +54,7 @@ def task_scope():
         drop_runtime_role(dsn, role)
 
 
-def register_web_import(dsn, project, task, *, status="READY", manifest_key=None):
+def register_web_import(dsn, project, task, *, status="READY", manifest_key=None, source_format="LEROBOT_V3"):
     source_id = "web-" + uuid4().hex
     scope = dict(
         organization_id=organization_for(project), project_id=project, region_code="cn-test"
@@ -66,8 +66,8 @@ def register_web_import(dsn, project, task, *, status="READY", manifest_key=None
         collection_task_id=task.collection_task_id,
         dataset_id=task.dataset_id,
         robot_id="manifest-device",
-        source_format="LEROBOT_V3",
-        source_format_version="v3.0",
+        source_format=source_format,
+        source_format_version="v3.0" if source_format == "LEROBOT_V3" else "1",
         manifest_key=manifest_key or f"raw/{source_id}/manifest.json",
         storage_prefix=f"raw/{source_id}/source",
         content_hash="a" * 64,
@@ -87,6 +87,8 @@ def register_web_import(dsn, project, task, *, status="READY", manifest_key=None
         )
         for index in range(2)
     )
+    if source_format == "MCAP":
+        episodes = ()
     PostgresRawSourceRepository(psycopg_connection_factory(dsn)).register_committed(
         CommittedRawSourceGraph(
             source=source,
@@ -95,8 +97,8 @@ def register_web_import(dsn, project, task, *, status="READY", manifest_key=None
                 **scope,
                 raw_source_id=source_id,
                 job_id=source_id,
-                job_type="LEROBOT_IMPORT",
-                adapter_name="lerobot_v3",
+                job_type="LEROBOT_IMPORT" if source_format == "LEROBOT_V3" else "CONTINUOUS_RECORDING_DISCOVERY",
+                adapter_name="lerobot_v3" if source_format == "LEROBOT_V3" else "mcap",
                 status="SUCCEEDED" if status == "READY" else "RUNNING",
             ),
         )
@@ -179,3 +181,38 @@ def test_legacy_receipt_is_not_counted_again_as_a_web_import(task_scope):
     with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
         items = read_captures(cursor, source.organization_id, project, "cn-test")
     assert capture_counts(items).upload_count == 0
+
+
+def test_mcap_batch_is_visible_before_recording_creation_and_uses_latest_attempt(task_scope):
+    from hc_data_platform.dashboard.recording_projection import merge_recording_facts
+    from hc_data_platform.dashboard.repository import TaskStatusTaskFact
+    dsn, project, service, task = task_scope
+    source, _ = register_web_import(dsn, project, task, source_format='MCAP')
+    try:
+        with psycopg.connect(dsn) as db:
+            set_scope(db, project)
+            for ident, path, status in [('first-old','a.mcap','FAILED'),('second','b.mcap','RUNNING')]:
+                db.execute('''INSERT INTO ingest.mcap_processing_files
+                (organization_id,project_id,region_code,raw_source_id,processing_id,source_path,
+                 source_document,configuration,collection_task_id,robot_id,dataset_id,status,error,created_at)
+                VALUES (%s,%s,'cn-test',%s,%s,%s,'{}','{}',%s,'manifest-device',%s,%s,'old failure',now()-interval '1 day')''',
+                (source.organization_id,project,source.raw_source_id,ident,path,task.collection_task_id,task.dataset_id,status))
+            db.execute('''INSERT INTO ingest.mcap_processing_files
+                SELECT organization_id,project_id,region_code,raw_source_id,'first-new',source_path,
+                 source_document,configuration,collection_task_id,robot_id,dataset_id,'PENDING',
+                 0,NULL,NULL,now(),now(),config_reference,channel_inventory
+                FROM ingest.mcap_processing_files WHERE project_id=%s AND processing_id='first-old' ''',(project,))
+        page = service.captures(source.organization_id,project,'cn-test',task_id=task.collection_task_id)
+        assert len(page.items) == 2
+        assert {i.data_package_id for i in page.items} == {'first-new','second'}
+        assert {i.stage for i in page.items} == {'RECEIVED','PREPARING'}
+        facts, packages = merge_recording_facts((TaskStatusTaskFact(task_id=task.collection_task_id,
+            task_code='test',name='MCAP',lifecycle='ACTIVE'),),(),page.items,{},task.collection_task_id)
+        assert facts[0].received_count == 2 and len(packages) == 2
+        assert all(p.raw_committed for p in packages)
+        with psycopg.connect(dsn) as db, db.cursor() as cursor:
+            assert not read_captures(cursor,source.organization_id,project,'foreign',task.collection_task_id)
+    finally:
+        with psycopg.connect(dsn) as db:
+            set_scope(db,project)
+            db.execute('DELETE FROM ingest.mcap_processing_files WHERE project_id=%s',(project,))

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useScopedQuery } from "../../../shared/api/use-scoped-query";
 import {
-  authorizeLogicalRobotAsset,
+  authorizeLogicalRobotAssets,
   loadLogicalRobotScene,
 } from "../api/logical-robot-scene";
 import type { LogicalSelection, LogicalSnapshot } from "../api/logical-data";
@@ -9,11 +9,14 @@ import { useEpisodeRobotScene } from "../../viewer/use-episode-robot-scene";
 import type { RobotSceneProvenance } from "../../viewer/robot-scene-provenance";
 import { buildJointFrameSource } from "../../viewer/joint-frame-source";
 import { createLazyThreeRobotSceneLoader } from "../../viewer/lazy-three-loader";
+import { authorizedModelSceneAssets } from "../../viewer/authorized-model-cache";
 import type { StreamDescriptor } from "../../viewer/types";
 
 export interface LogicalRobotTarget {
   readonly selection: LogicalSelection;
   readonly view: LogicalSnapshot;
+  readonly robot?: import("../api/logical-robot-scene").LogicalRobotScene;
+  readonly robotAssets?: Awaited<ReturnType<typeof authorizeLogicalRobotAssets>>;
 }
 
 /** A current binding is a compatibility source only after explicit historical absence. */
@@ -31,22 +34,24 @@ export function useLogicalRobotScene(
       ? { selection: target.selection, snapshotId: target.view.snapshot_id }
       : null,
     {
-      enabled: target !== null,
+      enabled: target !== null && !target.robot,
       queryFn: ({ signal }) =>
         loadLogicalRobotScene(target!.selection, target!.view, signal),
       staleTime: 0,
       retry: false,
     },
   );
+  const sceneView = target?.robot ?? query.data;
+  const sceneFailed = !target?.robot && query.isError;
   const historical =
-    !query.isError && query.data?.provenance === "MISSING_HISTORICAL";
+    !sceneFailed && sceneView?.provenance === "MISSING_HISTORICAL";
   const compatibility = useEpisodeRobotScene(
     historical ? historicalRobotId : null,
     historical ? jointStream : null,
     historical ? (target?.selection.scope ?? null) : null,
     historicalProvenance,
   );
-  const fixed = query.data?.scene;
+  const fixed = sceneView?.scene;
   const jointFrameSource = useMemo(() => {
     const source = buildJointFrameSource(jointStream);
     if (!source || fixed?.status !== "FROZEN") return;
@@ -66,12 +71,12 @@ export function useLogicalRobotScene(
     };
   }, [jointStream, fixed]);
   const robotScene = useMemo(() => {
-    const view = query.data;
+    const view = sceneView;
     const urdf = fixed?.assets.find((asset) => asset.role === "URDF");
     if (
       !target ||
       !view ||
-      query.isError ||
+      sceneFailed ||
       fixed?.status !== "FROZEN" ||
       !urdf ||
       !fixed.model_id ||
@@ -95,42 +100,21 @@ export function useLogicalRobotScene(
       ),
       jointFrameSource,
       runtimeLoader: createLazyThreeRobotSceneLoader(async (_props, signal) => {
-        const assets = fixed.assets.filter(
-          (a) =>
-            a.asset_id === urdf.asset_id ||
-            a.role === "MESH" ||
-            a.role === "TEXTURE",
-        );
-        const grants = await Promise.all(
-          assets.map(async (asset) => ({
-            asset,
-            grant: await authorizeLogicalRobotAsset(
-              target.selection,
-              view,
-              asset,
-              signal,
-            ),
-          })),
-        );
+        const grants = target.robotAssets?.every(g => Date.parse(g.grant.expires_at) > Date.now() + 10_000)
+          ? target.robotAssets
+          : await authorizeLogicalRobotAssets(target.selection, view, signal);
         signal.throwIfAborted();
         return {
           manifest: { modelId, modelVersion, requiredJoints },
-          urdfUrl: grants.find((g) => g.asset.asset_id === urdf.asset_id)!.grant
-            .download_url,
-          urdfPath: urdf.relative_path,
-          assetUrls: Object.fromEntries(
-            grants
-              .filter((g) => g.asset.asset_id !== urdf.asset_id)
-              .map((g) => [g.asset.relative_path, g.grant.download_url]),
-          ),
+          ...authorizedModelSceneAssets(grants, target.selection.scope, _props.onLoadProgress),
         };
       }),
     };
-  }, [target, query.data, query.isError, fixed, jointFrameSource]);
+  }, [target, sceneView, sceneFailed, fixed, jointFrameSource]);
   const robotSceneUnavailableReason =
-    !target || query.isPending
+    !target || (!sceneView && query.isPending)
       ? "正在读取数据快照中的机器人场景…"
-      : query.isError
+      : sceneFailed
         ? "固定机器人场景读取失败或读取权限已失效，请重新加载。"
         : fixed?.status === "NO_MODEL_BINDING"
           ? "处理规划时未绑定机器人模型；此快照没有可回放的模型。"
@@ -144,6 +128,6 @@ export function useLogicalRobotScene(
       ? compatibility
       : { robotScene, robotSceneUnavailableReason }),
     // Retain the original calibration value and hashes; do not invent a transform schema.
-    frozenEvidence: query.data?.provenance === "FROZEN" ? query.data : null,
+    frozenEvidence: sceneView?.provenance === "FROZEN" ? sceneView : null,
   };
 }

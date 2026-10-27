@@ -8,6 +8,8 @@ import { getRuntimeConfig } from "../../../shared/config/runtime";
 import {
   robotModelAssetWire,
   robotModelAssetAuthorizationWire,
+  robotModelViewerAssetGrantWire,
+  validateRobotModelViewerAssets,
 } from "../../robot-models/api/client";
 import {
   logicalDataEndpoint,
@@ -74,7 +76,7 @@ const sceneWire = z
         message: "固定模型来源、资产或映射不一致",
       });
   }) satisfies z.ZodType<Schemas["FrozenRobotScene"]>;
-const sceneViewWire = z
+export const sceneViewWire = z
   .object({
     snapshot_id: id,
     provenance: z.enum(["FROZEN", "MISSING_HISTORICAL"]),
@@ -86,11 +88,10 @@ const sceneViewWire = z
       ? Boolean(v.scene && v.scene_sha256)
       : v.scene == null && v.scene_sha256 == null,
   ) satisfies z.ZodType<Schemas["LogicalRobotScene"]>;
-const assetGrantWire = z.object({
+export const assetGrantWire = z.object({
   snapshot_id: id,
   scene_sha256: digest,
-  asset: robotModelAssetWire,
-  authorization: robotModelAssetAuthorizationWire,
+  ...robotModelViewerAssetGrantWire.shape,
 }) satisfies z.ZodType<Schemas["LogicalRobotAssetGrant"]>;
 
 async function sceneRequest(
@@ -115,6 +116,7 @@ async function sceneRequest(
       query: {
         snapshot_token: selection.snapshotToken,
         snapshot_id: snapshotId,
+        ...(suffix === "/assets/authorize" ? { preview_format: "glb" } : {}),
       },
     });
     lease.signal.throwIfAborted();
@@ -165,6 +167,15 @@ export async function authorizeLogicalRobotAsset(
     "POST",
     signal,
   );
+  return validateAssetGrant(raw, endpoint, view, asset);
+}
+
+function validateAssetGrant(
+  raw: unknown,
+  endpoint: string,
+  view: LogicalRobotScene,
+  asset: Schemas["RobotModelAsset"],
+) {
   const grant = parseWire(
     assetGrantWire.refine(
       (value) =>
@@ -196,4 +207,37 @@ export async function authorizeLogicalRobotAsset(
   )
     throw new Error("固定模型资产下载地址无效");
   return { ...grant.authorization, download_url: url.toString() };
+}
+
+/** One authorization round trip for the exact frozen viewer assets. */
+export async function authorizeLogicalRobotAssets(
+  selection: LogicalSelection,
+  view: LogicalRobotScene,
+  signal?: AbortSignal,
+) {
+  if (view.provenance !== "FROZEN" || !view.scene)
+    throw new Error("固定机器人场景不可用");
+  const { raw, endpoint } = await sceneRequest(
+    selection, view.snapshot_id, "/assets/authorize", "POST", signal,
+  );
+  return validateLogicalRobotAssets(raw, view, endpoint);
+}
+
+export function validateLogicalRobotAssets(raw: unknown, view: LogicalRobotScene, endpoint = "/logical/robot-scene") {
+  if (!view.scene || view.provenance !== "FROZEN") throw new Error("固定机器人场景不可用");
+  const assets = view.scene.assets.filter(a => ["URDF", "MESH", "TEXTURE"].includes(a.role));
+  const grants = parseWire(
+    z.array(assetGrantWire).refine((values) =>
+      values.length === assets.length &&
+      new Set(values.map((g) => g.asset.asset_id)).size === assets.length &&
+      values.every((g) => assets.some((a) => a.asset_id === g.asset.asset_id)),
+    ),
+    raw,
+    { endpoint },
+  );
+  for (const value of grants) {
+    const asset = assets.find((asset) => asset.asset_id === value.asset.asset_id)!;
+    validateAssetGrant(value, endpoint, view, asset);
+  }
+  return validateRobotModelViewerAssets(grants, assets, endpoint);
 }

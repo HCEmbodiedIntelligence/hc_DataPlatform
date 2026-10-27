@@ -121,6 +121,7 @@ class TaskStageCounts(BaseModel):
     succeeded: int = Field(default=0, ge=0)
     risk: int = Field(default=0, ge=0)
     isolated: int = Field(default=0, ge=0)
+    cancelled: int = Field(default=0, ge=0)
     blocked: int = Field(default=0, ge=0)
     failed: int = Field(default=0, ge=0)
     unavailable: int = Field(default=0, ge=0)
@@ -301,6 +302,7 @@ class TaskPipelineStatus(BaseModel):
                 + stage.succeeded
                 + stage.risk
                 + stage.isolated
+                + stage.cancelled
                 + stage.blocked
                 + stage.failed
                 + stage.unavailable

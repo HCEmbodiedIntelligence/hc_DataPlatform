@@ -27,6 +27,15 @@ _MIGRATION_DDL_LOCK_TIMEOUT = "5s"
 # account. Public registration now atomically grants the first account its role.
 _RETIRED_DEFAULT_ADMIN_VERSION = "security/023_default_admin.sql"
 _RETIRED_DEFAULT_ADMIN_CHECKSUM = "ff7c314ded8fcbc925b96eb90ceea7b5703e21b99ef14e4e577ce9f6d0bec509"
+# The 2026-10-21 consolidation removed one final blank line from this already
+# applied migration (152d1884 / 80845a81 -> b18fea44). Its SQL is byte-identical
+# otherwise. Only this audited old/new pair may update the ledger without DDL.
+_HISTORICAL_NEWLINE_CHECKSUMS = {
+    "ingest/026_mcap_stored_binding.sql": (
+        "4cde20a2a567c1c1d9299c7845c10caf1945e7301738a1f1334174bf2298e72f",
+        "887864580565302a0ee4416300d6ebf12d2b2fc86c1069ee2889aab007d4854b",
+    ),
+}
 _REPEATABLE_SECURITY_MIGRATIONS = frozenset(
     {
         "security/001_core.sql",
@@ -498,6 +507,36 @@ async def _apply_pending_migration(
         await _record_migration(connection, migration)
 
 
+async def _reconcile_historical_newline_checksum(
+    connection: asyncpg.Connection[Any], migration: Migration, previous_checksum: str
+) -> bool:
+    if _HISTORICAL_NEWLINE_CHECKSUMS.get(migration.version) != (
+        previous_checksum,
+        migration.checksum_sha256,
+    ):
+        return False
+    # Prove the exact historical bytes, rather than accepting arbitrary whitespace
+    # changes or weakening checksum validation for other migrations.
+    if hashlib.sha256((migration.sql + "\n").encode("utf-8")).hexdigest() != previous_checksum:
+        return False
+    async with connection.transaction():
+        result = await connection.execute(
+            """
+            UPDATE core.schema_migrations
+            SET checksum_sha256 = $2
+            WHERE version = $1 AND checksum_sha256 = $3
+            """,
+            migration.version,
+            migration.checksum_sha256,
+            previous_checksum,
+        )
+        if result != "UPDATE 1":
+            raise RuntimeError(
+                f"migration checksum changed during reconciliation: {migration.version}"
+            )
+    return True
+
+
 async def apply_migrations(
     dsn: str,
     *,
@@ -528,7 +567,12 @@ async def apply_migrations(
             previous_checksum = applied.get(migration.version)
             if previous_checksum is not None:
                 if previous_checksum != migration.checksum_sha256:
-                    raise RuntimeError(f"applied migration checksum drift: {migration.version}")
+                    reconciled = await _reconcile_historical_newline_checksum(
+                        connection, migration, previous_checksum
+                    )
+                    if not reconciled:
+                        raise RuntimeError(f"applied migration checksum drift: {migration.version}")
+                    applied[migration.version] = migration.checksum_sha256
                 continue
             await _apply_pending_migration(connection, migration)
             applied[migration.version] = migration.checksum_sha256

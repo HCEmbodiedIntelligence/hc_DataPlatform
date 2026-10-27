@@ -565,11 +565,12 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
     recording_config: RecordingConfigurationV1
     capture_snapshot: dict[str, Any] | None = None
     capture_validation: dict[str, Any] | None = None
+    task_labels: tuple[str, ...] | None = Field(default=None, max_length=100)
 
     @model_serializer(mode="wrap")
     def serialize_capture(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         document: dict[str, Any] = handler(self)
-        for key in ("capture_snapshot", "capture_validation"):
+        for key in ("capture_snapshot", "capture_validation", "task_labels"):
             if document.get(key) is None:
                 document.pop(key, None)
         return document
@@ -628,9 +629,7 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
             raise ValueError("quality profile must exactly match configured Episode modalities")
         if self.alignment_profile.required_modalities != expected_modalities:
             raise ValueError("alignment profile must exactly match configured Episode modalities")
-        expected_fps = (
-            self.capture_snapshot["output"]["frequency_hz"] if self.capture_snapshot else 30
-        )
+        expected_fps = self.quality_profile.default_timing.target_frequency_hz
         if self.alignment_profile.frequency_hz != expected_fps:
             raise ValueError("continuous Episode alignment differs from its frozen frequency")
         return self
@@ -755,6 +754,7 @@ class AutomaticAnnotationActivityInput(BaseModel):
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
     allow_unconfigured: bool = False
+    task_labels: tuple[str, ...] = Field(default=(), max_length=100)
 
     @model_validator(mode="after")
     def annotation_binding_matches(self) -> AutomaticAnnotationActivityInput:

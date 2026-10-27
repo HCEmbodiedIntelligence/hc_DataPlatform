@@ -76,6 +76,7 @@ export interface DataVisualizationWorkbenchAdapter {
   readonly readOnly: boolean;
   readonly clock: PlaybackClock;
   readonly cameraStreams: readonly StreamDescriptor[];
+  readonly cameraEmptyMessage?: string;
   /** Optional URDF scene driven by the same immutable playback clock. */
   readonly robotScene?: RobotSceneCoreProps & {
     readonly title?: string;

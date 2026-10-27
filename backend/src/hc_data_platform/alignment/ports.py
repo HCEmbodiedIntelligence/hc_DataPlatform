@@ -49,6 +49,8 @@ class AlignmentPort(Protocol):
         samples: Iterable[tuple[str, TimedSampleV1]],
         profile: AlignmentProfileV1,
         writer: FragmentWriterPort,
+        target_timestamps: Iterable[int] | None = None,
+        drop_invalid: bool = False,
     ) -> AlignedFragmentManifestV1: ...
 
 

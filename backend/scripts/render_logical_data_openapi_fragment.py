@@ -30,6 +30,7 @@ def main():
                     "FrozenRobotScene",
                     "LogicalRobotScene",
                     "LogicalRobotAssetGrant",
+                    "LogicalRobotPreviewGrant",
                     "LogicalSample",
                     "LogicalSampleBatch",
                     "LogicalMediaGrant",

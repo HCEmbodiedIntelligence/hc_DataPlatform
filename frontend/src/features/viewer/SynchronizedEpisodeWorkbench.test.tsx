@@ -11,6 +11,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { createPlaybackClock } from "./PlaybackClock";
 import { SynchronizedEpisodeWorkbench } from "./SynchronizedEpisodeWorkbench";
+import { DataVisualizationWorkbench } from "./DataVisualizationWorkbench";
 import type { StreamDescriptor, ViewerWindowPayload } from "./types";
 import type { DataVisualizationWorkbenchAdapter } from "./workbench-contract";
 
@@ -51,6 +52,44 @@ function adapter(
     timelineTracks: [],
   };
 }
+it.each(["synchronized", "media"] as const)("drives the %s robot with the workbench clock when the scene has no clock", async (layout) => {
+  const clock = createPlaybackClock({ startNs: origin, endNs: end });
+  const applyTime = vi.fn();
+  const dispose = vi.fn();
+  const runtimeLoader = vi.fn(async () => ({
+    manifest: { modelId: "robot", modelVersion: "v1", requiredJoints: [] },
+    runtime: {
+      canvas: document.createElement("canvas"),
+      applyTime,
+      dispose,
+      restoreContext: async () => true,
+    },
+  }));
+  const model = {
+    ...adapter(clock),
+    robotScene: {
+      modelRef: { modelId: "robot", modelVersion: "v1" },
+      jointMapping: {},
+      runtimeLoader,
+    },
+  };
+  const content = () => layout === "synchronized"
+    ? <SynchronizedEpisodeWorkbench adapter={model} jointAngleStream={null} />
+    : <DataVisualizationWorkbench adapter={model} />;
+  const ui = render(content());
+  await waitFor(() => expect(applyTime).toHaveBeenLastCalledWith(origin));
+  act(() => clock.seek("1700000000500000000"));
+  expect(applyTime).toHaveBeenLastCalledWith("1700000000500000000");
+  ui.rerender(content());
+  expect(runtimeLoader).toHaveBeenCalledTimes(1);
+  act(() => { clock.play(); clock.pause(); });
+  expect(applyTime).toHaveBeenCalledTimes(4);
+  ui.unmount();
+  act(() => clock.seek(end));
+  expect(applyTime).toHaveBeenCalledTimes(4);
+  expect(dispose).toHaveBeenCalledTimes(1);
+  clock.dispose();
+});
 it("switches to actual action windows, cancels the previous source and keeps values synchronized without assuming angular units", async () => {
   const clock = createPlaybackClock({ startNs: origin, endNs: end });
   let resolveJoint!: (payload: ViewerWindowPayload) => void;
@@ -93,7 +132,7 @@ it("switches to actual action windows, cancels the previous source and keeps val
   fireEvent.change(screen.getByLabelText("数值通道"), {
     target: { value: "action" },
   });
-  expect(await screen.findByText("动作指令变化")).toBeVisible();
+  expect(await screen.findByRole("article", { name: "动作指令变化" })).toBeVisible();
   await waitFor(() => expect(actionLoad).toHaveBeenCalledTimes(1));
   expect(jointSignal.aborted).toBe(true);
   expect(await screen.findByText("0.10")).toBeVisible();

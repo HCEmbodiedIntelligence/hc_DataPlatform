@@ -114,6 +114,7 @@ function SummaryItem({
 }
 
 export function Component() {
+  const viewerScope = useShellStore((state) => state.scope);
   const organizationId = useShellStore(
     (state) =>
       state.scope?.organizationId ??
@@ -207,6 +208,7 @@ export function Component() {
         modelVersion,
         assets.data ?? [],
         signal,
+        { scope: viewerScope ?? undefined, onLoadProgress: _props.onLoadProgress },
       );
       return {
         manifest: { modelId, modelVersion, requiredJoints },
@@ -219,6 +221,7 @@ export function Component() {
     organizationId,
     selectedVersion,
     urdfAsset,
+    viewerScope,
   ]);
 
   useEffect(() => {

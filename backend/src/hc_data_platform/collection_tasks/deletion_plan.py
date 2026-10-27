@@ -21,6 +21,8 @@ from hc_data_platform.core.errors import problem
 TABLES = tuple(
     [
         "collection_tasks.collection_tasks",
+        "collection_tasks.capture_plans",
+        "collection_tasks.capture_plan_heads",
         "ingest.collection_jobs",
         "ingest.rollouts",
         "ingest.upload_sessions",
@@ -35,6 +37,11 @@ TABLES = tuple(
         "ingest.robot_ingest_camera_metrics",
         "ingest.robot_ingest_attempts",
         "ingest.raw_sources",
+        "ingest.raw_capture_snapshots",
+        "ingest.capture_recording_snapshots",
+        "ingest.capture_reprocess_requests",
+        "ingest.recording_source_links",
+        "ingest.robot_task_data_requirements",
         "ingest.raw_ingest_jobs",
         "ingest.raw_source_episodes",
         "ingest.episode_resolutions",
@@ -67,6 +74,8 @@ TABLES = tuple(
         "dataset_registry.dataset_version_schema_summaries",
         "dataset_registry.dataset_version_source_provenance",
         "dataset_registry.dataset_version_successor_drafts",
+        "calibrations.calibration_dataset_version_associations",
+        "data_schemas.stream_schema_dataset_version_references",
         "episode_store.bindings",
         "episode_store.versions",
         "episode_store.attempts",
@@ -76,6 +85,9 @@ TABLES = tuple(
         "episode_store.collection_heads",
         "episode_store.collection_publications",
         "episode_store.dataset_schemas",
+        "episode_store.dataset_capture_contracts",
+        "episode_store.dataset_capture_formats",
+        "episode_store.dataset_schema_versions",
         "episode_store.media_previews",
         "episode_store.data_reviews",
         "episode_store.qc_evidence",
@@ -101,6 +113,7 @@ TABLES = tuple(
         "annotation.frame_selection_manifests",
         "annotation.legacy_cleaning_migrations",
         "annotation.tag_schema_bindings",
+        "annotation.collection_task_tag_schema_bindings",
         "manual_cleaning.manual_issues",
         "manual_cleaning.manual_issue_draft_links",
         "manual_cleaning.cleaning_workbench_drafts",
@@ -224,7 +237,7 @@ def locators(document, bucket, *, ignore_external=False):
     return keys, prefixes
 
 
-def registered_locators(table, row, bucket, *, ignore_external=False):
+def registered_locators(table, row, bucket, *, ignore_external=False, local_artifacts=None):
     # Do not walk arbitrary upload commands, annotation plans, provenance or
     # Dataset metadata. Those documents can contain caller-supplied strings.
     direct = {
@@ -251,6 +264,8 @@ def registered_locators(table, row, bucket, *, ignore_external=False):
         "storage.managed_objects": ("object_key", "original_object_key"),
     }
     document = {k: row[k] for k in direct.get(table, ()) if row.get(k)}
+    if local_artifacts is not None and local_artifacts.locator(table, row) is not None:
+        document.pop("staging_uri", None)
     if table == "episode_store.versions" and row.get("receipt_document"):
         document["package_prefix"] = row["receipt_document"]["data"]["package_prefix"]
     if table == "episode_store.media_previews" and row.get("receipt"):
@@ -287,6 +302,8 @@ class DeletionPlan:
     objects: dict = field(default_factory=dict)
     multiparts: list = field(default_factory=list)
     present_objects: int = 0
+    local_files: dict = field(default_factory=dict)
+    present_local_files: int = 0
 
     @property
     def counts(self):
@@ -427,7 +444,13 @@ def build_plan(cursor, task, scope, bucket, objects):
                 raise RuntimeError(f"deletion table lacks primary key: {table}")
             plan.selectors[table].append({k: row[k] for k in primary[table]})
             if table != "robotics.data_scene_snapshots":
-                keys, prefixes = registered_locators(table, row, bucket)
+                keys, prefixes = registered_locators(
+                    table, row, bucket, local_artifacts=objects.local_artifacts
+                )
+                if objects.local_artifacts is not None:
+                    path = objects.local_artifacts.locator(table, row)
+                    if path is not None:
+                        plan.local_files.setdefault(path, 0)
                 for key in keys:
                     plan.objects.setdefault(key, 0)
                 for prefix in prefixes:
@@ -496,6 +519,12 @@ def build_plan(cursor, task, scope, bucket, objects):
             if index in selected[table]:
                 continue
             keys, prefixes = registered_locators(table, row, bucket, ignore_external=True)
+            if objects.local_artifacts is not None and (
+                objects.local_artifacts.references(table, row) & plan.local_files.keys()
+            ):
+                raise conflict(
+                    "TASK_DELETE_SHARED_OBJECT", "本地中间文件仍被其他数据引用，无法永久删除。"
+                )
             if keys & plan.objects.keys() or any(
                 k.startswith(p) for p in prefixes for k in plan.objects
             ):
@@ -507,6 +536,11 @@ def build_plan(cursor, task, scope, bucket, objects):
         if size is not None:
             plan.present_objects += 1
             plan.objects[key] = size
+    for path in plan.local_files:
+        size = objects.local_artifacts.size(path)
+        if size is not None:
+            plan.present_local_files += 1
+            plan.local_files[path] = size
     return plan
 
 
@@ -538,10 +572,20 @@ def _assert_idle_unprotected(table, row):
     for flag in ("legal_hold", "governance_hold"):
         if row.get(flag):
             raise conflict("TASK_DELETE_PROTECTED", "关联数据仍处于保护状态。")
-    for flag in ("retention_until", "lease_expires_at", "claimed_until"):
+    # TASK_DATASET_90D is the automatic sampling-cache GC policy. Explicitly
+    # deleting its entire task/Dataset also deletes that cache. Project overrides
+    # and holds remain authoritative, independently of active processing leases.
+    default_sampling_ttl = (
+        table == "annotation.frame_selection_manifests"
+        and row.get("retention_policy") == "TASK_DATASET_90D"
+    )
+    until = row.get("retention_until")
+    if until and datetime.fromisoformat(until) > now and not default_sampling_ttl:
+        raise conflict("TASK_DELETE_PROTECTED", "关联数据仍处于明确设置的保留期内。")
+    for flag in ("lease_expires_at", "claimed_until"):
         if row.get(flag) and datetime.fromisoformat(row[flag]) > now:
-            raise conflict("TASK_DELETE_BUSY", "关联数据正在处理或处于保留期，请稍后重试。")
-    if row.get("status") in {"RUNNING", "PREPARING", "COMMITTING"}:
+            raise conflict("TASK_DELETE_BUSY", "关联数据正在处理中，请稍后重试。")
+    if row.get("status") in {"RUNNING", "PREPARING", "COMMITTING", "WRITING"}:
         raise conflict("TASK_DELETE_BUSY", "任务仍在后台处理中，请等待处理结束或取消处理后重试。")
     if table == "workflow.jobs" and row.get("status") in {"PENDING", "RUNNING"}:
         raise conflict("TASK_DELETE_BUSY", "任务仍有未结束的处理流程，请先取消处理后重试。")

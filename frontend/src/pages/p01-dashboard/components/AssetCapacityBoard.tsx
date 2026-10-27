@@ -13,6 +13,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
+import { Link } from "react-router-dom";
+import { dataUploadRoutes } from "../../../shared/routing/navigation-routes";
 import type {
   DashboardDataIssue,
   DashboardScope,
@@ -113,6 +115,8 @@ function stageMeta(
     );
   if (stage.blocked > 0 && stage.stage !== "STANDARDIZATION")
     parts.push(`阻塞 ${countFormatter.format(stage.blocked)}`);
+  if (stage.cancelled > 0)
+    parts.push(`已取消 ${countFormatter.format(stage.cancelled)}`);
   if (stage.unavailable > 0)
     parts.push(`不可用 ${countFormatter.format(stage.unavailable)}`);
   return parts.length > 0 ? parts.join(" · ") : null;
@@ -137,6 +141,10 @@ export function AssetCapacityBoard({
     category: DashboardDataIssue["category"];
   } | null>(null);
   const issues = pipeline.issues ?? [];
+  const uploadQuery = new URLSearchParams({ unfinished: "1" });
+  if (taskStatus.selectedTaskId)
+    uploadQuery.set("taskId", taskStatus.selectedTaskId);
+  const unfinishedUploadsPath = `${dataUploadRoutes.records}?${uploadQuery}`;
 
   return (
     <section
@@ -259,13 +267,29 @@ export function AssetCapacityBoard({
               <span className={styles.stageFact}>
                 {countFormatter.format(stage?.succeeded ?? 0)} 个数据包
               </span>
-              <span
-                className={styles.stageMeta}
-                data-tone={tone}
-                aria-hidden={meta ? undefined : true}
-              >
-                {meta}
-              </span>
+              {stageCode === "PACKAGE_UPLOAD" &&
+              stage &&
+              stage.waiting + stage.running + stage.blocked + stage.failed >
+                0 ? (
+                <Link
+                  className={`${styles.stageMeta} ${styles.stageLink}`}
+                  data-tone={tone}
+                  to={unfinishedUploadsPath}
+                  aria-label="处理未完成上传"
+                  title="查看并处理当前任务范围的未完成上传"
+                >
+                  {meta || "处理未完成上传"}
+                  <ChevronRight size={12} aria-hidden="true" />
+                </Link>
+              ) : (
+                <span
+                  className={styles.stageMeta}
+                  data-tone={tone}
+                  aria-hidden={meta ? undefined : true}
+                >
+                  {meta}
+                </span>
+              )}
               <div className={styles.stageBadges}>
                 {(
                   [

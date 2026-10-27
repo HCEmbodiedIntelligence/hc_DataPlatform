@@ -532,6 +532,8 @@ class RobotIngestUpload(StrictModel):
     expires_at: datetime
     updated_at: datetime
     committed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by: str | None = None
 
 
 class RobotIngestUploadEnvelope(StrictModel):

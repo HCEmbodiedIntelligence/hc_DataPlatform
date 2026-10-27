@@ -1239,6 +1239,7 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 dataset_schema_snapshot_id=request.schema_snapshot_id,
                 base_step_count=derived.step_count,
                 source_workflow_id=workflow.info().workflow_id,
+                **({"task_labels": request.task_labels} if request.task_labels is not None else {}),
             )
             annotation, annotation_state = await _create_optional_annotation(annotation_input)
             await self._state(

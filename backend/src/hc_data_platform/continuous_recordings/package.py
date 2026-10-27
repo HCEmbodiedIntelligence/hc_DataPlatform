@@ -156,7 +156,7 @@ def recording_files(request, connections, storage):
             # copied below; robot archives and whole MCAP are not new primaries.
             if (
                 request.recording_config.recorder_version
-                in {"openarm-session/v2", "native-mcap-recording/1", "native-mcap-recording/2"}
+                in {"openarm-session/v2", "native-mcap-recording/1", "native-mcap-recording/2", "native-mcap-recording/3", "native-mcap-recording/4"}
                 and roles[file.relative_path] is RecordingAssetRole.AUXILIARY
                 and file.relative_path.startswith("source/original/")
             ):
@@ -193,6 +193,8 @@ def source_context(request, upload, paths):
     ):
         raise ValueError("recording config bytes differ from committed command")
     origin = timestamp_ns(upload.command.capture_started_at)
+    if request.recording_config.recorder_version in {"native-mcap-recording/3", "native-mcap-recording/4"}:
+        origin = read_json(paths["mcap-provenance.json"])["source_origin_ns"]
     facts = {
         "capture_started_at": upload.command.capture_started_at.isoformat(),
         "recording_origin_ns": origin,
@@ -326,10 +328,26 @@ def timeline(request, origin):
     return origin + request.start_offset_ns, request.end_offset_ns - request.start_offset_ns
 
 
+def preserved_frames(request, paths):
+    """Original row index and MCAP offset, never inferred from nominal FPS."""
+    if request.recording_config.recorder_version not in {"native-mcap-recording/3", "native-mcap-recording/4"}:
+        return None
+    result = []
+    with paths["source/frames.jsonl"].open() as stream:
+        for line in stream:
+            row = json.loads(line)
+            if request.start_offset_ns <= row["offset_ns"] < request.end_offset_ns:
+                result.append((row["source_frame"], row["offset_ns"]))
+    if not result:
+        raise ValueError("selected window has no source frames")
+    return result
+
+
 def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *, schemas=None):
     source = request.projection
     files = {file.relative_path: file for file in inventory(request)}
     origin, clock, declared = source_context(request, upload, paths)
+    preserved = preserved_frames(request, paths)
     if alignment.data.start_ns != timeline(request, origin)[0]:
         raise ValueError("recording alignment uses a different source clock")
     mapping = feature_names(sorted(request.alignment_profile.required_modalities))
@@ -396,14 +414,16 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         stop = request.end_offset_ns - camera.capture_start_offset_ns
         if offset < 0 or stop <= offset:
             raise ValueError("recording camera does not cover the selected window")
-        first = round(Fraction(offset, 1_000_000_000) * fps)
+        first = preserved[0][0] if preserved else round(Fraction(offset, 1_000_000_000) * fps)
         windows[target] = DepthWindow(
             first,
-            min(count, round(Fraction(stop, 1_000_000_000) * fps)),
+            preserved[-1][0] + 1 if preserved else min(count, round(Fraction(stop, 1_000_000_000) * fps)),
             manifest.row_count,
             request.alignment_profile.frequency_hz,
             alignment.data.start_ns,
             source_start_offset_ns=offset,
+            source_frames=tuple(i for i, _ in preserved) if preserved else None,
+            target_timestamps_ns=tuple(origin + stamp for _, stamp in preserved) if preserved else None,
         )
     ident = EpisodeIdentity(
         organization_id=source.organization_id,
@@ -438,7 +458,9 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         "frequency_hz": request.alignment_profile.frequency_hz,
         "capture": request.capture_snapshot,
         "capture_validation": request.capture_validation,
-        "task": source.collection_task_id,
+        "task": (request.task_labels[0] if request.task_labels else None)
+        or (request.capture_snapshot or {}).get("task_instruction") or source.collection_task_id,
+        **({"task_labels": list(request.task_labels)} if request.task_labels is not None else {}),
         "source": {
             "recording_id": source.recording_id,
             "recording_upload_id": source.recording_upload_id,
@@ -472,7 +494,7 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         input=PackageInput(
             identity=ident,
             source_sha256=source.source_sha256,
-            processor_version=VERSION,
+            processor_version=request.alignment_profile.converter_version,
             configuration_sha256="0" * 64,
             schema_snapshot_id=request.schema_snapshot_id,
             required_features=tuple(sorted(mapping.values())),
@@ -618,6 +640,9 @@ def prepared_recording_assets(request, plan, paths, attempt_id):
                     frame_at(request.start_offset_ns, request.alignment_profile.frequency_hz),
                     frame_at(request.end_offset_ns, request.alignment_profile.frequency_hz),
                 )
+                source_frames = preserved_frames(request, paths)
+                if source_frames:
+                    first, stop = source_frames[0][0], source_frames[-1][0] + 1
                 count = 0
                 with (
                     paths["source/frames.jsonl"].open("rb") as original,

@@ -89,7 +89,7 @@ class TagDerivationService:
         data = task.data_ref
         package = self.packages.files.open(data.identity, data.data_version_id)
         schema = self.packages.schemas.schema_for(
-            data.identity.project_id, data.identity.dataset_id
+            data.identity.project_id, data.identity.dataset_id, data.schema_snapshot_id
         )
         episode = freeze_tag_episode(
             package, selection, snapshot, schema, display_name=body.display_name

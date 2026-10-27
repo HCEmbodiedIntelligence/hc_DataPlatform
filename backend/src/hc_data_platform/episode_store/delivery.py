@@ -6,7 +6,7 @@ import io
 import logging
 import time
 import zipfile
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -28,7 +28,7 @@ from .models import canonical, digest
 logger = logging.getLogger(__name__)
 
 
-def archive_packages(packages, plan, destination, checkpoint, progress):
+def archive_packages(packages, plan, destination, checkpoint, progress, *, pin_totals=lambda *_: None):
     """Write deterministic ZIP64 using fixed inventory and bounded read buffers."""
     count = size = 0
     last_report = time.monotonic()
@@ -66,27 +66,28 @@ def archive_packages(packages, plan, destination, checkpoint, progress):
                 or package.receipt.manifest_sha256 != selection.manifest_sha256
             ):
                 raise PackageConflict("archive source differs from the frozen plan")
-            for entry in package.manifest.files:
-                with package.file(entry.path) as path, path.open("rb") as stream:
-                    member(
-                        archive, f"{selection.root}/{entry.path}", stream, entry.size, entry.sha256
-                    )
-            for name, document in (
-                ("hc/manifest.json", package.manifest),
-                ("hc/commit.json", package.receipt),
-            ):
-                body = canonical(document.model_dump(mode="json"))
-                member(
-                    archive,
-                    f"{selection.root}/{name}",
-                    io.BytesIO(body),
-                    len(body),
-                    hashlib.sha256(body).hexdigest(),
-                )
+            from .processed_archive import processed_archive
+
+            prepared = (nullcontext((package, False)) if plan.processor_version == "hc-episode-archive/1"
+                        else processed_archive(package, destination.parent, checkpoint))
+            with prepared as (view, derived):
+                for entry in view.manifest.files:
+                    with view.file(entry.path) as path, path.open("rb") as stream:
+                        member(archive, f"{selection.root}/{entry.path}", stream, entry.size, entry.sha256)
+                documents = [("hc/manifest.json", view.manifest)]
+                # A local training derivative has a manifest, not a database
+                # commit receipt. Its immutable parent receipt is an attachment.
+                if not derived:
+                    documents.append(("hc/commit.json", package.receipt))
+                for name, document in documents:
+                    body = canonical(document.model_dump(mode="json"))
+                    member(archive, f"{selection.root}/{name}", io.BytesIO(body),
+                           len(body), hashlib.sha256(body).hexdigest())
         body = inventory_document(plan)
         member(
             archive, "delivery.json", io.BytesIO(body), len(body), hashlib.sha256(body).hexdigest()
         )
+    pin_totals(count, size)
     checksum = hashlib.sha256()
     with destination.open("rb") as stream:
         for block in iter(lambda: stream.read(1024**2), b""):
@@ -296,6 +297,7 @@ class EpisodeDeliveryService:
                             archive,
                             checkpoint,
                             lambda files, size: self.repository.progress(row, files, size),
+                            pin_totals=lambda files, size: self.repository.pin_totals(row, files, size),
                         )
                     key = f"episode-deliveries/{digest(scope_key())}/{job_id}/{checksum}.zip"
                     self.repository.pin_artifact(row, key, checksum, size)

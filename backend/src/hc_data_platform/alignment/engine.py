@@ -110,6 +110,8 @@ class AlignmentEngine:
         samples: Iterable[tuple[str, TimedSampleV1]],
         profile: AlignmentProfileV1,
         writer: FragmentWriterPort,
+        target_timestamps: Iterable[int] | None = None,
+        drop_invalid: bool = False,
     ) -> AlignedFragmentManifestV1:
         """Align a per-topic ordered stream with bounded lookahead deques."""
 
@@ -128,10 +130,12 @@ class AlignmentEngine:
             },
         )
         schema_sha256 = self._schema_hash(schema_input, profile)
+        if drop_invalid:
+            schema_sha256 = hashlib.sha256((schema_sha256 + ":drop-invalid-compact/v1").encode()).hexdigest()
         buffers: dict[str, deque[TimedSampleV1]] = {name: deque() for name in stream_kinds}
         watermark = -1
         previous_sources: dict[str, tuple[int, ...]] = {}
-        timestamps = self.iter_timestamps(schema_input, profile)
+        timestamps = iter(target_timestamps) if target_timestamps is not None else self.iter_timestamps(schema_input, profile)
         target = next(timestamps, None)
         step_index = 0
         row_count = 0
@@ -181,10 +185,13 @@ class AlignmentEngine:
         def write_one() -> None:
             nonlocal target, step_index, row_count
             row = emit()
-            writer.write_row(row)
-            digest.update(canonical_json_bytes(row.model_dump(mode="python")))
-            digest.update(b"\n")
-            row_count += 1
+            if row.sample_valid or not drop_invalid:
+                if drop_invalid:
+                    row = row.model_copy(update={"step_index": row_count})
+                writer.write_row(row)
+                digest.update(canonical_json_bytes(row.model_dump(mode="python")))
+                digest.update(b"\n")
+                row_count += 1
             step_index += 1
             target = next(timestamps, None)
             if target is None:
@@ -211,6 +218,8 @@ class AlignmentEngine:
                     write_one()
             while target is not None:
                 write_one()
+            if drop_invalid and not row_count:
+                raise ValueError("aligned Episode has no usable frames")
             content_sha256 = digest.hexdigest()
             staging_uri = writer.commit(
                 row_count=row_count,

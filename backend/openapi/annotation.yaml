@@ -291,8 +291,10 @@ components:
           title: Parent Manifest Sha256
           type: string
         processor_version:
-          const: hc-annotated-delivery-queue/1
-          default: hc-annotated-delivery-queue/1
+          default: hc-annotated-delivery-queue/2
+          enum:
+          - hc-annotated-delivery-queue/1
+          - hc-annotated-delivery-queue/2
           title: Processor Version
           type: string
         reader_version:
@@ -959,7 +961,7 @@ components:
           type: integer
         label:
           anyOf:
-          - maxLength: 256
+          - maxLength: 10000
             minLength: 1
             type: string
           - type: 'null'

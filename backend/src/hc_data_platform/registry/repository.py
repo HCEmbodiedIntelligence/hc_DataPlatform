@@ -193,7 +193,7 @@ class RegistryRepository(Protocol):
     ) -> tuple[RobotModelAsset, ...]: ...
 
     def get_robot_model_asset(
-        self, *, organization_id: str, project_id: str, asset_id: str
+        self, *, organization_id: str, project_id: str, asset_id: str, include_content: bool = True
     ) -> tuple[str, RobotModelAsset, bytes | None] | None: ...
 
     def store_robot_model_asset_content(
@@ -612,12 +612,12 @@ class InMemoryRegistryRepository:
         return tuple(sorted(values, key=lambda item: (item.relative_path, item.asset_id)))
 
     def get_robot_model_asset(
-        self, *, organization_id: str, project_id: str, asset_id: str
+        self, *, organization_id: str, project_id: str, asset_id: str, include_content: bool = True
     ) -> tuple[str, RobotModelAsset, bytes | None] | None:
         with self._lock:
             key = (organization_id, project_id, asset_id)
             found = self._assets.get(key)
-            return None if found is None else (found[0], found[2], self._asset_contents.get(key))
+            return None if found is None else (found[0], found[2], self._asset_contents.get(key) if include_content else None)
 
     def store_robot_model_asset_content(
         self,
@@ -1709,15 +1709,15 @@ class PostgresRegistryRepository:
             connection.close()
 
     def get_robot_model_asset(
-        self, *, organization_id: str, project_id: str, asset_id: str
+        self, *, organization_id: str, project_id: str, asset_id: str, include_content: bool = True
     ) -> tuple[str, RobotModelAsset, bytes | None] | None:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
             cursor.execute(
-                """
+                f"""
                 SELECT asset_id, relative_path, role, media_type, size_bytes, sha256, created_at,
-                       object_key, content
+                       object_key, {"content" if include_content else "NULL::bytea AS content"}
                   FROM registry.robot_model_assets
                  WHERE organization_id = %s AND project_id = %s AND asset_id = %s::uuid
                 """,

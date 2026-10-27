@@ -15,7 +15,7 @@ function slice(
   startNs: number,
   endNs: number,
 ): EditableSlice {
-  return { episodeId, startNs, endNs, title: "", taskLabel: "", notes: "" };
+  return { episodeId, startNs, endNs, title: "", taskLabels: [], notes: "" };
 }
 
 describe("recording segmentation model", () => {
@@ -76,12 +76,14 @@ describe("recording segmentation model", () => {
         episode_id: "episode_0001",
         start_offset_ns: "0",
         end_offset_ns: "1000000000",
+        task_labels: [],
       },
       {
         episode_id: "episode_0002",
         start_offset_ns: "2000000000",
         end_offset_ns: "3000000000",
         title: "第二条",
+        task_labels: [],
       },
     ]);
   });

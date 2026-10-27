@@ -1,84 +1,44 @@
+"""QC is compiled from the selected immutable scheme, never a project-level match."""
+import copy
 import pytest
-
-from hc_data_platform.continuous_recordings.processing import (
-    PostgresContinuousEpisodeWorkflowInputResolver,
-)
-from hc_data_platform.quality.models import QualityProfileV1
-from hc_data_platform.workflow.ingest_dispatch import IngestWorkflowPlanBlocked
+from hc_data_platform.capture_schemes.quality import from_snapshot
 
 
-class Cursor:
-    def __init__(self, profiles):
-        self.rows = [(p.model_dump(mode="json"),) for p in profiles]
-
-    def execute(self, *args):
-        pass
-
-    def fetchall(self):
-        return self.rows
+def snapshot(policy=None):
+    return {"output": {"features": {"observation.state": {"role": "state"}, "action": {"role": "action"}}},
+            "quality_policy": policy or {}}
 
 
-def select(profiles, topics=frozenset({"/state"})):
-    return PostgresContinuousEpisodeWorkflowInputResolver._quality_profile(
-        Cursor(profiles), "01", topics
-    )
+def test_new_threshold_version_preserves_frozen_history():
+    old = snapshot({"timing": {"minimum_frequency_ratio_risk": .95}})
+    new = copy.deepcopy(old)
+    new["quality_policy"]["timing"]["minimum_frequency_ratio_risk"] = .9
+    first = from_snapshot(old, {'/observation/state','/action'}, 30)
+    second = from_snapshot(new, {'/observation/state','/action'}, 30)
+    assert first.profile_id != second.profile_id
+    assert first.default_timing.minimum_frequency_hz_risk == 28.5
+    assert second.default_timing.minimum_frequency_hz_risk == 27
+    assert first == from_snapshot(old, {'/observation/state','/action'}, 30)
 
 
-def test_new_threshold_version_preserves_history_and_is_selected():
-    old = QualityProfileV1(profile_id="capture", required_topics={"/state"})
-    old = old.model_copy(
-        update={
-            "default_timing": old.default_timing.model_copy(
-                update={"minimum_frequency_hz_risk": 28.5}
-            )
-        }
-    )
-    new = old.model_copy(
-        update={
-            "profile_version": 2,
-            "default_timing": old.default_timing.model_copy(
-                update={"minimum_frequency_hz_risk": 27.0}
-            ),
-        }
-    )
-    assert select([new, old]) == new
-    assert select([old, new]) == new
-    assert old.default_timing.minimum_frequency_hz_risk == 28.5
+@pytest.mark.parametrize('field,value', [
+    ('joint_limits', {'arm': [-1, 1]}),
+    ('timing', {'maximum_gap_ns_reject': 200000000}),
+    ('action', {'maximum_jump_risk': .1}),
+    ('image', {'black_luma_threshold': 8}),
+    ('point_cloud', {'minimum_point_count': 10}),
+    ('synchronization', {'maximum_p95_offset_ns_reject': 200000000}),
+    ('completeness', {'minimum_ratio_reject': .5}),
+])
+def test_each_scheme_rule_group_changes_execution_identity(field,value):
+    first = from_snapshot(snapshot(), {'/observation/state','/action'}, 30)
+    changed = from_snapshot(snapshot({field:value}), {'/observation/state','/action'}, 30)
+    assert first.profile_id != changed.profile_id
+    assert changed.engine_version == 'be06-qc/4'
 
 
-def test_identical_policy_aliases_select_one_existing_identity_deterministically():
-    first = QualityProfileV1(profile_id="a", required_topics={"/state"})
-    alias = first.model_copy(update={"profile_id": "b", "profile_version": 3})
-    assert select([alias, first]) == first
-    assert select([first, alias]) == first
-    assert alias.profile_id == "b" and alias.profile_version == 3
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("engine_version", "be06-qc/3"),
-        ("joint_limits", {"arm": (-1.0, 1.0)}),
-        ("joint_topic", "/other-state"),
-        ("default_timing", {"minimum_frequency_hz_risk": 28.5}),
-        ("action", {"topic": "/action", "maximum_jump_risk": 0.1}),
-    ],
-)
-def test_different_matching_policy_rules_remain_ambiguous(field, value):
-    first = QualityProfileV1(profile_id="a", required_topics={"/state"})
-    changed = QualityProfileV1.model_validate(
-        {
-            **first.model_dump(),
-            "profile_id": "b",
-            field: value,
-        }
-    )
-    with pytest.raises(IngestWorkflowPlanBlocked, match="exactly one"):
-        select([first, changed])
-
-
-def test_new_topic_contract_does_not_fall_back_to_old_version():
-    old = QualityProfileV1(profile_id="capture", required_topics={"/state"})
-    new = old.model_copy(update={"profile_version": 2, "required_topics": frozenset({"/other"})})
-    with pytest.raises(IngestWorkflowPlanBlocked, match="exactly one"):
-        select([old, new])
+def test_changing_selected_fields_cannot_reuse_previous_rules():
+    first = from_snapshot(snapshot(), {'/observation/state','/action'}, 30)
+    other = from_snapshot(snapshot(), {'/other'}, 30)
+    assert first.profile_id != other.profile_id
+    assert other.required_topics == {'/other'}

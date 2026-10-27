@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import {
   getSessionBootstrap,
   logoutSession,
@@ -42,6 +45,24 @@ export function RuntimePlatformShell({
   const { showToast } = useToast();
   const logoutInFlight = useRef(false);
   const [logoutPending, setLogoutPending] = useState(false);
+  const client = useQueryClient();
+  const scope = useShellStore(state => state.scope);
+  const revision = useScopeQueryRevision();
+  const capabilities = useCapabilities();
+  const warmModel = bootstrapLoaded && !capabilities.loading && !capabilities.failed &&
+    ["annotation_task.read", "episode.read", "dataset_version.read", "robot_model.read"].every(capabilities.has);
+
+  useEffect(() => {
+    if (!warmModel || !scope?.projectId || !scope.regionCode) return;
+    const controller = new AbortController();
+    const selected = { organizationId: scope.organizationId, projectId: scope.projectId, regionCode: scope.regionCode };
+    // This effect belongs to the shell, not a route. Moving between pages keeps
+    // downloads alive; authorization changes still cancel the private lease.
+    void import("../../features/annotation/runtime/task-preload")
+      .then(module => module.preloadHomeModel(client, selected, revision, controller.signal))
+      .catch(() => undefined); // Foreground viewer has an explicit retry action.
+    return () => controller.abort();
+  }, [client, warmModel, revision, scope?.organizationId, scope?.projectId, scope?.regionCode]);
 
   async function logout(): Promise<void> {
     if (logoutInFlight.current) return;

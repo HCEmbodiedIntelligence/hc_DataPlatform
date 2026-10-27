@@ -48,10 +48,10 @@ class CollectionDelivery:
             package = self.owner.packages.files.open(data.identity, data.data_version_id)
             if package.receipt.data != data:
                 raise PackageConflict("collection data differs from its committed reference")
-            if adapter.name == "mcap":
-                from .original_export import require_original_mcap
+            if adapter.name in {"mcap", "holobrain"}:
+                from .normalized_export import selected_source
 
-                require_original_mcap(package)
+                selected_source(package, holobrain=adapter.name == "holobrain")
             if adapter.originals:
                 from .original_export import originals
 

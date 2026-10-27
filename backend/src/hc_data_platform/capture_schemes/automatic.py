@@ -76,7 +76,7 @@ def complete_adapters(document):
                     "required": feature.get("required", True),
                 }
             )
-        elif name not in GENERATED:
+        elif name not in GENERATED and name not in {f.get("validity_feature") for f in features.values()}:
             if name in POSES:
                 kind = "geometry_msgs/msg/PoseStamped"
                 fields = [f"pose.position.{x}" for x in "xyz"] + [

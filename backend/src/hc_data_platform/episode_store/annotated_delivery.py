@@ -23,19 +23,18 @@ from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PAT
 from .models import DataVersionRef, FileEntry, FrozenModel, canonical, digest
 from .writer import Moments, write_json
 
-PROCESSOR = "hc-annotated-episode/1"
+PROCESSOR = "hc-annotated-episode/2"
 
 
 class AnnotatedDeliveryManifest(FrozenModel):
-    format: Literal["hc-annotated-episode/1"] = PROCESSOR
+    format: Literal["hc-annotated-episode/1", "hc-annotated-episode/2"] = PROCESSOR
     base_data: DataVersionRef
     subtasks: SubtaskBinding
     review: ReviewReference
     files: tuple[FileEntry, ...] = Field(min_length=1)
     includes_collected_depth: Literal[True] = True
     excluded_modalities: tuple[str, ...] = Field(default=(), max_length=0)
-    # Explicit cleaning masks preserve the complete parent. No frames are dropped.
-    exclusion_policy: Literal["mark_parent_frames"] = "mark_parent_frames"
+    exclusion_policy: Literal["mark_parent_frames", "drop_invalid_and_excluded_frames"] = "drop_invalid_and_excluded_frames"
 
     @model_validator(mode="after")
     def coherent(self):
@@ -46,7 +45,8 @@ class AnnotatedDeliveryManifest(FrozenModel):
 
 
 def write_annotated_delivery(
-    root, package, annotation_file, track, *, checkpoint=lambda: None, review_document=None
+    root, package, annotation_file, track, *, checkpoint=lambda: None, review_document=None,
+    compact_invalid=True,
 ):
     data, body = package.receipt.data, annotation_file.content
     if hashlib.sha256(body).hexdigest() != annotation_file.file.content_sha256:
@@ -194,7 +194,9 @@ def write_annotated_delivery(
             "hc.annotation.excluded": {"dtype": "bool", "shape": [1], "names": None},
         }
     )
-    info["hc.annotation_delivery"] = {"format": PROCESSOR, "manifest": "hc/delivery_manifest.json"}
+    processor = PROCESSOR if compact_invalid else "hc-annotated-episode/1"
+    exclusion_policy = "drop_invalid_and_excluded_frames" if compact_invalid else "mark_parent_frames"
+    info["hc.annotation_delivery"] = {"format": processor, "manifest": "hc/delivery_manifest.json"}
     (root / "hc/annotation.json").write_bytes(body)
     if review_document is not None:
         write_json(root, "hc/annotation-review.json", review_document)
@@ -208,20 +210,33 @@ def write_annotated_delivery(
         "meta/stats.json": stats,
         "hc/subtask-track.json": projection.binding.model_dump(mode="json"),
         "hc/annotation-delivery.json": {
-            "format": PROCESSOR,
+            "format": processor,
             "review": review.model_dump(mode="json"),
             "base_data": data.model_dump(mode="json"),
             "projection_sha256": projection.configuration_sha256,
             "frame_mapping": "hc/annotation_source_frames.parquet",
-            "exclusion_policy": "mark_parent_frames",
-            "media_policy": "verified_byte_copy",
+            "exclusion_policy": exclusion_policy,
+            "media_policy": "selected-rows-cfr/v1" if compact_invalid else "verified_byte_copy",
             "requantized": False,
-            "transcoded": False,
+            "transcoded": compact_invalid and any(f["dtype"] == "video" for f in info["features"].values()),
         },
         "hc/parent_manifest.json": package.manifest.model_dump(mode="json"),
         "hc/parent_commit.json": package.receipt.model_dump(mode="json"),
     }.items():
         write_json(root, path, value)
+    if compact_invalid:
+        from .capture_selection import compact_capture_rows
+
+        compact_capture_rows(root)
+        if projection.segments:
+            from bisect import bisect_left
+
+            retained = pq.read_table(root / "hc/annotation_source_frames.parquet")["source_frame_index"].to_pylist()
+            segments = [{**row,
+                         "output_start_step": bisect_left(retained, row["source_start_step"]),
+                         "output_end_step": bisect_left(retained, row["source_end_step"])}
+                        for row in projection.rows()]
+            (root / "hc/subtasks.jsonl").write_bytes(b"".join(canonical(row) + b"\n" for row in segments))
     entries = tuple(
         FileEntry(
             path=path.relative_to(root).as_posix(),
@@ -233,6 +248,7 @@ def write_annotated_delivery(
         if path.is_file()
     )
     manifest = AnnotatedDeliveryManifest(
+        format=processor, exclusion_policy=exclusion_policy,
         base_data=data, subtasks=projection.binding, review=review, files=entries
     )
     write_json(root, "hc/delivery_manifest.json", manifest.model_dump(mode="json"))

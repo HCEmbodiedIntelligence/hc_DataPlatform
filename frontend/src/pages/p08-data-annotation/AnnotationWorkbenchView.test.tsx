@@ -282,6 +282,40 @@ const failedPreSubmitChecks: readonly TagReviewCheckResult[] = [
 ];
 
 describe("P08 page-level workspace navigation", () => {
+  it.each(["annotation", "tag-review"] as const)("reopens a completed result from %s and enables editing", async mode => {
+    const user = userEvent.setup();
+    const draft = createVisualAnnotationBundle({ mode: "annotation", cameraCount: 1 });
+    let finish!: () => void;
+    const reopen = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+    const switchMode = vi.fn();
+    function Harness() {
+      const [reopened, setReopened] = useState(false);
+      const bundle = reopened ? draft : { ...draft,
+        task: { ...draft.task, status: "APPROVED" as const, approved_revision: draft.task.current_revision },
+      };
+      return <AnnotationWorkbenchView
+        bundle={bundle} dirty={false} mode={mode} renderPanel={panel}
+        scope={visualAnnotationScope} tags={draft.draft!.tags}
+        permissions={{ hasAnnotationDraft: true, canCreate: false, canEdit: reopened,
+          canSave: reopened, canSubmit: reopened, canReview: false, canRevise: reopened, canReopen: !reopened }}
+        onReopenAnnotation={async () => { await reopen(); setReopened(true); }}
+        onSwitchMode={switchMode} onReview={async () => {}} onSave={async () => {}}
+        onSubmit={async () => {}} onTagsChange={() => {}}
+      />;
+    }
+    render(<Harness />);
+    expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("button", { name: "保存修改" })).toBeNull();
+    await user.dblClick(screen.getByRole("button", { name: "修改标注" }));
+    expect(reopen).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "修改标注" })).toBeDisabled();
+    await act(async () => finish());
+    await waitFor(() => expect(workspaceTab("标注")).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "修改标注" })).toBeNull();
+    if (mode === "tag-review") expect(switchMode).toHaveBeenCalledWith("annotation");
+  });
+
   it.each(["annotation", "tag-review"] as const)(
     "keeps ordinary wheels available for page scrolling in %s while allowing modified model zoom",
     (mode) => {
@@ -794,7 +828,9 @@ describe("P08 viewer-slot composition", () => {
       expect(screen.getAllByRole("slider")).toHaveLength(1);
       expect(
         screen.getByText(
-          `四路视频 · 已接入 ${Math.min(cameraCount, 4)} / 4 路`,
+          cameraCount === 0
+            ? "无相机数据 · 使用关节曲线与时间切片"
+            : `四路视频 · 已接入 ${Math.min(cameraCount, 4)} / 4 路`,
         ),
       ).toBeInTheDocument();
       expect(

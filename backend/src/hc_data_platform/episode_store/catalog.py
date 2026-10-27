@@ -101,7 +101,8 @@ class EpisodeCatalogReader:
     def schema_for(self, project_id, dataset_id):
         collection_scope(dataset_id, project_id)
         if self.schemas is not None:
-            schema = self.schemas.schema_for(project_id, dataset_id)
+            current = self.collections.current(dataset_id, project_id=project_id)
+            schema = self.schemas.schema_for(project_id, dataset_id, current.schema_snapshot_id if current else None)
             if schema is not None:
                 return schema
         return self.legacy.schema_for(project_id, dataset_id)

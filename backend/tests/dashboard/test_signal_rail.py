@@ -25,7 +25,7 @@ from tests.dashboard.test_task_status_projection import NOW, auth, package, stat
         ({"raw_committed": False, "upload_status": "UPLOADING"}, "PACKAGE_UPLOAD", "running"),
         ({"raw_committed": False, "upload_status": "FAILED"}, "PACKAGE_UPLOAD", "failed"),
         ({"raw_committed": False, "upload_status": "PAUSED"}, "PACKAGE_UPLOAD", "blocked"),
-        ({"raw_committed": False, "upload_status": "CANCELLED"}, "PACKAGE_UPLOAD", "blocked"),
+        ({"raw_committed": False, "upload_status": "CANCELLED"}, "PACKAGE_UPLOAD", "cancelled"),
         (
             {"raw_committed": False, "upload_status": "MULTIPART_COMPLETED"},
             "RAW_RECEIPT",
@@ -134,7 +134,8 @@ def test_only_the_reached_stage_has_active_work(changes, stage, bucket):
     stages = {item.stage.value: item for item in result.stages}
     reached = stages[stage]
     assert getattr(reached, bucket) == 1
-    assert result.current_stage.value == stage
+    # Cancellation closes the queue; it must not keep an active upload stage.
+    assert result.current_stage.value == ("TASK_EXECUTION" if bucket == "cancelled" else stage)
     later = False
     for item in result.stages:
         if later:

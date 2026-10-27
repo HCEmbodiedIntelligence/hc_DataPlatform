@@ -952,7 +952,13 @@ class ContinuousRecordingService:
 
     def _video_media(self, upload, asset, assets, camera, *, episode=False):
         depth = is_depth(camera)
-        preview = read_preview(self._storage, upload, asset, assets) if depth else None
+        selected_preview = any(a.manifest.path == "source/frames.jsonl" for a in assets)
+        preview = read_preview(self._storage, upload, asset, assets) if depth or selected_preview else None
+        selected_preview = selected_preview and preview is not None
+        if depth and preview is None:
+            # Historical recording views stay available until a versioned
+            # selected preview is published. They retain their original label.
+            preview = read_preview(self._storage, upload, asset, assets, selected=False)
         return {
             "modality": "depth" if depth else "rgb",
             "preview_status": "UNAVAILABLE" if depth and not preview else "READY",
@@ -961,7 +967,8 @@ class ContinuousRecordingService:
                 preview or asset.object_key, self._preview_ttl
             ),
             "codec": "h264" if preview else camera.codec,
-            "materialization": ("DEPTH_PREVIEW_TIME_WINDOW" if episode else "DEPTH_PREVIEW")
+            "materialization": (("PROCESSED_PREVIEW_TIME_WINDOW" if episode else "PROCESSED_PREVIEW")
+                                if selected_preview else ("DEPTH_PREVIEW_TIME_WINDOW" if episode else "DEPTH_PREVIEW"))
             if preview
             else ("ORIGINAL_VIDEO_TIME_WINDOW" if episode else "ORIGINAL_RECORDING"),
         }
@@ -1131,6 +1138,8 @@ class ContinuousRecordingService:
             "openarm-session/v2",
             "native-mcap-recording/1",
             "native-mcap-recording/2",
+            "native-mcap-recording/3",
+            "native-mcap-recording/4",
         }:
             state = next(
                 (sensor for sensor in sensors if sensor.topic == "/observation/state"), None
@@ -1213,6 +1222,14 @@ class ContinuousRecordingService:
                 title="Episode slice is outside the recording",
                 detail="Every episode interval must be contained in the uploaded capture range.",
             )
+        defaults = self._repository.present((recording,))[0].default_task_labels
+        labels_by_episode = {
+            item.episode_id: tuple(dict.fromkeys(
+                item.task_labels if item.task_labels is not None
+                else (item.task_label,) if item.task_label else defaults
+            ))
+            for item in ordered
+        }
         slices = tuple(
             EpisodeSlice(
                 scope=recording.scope,
@@ -1227,7 +1244,8 @@ class ContinuousRecordingService:
                 ),
                 ended_at=absolute_recording_time(recording.capture_started_at, item.end_offset_ns),
                 title=item.title,
-                task_label=item.task_label,
+                task_label=next(iter(labels_by_episode[item.episode_id]), None),
+                task_labels=labels_by_episode[item.episode_id],
                 notes=item.notes,
                 source_sha256=recording.source_sha256,
                 source_upload_session_id=recording.upload_session_id,

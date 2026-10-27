@@ -1,11 +1,11 @@
 """Select exactly the retained capture rows in every video, using a compact CFR clock."""
-from dataclasses import dataclass
-from fractions import Fraction
 import hashlib
 import io
 import json
-from pathlib import Path
 import shutil
+from dataclasses import dataclass
+from fractions import Fraction
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import av
@@ -16,7 +16,8 @@ from PIL import Image
 
 from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
-from hc_data_platform.data_formats.video import inspect_video, inspect_depth_video
+from hc_data_platform.data_formats.video import inspect_depth_video, inspect_video
+
 from .depth_window import prepare_depth_window
 from .models import FileEntry, canonical
 from .prepared_assets import PreparedVideo
@@ -132,9 +133,10 @@ def compact_capture_media(root: Path):
                 selected_feature, statistics = inspect_depth_video(path, len(indices), fps,
                     feature['info'], masks=masks())
             else:
-                output = work/(key+'.mp4')
-                select_rgb(path, output, indices, fps)
-                shutil.copyfile(output, path)
+                if indices != tuple(range(info['hc.media_frame_count'])):
+                    output = work/(key+'.mp4')
+                    select_rgb(path, output, indices, fps)
+                    shutil.copyfile(output, path)
                 selected_feature, statistics = inspect_video(path, frame_count=len(indices), fps=fps)
             info['features'][key] = selected_feature
             if statistics:
@@ -142,14 +144,16 @@ def compact_capture_media(root: Path):
             else:
                 stats.pop(key, None)
             media_evidence[key] = {'source_video_sha256': parent_hash, 'selected_video_sha256': file_hash(path)}
-    schema = parquet.schema_arrow.append(pa.field('hc.source_frame_index', pa.int64()))
+    schema = parquet.schema_arrow
+    if 'hc.source_frame_index' not in schema.names:
+        schema = schema.append(pa.field('hc.source_frame_index', pa.int64()))
     temporary_data = (root/DATA_PATH).with_suffix('.selected.parquet')
     count = 0
     with pq.ParquetWriter(temporary_data, schema) as output:
         for batch in parquet.iter_batches(batch_size=128):
             rows = batch.to_pylist()
             for row in rows:
-                row['hc.source_frame_index'] = row['hc.video_frame_index']
+                row.setdefault('hc.source_frame_index', row['hc.video_frame_index'])
                 row['hc.video_frame_index'] = count
                 row['hc.video_timestamp'] = count/fps
                 count += 1

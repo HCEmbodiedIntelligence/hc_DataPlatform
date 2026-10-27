@@ -29,7 +29,17 @@ GENERATED = {
 
 
 def _number(value, path, *, dtype=None):
-    for part in path.split("."):
+    parts = path.split(".")
+    if len(parts) == 2 and parts[0] in {"position", "velocity", "effort"} and not parts[1].isdigit():
+        from .mcap_selection import joint_values
+        joint_values(value, [parts[1]], [parts[1]], topic="numeric:" + path, stamp="selected")
+        names = list(get_field(value, "name", []))
+        values = list(get_field(value, parts[0], []))
+        if not values:
+            raise ValueError(f"MCAP_NUMERIC_INVALID: {path} array absent")
+        value = values[names.index(parts[1])]
+        path = ""
+    for part in path.split(".") if path else ():
         if isinstance(value, (list, tuple, np.ndarray)) and part.isdigit():
             if int(part) >= len(value):
                 raise ValueError(f"MCAP_NUMERIC_INVALID: {path}")
@@ -79,19 +89,37 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     from hc_data_platform.capture_schemes.schema import native_topic
 
     from .mcap_native import decoded, prepare
+    from .mcap_selection import ros_type, select_mcap
 
     path, destination = Path(path), Path(destination)
     output = OutputContract.model_validate(cfg.semantic_output)
     # FRAME_TIMESTAMP means the preserved state timeline for this ROS adapter.
     if output.time_source == "FRAME_TIMESTAMP" and cfg.time_source != "STATE_LOG_TIME":
         raise ValueError("MCAP_FRAME_CLOCK_REQUIRES_STATE")
-    base = cfg.model_copy(
-        update={"semantic_output": None, "numeric_sources": {}, "alignment_policy": "PRESERVE"}
-    )
+    versioned = output.algorithm in {"capture-structure/v2", "capture-structure/v3"}
+    selection = None
+    if versioned:
+        selected = destination.parent / (destination.name + "-selected.mcap")
+        selection = select_mcap(path, selected, cfg, progress)
+        path = selected
+    base = cfg.model_copy(update={
+        "semantic_output": None, "numeric_sources": {}, "alignment_policy": "PRESERVE",
+        **({role + "_required_axes": cfg.required_axes(role) for role in ("state", "action")} if versioned else {}),
+    })
     recording, evidence = prepare(path, destination, base, progress, preserve_source=True)
+    if selection:
+        target = destination / selection["path"]
+        if selection.get("normalization"):
+            path.with_suffix(".audit.json").replace(destination / "source/normalization.json")
+        path.replace(target)
+        path = target
+        evidence["selected_mcap"] = selection
+        from hc_data_platform.capture_schemes.schema import format_version
+        evidence["format_version"] = format_version(cfg.semantic_output)
     features = output.features
+    masks = {f.validity_feature: name for name, f in features.items() if f.validity_feature and f.role in {"state", "action"}}
     cameras = {"observation.images." + camera.camera_id: camera for camera in cfg.cameras}
-    supported = {"observation.state", "action", *cameras, *cfg.numeric_sources, *GENERATED}
+    supported = {"observation.state", "action", *cameras, *cfg.numeric_sources, *GENERATED, *masks}
     if set(features) - supported:
         raise ValueError(
             "MCAP_SOURCE_MAPPING_REQUIRED: " + ", ".join(sorted(set(features) - supported))
@@ -117,11 +145,17 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             progress()
             origin = message.log_time if origin is None else min(origin, message.log_time)
             for name in by_topic.get(channel.topic, []):
-                source_times[name].append(message.log_time)
+                if cfg.normalization:
+                    from .joint_normalization import capture_time
+
+                    value = decoded(schema, channel, message, decoder)
+                    source_times[name].append(capture_time(value, message))
+                else:
+                    source_times[name].append(message.log_time)
                 mapping = cfg.numeric_sources.get(name)
                 if mapping is None:
                     continue
-                if schema is None or schema.name != mapping.message_type:
+                if schema is None or ros_type(schema.name) != ros_type(mapping.message_type):
                     raise ValueError(f"MCAP_NUMERIC_TYPE_MISMATCH: {name}")
                 value = decoded(schema, channel, message, decoder)
                 header = get_field(value, "header", None)
@@ -132,6 +166,11 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
                     _number(value, field, dtype=features[name].dtype) for field in mapping.fields
                 ]
                 values[name].append(_cast(numbers, features[name]))
+    for name in source_times:
+        if name in values:
+            pairs = sorted(zip(source_times[name], values[name], strict=True), key=lambda p: p[0])
+            values[name] = [p[1] for p in pairs]
+        source_times[name].sort()
     if origin is None:
         raise ValueError("MCAP_EMPTY_REQUIRED_TOPIC")
     for name, samples in values.items():
@@ -139,6 +178,7 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             raise ValueError(f"MCAP_REQUIRED_SIGNAL_MISSING: {name}")
 
     actual = dict(evidence["output_features"])
+    actual.update({name: _definition(features[name]) for name in masks})
     for name in ("observation.state", "action"):
         feature = features.get(name)
         if feature is None:
@@ -213,17 +253,26 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             emit(channel.topic, value, message)
             if logical in features:
                 emit(native_topic(logical), value, message)
+                mask = features[logical].validity_feature
+                if mask:
+                    emit(native_topic(mask), value["validity"], message)
             if channel.topic != "source.timestamp_ns":
                 continue
             stamp = value
             selected = {
                 name: bisect.bisect_right(times, stamp) - 1 for name, times in source_times.items()
             }
+            if cfg.normalization:
+                from .joint_normalization import nearest_index
+
+                selected = {name: nearest_index(times, stamp, 150_000_000) for name, times in source_times.items()}
+                selected = {name: -1 if pos is None else pos for name, pos in selected.items()}
             for name in present:
                 feature = features[name]
                 if name in values:
                     pos = selected[name]
-                    row = values[name][pos] if pos >= 0 else [None] * feature.shape[0]
+                    fresh = pos >= 0 and abs(stamp - source_times[name][pos]) <= (150_000_000 if cfg.normalization else round(cfg.maximum_time_error_ms * 1e6))
+                    row = values[name][pos] if fresh else [None] * feature.shape[0]
                 elif name == "observation.recording_time":
                     row = [(stamp - origin) / 1e9]
                 else:
@@ -249,7 +298,7 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     replacement.replace(original)
     canonical_sensors = {
         native_topic(name): features[name].required
-        for name in present | ({"observation.state", "action"} & set(features))
+        for name in present | set(masks) | ({"observation.state", "action"} & set(features))
     }
     canonical_sensors["/metadata/source"] = True
     recording["sensors"].extend(
@@ -270,7 +319,7 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             "alignment_policy": "PRESERVE",
         },
         output_features=actual,
-        semantic_projection="explicit-ros-features/v1",
+        semantic_projection="explicit-ros-features/v2" if versioned else "explicit-ros-features/v1",
         source_reference_frames=reference_frames,
     )
     for name, document in (

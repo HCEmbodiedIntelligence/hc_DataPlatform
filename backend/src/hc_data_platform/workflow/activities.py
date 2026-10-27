@@ -1752,6 +1752,7 @@ async def create_annotation_task(
                 source_workflow_id=request.source_workflow_id,
                 task_kind=request.task_kind,
                 frame_selection=request.frame_selection,
+                task_labels=request.task_labels,
             )
         )
         return AutomaticAnnotationActivityOutput(task_id=task.task_id)

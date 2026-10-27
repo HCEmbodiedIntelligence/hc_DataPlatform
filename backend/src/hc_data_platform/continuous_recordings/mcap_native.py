@@ -8,7 +8,6 @@ import bisect
 import copy
 import hashlib
 import json
-import math
 import sqlite3
 import statistics
 from pathlib import Path
@@ -25,9 +24,18 @@ from hc_data_platform.verification.ports import McapRos2DecoderProbe
 
 from .mcap_contracts import CameraMapping as CameraMapping
 from .mcap_contracts import McapProcessingConfig as McapProcessingConfig
+from .mcap_selection import joint_values, ros_type, selected_topics
 
-VERSION = "native-mcap-recording/2"
+VERSION = "native-mcap-recording/4"
 TOPICS = ("/observation/state", "/action", "/openarm/capture_validity", "source.timestamp_ns")
+
+
+def capture_stamp(schema, channel, message, decoder, cfg):
+    if cfg.normalization:
+        from .joint_normalization import capture_time
+
+        return capture_time(decoded(schema, channel, message, decoder), message)
+    return message.log_time
 
 
 def decoded(schema, channel, message, decoder):
@@ -36,13 +44,13 @@ def decoded(schema, channel, message, decoder):
     return decoder.probe(
         message_encoding=channel.message_encoding,
         schema_encoding=schema.encoding,
-        schema_name=schema.name,
+        schema_name=ros_type(schema.name),
         schema_data=schema.data,
         message_data=message.data,
     )
 
 
-def inspect(path, progress=lambda: None):
+def inspect(path, progress=lambda: None, *, selected_topics=None):
     result, decoder = {}, McapRos2DecoderProbe()
     last_arrival = {}
     with Path(path).open("rb") as stream:
@@ -51,7 +59,7 @@ def inspect(path, progress=lambda: None):
         if summary:
             for channel in summary.channels.values():
                 schema = summary.schemas.get(channel.schema_id)
-                name = schema.name if schema else ""
+                name = ros_type(schema.name) if schema else ""
                 result[channel.topic] = {
                     "schema": name,
                     "kind": "joints"
@@ -67,7 +75,7 @@ def inspect(path, progress=lambda: None):
                 }
         for schema, channel, message in reader.iter_messages(log_time_order=False):
             progress()
-            name = schema.name if schema else ""
+            name = ros_type(schema.name) if schema else ""
             entry = result.setdefault(
                 channel.topic,
                 {
@@ -100,7 +108,7 @@ def inspect(path, progress=lambda: None):
                 else message.log_time,
                 message.log_time,
             )
-            if entry["message_count"] > 1 or not name.endswith(
+            if (selected_topics is not None and channel.topic not in selected_topics) or entry["message_count"] > 1 or not name.endswith(
                 ("/Image", "/CompressedImage", "/JointState")
             ):
                 continue
@@ -175,7 +183,7 @@ def resolve(config, inventory):
                     else "MCAP_REQUIRED_DEPTH_MISSING"
                 )
                 raise ValueError(f"{code}: required topic={camera.topic}; message_count=0")
-        elif found["kind"] != camera.kind or found["schema"] != camera.message_type:
+        elif found["kind"] != camera.kind or found["schema"] != ros_type(camera.message_type):
             raise ValueError(
                 f"MCAP_MAPPING_INVALID: {camera.topic} "
                 f"expected {camera.message_type}/{camera.kind}, "
@@ -195,7 +203,8 @@ def resolve(config, inventory):
         names, _ = config.layout(role)
         names = names or tuple(observed)
         layouts[role + "_joint_names"] = names
-        absent = sorted(set(names) - set(observed))
+        required = config.required_axes(role) if config.layout(role)[0] else names
+        absent = sorted(set(required) - set(observed))
         if absent:
             raise ValueError(
                 f"MCAP_JOINT_LAYOUT_MISMATCH: {role} missing={absent}; actual={observed}"
@@ -244,8 +253,10 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             from .mcap_transport import prepare_transport
 
             return prepare_transport(path, destination, progress)
-    inventory = inspect(path, progress)
+    inventory = inspect(path, progress, selected_topics=selected_topics(config)
+                        if config.cameras or config.collection_mode == "JOINT_ONLY" else None)
     cfg = resolve(config, inventory)
+    version = VERSION if cfg.normalization else "native-mcap-recording/3"
     clock = cfg.primary_camera if cfg.time_source == "RGB_LOG_TIME" else cfg.state_topic
     if inventory[clock].get("backwards_timestamps"):
         raise ValueError(
@@ -306,40 +317,22 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                         "INSERT INTO frames VALUES(?,?,?,?,?,?)",
                         (
                             channel.topic,
-                            message.log_time,
+                            capture_stamp(schema, channel, message, decoder, cfg),
                             message.sequence,
                             frame.pixels.tobytes(),
                             json.dumps(frame.pixels.shape),
                             frame.pixels.dtype.str,
                         ),
                     )
-                    times.setdefault(channel.topic, []).append(message.log_time)
+                    times.setdefault(channel.topic, []).append(capture_stamp(schema, channel, message, decoder, cfg))
                 elif channel.topic in numeric:
                     value = decoded(schema, channel, message, decoder)
-                    names = get_field(value, "name")
-                    if len(set(names)) != len(names):
-                        raise ValueError(
-                            f"MCAP_JOINT_LAYOUT_MISMATCH: duplicate joints at {message.log_time}"
-                        )
-                    values = dict(
-                        zip(get_field(value, "name"), get_field(value, "position"), strict=True)
-                    )
-                    required_names = {
-                        name
-                        for role in ("state", "action")
-                        if (getattr(cfg, role + "_topic") or cfg.state_topic) == channel.topic
-                        for name in cfg.layout(role)[0]
-                    }
-                    absent = required_names - set(values)
-                    if absent:
-                        raise ValueError(
-                            f"MCAP_JOINT_LAYOUT_MISMATCH: {channel.topic} "
-                            f"missing={sorted(absent)} at {message.log_time}"
-                        )
-                    selected = {n: float(values[n]) for n in required_names}
-                    if not all(math.isfinite(v) for v in selected.values()):
-                        raise ValueError("MCAP_NONFINITE_JOINT")
-                    numeric[channel.topic].append((message.log_time, selected))
+                    roles = [role for role in ("state", "action")
+                             if (getattr(cfg, role + "_topic") or cfg.state_topic) == channel.topic]
+                    names = {name for role in roles for name in cfg.layout(role)[0]}
+                    required = {name for role in roles for name in cfg.required_axes(role)}
+                    selected = joint_values(value, names, required, topic=channel.topic, stamp=message.log_time)
+                    numeric[channel.topic].append((capture_stamp(schema, channel, message, decoder, cfg), selected))
         db.execute("CREATE INDEX frame_time ON frames(topic,stamp)")
         db.commit()
         for topic in times:
@@ -376,7 +369,14 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             raise ValueError("MCAP_DURATION_LIMIT: split recordings exceeding 24 hours")
         limit = round(cfg.maximum_time_error_ms * 1e6)
 
-        def nearest(stamps, target):
+        def nearest(stamps, target, tolerance=None):
+            if cfg.normalization:
+                from .joint_normalization import nearest_index
+
+                return nearest_index(stamps, target, tolerance or 20_000_000)
+            if cfg.action_required_axes is not None or cfg.state_required_axes is not None:
+                index = bisect.bisect_right(stamps, target) - 1
+                return index if index >= 0 and target - stamps[index] <= limit else None
             if cfg.alignment_policy == "FIXED_GRID":
                 # Shared outputs use causal hold; source age/validity retain gaps.
                 index = bisect.bisect_right(stamps, target) - 1
@@ -411,7 +411,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             (destination / "source/frames.jsonl").open("wb") as trace,
         ):
             writer = Writer(output, compression=CompressionType.ZSTD, enable_crcs=True)
-            writer.start(profile=VERSION)
+            writer.start(profile=version)
             schema = writer.register_schema("hc-recording-value/1", "jsonschema", b"{}")
             channels = {t: writer.register_channel(t, "json", schema) for t in TOPICS}
             try:
@@ -455,19 +455,29 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                         pos = nearest(numeric_times[topic], reference)
                         if pos is None:
                             reasons.append(key + ":missing")
+                        sample = numeric[topic][pos][1] if pos is not None else {}
+                        # Diagnostic evidence is not an accepted alignment. Retain
+                        # the closest timestamp even when it exceeds tolerance.
+                        times_for_topic = numeric_times[topic]
+                        insertion = bisect.bisect_left(times_for_topic, reference)
+                        candidates = [j for j in (insertion - 1, insertion) if 0 <= j < len(times_for_topic)]
+                        closest = min(candidates, key=lambda j: (abs(times_for_topic[j] - reference), times_for_topic[j])) if candidates else None
                         values[key] = {
-                            "values": [numeric[topic][pos][1][name] for name in names]
+                            "values": [sample.get(name, 0.0) for name in names]
                             if pos is not None
-                            else [None] * len(names),
-                            "validity": [pos is not None] * len(names),
+                            else [0.0 if cfg.action_required_axes is not None or cfg.state_required_axes is not None else None] * len(names),
+                            "validity": [name in sample for name in names],
                             "source_timestamp_ns": numeric[topic][pos][0]
                             if pos is not None
                             else None,
+                            "nearest_source_timestamp_ns": times_for_topic[closest] if closest is not None and reference >= 0 else None,
+                            "alignment_reference_timestamp_ns": reference if reference >= 0 else None,
+                            "source_topic": topic,
                             "names": list(names),
                             "units": list(units) if units else ["unknown"] * len(names),
                         }
                     for topic, c in cameras.items():
-                        j = nearest(times[topic], stamp)
+                        j = nearest(times[topic], stamp, 50_000_000 if c["kind"] == "depth" else 20_000_000)
                         row = (
                             db.execute(
                                 "SELECT seq,data,shape,dtype FROM frames "
@@ -542,7 +552,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             "schema_version": "recording-config/v2" if not cameras else "recording-config/v1",
             "collection_mode": cfg.collection_mode if cameras else "JOINT_ONLY",
             "time_source": cfg.time_source,
-            "recorder_version": VERSION,
+            "recorder_version": version,
             "primary_clock_domain": "recording_grid",
             "cameras": [
                 {
@@ -570,10 +580,10 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             ],
         }
         provenance = {
-            "format": VERSION,
+            "format": version,
             "source_origin_ns": start,
             "duration_ns": round(count * 1e9 / cfg.fps),
-            "clock": "mcap_log_time",
+            "clock": "ros_header_stamp" if cfg.normalization else "mcap_log_time",
             "time_source": cfg.time_source,
             "collection_mode": cfg.collection_mode,
             "config": cfg.model_dump(mode="json"),

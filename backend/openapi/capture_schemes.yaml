@@ -138,10 +138,7 @@ components:
         output:
           $ref: '#/components/schemas/DraftOutputContract'
         quality_policy:
-          additionalProperties:
-            type: string
-          title: Quality Policy
-          type: object
+          $ref: '#/components/schemas/CaptureQualityPolicy'
         software:
           default: ''
           maxLength: 120
@@ -351,6 +348,57 @@ components:
       - participants
       title: CaptureParticipantChange
       type: object
+    CaptureQualityPolicy:
+      additionalProperties: false
+      properties:
+        action:
+          $ref: '#/components/schemas/ActionQualityProfileV1'
+        completeness:
+          $ref: '#/components/schemas/CompleteStepProfileV1'
+        feature_images:
+          additionalProperties:
+            $ref: '#/components/schemas/ImageQualityProfileV1'
+          title: Feature Images
+          type: object
+        feature_point_clouds:
+          additionalProperties:
+            $ref: '#/components/schemas/PointCloudQualityProfileV1'
+          title: Feature Point Clouds
+          type: object
+        feature_timing:
+          additionalProperties:
+            $ref: '#/components/schemas/CaptureTimingRules'
+          title: Feature Timing
+          type: object
+        image:
+          $ref: '#/components/schemas/ImageQualityProfileV1'
+        joint_limits:
+          additionalProperties:
+            maxItems: 2
+            minItems: 2
+            prefixItems:
+            - type: number
+            - type: number
+            type: array
+          title: Joint Limits
+          type: object
+        joint_out_of_range_is_reject:
+          default: true
+          title: Joint Out Of Range Is Reject
+          type: boolean
+        missing_required:
+          const: reject
+          default: reject
+          title: Missing Required
+          type: string
+        point_cloud:
+          $ref: '#/components/schemas/PointCloudQualityProfileV1'
+        synchronization:
+          $ref: '#/components/schemas/ModalityOffsetProfileV1'
+        timing:
+          $ref: '#/components/schemas/CaptureTimingRules'
+      title: CaptureQualityPolicy
+      type: object
     CaptureRecordingSnapshot:
       additionalProperties: false
       properties:
@@ -415,6 +463,12 @@ components:
           pattern: ^[A-Za-z0-9._-]+$
           title: Project Id
           type: string
+        quality_policy:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Quality Policy
         recording_id:
           maxLength: 128
           minLength: 1
@@ -454,6 +508,11 @@ components:
           - CAPTURE_BUNDLE
           title: Source Format
           type: string
+        task_instruction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Task Instruction
       required:
       - schema_version
       - organization_id
@@ -768,10 +827,7 @@ components:
           title: Published By
           type: string
         quality_policy:
-          additionalProperties:
-            type: string
-          title: Quality Policy
-          type: object
+          $ref: '#/components/schemas/CaptureQualityPolicy'
         scheme_id:
           maxLength: 128
           minLength: 1
@@ -912,6 +968,12 @@ components:
           pattern: ^[A-Za-z0-9._-]+$
           title: Project Id
           type: string
+        quality_policy:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Quality Policy
         region_code:
           maxLength: 128
           minLength: 1
@@ -997,6 +1059,71 @@ components:
       - locked_at
       title: CaptureTaskReference
       type: object
+    CaptureTimingRules:
+      additionalProperties: false
+      properties:
+        maximum_backward_timestamps_reject:
+          default: 0
+          minimum: 0.0
+          title: Maximum Backward Timestamps Reject
+          type: integer
+        maximum_consecutive_missing_reject:
+          default: 29
+          minimum: 0.0
+          title: Maximum Consecutive Missing Reject
+          type: integer
+        maximum_consecutive_missing_risk:
+          default: 2
+          minimum: 0.0
+          title: Maximum Consecutive Missing Risk
+          type: integer
+        maximum_duplicate_timestamps_reject:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Maximum Duplicate Timestamps Reject
+        maximum_duplicate_timestamps_risk:
+          default: 0
+          minimum: 0.0
+          title: Maximum Duplicate Timestamps Risk
+          type: integer
+        maximum_gap_ns_reject:
+          default: 1000000000
+          minimum: 0.0
+          title: Maximum Gap Ns Reject
+          type: integer
+        maximum_gap_ns_risk:
+          default: 100000000
+          minimum: 0.0
+          title: Maximum Gap Ns Risk
+          type: integer
+        minimum_coverage_ratio_reject:
+          default: 0.8
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Coverage Ratio Reject
+          type: number
+        minimum_coverage_ratio_risk:
+          default: 0.98
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Coverage Ratio Risk
+          type: number
+        minimum_frequency_ratio_reject:
+          default: 0.75
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Frequency Ratio Reject
+          type: number
+        minimum_frequency_ratio_risk:
+          default: 0.9
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Frequency Ratio Risk
+          type: number
+      title: CaptureTimingRules
+      type: object
     DeviceMapping:
       additionalProperties: false
       properties:
@@ -1039,8 +1166,11 @@ components:
         configuration:
           $ref: '#/components/schemas/McapDraftConfig'
         parser_version:
-          const: native-mcap-recording/2
-          default: native-mcap-recording/2
+          default: native-mcap-recording/3
+          enum:
+          - native-mcap-recording/2
+          - native-mcap-recording/3
+          - native-mcap-recording/4
           title: Parser Version
           type: string
         source_format:
@@ -1056,8 +1186,11 @@ components:
       additionalProperties: false
       properties:
         algorithm:
-          const: capture-structure/v1
           default: capture-structure/v1
+          enum:
+          - capture-structure/v1
+          - capture-structure/v2
+          - capture-structure/v3
           title: Algorithm
           type: string
         features:
@@ -1078,6 +1211,19 @@ components:
           default: PRESERVE
           title: Frequency Policy
           type: string
+        metadata_features:
+          default: []
+          items:
+            enum:
+            - head.calibration
+            - head.extrinsics
+            type: string
+          title: Metadata Features
+          type: array
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         time_source:
           enum:
           - FRAME_TIMESTAMP
@@ -1085,6 +1231,12 @@ components:
           - RGB_LOG_TIME
           title: Time Source
           type: string
+        validity_max_age_ms:
+          default: 50
+          exclusiveMinimum: 0.0
+          maximum: 1000.0
+          title: Validity Max Age Ms
+          type: number
       required:
       - time_source
       - features
@@ -1129,6 +1281,13 @@ components:
           default: true
           title: Required
           type: boolean
+        required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Required Axes
         role:
           enum:
           - state
@@ -1164,6 +1323,57 @@ components:
       - role
       title: Feature
       type: object
+    JointNormalization:
+      additionalProperties: false
+      description: Immutable position/clock semantics for the HC TJ full-body profile.
+      properties:
+        camera_mode:
+          default: legacy_reference
+          enum:
+          - legacy_reference
+          - calibrated
+          title: Camera Mode
+          type: string
+        capture_clock:
+          const: header_stamp
+          default: header_stamp
+          title: Capture Clock
+          type: string
+        clock_domain:
+          maxLength: 256
+          minLength: 1
+          title: Clock Domain
+          type: string
+        clock_evidence:
+          maxLength: 2048
+          minLength: 1
+          title: Clock Evidence
+          type: string
+        hand_encoding:
+          const: independent_ban_command
+          default: independent_ban_command
+          title: Hand Encoding
+          type: string
+        invalid_action:
+          const: drop
+          default: drop
+          title: Invalid Action
+          type: string
+        profile:
+          const: hc_tj_17dof/v1
+          default: hc_tj_17dof/v1
+          title: Profile
+          type: string
+        waist_fallback_ms:
+          const: 20
+          default: 20
+          title: Waist Fallback Ms
+          type: integer
+      required:
+      - clock_domain
+      - clock_evidence
+      title: JointNormalization
+      type: object
     LeRobotAdapter:
       additionalProperties: false
       properties:
@@ -1195,8 +1405,11 @@ components:
         configuration:
           $ref: '#/components/schemas/McapDraftConfig'
         parser_version:
-          const: native-mcap-recording/2
-          default: native-mcap-recording/2
+          default: native-mcap-recording/3
+          enum:
+          - native-mcap-recording/2
+          - native-mcap-recording/3
+          - native-mcap-recording/4
           title: Parser Version
           type: string
         source_format:
@@ -1223,6 +1436,13 @@ components:
             type: string
           title: Action Joint Units
           type: array
+        action_required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Action Required Axes
         action_topic:
           anyOf:
           - type: string
@@ -1290,6 +1510,19 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        metadata_sources:
+          additionalProperties:
+            type: string
+          propertyNames:
+            enum:
+            - head.calibration
+            - head.extrinsics
+          title: Metadata Sources
+          type: object
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         numeric_sources:
           additionalProperties:
             $ref: '#/components/schemas/NumericMapping'
@@ -1318,6 +1551,13 @@ components:
             type: string
           title: State Joint Units
           type: array
+        state_required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: State Required Axes
         state_topic:
           anyOf:
           - type: string
@@ -1330,6 +1570,13 @@ components:
           - STATE_LOG_TIME
           title: Time Source
           type: string
+        topic_aliases:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          title: Topic Aliases
+          type: object
       title: McapDraftConfig
       type: object
     NumericMapping:
@@ -1363,8 +1610,11 @@ components:
       description: Shared structure; historical frequency values are informational only.
       properties:
         algorithm:
-          const: capture-structure/v1
           default: capture-structure/v1
+          enum:
+          - capture-structure/v1
+          - capture-structure/v2
+          - capture-structure/v3
           title: Algorithm
           type: string
         features:
@@ -1385,6 +1635,19 @@ components:
           default: PRESERVE
           title: Frequency Policy
           type: string
+        metadata_features:
+          default: []
+          items:
+            enum:
+            - head.calibration
+            - head.extrinsics
+            type: string
+          title: Metadata Features
+          type: array
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         time_source:
           enum:
           - FRAME_TIMESTAMP
@@ -1392,6 +1655,12 @@ components:
           - RGB_LOG_TIME
           title: Time Source
           type: string
+        validity_max_age_ms:
+          default: 50
+          exclusiveMinimum: 0.0
+          maximum: 1000.0
+          title: Validity Max Age Ms
+          type: number
       required:
       - time_source
       - features
@@ -1550,10 +1819,7 @@ components:
         output:
           $ref: '#/components/schemas/DraftOutputContract'
         quality_policy:
-          additionalProperties:
-            type: string
-          title: Quality Policy
-          type: object
+          $ref: '#/components/schemas/CaptureQualityPolicy'
         software:
           default: ''
           maxLength: 120

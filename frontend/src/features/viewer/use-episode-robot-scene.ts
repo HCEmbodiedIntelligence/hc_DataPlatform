@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { Scope } from "../../shared/scope/model";
 import { authorizeRobotModelViewerAssets } from "../robot-models/api/client";
 import {
   useScopedRobotModelAssets,
@@ -17,7 +18,7 @@ import {
 export function useEpisodeRobotScene(
   manifestRobotId: string | null,
   jointAngleStream: StreamDescriptor | null,
-  scope: { readonly organizationId: string } | null,
+  scope: Scope | null,
   provenance: RobotSceneProvenance = currentBindingPreview,
 ) {
   const organizationId = scope?.organizationId ?? null;
@@ -97,6 +98,7 @@ export function useEpisodeRobotScene(
           modelVersion,
           robotModelAssets.data ?? [],
           signal,
+          { scope, onLoadProgress: _props.onLoadProgress },
         );
         return {
           manifest: { modelId, modelVersion, requiredJoints },

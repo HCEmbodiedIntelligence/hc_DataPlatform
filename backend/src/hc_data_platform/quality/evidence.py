@@ -221,10 +221,11 @@ class RuleEvidenceCollector:
             LEGACY_QUALITY_ENGINE_VERSION,
             CURRENT_QUALITY_ENGINE_VERSION,
             BOUNDARY_QUALITY_ENGINE_VERSION,
+            "be06-qc/4",
         }
         active = (
             evidence_rule_codes(report.engine_version)
-            if report.engine_version == LEGACY_QUALITY_ENGINE_VERSION
+            if report.engine_version in {LEGACY_QUALITY_ENGINE_VERSION, "be06-qc/4"}
             else APPROVED_RISK_CODES | {QualityCode.NO_COMMON_WINDOW}
             if report.engine_version == BOUNDARY_QUALITY_ENGINE_VERSION
             else APPROVED_RISK_CODES
@@ -442,7 +443,7 @@ class RuleEvidenceCollector:
             profile.complete_step.model_dump(),
             None if measured_ratio else "COMPLETE_STEP_RATIO_NOT_MEASURED",
         )
-        if report.engine_version == BOUNDARY_QUALITY_ENGINE_VERSION:
+        if report.engine_version in {BOUNDARY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
             metrics = {metric.topic: metric for metric in report.topic_metrics}
             for code in sorted(BOUNDARY_CODES, key=lambda item: item.value):
                 for topic in sorted(profile.required_topics) or [None]:

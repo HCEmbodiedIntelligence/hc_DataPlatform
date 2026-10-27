@@ -2,6 +2,7 @@ import {
   Alert,
   Button,
   Checkbox,
+  Dropdown,
   Input,
   Modal,
   Select,
@@ -10,7 +11,14 @@ import {
   Tag,
 } from "antd";
 import { useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  Copy,
+  Link2,
+  MoreHorizontal,
+  Pencil,
+} from "lucide-react";
 import {
   Link,
   useLocation,
@@ -248,35 +256,67 @@ function Library({ org }: { org: string }) {
           },
           {
             title: "操作",
+            width: manage ? 272 : 132,
+            fixed: "right",
             render: (_, item) => (
-              <Space wrap>
-                <Link to={route(item.scheme_id)}>查看引用</Link>
+              <div className={styles.rowActions}>
                 {manage && (
-                  <>
-                    <Button
-                      size="small"
-                      disabled={item.archived}
-                      onClick={() => edit(item.scheme_id)}
-                    >
-                      编辑方案
-                    </Button>
-                    <Button
-                      size="small"
-                      disabled={!item.latest_version}
-                      onClick={() => copy(item.scheme_id)}
-                    >
-                      复制新方案
-                    </Button>
-                    <Button
-                      size="small"
-                      disabled={item.archived}
-                      onClick={() => setArchive(item)}
-                    >
-                      归档
-                    </Button>
-                  </>
+                  <Button
+                    className={styles.editAction}
+                    type="text"
+                    icon={<Pencil aria-hidden="true" size={14} />}
+                    disabled={item.archived}
+                    onClick={() => edit(item.scheme_id)}
+                  >
+                    编辑方案
+                  </Button>
                 )}
-              </Space>
+                <Link
+                  className={styles.referenceAction}
+                  to={route(item.scheme_id)}
+                >
+                  <Link2 aria-hidden="true" size={14} />
+                  查看引用
+                </Link>
+                {manage && (
+                  <Dropdown
+                    autoFocus
+                    destroyOnHidden
+                    trigger={["click"]}
+                    placement="bottomRight"
+                    rootClassName={styles.actionDropdown}
+                    menu={{
+                      items: [
+                        {
+                          key: "copy",
+                          label: "复制新方案",
+                          icon: <Copy aria-hidden="true" size={16} />,
+                          disabled: !item.latest_version,
+                          onClick: () => copy(item.scheme_id),
+                        },
+                        { type: "divider" },
+                        {
+                          key: "archive",
+                          label: "归档方案",
+                          icon: <Archive aria-hidden="true" size={16} />,
+                          disabled: item.archived,
+                          danger: true,
+                          onClick: () => setArchive(item),
+                        },
+                      ],
+                    }}
+                  >
+                    <Button
+                      aria-label={`更多操作：${item.draft.name}`}
+                      aria-haspopup="menu"
+                      title="更多操作"
+                      className={styles.moreAction}
+                      type="text"
+                      icon={<MoreHorizontal aria-hidden="true" size={18} />}
+                    />
+                  </Dropdown>
+                )}
+              </div>
             ),
           },
         ]}
@@ -541,7 +581,7 @@ function Library({ org }: { org: string }) {
                             {
                               title: "状态",
                               render: (_, r) =>
-                                r.locked_at ? "已固定" : "尚未开始",
+                                r.locked_at ? "已开始采集" : "尚未开始",
                             },
                           ]}
                         />

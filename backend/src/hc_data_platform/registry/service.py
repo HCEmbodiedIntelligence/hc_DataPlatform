@@ -46,6 +46,9 @@ from .models import (
     RobotModelPublishPreflight,
     RobotModelPublishPreflightEnvelope,
     RobotModelVersionEnvelope,
+    RobotModelPreviewGrant,
+    RobotModelViewerAssetGrant,
+    RobotModelViewerAssetPage,
 )
 from .repository import (
     RegistryAuditEvent,
@@ -55,6 +58,7 @@ from .repository import (
     RobotModelPublishPreflightRecord,
 )
 from .snapshot_queries import PublishedModelAssetReader
+from .previews import RobotModelPreviews
 
 _ASSET_PART_SIZE_BYTES = 16 * 1024**2
 _ASSET_INITIAL_PART_LIMIT = 32
@@ -72,10 +76,12 @@ class RegistryService:
         *,
         storage: ObjectStoragePort | None = None,
         published_assets: PublishedModelAssetReader | None = None,
+        preview_root: str | None = None,
         cursor_secret: str = _IN_MEMORY_PREFLIGHT_SECRET,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
     ) -> None:
         self._published_assets = published_assets
+        self.previews = RobotModelPreviews(preview_root)
         self._repository = repository
         self._storage = storage
         self._preflight_codec = CursorCodec(cursor_secret)
@@ -651,6 +657,50 @@ class RegistryService:
         )
         return RobotModelAssetPage(items=items, scope=scope, request_id=request_id)
 
+    def authorize_viewer_assets(
+        self, *, auth: AuthContext, organization_id: str, project_id: str,
+        version_id: str, request_id: str,
+    ) -> RobotModelViewerAssetPage:
+        """One metadata read for all viewers; full content stays at the download boundary."""
+        scope = self._authorize_read(
+            auth=auth, organization_id=organization_id, project_id=project_id
+        )
+        self._require_version(
+            organization_id=organization_id, project_id=project_id, version_id=version_id
+        )
+        assets = self._repository.list_robot_model_assets(
+            organization_id=organization_id, project_id=project_id, version_id=version_id
+        )
+        items = []
+        for asset in assets:
+            if asset.role not in {"URDF", "MESH", "TEXTURE"}:
+                continue
+            grant = self._signed_asset_authorization(organization_id, project_id, asset)
+            items.append(RobotModelViewerAssetGrant(
+                asset=asset, authorization=grant, preview=self.preview_authorization(asset, grant, "glb")
+            ))
+        self._audit(
+            auth=auth, scope=scope, action="registry.robot_model_assets.download_authorized",
+            resource_id=version_id, request_id=request_id, outcome="SUCCEEDED",
+        )
+        return RobotModelViewerAssetPage(
+            version_id=version_id, items=tuple(items), scope=scope, request_id=request_id
+        )
+
+    def preview_authorization(self, asset, grant, preview_format="glb"):
+        metadata = self.previews.describe(asset.sha256, preview_format) if asset.role == "MESH" else None
+        if metadata is None and asset.role == "MESH" and preview_format == "glb":
+            metadata = self.previews.describe(asset.sha256, "stl")
+        if metadata is None:
+            return None
+        return RobotModelPreviewGrant(
+            asset_id=asset.asset_id, source_sha256=asset.sha256,
+            sha256=metadata["sha256"], size_bytes=metadata["size_bytes"],
+            media_type=metadata["media_type"], policy=metadata["policy"],
+            expires_at=grant.expires_at,
+            download_url=grant.download_url + "&preview_sha256=" + metadata["sha256"],
+        )
+
     def authorize_asset_download(
         self,
         *,
@@ -730,6 +780,28 @@ class RegistryService:
             found=(object_key, asset, content),
         )
 
+    def authorize_published_asset_downloads(
+        self, *, auth: AuthContext, organization_id: str, project_id: str,
+        version_id: str, asset_ids: tuple[str, ...], request_id: str,
+    ) -> tuple[RobotModelAssetDownloadAuthorization, ...]:
+        ScopeGuard.require(auth, project_id, organization_id=organization_id)
+        auth.require_organization_capability(organization_id, "robot_model.read")
+        if self._published_assets is None:
+            raise problem(status=503, code="PUBLISHED_MODEL_ASSETS_UNAVAILABLE",
+                          title="Published model assets unavailable", detail="No published model reader.")
+        found = self._published_assets.find_many(organization_id, version_id, asset_ids)
+        if set(found) != set(asset_ids):
+            raise problem(status=404, code="ROBOT_MODEL_ASSET_NOT_FOUND",
+                          title="Published model asset not found", detail="Asset not in selected published model.")
+        grants = tuple(self._signed_asset_authorization(
+            organization_id, found[asset_id][0], found[asset_id][1]
+        ) for asset_id in asset_ids)
+        if grants:
+            self._audit(auth=auth, scope=RegistryScope(organization_id=organization_id, project_id=project_id),
+                        action="registry.robot_model_assets.download_authorized", resource_id=version_id,
+                        request_id=request_id, outcome="SUCCEEDED")
+        return grants
+
     def _authorize_asset_result(
         self,
         *,
@@ -748,6 +820,16 @@ class RegistryService:
             asset=asset,
             content=content,
         )
+        grant = self._signed_asset_authorization(organization_id, project_id, asset)
+        self._audit(
+            auth=auth, scope=scope, action="registry.robot_model_asset.download_authorized",
+            resource_id=asset.asset_id, request_id=request_id, outcome="SUCCEEDED",
+        )
+        return grant
+
+    def _signed_asset_authorization(self, organization_id, project_id, asset):
+        # Bytes were validated at upload/publication and remain verified at the
+        # download boundary. Issuing a grant must not re-read the entire model.
         expires_at = self._clock() + _ASSET_AUTHORIZATION_TTL
         token = self._preflight_codec.encode(
             {
@@ -761,14 +843,6 @@ class RegistryService:
         url = (
             f"/api/v1/organizations/{quote(organization_id, safe='')}"
             f"/robot-model-assets/content?token={quote(token, safe='')}"
-        )
-        self._audit(
-            auth=auth,
-            scope=scope,
-            action="registry.robot_model_asset.download_authorized",
-            resource_id=asset.asset_id,
-            request_id=request_id,
-            outcome="SUCCEEDED",
         )
         return RobotModelAssetDownloadAuthorization(
             asset_id=asset.asset_id,
@@ -804,6 +878,7 @@ class RegistryService:
         *,
         organization_id: str,
         token: str,
+        preview_sha256: str | None = None,
     ) -> tuple[str, Iterable[bytes]]:
         """Resolve a signed PostgreSQL asset download without exposing storage internals."""
 
@@ -836,6 +911,7 @@ class RegistryService:
             organization_id=organization_id,
             project_id=project_id,
             asset_id=asset_id,
+            **({"include_content": False} if preview_sha256 is not None else {}),
         )
         if found is None:
             raise problem(
@@ -845,6 +921,14 @@ class RegistryService:
                 detail="The authorized model asset no longer exists.",
             )
         object_key, asset, content = found
+        if preview_sha256 is not None:
+            try:
+                body = self.previews.read(asset.sha256, preview_sha256)
+            except (KeyError, FileNotFoundError) as exc:
+                raise problem(status=404, code="ROBOT_PREVIEW_NOT_FOUND", title="Model preview unavailable", detail="No preview matches this authorized source asset.") from exc
+            except ValueError as exc:
+                raise problem(status=409, code="ROBOT_PREVIEW_INVALID", title="Model preview differs", detail="The visual preview failed its content digest check.") from exc
+            return "preview.glb" if body[:4] == b"glTF" else "preview.stl", (body,)
         body = self._persisted_asset_content(
             organization_id=organization_id,
             project_id=project_id,

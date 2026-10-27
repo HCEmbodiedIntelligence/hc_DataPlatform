@@ -252,19 +252,7 @@ describe("P14 robot model asset client", () => {
     ).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
   });
 
-  it("authorizes the URDF and every render dependency independently", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      const assetId = url.match(/\/assets\/([^/]+)\/download$/u)?.[1];
-      return jsonResponse({
-        asset_id: assetId,
-        download_url: `https://object.example.test/${assetId}?signature=ephemeral`,
-        expires_at: "2026-08-19T11:15:00Z",
-        sha256: "b".repeat(64),
-        media_type: assetId === "asset-urdf" ? "application/xml" : "model/stl",
-      });
-    });
-    vi.stubGlobal("fetch", fetchMock);
+  it("authorizes all viewer dependencies in one batch and enables the shared model cache", async () => {
     const assets = [
       {
         asset_id: "asset-urdf",
@@ -295,21 +283,26 @@ describe("P14 robot model asset client", () => {
       },
     ] as const;
 
-    await expect(
-      authorizeRobotModelViewerAssets(
-        scope.organizationId,
-        "version-1",
-        assets,
-      ),
-    ).resolves.toEqual({
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse({
+      version_id: "version-1", scope: { organization_id: scope.organizationId }, request_id: "viewer-test",
+      items: assets.filter(asset => asset.role !== "CONFIG").map(asset => ({ asset, authorization: {
+        asset_id: asset.asset_id, download_url: `https://object.example.test/${asset.asset_id}?signature=ephemeral`,
+        expires_at: "2099-01-01T00:00:00Z", sha256: asset.sha256, media_type: asset.media_type,
+      }, ...(asset.role === "MESH" ? { preview: {
+        asset_id: asset.asset_id, source_sha256: asset.sha256, sha256: "d".repeat(64),
+        size_bytes: 20, media_type: "model/gltf-binary", policy: "mesh-indexed-glb-v2",
+        download_url: "https://object.example.test/preview", expires_at: "2099-01-01T00:00:00Z",
+      } } : {}) })),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const viewer = await authorizeRobotModelViewerAssets(scope.organizationId, "version-1", assets);
+    expect(viewer).toMatchObject({
       urdfUrl: "https://object.example.test/asset-urdf?signature=ephemeral",
-      urdfPath: "robot/model.urdf",
-      assetUrls: {
-        "robot/meshes/body.stl":
-          "https://object.example.test/asset-mesh?signature=ephemeral",
-      },
+      urdfPath: "robot/model.urdf", assetUrls: { "robot/meshes/body.stl": "https://object.example.test/preview" },
+      prepare: expect.any(Function), parsedCacheKey: expect.any(String),
     });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/viewer-assets:authorize");
   });
 
   it.each(["complete", "new-session", "owner-cancel"] as const)(

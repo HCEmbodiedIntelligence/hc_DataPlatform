@@ -327,6 +327,13 @@ class ActionObservation(BaseModel):
 
     timestamp_ns: int = Field(ge=0)
     values: tuple[float, ...]
+    validity: tuple[bool, ...] | None = None
+
+    @model_validator(mode="after")
+    def mask_layout(self):
+        if self.validity is not None and len(self.validity) != len(self.values):
+            raise ValueError("action validity must match values")
+        return self
 
     @field_validator("values")
     @classmethod

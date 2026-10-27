@@ -8,11 +8,14 @@ Lance 相关代码暂时保留；新上传处理沿用 Episode 文件包，旧 L
 
 ```bash
 cd /home/hc_op/workspace/hc_DataPlatform
-bash deploy/local/compose.sh current up --build -d
-bash deploy/local/compose.sh current ps
+bash start.sh
+bash deploy/local/compose.sh current --profile cloudflare ps
 bash deploy/local/compose.sh current logs --tail=100 api worker
-bash deploy/local/compose.sh current stop
+bash stop.sh
 ```
+
+`start.sh` 同时启动平台、外网静态前端和固定域名隧道，并检查 <https://158722.xyz>。
+更新镜像与外网页面使用 `bash start.sh --build`；`stop.sh` 停止平台和隧道并保留数据。
 
 入口为 <http://127.0.0.1:8088>，配置在根目录 `.env`。
 局域网机器人接入时，将 `.env` 中的 `HC_PUBLIC_ORIGIN` 设置为机器人可达的平台
@@ -36,6 +39,8 @@ IP 或域名（例如 `http://192.168.1.10:8088`），并设置 `HC_GATEWAY_BIND
 `stop` 保留数据；`down -v` 会删除 PostgreSQL 等命名卷，但不会清空上述宿主机绑定目录。
 
 ## Cloudflare 临时外网访问
+
+固定域名 `158722.xyz` 使用上述 `start.sh` / `stop.sh`；下列临时隧道命令会切换对外地址。
 
 本机已安装官方 `cloudflared`，位于工作区 `.data-platform-tools/cloudflared`。
 平台运行后，可使用以下命令管理临时 HTTPS 地址，无需 Cloudflare 账号或域名：

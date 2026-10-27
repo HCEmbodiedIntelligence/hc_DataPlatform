@@ -4,6 +4,7 @@ import {
   type McapConfig,
   type SchemeDocument,
 } from "./contracts";
+import { qualityPolicySchema } from "./quality-contract";
 export function newFeature(role: Feature["role"]): Feature {
   return {
     dtype: role === "rgb" ? "video" : "float32",
@@ -34,6 +35,8 @@ export function emptyDocument(): SchemeDocument {
     ],
     output: {
       algorithm: "capture-structure/v1",
+      metadata_features: [],
+      validity_max_age_ms: 50,
       frequency_hz: null,
       frequency_policy: "PRESERVE",
       time_source: "FRAME_TIMESTAMP",
@@ -42,7 +45,7 @@ export function emptyDocument(): SchemeDocument {
         action: newFeature("action"),
       },
     },
-    quality_policy: {},
+    quality_policy: qualityPolicySchema.parse({}),
   });
 }
 export function mcapConfiguration(
@@ -104,7 +107,7 @@ export function mcapConfiguration(
           maximum_time_error_ms: 50,
           alignment_policy: "PRESERVE" as const,
         }),
-    ...(previous?.semantic_output || automatic
+    ...(previous?.semantic_output || automatic || ["capture-structure/v2", "capture-structure/v3"].includes(doc.output.algorithm)
       ? {
           semantic_output: doc.output,
           numeric_sources: Object.fromEntries(
@@ -115,6 +118,7 @@ export function mcapConfiguration(
         }
       : {}),
     fps: doc.output.frequency_hz,
+    maximum_time_error_ms: doc.output.validity_max_age_ms ?? previous?.maximum_time_error_ms ?? 50,
     cameras,
     collection_mode: cameras.length ? "RGB" : "JOINT_ONLY",
     primary_camera: cameras.some(
@@ -142,6 +146,7 @@ export function mcapConfiguration(
               .filter(
                 ([name, f]) =>
                   !["state", "action", "rgb", "depth"].includes(f.role) &&
+                  !Object.values(doc.output.features).some((field) => field.validity_feature === name) &&
                   ![
                     "observation.source_time",
                     "observation.source_age",
@@ -189,6 +194,16 @@ export function mcapConfiguration(
   };
 }
 export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
+  const features = { ...doc.output.features };
+  for (const [name, feature] of Object.entries(features)) {
+    if (feature.required_axes == null) continue;
+    const mask = feature.validity_feature || `${name}.valid`;
+    features[name] = { ...feature, validity_feature: mask };
+    features[mask] = { ...newFeature("validity"), dtype: "bool", shape: feature.shape, names: feature.names };
+  }
+  doc = { ...doc, output: { ...doc.output, features,
+    algorithm: Object.values(features).some((f) => f.required_axes != null) ? "capture-structure/v2" : doc.output.algorithm } };
+
   if (doc.input_mode === "AUTO") {
     const configuration = mcapConfiguration(doc);
     const lerobot = doc.adapters.find((a) => a.source_format === "LEROBOT_V3");
@@ -207,7 +222,7 @@ export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
         },
         {
           source_format: "MCAP",
-          parser_version: "native-mcap-recording/2",
+          parser_version: doc.output.algorithm === "capture-structure/v3" ? "native-mcap-recording/4" as const : doc.output.algorithm === "capture-structure/v2" ? "native-mcap-recording/3" : "native-mcap-recording/2",
           configuration,
         },
         {
@@ -221,6 +236,7 @@ export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
   return {
     ...doc,
     adapters: doc.adapters.map((adapter) =>
+      adapter.source_format === "MCAP" ? { ...adapter, parser_version: doc.output.algorithm === "capture-structure/v3" ? "native-mcap-recording/4" as const : doc.output.algorithm === "capture-structure/v2" ? "native-mcap-recording/3" as const : adapter.parser_version, configuration: mcapConfiguration(doc, "MCAP") } :
       adapter.source_format !== "LEROBOT_V3"
         ? {
             ...adapter,

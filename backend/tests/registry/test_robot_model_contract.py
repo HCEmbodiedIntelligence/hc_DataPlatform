@@ -35,6 +35,7 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
         f"{root}/robot-model-assets/upload-part",
         f"{root}/robot-model-assets/content",
         f"{root}/robot-model-versions/{{version_id}}/assets",
+        f"{root}/robot-model-versions/{{version_id}}/viewer-assets:authorize",
         f"{root}/robot-model-versions/{{version_id}}/assets/{{asset_id}}/download",
     }
     assert paths[f"{root}/robot-models"]["get"]["operationId"] == "listRobotModels"

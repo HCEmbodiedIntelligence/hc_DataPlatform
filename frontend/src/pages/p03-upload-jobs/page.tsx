@@ -35,6 +35,7 @@ import {
 import { uploadProblemCopy } from "../../features/ingest/upload/upload-contract";
 import type { LeRobotTargetBinding } from "../../features/ingest/upload/lerobot-client";
 import { useUploadQueueStore } from "../../features/ingest/upload/upload-queue-store";
+import { ResourceLabel } from "../../shared/lib/resource-labels";
 
 function useNetworkStatus(): boolean {
   const [online, setOnline] = useState(
@@ -108,6 +109,11 @@ export default function UploadJobsPage() {
     () => new URLSearchParams(location.search).get("robotId"),
     [location.search],
   );
+  const taskIdFilter =
+    new URLSearchParams(location.search).get("taskId") || undefined;
+  const unfinishedFilter =
+    new URLSearchParams(location.search).get("unfinished") === "1";
+  const capturesFocused = Boolean(taskIdFilter) || unfinishedFilter;
   const online = useNetworkStatus();
 
   const [flow, setFlow] = useState<UploadFlowState>({ phase: "idle" });
@@ -181,7 +187,11 @@ export default function UploadJobsPage() {
       statusFilter,
     ],
     enabled:
-      activeTab === "records" && Boolean(scope) && canRead && !robotIdFilter,
+      activeTab === "records" &&
+      Boolean(scope) &&
+      canRead &&
+      !robotIdFilter &&
+      !capturesFocused,
     staleTime: 10_000,
     queryFn: ({ signal }) => {
       if (!scope) throw new Error("INGEST_SCOPE_UNAVAILABLE");
@@ -199,7 +209,10 @@ export default function UploadJobsPage() {
   const robotRecords = useRobotUploadHistory(
     scope,
     robotIdFilter,
-    activeTab === "records" && canRead && canReadRobotIngest,
+    activeTab === "records" &&
+      canRead &&
+      canReadRobotIngest &&
+      !capturesFocused,
   );
 
   const resetSelection = useCallback(() => {
@@ -446,6 +459,16 @@ export default function UploadJobsPage() {
     recoveryFailureVisible;
   const failedPrecheckItemIds =
     flow.phase === "precheck_failed" ? flow.preparedItemIds : [];
+  const capturesPanel =
+    activeTab === "records" && scope && canRead ? (
+      <CaptureProgressPanel
+        key={`captures-${scope.organizationId}/${scope.projectId}/${scope.regionCode}/${taskIdFilter ?? "all"}/${unfinishedFilter}`}
+        scope={scope}
+        robotId={robotIdFilter ?? undefined}
+        taskId={taskIdFilter}
+        initialUnfinishedOnly={unfinishedFilter}
+      />
+    ) : null;
 
   return (
     <main className={styles.page} data-upload-flow={flow.phase}>
@@ -486,7 +509,9 @@ export default function UploadJobsPage() {
         </Link>
       </nav>
 
-      {activeTab === "records" && <SuccessfulVolume scope={scope} robotId={robotIdFilter} />}
+      {activeTab === "records" && !capturesFocused && (
+        <SuccessfulVolume scope={scope} robotId={robotIdFilter} />
+      )}
 
       {activeTab === "new" ? (
         <section
@@ -594,7 +619,34 @@ export default function UploadJobsPage() {
           role="tabpanel"
           aria-label="上传记录"
         >
-          {queueItems.length > 0 || recovering || recoveryProblem ? (
+          {capturesFocused && (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                title={
+                  taskIdFilter && scope ? (
+                    <span>
+                      任务范围：
+                      <ResourceLabel
+                        kind="collection_task"
+                        id={taskIdFilter}
+                        scope={scope}
+                      />
+                    </span>
+                  ) : (
+                    "当前项目全部任务"
+                  )
+                }
+                action={
+                  <Link to={dataUploadRoutes.records}>查看全部上传记录</Link>
+                }
+              />
+              {capturesPanel}
+            </>
+          )}
+          {!capturesFocused &&
+          (queueItems.length > 0 || recovering || recoveryProblem) ? (
             <div className={styles.recordsActiveQueue}>
               <UploadQueuePanel
                 items={queueItems}
@@ -620,7 +672,7 @@ export default function UploadJobsPage() {
               />
             </div>
           ) : null}
-          {robotIdFilter ? (
+          {capturesFocused ? null : robotIdFilter ? (
             canReadRobotIngest ? (
               <RobotUploadRecordsPanel
                 scope={scope}
@@ -664,14 +716,8 @@ export default function UploadJobsPage() {
         </section>
       )}
 
-      {activeTab === "records" && scope && canRead ? (
-        <CaptureProgressPanel
-          key={`captures-${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}
-          scope={scope}
-          robotId={robotIdFilter ?? undefined}
-        />
-      ) : null}
-      {scope && canRead ? (
+      {!capturesFocused && capturesPanel}
+      {scope && canRead && !capturesFocused ? (
         <LeRobotProcessingRecords
           key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}
           scope={scope}

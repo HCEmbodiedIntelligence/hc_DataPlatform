@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 from typing_extensions import Self
 
 from hc_data_platform.continuous_recordings.mcap_contracts import (
     McapDraftConfig,
+    JointNormalization,
 )
 
 from .references import AddParticipants as AddParticipants
@@ -21,6 +22,7 @@ from .references import Sha256 as Sha256
 from .references import SourceFormat as SourceFormat
 from .references import Strict as Strict
 from .references import VersionReference as VersionReference
+from .quality_models import CaptureQualityPolicy
 
 
 class Feature(Strict):
@@ -35,6 +37,8 @@ class Feature(Strict):
     # Missing optional data is represented by absence and/or a validity mask.
     missing: Literal["presence_and_validity"] = "presence_and_validity"
     validity_feature: str | None = None
+    # None retains the v1 all-axes-required rule. Empty means all axes optional.
+    required_axes: tuple[str, ...] | None = None
     media: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -52,18 +56,47 @@ class Feature(Strict):
                 raise ValueError("state/action require an explicit unit for every axis")
         if self.validity_feature == "":
             raise ValueError("validity feature must be named")
+        if self.required_axes is not None:
+            if self.role not in {"state", "action"} or not isinstance(self.names, tuple):
+                raise ValueError("required_axes is only supported for named state/action")
+            if len(set(self.required_axes)) != len(self.required_axes) or set(self.required_axes) - set(self.names):
+                raise ValueError("required_axes must be unique selected axis names")
         return self
 
 
 class DraftOutputContract(Strict):
-    algorithm: Literal["capture-structure/v1"] = "capture-structure/v1"
+    algorithm: Literal["capture-structure/v1", "capture-structure/v2", "capture-structure/v3"] = "capture-structure/v1"
+    normalization: JointNormalization | None = None
+    metadata_features: tuple[Literal["head.calibration", "head.extrinsics"], ...] = ()
     frequency_hz: float | None = Field(default=None, gt=0, le=1000, allow_inf_nan=False)
     frequency_policy: Literal["PRESERVE"] = "PRESERVE"
     time_source: Literal["FRAME_TIMESTAMP", "STATE_LOG_TIME", "RGB_LOG_TIME"]
     features: dict[str, Feature] = Field(min_length=1)
+    # v2 validity is causal and expires; this is part of the format identity.
+    validity_max_age_ms: float = Field(default=50, gt=0, le=1000, allow_inf_nan=False)
+
+    @model_serializer(mode="wrap")
+    def preserve_historical_contract(self, handler):
+        value = handler(self)
+        if self.normalization is None:
+            value.pop("normalization", None)
+        if not self.metadata_features:
+            value.pop("metadata_features", None)
+        return value
 
     @model_validator(mode="after")
     def fields(self) -> Self:
+        if self.algorithm == "capture-structure/v3":
+            from hc_data_platform.continuous_recordings.joint_normalization import JOINTS
+
+            if self.normalization is None:
+                raise ValueError("capture-structure/v3 requires an explicit normalization policy")
+            for name in ("observation.state", "action"):
+                feature = self.features.get(name)
+                if feature is None or feature.names != JOINTS or feature.dtype != "float64" or feature.units != ("rad",) * 17 or feature.required_axes is not None:
+                    raise ValueError("capture-structure/v3 requires complete float64 17-axis positions in rad")
+        elif self.normalization is not None or self.metadata_features:
+            raise ValueError("normalization and selected metadata require capture-structure/v3")
         for name, feature in self.features.items():
             if not name.strip() or name.startswith("__hc_"):
                 raise ValueError("invalid feature name")
@@ -71,6 +104,12 @@ class DraftOutputContract(Strict):
                 mask = self.features.get(feature.validity_feature)
                 if mask is None or mask.role != "validity" or not mask.required:
                     raise ValueError("validity_feature must reference a required validity field")
+            if feature.required_axes is not None:
+                if self.algorithm != "capture-structure/v2":
+                    raise ValueError("per-axis missing policy requires capture-structure/v2")
+                mask = self.features.get(feature.validity_feature or "")
+                if mask is None or mask.dtype != "bool" or mask.shape != feature.shape or mask.names != feature.names:
+                    raise ValueError("per-axis policy requires a matching boolean validity feature")
         return self
 
 
@@ -80,7 +119,7 @@ class OutputContract(DraftOutputContract):
 
 class DraftMcapAdapter(Strict):
     source_format: Literal["MCAP"] = "MCAP"
-    parser_version: Literal["native-mcap-recording/2"] = "native-mcap-recording/2"
+    parser_version: Literal["native-mcap-recording/2", "native-mcap-recording/3", "native-mcap-recording/4"] = "native-mcap-recording/3"
     configuration: McapDraftConfig
 
 
@@ -123,10 +162,20 @@ class CaptureDraftDefinition(Strict):
     model_version_ids: tuple[Identifier, ...] = ()
     adapters: tuple[DraftAdapter, ...] = Field(min_length=1, max_length=3)
     output: DraftOutputContract
-    quality_policy: dict[str, str] = Field(default_factory=dict)
+    quality_policy: CaptureQualityPolicy = Field(default_factory=CaptureQualityPolicy)
 
     @model_validator(mode="after")
     def unique_adapters(self) -> Self:
+        policy = self.quality_policy
+        overrides = set(policy.feature_timing) | set(policy.feature_images) | set(policy.feature_point_clouds)
+        if overrides - set(self.output.features):
+            raise ValueError("QC overrides must reference selected capture features")
+        if any(self.output.features[name].role not in {"rgb", "depth"} for name in policy.feature_images):
+            raise ValueError("image QC overrides require an image feature")
+        axes = {axis for feature in self.output.features.values() if feature.role == "state"
+                for axis in (feature.names if isinstance(feature.names, tuple) else ())}
+        if set(policy.joint_limits) - axes:
+            raise ValueError("QC joint limits must reference declared state axes")
         formats = [a.source_format for a in self.adapters]
         if len(formats) != len(set(formats)):
             raise ValueError("each input format must have exactly one adapter")
@@ -141,6 +190,13 @@ class CaptureDraftDefinition(Strict):
             if not {"observation.state", "action"} <= self.output.features.keys():
                 raise ValueError("automatic schemes require observation.state and action")
         for adapter in self.adapters:
+            if self.output.algorithm == "capture-structure/v3":
+                if not isinstance(adapter, DraftMcapAdapter) or adapter.parser_version != "native-mcap-recording/4":
+                    raise ValueError("capture-structure/v3 requires native-mcap-recording/4 MCAP input")
+                if adapter.configuration.normalization != self.output.normalization or set(adapter.configuration.metadata_sources) != set(self.output.metadata_features):
+                    raise ValueError("normalization/metadata selection must match the frozen output")
+            if self.output.algorithm == "capture-structure/v2" and isinstance(adapter, DraftMcapAdapter) and adapter.parser_version != "native-mcap-recording/3":
+                raise ValueError("capture-structure/v2 requires native-mcap-recording/3")
             if isinstance(adapter, LeRobotAdapter) and set(adapter.feature_sources) - set(
                 self.output.features
             ):
@@ -149,6 +205,8 @@ class CaptureDraftDefinition(Strict):
                 declared = DraftOutputContract.model_validate(adapter.configuration.semantic_output)
                 if declared.model_dump(mode="json") != self.output.model_dump(mode="json"):
                     raise ValueError("MCAP semantic output must match the shared output contract")
+                if self.output.algorithm == "capture-structure/v2" and adapter.configuration.maximum_time_error_ms != self.output.validity_max_age_ms:
+                    raise ValueError("adapter expiry must match the output validity policy")
         return self
 
 

@@ -4,13 +4,10 @@ import {
   App,
   Button,
   Drawer,
-  Input,
-  InputNumber,
   Modal,
   Pagination,
   Tag,
   Tooltip,
-  Typography,
 } from "antd";
 import {
   ArrowLeft,
@@ -24,7 +21,6 @@ import {
   Save,
   Scissors,
   Split,
-  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -48,6 +44,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { EpisodePreview } from "./EpisodePreview";
+import { EpisodeSliceList } from "./EpisodeSliceList";
 import { RecordingNavigator, type RecordingFilter } from "./RecordingNavigator";
 import {
   recordingFileName,
@@ -56,16 +53,8 @@ import {
   recordingSearchValues,
 } from "./presentation";
 import { useToast } from "../../shared/ui/ToastProvider";
+import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import {
-  useScopedRobotModelAssets,
-  useScopedRobotModelJointMappings,
-  useScopedRobotModelVersion,
-} from "../../features/robot-models/api/hooks";
-import { authorizeRobotModelViewerAssets } from "../../features/robot-models/api/client";
-import { useScopedRobotBootstrap } from "../../features/robots/api/hooks";
-import {
-  buildJointFrameSource,
-  createLazyThreeRobotSceneLoader,
   createPlaybackClock,
   CameraViewToolbar,
   selectCameraStreams,
@@ -85,14 +74,11 @@ import {
   type RecordingScope,
 } from "./api";
 import {
-  clampBoundary,
   formatDuration,
   formatTimecode,
   fromServerSlices,
   nextEpisodeId,
-  nsToSeconds,
   parseNanoseconds,
-  secondsToNs,
   toSliceInputs,
   validateSlices,
   type EditableSlice,
@@ -494,7 +480,7 @@ function RecordingSegmentationPage({
       gateway.videoSources(scope as RecordingScope, recordingId, signal),
     enabled:
       scope !== null &&
-      detail.data?.data.schema_version === "continuous-recording/v2",
+      (!detail.data || detail.data.data.schema_version === "continuous-recording/v2"),
     retry: false,
     staleTime: 5 * 60_000,
   });
@@ -514,6 +500,7 @@ function RecordingSegmentationPage({
     null,
   );
   const initializedEtag = useRef<string | null>(null);
+  const initializedEditable = useRef(false);
 
   const recording = detail.data?.data;
   const revision = detail.data?.current_slice_revision ?? null;
@@ -544,24 +531,6 @@ function RecordingSegmentationPage({
     () => validateSlices(slices, durationNs, minimumDurationNs),
     [durationNs, minimumDurationNs, slices],
   );
-  const robotBootstrap = useScopedRobotBootstrap(
-    scope?.organizationId ?? null,
-    recording?.robot_id ?? null,
-  );
-  const boundVersionId =
-    robotBootstrap.data?.effectiveModelBinding?.robotModelVersionId ?? null;
-  const robotModelVersion = useScopedRobotModelVersion(
-    scope?.organizationId ?? null,
-    boundVersionId,
-  );
-  const robotModelAssets = useScopedRobotModelAssets(
-    scope?.organizationId ?? null,
-    boundVersionId,
-  );
-  const robotJointMappings = useScopedRobotModelJointMappings(
-    scope?.organizationId ?? null,
-    boundVersionId,
-  );
   const rawJointStream = useMemo(
     () =>
       recording &&
@@ -576,111 +545,11 @@ function RecordingSegmentationPage({
         : null,
     [gateway, recording, recordingId, scope],
   );
-  const rawJointFrameSource = useMemo(() => {
-    const base = buildJointFrameSource(rawJointStream);
-    if (!base) return;
-    const directions = new Map(
-      (robotJointMappings.data ?? []).map((mapping) => [
-        mapping.source_joint_name,
-        mapping.direction,
-      ]),
-    );
-    return {
-      async sampleAt(ns: string, signal: AbortSignal) {
-        const frame = await base.sampleAt(ns, signal);
-        return Object.fromEntries(
-          Object.entries(frame).map(([joint, value]) => [
-            joint,
-            directions.get(joint) === "INVERTED" ? -value : value,
-          ]),
-        );
-      },
-    };
-  }, [rawJointStream, robotJointMappings.data]);
-  const urdfAsset = robotModelAssets.data?.find(
-    (asset) => asset.role === "URDF",
-  );
-  const robotScene = useMemo(() => {
-    if (
-      !scope ||
-      !robotModelVersion.data ||
-      robotModelVersion.data.lifecycle !== "PUBLISHED" ||
-      !urdfAsset ||
-      !rawJointFrameSource
-    )
-      return;
-    const modelId = robotModelVersion.data.robotModelId;
-    const modelVersion = robotModelVersion.data.id;
-    const jointMapping = Object.fromEntries(
-      (robotJointMappings.data ?? []).map((mapping) => [
-        mapping.source_joint_name,
-        mapping.target_joint_name,
-      ]),
-    );
-    const requiredJoints = (robotJointMappings.data ?? []).map(
-      (mapping) => mapping.source_joint_name,
-    );
-    return {
-      title: "机器人 URDF",
-      modelRef: { modelId, modelVersion },
-      jointMapping,
-      jointFrameSource: rawJointFrameSource,
-      runtimeLoader: createLazyThreeRobotSceneLoader(async (_props, signal) => {
-        const viewerAssets = await authorizeRobotModelViewerAssets(
-          scope.organizationId,
-          modelVersion,
-          robotModelAssets.data ?? [],
-          signal,
-        );
-        return {
-          manifest: { modelId, modelVersion, requiredJoints },
-          ...viewerAssets,
-        };
-      }),
-    };
-  }, [
-    robotJointMappings.data,
-    robotModelAssets.data,
-    robotModelVersion.data,
-    rawJointFrameSource,
-    scope,
-    urdfAsset,
-  ]);
-  const robotSceneUnavailableReason = useMemo(() => {
-    if (!recording) return undefined;
-    if (!rawJointStream)
-      return "当前录制不是可直接读取原始 SENSOR_DATA 的 v2 多对象录制。";
-    if (robotBootstrap.isPending)
-      return `正在解析机器人 ${recordingRobotName(recording)} 的模型绑定…`;
-    if (robotBootstrap.isError)
-      return `无法读取机器人 ${recordingRobotName(recording)} 的模型配置。`;
-    if (!boundVersionId)
-      return `机器人 ${recordingRobotName(recording)} 尚未绑定已发布 URDF 模型。`;
-    if (robotModelVersion.isPending || robotModelAssets.isPending)
-      return "正在加载已发布模型版本与 URDF 资产…";
-    if (robotModelVersion.isError || robotModelAssets.isError)
-      return "模型绑定已存在，但固定版本或 URDF 资产加载失败。";
-    if (robotModelVersion.data?.lifecycle !== "PUBLISHED")
-      return "当前机器人绑定的模型版本尚未发布。";
-    if (!urdfAsset) return "当前已发布模型没有可用的 URDF 资产。";
-    if (robotJointMappings.isPending) return "正在加载关节映射…";
-    if (robotJointMappings.isError) return "URDF 已找到，但关节映射加载失败。";
-    return undefined;
-  }, [
-    boundVersionId,
-    recording,
+  const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
+    recording?.robot_id ?? null,
     rawJointStream,
-    robotBootstrap.isError,
-    robotBootstrap.isPending,
-    robotJointMappings.isError,
-    robotJointMappings.isPending,
-    robotModelAssets.isError,
-    robotModelAssets.isPending,
-    robotModelVersion.data?.lifecycle,
-    robotModelVersion.isError,
-    robotModelVersion.isPending,
-    urdfAsset,
-  ]);
+    scope,
+  );
   const cameraStreams = useMemo(
     () =>
       buildRecordingCameraStreams({
@@ -707,17 +576,41 @@ function RecordingSegmentationPage({
   const selectedSlice = slices.find((slice) => slice.episodeId === selectedId);
 
   useEffect(() => {
-    if (!recording || initializedEtag.current === recording.etag) return;
-    const initial = fromServerSlices(revision?.slices ?? []);
+    if (
+      !recording ||
+      (initializedEtag.current === recording.etag &&
+        (readOnly || initializedEditable.current))
+    )
+      return;
+    const defaults = readOnly ? [] : (recording.default_task_labels ?? []);
+    const initial = fromServerSlices(revision?.slices ?? [], defaults);
+    if (!revision && !readOnly && defaults.length && durationNs > 0) {
+      initial.push({
+        episodeId: nextEpisodeId([]),
+        startNs: 0,
+        endNs: durationNs,
+        title: "完整录制",
+        taskLabels: defaults,
+        notes: "",
+      });
+    }
     setSlices(initial);
     setSelectedId((previous) =>
       initial.some((slice) => slice.episodeId === previous)
         ? previous
         : (initial[0]?.episodeId ?? null),
     );
-    setDirty(false);
+    setDirty(
+      Boolean(
+        defaults.length &&
+          revision?.slices.some(
+            (slice) => slice.task_labels == null && !slice.task_label,
+          ),
+      ),
+    );
     initializedEtag.current = recording.etag;
-  }, [recording, revision]);
+    initializedEditable.current = !readOnly;
+  }, [recording, revision, readOnly, durationNs]);
 
   useEffect(() => {
     const unsubscribe = clock.subscribe((value) => setCurrentNs(Number(value)));
@@ -747,6 +640,22 @@ function RecordingSegmentationPage({
     setDirty(true);
   }, []);
 
+  const deleteSlice = useCallback(
+    (episodeId: string) => {
+      if (readOnly) return;
+      const index = slices.findIndex((slice) => slice.episodeId === episodeId);
+      if (index < 0) return;
+      const remaining = slices.filter((slice) => slice.episodeId !== episodeId);
+      updateSlices(remaining);
+      setSelectedId((current) =>
+        current === episodeId
+          ? (remaining[Math.min(index, remaining.length - 1)]?.episodeId ?? null)
+          : current,
+      );
+    },
+    [readOnly, slices, updateSlices],
+  );
+
   const addSlice = useCallback(() => {
     if (readOnly) return;
     if (markInNs === null) {
@@ -767,7 +676,7 @@ function RecordingSegmentationPage({
       startNs,
       endNs,
       title: `Episode ${String(ordinal).padStart(4, "0")}`,
-      taskLabel: "",
+      taskLabels: recording?.default_task_labels ?? [],
       notes: "",
     };
     const next = [...slices, candidate].sort(
@@ -791,6 +700,7 @@ function RecordingSegmentationPage({
     markInNs,
     minimumDurationNs,
     readOnly,
+    recording?.default_task_labels,
     showToast,
     slices,
     updateSlices,
@@ -819,7 +729,7 @@ function RecordingSegmentationPage({
             startNs,
             endNs,
             title: `Episode ${String(slices.length + 1).padStart(4, "0")}`,
-            taskLabel: "",
+            taskLabels: recording?.default_task_labels ?? [],
             notes: "",
           };
       const next = selected
@@ -848,6 +758,7 @@ function RecordingSegmentationPage({
       durationNs,
       minimumDurationNs,
       readOnly,
+      recording?.default_task_labels,
       seek,
       selectedId,
       showToast,
@@ -945,7 +856,7 @@ function RecordingSegmentationPage({
                 startNs: 0,
                 endNs: durationNs,
                 title: "完整录制",
-                taskLabel: "",
+                taskLabels: recording?.default_task_labels ?? [],
                 notes: "",
               },
             ];
@@ -1108,217 +1019,10 @@ function RecordingSegmentationPage({
                     : slice,
                 ),
               ),
-            onDelete: () => {
-              updateSlices(
-                slices.filter((slice) => slice.episodeId !== segment.id),
-              );
-              setSelectedId(null);
-            },
+            onDelete: () => deleteSlice(segment.id),
           },
     })),
   }));
-  const renderEpisodeList = () => (
-    <aside className={styles.episodeInspector} aria-label="Episode 列表与属性">
-      <div className={styles.episodeList}>
-        {slices.length === 0 ? (
-          <div className={styles.emptyEpisodes}>
-            <Scissors size={28} aria-hidden="true" />
-            <strong>还没有 Episode</strong>
-            <span>
-              不分段可直接提交完整录制；需要多段时，在时间轴空白处拖拽新增
-              Episode。
-            </span>
-          </div>
-        ) : (
-          slices.map((slice, index) => {
-            const selected = selectedId === slice.episodeId;
-            const issue = issues.find(
-              (item) => item.episodeId === slice.episodeId,
-            );
-            return (
-              <article
-                className={styles.episodeCard}
-                data-selected={selected || undefined}
-                key={slice.episodeId}
-              >
-                <button
-                  type="button"
-                  className={styles.episodeCardHeader}
-                  onClick={() => {
-                    setSelectedId(slice.episodeId);
-                    seek(slice.startNs);
-                  }}
-                  aria-expanded={selected}
-                >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <span>
-                    <strong>{slice.title || slice.episodeId}</strong>
-                    <small>
-                      {formatTimecode(slice.startNs)} —{" "}
-                      {formatTimecode(slice.endNs)}
-                    </small>
-                  </span>
-                  <span className={styles.episodeHeaderState}>
-                    {issue ? <Tag color="error">边界错误</Tag> : null}
-                  </span>
-                </button>
-                {selected ? (
-                  <div className={styles.episodeFields}>
-                    <label>
-                      标题
-                      <Input
-                        size="small"
-                        value={slice.title}
-                        disabled={readOnly}
-                        maxLength={256}
-                        onChange={(event) =>
-                          updateSlices(
-                            slices.map((item) =>
-                              item.episodeId === slice.episodeId
-                                ? { ...item, title: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <label>
-                      任务标签
-                      <Input
-                        size="small"
-                        value={slice.taskLabel}
-                        disabled={readOnly}
-                        maxLength={128}
-                        placeholder="例如：抓取并放置"
-                        onChange={(event) =>
-                          updateSlices(
-                            slices.map((item) =>
-                              item.episodeId === slice.episodeId
-                                ? {
-                                    ...item,
-                                    taskLabel: event.target.value,
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <div className={styles.boundaryFields}>
-                      <label>
-                        开始（秒）
-                        <InputNumber
-                          size="small"
-                          value={Number(nsToSeconds(slice.startNs).toFixed(3))}
-                          disabled={readOnly}
-                          min={0}
-                          max={nsToSeconds(slice.endNs)}
-                          step={0.033}
-                          onChange={(value) =>
-                            typeof value === "number" &&
-                            updateSlices(
-                              clampBoundary(
-                                slices,
-                                slice.episodeId,
-                                "start",
-                                secondsToNs(value),
-                                durationNs,
-                                minimumDurationNs,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        结束（秒）
-                        <InputNumber
-                          size="small"
-                          value={Number(nsToSeconds(slice.endNs).toFixed(3))}
-                          disabled={readOnly}
-                          min={nsToSeconds(slice.startNs)}
-                          max={nsToSeconds(durationNs)}
-                          step={0.033}
-                          onChange={(value) =>
-                            typeof value === "number" &&
-                            updateSlices(
-                              clampBoundary(
-                                slices,
-                                slice.episodeId,
-                                "end",
-                                secondsToNs(value),
-                                durationNs,
-                                minimumDurationNs,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                    </div>
-                    <label className={styles.episodeNotes}>
-                      备注
-                      <Input.TextArea
-                        size="small"
-                        value={slice.notes}
-                        disabled={readOnly}
-                        autoSize={{ minRows: 1, maxRows: 3 }}
-                        maxLength={4096}
-                        onChange={(event) =>
-                          updateSlices(
-                            slices.map((item) =>
-                              item.episodeId === slice.episodeId
-                                ? { ...item, notes: event.target.value }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    </label>
-                    <div className={styles.episodeFieldFooter}>
-                      <Button
-                        size="small"
-                        onClick={() => {
-                          clock.pause();
-                          if (cameraStreams.length) setPreviewSlice(slice);
-                          else seek(slice.startNs);
-                        }}
-                      >
-                        {cameraStreams.length ? "查看视频" : "定位切片"}
-                      </Button>
-                      <Button
-                        size="small"
-                        danger
-                        type="text"
-                        icon={<Trash2 size={15} />}
-                        disabled={readOnly}
-                        onClick={() => {
-                          updateSlices(
-                            slices.filter(
-                              (item) => item.episodeId !== slice.episodeId,
-                            ),
-                          );
-                          setSelectedId(null);
-                        }}
-                      >
-                        删除
-                      </Button>
-                    </div>
-                    {issue ? (
-                      <Typography.Text
-                        className={styles.episodeBoundaryError}
-                        type="danger"
-                      >
-                        {issue.message}
-                      </Typography.Text>
-                    ) : null}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })
-        )}
-      </div>
-    </aside>
-  );
 
   return (
     <div
@@ -1446,7 +1150,9 @@ function RecordingSegmentationPage({
                     <Tag color="warning">有未保存修改</Tag>
                   ) : (
                     <Tag color="default">
-                      已保存 r{recording.current_revision}
+                      {recording.current_revision
+                        ? `已保存 r${recording.current_revision}`
+                        : "尚未保存"}
                     </Tag>
                   )}
                   <Button
@@ -1608,7 +1314,26 @@ function RecordingSegmentationPage({
                     />
                   </Tooltip>
                 </div>
-                {renderEpisodeList()}
+                <EpisodeSliceList
+                  slices={slices}
+                  selectedId={selectedId}
+                  readOnly={readOnly}
+                  durationNs={durationNs}
+                  minimumDurationNs={minimumDurationNs}
+                  issues={issues}
+                  hasVideo={cameraStreams.length > 0}
+                  onSelect={(slice) => {
+                    setSelectedId(slice.episodeId);
+                    seek(slice.startNs);
+                  }}
+                  onChange={updateSlices}
+                  onDelete={deleteSlice}
+                  onPreview={(slice) => {
+                    clock.pause();
+                    if (cameraStreams.length) setPreviewSlice(slice);
+                    else seek(slice.startNs);
+                  }}
+                />
               </>
             ),
           }}

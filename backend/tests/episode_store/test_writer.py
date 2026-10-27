@@ -121,6 +121,10 @@ def test_frozen_numeric_type_keeps_initial_missing_axes_and_rejects_false_validi
                     "names": ["a", "b"],
                     "units": ["rad", "rad"],
                     "validity": [false_validity or i > 0, True],
+                    "source_topic": "/observation/joint_states",
+                    "source_timestamp_ns": None if i == 0 else round(i * 1e9 / 15),
+                    "nearest_source_timestamp_ns": round(i * 1e9 / 15),
+                    "alignment_reference_timestamp_ns": round(i * 1e9 / 15),
                 }
             },
             valid={"/humanoid/observation/state": True},
@@ -158,10 +162,13 @@ def test_frozen_numeric_type_keeps_initial_missing_axes_and_rejects_false_validi
     finally:
         reset_request_context(token)
     table = pq.read_table(root / DATA_PATH)
-    assert table["observation.state"].to_pylist() == [[None, 0.0], [0.5, 0.0], [0.5, 0.0]]
+    assert table["observation.state"].to_pylist() == [[0.5, 0.0], [0.5, 0.0]]
     assert str(table["observation.state"].type) == "fixed_size_list<element: float>[2]"
-    assert table["hc.valid.observation.state"].to_pylist() == [False, True, True]
-    assert json.loads(table["hc.axis_validity.observation.state"][0].as_py()) == [False, True]
+    assert table["hc.valid.observation.state"].to_pylist() == [True, True]
+    assert table["frame_index"].to_pylist() == [0, 1]
+    assert table["hc.source_frame_index"].to_pylist() == [1, 2]
+    archive = pq.read_table(root / "hc/recording/aligned_rows.parquet")
+    assert json.loads(archive["hc.axis_validity.observation.state"][0].as_py()) == [False, True]
     assert json.loads((root / "meta/stats.json").read_text())["observation.state"]["mean"] == [
         0.5,
         0.0,

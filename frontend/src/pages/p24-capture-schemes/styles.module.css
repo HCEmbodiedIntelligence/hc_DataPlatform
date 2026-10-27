@@ -21,6 +21,80 @@
 .content td {
   overflow-wrap: anywhere;
 }
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  white-space: nowrap;
+}
+.editAction:global(.ant-btn),
+.moreAction:global(.ant-btn),
+.referenceAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 6px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+.editAction:global(.ant-btn):not(:disabled) {
+  color: var(--hc-color-primary);
+  background: var(--hc-color-surface-tint);
+}
+.editAction:global(.ant-btn):not(:disabled):hover {
+  color: var(--hc-color-primary-hover);
+  background: color-mix(in srgb, var(--hc-color-primary) 15%, white);
+}
+.editAction:global(.ant-btn):not(:disabled):active {
+  color: var(--hc-color-primary-active);
+  background: color-mix(in srgb, var(--hc-color-primary) 21%, white);
+}
+.referenceAction,
+.moreAction:global(.ant-btn) {
+  color: var(--hc-color-text-muted);
+}
+.referenceAction:hover,
+.moreAction:global(.ant-btn):not(:disabled):hover {
+  color: var(--hc-color-primary);
+  background: var(--hc-color-surface-muted);
+}
+.moreAction:global(.ant-btn) {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+.editAction:global(.ant-btn):focus-visible,
+.referenceAction:focus-visible,
+.moreAction:global(.ant-btn):focus-visible {
+  outline: 2px solid var(--hc-color-focus);
+  outline-offset: 2px;
+}
+.actionDropdown :global(.ant-dropdown-menu) {
+  min-width: 168px;
+  padding: 6px;
+  border: 1px solid var(--hc-color-border-subtle);
+  border-radius: 12px;
+  box-shadow: var(--hc-shadow-md);
+}
+.actionDropdown :global(.ant-dropdown-menu-item) {
+  min-height: 38px;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+.actionDropdown :global(.ant-dropdown-menu-item-icon) {
+  display: inline-flex;
+}
 @media (max-width: 800px) {
   .page {
     padding: 12px;

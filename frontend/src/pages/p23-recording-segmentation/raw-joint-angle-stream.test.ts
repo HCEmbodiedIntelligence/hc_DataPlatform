@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useShellStore } from "../../shared/scope/shell-store";
 import { buildJointFrameSource } from "../../features/viewer";
 import type { RecordingGateway, RecordingScope } from "./api";
 import {
@@ -11,6 +12,14 @@ const scope: RecordingScope = {
   projectId: "project-test",
   regionCode: "cn-test",
 };
+
+beforeEach(() => {
+  const store = useShellStore.getState();
+  store.setSession({ actorId: "reader", displayName: "Reader", roleIds: [] }, "session");
+  store.setScope(scope);
+  store.setSessionScopes([{ ...scope, regionCodes: [scope.regionCode], projectWide: false, capabilities: ["upload.read"] }], 1);
+});
+afterEach(() => useShellStore.getState().setSession(null, null));
 
 describe("raw recording joint-angle stream", () => {
   it("preserves OpenArm joint names and mixed arm/gripper units", () => {
@@ -90,6 +99,7 @@ describe("raw recording joint-angle stream", () => {
     await expect(
       frameSource?.sampleAt("1900000000", new AbortController().signal),
     ).resolves.toEqual({ shoulder: 0.5, elbow: -1 });
+    expect(sensorWindow).toHaveBeenCalledTimes(1);
     expect(sensorWindow).toHaveBeenLastCalledWith(
       scope,
       "recording-test",
@@ -100,5 +110,10 @@ describe("raw recording joint-angle stream", () => {
       },
       expect.any(AbortSignal),
     );
+    useShellStore.getState().setSession(null, null);
+    await expect(stream.windowSource!.loadWindow(
+      { startNs: "0", endNs: "4000000000", lod: 0 }, new AbortController().signal,
+    )).rejects.toMatchObject({ name: "AbortError" });
+    expect(sensorWindow).toHaveBeenCalledTimes(1);
   });
 });

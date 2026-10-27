@@ -58,7 +58,7 @@ describe("recording segmentation workbench adapter", () => {
           startNs: 1_000_000_000,
           endNs: 3_000_000_000,
           title: "抓取",
-          taskLabel: "pick",
+          taskLabels: ["pick"],
           notes: "",
         },
       ]),

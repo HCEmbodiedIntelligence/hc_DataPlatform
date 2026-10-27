@@ -7,6 +7,7 @@ import {
 } from "../../../shared/config/runtime";
 import {
   authorizeLogicalRobotAsset,
+  authorizeLogicalRobotAssets,
   loadLogicalRobotScene,
   type LogicalRobotScene,
 } from "./logical-robot-scene";
@@ -203,6 +204,25 @@ it("authorizes assets only against the fixed scene rather than the current robot
       scopeMode: "explicit",
     }),
   );
+});
+it("authorizes all fixed assets in one request and rejects missing or duplicated grants", async () => {
+  mocked.mockResolvedValueOnce([grant()] as never);
+  const result = await authorizeLogicalRobotAssets(selection, view);
+  expect(result[0]?.grant.sha256).toBe(asset.sha256);
+  expect(mocked).toHaveBeenCalledTimes(1);
+  expect(mocked).toHaveBeenCalledWith(expect.objectContaining({path: expect.stringContaining('/robot-scene/assets/authorize')}));
+  for (const response of [[], [grant(), grant()], [{...grant(), scene_sha256: 'f'.repeat(64)}]]) {
+    mocked.mockResolvedValueOnce(response as never);
+    await expect(authorizeLogicalRobotAssets(selection, view)).rejects.toMatchObject({code:'CONTRACT_MISMATCH'});
+  }
+});
+it("rejects a lightweight mesh from a different source asset", async () => {
+  const mesh = {...asset, role:'MESH' as const};
+  const meshView = {...view, scene:{...view.scene!, assets:[mesh]}};
+  mocked.mockResolvedValueOnce([{...grant(), asset:mesh, preview:{...grant().authorization,
+    source_sha256:'0'.repeat(64), sha256:'1'.repeat(64), size_bytes:5,
+    media_type:'model/stl', policy:'mesh-qem-v1'}}] as never);
+  await expect(authorizeLogicalRobotAssets(selection, meshView)).rejects.toThrow('不匹配');
 });
 it.each(["scene", "bytes", "path", "expiry"])(
   "rejects a grant with mismatched %s",

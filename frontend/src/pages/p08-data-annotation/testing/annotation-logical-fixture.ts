@@ -43,6 +43,7 @@ export function annotationLogicalFixture(
   return {
     task_id: task.task_id,
     snapshot_token: "fixed-task-token",
+    robot_assets: [],
     snapshot_id: `snapshot_${"a".repeat(64)}`,
     snapshot: {
       format: "hc-logical-snapshot/1",

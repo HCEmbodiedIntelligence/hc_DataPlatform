@@ -250,9 +250,14 @@ services:
         condition: service_healthy
       migration:
         condition: service_completed_successfully
+      runtime-cache-init:
+        condition: service_completed_successfully
     ports: ["127.0.0.1:${HC_API_HOST_PORT:-8000}:8000"]
     volumes:
       - ./backend:/app:ro
+      # API imports and worker alignment share persisted attempt files. Task
+      # deletion must be able to inspect and purge either producer's output.
+      - alignment-cache:/tmp/hc-data/alignment
     tmpfs:
       - /tmp/hc-data/robot-model-upload-staging:rw,nosuid,size=512m,uid=65532,gid=65532,mode=0750
 

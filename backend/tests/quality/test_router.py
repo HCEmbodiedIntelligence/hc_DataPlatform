@@ -87,7 +87,7 @@ def _client() -> TestClient:
             project_ids=frozenset({"p1"}),
             region_codes=frozenset({"cn-hz"}),
             capabilities=frozenset({"upload.read", "upload.manage"}),
-            scope_pairs=frozenset({("p1", "cn-hz")}),
+            scope_pairs=frozenset({("p1", "cn-hz"), ("p1", None)}),
         )
         return await call_next(request)
 
@@ -101,6 +101,13 @@ def test_rollout_quality_is_tenant_scoped_and_not_cacheable() -> None:
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.json()["status"] == "PASS"
+
+
+def test_independent_qc_configuration_is_replaced_by_capture_scheme():
+    profile = QualityProfileV1(profile_id="independent", required_topics=frozenset())
+    response = _client().post('/api/v1/projects/p1/quality-profiles', json=profile.model_dump(mode='json'))
+    assert response.status_code == 409
+    assert response.json()['code'] == 'CAPTURE_SCHEME_REQUIRED'
 
 
 @pytest.mark.parametrize(

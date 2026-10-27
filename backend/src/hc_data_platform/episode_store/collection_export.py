@@ -23,6 +23,8 @@ from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PAT
 from .annotated_delivery import write_annotated_delivery
 from .collection_metadata import NORMALIZED_PROCESSOR, normalize_capture_metadata
 from .models import FileEntry, canonical, digest
+from .normalized_lerobot import LEGACY_PROCESSOR as LEGACY_SELECTED_PROCESSOR
+from .normalized_lerobot import PROCESSOR as SELECTED_PROCESSOR
 from .scope import assert_scope
 from .writer import Moments, write_json
 
@@ -78,6 +80,11 @@ class LocalDerivative:
             )
         )
         self.entries = {entry.path: entry for entry in self.manifest.files}
+        if manifest.exclusion_policy == "drop_invalid_and_excluded_frames":
+            self.frames = [
+                (row["source_timestamp_ns"], {"parent_frame_index": row["source_frame_index"]})
+                for row in pq.read_table(root / "hc/annotation_source_frames.parquet").to_pylist()
+            ]
 
     @contextmanager
     def file(self, relative):
@@ -93,7 +100,7 @@ class LocalDerivative:
 
 
 @contextmanager
-def prepared(selection, parent_directory, checkpoint):
+def prepared(selection, parent_directory, checkpoint, *, compact_invalid=False):
     if selection.annotation_file is None:
         yield selection.package
         return
@@ -106,6 +113,7 @@ def prepared(selection, parent_directory, checkpoint):
             selection.track,
             checkpoint=checkpoint,
             review_document=selection.review_document,
+            compact_invalid=compact_invalid,
         )
         yield LocalDerivative(root, selection.package, manifest)
 
@@ -124,6 +132,16 @@ def selected_info(package, modalities):
         for key in info["features"]
         if key in excluded or any(key.startswith("hc.") and key.endswith("." + d) for d in excluded)
     }
+    declaration = info.get("hc.capture_contract", {}).get("features")
+    if declaration:
+        bookkeeping = {"index", "frame_index", "episode_index", "task_index", "timestamp",
+                       "hc.timestamp_ns", "hc.sample_valid", "hc.action_source_origins",
+                       "subtask_index", "hc.annotation.excluded"}
+        allowed = set(declaration) | bookkeeping
+        for key in info["features"]:
+            if key.startswith("hc.") and any(key.endswith("." + name) for name in declaration):
+                allowed.add(key)
+        excluded_columns.update(set(info["features"]) - allowed)
     for key in excluded_columns:
         del info["features"][key]
     for key in ("hc.feature_mapping", "hc.structured_features", "hc.source_shapes"):
@@ -179,14 +197,31 @@ def preflight(selections, modalities, *, processor_version=None):
         raise PermissionError("collection must stay in one tenant/project/region")
     if len({d.identity.key for d in data}) != len(data):
         raise ValueError("select at most one version of each Episode")
-    if processor_version not in {None, PROCESSOR, NORMALIZED_PROCESSOR}:
+    if processor_version not in {None, PROCESSOR, NORMALIZED_PROCESSOR, SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
         raise ValueError("unsupported collection processor")
     for selection in sources:
         assert_scope(selection.package.receipt.data.identity)
     selected = [selected_info(s.package, modalities) for s in sources]
     infos = [item[0] for item in selected]
+    selected_capture = all(info.get("hc.capture_contract", {}).get("algorithm") == "capture-structure/v3" for info in infos)
+    if processor_version == LEGACY_SELECTED_PROCESSOR and not selected_capture:
+        raise CollectionIncompatible("normalized capture contract")
+    if processor_version is None:
+        needs_selection = selected_capture or any(s.annotation_file is not None for s in sources)
+        if not needs_selection:
+            for source in sources:
+                with source.package.file(DATA_PATH) as path:
+                    schema = pq.read_schema(path)
+                    columns = [name for name in ("hc.sample_valid", "hc.annotation.excluded") if name in schema.names]
+                    if columns:
+                        from .frame_policy import usable_row
+                        needs_selection |= any(not usable_row(row) for row in pq.read_table(path, columns=columns).to_pylist())
+        if needs_selection:
+            processor_version = SELECTED_PROCESSOR
     normalization = None
     if processor_version == NORMALIZED_PROCESSOR or (
+        processor_version in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR} and selected_capture
+    ) or (
         processor_version is None
         and any(contract(info) != contract(infos[0]) for info in infos[1:])
     ):
@@ -260,8 +295,8 @@ def write_collection(
 ):
     """Rebuild indexes, task/subtask tables, metadata, moments and media offsets.
 
-    Per-Episode videos remain separate MP4s with their original zero-based PTS.
-    No frame selection, resampling, requantization or transcoding occurs here.
+    Selected views compact media and preserve parent frame mappings before
+    collection assembly. Legacy frozen plans retain their original behavior.
     """
     sources, tasks, metadata = preflight(
         selections, modalities, processor_version=processor_version
@@ -293,9 +328,21 @@ def write_collection(
         info["hc.metadata_normalization"] = "hc/metadata_normalization.json"
         write_json(root, info["hc.metadata_normalization"], metadata.normalization)
     with pq.ParquetWriter(root / "hc/collection_frames.parquet", mapping_schema) as mapping:
-        for index, selection in enumerate(sources):
+        if metadata.processor_version in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
+            from .normalized_export import frame_selection
+            selected_tasks = set()
+            for source in sources:
+                if uses_selected_views(source, metadata.processor_version):
+                    selected_tasks.update(row["task"] for row in frame_selection(source).values())
+                else:
+                    with source.package.file("meta/tasks.parquet") as path:
+                        selected_tasks.update(row["task"] for row in pq.read_table(path).to_pylist())
+            tasks = sorted(selected_tasks)
+        for selection in sources:
             checkpoint()
-            with prepared(selection, root.parent, checkpoint) as view:
+            with collection_views(selection, root.parent, checkpoint, modalities, metadata.processor_version) as views:
+              for view in views:
+                index = len(members)
                 member, episode, segments = write_member(
                     root,
                     index,
@@ -312,19 +359,19 @@ def write_collection(
                     annotated,
                     checkpoint,
                 )
-            calibration_path = f"hc/episodes/{index:06d}/hc/camera_calibration.json"
-            if selection.camera_calibration is not None:
-                write_json(
-                    root, calibration_path, selection.camera_calibration.model_dump(mode="json")
-                )
-                member["camera_calibration"] = calibration_path
-            else:
-                member["camera_calibration"] = None
-            members.append(member)
-            episodes.append(episode)
-            subtask_rows.extend(segments)
-            offset += member["data"]["frame_count"]
-            subtask_offset += len(segments)
+                calibration_path = f"hc/episodes/{index:06d}/hc/camera_calibration.json"
+                if selection.camera_calibration is not None:
+                    write_json(root, calibration_path, selection.camera_calibration.model_dump(mode="json"))
+                    member["camera_calibration"] = calibration_path
+                else:
+                    member["camera_calibration"] = None
+                members.append(member)
+                episodes.append(episode)
+                subtask_rows.extend(segments)
+                offset += episode["length"]
+                subtask_offset += len(segments)
+    if not offset:
+        raise ValueError("LEROBOT_NO_SELECTED_FRAMES")
     statistics = {key: moments.document() for key, moments in numeric.items() if moments.count}
     for key, items in videos.items():
         if items:
@@ -338,10 +385,10 @@ def write_collection(
                 info["features"][key]["info"]["hc.stats_status"] = "NO_VALID_PIXELS"
     info.update(
         {
-            "total_episodes": len(sources),
+            "total_episodes": len(episodes),
             "total_frames": offset,
             "total_tasks": len(tasks),
-            "splits": {"train": f"0:{len(sources)}"},
+            "splits": {"train": f"0:{len(episodes)}"},
             "data_path": DATA_TEMPLATE,
             "video_path": VIDEO_PATH if videos else None,
             "hc.package_version": metadata.processor_version,
@@ -388,8 +435,8 @@ def write_collection(
             "is_reassembled_collection": True,
             "source_frames": "hc/collection_frames.parquet",
             "subtask_index_scope": "collection" if annotated else None,
-            "media_policy": "verified_byte_copy",
-            "transcoded": False,
+            "media_policy": "committed_frame_selection" if metadata.processor_version in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR} else "verified_byte_copy",
+            "transcoded": any(op["transcoded"] for member in members for op in member.get("media_operations", [])),
             "requantized": False,
             "model_depth_training_support": "NOT_VALIDATED",
         },
@@ -414,6 +461,27 @@ def write_collection(
     }
     write_json(root, "hc/collection_manifest.json", manifest)
     return manifest, digest(manifest)
+
+
+def uses_selected_views(selection, processor):
+    if processor not in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
+        return False
+    return (
+        processor == LEGACY_SELECTED_PROCESSOR
+        or selection.annotation_file is None
+        or selection.package.document("meta/info.json").get("hc.capture_contract", {}).get("algorithm") == "capture-structure/v3"
+    )
+
+
+@contextmanager
+def collection_views(selection, parent, checkpoint, modalities, processor):
+    if uses_selected_views(selection, processor):
+        from .normalized_lerobot import views
+        yield views(selection, parent, checkpoint, modalities,
+                    compact_invalid=processor != LEGACY_SELECTED_PROCESSOR)
+    else:
+        with prepared(selection, parent, checkpoint, compact_invalid=processor == SELECTED_PROCESSOR) as view:
+            yield (view,)
 
 
 def write_member(
@@ -443,6 +511,8 @@ def write_member(
     for entry in view.manifest.files:
         if entry.path.startswith("videos/") or entry.path.startswith("data/"):
             continue
+        if entry.path.startswith(("source/", "raw/")) or Path(entry.path).suffix.lower() in {".mcap", ".zip"}:
+            continue
         if any(entry.path.startswith(depth_paths[d]["evidence_path"] + "/") for d in excluded):
             continue
         copy_member(root, view, entry, f"{attachment}/{entry.path}", checkpoint)
@@ -453,7 +523,10 @@ def write_member(
             r["task_index"]: tasks.index(r["task"]) for r in pq.read_table(path).to_pylist()
         }
     segments = []
-    if selection.annotation_file is not None and selection.track.annotation_ids:
+    if hasattr(view, "segments"):
+        segments = [{**s, "episode_index": index, "source_subtask_index": s["subtask_index"],
+                     "subtask_index": subtask_offset + s["subtask_index"]} for s in view.segments]
+    elif selection.annotation_file is not None and selection.track.annotation_ids:
         with view.file("hc/subtasks.jsonl") as path:
             for line in path.read_bytes().splitlines():
                 original = json.loads(line)
@@ -538,14 +611,14 @@ def write_member(
                             table["episode_index"],
                             table["frame_index"],
                             pa.array([data.data_version_id] * len(batch)),
-                            table["frame_index"],
-                            table["hc.timestamp_ns"],
+                            pa.array([view.frames[n][1]["parent_frame_index"] for n in frames], type=pa.int64()) if hasattr(view, "frames") else table["frame_index"],
+                            pa.array([view.frames[n][0] for n in frames], type=pa.int64()) if hasattr(view, "frames") else table["hc.timestamp_ns"],
                         ],
                         schema=mapping.schema,
                     )
                 )
                 seen += len(batch)
-    if seen != data.frame_count:
+    if seen != local_info["total_frames"]:
         raise ValueError("collection source frame count differs from its receipt")
     episode = {
         "episode_index": index,
@@ -619,4 +692,7 @@ def write_member(
             if feature in videos
         },
     }
+    if hasattr(view, "selection"):
+        member["selection"] = view.selection
+        member["media_operations"] = view.operations
     return member, episode, segments

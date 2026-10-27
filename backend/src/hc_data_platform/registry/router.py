@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import mimetypes
 from typing import Annotated, Any
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -30,8 +28,10 @@ from .models import (
     RobotModelPage,
     RobotModelPublishPreflightEnvelope,
     RobotModelVersionEnvelope,
+    RobotModelViewerAssetPage,
 )
 from .service import RegistryService
+from .downloads import model_download_response
 
 router = APIRouter(prefix="/api/v1/organizations/{organization_id}", tags=["registry"])
 _service: RegistryService | None = None
@@ -214,27 +214,22 @@ async def upload_robot_model_asset_part_to_server(
     "/robot-model-assets/content",
     operation_id="downloadRobotModelAssetFromServer",
     response_class=StreamingResponse,
-    responses=PROBLEM_RESPONSES,
+    responses={**PROBLEM_RESPONSES, 206: {"description": "Authorized model byte range"},
+               416: {"description": "Unsatisfiable byte range"}},
 )
 def download_robot_model_asset_from_server(
     organization_id: str,
     token: Annotated[str, Query(min_length=1, max_length=16_384)],
     service: ServiceDependency,
+    preview_sha256: str | None = Query(default=None, pattern=r"^[0-9a-f]{64}$"),
+    range_header: str | None = Header(default=None, alias="Range", max_length=128),
 ) -> StreamingResponse:
     filename, chunks = service.open_authorized_asset_download(
         organization_id=organization_id,
         token=token,
+        preview_sha256=preview_sha256,
     )
-    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return StreamingResponse(
-        chunks,
-        media_type=media_type,
-        headers={
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return model_download_response(filename, chunks, range_header)
 
 
 @router.get(
@@ -627,6 +622,29 @@ def list_robot_model_assets(
         project_id=project_id,
         version_id=version_id,
         request_id=_request_id(request),
+    )
+
+
+@router.post(
+    "/robot-model-versions/{version_id}/viewer-assets:authorize",
+    operation_id="authorizeRobotModelViewerAssets",
+    response_model=RobotModelViewerAssetPage,
+    responses=PROBLEM_RESPONSES,
+)
+def authorize_robot_model_viewer_assets(
+    organization_id: str,
+    version_id: str,
+    response: Response,
+    request: Request,
+    auth: VerifiedAuth,
+    project_id: ProjectScope,
+    service: ServiceDependency,
+) -> RobotModelViewerAssetPage:
+    _select_project_scope(auth, project_id)
+    _no_store(response)
+    return service.authorize_viewer_assets(
+        auth=auth, organization_id=organization_id, project_id=project_id,
+        version_id=version_id, request_id=_request_id(request),
     )
 
 

@@ -48,7 +48,7 @@ const collectionPlan = z
       .regex(/^[a-z][a-z0-9_]*_collection_zip\/[1-9][0-9]*$/u),
     annotation_selection: z.literal("per_episode_fixed_selection"),
     contract_sha256: digest,
-    processor_version: z.enum(["hc-lerobot-collection/1", "hc-export/1"]),
+    processor_version: z.enum(["hc-lerobot-collection/1", "hc-lerobot-collection/2", "hc-lerobot-collection/3", "hc-export/1"]),
     archive_version: z.literal("hc-collection-archive/1"),
     reader_version: z.string().min(1),
   })
@@ -250,7 +250,7 @@ export async function createPackageBatch(
     mode === "rgb" || mode === "rgbd"
       ? "lerobot_collection_zip/1"
       : mode === "mcap"
-        ? "mcap_collection_zip/1"
+        ? "mcap_collection_zip/2"
         : mode === "original"
           ? "original_collection_zip/1"
           : mode === "independent"

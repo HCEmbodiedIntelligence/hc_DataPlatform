@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import io
-import itertools
+import pickle
 import shutil
 from pathlib import Path
+from tempfile import SpooledTemporaryFile
 from typing import Any
 
 import numpy as np
@@ -39,7 +40,8 @@ def capture_value(value, enabled):
         enabled
         and isinstance(value, dict)
         and set(value)
-        <= {"values", "names", "units", "source_origins", "validity", "source_timestamp_ns"}
+        <= {"values", "names", "units", "source_origins", "validity", "source_timestamp_ns",
+            "nearest_source_timestamp_ns", "alignment_reference_timestamp_ns", "source_topic"}
         and isinstance(value.get("values"), list)
         and value["values"]
         and all(v is None or (type(v) in (int, float) and np.isfinite(v)) for v in value["values"])
@@ -74,6 +76,51 @@ def missing_value(value):
     )
 
 
+def typed_stream(steps, contract, capture_values, cameras, camera_topics):
+    """Infer absent initial scalars/vectors without retaining a long gap in RAM.
+
+    The first yielded record is a schema prototype only. Subsequent records are
+    the original rows, including the unavailable prefix, for audit/media mapping.
+    The private spool contains objects written by this function, never input files.
+    """
+    iterator = iter(steps)
+    first = next(iterator, None)
+    if first is None:
+        return
+    mapping = feature_names(sorted(first.modalities), camera_topics=camera_topics)
+    missing = {name for name, value in first.modalities.items()
+               if mapping[name] not in cameras and not contract.get("features", {}).get(mapping[name])
+               and missing_value(capture_value(value, capture_values)[0])}
+    if not missing:
+        yield first
+        yield first
+        yield from iterator
+        return
+    values = dict(first.modalities)
+    with SpooledTemporaryFile(max_size=1024**2) as spool:
+        pickle.dump(first, spool)
+        for row in iterator:
+            pickle.dump(row, spool)
+            for name in tuple(missing):
+                value = row.modalities.get(name)
+                if row.valid.get(name, False) and not missing_value(capture_value(value, capture_values)[0]):
+                    values[name] = value
+                    missing.remove(name)
+            if not missing:
+                break
+        if missing:
+            raise ValueError(f"no usable values to infer feature types: {sorted(missing)}")
+        yield first.model_copy(update={"modalities": values})
+        spool.seek(0)
+        while True:
+            try:
+                row = pickle.load(spool)
+            except EOFError:
+                break
+            yield row
+        yield from iterator
+
+
 def write_episode(
     root: Path, source: PackageInput, steps, assets: PreparedAssets, *, fps: float, metadata: dict
 ):
@@ -84,8 +131,8 @@ def write_episode(
     shared_projection = (
         capture.get("effective_adapter", {}).get("configuration", {}).get("semantic_output")
     )
-    # Shared schemes preserve their complete frame grid and explicit validity
-    # fields, like LeRobot input. Legacy recordings retain their row selection.
+    # Legacy captures need extra vector decoding. Row selection below applies to
+    # every ingress, including semantic schemes and imported LeRobot packages.
     capture_masking = bool(metadata.get("quality", {}).get("capture_quality")) and not bool(
         shared_projection
     )
@@ -93,7 +140,8 @@ def write_episode(
 
     contract = (metadata.get("capture") or {}).get("output", {})
     capture_values = capture_masking or bool(contract)
-    iterator = iter(apply_validity(steps, metadata))
+    iterator = typed_stream(apply_validity(steps, metadata), contract, capture_values,
+                            set(assets.videos), metadata.get("camera_topics"))
     first = next(iterator, None)
     if first is None:
         raise ValueError("cannot write an empty Episode")
@@ -191,6 +239,7 @@ def write_episode(
         key: Moments() for key, f in features.items() if f["dtype"] not in {"string", "binary"}
     }
     count = 0
+    invalid_count = 0
     pending, source_rows = [], []
     training_indices = []
 
@@ -200,7 +249,7 @@ def write_episode(
         for key, statistics in moments.items():
             values = table[key].to_pylist()
             mask_key = "hc.valid." + key
-            if (capture_masking or contract) and mask_key in table.column_names:
+            if mask_key in table.column_names:
                 values = [
                     v for v, valid in zip(values, table[mask_key].to_pylist(), strict=True) if valid
                 ]
@@ -214,7 +263,8 @@ def write_episode(
         pq.ParquetWriter(root / DATA_PATH, schema) as output,
         pq.ParquetWriter(root / "hc/source_frames.parquet", frame_schema) as source_output,
     ):
-        for step in itertools.chain((first,), iterator):
+        for step in iterator:
+            invalid_count += not step.sample_valid
             if (
                 step.step_index != count
                 or step.rollout_id != source.identity.rollout_id
@@ -239,6 +289,7 @@ def write_episode(
                         raise ValueError("numeric semantics changed within Episode")
                     if (
                         not contract.get("features", {}).get(target)
+                        and not (missing_value(value) and not step.valid.get(name, False))
                         and capture_type(value, encoding, name, capture_masking)[0]
                         != source_types[target]
                     ):
@@ -255,7 +306,7 @@ def write_episode(
                             raise ValueError(
                                 "missing numerical value is marked valid or shape differs"
                             )
-                    row[target] = value[0] if source_shapes[target] == [1] else value
+                    row[target] = value[0] if value is not None and source_shapes[target] == [1] else value
                 # Unknown stays unknown in the trace; never infer validity from absent evidence.
                 row[f"hc.source_timestamps_ns.{target}"] = canonical(
                     step.source_timestamps_ns.get(name, ())
@@ -462,7 +513,7 @@ def write_episode(
             raise ValueError("recording evidence cannot overwrite an Episode file")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(origin, target)
-    if capture_masking:
+    if capture_masking or invalid_count:
         from .capture_selection import compact_capture_rows
 
         compact_capture_rows(root)

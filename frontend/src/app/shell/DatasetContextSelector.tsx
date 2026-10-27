@@ -21,6 +21,7 @@ export default function DatasetContextSelector({ className }: DatasetContextSele
   const capabilities = useCapabilities();
   const projectId = useShellStore((state) => state.scope?.projectId);
   const [query, setQuery] = useState('');
+  const [opened, setOpened] = useState(false);
   const deferredQuery = useDeferredValue(query.trim());
   const context = datasetContextKind(location.pathname);
   const canRead =
@@ -37,7 +38,9 @@ export default function DatasetContextSelector({ className }: DatasetContextSele
     }),
     [deferredQuery],
   );
-  const datasets = useDatasetsQuery(filters, canRead);
+  // The page already loads its own dataset list. This optional search control
+  // should not fetch another 100 records on every first visit to the page.
+  const datasets = useDatasetsQuery(filters, canRead && opened);
   const currentDatasetId = selectedDatasetId(location.pathname, location.search);
   const options = useMemo(() => {
     const values: Array<{ label: string; value: string }> =
@@ -81,6 +84,7 @@ export default function DatasetContextSelector({ className }: DatasetContextSele
       value={currentDatasetId}
       onChange={(value) => selectDataset(value)}
       onSearch={setQuery}
+      onOpenChange={(open) => { if (open) setOpened(true); }}
     />
   );
 }

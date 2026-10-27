@@ -1007,6 +1007,7 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
         "succeeded",
         "risk",
         "isolated",
+        "cancelled",
         "blocked",
         "failed",
         "unavailable",
@@ -1044,8 +1045,10 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
             upload_bucket = (
                 "failed"
                 if main is TaskPackageMainState.UPLOAD_FAILED
+                else "cancelled"
+                if main is TaskPackageMainState.CANCELLED
                 else "blocked"
-                if main in {TaskPackageMainState.UPLOAD_PAUSED, TaskPackageMainState.CANCELLED}
+                if main is TaskPackageMainState.UPLOAD_PAUSED
                 else "running"
                 if main is TaskPackageMainState.UPLOADING
                 else "waiting"

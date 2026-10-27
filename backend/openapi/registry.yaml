@@ -563,6 +563,55 @@ components:
       - request_id
       title: RobotModelPage
       type: object
+    RobotModelPreviewGrant:
+      additionalProperties: false
+      properties:
+        asset_id:
+          minLength: 1
+          title: Asset Id
+          type: string
+        download_url:
+          minLength: 1
+          title: Download Url
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        policy:
+          enum:
+          - mesh-qem-v1
+          - mesh-indexed-glb-v2
+          title: Policy
+          type: string
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+          type: integer
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Source Sha256
+          type: string
+      required:
+      - asset_id
+      - download_url
+      - expires_at
+      - sha256
+      - media_type
+      - source_sha256
+      - size_bytes
+      - policy
+      title: RobotModelPreviewGrant
+      type: object
     RobotModelPublishCheck:
       additionalProperties: false
       properties:
@@ -789,6 +838,45 @@ components:
       - request_id
       title: RobotModelVersionEnvelope
       type: object
+    RobotModelViewerAssetGrant:
+      additionalProperties: false
+      properties:
+        asset:
+          $ref: '#/components/schemas/RobotModelAsset'
+        authorization:
+          $ref: '#/components/schemas/RobotModelAssetDownloadAuthorization'
+        preview:
+          anyOf:
+          - $ref: '#/components/schemas/RobotModelPreviewGrant'
+          - type: 'null'
+      required:
+      - asset
+      - authorization
+      title: RobotModelViewerAssetGrant
+      type: object
+    RobotModelViewerAssetPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotModelViewerAssetGrant'
+          title: Items
+          type: array
+        request_id:
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+        version_id:
+          title: Version Id
+          type: string
+      required:
+      - version_id
+      - items
+      - scope
+      - request_id
+      title: RobotModelViewerAssetPage
+      type: object
 info:
   title: HC registry contract
   version: '2026-08-19'
@@ -988,9 +1076,29 @@ paths:
           minLength: 1
           title: Token
           type: string
+      - in: query
+        name: preview_sha256
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Preview Sha256
+      - in: header
+        name: Range
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Range
       responses:
         '200':
           description: Successful Response
+        '206':
+          description: Authorized model byte range
         '401':
           content:
             application/problem+json:
@@ -1033,6 +1141,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: The registry request could not be completed.
+        '416':
+          description: Unsatisfiable byte range
         '422':
           content:
             application/problem+json:
@@ -1666,6 +1776,88 @@ paths:
       security:
       - bearerAuth: []
       summary: Create Robot Model Asset Upload Session
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/viewer-assets:authorize:
+    post:
+      operationId: authorizeRobotModelViewerAssets
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelViewerAssetPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Authorize Robot Model Viewer Assets
       tags:
       - registry
   /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:create-draft:

@@ -18,11 +18,12 @@ import { annotationQueueQueryCodec } from "./query-codec";
 import type { AnnotationQueueStage } from "./query-codec";
 import type { RuntimeAnnotationTask } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
-const { grantedCapabilities, listTasksMock, claimTaskMock } = vi.hoisted(
+const { grantedCapabilities, listTasksMock, claimTaskMock, reopenTaskMock } = vi.hoisted(
   () => ({
     grantedCapabilities: new Set<string>(),
     listTasksMock: vi.fn(),
     claimTaskMock: vi.fn(),
+    reopenTaskMock: vi.fn(),
   }),
 );
 
@@ -35,7 +36,7 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
 }));
 
 vi.mock("../../shared/scope/shell-store", () => ({
-  useShellStore: (selector: (state: object) => unknown) =>
+  useShellStore: Object.assign((selector: (state: object) => unknown) =>
     selector({
       principal: {
         actorId: "annotator-current",
@@ -47,7 +48,7 @@ vi.mock("../../shared/scope/shell-store", () => ({
         projectId: "project-fe13",
         regionCode: "cn-shanghai",
       },
-    }),
+    }), { subscribe: () => () => {} }),
 }));
 
 vi.mock(
@@ -61,6 +62,7 @@ vi.mock(
       ...actual,
       listRuntimeAnnotationTasks: listTasksMock,
       claimRuntimeAnnotationTask: claimTaskMock,
+      reopenRuntimeAnnotationTask: reopenTaskMock,
     };
   },
 );
@@ -145,6 +147,7 @@ beforeEach(() => {
   listTasksMock.mockReset();
   listTasksMock.mockResolvedValue([]);
   claimTaskMock.mockReset();
+  reopenTaskMock.mockReset();
   claimTaskMock.mockResolvedValue(
     task("DRAFT", { assignee_id: "annotator-current" }),
   );
@@ -333,6 +336,56 @@ describe("AnnotationQueuePage status architecture", () => {
 });
 
 describe("AnnotationQueuePage row entry", () => {
+  it("keeps viewing read-only and reopens a completed task once from its edit button", async () => {
+    for (const capability of ["annotation.edit", "annotation_draft.edit", "annotation.save"])
+      grantedCapabilities.add(capability);
+    const completed = task("APPROVED");
+    listTasksMock.mockResolvedValue([completed]);
+    let finish!: () => void;
+    reopenTaskMock.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    const path = "/annotations/annotate?stage=APPROVED";
+    renderQueue("annotation", path);
+    const edit = await screen.findByRole("button", { name: "修改标注" });
+    expect(edit).toBeEnabled();
+    expect(screen.getByRole("link", { name: "查看结果" })).toBeVisible();
+    expect(reopenTaskMock).not.toHaveBeenCalled();
+    fireEvent.click(edit);
+    fireEvent.click(edit);
+    expect(reopenTaskMock).toHaveBeenCalledTimes(1);
+    expect(reopenTaskMock).toHaveBeenCalledWith(expect.objectContaining({ projectId: "project-fe13" }), completed);
+    expect(edit).toBeDisabled();
+    listTasksMock.mockResolvedValue([task("DRAFT", { task_id: completed.task_id })]);
+    await act(async () => finish());
+    await waitFor(() => expect(screen.getByLabelText("当前位置").textContent).toBe(
+      `/annotations/tasks/${completed.task_id}?returnTo=${encodeURIComponent(path)}`,
+    ));
+    expect(listTasksMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["permission", "assignment"])("disables completed editing without %s", async reason => {
+    for (const capability of ["annotation.edit", "annotation_draft.edit", "annotation.save"])
+      grantedCapabilities.add(capability);
+    if (reason === "permission") grantedCapabilities.delete("annotation.save");
+    listTasksMock.mockResolvedValue([task("APPROVED", reason === "assignment" ? { assignee_id: "someone-else" } : {})]);
+    renderQueue("annotation", "/annotations/annotate?stage=APPROVED");
+    const edit = await screen.findByRole("button", { name: "修改标注" });
+    expect(edit).toBeDisabled();
+    fireEvent.click(edit);
+    expect(reopenTaskMock).not.toHaveBeenCalled();
+  });
+
+  it("retains the completed result and reports a failed reopen", async () => {
+    for (const capability of ["annotation.edit", "annotation_draft.edit", "annotation.save"])
+      grantedCapabilities.add(capability);
+    listTasksMock.mockResolvedValue([task("APPROVED")]);
+    reopenTaskMock.mockRejectedValue(new Error("任务版本已更新，请刷新后重试。"));
+    renderQueue("annotation", "/annotations/annotate?stage=APPROVED");
+    fireEvent.click(await screen.findByRole("button", { name: "修改标注" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("任务版本已更新");
+    expect(screen.getByLabelText("当前位置")).toHaveTextContent("/annotations/annotate?stage=APPROVED");
+    expect(screen.getByRole("link", { name: "查看结果" })).toBeVisible();
+  });
+
   it("claims an unassigned task once from a cell click, then opens it with the queue return location", async () => {
     const draft = task("DRAFT");
     const claimed = task("DRAFT", { assignee_id: "annotator-current" });

@@ -104,6 +104,8 @@ services:
 
   api:
     <<: *api
+    volumes:
+      - worker-cache:/tmp/hc-data
     depends_on:
       migration: {condition: service_completed_successfully}
       minio-init: {condition: service_completed_successfully}

@@ -99,7 +99,7 @@ class QualityEngine:
                 profile.timing_for(topic),
                 expected_frames.get(topic),
             )
-            if (self._engine_version or profile.engine_version) == BOUNDARY_QUALITY_ENGINE_VERSION:
+            if (self._engine_version or profile.engine_version) in {BOUNDARY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
                 topic_metrics, topic_findings = active_topic_timing(
                     topic=topic,
                     timestamps=sorted(set(data.topic_timestamps_ns.get(topic, ()))),
@@ -265,7 +265,7 @@ class QualityEngine:
                     )
                     if (
                         self._engine_version or profile.engine_version
-                    ) == BOUNDARY_QUALITY_ENGINE_VERSION:
+                    ) in {BOUNDARY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
                         topic_metrics, topic_findings = active_topic_timing(
                             topic=topic,
                             timestamps=(
@@ -320,7 +320,7 @@ class QualityEngine:
         data: QualityInputV1,
         profile: QualityProfileV1,
     ) -> None:
-        if (self._engine_version or profile.engine_version) != BOUNDARY_QUALITY_ENGINE_VERSION:
+        if (self._engine_version or profile.engine_version) not in {BOUNDARY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
             return
         start, end = common_window(data.start_ns, data.end_ns, findings)
         hz = profile.default_timing.target_frequency_hz
@@ -345,7 +345,7 @@ class QualityEngine:
         profile: QualityProfileV1,
     ) -> list[QcFinding]:
         # Archived v1 profiles remain reproducible for historical workflow replay.
-        if (self._engine_version or profile.engine_version) == LEGACY_QUALITY_ENGINE_VERSION:
+        if (self._engine_version or profile.engine_version) in {LEGACY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
             return findings
         return approved_risk_findings(findings, profile)
 
@@ -992,7 +992,9 @@ class QualityEngine:
                 )
                 continue
             jump = math.sqrt(
-                sum((a - b) ** 2 for a, b in zip(left.values, right.values, strict=True))
+                sum((a - b) ** 2 for i, (a, b) in enumerate(zip(left.values, right.values, strict=True))
+                    if (left.validity is None or left.validity[i])
+                    and (right.validity is None or right.validity[i]))
             )
             jump_severity = self._higher_is_worse(
                 jump, thresholds.maximum_jump_risk, thresholds.maximum_jump_reject

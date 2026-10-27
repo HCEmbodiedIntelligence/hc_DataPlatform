@@ -10,6 +10,7 @@ from hc_data_platform.annotation import (
     AnnotationRestoreTargetError,
     AnnotationService,
     AnnotationStatus,
+    AnnotationTag,
     DisabledAutoAnnotationProvider,
     FeatureDisabledError,
     InMemoryAnnotationService,
@@ -337,6 +338,80 @@ def test_edit_after_approval_creates_new_draft_and_keeps_review_history() -> Non
     assert service.get_revision("task-1", 1).revision == 1
     assert service.list_reviews("task-1")[0].revision == 1
     assert service.get_approved_revision(project_id="project-a", rollout_id="rollout-a") is None
+
+
+@pytest.mark.parametrize("approved_revision", [0, 1])
+def test_reopen_copy_edit_and_reapprove_preserves_completed_snapshot(approved_revision: int) -> None:
+    service, annotator = service_with_claimed_task()
+    original_tag = AnnotationTag(
+        annotation_id="manual-task",
+        tag_id="manual-task",
+        path=("manual-task",),
+        label="拿起物体",
+        start_step=100,
+        end_step=150,
+    )
+    if approved_revision:
+        service.save_draft(
+            "task-1", annotator, [operation("exclude", OperationKind.EXCLUDE, 3, 8)],
+            tags=[original_tag], expected_revision=0,
+            if_match=service.get_task("task-1").etag, client_mutation_id="initial-save",
+        )
+    submitted = service.submit(
+        "task-1", annotator, expected_revision=approved_revision,
+        if_match=service.get_task("task-1").etag,
+    )
+    reviewer = actor("bob", *REVIEWER_CAPABILITIES)
+    service.review(
+        "task-1", reviewer, ReviewDecision.APPROVE,
+        revision=approved_revision, if_match=submitted.etag,
+    )
+    completed = service.get_task("task-1")
+    source = service.get_revision("task-1", approved_revision)
+    original_reviews = service.list_reviews("task-1")
+    exclusions = service.effective_exclusions("task-1")
+
+    with pytest.raises(AnnotationPermissionError):
+        service.save_draft(
+            "task-1", actor("other", *ANNOTATOR_CAPABILITIES), (), tags=source.tags,
+            expected_revision=approved_revision, if_match=completed.etag,
+            client_mutation_id="unauthorized-reopen",
+        )
+    reopened = service.save_draft(
+        "task-1", annotator, (), tags=source.tags,
+        expected_revision=approved_revision, if_match=completed.etag,
+        client_mutation_id="reopen",
+    )
+    assert service.get_task("task-1").status is AnnotationStatus.DRAFT
+    assert service.get_task("task-1").approved_revision is None
+    assert reopened.tags == source.tags
+    assert reopened.content_hash == source.content_hash
+    assert service.effective_exclusions("task-1") == exclusions
+    with pytest.raises(AnnotationConflictError):
+        service.save_draft(
+            "task-1", annotator, (), tags=source.tags,
+            expected_revision=approved_revision, if_match=completed.etag,
+            client_mutation_id="stale-reopen",
+        )
+    changed_tag = original_tag.model_copy(update={"label": "拿起物体并放入盒中", "end_step": 180})
+    edited = service.save_draft(
+        "task-1", annotator, (), tags=[changed_tag],
+        expected_revision=reopened.revision, if_match=service.get_task("task-1").etag,
+        client_mutation_id="save-edit",
+    )
+    submitted = service.submit(
+        "task-1", annotator, expected_revision=edited.revision,
+        if_match=service.get_task("task-1").etag,
+    )
+    service.review(
+        "task-1", reviewer, ReviewDecision.APPROVE,
+        revision=edited.revision, if_match=submitted.etag,
+    )
+    assert service.get_task("task-1").status is AnnotationStatus.APPROVED
+    assert service.get_task("task-1").approved_revision == edited.revision
+    assert service.get_draft("task-1", annotator).tags == (changed_tag,)
+    assert service.get_revision("task-1", approved_revision) == source
+    assert service.list_reviews("task-1")[:-1] == original_reviews
 
 
 def test_reviewer_scope_and_role_are_enforced() -> None:

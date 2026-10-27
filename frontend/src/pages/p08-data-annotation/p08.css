@@ -577,6 +577,10 @@
   font-size: 11px;
 }
 
+.p08-reopen-action {
+  margin-inline-start: 6px;
+}
+
 .p08-status {
   display: inline-flex;
   min-height: 26px;

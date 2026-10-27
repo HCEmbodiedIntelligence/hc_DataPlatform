@@ -1,232 +1,205 @@
-paths:
-  /api/v1/projects/{project_id}/quality-profiles:
-    post:
-      operationId: createQualityProfileVersion
-      tags: [quality]
-      parameters:
-        - $ref: "#/components/parameters/QualityProjectId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: "#/components/schemas/QualityProfileV1"}
-      responses:
-        "201":
-          description: Immutable quality profile version created
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/QualityProfileV1"}
-        "409": {description: The profile version already exists with different content}
-  /api/v1/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}:
-    get:
-      operationId: getQualityProfileVersion
-      tags: [quality]
-      parameters:
-        - $ref: "#/components/parameters/QualityProjectId"
-        - $ref: "#/components/parameters/QualityProfileId"
-        - $ref: "#/components/parameters/QualityProfileVersion"
-      responses:
-        "200":
-          description: Immutable quality profile version
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/QualityProfileV1"}
-        "404": {description: Quality profile version not found}
-  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/quality:
-    get:
-      operationId: getRolloutQuality
-      tags: [quality]
-      parameters:
-        - $ref: "#/components/parameters/QualityProjectId"
-        - $ref: "#/components/parameters/QualityRegionCode"
-        - $ref: "#/components/parameters/QualityRolloutId"
-      responses:
-        "200":
-          description: Latest persisted quality summary and its immutable full report
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/QcReportV1"}
-        "404": {description: No persisted quality report exists for the rollout}
-  /api/v1/projects/{project_id}/regions/{region_code}/quality-problems:
-    get:
-      operationId: listAutoQualityProblems
-      tags: [quality]
-      description: Expose latest RISK/REJECT reports as read-only unified issue-center rows.
-      parameters:
-        - $ref: "#/components/parameters/QualityProjectId"
-        - $ref: "#/components/parameters/QualityRegionCode"
-      responses:
-        "200":
-          description: Latest automatic quality problems for the scoped project and Region
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/AutoQualityProblemListV1"}
 components:
   parameters:
-    QualityProjectId:
-      name: project_id
-      in: path
-      required: true
-      schema: {type: string, minLength: 1}
-    QualityRegionCode:
-      name: region_code
-      in: path
-      required: true
-      schema: {type: string, minLength: 1}
-    QualityRolloutId:
-      name: rollout_id
-      in: path
-      required: true
-      schema: {type: string, minLength: 1}
     QualityProfileId:
+      in: path
       name: profile_id
-      in: path
       required: true
-      schema: {type: string, minLength: 1}
+      schema:
+        minLength: 1
+        type: string
     QualityProfileVersion:
-      name: profile_version
       in: path
+      name: profile_version
       required: true
-      schema: {type: integer, minimum: 1}
+      schema:
+        minimum: 1
+        type: integer
+    QualityProjectId:
+      in: path
+      name: project_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    QualityRegionCode:
+      in: path
+      name: region_code
+      required: true
+      schema:
+        minLength: 1
+        type: string
+    QualityRolloutId:
+      in: path
+      name: rollout_id
+      required: true
+      schema:
+        minLength: 1
+        type: string
   schemas:
-    QualityStatus:
-      type: string
-      enum: [PASS, RISK, REJECT]
-    FindingSeverity:
-      type: string
-      enum: [info, warning, error]
-    QualityCode:
-      type: string
-      enum:
-        - QC_REQUIRED_TOPIC_MISSING
-        - QC_TIMESTAMP_DUPLICATE
-        - QC_TIMESTAMP_BACKWARD
-        - QC_FREQUENCY_LOW
-        - QC_GAP_EXCESSIVE
-        - QC_CONSECUTIVE_FRAMES_MISSING
-        - QC_LEADING_IDLE
-        - QC_TRAILING_IDLE
-        - QC_NO_COMMON_WINDOW
-        - QC_COVERAGE_LOW
-        - QC_IMAGE_BLACK
-        - QC_IMAGE_REPEATED
-        - QC_IMAGE_CORRUPT
-        - QC_JOINT_OUT_OF_RANGE
-        - QC_ACTION_MISSING
-        - QC_ACTION_JUMP
-        - QC_POINT_CLOUD_EMPTY
-        - QC_POINT_COUNT_ABNORMAL
-        - QC_MODALITY_OFFSET
-        - QC_COMPLETE_STEP_RATIO_LOW
-    AutoQualityProblemV1:
+    ActionQualityProfileV1:
+      additionalProperties: false
       properties:
+        dimension_mismatch_is_reject:
+          default: true
+          type: boolean
+        maximum_jump_reject:
+          default: null
+          exclusiveMinimum: 0
+          type:
+          - number
+          - 'null'
+        maximum_jump_risk:
+          default: null
+          exclusiveMinimum: 0
+          type:
+          - number
+          - 'null'
+        minimum_observation_count_reject:
+          default: 0
+          minimum: 0
+          type: integer
+        minimum_observation_count_risk:
+          default: 1
+          minimum: 0
+          type: integer
+        topic:
+          default: /action
+          type: string
+      required:
+      - topic
+      - minimum_observation_count_risk
+      - minimum_observation_count_reject
+      - maximum_jump_risk
+      - maximum_jump_reject
+      - dimension_mismatch_is_reject
+      type: object
+    AutoQualityProblemListV1:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AutoQualityProblemV1'
+          type: array
         schema_version:
+          const: auto-quality-problem-list/v1
+          default: auto-quality-problem-list/v1
           type: string
-          const: auto-quality-problem/v1
-          title: Schema Version
-          default: auto-quality-problem/v1
+        total:
+          minimum: 0
+          type: integer
+      required:
+      - items
+      - total
+      type: object
+    AutoQualityProblemV1:
+      additionalProperties: false
+      description: Latest failed automatic-QC result projected for the unified issue center.
+      properties:
+        data_package_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Data Package Id
+        end_ns:
+          pattern: ^[1-9][0-9]*$
+          title: End Ns
+          type: string
+        finding_codes:
+          items:
+            type: string
+          minItems: 1
+          title: Finding Codes
+          type: array
+        finding_count:
+          exclusiveMinimum: 0.0
+          title: Finding Count
+          type: integer
         id:
-          type: string
           pattern: ^qc_[0-9a-f]{32}$
           title: Id
-        source:
           type: string
-          const: AUTO_QC
-          title: Source
-          default: AUTO_QC
-        session_id:
-          anyOf:
-          - type: string
-            maxLength: 256
-            minLength: 1
-          - type: 'null'
-          title: Session Id
-        source_import_id:
-          anyOf:
-          - type: string
-            maxLength: 256
-            minLength: 1
-          - type: 'null'
-          title: Source Import Id
-        source_episode_index:
-          anyOf:
-          - type: integer
-            minimum: 0.0
-          - type: 'null'
-          title: Source Episode Index
-        recording_id:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Recording Id
+        message:
+          maxLength: 1000
+          minLength: 1
+          title: Message
+          type: string
         recording_episode_id:
           anyOf:
           - type: string
           - type: 'null'
           title: Recording Episode Id
-        rollout_id:
+        recording_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Id
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Report Sha256
           type: string
+        rollout_id:
           maxLength: 256
           minLength: 1
           title: Rollout Id
-        data_package_id:
+          type: string
+        schema_version:
+          const: auto-quality-problem/v1
+          default: auto-quality-problem/v1
+          title: Schema Version
+          type: string
+        session_id:
           anyOf:
-          - type: string
-            maxLength: 256
+          - maxLength: 256
             minLength: 1
+            type: string
           - type: 'null'
-          title: Data Package Id
-        status:
-          type: string
-          enum:
-          - RISK
-          - REJECT
-          title: Status
+          title: Session Id
         severity:
-          type: string
           enum:
           - HIGH
           - CRITICAL
           title: Severity
-        start_ns:
           type: string
+        source:
+          const: AUTO_QC
+          default: AUTO_QC
+          title: Source
+          type: string
+        source_episode_index:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Source Episode Index
+        source_import_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Source Import Id
+        start_ns:
           pattern: ^(?:0|[1-9][0-9]*)$
           title: Start Ns
-        end_ns:
           type: string
-          pattern: ^[1-9][0-9]*$
-          title: End Ns
-        message:
+        status:
+          enum:
+          - RISK
+          - REJECT
+          title: Status
           type: string
-          maxLength: 1000
-          minLength: 1
-          title: Message
-        finding_count:
-          type: integer
-          exclusiveMinimum: 0.0
-          title: Finding Count
-        finding_codes:
-          items:
-            type: string
-          type: array
-          minItems: 1
-          title: Finding Codes
         topics:
           items:
             type: string
-          type: array
           minItems: 1
           title: Topics
-        report_sha256:
-          type: string
-          pattern: ^[0-9a-f]{64}$
-          title: Report Sha256
+          type: array
         updated_at:
-          type: string
           format: date-time
           title: Updated At
-      additionalProperties: false
-      type: object
+          type: string
       required:
       - id
       - rollout_id
@@ -241,294 +214,627 @@ components:
       - report_sha256
       - updated_at
       title: AutoQualityProblemV1
-      description: Latest failed automatic-QC result projected for the unified issue center.
-    AutoQualityProblemListV1:
       type: object
+    CompleteStepProfileV1:
       additionalProperties: false
-      required: [items, total]
       properties:
-        schema_version: {type: string, const: auto-quality-problem-list/v1, default: auto-quality-problem-list/v1}
-        items:
-          type: array
-          items: {$ref: "#/components/schemas/AutoQualityProblemV1"}
-        total: {type: integer, minimum: 0}
+        minimum_ratio_reject:
+          default: 0.8
+          maximum: 1
+          minimum: 0
+          type: number
+        minimum_ratio_risk:
+          default: 0.98
+          maximum: 1
+          minimum: 0
+          type: number
+        topic:
+          default: __multimodal_step__
+          type: string
+      required:
+      - topic
+      - minimum_ratio_risk
+      - minimum_ratio_reject
+      type: object
     EvidenceScalar:
       anyOf:
-        - {type: boolean}
-        - {type: integer}
-        - {type: number}
-        - {type: string}
-    TopicTimingProfileV1:
-      type: object
-      additionalProperties: false
-      required:
-        - target_frequency_hz
-        - minimum_frequency_hz_risk
-        - minimum_frequency_hz_reject
-        - minimum_coverage_ratio_risk
-        - minimum_coverage_ratio_reject
-        - maximum_gap_ns_risk
-        - maximum_gap_ns_reject
-        - maximum_consecutive_missing_risk
-        - maximum_consecutive_missing_reject
-        - maximum_duplicate_timestamps_risk
-        - maximum_duplicate_timestamps_reject
-        - maximum_backward_timestamps_reject
-      properties:
-        target_frequency_hz: {type: number, exclusiveMinimum: 0, maximum: 1000, default: 30}
-        minimum_frequency_hz_risk: {type: number, minimum: 0, default: 27.0}
-        minimum_frequency_hz_reject: {type: number, minimum: 0, default: 22.5}
-        minimum_coverage_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0.98}
-        minimum_coverage_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.8}
-        maximum_gap_ns_risk: {type: integer, minimum: 0, default: 100000000}
-        maximum_gap_ns_reject: {type: integer, minimum: 0, default: 1000000000}
-        maximum_consecutive_missing_risk: {type: integer, minimum: 0, default: 2}
-        maximum_consecutive_missing_reject: {type: integer, minimum: 0, default: 29}
-        maximum_duplicate_timestamps_risk: {type: integer, minimum: 0, default: 0}
-        maximum_duplicate_timestamps_reject: {type: [integer, "null"], minimum: 0, default: null}
-        maximum_backward_timestamps_reject: {type: integer, minimum: 0, default: 0}
+      - type: boolean
+      - type: integer
+      - type: number
+      - type: string
+    FindingSeverity:
+      enum:
+      - info
+      - warning
+      - error
+      type: string
     ImageQualityProfileV1:
-      type: object
       additionalProperties: false
-      required:
-        - black_luma_threshold
-        - maximum_black_frame_ratio_risk
-        - maximum_black_frame_ratio_reject
-        - maximum_repeated_frame_ratio_risk
-        - maximum_repeated_frame_ratio_reject
-        - maximum_corrupt_frame_ratio_risk
-        - maximum_corrupt_frame_ratio_reject
       properties:
-        black_luma_threshold: {type: number, minimum: 0, maximum: 255, default: 5}
-        maximum_black_frame_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0.02}
-        maximum_black_frame_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.5}
-        maximum_repeated_frame_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0.05}
-        maximum_repeated_frame_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.5}
-        maximum_corrupt_frame_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0}
-        maximum_corrupt_frame_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0}
-    ActionQualityProfileV1:
+        black_luma_threshold:
+          default: 5
+          maximum: 255
+          minimum: 0
+          type: number
+        maximum_black_frame_ratio_reject:
+          default: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_black_frame_ratio_risk:
+          default: 0.02
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_corrupt_frame_ratio_reject:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_corrupt_frame_ratio_risk:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_repeated_frame_ratio_reject:
+          default: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_repeated_frame_ratio_risk:
+          default: 0.05
+          maximum: 1
+          minimum: 0
+          type: number
+      required:
+      - black_luma_threshold
+      - maximum_black_frame_ratio_risk
+      - maximum_black_frame_ratio_reject
+      - maximum_repeated_frame_ratio_risk
+      - maximum_repeated_frame_ratio_reject
+      - maximum_corrupt_frame_ratio_risk
+      - maximum_corrupt_frame_ratio_reject
       type: object
-      additionalProperties: false
-      required:
-        - topic
-        - minimum_observation_count_risk
-        - minimum_observation_count_reject
-        - maximum_jump_risk
-        - maximum_jump_reject
-        - dimension_mismatch_is_reject
-      properties:
-        topic: {type: string, default: /action}
-        minimum_observation_count_risk: {type: integer, minimum: 0, default: 1}
-        minimum_observation_count_reject: {type: integer, minimum: 0, default: 0}
-        maximum_jump_risk: {type: [number, "null"], exclusiveMinimum: 0, default: null}
-        maximum_jump_reject: {type: [number, "null"], exclusiveMinimum: 0, default: null}
-        dimension_mismatch_is_reject: {type: boolean, default: true}
-    PointCloudQualityProfileV1:
-      type: object
-      additionalProperties: false
-      required:
-        - minimum_point_count
-        - maximum_point_count
-        - maximum_empty_ratio_risk
-        - maximum_empty_ratio_reject
-        - maximum_abnormal_count_ratio_risk
-        - maximum_abnormal_count_ratio_reject
-      properties:
-        minimum_point_count: {type: [integer, "null"], minimum: 0, default: null}
-        maximum_point_count: {type: [integer, "null"], minimum: 0, default: null}
-        maximum_empty_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0}
-        maximum_empty_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.2}
-        maximum_abnormal_count_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0}
-        maximum_abnormal_count_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.5}
     ModalityOffsetProfileV1:
-      type: object
       additionalProperties: false
-      required: [maximum_p95_offset_ns_risk, maximum_p95_offset_ns_reject]
       properties:
-        maximum_p95_offset_ns_risk: {type: integer, minimum: 0, default: 20000000}
-        maximum_p95_offset_ns_reject: {type: integer, minimum: 0, default: 100000000}
-    CompleteStepProfileV1:
-      type: object
-      additionalProperties: false
-      required: [topic, minimum_ratio_risk, minimum_ratio_reject]
-      properties:
-        topic: {type: string, default: __multimodal_step__}
-        minimum_ratio_risk: {type: number, minimum: 0, maximum: 1, default: 0.98}
-        minimum_ratio_reject: {type: number, minimum: 0, maximum: 1, default: 0.8}
-    QualityProfileV1:
-      type: object
-      additionalProperties: false
+        maximum_p95_offset_ns_reject:
+          default: 100000000
+          minimum: 0
+          type: integer
+        maximum_p95_offset_ns_risk:
+          default: 20000000
+          minimum: 0
+          type: integer
       required:
-        - schema_version
-        - profile_id
-        - profile_version
-        - engine_version
-        - required_topics
-        - default_timing
-        - topic_timing
-        - default_image
-        - image_profiles
-        - joint_topic
-        - joint_limits
-        - joint_out_of_range_is_reject
-        - action
-        - default_point_cloud
-        - point_cloud_profiles
-        - modality_offset
-        - complete_step
+      - maximum_p95_offset_ns_risk
+      - maximum_p95_offset_ns_reject
+      type: object
+    PointCloudQualityProfileV1:
+      additionalProperties: false
       properties:
-        schema_version: {type: string, const: quality-profile/v1}
-        profile_id: {type: string, minLength: 1}
-        profile_version: {type: integer, minimum: 1}
-        engine_version: {type: string, minLength: 1, default: be06-qc/2}
+        maximum_abnormal_count_ratio_reject:
+          default: 0.5
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_abnormal_count_ratio_risk:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_empty_ratio_reject:
+          default: 0.2
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_empty_ratio_risk:
+          default: 0
+          maximum: 1
+          minimum: 0
+          type: number
+        maximum_point_count:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        minimum_point_count:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+      required:
+      - minimum_point_count
+      - maximum_point_count
+      - maximum_empty_ratio_risk
+      - maximum_empty_ratio_reject
+      - maximum_abnormal_count_ratio_risk
+      - maximum_abnormal_count_ratio_reject
+      type: object
+    QcFinding:
+      additionalProperties: false
+      properties:
+        code:
+          $ref: '#/components/schemas/QualityCode'
+        end_ns:
+          minimum: 0
+          type: integer
+        message:
+          type: string
+        observed:
+          $ref: '#/components/schemas/EvidenceScalar'
+        severity:
+          $ref: '#/components/schemas/FindingSeverity'
+        start_ns:
+          minimum: 0
+          type: integer
+        threshold:
+          $ref: '#/components/schemas/EvidenceScalar'
+        topic:
+          minLength: 1
+          type: string
+      required:
+      - code
+      - severity
+      - message
+      - topic
+      - start_ns
+      - end_ns
+      - observed
+      - threshold
+      type: object
+    QcReportV1:
+      additionalProperties: false
+      properties:
+        content_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        duration_ns:
+          minimum: 1
+          type: integer
+        end_ns:
+          minimum: 1
+          type: integer
+        engine_version:
+          type: string
+        findings:
+          items:
+            $ref: '#/components/schemas/QcFinding'
+          type: array
+        profile_id:
+          type: string
+        profile_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        rollout_id:
+          type: string
+        schema_version:
+          const: qc-report/v1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        start_ns:
+          minimum: 0
+          type: integer
+        status:
+          $ref: '#/components/schemas/QualityStatus'
+        topic_metrics:
+          items:
+            $ref: '#/components/schemas/TopicTimingMetricsV1'
+          type: array
+      required:
+      - schema_version
+      - rollout_id
+      - source_sha256
+      - profile_id
+      - profile_version
+      - profile_sha256
+      - engine_version
+      - start_ns
+      - end_ns
+      - duration_ns
+      - status
+      - topic_metrics
+      - findings
+      - content_sha256
+      type: object
+    QualityCode:
+      enum:
+      - QC_REQUIRED_TOPIC_MISSING
+      - QC_TIMESTAMP_DUPLICATE
+      - QC_TIMESTAMP_BACKWARD
+      - QC_FREQUENCY_LOW
+      - QC_GAP_EXCESSIVE
+      - QC_CONSECUTIVE_FRAMES_MISSING
+      - QC_LEADING_IDLE
+      - QC_TRAILING_IDLE
+      - QC_NO_COMMON_WINDOW
+      - QC_COVERAGE_LOW
+      - QC_IMAGE_BLACK
+      - QC_IMAGE_REPEATED
+      - QC_IMAGE_CORRUPT
+      - QC_JOINT_OUT_OF_RANGE
+      - QC_ACTION_MISSING
+      - QC_ACTION_JUMP
+      - QC_POINT_CLOUD_EMPTY
+      - QC_POINT_COUNT_ABNORMAL
+      - QC_MODALITY_OFFSET
+      - QC_COMPLETE_STEP_RATIO_LOW
+      type: string
+    QualityCompletedV1:
+      additionalProperties: false
+      properties:
+        engine_version:
+          type: string
+        event_version:
+          const: quality-completed/v1
+          type: string
+        profile_id:
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        rollout_id:
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        status:
+          $ref: '#/components/schemas/QualityStatus'
+      required:
+      - event_version
+      - rollout_id
+      - source_sha256
+      - profile_id
+      - profile_version
+      - engine_version
+      - status
+      - report_sha256
+      type: object
+    QualityProfileV1:
+      additionalProperties: false
+      properties:
+        action:
+          $ref: '#/components/schemas/ActionQualityProfileV1'
+        complete_step:
+          $ref: '#/components/schemas/CompleteStepProfileV1'
+        default_image:
+          $ref: '#/components/schemas/ImageQualityProfileV1'
+        default_point_cloud:
+          $ref: '#/components/schemas/PointCloudQualityProfileV1'
+        default_timing:
+          $ref: '#/components/schemas/TopicTimingProfileV1'
+        engine_version:
+          default: be06-qc/2
+          minLength: 1
+          type: string
+        image_profiles:
+          additionalProperties:
+            $ref: '#/components/schemas/ImageQualityProfileV1'
+          type: object
+        joint_limits:
+          additionalProperties:
+            items:
+              type: number
+            maxItems: 2
+            minItems: 2
+            type: array
+          type: object
+        joint_out_of_range_is_reject:
+          type: boolean
+        joint_topic:
+          minLength: 1
+          type: string
+        modality_offset:
+          $ref: '#/components/schemas/ModalityOffsetProfileV1'
+        point_cloud_profiles:
+          additionalProperties:
+            $ref: '#/components/schemas/PointCloudQualityProfileV1'
+          type: object
+        profile_id:
+          minLength: 1
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
         required_topics:
+          items:
+            minLength: 1
+            type: string
           type: array
           uniqueItems: true
-          items: {type: string, minLength: 1}
-        default_timing: {$ref: "#/components/schemas/TopicTimingProfileV1"}
+        schema_version:
+          const: quality-profile/v1
+          type: string
         topic_timing:
-          type: object
-          additionalProperties: {$ref: "#/components/schemas/TopicTimingProfileV1"}
-        default_image: {$ref: "#/components/schemas/ImageQualityProfileV1"}
-        image_profiles:
-          type: object
-          additionalProperties: {$ref: "#/components/schemas/ImageQualityProfileV1"}
-        joint_topic: {type: string, minLength: 1}
-        joint_limits:
-          type: object
           additionalProperties:
-            type: array
-            minItems: 2
-            maxItems: 2
-            items: {type: number}
-        joint_out_of_range_is_reject: {type: boolean}
-        action: {$ref: "#/components/schemas/ActionQualityProfileV1"}
-        default_point_cloud: {$ref: "#/components/schemas/PointCloudQualityProfileV1"}
-        point_cloud_profiles:
+            $ref: '#/components/schemas/TopicTimingProfileV1'
           type: object
-          additionalProperties: {$ref: "#/components/schemas/PointCloudQualityProfileV1"}
-        modality_offset: {$ref: "#/components/schemas/ModalityOffsetProfileV1"}
-        complete_step: {$ref: "#/components/schemas/CompleteStepProfileV1"}
-    TopicTimingMetricsV1:
-      type: object
-      additionalProperties: false
       required:
-        - topic
-        - message_count
-        - unique_frame_count
-        - expected_frame_count
-        - duplicate_count
-        - backward_count
-        - actual_frequency_hz
-        - interval_p50_ns
-        - interval_p95_ns
-        - interval_p99_ns
-        - maximum_gap_ns
-        - maximum_consecutive_missing
-        - coverage_ratio
-      properties:
-        topic: {type: string}
-        message_count: {type: integer, minimum: 0}
-        unique_frame_count: {type: integer, minimum: 0}
-        expected_frame_count: {type: integer, minimum: 1}
-        duplicate_count: {type: integer, minimum: 0}
-        backward_count: {type: integer, minimum: 0}
-        actual_frequency_hz: {type: number, minimum: 0}
-        interval_p50_ns: {type: [integer, "null"], minimum: 0}
-        interval_p95_ns: {type: [integer, "null"], minimum: 0}
-        interval_p99_ns: {type: [integer, "null"], minimum: 0}
-        maximum_gap_ns: {type: integer, minimum: 0}
-        maximum_consecutive_missing: {type: integer, minimum: 0}
-        coverage_ratio: {type: number, minimum: 0, maximum: 1}
-    QcFinding:
+      - schema_version
+      - profile_id
+      - profile_version
+      - engine_version
+      - required_topics
+      - default_timing
+      - topic_timing
+      - default_image
+      - image_profiles
+      - joint_topic
+      - joint_limits
+      - joint_out_of_range_is_reject
+      - action
+      - default_point_cloud
+      - point_cloud_profiles
+      - modality_offset
+      - complete_step
       type: object
-      additionalProperties: false
-      required: [code, severity, message, topic, start_ns, end_ns, observed, threshold]
-      properties:
-        code: {$ref: "#/components/schemas/QualityCode"}
-        severity: {$ref: "#/components/schemas/FindingSeverity"}
-        message: {type: string}
-        topic: {type: string, minLength: 1}
-        start_ns: {type: integer, minimum: 0}
-        end_ns: {type: integer, minimum: 0}
-        observed: {$ref: "#/components/schemas/EvidenceScalar"}
-        threshold: {$ref: "#/components/schemas/EvidenceScalar"}
-    QcReportV1:
-      type: object
-      additionalProperties: false
-      required:
-        - schema_version
-        - rollout_id
-        - source_sha256
-        - profile_id
-        - profile_version
-        - profile_sha256
-        - engine_version
-        - start_ns
-        - end_ns
-        - duration_ns
-        - status
-        - topic_metrics
-        - findings
-        - content_sha256
-      properties:
-        schema_version: {type: string, const: qc-report/v1}
-        rollout_id: {type: string}
-        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
-        profile_id: {type: string}
-        profile_version: {type: integer, minimum: 1}
-        profile_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
-        engine_version: {type: string}
-        start_ns: {type: integer, minimum: 0}
-        end_ns: {type: integer, minimum: 1}
-        duration_ns: {type: integer, minimum: 1}
-        status: {$ref: "#/components/schemas/QualityStatus"}
-        topic_metrics:
-          type: array
-          items: {$ref: "#/components/schemas/TopicTimingMetricsV1"}
-        findings:
-          type: array
-          items: {$ref: "#/components/schemas/QcFinding"}
-        content_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+    QualityStatus:
+      enum:
+      - PASS
+      - RISK
+      - REJECT
+      type: string
     QualitySummaryV1:
-      type: object
       additionalProperties: false
-      required:
-        - schema_version
-        - rollout_id
-        - source_sha256
-        - profile_id
-        - profile_version
-        - engine_version
-        - status
-        - report_sha256
       properties:
-        schema_version: {type: string, const: quality-summary/v1}
-        rollout_id: {type: string}
-        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
-        profile_id: {type: string}
-        profile_version: {type: integer, minimum: 1}
-        engine_version: {type: string}
-        status: {$ref: "#/components/schemas/QualityStatus"}
-        report_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
-    QualityCompletedV1:
+        engine_version:
+          type: string
+        profile_id:
+          type: string
+        profile_version:
+          minimum: 1
+          type: integer
+        report_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        rollout_id:
+          type: string
+        schema_version:
+          const: quality-summary/v1
+          type: string
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          type: string
+        status:
+          $ref: '#/components/schemas/QualityStatus'
+      required:
+      - schema_version
+      - rollout_id
+      - source_sha256
+      - profile_id
+      - profile_version
+      - engine_version
+      - status
+      - report_sha256
       type: object
+    TopicTimingMetricsV1:
       additionalProperties: false
-      required:
-        - event_version
-        - rollout_id
-        - source_sha256
-        - profile_id
-        - profile_version
-        - engine_version
-        - status
-        - report_sha256
       properties:
-        event_version: {type: string, const: quality-completed/v1}
-        rollout_id: {type: string}
-        source_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
-        profile_id: {type: string}
-        profile_version: {type: integer, minimum: 1}
-        engine_version: {type: string}
-        status: {$ref: "#/components/schemas/QualityStatus"}
-        report_sha256: {type: string, pattern: "^[0-9a-f]{64}$"}
+        actual_frequency_hz:
+          minimum: 0
+          type: number
+        backward_count:
+          minimum: 0
+          type: integer
+        coverage_ratio:
+          maximum: 1
+          minimum: 0
+          type: number
+        duplicate_count:
+          minimum: 0
+          type: integer
+        expected_frame_count:
+          minimum: 1
+          type: integer
+        interval_p50_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        interval_p95_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        interval_p99_ns:
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        maximum_consecutive_missing:
+          minimum: 0
+          type: integer
+        maximum_gap_ns:
+          minimum: 0
+          type: integer
+        message_count:
+          minimum: 0
+          type: integer
+        topic:
+          type: string
+        unique_frame_count:
+          minimum: 0
+          type: integer
+      required:
+      - topic
+      - message_count
+      - unique_frame_count
+      - expected_frame_count
+      - duplicate_count
+      - backward_count
+      - actual_frequency_hz
+      - interval_p50_ns
+      - interval_p95_ns
+      - interval_p99_ns
+      - maximum_gap_ns
+      - maximum_consecutive_missing
+      - coverage_ratio
+      type: object
+    TopicTimingProfileV1:
+      additionalProperties: false
+      properties:
+        maximum_backward_timestamps_reject:
+          default: 0
+          minimum: 0
+          type: integer
+        maximum_consecutive_missing_reject:
+          default: 29
+          minimum: 0
+          type: integer
+        maximum_consecutive_missing_risk:
+          default: 2
+          minimum: 0
+          type: integer
+        maximum_duplicate_timestamps_reject:
+          default: null
+          minimum: 0
+          type:
+          - integer
+          - 'null'
+        maximum_duplicate_timestamps_risk:
+          default: 0
+          minimum: 0
+          type: integer
+        maximum_gap_ns_reject:
+          default: 1000000000
+          minimum: 0
+          type: integer
+        maximum_gap_ns_risk:
+          default: 100000000
+          minimum: 0
+          type: integer
+        minimum_coverage_ratio_reject:
+          default: 0.8
+          maximum: 1
+          minimum: 0
+          type: number
+        minimum_coverage_ratio_risk:
+          default: 0.98
+          maximum: 1
+          minimum: 0
+          type: number
+        minimum_frequency_hz_reject:
+          default: 22.5
+          minimum: 0
+          type: number
+        minimum_frequency_hz_risk:
+          default: 27.0
+          minimum: 0
+          type: number
+        target_frequency_hz:
+          default: 30
+          exclusiveMinimum: 0
+          maximum: 1000
+          type: number
+      required:
+      - target_frequency_hz
+      - minimum_frequency_hz_risk
+      - minimum_frequency_hz_reject
+      - minimum_coverage_ratio_risk
+      - minimum_coverage_ratio_reject
+      - maximum_gap_ns_risk
+      - maximum_gap_ns_reject
+      - maximum_consecutive_missing_risk
+      - maximum_consecutive_missing_reject
+      - maximum_duplicate_timestamps_risk
+      - maximum_duplicate_timestamps_reject
+      - maximum_backward_timestamps_reject
+      type: object
+paths:
+  /api/v1/projects/{project_id}/quality-profiles:
+    post:
+      deprecated: true
+      operationId: createQualityProfileVersion
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QualityProfileV1'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityProfileV1'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Quality Profile
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}:
+    get:
+      operationId: getQualityProfileVersion
+      parameters:
+      - $ref: '#/components/parameters/QualityProjectId'
+      - $ref: '#/components/parameters/QualityProfileId'
+      - $ref: '#/components/parameters/QualityProfileVersion'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityProfileV1'
+          description: Immutable quality profile version
+        '404':
+          description: Quality profile version not found
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/regions/{region_code}/quality-problems:
+    get:
+      description: Expose latest RISK/REJECT reports as read-only unified issue-center rows.
+      operationId: listAutoQualityProblems
+      parameters:
+      - $ref: '#/components/parameters/QualityProjectId'
+      - $ref: '#/components/parameters/QualityRegionCode'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutoQualityProblemListV1'
+          description: Latest automatic quality problems for the scoped project and Region
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/quality:
+    get:
+      operationId: getRolloutQuality
+      parameters:
+      - $ref: '#/components/parameters/QualityProjectId'
+      - $ref: '#/components/parameters/QualityRegionCode'
+      - $ref: '#/components/parameters/QualityRolloutId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QcReportV1'
+          description: Latest persisted quality summary and its immutable full report
+        '404':
+          description: No persisted quality report exists for the rollout
+      tags:
+      - quality

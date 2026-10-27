@@ -39,6 +39,7 @@ def snapshot(
     ],
     service: Annotated[AnnotationLogicalService, Depends(application_service)],
     response: Response,
+    include_model: bool = False,
 ) -> AnnotationLogicalSnapshot:
     authorize_scope(auth, project_id, "annotation_task.read", region_code, organization_id)
     response.headers["Cache-Control"] = "no-store"
@@ -49,6 +50,7 @@ def snapshot(
             project_id=project_id,
             region_code=region_code,
             auth=auth,
+            include_model=include_model,
         )
     except KeyError as exc:
         raise problem(

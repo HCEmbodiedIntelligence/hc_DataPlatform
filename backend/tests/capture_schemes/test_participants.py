@@ -66,9 +66,15 @@ def test_add_after_start_retains_lock_old_mapping_and_snapshot_with_idempotent_r
             "tester",
         )
     assert exc.value.problem.code == "CAPTURE_PARTICIPANT_EXISTS"
-    with psycopg.connect(dsn) as db, pytest.raises(ProblemException) as exc:
-        plans.save_plan(db, scope, tasks[0], selection(reference, "robot-2", revision=2), "tester")
-    assert exc.value.problem.code == "CAPTURE_PLAN_LOCKED"
+    with psycopg.connect(dsn) as db:
+        changed = plans.save_plan(
+            db, scope, tasks[0], selection(reference, "robot-2", revision=2), "tester"
+        )
+        assert changed["revision"] == 3
+        assert [p["robot_id"] for p in changed["participants"]] == ["robot-2"]
+        assert (
+            plans.prepare_recording(db, scope, tasks[0], "robot-1", prepared, "tester") == original
+        )
 
 
 def test_addition_requires_verified_mapping_and_unarchived_scheme(environment):  # noqa: F811

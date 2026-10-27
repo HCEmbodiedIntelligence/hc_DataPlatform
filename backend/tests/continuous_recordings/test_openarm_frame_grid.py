@@ -13,9 +13,7 @@ from hc_data_platform.alignment.models import AlignmentProfileV1, AlignmentStrat
 from hc_data_platform.continuous_recordings.asset_models import SensorTimestampMode
 from hc_data_platform.continuous_recordings.openarm_grid import frame_time, slice_frame_time
 from hc_data_platform.continuous_recordings.processing import (
-    ContinuousEpisodeProcessingError,
     ContinuousEpisodeProcessingService,
-    _CompleteFrameWriter,
 )
 from hc_data_platform.verification.ports import RegisteredDecoderProbe
 
@@ -26,10 +24,9 @@ def test_native_mcap_slices_preserve_every_action(tmp_path, first, round_timesta
     _align(tmp_path, first, round_timestamps)
 
 
-def test_missing_action_aborts_before_fragment_commit(tmp_path):
-    with pytest.raises(ContinuousEpisodeProcessingError, match="missing required samples"):
-        _align(tmp_path, 1, True, missing_frame=3)
-    assert not list(tmp_path.rglob("*.arrow"))
+def test_missing_action_drops_one_frame_and_compacts_the_fragment(tmp_path):
+    _align(tmp_path, 1, True, missing_frame=3)
+    assert list(tmp_path.rglob("*.arrow"))
 
 
 def test_wrong_grid_is_not_silently_retimed():
@@ -105,12 +102,15 @@ def _align(tmp_path, first, rounded, missing_frame=None):
                 "/observation/state": AlignmentStrategy.LINEAR,
             },
         ),
-        writer=_CompleteFrameWriter(ArrowFragmentWriter(tmp_path / "arrow")),
+        writer=ArrowFragmentWriter(tmp_path / "arrow"),
+        drop_invalid=True,
     )
     table = ipc.open_file(Path(manifest.staging_uri.removeprefix("file://"))).read_all()
     rows = table.to_pylist()
-    assert len(rows) == 6 and all(row["sample_valid"] for row in rows)
-    for k, row in enumerate(rows, first):
+    retained = [k for k in range(first, first + 6) if k != missing_frame]
+    assert len(rows) == len(retained) and all(row["sample_valid"] for row in rows)
+    assert [row["step_index"] for row in rows] == list(range(len(retained)))
+    for k, row in zip(retained, rows, strict=True):
         modalities = json.loads(row["modalities_json"])
         for topic in topics:
             assert modalities[topic]["value"]["values"] == [k, k + 0.5]

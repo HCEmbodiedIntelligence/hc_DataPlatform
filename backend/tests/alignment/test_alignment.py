@@ -23,6 +23,27 @@ from hc_data_platform.alignment.models import AlignedRowV1, AlignedValueV1
 SHA = "c" * 64
 
 
+def test_streaming_compaction_hash_and_dense_indexes_cover_only_retained_frames():
+    from hc_data_platform.alignment.canonical import canonical_json_bytes
+
+    writer = FakeFragmentWriter()
+    stamps = [0, 66_666_666, 99_999_999]
+    manifest = AlignmentEngine().align_stream_to_writer(
+        rollout_id="r1", source_sha256=SHA, attempt_id="compact", start_ns=0, end_ns=133_333_333,
+        stream_kinds={"camera": ModalityKind.IMAGE},
+        samples=(("camera", TimedSampleV1(timestamp_ns=t, value=str(t))) for t in stamps),
+        target_timestamps=[0, 33_333_333, 66_666_666, 99_999_999],
+        profile=_profile({"camera"}, default_tolerance_ns=0), writer=writer, drop_invalid=True,
+    )
+    assert manifest.row_count == 3
+    assert [r.step_index for r in writer.rows] == [0, 1, 2]
+    assert [r.timestamp_ns for r in writer.rows] == stamps
+    assert all(r.sample_valid for r in writer.rows)
+    assert manifest.content_sha256 == hashlib.sha256(b"".join(
+        canonical_json_bytes(r.model_dump(mode="python")) + b"\n" for r in writer.rows
+    )).hexdigest()
+
+
 def _stream(kind: ModalityKind, samples: list[tuple[int, object]]) -> ModalityStreamV1:
     return ModalityStreamV1(
         kind=kind,

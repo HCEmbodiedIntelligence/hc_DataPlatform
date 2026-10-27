@@ -69,9 +69,14 @@ def apply_validity(steps: Iterable[StepRecord], metadata: dict[str, Any]) -> Ite
         # Optional unavailable axes do not invalidate unrelated required signals.
         required = {k for k, v in contract["features"].items() if v["required"]}
         mapping = feature_names(sorted(step.modalities))
-        required_valid = all(
-            valid.get(name, False) for name, target in mapping.items() if target in required
-        )
+        def required_validity(name, target):
+            declaration = contract["features"][target]
+            axes = declaration.get("required_axes")
+            if axes is None:
+                return valid.get(name, False)
+            return all(mask for axis, mask in zip(declaration["names"], masks[name], strict=True) if axis in axes)
+
+        required_valid = all(required_validity(name, target) for name, target in mapping.items() if target in required)
         yield step.model_copy(
             update={
                 "axis_validity": masks,

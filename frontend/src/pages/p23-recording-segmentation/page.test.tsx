@@ -32,6 +32,7 @@ const scope = {
 
 const recording: ContinuousRecording = {
   schema_version: "continuous-recording/v2",
+  default_task_labels: [],
   scope: {
     organization_id: scope.organizationId,
     project_id: scope.projectId,
@@ -143,6 +144,7 @@ function makeGateway(): RecordingGateway {
             source_recording_upload_id: recording.recording_upload_id,
             title: slice.title,
             task_label: slice.task_label,
+            task_labels: slice.task_labels,
             notes: slice.notes,
           })),
         },
@@ -274,6 +276,14 @@ afterEach(() => {
 });
 
 describe("P23 recording segmentation", () => {
+  it("starts video authorization while recording details are still loading", async () => {
+    const gateway = makeGateway();
+    vi.mocked(gateway.detail).mockImplementation(() => new Promise(() => {}));
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    await waitFor(() => expect(gateway.videoSources).toHaveBeenCalledWith(
+      scope, recording.recording_id, expect.any(AbortSignal),
+    ));
+  });
   it("switches original recordings in place, resets the player and keeps the chosen task filter", async () => {
     const { gateway, second } = makeSwitchingGateway();
     const user = userEvent.setup();
@@ -459,7 +469,7 @@ describe("P23 recording segmentation", () => {
       });
       renderPage(gateway, "/recordings/recording_three_hours/slice");
       expect(
-        await screen.findByRole("button", { name: "查看视频" }),
+        await screen.findByRole("button", { name: "预览 Episode 1" }),
       ).toBeVisible();
       expect(gateway.processing).not.toHaveBeenCalled();
       expect(screen.queryByText("质检明细")).not.toBeInTheDocument();
@@ -553,6 +563,7 @@ describe("P23 recording segmentation", () => {
           start_offset_ns: "0",
           end_offset_ns: "1000000000",
           title: "Episode 0001",
+          task_labels: [],
         },
       ],
     });
@@ -566,6 +577,149 @@ describe("P23 recording segmentation", () => {
     expect(vi.mocked(gateway.saveDraft).mock.calls[0]?.[2]).toEqual({
       slices: [],
     });
+  });
+
+  it("starts with a full episode description, preserves multiple labels when split, and saves edited bounds", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    const description =
+      "抓取桌面物体，放入容器，再将机械臂恢复到初始位置。".repeat(20);
+    vi.mocked(gateway.detail).mockResolvedValue({
+      data: { ...recording, default_task_labels: [description] },
+      current_slice_revision: null,
+    });
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    await user.click(await screen.findByRole("button", { name: "编辑 Episode 1" }));
+    expect(await screen.findByLabelText("任务描述标签 1")).toHaveValue(
+      description,
+    );
+    expect(screen.getByText("尚未保存")).toBeInTheDocument();
+    expect(screen.queryByText("已保存 r0")).not.toBeInTheDocument();
+    expect(
+      Number(
+        (
+          screen.getByRole("spinbutton", {
+            name: "开始（秒）",
+          }) as HTMLInputElement
+        ).value,
+      ),
+    ).toBe(0);
+    expect(
+      Number(
+        (
+          screen.getByRole("spinbutton", {
+            name: "结束（秒）",
+          }) as HTMLInputElement
+        ).value,
+      ),
+    ).toBe(10800);
+    await user.click(screen.getByRole("button", { name: "添加任务描述标签" }));
+    fireEvent.change(screen.getByLabelText("任务描述标签 2"), {
+      target: { value: "保持物体直立" },
+    });
+    await user.click(screen.getByRole("button", { name: "返回切片" }));
+    const playhead = screen.getByRole("slider", { name: "共享播放位置" });
+    for (let step = 0; step < 10; step++)
+      fireEvent.keyDown(playhead, { key: "ArrowRight" });
+    await user.click(screen.getByRole("button", { name: "播放头拆分" }));
+    await user.click(screen.getByRole("button", { name: "编辑 Episode 2" }));
+    expect(screen.getByLabelText("任务描述标签 1")).toHaveValue(description);
+    expect(screen.getByLabelText("任务描述标签 2")).toHaveValue("保持物体直立");
+    await user.click(screen.getByRole("button", { name: "返回切片" }));
+    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(gateway.saveDraft).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("已保存 r1")).toBeInTheDocument();
+    const saved = vi.mocked(gateway.saveDraft).mock.calls[0]![2].slices;
+    expect(saved.map((slice) => slice.task_labels)).toEqual([
+      [description, "保持物体直立"],
+      [description, "保持物体直立"],
+    ]);
+    expect(
+      saved.map((slice) => [slice.start_offset_ns, slice.end_offset_ns]),
+    ).toEqual([
+      ["0", "1000000000"],
+      ["1000000000", recording.duration_ns],
+    ]);
+  });
+
+  it("keeps manual splits compact and deletes their rows without saving until requested", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    vi.mocked(gateway.detail).mockResolvedValue({
+      data: { ...recording, default_task_labels: ["任务描述".repeat(200)] },
+      current_slice_revision: null,
+    });
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    await screen.findByRole("button", { name: "编辑 Episode 1" });
+    expect(screen.queryByLabelText("任务描述标签 1")).not.toBeInTheDocument();
+    const playhead = screen.getByRole("slider", { name: "共享播放位置" });
+    for (let split = 0; split < 2; split++) {
+      for (let step = 0; step < 10; step++)
+        fireEvent.keyDown(playhead, { key: "ArrowRight" });
+      await user.click(screen.getByRole("button", { name: "播放头拆分" }));
+    }
+    expect(screen.getByText("有未保存修改")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "编辑 Episode 3" }));
+    fireEvent.keyDown(screen.getByLabelText("任务描述标签 1"), { key: "Delete" });
+    expect(screen.getAllByRole("button", { name: /^删除 Episode \d+$/ })).toHaveLength(3);
+    await user.click(screen.getByRole("button", { name: "返回切片" }));
+
+    await user.click(screen.getByRole("button", { name: "删除 Episode 1" }));
+    await user.click(screen.getByRole("button", { name: "编辑 Episode 2" }));
+    expect(
+      Number((screen.getByRole("spinbutton", { name: "开始（秒）" }) as HTMLInputElement).value),
+    ).toBe(2);
+    await user.click(screen.getByRole("button", { name: "删除此片段" }));
+    await user.click(screen.getByRole("button", { name: "编辑 Episode 1" }));
+    expect(
+      Number((screen.getByRole("spinbutton", { name: "开始（秒）" }) as HTMLInputElement).value),
+    ).toBe(1);
+    await user.click(screen.getByRole("button", { name: "返回切片" }));
+    await user.click(screen.getByRole("button", { name: "删除 Episode 1" }));
+    expect(screen.getByText("还没有 Episode")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除选中的 Episode" })).not.toBeInTheDocument();
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+    expect(gateway.finalize).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(gateway.saveDraft).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(gateway.saveDraft).mock.calls[0]![2].slices).toEqual([]);
+  });
+
+  it("preserves explicit label deletion after saving and reopening a draft", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    const draft = await gateway.saveDraft(
+      scope,
+      recording.recording_id,
+      {
+        slices: [
+          {
+            episode_id: "episode_0001",
+            start_offset_ns: "0",
+            end_offset_ns: "1000000000",
+            task_labels: [],
+          },
+        ],
+      },
+      recording.etag,
+    );
+    vi.mocked(gateway.saveDraft).mockClear();
+    vi.mocked(gateway.detail).mockResolvedValue({
+      data: { ...draft.recording, default_task_labels: ["任务原描述"] },
+      current_slice_revision: draft.revision,
+    });
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    await user.click(await screen.findByRole("button", { name: "编辑 Episode 1" }));
+    await screen.findByRole("button", { name: "添加任务描述标签" });
+    expect(screen.queryByLabelText("任务描述标签 1")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "返回切片" }));
+    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(gateway.saveDraft).toHaveBeenCalledTimes(1));
+    expect(
+      vi.mocked(gateway.saveDraft).mock.calls[0]![2].slices[0]?.task_labels,
+    ).toEqual([]);
   });
 
   it("creates a second Episode independently of the first", async () => {
@@ -631,7 +785,7 @@ describe("P23 recording segmentation", () => {
     expect(screen.getByLabelText("front 媒体")).toBeVisible();
     expect(screen.getByLabelText("front_depth 媒体")).toBeVisible();
     await markFirstSlice(user);
-    await user.click(screen.getByRole("button", { name: "查看视频" }));
+    await user.click(screen.getByRole("button", { name: "预览 Episode 1" }));
     const preview = within(await screen.findByRole("dialog"));
     const previewSelect = preview.getByRole("combobox", { name: "显示视频" });
     expect(previewSelect).toHaveValue("__quad__");
@@ -677,6 +831,7 @@ describe("P23 recording segmentation", () => {
         start_offset_ns: "0",
         end_offset_ns: recording.duration_ns,
         title: "完整录制",
+        task_labels: [],
       },
     ]);
     await user.click(
@@ -685,6 +840,8 @@ describe("P23 recording segmentation", () => {
     expect(screen.queryByText("切片已最终提交")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "提交成片" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "删除选中的 Episode" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除 Episode 1" })).toBeDisabled();
     expect(gateway.processing).not.toHaveBeenCalled();
   });
 });

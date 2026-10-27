@@ -41,6 +41,14 @@ def get_format(name):
 
 
 def from_archive(archive):
+    if archive == "mcap_collection_zip/1":
+        return ExportFormat("mcap", archive, "MCAP（历史原话题）", False, legacy_mcap, True, "mcap/1")
+    if archive == "mcap_collection_zip/2":
+        return ExportFormat("mcap", archive, "MCAP（历史断段策略）", False, legacy_selected_mcap,
+                            reader_version="hc-selected-mcap/2")
+    if archive == "holobrain_collection_zip/1":
+        return ExportFormat("holobrain", archive, "HoloBrain（历史断段策略）", False, legacy_holobrain,
+                            reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1")
     for adapter in _FORMATS.values():
         if adapter.archive == archive:
             return adapter
@@ -73,9 +81,31 @@ def lerobot(root, selections, *, storage, modalities, checkpoint, processor_vers
 
 
 def mcap(root, selections, *, storage, modalities, checkpoint):
-    from .original_export import write_mcap_collection
+    from .normalized_export import write_mcap_collection
 
     return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint)
+
+
+def legacy_mcap(root, selections, *, storage, modalities, checkpoint):
+    from .original_export import write_mcap_collection
+    return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint)
+
+
+def legacy_selected_mcap(root, selections, *, storage, modalities, checkpoint):
+    from .normalized_export import write_mcap_collection
+    return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint,
+                                 compact_invalid=False)
+
+
+def holobrain(root, selections, *, storage, modalities, checkpoint):
+    from .holobrain_export import write_collection
+    return write_collection(root, selections, storage=storage, modalities=modalities, checkpoint=checkpoint)
+
+
+def legacy_holobrain(root, selections, *, storage, modalities, checkpoint):
+    from .holobrain_export import write_collection
+    return write_collection(root, selections, storage=storage, modalities=modalities,
+                            checkpoint=checkpoint, compact_invalid=False)
 
 
 def original(root, selections, *, storage, modalities, checkpoint):
@@ -97,12 +127,13 @@ register(
 register(
     ExportFormat(
         "mcap",
-        "mcap_collection_zip/1",
+        "mcap_collection_zip/3",
         "MCAP",
         False,
         mcap,
-        originals=True,
-        reader_version="mcap/1",
+        reader_version="hc-selected-mcap/2",
     )
 )
 register(ExportFormat("original", "original_collection_zip/1", "原始文件", False, original, True))
+register(ExportFormat("holobrain", "holobrain_collection_zip/2", "HoloBrain（19维，含腰部）", False, holobrain,
+                      reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1"))

@@ -3,6 +3,7 @@ import { readableFallback } from "../../../shared/lib/resource-labels";
 import { createDatasetPackageMediaSource } from "../../datasets/episodes/package-media-source";
 import {
   loadAnnotationLogicalData,
+  requestAnnotationLogicalSnapshot,
   type AnnotationLogicalData,
 } from "./logical-data";
 import {
@@ -161,6 +162,9 @@ export interface RuntimeAnnotationCommands {
   readonly claim: (
     task: RuntimeAnnotationTask,
   ) => Promise<RuntimeAnnotationTask>;
+  readonly reopen: (
+    task: RuntimeAnnotationTask,
+  ) => Promise<RuntimeAnnotationRevision>;
   readonly restoreRevision: (
     task: RuntimeAnnotationTask,
     targetRevision: number,
@@ -497,35 +501,38 @@ export async function loadRuntimeAnnotationBundle(
   taskId: string,
   mode: AnnotationWorkbenchMode,
   signal?: AbortSignal,
+  knownTasks?: readonly RuntimeAnnotationTask[],
 ): Promise<RuntimeAnnotationBundle> {
-  const [task, tasks] = await Promise.all([
-    getRuntimeAnnotationTask(scope, taskId, signal),
-    listRuntimeAnnotationTasks(scope, signal),
+  // Task-id requests start together. A navigator hint also starts immutable
+  // schema/package reads immediately; history remains authoritative for edits.
+  const historyRequest = getRuntimeAnnotationHistory(scope, taskId, signal);
+  const logicalRequest = requestAnnotationLogicalSnapshot(scope, taskId, signal);
+  void logicalRequest.catch(() => undefined);
+  const hint = knownTasks?.find(task => task.task_id === taskId);
+  const taskReady = hint ? Promise.resolve(hint) : historyRequest.then(value => value.task);
+  const [history, tasks, draft, details] = await Promise.all([
+    historyRequest,
+    knownTasks ? Promise.resolve(knownTasks) : listRuntimeAnnotationTasks(scope, signal),
+    mode === "annotation" ? getRuntimeAnnotationDraftOrNull(scope, taskId, signal) : Promise.resolve(null),
+    taskReady.then(async task => {
+      assertTaskIdentity(task, scope, taskId);
+      const manifestRequest = (checkedAnnotationRef(scope, task)
+        ? Promise.resolve(null) : loadManifestForTask(scope, task, signal))
+        .then(manifest => ({ manifest, manifestIssue: null as DomainError | null }))
+        .catch((error: unknown) => ({ manifest: null, manifestIssue: asDomainError(error, "数据清单加载失败。") }));
+      const [schema, manifestResult, datasetVersion, logical] = await Promise.all([
+        getRuntimeTagSchema(scope, task, signal), manifestRequest,
+        getRuntimeDatasetVersion(scope, task, signal),
+        loadAnnotationLogicalData(scope, task, signal, logicalRequest),
+      ]);
+      return { schema, manifestResult, datasetVersion, logical };
+    }),
   ]);
-  const ref = checkedAnnotationRef(scope, task);
-  const manifestPromise = (
-    ref ? Promise.resolve(null) : loadManifestForTask(scope, task, signal)
-  )
-    .then((manifest) => ({
-      manifest,
-      manifestIssue: null as DomainError | null,
-    }))
-    .catch((error: unknown) => ({
-      manifest: null,
-      manifestIssue: asDomainError(error, "数据清单加载失败。"),
-    }));
-  const [draft, history, schema, manifestResult, datasetVersion, logical] =
-    await Promise.all([
-      mode === "annotation"
-        ? getRuntimeAnnotationDraftOrNull(scope, taskId, signal)
-        : Promise.resolve(null),
-      getRuntimeAnnotationHistory(scope, taskId, signal),
-      getRuntimeTagSchema(scope, task, signal),
-      manifestPromise,
-      getRuntimeDatasetVersion(scope, task, signal),
-      loadAnnotationLogicalData(scope, task, signal),
-    ]);
+  const task = history.task;
+  assertTaskIdentity(task, scope, taskId);
+  const { schema, manifestResult, datasetVersion, logical } = details;
   if (
+    (hint !== undefined && !sameAnnotationBinding(hint, task)) ||
     history.task.task_id !== task.task_id ||
     schema.project_id !== task.project_id ||
     schema.schema_id !== task.tag_schema_id ||
@@ -603,6 +610,59 @@ export async function saveRuntimeAnnotationDraft(
     revision.tag_schema_version !== task.tag_schema_version
   ) {
     contractMismatch("保存后的修订与当前任务或标签结构不一致。");
+  }
+  return revision;
+}
+
+/** Start a new draft from the approved snapshot; historic reviews stay immutable. */
+export async function reopenRuntimeAnnotationTask(
+  scope: RuntimeAnnotationScope,
+  task: RuntimeAnnotationTask,
+): Promise<RuntimeAnnotationRevision> {
+  assertTaskIdentity(task, scope, task.task_id);
+  if (
+    task.status !== "APPROVED" ||
+    task.approved_revision !== task.current_revision
+  ) {
+    contractMismatch("只有标注完成的当前版本可以重新打开修改，请刷新任务状态。");
+  }
+  const source = await request<RuntimeAnnotationRevision>({
+    method: "GET",
+    path: `/annotation-tasks/${encoded(task.task_id)}/revisions/${task.current_revision}`,
+    scope: scopeForRequest(scope),
+  });
+  if (
+    source.task_id !== task.task_id ||
+    source.revision !== task.current_revision ||
+    !sameAnnotationBinding(task, source) ||
+    source.tag_schema_id !== task.tag_schema_id ||
+    source.tag_schema_version !== task.tag_schema_version
+  ) {
+    contractMismatch("已完成的标注版本与当前任务不一致，请刷新后重试。");
+  }
+  const body = {
+    client_mutation_id: createClientMutationId("reopen"),
+    expected_revision: task.current_revision,
+    // Operations are incremental. The new draft inherits all existing ranges.
+    operations: [],
+    tags: [...source.tags],
+  } satisfies components["schemas"]["SaveDraftRequest"];
+  const revision = await request<RuntimeAnnotationRevision>({
+    method: "POST",
+    path: `/annotation-tasks/${encoded(task.task_id)}/revisions`,
+    scope: scopeForRequest(scope),
+    ifMatch: task.etag,
+    body,
+  });
+  if (
+    revision.task_id !== task.task_id ||
+    revision.revision !== task.current_revision + 1 ||
+    revision.parent_revision !== task.current_revision ||
+    !sameAnnotationBinding(task, revision) ||
+    revision.tag_schema_id !== task.tag_schema_id ||
+    revision.tag_schema_version !== task.tag_schema_version
+  ) {
+    contractMismatch("重新打开标注后未返回预期的新草稿版本。");
   }
   return revision;
 }
@@ -859,6 +919,7 @@ export function createRuntimeAnnotationCommands(
         comment,
       ),
     claim: (task) => claimRuntimeAnnotationTask(scope, task),
+    reopen: (task) => reopenRuntimeAnnotationTask(scope, task),
     restoreRevision: (task, targetRevision) =>
       restoreRuntimeAnnotationRevision(scope, task, targetRevision),
   };

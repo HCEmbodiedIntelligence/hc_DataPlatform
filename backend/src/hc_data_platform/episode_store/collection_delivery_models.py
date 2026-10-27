@@ -82,7 +82,7 @@ class CollectionDeliveryPlan(FrozenModel):
     annotation_selection: Literal["per_episode_fixed_selection"] = "per_episode_fixed_selection"
     contract_sha256: Digest
     processor_version: Literal[
-        "hc-lerobot-collection/1", "hc-lerobot-collection/2", "hc-export/1"
+        "hc-lerobot-collection/1", "hc-lerobot-collection/2", "hc-lerobot-collection/3", "hc-lerobot-collection/4", "hc-export/1"
     ] = "hc-lerobot-collection/1"
     archive_version: Literal["hc-collection-archive/1"] = "hc-collection-archive/1"
     reader_version: str = "lerobot/0.6.1"

@@ -133,7 +133,7 @@ it("does not submit or load processing controls without permission", () => {
 it("shows MCAP preparation errors and retries the stored source", async () => {
   let retried = false;
   vi.mocked(request).mockImplementation(async (input) => {
-    if (input.path.endsWith("/mcap-versions")) return { items: [] };
+    if (input.path.endsWith("/mcap-plan-versions")) return { items: [] };
     if (input.path.endsWith(":process-mcap") && input.method === "POST") {
       retried = true;
       return {};

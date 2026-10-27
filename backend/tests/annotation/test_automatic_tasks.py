@@ -48,6 +48,8 @@ def _request(**changes: object) -> AutomaticAnnotationRequest:
 
 
 def _publish_compatible_schema(repository: InMemoryAutomaticAnnotationRepository) -> None:
+    from hc_data_platform.annotation.validation import schema_content_hash
+
     draft = TagSchemaVersion(
         schema_id="schema-1",
         project_id="project-a",
@@ -72,6 +74,7 @@ def _publish_compatible_schema(repository: InMemoryAutomaticAnnotationRepository
         content_hash="a" * 64,
         created_by="schema-author",
     )
+    draft = draft.model_copy(update={"content_hash": schema_content_hash(draft.document)})
     repository.create_tag_schema_version(draft)
     assert repository.publish_tag_schema_version(
         draft,
@@ -144,6 +147,40 @@ def test_concurrent_replay_has_one_task_with_immutable_lance_and_schema_lineage(
         sum(event["action"] == "annotation.task.created" for event in repository.automatic_audit)
         == 1
     )
+
+
+def test_slice_descriptions_are_saved_as_full_episode_tags_and_remain_editable() -> None:
+    from hc_data_platform.annotation.models import AnnotationActor
+    from hc_data_platform.annotation.validation import revision_content_hash, validate_tag_revision
+
+    repository = InMemoryAutomaticAnnotationRepository()
+    _publish_compatible_schema(repository)
+    automatic = AutomaticAnnotationTaskService(repository)
+    description = "将物体放入盒子后回到起始位置。" * 40
+    request = _request(task_labels=(description, "保持物体直立", description))
+    task = automatic.ensure_task(request)
+    aggregate = repository.get(task.task_id)
+    initial = aggregate.revisions[0]
+    assert [tag.label for tag in initial.tags] == [description, "保持物体直立"]
+    assert all((tag.start_step, tag.end_step) == (0, request.base_step_count) for tag in initial.tags)
+    assert len({tag.annotation_id for tag in initial.tags}) == 2
+    schema = repository.get_tag_schema_version(schema_id=task.tag_schema_id, version=task.tag_schema_version)
+    validate_tag_revision(tags=initial.tags, operations=(), schema=schema, base_step_count=task.base_step_count)
+    assert initial.content_hash == revision_content_hash(
+        base_lance_version=request.lance_version, data_ref=None,
+        tag_schema_id=task.tag_schema_id, tag_schema_version=task.tag_schema_version,
+        tags=initial.tags, operations=(),
+    )
+    actor = AnnotationActor(actor_id="editor", project_ids=frozenset({request.project_id}),
+                            capabilities=frozenset({"annotation_task.claim", "annotation_task.read", "annotation.save"}))
+    service = AnnotationService(repository)
+    claimed = service.claim(task.task_id, actor)
+    saved = service.save_draft(task.task_id, actor, (), tags=(), expected_revision=0,
+                              if_match=claimed.etag, client_mutation_id="clear-defaults")
+    assert saved.tags == ()
+    automatic.ensure_task(request)
+    assert service.get_draft(task.task_id, actor).tags == ()
+    assert repository.get(task.task_id).revisions[0].tags == initial.tags
 
 
 def _scoped_auth(

@@ -92,15 +92,6 @@ def _manifest() -> RolloutManifestV1:
     )
 
 
-def _profile(manifest: RolloutManifestV1) -> QualityProfileV1:
-    return QualityProfileV1(
-        profile_id="manifest-30hz",
-        required_topics=frozenset(manifest.expected_topics),
-        action={
-            "minimum_observation_count_risk": 0,
-            "minimum_observation_count_reject": 0,
-        },
-    )
 
 
 def _frozen(manifest, dataset):
@@ -160,7 +151,6 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
                 preflight.manifest_fingerprint,
                 preflight.model_dump(mode="json"),
             ),
-            [(_profile(manifest).model_dump(mode="json"),)],
             (_frozen(manifest, "dataset_ab"),),
         ]
     )
@@ -174,6 +164,7 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
     projection_connections = (_Connection([projection_row]),)
     connections = iter((plan_connection, *projection_connections))
     catalog = InMemoryLanceCatalog()
+    catalog.resolve_capture_schema = lambda snapshot: snapshot
     storage = _Storage()
     projection_store = LocalProjectionArtifactStore(tmp_path / "projection-store")
     resolver = PostgresIngestWorkflowInputResolver(
@@ -232,7 +223,8 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
     assert request.organization_id == "organization-a"
     assert request.verification.organization_id == "organization-a"
     assert request.alignment.schema_snapshot_id.startswith("capture-")
-    assert request.quality.profile.profile_id == "manifest-30hz"
+    assert request.quality.profile.profile_id.startswith("capture-scheme-")
+    assert all("FROM quality_profiles" not in query for query, _ in plan_connection._cursor.executions)
     assert request.quality.data is None
     assert request.alignment.data is None
     assert request.quality.source == request.alignment.source
@@ -268,7 +260,7 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
     assert catalog._schemas[("project-a", "dataset_ab")].fields["/camera/front/image"] == "json"
     assert catalog._schemas[("project-a", "dataset_ab")].fields["/joint_states"] == "json"
     assert catalog._schemas[("project-a", "dataset_ab")].fields["/action"] == "json"
-    assert plan_connection._cursor.executions[2][1] == (
+    assert plan_connection._cursor.executions[1][1] == (
         "organization-a",
         "project-a",
         "region-a",
@@ -278,66 +270,8 @@ def test_resolver_localizes_raw_once_without_projection_arrow_for_quality_alignm
     assert all("annotation." not in query for query, _ in plan_connection._cursor.executions)
 
 
-def test_resolver_fails_closed_when_quality_plan_is_ambiguous() -> None:
-    manifest = _manifest()
-    preflight = preflight_manifest(manifest)
-    profile = _profile(manifest).model_dump(mode="json")
-    connection = _Connection(
-        [
-            (
-                "raw/legal.mcap",
-                "raw/rollout_manifest.json",
-                manifest.sha256,
-                preflight.manifest_fingerprint,
-                preflight.model_dump(mode="json"),
-            ),
-            [(profile,), ({**profile, "profile_id": "another-profile"},)],
-        ]
-    )
-    resolver = PostgresIngestWorkflowInputResolver(
-        lambda: connection,
-        _Storage(),
-        InMemoryLanceCatalog(),
-    )
-
-    token = bind_request_context(
-        RequestContext(
-            organization_id="organization-a",
-            project_id="project-a",
-            region_code="region-a",
-            service_identity=True,
-        )
-    )
-    try:
-        with pytest.raises(IngestWorkflowPlanBlocked, match="exactly one quality profile"):
-            resolver.resolve(
-                project_id="project-a",
-                region_code="region-a",
-                session_id="session-a",
-                rollout_id="rollout-a",
-                data_package_id="package-a",
-            )
-    finally:
-        reset_request_context(token)
 
 
-def test_resolver_uses_latest_profile_version_without_losing_immutable_history() -> None:
-    manifest = _manifest()
-    old = _profile(manifest).model_copy(update={"engine_version": "be06-qc/1"})
-    current = _profile(manifest).model_copy(update={"profile_version": 2})
-    cursor = _Cursor([[(current.model_dump(mode="json"),), (old.model_dump(mode="json"),)]])
-    token = bind_request_context(
-        RequestContext(
-            organization_id="organization-a", project_id="project-a", service_identity=True
-        )
-    )
-    try:
-        selected = PostgresIngestWorkflowInputResolver._quality_profile(
-            cursor, "project-a", preflight_manifest(manifest)
-        )
-    finally:
-        reset_request_context(token)
-    assert selected == current
 
 
 def test_resolver_routes_by_frozen_recording_without_annotation_binding() -> None:
@@ -352,11 +286,11 @@ def test_resolver_routes_by_frozen_recording_without_annotation_binding() -> Non
                 preflight.manifest_fingerprint,
                 preflight.model_dump(mode="json"),
             ),
-            [(_profile(manifest).model_dump(mode="json"),)],
             (_frozen(manifest, "dataset_mcap"),),
         ]
     )
     catalog = InMemoryLanceCatalog()
+    catalog.resolve_capture_schema = lambda snapshot: snapshot
     catalog.register_schema(
         DatasetSchemaSnapshot.create(
             project_id="project-a",
@@ -395,7 +329,7 @@ def test_resolver_routes_by_frozen_recording_without_annotation_binding() -> Non
     assert request.dataset_id == "dataset_mcap"
     assert request.alignment.schema_snapshot_id.startswith("capture-")
     assert catalog.schema_for("project-a", "dataset_mcap") is not None
-    assert connection._cursor.executions[2][1] == (
+    assert connection._cursor.executions[1][1] == (
         "organization-a",
         "project-a",
         "region-a",
@@ -417,7 +351,6 @@ def test_resolver_fails_closed_when_recording_has_no_frozen_plan() -> None:
                 preflight.manifest_fingerprint,
                 preflight.model_dump(mode="json"),
             ),
-            [(_profile(manifest).model_dump(mode="json"),)],
             None,
         ]
     )

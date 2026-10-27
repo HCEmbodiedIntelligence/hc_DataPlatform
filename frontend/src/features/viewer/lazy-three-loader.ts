@@ -8,7 +8,15 @@ export interface RobotSceneAssets {
   readonly manifest: RobotSceneManifest;
   readonly urdfUrl: string;
   readonly urdfPath?: string;
+  /** Available only after current scope/manifest grants have been validated. */
+  readonly parsedCacheKey?: string;
   readonly assetUrls?: Readonly<Record<string, string>>;
+  readonly prepare?: (signal: AbortSignal) => Promise<{
+    urdfUrl: string;
+    assetUrls: Readonly<Record<string, string>>;
+    glbUrls?: readonly string[];
+    release(): void;
+  }>;
   readonly packages?:
     | string
     | Readonly<Record<string, string>>

@@ -92,6 +92,17 @@ export function JointFields({
                 }}
               />
               <Space size={2}>
+                <Select
+                  aria-label={`${name} 第${i + 1}轴缺失策略`}
+                  disabled={disabled}
+                  value={(f.required_axes ?? names).includes(axis) ? "required" : "optional"}
+                  style={{ minWidth: 110 }}
+                  options={[{ value: "required", label: "必需" }, { value: "optional", label: "允许缺失" }]}
+                  onChange={(policy) => onChange({ ...f,
+                    required_axes: names.filter((n) => n === axis ? policy === "required" : (f.required_axes ?? names).includes(n)),
+                    validity_feature: f.validity_feature || `${name}.valid`,
+                  })}
+                />
                 <Button
                   aria-label={`${name} 第${i + 1}轴上移`}
                   title="上移"
@@ -120,6 +131,7 @@ export function JointFields({
                         names: names.filter((_, n) => n !== i),
                         units: f.units.filter((_, n) => n !== i),
                         shape: [names.length - 1],
+                        required_axes: f.required_axes?.filter((n) => n !== axis),
                       })
                     }
                   />

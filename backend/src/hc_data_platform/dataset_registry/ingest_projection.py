@@ -92,6 +92,20 @@ class PostgresDatasetIngestProjector:
             steps=episode_packages.steps if episode_packages else None,
         )
 
+    def _frequency_matches(self, version, frequency_hz):
+        if version.frequency_hz == frequency_hz:
+            return True
+        if not isinstance(version, CollectionVersion) or self._episode_packages is None:
+            return False
+        schema = self._episode_packages.schemas.schema_for(
+            version.project_id, version.dataset_id, version.schema_snapshot_id
+        )
+        # Versioned structure keeps a nominal schema rate. The package reader
+        # below verifies this recording's actual rate and source frame timeline.
+        return (schema.semantic_contract or {}).get("algorithm") in {
+            "capture-structure/v2", "capture-structure/v3"
+        }
+
     def _commit_matches(
         self,
         source: IngestProjectionSourceV1 | ContinuousEpisodeProjectionSourceV1,
@@ -161,7 +175,7 @@ class PostgresDatasetIngestProjector:
             or version.version != ready.dataset_version
             or not self._commit_matches(source, version, ready)
             or version.schema_snapshot_id != schema_snapshot_id
-            or version.frequency_hz != frequency_hz
+            or not self._frequency_matches(version, frequency_hz)
             or ready.project_id != source.project_id
             or ready.rollout_id != source.rollout_id
             or ready.source_sha256 != source.source_sha256
@@ -295,7 +309,7 @@ class PostgresDatasetIngestProjector:
             or version.version != ready.dataset_version
             or not self._commit_matches(source, version, ready)
             or version.schema_snapshot_id != schema_snapshot_id
-            or version.frequency_hz != frequency_hz
+            or not self._frequency_matches(version, frequency_hz)
             or ready.project_id != source.project_id
             or ready.rollout_id != source.rollout_id
             or ready.source_sha256 != source.source_sha256

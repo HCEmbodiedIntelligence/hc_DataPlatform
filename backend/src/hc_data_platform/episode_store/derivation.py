@@ -30,6 +30,7 @@ from .depth_window import PARENT_TIME_VERSION, prepare_depth_window
 from .derivation_models import TagEpisodePlan
 from .derivation_quality import AUTO_QUALITY, evaluate_tag_quality, freeze_quality
 from .errors import PackageConflict
+from .frame_mapping import package_mapping
 from .frame_window import DepthWindow
 from .models import canonical
 from .prepared_assets import PreparedVideo
@@ -141,7 +142,7 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
             display_name=plan.display_name,
             quality_contract=plan.encoding.get("quality"),
         )
-        != plan
+        .model_copy(update={"processor_version": plan.processor_version}) != plan
     ):
         raise PackageConflict("Tag derivation timestamps/schema differ from the verified parent")
     root = Path(root)
@@ -186,7 +187,9 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
                 output.write_table(table)
                 mapping.write_table(pa.Table.from_pylist(trace, schema=mapping_schema))
                 for key, moments in numeric.items():
-                    moments.add(table[key].to_pylist())
+                    values = [r[key] for r in pending if r.get("hc.valid." + key, True)]
+                    if values:
+                        moments.add(values)
                 pending.clear()
                 trace.clear()
 
@@ -214,6 +217,9 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
                     timestamp=seen / fps,
                     task_index=task_map[row["task_index"]],
                 )
+                if plan.processor_version != "hc-tag-episode/1" and "hc.video_frame_index" in row:
+                    row["hc.video_frame_index"] = seen
+                    row["hc.video_timestamp"] = seen / fps
                 if seen == 0:
                     for key in row:
                         if key.startswith("hc.repeated."):
@@ -241,7 +247,13 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
     }
     modalities = package.document("hc/modalities.json")
     receipts = []
-    window = DepthWindow(plan.start_step, plan.end_step, count, fps, plan.start_timestamp_ns)
+    with package.file(DATA_PATH) as path:
+        selected_times = tuple(r["hc.timestamp_ns"] for r in window_rows(path, plan.start_step, plan.end_step))
+    window = DepthWindow(plan.start_step, plan.end_step, count, fps, plan.start_timestamp_ns,
+                         source_frames=tuple(range(plan.start_step, plan.end_step)),
+                         target_timestamps_ns=selected_times)
+    if plan.processor_version == "hc-tag-episode/1":
+        window = DepthWindow(plan.start_step, plan.end_step, count, fps, plan.start_timestamp_ns)
     with TemporaryDirectory(prefix="tag-media-", dir=root.parent) as temporary:
         for key, feature in features.items():
             if feature["dtype"] != "video":
@@ -334,16 +346,26 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
     write_json(root, "hc/modalities.json", modalities)
     if "quality" in plan.encoding:
         evaluate_tag_quality(root, plan, info, checkpoint=checkpoint)
+    if plan.processor_version != "hc-tag-episode/1" and (
+        info.get("hc.training_policy")
+        or any(not r["hc.sample_valid"] for r in parquet_rows(root / DATA_PATH))
+    ):
+        from .capture_selection import compact_capture_rows
+
+        compact_capture_rows(root)
     checkpoint()
     return validate_package(root, plan.input)
 
 
 def source_frames(package, root, plan, checkpoint):
-    with package.file("hc/source_frames.parquet") as path:
-        schema = pq.read_schema(path)
+    with package.file(DATA_PATH) as path:
+        data = pq.read_table(path)
+    selected = package_mapping(package, data).slice(plan.start_step, plan.frame_count)
+    if selected.num_rows:
+        schema = selected.schema
         with pq.ParquetWriter(root / "hc/source_frames.parquet", schema) as output:
             pending = []
-            for index, row in enumerate(window_rows(path, plan.start_step, plan.end_step)):
+            for index, row in enumerate(selected.to_pylist()):
                 checkpoint()
                 if row["frame_index"] != plan.start_step + index:
                     raise PackageConflict("parent source frame order differs from Tag selection")

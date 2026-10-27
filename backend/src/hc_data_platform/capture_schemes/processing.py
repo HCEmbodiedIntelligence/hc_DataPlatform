@@ -65,12 +65,14 @@ def validate_snapshot(snapshot: Document, scope: Scope, raw: Document) -> Docume
         return unresolved("CAPTURE_VERSION_MISMATCH", "Raw 归属或快照摘要不一致")
     try:
         VersionReference.model_validate(snapshot["scheme"])
+        from .quality_models import CaptureQualityPolicy
+        CaptureQualityPolicy.model_validate(snapshot.get("quality_policy") or {})
         output = OutputContract.model_validate(snapshot["output"])
         adapter: Any = TypeAdapter(Adapter).validate_python(snapshot["effective_adapter"])
         if adapter.source_format != raw["source_format"]:
             return unresolved("CAPTURE_FORMAT_UNSUPPORTED", "快照适配器与 Raw 格式不一致")
         if adapter.source_format in {"MCAP", "CAPTURE_BUNDLE"} and (
-            adapter.configuration.semantic_output != output.model_dump(mode="json")
+            OutputContract.model_validate(adapter.configuration.semantic_output) != output
             if adapter.configuration.semantic_output is not None
             else adapter.configuration.time_source != output.time_source
         ):

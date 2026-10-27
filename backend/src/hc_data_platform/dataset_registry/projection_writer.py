@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import json
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from fractions import Fraction
@@ -865,6 +866,17 @@ class DatasetProjectionWriter:
         expected_frames = math.ceil(
             (alignment.end_ns - alignment.start_ns) * Fraction(str(frequency_hz)) / 10**9
         )
+        source = package.document("hc/source.json")
+        if source.get("mcap", {}).get("format") in {"native-mcap-recording/3", "native-mcap-recording/4"}:
+            # MCAP acquisition times are irregular. Verify the committed source
+            # timeline instead of inventing a count from nominal video FPS.
+            with package.file("hc/recording/source_frames.jsonl") as path:
+                stamps = [json.loads(line)["row"]["target_time_ns"] for line in path.read_bytes().splitlines()]
+            if not stamps or any(a >= b for a, b in zip(stamps, stamps[1:])) or not (
+                alignment.start_ns <= stamps[0] <= stamps[-1] < alignment.end_ns
+            ):
+                raise DatasetIngestProjectionConflict("package source acquisition timeline is invalid")
+            expected_frames = len(stamps)
         if info.get('hc.training_policy') == 'drop_invalid_rows_preserve_source_time/v1':
             from hc_data_platform.episode_store.validation import parquet_rows
             with package.file('hc/recording/aligned_rows.parquet') as path:

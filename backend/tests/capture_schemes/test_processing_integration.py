@@ -323,9 +323,9 @@ async def test_frozen_x1_without_annotation_roundtrip(tmp_path, monkeypatch, var
             configured = configuration.configure_labels(
                 label_actor, org, project, region, dataset, ["synthetic action"]
             )
-            assert (
-                configured.configured and configured.schema_snapshot_id == data.schema_snapshot_id
-            )
+            # Labels now belong to the collection task and survive format upgrades.
+            assert configured.configured and configured.schema_id is not None
+            assert configured.schema_snapshot_id is None
             with connect() as db:
                 original_workflow = db.execute(
                     """SELECT workflow_id FROM workflow.jobs WHERE organization_id=%s

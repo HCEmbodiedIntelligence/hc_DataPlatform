@@ -100,7 +100,7 @@ class CreateCollectionTask(StrictModel):
     # Optional when omitted, but explicit JSON null is invalid.
     dataset_id: DatasetIdentifier = Field(default_factory=_omitted_text)
     name: str = Field(min_length=1, max_length=200)
-    type: str = Field(min_length=1, max_length=100)
+    type: str = Field(default="", max_length=100, description="任务分类，留空表示未分类。")
     scenario: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=10_000)
     target: CollectionTarget | None = None
@@ -119,7 +119,9 @@ class UpdateCollectionTask(StrictModel):
     # while keeping explicit JSON null invalid in both validation and OpenAPI.
     dataset_id: DatasetIdentifier = Field(default_factory=_omitted_text)
     name: str = Field(default_factory=_omitted_text, min_length=1, max_length=200)
-    type: str = Field(default_factory=_omitted_text, min_length=1, max_length=100)
+    type: str = Field(
+        default_factory=_omitted_text, max_length=100, description="任务分类，空字符串可清除分类。"
+    )
     scenario: str = Field(default_factory=_omitted_text, min_length=1, max_length=200)
     description: str = Field(default_factory=_omitted_text, max_length=10_000)
     target: CollectionTarget | None = None

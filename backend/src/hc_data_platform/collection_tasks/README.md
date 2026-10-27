@@ -65,3 +65,18 @@ fields.
 Migrations are forward-only under the repository migration runner. Rollback is therefore
 an application rollback followed by a reviewed forward migration; an automatic down
 script is intentionally not provided.
+
+## Permanent task deletion
+
+Explicit deletion owns an exclusive task Dataset and uses a durable manifest for
+both object storage and exact local Arrow attempt files. API and worker containers
+must share the configured alignment staging root. Local paths must match the
+writer's rollout/attempt/content hashes; external files, symlinks and retained
+references cannot become delete targets. A missing intermediate file is already
+cleaned up. A cleanup failure keeps the manifest so the next request resumes it.
+
+The default `TASK_DATASET_90D` sampling-manifest TTL governs automatic GC while
+the task exists. Explicit permanent deletion of that task and its Dataset also
+removes those sampling manifests and releases their quota. Legal/governance
+holds, `PROJECT_OVERRIDE` retention, storage retention and active processing
+leases still block deletion; ordinary automatic GC keeps its original TTL checks.

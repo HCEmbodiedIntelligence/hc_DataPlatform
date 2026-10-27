@@ -171,8 +171,9 @@ def seed_ledger(repository, source):
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("delayed_annotation", [False, True])
 def test_ready_requires_package_collection_qc_task_viewer_and_all_previews(
-    services, tmp_path, monkeypatch
+    services, tmp_path, monkeypatch, delayed_annotation
 ):
     repository, storage = services
     ident = identity().model_copy(
@@ -322,6 +323,8 @@ def test_ready_requires_package_collection_qc_task_viewer_and_all_previews(
             ):
                 with pytest.raises(psycopg.errors.CheckViolation):
                     processor.update_state(state.model_copy(update=change))
+            if delayed_annotation:
+                state = state.model_copy(update={"annotation_task_id": None})
             barrier = Barrier(3)
             get = records.get_episode_processing
 
@@ -343,6 +346,18 @@ def test_ready_requires_package_collection_qc_task_viewer_and_all_previews(
             assert saved.status is EpisodeProcessingStatus.READY and saved.lance_version is None
             assert saved.data_ref == ready.data
             assert processor.update_state(state).episode == saved  # Lost-response recovery.
+            if delayed_annotation:
+                with pytest.raises(psycopg.errors.CheckViolation, match="exact package"):
+                    records.save_episode_processing(
+                        saved.model_copy(update={"annotation_task_id": "another-task"}),
+                        expected_status=EpisodeProcessingStatus.READY,
+                    )
+                saved = records.save_episode_processing(
+                    saved.model_copy(update={"annotation_task_id": task.task_id}),
+                    expected_status=EpisodeProcessingStatus.READY,
+                )
+                assert saved.data_ref == ready.data
+                assert saved.annotation_task_id == task.task_id
             with repository.transaction() as cursor:
                 cursor.execute(
                     """SELECT count(*) FROM ingest.recording_episode_dataset_version_reservations
@@ -354,6 +369,7 @@ def test_ready_requires_package_collection_qc_task_viewer_and_all_previews(
             for mutation in (
                 "data_ref=NULL,lance_version=1,collection_version_id=NULL",
                 "start_offset_ns=1",
+                "annotation_task_id=NULL",
             ):
                 with (
                     pytest.raises(psycopg.errors.CheckViolation, match="immutable"),

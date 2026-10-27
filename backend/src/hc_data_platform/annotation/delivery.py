@@ -195,6 +195,7 @@ class AnnotationDeliveryService:
                         annotation,
                         plan.binding.track,
                         checkpoint=checkpoint,
+                        compact_invalid=plan.processor_version != "hc-annotated-delivery-queue/1",
                         review_document={
                             "format": "hc-annotation-review/1",
                             "review": plan.review.model_dump(mode="json"),

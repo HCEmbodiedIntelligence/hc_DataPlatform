@@ -108,6 +108,7 @@ export type DashboardTaskStage = Readonly<{
   succeeded: number;
   risk: number;
   isolated: number;
+  cancelled: number;
   blocked: number;
   failed: number;
   unavailable: number;

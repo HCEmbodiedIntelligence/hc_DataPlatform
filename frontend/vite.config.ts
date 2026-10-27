@@ -16,6 +16,7 @@ export default defineConfig({
   },
   server: {
     host: "0.0.0.0",
+    allowedHosts: ["www.158722.xyz"],
     port: 5173,
     strictPort: true,
     ...(devProxyTarget
@@ -48,6 +49,8 @@ export default defineConfig({
           if (normalized.includes("/node_modules/@tanstack/"))
             return "query-platform";
           if (normalized.includes("/node_modules/zod/")) return "contracts";
+          // Avoid dozens of tiny icon requests on high-latency public routes.
+          if (normalized.includes("/node_modules/lucide-react/")) return "icons";
           return undefined;
         },
       },

@@ -1247,6 +1247,17 @@ components:
             $ref: '#/components/schemas/RobotIngestCameraManifest'
           title: Cameras
           type: array
+        cancelled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Cancelled At
+        cancelled_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cancelled By
         capture_ended_at:
           format: date-time
           title: Capture Ended At
@@ -2692,6 +2703,58 @@ paths:
       security:
       - bearerAuth: []
       summary: List Robot Upload Episodes
+      tags:
+      - robot-ingest
+  /api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}:cancel:
+    post:
+      operationId: cancelRobotIngestUploadAsOperator
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Cancel Robot Upload As Operator
       tags:
       - robot-ingest
   /api/v1/robot-ingest/uploads:

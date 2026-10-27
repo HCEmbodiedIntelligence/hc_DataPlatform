@@ -358,6 +358,7 @@ class CollectionTaskService:
         offset=0,
         robot_id=None,
         dataset_id=None,
+        unfinished_uploads_only=False,
     ):
         from .captures import CaptureProgressPage, capture_counts
 
@@ -368,6 +369,13 @@ class CollectionTaskService:
             items = tuple(item for item in items if item.robot_id == robot_id)
         if dataset_id is not None:
             items = tuple(item for item in items if item.dataset_id == dataset_id)
+        if unfinished_uploads_only:
+            items = tuple(
+                item
+                for item in items
+                if not item.received
+                and item.upload_state in {"UPLOADING", "PAUSED", "READY_TO_COMMIT", "FAILED"}
+            )
         return CaptureProgressPage(
             items=items[offset : offset + limit], total=len(items), counts=capture_counts(items)
         )

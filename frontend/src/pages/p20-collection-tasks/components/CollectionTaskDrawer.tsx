@@ -168,7 +168,7 @@ function commandFromValues(values: TaskFormValues): CreateCollectionTask {
     ...(values.datasetId === NEW_DATASET_VALUE
       ? {}
       : { dataset_id: values.datasetId }),
-    type: values.type.trim(),
+    type: (values.type ?? "").trim(),
     scenario: values.scenario.trim(),
     description: values.description.trim(),
     target:
@@ -553,22 +553,18 @@ export function CollectionTaskDrawer({
               />
             )}
             <Form.Item
-              label="采集类型"
+              label="任务分类（选填）"
               name="type"
               rules={[
-                {
-                  required: true,
-                  whitespace: true,
-                  message: "请输入采集类型。",
-                },
-                { max: 100, message: "采集类型不能超过 100 个字符。" },
+                { max: 100, message: "任务分类不能超过 100 个字符。" },
               ]}
+              extra="用于任务展示和筛选，例如抓取、搬运、装配。"
             >
               <Input
                 autoComplete="off"
                 maxLength={100}
                 name="type"
-                placeholder="请输入项目约定的采集类型…"
+                placeholder="例如：抓取、搬运、装配；可留空"
               />
             </Form.Item>
 

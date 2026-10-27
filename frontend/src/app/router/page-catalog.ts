@@ -23,6 +23,24 @@ export const pageCatalog = buildPageCatalog(
   },
 );
 
+const pendingPreloads = new Map<string, Promise<unknown>>();
+
+/** Warm code on navigation intent; never fetch private page data or run loaders. */
+export function preloadNavigationPage(path: string): void {
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+  }).connection;
+  if (connection?.saveData || /(^|-)2g$/u.test(connection?.effectiveType ?? "")) return;
+  if (pendingPreloads.has(path) || pendingPreloads.size >= 2) return;
+  const route = pageCatalog.routes.find((candidate) => candidate.path === path);
+  if (!route || typeof route.lazy !== "function") return;
+  const load = Promise.resolve(route.lazy());
+  pendingPreloads.set(path, load);
+  // Dynamic import itself retains successful modules. Failed preloads must not
+  // poison a later click; the router owns the visible error/retry behavior.
+  void load.catch(() => undefined).finally(() => pendingPreloads.delete(path));
+}
+
 replaceRegisteredPageRoutes(
   pageCatalog.pages
     .filter((page) => page.enabled)

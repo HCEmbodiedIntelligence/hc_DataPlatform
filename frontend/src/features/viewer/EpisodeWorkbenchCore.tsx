@@ -732,9 +732,11 @@ function panelStateLabel(state: ViewerPanelSpec["state"]): string {
 
 export function ViewerRobotPosePanel({
   scene,
+  clock,
   unavailableReason,
 }: {
   readonly scene?: EpisodeWorkbenchCoreProps["robotScene"];
+  readonly clock: PlaybackClock;
   readonly unavailableReason?: string;
 }): JSX.Element {
   if (!scene)
@@ -762,8 +764,8 @@ export function ViewerRobotPosePanel({
     );
   const {
     title = "机器人 URDF",
-    canonicalPath = "robot/model/urdf",
-    sourceDescription,
+    canonicalPath: _canonicalPath,
+    sourceDescription: _sourceDescription,
     ...sceneProps
   } = scene;
   return (
@@ -773,11 +775,9 @@ export function ViewerRobotPosePanel({
       aria-labelledby="robot-scene-panel-title"
     >
       <header>
-        <h3 id="robot-scene-panel-title">{title}</h3>
-        <span>{canonicalPath}</span>
+        <h3 id="robot-scene-panel-title" title={title}>机器人</h3>
       </header>
-      {sourceDescription ? <p>{sourceDescription}</p> : null}
-      <RobotSceneCore {...sceneProps} />
+      <RobotSceneCore {...sceneProps} clock={clock} />
     </article>
   );
 }
@@ -1135,15 +1135,15 @@ export function ViewerJointAngleCurvePanel({
     <article
       className="viewer-joint-curves"
       data-state={unavailable ? "unavailable" : windowState.status}
-      aria-labelledby="joint-angle-curves-title"
+      aria-label={title}
     >
       <header>
         <span>
           <Activity aria-hidden="true" size={15} />
-          <strong id="joint-angle-curves-title">{title}</strong>
+          <strong id="joint-angle-curves-title">{isJoint ? "关节" : stream?.modality === "action" ? "动作" : "曲线"}</strong>
         </span>
         <small>
-          {elapsed(cursorNs)} · {stream?.canonicalPath ?? "共享时间轴"}
+          {elapsed(cursorNs)}
         </small>
       </header>
       {unavailable ? (
@@ -1455,6 +1455,31 @@ export function SharedSignalTimeline({
   const hasEditableSegments =
     !disabled &&
     tracks.some((track) => track.segments.some((segment) => segment.editing));
+
+  const deleteSegment = (segment: ViewerTimelineSegment) => {
+    if (disabled || !segment.editing) return;
+    segment.editing.onDelete();
+    setContextMenu(null);
+    timelineRef.current?.focus({ preventScroll: true });
+  };
+  const handleDeleteKey = (
+    event: ReactKeyboardEvent,
+    segment: ViewerTimelineSegment,
+  ) => {
+    if (
+      event.key !== "Delete" ||
+      event.repeat ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.metaKey ||
+      disabled ||
+      !segment.editing
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    deleteSegment(segment);
+  };
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -2032,6 +2057,9 @@ export function SharedSignalTimeline({
                               Boolean(segment.editing && !disabled) || undefined
                             }
                             data-segment-id={segment.id}
+                            aria-keyshortcuts={
+                              segment.editing && !disabled ? "Delete" : undefined
+                            }
                             style={style}
                             title={
                               segment.editing && !disabled
@@ -2062,6 +2090,7 @@ export function SharedSignalTimeline({
                                 segment,
                               );
                             }}
+                            onKeyDown={(event) => handleDeleteKey(event, segment)}
                             onContextMenu={(event) => {
                               if (!segment.editing || disabled) return;
                               event.preventDefault();
@@ -2180,17 +2209,13 @@ export function SharedSignalTimeline({
                   event.stopPropagation();
                   setContextMenu(null);
                   contextMenu.trigger.focus({ preventScroll: true });
-                }
+                } else handleDeleteKey(event, menuSegment);
               }}
             >
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => {
-                  menuSegment.editing?.onDelete();
-                  setContextMenu(null);
-                  timelineRef.current?.focus({ preventScroll: true });
-                }}
+                onClick={() => deleteSegment(menuSegment)}
               >
                 删除 Tag <kbd>Del</kbd>
               </button>
@@ -2296,6 +2321,7 @@ export function ViewerMediaSurface({
         })}
         {hasRobotPanel ? (
           <ViewerRobotPosePanel
+            clock={clock}
             scene={robotScene}
             unavailableReason={robotSceneUnavailableReason}
           />

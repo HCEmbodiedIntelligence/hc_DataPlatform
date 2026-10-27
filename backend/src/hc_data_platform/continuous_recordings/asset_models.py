@@ -495,7 +495,7 @@ class EpisodeVideoSource(BaseModel):
     codec: str
     expires_at: datetime
     byte_range_supported: bool = True
-    materialization: Literal["ORIGINAL_VIDEO_TIME_WINDOW", "DEPTH_PREVIEW_TIME_WINDOW"] = (
+    materialization: Literal["ORIGINAL_VIDEO_TIME_WINDOW", "DEPTH_PREVIEW_TIME_WINDOW", "PROCESSED_PREVIEW_TIME_WINDOW"] = (
         "ORIGINAL_VIDEO_TIME_WINDOW"
     )
 
@@ -524,7 +524,7 @@ class RecordingVideoSource(BaseModel):
     codec: str
     expires_at: datetime
     byte_range_supported: bool = True
-    materialization: Literal["ORIGINAL_RECORDING", "DEPTH_PREVIEW"] = "ORIGINAL_RECORDING"
+    materialization: Literal["ORIGINAL_RECORDING", "DEPTH_PREVIEW", "PROCESSED_PREVIEW"] = "ORIGINAL_RECORDING"
 
 
 class RecordingVideoSourceEnvelope(BaseModel):

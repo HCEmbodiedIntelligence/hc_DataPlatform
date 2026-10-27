@@ -932,7 +932,7 @@
 }
 
 .workbench[data-layout="preview"] {
-  max-width: min(100%, var(--viewer-medium-width));
+  max-width: 100%;
   height: auto;
   min-height: 0;
   max-height: none;
@@ -1038,7 +1038,7 @@
   }
 }
 
-@container (max-width: 380px) {
+@container (max-width: 620px) {
   .workbench[data-layout="preview"] .media :global(.viewer-media-grid) {
     grid-template-columns: minmax(0, 1fr);
   }

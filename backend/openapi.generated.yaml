@@ -1753,8 +1753,10 @@ components:
           title: Parent Manifest Sha256
           type: string
         processor_version:
-          const: hc-annotated-delivery-queue/1
-          default: hc-annotated-delivery-queue/1
+          default: hc-annotated-delivery-queue/2
+          enum:
+          - hc-annotated-delivery-queue/1
+          - hc-annotated-delivery-queue/2
           title: Processor Version
           type: string
         reader_version:
@@ -2444,7 +2446,7 @@ components:
           type: integer
         label:
           anyOf:
-          - maxLength: 256
+          - maxLength: 10000
             minLength: 1
             type: string
           - type: 'null'
@@ -6121,10 +6123,7 @@ components:
         output:
           $ref: '#/components/schemas/DraftOutputContract'
         quality_policy:
-          additionalProperties:
-            type: string
-          title: Quality Policy
-          type: object
+          $ref: '#/components/schemas/CaptureQualityPolicy'
         software:
           default: ''
           maxLength: 120
@@ -6348,6 +6347,11 @@ components:
           minimum: 0.0
           title: Blocked Episode Count
           type: integer
+        canonical_episode_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Canonical Episode Id
         capture_mode:
           title: Capture Mode
           type: string
@@ -6420,6 +6424,11 @@ components:
           - type: string
           - type: 'null'
           title: Source Import Id
+        source_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Path
         stage:
           enum:
           - UPLOADING
@@ -6474,6 +6483,57 @@ components:
       - total
       - counts
       title: CaptureProgressPage
+      type: object
+    CaptureQualityPolicy:
+      additionalProperties: false
+      properties:
+        action:
+          $ref: '#/components/schemas/ActionQualityProfileV1'
+        completeness:
+          $ref: '#/components/schemas/CompleteStepProfileV1'
+        feature_images:
+          additionalProperties:
+            $ref: '#/components/schemas/ImageQualityProfileV1'
+          title: Feature Images
+          type: object
+        feature_point_clouds:
+          additionalProperties:
+            $ref: '#/components/schemas/PointCloudQualityProfileV1'
+          title: Feature Point Clouds
+          type: object
+        feature_timing:
+          additionalProperties:
+            $ref: '#/components/schemas/CaptureTimingRules'
+          title: Feature Timing
+          type: object
+        image:
+          $ref: '#/components/schemas/ImageQualityProfileV1'
+        joint_limits:
+          additionalProperties:
+            maxItems: 2
+            minItems: 2
+            prefixItems:
+            - type: number
+            - type: number
+            type: array
+          title: Joint Limits
+          type: object
+        joint_out_of_range_is_reject:
+          default: true
+          title: Joint Out Of Range Is Reject
+          type: boolean
+        missing_required:
+          const: reject
+          default: reject
+          title: Missing Required
+          type: string
+        point_cloud:
+          $ref: '#/components/schemas/PointCloudQualityProfileV1'
+        synchronization:
+          $ref: '#/components/schemas/ModalityOffsetProfileV1'
+        timing:
+          $ref: '#/components/schemas/CaptureTimingRules'
+      title: CaptureQualityPolicy
       type: object
     CaptureRecordingSnapshot:
       additionalProperties: false
@@ -6539,6 +6599,12 @@ components:
           pattern: ^[A-Za-z0-9._-]+$
           title: Project Id
           type: string
+        quality_policy:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Quality Policy
         recording_id:
           maxLength: 128
           minLength: 1
@@ -6578,6 +6644,11 @@ components:
           - CAPTURE_BUNDLE
           title: Source Format
           type: string
+        task_instruction:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Task Instruction
       required:
       - schema_version
       - organization_id
@@ -6892,10 +6963,7 @@ components:
           title: Published By
           type: string
         quality_policy:
-          additionalProperties:
-            type: string
-          title: Quality Policy
-          type: object
+          $ref: '#/components/schemas/CaptureQualityPolicy'
         scheme_id:
           maxLength: 128
           minLength: 1
@@ -7036,6 +7104,12 @@ components:
           pattern: ^[A-Za-z0-9._-]+$
           title: Project Id
           type: string
+        quality_policy:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Quality Policy
         region_code:
           maxLength: 128
           minLength: 1
@@ -7120,6 +7194,71 @@ components:
       - version
       - locked_at
       title: CaptureTaskReference
+      type: object
+    CaptureTimingRules:
+      additionalProperties: false
+      properties:
+        maximum_backward_timestamps_reject:
+          default: 0
+          minimum: 0.0
+          title: Maximum Backward Timestamps Reject
+          type: integer
+        maximum_consecutive_missing_reject:
+          default: 29
+          minimum: 0.0
+          title: Maximum Consecutive Missing Reject
+          type: integer
+        maximum_consecutive_missing_risk:
+          default: 2
+          minimum: 0.0
+          title: Maximum Consecutive Missing Risk
+          type: integer
+        maximum_duplicate_timestamps_reject:
+          anyOf:
+          - minimum: 0.0
+            type: integer
+          - type: 'null'
+          title: Maximum Duplicate Timestamps Reject
+        maximum_duplicate_timestamps_risk:
+          default: 0
+          minimum: 0.0
+          title: Maximum Duplicate Timestamps Risk
+          type: integer
+        maximum_gap_ns_reject:
+          default: 1000000000
+          minimum: 0.0
+          title: Maximum Gap Ns Reject
+          type: integer
+        maximum_gap_ns_risk:
+          default: 100000000
+          minimum: 0.0
+          title: Maximum Gap Ns Risk
+          type: integer
+        minimum_coverage_ratio_reject:
+          default: 0.8
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Coverage Ratio Reject
+          type: number
+        minimum_coverage_ratio_risk:
+          default: 0.98
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Coverage Ratio Risk
+          type: number
+        minimum_frequency_ratio_reject:
+          default: 0.75
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Frequency Ratio Reject
+          type: number
+        minimum_frequency_ratio_risk:
+          default: 0.9
+          maximum: 1.0
+          minimum: 0.0
+          title: Minimum Frequency Ratio Risk
+          type: number
+      title: CaptureTimingRules
       type: object
     ChannelInventoryV1:
       additionalProperties: false
@@ -8783,6 +8922,8 @@ components:
           enum:
           - hc-lerobot-collection/1
           - hc-lerobot-collection/2
+          - hc-lerobot-collection/3
+          - hc-lerobot-collection/4
           - hc-export/1
           title: Processor Version
           type: string
@@ -9946,6 +10087,13 @@ components:
           type: integer
         data_package_id:
           $ref: '#/components/schemas/IngestIdentifier'
+        default_task_labels:
+          items:
+            maxLength: 10000
+            minLength: 1
+            type: string
+          maxItems: 100
+          type: array
         device_id:
           $ref: '#/components/schemas/IngestIdentifier'
         duration_ns:
@@ -10237,12 +10385,12 @@ components:
           - $ref: '#/components/schemas/CollectionTarget'
           - type: 'null'
         type:
+          default: ''
+          description: 任务分类，留空表示未分类。
           maxLength: 100
-          minLength: 1
           type: string
       required:
       - name
-      - type
       - scenario
       type: object
     CreateDataSourceCommand:
@@ -16797,8 +16945,11 @@ components:
         configuration:
           $ref: '#/components/schemas/McapDraftConfig'
         parser_version:
-          const: native-mcap-recording/2
-          default: native-mcap-recording/2
+          default: native-mcap-recording/3
+          enum:
+          - native-mcap-recording/2
+          - native-mcap-recording/3
+          - native-mcap-recording/4
           title: Parser Version
           type: string
         source_format:
@@ -16814,8 +16965,11 @@ components:
       additionalProperties: false
       properties:
         algorithm:
-          const: capture-structure/v1
           default: capture-structure/v1
+          enum:
+          - capture-structure/v1
+          - capture-structure/v2
+          - capture-structure/v3
           title: Algorithm
           type: string
         features:
@@ -16836,6 +16990,19 @@ components:
           default: PRESERVE
           title: Frequency Policy
           type: string
+        metadata_features:
+          default: []
+          items:
+            enum:
+            - head.calibration
+            - head.extrinsics
+            type: string
+          title: Metadata Features
+          type: array
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         time_source:
           enum:
           - FRAME_TIMESTAMP
@@ -16843,6 +17010,12 @@ components:
           - RGB_LOG_TIME
           title: Time Source
           type: string
+        validity_max_age_ms:
+          default: 50
+          exclusiveMinimum: 0.0
+          maximum: 1000.0
+          title: Validity Max Age Ms
+          type: number
       required:
       - time_source
       - features
@@ -17530,8 +17703,10 @@ components:
           title: Modalities
           type: string
         processor_version:
-          const: hc-episode-archive/1
-          default: hc-episode-archive/1
+          default: hc-episode-archive/2
+          enum:
+          - hc-episode-archive/1
+          - hc-episode-archive/2
           title: Processor Version
           type: string
         reader_version:
@@ -18341,10 +18516,19 @@ components:
           format: date-time
           type: string
         task_label:
-          maxLength: 128
+          maxLength: 10000
           minLength: 1
           type:
           - string
+          - 'null'
+        task_labels:
+          items:
+            maxLength: 10000
+            minLength: 1
+            type: string
+          maxItems: 100
+          type:
+          - array
           - 'null'
         title:
           maxLength: 256
@@ -18380,10 +18564,19 @@ components:
         start_offset_ns:
           $ref: '#/components/schemas/NanosecondsDecimal'
         task_label:
-          maxLength: 128
+          maxLength: 10000
           minLength: 1
           type:
           - string
+          - 'null'
+        task_labels:
+          items:
+            maxLength: 10000
+            minLength: 1
+            type: string
+          maxItems: 100
+          type:
+          - array
           - 'null'
         title:
           maxLength: 256
@@ -18439,6 +18632,7 @@ components:
           enum:
           - ORIGINAL_VIDEO_TIME_WINDOW
           - DEPTH_PREVIEW_TIME_WINDOW
+          - PROCESSED_PREVIEW_TIME_WINDOW
           title: Materialization
           type: string
         media_type:
@@ -18595,39 +18789,6 @@ components:
       - start_step
       - end_step
       title: ExclusionRange
-      type: object
-    ExportCameraCalibration:
-      additionalProperties: false
-      properties:
-        configuration:
-          $ref: '#/components/schemas/RobotCameraCalibration'
-        configuration_sha256:
-          pattern: ^[0-9a-f]{64}$
-          title: Configuration Sha256
-          type: string
-        feature_bindings:
-          additionalProperties:
-            maxItems: 2
-            minItems: 2
-            prefixItems:
-            - type: string
-            - type: string
-            type: array
-          title: Feature Bindings
-          type: object
-        robot_id:
-          title: Robot Id
-          type: string
-        snapshot_policy:
-          default: robot_configuration_at_export_request
-          title: Snapshot Policy
-          type: string
-      required:
-      - robot_id
-      - configuration
-      - configuration_sha256
-      - feature_bindings
-      title: ExportCameraCalibration
       type: object
     ExportDataStage:
       default: annotated
@@ -18939,6 +19100,13 @@ components:
           default: true
           title: Required
           type: boolean
+        required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Required Axes
         role:
           enum:
           - state
@@ -19651,6 +19819,57 @@ components:
       - QUALITY_REJECTED
       - CANCELLED
       type: string
+    JointNormalization:
+      additionalProperties: false
+      description: Immutable position/clock semantics for the HC TJ full-body profile.
+      properties:
+        camera_mode:
+          default: legacy_reference
+          enum:
+          - legacy_reference
+          - calibrated
+          title: Camera Mode
+          type: string
+        capture_clock:
+          const: header_stamp
+          default: header_stamp
+          title: Capture Clock
+          type: string
+        clock_domain:
+          maxLength: 256
+          minLength: 1
+          title: Clock Domain
+          type: string
+        clock_evidence:
+          maxLength: 2048
+          minLength: 1
+          title: Clock Evidence
+          type: string
+        hand_encoding:
+          const: independent_ban_command
+          default: independent_ban_command
+          title: Hand Encoding
+          type: string
+        invalid_action:
+          const: drop
+          default: drop
+          title: Invalid Action
+          type: string
+        profile:
+          const: hc_tj_17dof/v1
+          default: hc_tj_17dof/v1
+          title: Profile
+          type: string
+        waist_fallback_ms:
+          const: 20
+          default: 20
+          title: Waist Fallback Ms
+          type: integer
+      required:
+      - clock_domain
+      - clock_evidence
+      title: JointNormalization
+      type: object
     JsonValue: {}
     LastUploadSummary:
       additionalProperties: false
@@ -20587,6 +20806,10 @@ components:
           $ref: '#/components/schemas/RobotModelAsset'
         authorization:
           $ref: '#/components/schemas/RobotModelAssetDownloadAuthorization'
+        preview:
+          anyOf:
+          - $ref: '#/components/schemas/LogicalRobotPreviewGrant'
+          - type: 'null'
         scene_sha256:
           pattern: ^[0-9a-f]{64}$
           title: Scene Sha256
@@ -20600,6 +20823,53 @@ components:
       - asset
       - authorization
       title: LogicalRobotAssetGrant
+      type: object
+    LogicalRobotPreviewGrant:
+      additionalProperties: false
+      properties:
+        asset_id:
+          minLength: 1
+          title: Asset Id
+          type: string
+        download_url:
+          minLength: 1
+          title: Download Url
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        policy:
+          const: mesh-qem-v1
+          title: Policy
+          type: string
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+          type: integer
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Source Sha256
+          type: string
+      required:
+      - asset_id
+      - download_url
+      - expires_at
+      - sha256
+      - media_type
+      - source_sha256
+      - size_bytes
+      - policy
+      title: LogicalRobotPreviewGrant
       type: object
     LogicalRobotScene:
       additionalProperties: false
@@ -22414,8 +22684,11 @@ components:
         configuration:
           $ref: '#/components/schemas/McapDraftConfig'
         parser_version:
-          const: native-mcap-recording/2
-          default: native-mcap-recording/2
+          default: native-mcap-recording/3
+          enum:
+          - native-mcap-recording/2
+          - native-mcap-recording/3
+          - native-mcap-recording/4
           title: Parser Version
           type: string
         source_format:
@@ -22442,6 +22715,13 @@ components:
             type: string
           title: Action Joint Units
           type: array
+        action_required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Action Required Axes
         action_topic:
           anyOf:
           - type: string
@@ -22509,6 +22789,19 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        metadata_sources:
+          additionalProperties:
+            type: string
+          propertyNames:
+            enum:
+            - head.calibration
+            - head.extrinsics
+          title: Metadata Sources
+          type: object
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         numeric_sources:
           additionalProperties:
             $ref: '#/components/schemas/NumericMapping'
@@ -22537,6 +22830,13 @@ components:
             type: string
           title: State Joint Units
           type: array
+        state_required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: State Required Axes
         state_topic:
           anyOf:
           - type: string
@@ -22549,6 +22849,13 @@ components:
           - STATE_LOG_TIME
           title: Time Source
           type: string
+        topic_aliases:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          title: Topic Aliases
+          type: object
       title: McapDraftConfig
       type: object
     McapProcessingConfig:
@@ -22566,6 +22873,13 @@ components:
             type: string
           title: Action Joint Units
           type: array
+        action_required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Action Required Axes
         action_topic:
           anyOf:
           - type: string
@@ -22632,6 +22946,19 @@ components:
           maximum: 1000.0
           title: Maximum Time Error Ms
           type: number
+        metadata_sources:
+          additionalProperties:
+            type: string
+          propertyNames:
+            enum:
+            - head.calibration
+            - head.extrinsics
+          title: Metadata Sources
+          type: object
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         numeric_sources:
           additionalProperties:
             $ref: '#/components/schemas/NumericMapping'
@@ -22660,6 +22987,13 @@ components:
             type: string
           title: State Joint Units
           type: array
+        state_required_axes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: State Required Axes
         state_topic:
           anyOf:
           - type: string
@@ -22672,6 +23006,13 @@ components:
           - STATE_LOG_TIME
           title: Time Source
           type: string
+        topic_aliases:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          title: Topic Aliases
+          type: object
       title: McapProcessingConfig
       type: object
     MembershipRequest:
@@ -23942,8 +24283,11 @@ components:
       description: Shared structure; historical frequency values are informational only.
       properties:
         algorithm:
-          const: capture-structure/v1
           default: capture-structure/v1
+          enum:
+          - capture-structure/v1
+          - capture-structure/v2
+          - capture-structure/v3
           title: Algorithm
           type: string
         features:
@@ -23964,6 +24308,19 @@ components:
           default: PRESERVE
           title: Frequency Policy
           type: string
+        metadata_features:
+          default: []
+          items:
+            enum:
+            - head.calibration
+            - head.extrinsics
+            type: string
+          title: Metadata Features
+          type: array
+        normalization:
+          anyOf:
+          - $ref: '#/components/schemas/JointNormalization'
+          - type: 'null'
         time_source:
           enum:
           - FRAME_TIMESTAMP
@@ -23971,6 +24328,12 @@ components:
           - RGB_LOG_TIME
           title: Time Source
           type: string
+        validity_max_age_ms:
+          default: 50
+          exclusiveMinimum: 0.0
+          maximum: 1000.0
+          title: Validity Max Age Ms
+          type: number
       required:
       - time_source
       - features
@@ -26948,6 +27311,7 @@ components:
           enum:
           - ORIGINAL_RECORDING
           - DEPTH_PREVIEW
+          - PROCESSED_PREVIEW
           title: Materialization
           type: string
         media_type:
@@ -27370,6 +27734,24 @@ components:
       required:
       - mappings
       title: ReplaceRobotModelJointMappingsRequest
+      type: object
+    ReprocessMcap:
+      additionalProperties: false
+      properties:
+        plan_revision:
+          minimum: 1.0
+          title: Plan Revision
+          type: integer
+        request_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Request Id
+          type: string
+      required:
+      - request_id
+      - plan_revision
+      title: ReprocessMcap
       type: object
     RequestAnnotationDelivery:
       additionalProperties: false
@@ -29153,6 +29535,17 @@ components:
             $ref: '#/components/schemas/RobotIngestCameraManifest'
           title: Cameras
           type: array
+        cancelled_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Cancelled At
+        cancelled_by:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Cancelled By
         capture_ended_at:
           format: date-time
           title: Capture Ended At
@@ -29892,6 +30285,55 @@ components:
       - request_id
       title: RobotModelPage
       type: object
+    RobotModelPreviewGrant:
+      additionalProperties: false
+      properties:
+        asset_id:
+          minLength: 1
+          title: Asset Id
+          type: string
+        download_url:
+          minLength: 1
+          title: Download Url
+          type: string
+        expires_at:
+          format: date-time
+          title: Expires At
+          type: string
+        media_type:
+          maxLength: 128
+          minLength: 1
+          title: Media Type
+          type: string
+        policy:
+          enum:
+          - mesh-qem-v1
+          - mesh-indexed-glb-v2
+          title: Policy
+          type: string
+        sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+          type: string
+        size_bytes:
+          exclusiveMinimum: 0.0
+          title: Size Bytes
+          type: integer
+        source_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Source Sha256
+          type: string
+      required:
+      - asset_id
+      - download_url
+      - expires_at
+      - sha256
+      - media_type
+      - source_sha256
+      - size_bytes
+      - policy
+      title: RobotModelPreviewGrant
+      type: object
     RobotModelPublishCheck:
       additionalProperties: false
       properties:
@@ -30117,6 +30559,45 @@ components:
       - scope
       - request_id
       title: RobotModelVersionEnvelope
+      type: object
+    RobotModelViewerAssetGrant:
+      additionalProperties: false
+      properties:
+        asset:
+          $ref: '#/components/schemas/RobotModelAsset'
+        authorization:
+          $ref: '#/components/schemas/RobotModelAssetDownloadAuthorization'
+        preview:
+          anyOf:
+          - $ref: '#/components/schemas/RobotModelPreviewGrant'
+          - type: 'null'
+      required:
+      - asset
+      - authorization
+      title: RobotModelViewerAssetGrant
+      type: object
+    RobotModelViewerAssetPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/RobotModelViewerAssetGrant'
+          title: Items
+          type: array
+        request_id:
+          title: Request Id
+          type: string
+        scope:
+          $ref: '#/components/schemas/RegistryScope'
+        version_id:
+          title: Version Id
+          type: string
+      required:
+      - version_id
+      - items
+      - scope
+      - request_id
+      title: RobotModelViewerAssetPage
       type: object
     RobotPartAuthorization:
       additionalProperties: false
@@ -31015,10 +31496,7 @@ components:
         output:
           $ref: '#/components/schemas/DraftOutputContract'
         quality_policy:
-          additionalProperties:
-            type: string
-          title: Quality Policy
-          type: object
+          $ref: '#/components/schemas/CaptureQualityPolicy'
         software:
           default: ''
           maxLength: 120
@@ -32674,53 +33152,60 @@ components:
       properties:
         blocked:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Blocked
+          type: integer
+        cancelled:
+          default: 0
+          minimum: 0.0
+          title: Cancelled
           type: integer
         failed:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Failed
           type: integer
         isolated:
           default: 0
-          description: Packages routed to problem data without blocking the task.
-          minimum: 0
+          minimum: 0.0
+          title: Isolated
           type: integer
         not_started:
           default: 0
           description: Packages whose prerequisites for this stage are not met.
-          minimum: 0
+          minimum: 0.0
+          title: Not Started
           type: integer
         risk:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Risk
           type: integer
         running:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Running
           type: integer
         stage:
           $ref: '#/components/schemas/TaskProcessingStage'
         succeeded:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Succeeded
           type: integer
         unavailable:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Unavailable
           type: integer
         waiting:
           default: 0
-          minimum: 0
+          minimum: 0.0
+          title: Waiting
           type: integer
       required:
       - stage
-      - waiting
-      - running
-      - succeeded
-      - risk
-      - blocked
-      - failed
-      - unavailable
+      title: TaskStageCounts
       type: object
     TaskStandardizationCounts:
       additionalProperties: false
@@ -33358,8 +33843,8 @@ components:
           - $ref: '#/components/schemas/CollectionTarget'
           - type: 'null'
         type:
+          description: 任务分类，空字符串可清除分类。
           maxLength: 100
-          minLength: 1
           type: string
       type: object
     UpdateDataSourceCommand:
@@ -34377,13 +34862,6 @@ components:
       - transport
       title: WritableRobotConfiguration
       type: object
-    hc_data_platform__quality__models__QualityStatus:
-      enum:
-      - PASS
-      - RISK
-      - REJECT
-      title: QualityStatus
-      type: string
     hc_data_platform__robot_ingest__models__CompletedPart:
       additionalProperties: false
       properties:
@@ -38058,9 +38536,29 @@ paths:
           minLength: 1
           title: Token
           type: string
+      - in: query
+        name: preview_sha256
+        required: false
+        schema:
+          anyOf:
+          - pattern: ^[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          title: Preview Sha256
+      - in: header
+        name: Range
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 128
+            type: string
+          - type: 'null'
+          title: Range
       responses:
         '200':
           description: Successful Response
+        '206':
+          description: Authorized model byte range
         '401':
           content:
             application/problem+json:
@@ -38103,6 +38601,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
           description: The registry request could not be completed.
+        '416':
+          description: Unsatisfiable byte range
         '422':
           content:
             application/problem+json:
@@ -38736,6 +39236,88 @@ paths:
       security:
       - bearerAuth: []
       summary: Create Robot Model Asset Upload Session
+      tags:
+      - registry
+  /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}/viewer-assets:authorize:
+    post:
+      operationId: authorizeRobotModelViewerAssets
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotModelViewerAssetPage'
+          description: Successful Response
+        '401':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '403':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '404':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '409':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '412':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '413':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '415':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+        '503':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: The registry request could not be completed.
+      security:
+      - bearerAuth: []
+      summary: Authorize Robot Model Viewer Assets
       tags:
       - registry
   /api/v1/organizations/{organization_id}/robot-model-versions/{version_id}:create-draft:
@@ -44715,6 +45297,13 @@ paths:
           - type: 'null'
           title: Dataset Id
       - in: query
+        name: unfinished_uploads_only
+        required: false
+        schema:
+          default: false
+          title: Unfinished Uploads Only
+          type: boolean
+      - in: query
         name: limit
         required: false
         schema:
@@ -44757,6 +45346,10 @@ paths:
                 $ref: '#/components/schemas/CaptureProgressPage'
           description: Successful Response
         '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
           description: Validation Error
       security:
       - bearerAuth: []
@@ -49009,9 +49602,15 @@ paths:
       - datasets
   /api/v1/projects/{project_id}/quality-profiles:
     post:
+      deprecated: true
       operationId: createQualityProfileVersion
       parameters:
-      - $ref: '#/components/parameters/QualityProjectId'
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
       requestBody:
         content:
           application/json:
@@ -49024,11 +49623,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QualityProfileV1'
-          description: Immutable quality profile version created
-        '409':
-          description: The profile version already exists with different content
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
       security:
       - bearerAuth: []
+      summary: Create Quality Profile
       tags:
       - quality
   /api/v1/projects/{project_id}/quality-profiles/{profile_id}/versions/{profile_version}:
@@ -54460,6 +55064,84 @@ paths:
       summary: Getlogicalrobotscene
       tags:
       - logical_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene/assets/authorize
+  : post:
+      operationId: authorizeLogicalRobotAssets
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: version_id
+        required: true
+        schema:
+          title: Version Id
+          type: string
+      - in: path
+        name: revision_id
+        required: true
+        schema:
+          title: Revision Id
+          type: string
+      - in: query
+        name: snapshot_token
+        required: true
+        schema:
+          maxLength: 2048
+          minLength: 16
+          title: Snapshot Token
+          type: string
+      - in: query
+        name: snapshot_id
+        required: true
+        schema:
+          pattern: ^snapshot_[0-9a-f]{64}$
+          title: Snapshot Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/LogicalRobotAssetGrant'
+                title: Response Authorizelogicalrobotassets
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Authorizelogicalrobotassets
+      tags:
+      - logical_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene/assets/{asset_id}/authorize
   : post:
       operationId: authorizeLogicalRobotAsset
@@ -56280,6 +56962,53 @@ paths:
       summary: Mcap Channels
       tags:
       - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-plan-versions:
+    get:
+      operationId: listMcapTaskPlanVersions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          title: Import Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Mcap Plan Versions
+      tags:
+      - lerobot-imports
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-processing:
     get:
       operationId: mcapProgress
@@ -56643,6 +57372,59 @@ paths:
       security:
       - bearerAuth: []
       summary: Process Mcap
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:reprocess-mcap:
+    post:
+      operationId: reprocessMcapWithTaskPlan
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: import_id
+        required: true
+        schema:
+          title: Import Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReprocessMcap'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Reprocess Mcap
       tags:
       - lerobot-imports
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry:
@@ -59582,6 +60364,58 @@ paths:
       security:
       - bearerAuth: []
       summary: List Robot Upload Episodes
+      tags:
+      - robot-ingest
+  /api/v1/projects/{project_id}/robot-ingest/uploads/{upload_id}:cancel:
+    post:
+      operationId: cancelRobotIngestUploadAsOperator
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: upload_id
+        required: true
+        schema:
+          title: Upload Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: X-Region-Code
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: X-Region-Code
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RobotIngestUploadEnvelope'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Cancel Robot Upload As Operator
       tags:
       - robot-ingest
   /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:

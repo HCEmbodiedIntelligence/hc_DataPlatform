@@ -505,8 +505,8 @@ function TaskDetails({
         <dd>
           <code translate="no">{task.dataset_id}</code>
         </dd>
-        <dt>采集类型</dt>
-        <dd>{task.type}</dd>
+        <dt>任务分类</dt>
+        <dd>{task.type || "未分类"}</dd>
         <dt>采集场景</dt>
         <dd>{task.scenario}</dd>
         {task.description ? (

@@ -843,7 +843,11 @@ def build_runtime(
         ),
         cursor_secret=resolved.cursor_secret,
         deletion=PostgresTaskDeletion(
-            connection_factory, TaskObjectPurger(s3_client, resolved.object_store_bucket)
+            connection_factory,
+            TaskObjectPurger(
+                s3_client, resolved.object_store_bucket,
+                alignment_staging_root=resolved.alignment_staging_root,
+            ),
         ),
     )
     storage_connection_factory = StorageTransactionConnectionFactory(connection_factory)
@@ -864,6 +868,7 @@ def build_runtime(
     registry = RegistryService(
         PostgresRegistryRepository(connection_factory, binding_usage=model_has_binding_history),
         published_assets=PublishedModelAssetReader(connection_factory),
+        preview_root=resolved.robot_model_preview_root,
         storage=FilesystemRobotModelStorage(
             resolved.robot_model_asset_root,
             signing_secret=resolved.cursor_secret,

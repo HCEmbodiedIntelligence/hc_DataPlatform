@@ -8,6 +8,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import type { CollectionTaskScope } from "../collection-tasks/api";
 import { createDomainError } from "../../shared/api/domain-error";
+import { validateWithRecovery } from "./validation-recovery";
 import {
   detailSchema,
   linkSchema,
@@ -89,11 +90,17 @@ export const captureApi = {
     expected_revision: number,
     sample: Sample,
   ) =>
-    detailSchema.parse(
-      await call(org, "POST", `${schemePath(org, id)}:validate`, {
-        expected_revision,
-        sample,
-      }),
+    validateWithRecovery(
+      (signal) =>
+        call(org, "POST", `${schemePath(org, id)}:validate`, {
+          expected_revision,
+          sample,
+        }, undefined, signal).then((result) => detailSchema.parse(result)),
+      (signal) =>
+        call(org, "GET", schemePath(org, id), undefined, undefined, signal)
+          .then((result) => detailSchema.parse(result)),
+      expected_revision,
+      sample,
     ),
   publish: async (org: string, id: string, expected_revision: number) =>
     versionSchema.parse(

@@ -156,6 +156,7 @@ class CaptureParticipantChange(Strict):
 
 
 class CaptureTaskPlan(Strict):
+    quality_policy: dict | None = None
     schema_version: Literal["capture-task-plan/v1"]
     organization_id: Identifier
     project_id: Identifier
@@ -184,6 +185,8 @@ class CaptureAssociationRemoved(Strict):
 
 
 class CaptureRecordingSnapshot(Strict):
+    quality_policy: dict | None = None
+    task_instruction: str | None = None
     schema_version: Literal["capture-recording-snapshot/v1"]
     organization_id: Identifier
     project_id: Identifier

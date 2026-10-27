@@ -1,6 +1,6 @@
 """Authorized logical snapshot reads shared by native and historical data."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
@@ -200,6 +200,37 @@ def getLogicalRobotScene(
         service,
         lambda reader: reader.robot_scene(
             selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        ),
+    )
+
+
+@router.post(
+    "/robot-scene/assets/authorize",
+    operation_id="authorizeLogicalRobotAssets",
+    response_model=list[LogicalRobotAssetGrant],
+)
+def authorizeLogicalRobotAssets(
+    project_id: str,
+    region_code: str,
+    dataset_id: str,
+    version_id: str,
+    revision_id: str,
+    auth: VerifiedAuth,
+    organization_id: Organization,
+    snapshot_token: SnapshotToken,
+    service: Reader,
+    response: Response,
+    snapshot_id: str = Query(pattern=r"^snapshot_[0-9a-f]{64}$"),
+    preview_format: Literal["stl", "glb"] = "stl",
+):
+    selection = _selection(
+        auth, organization_id, project_id, region_code, dataset_id, version_id, revision_id
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return _read(
+        service,
+        lambda reader: reader.authorize_robot_assets(
+            selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id, preview_format=preview_format
         ),
     )
 

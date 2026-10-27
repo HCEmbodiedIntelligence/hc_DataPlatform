@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -43,6 +44,28 @@ def make_etag(value: bytes | str | dict[str, Any], *, weak: bool = False) -> ETa
     else:
         body = value
     return ETag(hashlib.sha256(body).hexdigest(), weak=weak)
+
+
+def preserve_strong_etag(headers: MutableMapping[str, str]) -> None:
+    """Keep resource validators usable for If-Match through transforming proxies."""
+    value = headers.get("ETag")
+    if value is None:
+        return
+    try:
+        etag = ETag.parse(value)
+    except ValueError:
+        return
+    if etag.weak:
+        return
+    cache_control = headers.get("Cache-Control", "")
+    if any(part.strip().lower() == "no-transform" for part in cache_control.split(",")):
+        return
+    # Edge compression may otherwise change "vN" to W/"vN" on reads, making
+    # every subsequent mutation fail even though the resource did not change.
+    # Preserve the endpoint's privacy and freshness directives as well as its tag.
+    headers["Cache-Control"] = (
+        f"{cache_control}, no-transform" if cache_control else "no-transform"
+    )
 
 
 def etag_matches(if_match: str, current: ETag | str) -> bool:

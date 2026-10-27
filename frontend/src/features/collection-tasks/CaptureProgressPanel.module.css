@@ -47,6 +47,10 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+.row strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
 .row > div {
   min-width: 0;
 }
@@ -64,6 +68,7 @@
   flex-shrink: 0;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
 }
 .compact {
   padding: 10px 14px;

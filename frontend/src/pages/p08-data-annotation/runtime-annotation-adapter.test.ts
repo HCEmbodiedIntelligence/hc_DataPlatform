@@ -21,6 +21,7 @@ import {
   loadRuntimeAutoAnnotationCapability,
   loadRuntimeAnnotationBundle,
   restoreRuntimeAnnotationRevision,
+  reopenRuntimeAnnotationTask,
   resolveReviewSubmission,
   runtimeAnnotationScopeFromShell,
   saveRuntimeAnnotationDraft,
@@ -87,6 +88,25 @@ function installBundleResponses(
 }
 
 describe("P08 formal runtime annotation adapter", () => {
+  it("starts logical data and dependent metadata without waiting for a slow draft", async () => {
+    installRuntime();
+    const fixture = installBundleResponses();
+    const respond = requestMock.getMockImplementation()!;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    requestMock.mockImplementation(async options => {
+      if (options.path.endsWith("/draft")) await gate;
+      return respond(options);
+    });
+    const pending = loadRuntimeAnnotationBundle(visualAnnotationScope, fixture.task.task_id, "annotation");
+    await vi.waitFor(() => {
+      const paths = requestMock.mock.calls.map(([options]) => options.path);
+      expect(paths.some(path => path.endsWith("/logical"))).toBe(true);
+      expect(paths.some(path => path.includes("/tag-schemas/"))).toBe(true);
+      expect(paths.some(path => path.includes("/lance-versions/"))).toBe(true);
+    });
+    release();await pending;
+  });
   it("limits the default cockpit to four cameras and separates Tag levels into colored lanes", () => {
     const fixture = createVisualAnnotationBundle({
       mode: "annotation",
@@ -413,6 +433,54 @@ describe("P08 formal runtime annotation adapter", () => {
         }),
       }),
     );
+  });
+
+  it("reopens the exact approved snapshot without replaying its data operations", async () => {
+    const fixture = createVisualAnnotationBundle({ mode: "annotation" });
+    const task = { ...fixture.task, status: "APPROVED" as const,
+      approved_revision: fixture.task.current_revision };
+    const source = { ...fixture.history.revisions.at(-1)!, operations: [
+      { operation_id: "already-applied", kind: "EXCLUDE" as const, start_step: 10, end_step: 20 },
+    ] };
+    const next = { ...source, revision: source.revision + 1, parent_revision: source.revision, operations: [] };
+    requestMock.mockResolvedValueOnce(source as never).mockResolvedValueOnce(next as never);
+
+    expect(await reopenRuntimeAnnotationTask(visualAnnotationScope, task)).toEqual(next);
+    expect(requestMock).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      method: "GET", path: `/annotation-tasks/${task.task_id}/revisions/${task.current_revision}`,
+    }));
+    expect(requestMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      method: "POST", path: `/annotation-tasks/${task.task_id}/revisions`, ifMatch: task.etag,
+      body: { expected_revision: task.current_revision, operations: [], tags: source.tags,
+        client_mutation_id: expect.stringMatching(/^reopen-/) },
+    }));
+  });
+
+  it.each(["DRAFT", "SUBMITTED", "NEEDS_REVISION", "REJECTED"] as const)(
+    "does not reopen a %s task", async status => {
+      const fixture = createVisualAnnotationBundle({ mode: "annotation" });
+      await expect(reopenRuntimeAnnotationTask(visualAnnotationScope, { ...fixture.task, status }))
+        .rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+      expect(requestMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not reopen a snapshot from another task", async () => {
+    const fixture = createVisualAnnotationBundle({ mode: "annotation" });
+    const task = { ...fixture.task, status: "APPROVED" as const, approved_revision: fixture.task.current_revision };
+    requestMock.mockResolvedValueOnce({ ...fixture.history.revisions.at(-1), task_id: "another-task" } as never);
+    await expect(reopenRuntimeAnnotationTask(visualAnnotationScope, task)).rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a concurrent update when reopening without retrying a stale write", async () => {
+    const fixture = createVisualAnnotationBundle({ mode: "annotation" });
+    const task = { ...fixture.task, status: "APPROVED" as const, approved_revision: fixture.task.current_revision };
+    requestMock.mockResolvedValueOnce(fixture.history.revisions.at(-1) as never)
+      .mockRejectedValueOnce(createDomainError({ code: "VERSION_CONFLICT", message: "任务已更新",
+        fieldErrors: [], operationErrors: [], blockedReasons: [], requestId: null, retryable: false, httpStatus: 409 }));
+    await expect(reopenRuntimeAnnotationTask(visualAnnotationScope, task)).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    expect(requestMock).toHaveBeenCalledTimes(2);
   });
 
   it("blocks annotation mutations before transport when the task is read-only", async () => {

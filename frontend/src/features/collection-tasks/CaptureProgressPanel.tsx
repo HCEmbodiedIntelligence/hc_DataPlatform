@@ -9,6 +9,11 @@ import { Link } from "react-router-dom";
 import type { components } from "../../shared/api/generated/platform";
 import { request } from "../../shared/api/http-client";
 import type { CollectionTaskScope } from "./api";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import {
+  UploadCancellationDialog,
+  type CancellableUpload,
+} from "./UploadCancellationDialog";
 import styles from "./CaptureProgressPanel.module.css";
 
 type CapturePage = components["schemas"]["CaptureProgressPage"];
@@ -32,17 +37,25 @@ export function CaptureProgressPanel({
   robotId,
   datasetId,
   compact = false,
+  initialUnfinishedOnly = false,
 }: {
   readonly scope: CollectionTaskScope;
   readonly taskId?: string;
   readonly robotId?: string;
   readonly datasetId?: string;
   readonly compact?: boolean;
+  readonly initialUnfinishedOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const recordsId = useId();
   const [page, setPage] = useState(1);
   const [detailsId, setDetailsId] = useState<string | null>(null);
+  const [unfinishedOnly, setUnfinishedOnly] = useState(initialUnfinishedOnly);
+  const [cancelling, setCancelling] = useState<
+    readonly CancellableUpload[] | null
+  >(null);
+  const [cancelledCount, setCancelledCount] = useState(0);
+  const canManage = useCapabilities().has("upload.manage");
   const query = useQuery({
     queryKey: [
       "capture-progress",
@@ -53,6 +66,7 @@ export function CaptureProgressPanel({
       robotId,
       datasetId,
       page,
+      unfinishedOnly,
     ],
     queryFn: ({ signal }) =>
       request<CapturePage>({
@@ -66,12 +80,20 @@ export function CaptureProgressPanel({
           dataset_id: datasetId,
           limit: 10,
           offset: (page - 1) * 10,
+          unfinished_uploads_only: unfinishedOnly || undefined,
         },
       }),
     retry: false,
     refetchInterval: 5_000,
   });
   const counts = query.data?.counts;
+  const cancellable = (query.data?.items ?? []).filter(
+    (item) =>
+      !item.received &&
+      ["UPLOADING", "PAUSED", "READY_TO_COMMIT", "FAILED"].includes(
+        item.upload_state,
+      ),
+  );
   return (
     <section
       className={`${styles.panel} ${compact ? styles.compact : ""}`}
@@ -125,6 +147,18 @@ export function CaptureProgressPanel({
         <div className={styles.headerActions}>
           <Button
             size={compact ? "small" : "middle"}
+            type={unfinishedOnly ? "primary" : "default"}
+            aria-pressed={unfinishedOnly}
+            onClick={() => {
+              setUnfinishedOnly(!unfinishedOnly);
+              setPage(1);
+              setExpanded(true);
+            }}
+          >
+            {unfinishedOnly ? "查看全部记录" : "处理未完成上传"}
+          </Button>
+          <Button
+            size={compact ? "small" : "middle"}
             type={compact ? "text" : "default"}
             loading={query.isFetching}
             onClick={() => void query.refetch()}
@@ -160,6 +194,20 @@ export function CaptureProgressPanel({
         />
       ) : null}
       <div id={recordsId} hidden={compact && !expanded}>
+        {cancelledCount > 0 && (
+          <Alert
+            type="success"
+            showIcon
+            title={`已取消 ${cancelledCount} 条上传，信号轨道已刷新。`}
+            closable
+            onClose={() => setCancelledCount(0)}
+          />
+        )}
+        {unfinishedOnly && canManage && cancellable.length > 0 && (
+          <Button danger onClick={() => setCancelling(cancellable)}>
+            取消本页 {cancellable.length} 条上传
+          </Button>
+        )}
         {query.isPending && !compact ? (
           <p role="status">正在读取采集记录…</p>
         ) : null}
@@ -195,10 +243,11 @@ export function CaptureProgressPanel({
         <div className={styles.rows}>
           {query.data?.items.map((item) => (
             <article
-              key={`${item.upload_id}:${item.recording_id ?? "raw"}`}
+              key={`${item.upload_id}:${item.data_package_id}`}
               className={styles.row}
             >
               <div>
+                {item.source_path && <strong>{item.source_path}</strong>}
                 <strong>
                   <ResourceLabel
                     kind="robot"
@@ -280,6 +329,15 @@ export function CaptureProgressPanel({
                   )}
               </div>
               <div className={styles.actions}>
+                {canManage && cancellable.includes(item) && (
+                  <Button
+                    size="small"
+                    danger
+                    onClick={() => setCancelling([item])}
+                  >
+                    取消上传
+                  </Button>
+                )}
                 {item.canonical_episode_id && !datasetId && (
                   <Link to={`/datasets/${encodeURIComponent(item.dataset_id)}`}>
                     查看已有成片
@@ -310,7 +368,13 @@ export function CaptureProgressPanel({
               </div>
             </article>
           ))}
-          {query.data?.total === 0 && <p>当前还没有采集上传记录。</p>}
+          {query.data?.total === 0 && (
+            <p>
+              {unfinishedOnly
+                ? "当前没有未完成上传。"
+                : "当前还没有采集上传记录。"}
+            </p>
+          )}
         </div>
         {(query.data?.total ?? 0) > 10 && (
           <Pagination
@@ -322,6 +386,14 @@ export function CaptureProgressPanel({
           />
         )}
       </div>
+      {cancelling && (
+        <UploadCancellationDialog
+          scope={scope}
+          items={cancelling}
+          onClose={() => setCancelling(null)}
+          onCompleted={setCancelledCount}
+        />
+      )}
       <Drawer
         title="Episode 处理详情"
         open={Boolean(detailsId)}

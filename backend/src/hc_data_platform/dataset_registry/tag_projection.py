@@ -264,7 +264,8 @@ class PostgresTagProjector:
             package.manifest.input != plan.input
             or package.receipt.data != ready.data
             or ready.source_sha256 != plan.input.source_sha256
-            or ready.data.frame_count != plan.frame_count
+            or not 0 < ready.data.frame_count <= plan.frame_count
+            or (plan.processor_version == "hc-tag-episode/1" and ready.data.frame_count != plan.frame_count)
             or package.document("hc/derivation/plan.json") != plan.model_dump(mode="json")
             or version.project_id != plan.parent.identity.project_id
             or version.dataset_id != plan.parent.identity.dataset_id

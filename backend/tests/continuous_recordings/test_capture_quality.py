@@ -5,6 +5,36 @@ import pytest
 from hc_data_platform.continuous_recordings.capture_quality import aggregate
 
 
+def test_qc_offsets_include_accepted_state_and_rejected_nearest_action(tmp_path):
+    import json
+
+    from mcap.writer import Writer
+
+    from hc_data_platform.continuous_recordings.capture_quality import alignment_offsets
+
+    path = tmp_path / "sensor.mcap"
+    with path.open("wb") as file:
+        writer = Writer(file)
+        writer.start()
+        schema = writer.register_schema("value", "jsonschema", b"{}")
+        for topic, value in {
+            "source.timestamp_ns": 1_000_000_000,
+            "/observation/state": {"source_timestamp_ns": 998_000_000},
+            "/action": {
+                "source_timestamp_ns": None,
+                "nearest_source_timestamp_ns": 950_000_000,
+                "alignment_reference_timestamp_ns": 1_000_000_000,
+            },
+        }.items():
+            channel = writer.register_channel(topic, "json", schema)
+            writer.add_message(channel, 0, json.dumps(value).encode(), 0)
+        writer.finish()
+    assert alignment_offsets([path], 0, 100_000_000) == {
+        "/action": [-50_000_000],
+        "/observation/state": [-2_000_000],
+    }
+
+
 def profile():
     return SimpleNamespace(
         complete_step=SimpleNamespace(minimum_ratio_reject=0.8, minimum_ratio_risk=0.98),

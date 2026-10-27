@@ -23,6 +23,9 @@ EpisodeId = Annotated[
     str,
     StringConstraints(pattern=r"^episode_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$"),
 ]
+TaskDescription = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=10_000)
+]
 
 
 def _parse_nanoseconds(value: object) -> int:
@@ -90,6 +93,7 @@ class ContinuousRecording(BaseModel):
     source_file_name: str | None = Field(default=None, max_length=255)
     robot_name: str | None = Field(default=None, max_length=256)
     task_code: str | None = Field(default=None, max_length=128)
+    default_task_labels: tuple[TaskDescription, ...] = Field(default=(), max_length=100)
     upload_session_id: UUID | None = None
     recording_upload_id: UUID | None = None
     rollout_id: Identifier
@@ -144,7 +148,9 @@ class EpisodeSliceInput(BaseModel):
     start_offset_ns: Nanoseconds
     end_offset_ns: Nanoseconds
     title: str | None = Field(default=None, min_length=1, max_length=256)
-    task_label: str | None = Field(default=None, min_length=1, max_length=128)
+    task_label: TaskDescription | None = None
+    # None preserves legacy clients; an explicit empty list means the user cleared labels.
+    task_labels: tuple[TaskDescription, ...] | None = Field(default=None, max_length=100)
     notes: str | None = Field(default=None, max_length=4096)
 
     @model_validator(mode="after")
@@ -212,7 +218,8 @@ class EpisodeSlice(BaseModel):
     started_at: AwareDatetime
     ended_at: AwareDatetime
     title: str | None = Field(default=None, min_length=1, max_length=256)
-    task_label: str | None = Field(default=None, min_length=1, max_length=128)
+    task_label: TaskDescription | None = None
+    task_labels: tuple[TaskDescription, ...] | None = Field(default=None, max_length=100)
     notes: str | None = Field(default=None, max_length=4096)
     source_sha256: Sha256
     source_upload_session_id: UUID | None = None

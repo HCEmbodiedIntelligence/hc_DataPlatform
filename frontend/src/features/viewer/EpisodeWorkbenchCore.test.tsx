@@ -345,11 +345,39 @@ describe("direct Tag manipulation", () => {
   it("does not expose direct editing or deletion when read-only", () => {
     const { clock, editing, tag } = setup(true);
     fireEvent.contextMenu(tag);
+    fireEvent.keyDown(tag, { key: "Delete" });
     fireEvent.pointerDown(tag, { button: 0, pointerId: 1, clientX: 40 });
     fireEvent.pointerMove(tag, { pointerId: 1, clientX: 60 });
     fireEvent.pointerUp(tag, { pointerId: 1, clientX: 60 });
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(editing.onChange).not.toHaveBeenCalled();
+    expect(editing.onDelete).not.toHaveBeenCalled();
+    clock.dispose();
+  });
+
+  it.each(["segment", "menu"])(
+    "deletes a focused %s with Delete and restores timeline focus",
+    (target) => {
+      const { clock, editing, tag } = setup();
+      tag.focus();
+      if (target === "menu") fireEvent.contextMenu(tag);
+      fireEvent.keyDown(document.activeElement!, { key: "Delete" });
+      expect(editing.onDelete).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "共享视频时间轴与信号轨道" }),
+      ).toHaveFocus();
+      clock.dispose();
+    },
+  );
+
+  it("does not delete from other timeline controls or modified or repeated keys", () => {
+    const { clock, editing, tag } = setup();
+    fireEvent.keyDown(screen.getByRole("slider", { name: "播放位置" }), {
+      key: "Delete",
+    });
+    for (const modifier of ["ctrlKey", "altKey", "metaKey", "repeat"])
+      fireEvent.keyDown(tag, { key: "Delete", [modifier]: true });
     expect(editing.onDelete).not.toHaveBeenCalled();
     clock.dispose();
   });

@@ -140,6 +140,7 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
             ("collection_tasks.capture_plan_heads", "SELECT"),
             ("dataset_registry.datasets", "SELECT, INSERT"),
             ("annotation.tag_schema_bindings", "SELECT, INSERT"),
+            ("annotation.collection_task_tag_schema_bindings", "SELECT, INSERT, UPDATE"),
             ("annotation.tag_schema_versions", "SELECT, INSERT"),
             ("registry.organization_projects", "SELECT"),
             ("ingest.collection_jobs", "SELECT"),
@@ -452,6 +453,36 @@ def cleanup(dsn: str, project_id: str) -> None:
             "DELETE FROM registry.organization_projects WHERE organization_id = %s",
             (organization_for(project_id),),
         )
+
+
+def test_postgres_task_category_can_be_created_unset_and_cleared() -> None:
+    dsn = database_dsn()
+    project_id = f"collection-task-category-{uuid4().hex}"
+    ensure_organization_project(dsn, project_id)
+    role_name = f"collection_task_category_{uuid4().hex[:12]}"
+    create_runtime_role(dsn, role_name)
+    service = service_for(dsn, role_name)
+    try:
+        with request_scope(project_id):
+            task = create_task(
+                service, project_id, "category-create",
+                command=CreateCollectionTask(name="Unclassified", scenario="integration"),
+            )
+            assert task.type == ""
+            for category in ("抓取", ""):
+                task = service.update(
+                    organization_id=organization_for(project_id),
+                    project_id=project_id,
+                    collection_task_id=task.collection_task_id,
+                    command=UpdateCollectionTask(type=category),
+                    if_match=service.etag(task),
+                )
+                assert service.detail(
+                    organization_for(project_id), project_id, task.collection_task_id
+                ).type == category
+    finally:
+        cleanup(dsn, project_id)
+        drop_runtime_role(dsn, role_name)
 
 
 def test_postgres_target_constraint_rejects_nonpositive_dimensions() -> None:

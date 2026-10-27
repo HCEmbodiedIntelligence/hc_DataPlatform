@@ -16,6 +16,7 @@ from hc_data_platform.security.audit import canonical_hash
 from .models import (
     AnnotationRevision,
     AnnotationStatus,
+    AnnotationTag,
     AnnotationTask,
     AnnotationTaskCreationSource,
     AnnotationTaskKind,
@@ -46,6 +47,7 @@ class AutomaticAnnotationRequest:
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
     data_ref: DataVersionRef | None = None
+    task_labels: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         string_values = (
@@ -149,15 +151,28 @@ class AutomaticAnnotationTaskService:
         if schema is None:
             self._repository.record_automatic_blocked(request)
             raise AutomaticAnnotationBlocked(
-                "no explicitly compatible published Tag Schema is bound to this data target"
+                "the collection task has no published annotation rules configured"
             )
         now = self._clock()
+        tags = tuple(
+            AnnotationTag(
+                annotation_id=str(uuid5(NAMESPACE_URL, f"{request.task_id}:description:{index}")),
+                tag_id=f"task-description-{index + 1}",
+                path=(f"task-description-{index + 1}",),
+                label=label,
+                start_step=0,
+                end_step=request.base_step_count,
+            )
+            for index, label in enumerate(dict.fromkeys(
+                label.strip() for label in request.task_labels if label.strip()
+            ))
+        )
         content_hash = revision_content_hash(
             base_lance_version=request.lance_version,
             data_ref=request.data_ref,
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
-            tags=(),
+            tags=tags,
             operations=(),
         )
         revision = AnnotationRevision(
@@ -170,7 +185,7 @@ class AutomaticAnnotationTaskService:
             data_ref=request.data_ref,
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
-            tags=(),
+            tags=tags,
             operations=(),
             content_hash=content_hash,
             created_at=now,

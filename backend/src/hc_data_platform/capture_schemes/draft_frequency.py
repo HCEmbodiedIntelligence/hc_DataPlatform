@@ -32,6 +32,14 @@ def mcap_frequency(path: Path, configuration: Document) -> int:
     if not topic:
         raise ValueError("请选择 MCAP 时间来源对应的状态话题或主相机")
     intervals: list[int] = []
+    from hc_data_platform.continuous_recordings.mcap_selection import ALIASES
+    aliases = configuration.get("topic_aliases", {}).get(topic, ALIASES.get(topic, ()))
+    from hc_data_platform.continuous_recordings.mcap_native import inspect
+    inventory = inspect(path, selected_topics=set())
+    candidates = [t for t in (topic, *aliases) if inventory.get(t, {}).get("message_count", 0)]
+    if len(candidates) != 1:
+        raise ValueError("MCAP 时间来源缺失或存在多个来源别名")
+    topic = candidates[0]
     previous: int | None = None
     with path.open("rb") as stream:
         for _, _, message in make_reader(stream, validate_crcs=True).iter_messages(

@@ -8,7 +8,7 @@ export interface EditableSlice {
   readonly startNs: number;
   readonly endNs: number;
   readonly title: string;
-  readonly taskLabel: string;
+  readonly taskLabels: readonly string[];
   readonly notes: string;
 }
 
@@ -61,13 +61,15 @@ export function formatDuration(valueNs: number): string {
 
 export function fromServerSlices(
   slices: readonly EpisodeSlice[],
+  defaults: readonly string[] = [],
 ): EditableSlice[] {
   return slices.map((slice) => ({
     episodeId: slice.episode_id,
     startNs: parseNanoseconds(slice.start_offset_ns),
     endNs: parseNanoseconds(slice.end_offset_ns),
     title: slice.title ?? "",
-    taskLabel: slice.task_label ?? "",
+    taskLabels:
+      slice.task_labels ?? (slice.task_label ? [slice.task_label] : defaults),
     notes: slice.notes ?? "",
   }));
 }
@@ -82,7 +84,11 @@ export function toSliceInputs(
       start_offset_ns: String(slice.startNs),
       end_offset_ns: String(slice.endNs),
       ...(slice.title.trim() ? { title: slice.title.trim() } : {}),
-      ...(slice.taskLabel.trim() ? { task_label: slice.taskLabel.trim() } : {}),
+      task_labels: [
+        ...new Set(
+          slice.taskLabels.map((label) => label.trim()).filter(Boolean),
+        ),
+      ],
       ...(slice.notes.trim() ? { notes: slice.notes.trim() } : {}),
     }));
 }

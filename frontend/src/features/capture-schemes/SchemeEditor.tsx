@@ -11,6 +11,7 @@ import {
 } from "./contracts";
 import { AdapterFields } from "./AdapterFields";
 import { DefinitionFields } from "./DefinitionFields";
+import { QualityFields } from "./QualityFields";
 import { Differences, EvidenceView } from "./EvidenceView";
 import {
   emptyDocument,
@@ -81,7 +82,7 @@ export function SchemeEditor({
     organizationId,
     async (kind: "save" | "validate" | "publish") => {
       if (kind === "save") {
-        const normalized = normalizeAdapters(doc);
+        const normalized = normalizeAdapters({ ...doc, output: { ...doc.output, algorithm: doc.output.algorithm === "capture-structure/v3" ? "capture-structure/v3" : "capture-structure/v2" } });
         const errors = validateEditor(normalized);
         if (errors.length) throw new Error(errors.join("；"));
         const result = await captureApi.save(organizationId, schemeId, {
@@ -240,6 +241,7 @@ export function SchemeEditor({
               />
             )}
             <DefinitionFields document={doc} onChange={change} />
+            <QualityFields document={doc} onChange={change} />
           </>
         )}
         {step === 2 && (
@@ -271,7 +273,7 @@ export function SchemeEditor({
             </p>
             <Button
               type="primary"
-              loading={action.isPending}
+              loading={action.isPending && action.variables === "save"}
               disabled={!dirty || action.isPending}
               onClick={() => action.mutate("save")}
             >
@@ -290,11 +292,20 @@ export function SchemeEditor({
               onChange={setSample}
             />
             <Button
+              loading={action.isPending && action.variables === "validate"}
               disabled={dirty || !sample?.source_path || action.isPending}
               onClick={() => action.mutate("validate")}
             >
               {doc.input_mode === "AUTO" ? "验证采集方案" : "验证当前格式"}
             </Button>
+            {action.isPending && action.variables === "validate" && (
+              <Alert
+                type="info"
+                showIcon
+                title="正在验证样本"
+                description="大文件可能需要几分钟。响应超时后会自动查询验证结果，请等待，无需重复保存。"
+              />
+            )}
             {!dirty && <EvidenceView items={detail?.validations ?? []} />}
             {latest && (
               <>

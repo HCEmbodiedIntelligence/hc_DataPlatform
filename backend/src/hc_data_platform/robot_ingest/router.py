@@ -598,6 +598,30 @@ def list_robot_upload_history(
     )
 
 
+@router.post(
+    "/projects/{project_id}/robot-ingest/uploads/{upload_id}:cancel",
+    response_model=RobotIngestUploadEnvelope,
+    operation_id="cancelRobotIngestUploadAsOperator",
+)
+def cancel_robot_upload_as_operator(
+    project_id: str,
+    upload_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    organization_id: OrganizationId,
+    region_code: RegionCode,
+    service: Service,
+) -> RobotIngestUploadEnvelope:
+    _no_store(response)
+    return service.cancel_upload_as_operator(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        upload_id=upload_id,
+    )
+
+
 @router.get(
     "/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes",
     response_model=RobotIngestEpisodeResultList,

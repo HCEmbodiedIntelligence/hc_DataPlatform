@@ -12,6 +12,9 @@ import type {
 } from "../../../shared/api/generated/platform";
 import { parseWire, parseOrganizationWire } from "../../../shared/api/validate";
 import { getRobotBootstrap } from "../../robots/api/client";
+import { getRuntimeConfig } from "../../../shared/config/runtime";
+import type { Scope } from "../../../shared/scope/model";
+import { authorizedModelSceneAssets, type ModelLoadProgress } from "../../viewer/authorized-model-cache";
 
 const id = z.string().min(1).max(128);
 
@@ -102,6 +105,16 @@ const assetDownloadWireSchema = z
     media_type: z.string().min(1),
   })
   .strict();
+
+export const robotModelViewerAssetGrantWire = z.object({
+  asset: assetSchema,
+  authorization: assetDownloadWireSchema,
+  preview: assetDownloadWireSchema.extend({
+    source_sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    size_bytes: z.number().int().positive(),
+    policy: z.enum(["mesh-qem-v1", "mesh-indexed-glb-v2"]),
+  }).nullish(),
+});
 
 export {
   assetSchema as robotModelAssetWire,
@@ -435,61 +448,60 @@ export async function authorizeRobotModelAssetDownload(
   });
 }
 
-export interface RobotModelViewerAssets {
-  readonly urdfUrl: string;
-  readonly urdfPath: string;
-  readonly assetUrls: Readonly<Record<string, string>>;
+/** Validate content identity before any viewer is allowed to reuse cached bytes. */
+export function validateRobotModelViewerAssets(raw: unknown, assets: readonly RobotModelAsset[], endpoint: string) {
+  const expected = assets.filter(asset => ["URDF", "MESH", "TEXTURE"].includes(asset.role));
+  const grants = parseWire(z.array(robotModelViewerAssetGrantWire).refine(values =>
+    values.length === expected.length && new Set(values.map(value => value.asset.asset_id)).size === expected.length &&
+    values.every(value => expected.some(asset => asset.asset_id === value.asset.asset_id)),
+  ), raw, { endpoint });
+  const api = new URL(getRuntimeConfig().apiBaseUrl, globalThis.location?.origin ?? "http://localhost");
+  return expected.map(asset => {
+    const value = grants.find(item => item.asset.asset_id === asset.asset_id)!;
+    const original = value.authorization;
+    if (value.asset.sha256 !== asset.sha256 || value.asset.relative_path !== asset.relative_path ||
+        value.asset.role !== asset.role || value.asset.size_bytes !== asset.size_bytes ||
+        value.asset.media_type !== asset.media_type || original.asset_id !== asset.asset_id ||
+        original.sha256 !== asset.sha256 || original.media_type !== asset.media_type ||
+        Date.parse(original.expires_at) <= Date.now())
+      throw new Error("模型资产与授权内容不一致或授权已失效");
+    const preview = value.preview;
+    if (preview && (asset.role !== "MESH" || preview.source_sha256 !== asset.sha256 ||
+        preview.asset_id !== asset.asset_id || preview.size_bytes >= asset.size_bytes ||
+        preview.media_type !== (preview.policy === "mesh-indexed-glb-v2" ? "model/gltf-binary" : "model/stl") ||
+        Date.parse(preview.expires_at) <= Date.now()))
+      throw new Error("轻量模型与原始资产不匹配");
+    const selected = preview ?? original;
+    const originalUrl = new URL(original.download_url, api.origin);
+    const url = new URL(selected.download_url, originalUrl.origin);
+    if ([originalUrl, url].some(candidate => !["http:", "https:"].includes(candidate.protocol) || candidate.username || candidate.password))
+      throw new Error("模型资产下载地址无效");
+    return { asset, grant: { ...selected, download_url: url.toString() }, sizeBytes: preview?.size_bytes ?? asset.size_bytes };
+  });
 }
 
-/**
- * Authorize every object a URDF viewer may fetch. A signed URDF URL cannot be
- * used as a relative base for separately stored meshes or textures because
- * each object requires its own short-lived signature.
- */
+/** Authorize the complete viewer in one round trip, then use the common loader. */
 export async function authorizeRobotModelViewerAssets(
   organizationId: string,
   versionId: string,
   assets: readonly RobotModelAsset[],
   signal?: AbortSignal,
-): Promise<RobotModelViewerAssets> {
-  const urdfAsset = assets.find((asset) => asset.role === "URDF");
-  if (!urdfAsset) throw new Error("Robot model viewer requires one URDF asset");
-
-  const viewerAssets = assets.filter(
-    (asset) =>
-      asset.asset_id === urdfAsset.asset_id ||
-      asset.role === "MESH" ||
-      asset.role === "TEXTURE",
-  );
-  const authorizations = await Promise.all(
-    viewerAssets.map(async (asset) => ({
-      asset,
-      authorization: await authorizeRobotModelAssetDownload(
-        organizationId,
-        versionId,
-        asset.asset_id,
-        signal,
-      ),
-    })),
-  );
-  const urdfAuthorization = authorizations.find(
-    ({ asset }) => asset.asset_id === urdfAsset.asset_id,
-  );
-  if (!urdfAuthorization)
-    throw new Error("Robot model viewer could not authorize its URDF asset");
-
-  return {
-    urdfUrl: urdfAuthorization.authorization.download_url,
-    urdfPath: urdfAsset.relative_path,
-    assetUrls: Object.fromEntries(
-      authorizations
-        .filter(({ asset }) => asset.asset_id !== urdfAsset.asset_id)
-        .map(({ asset, authorization }) => [
-          asset.relative_path,
-          authorization.download_url,
-        ]),
-    ),
-  };
+  options: { scope?: Scope; onLoadProgress?: ModelLoadProgress } = {},
+) {
+  const scope = options.scope ?? { organizationId };
+  const lease = createSessionScopeLease(scope, signal);
+  const endpoint = `/organizations/${encodeURIComponent(organizationId)}/robot-model-versions/${encodeURIComponent(versionId)}/viewer-assets:authorize`;
+  try {
+    lease.signal.throwIfAborted();
+    const raw = await request<unknown>({ method: "POST", path: endpoint, scopeMode: "explicit",
+      scope: { organizationId }, cache: "no-store", signal: lease.signal });
+    lease.signal.throwIfAborted();
+    const page = parseOrganizationWire(z.object({
+      version_id: z.literal(versionId), items: z.array(robotModelViewerAssetGrantWire), scope: scopeSchema, request_id: id,
+    }), raw, { endpoint }, organizationId);
+    const grants = validateRobotModelViewerAssets(page.items, assets, endpoint);
+    return authorizedModelSceneAssets(grants, scope, options.onLoadProgress);
+  } finally { lease.release(); }
 }
 
 async function authorizeRobotModelAssetParts(

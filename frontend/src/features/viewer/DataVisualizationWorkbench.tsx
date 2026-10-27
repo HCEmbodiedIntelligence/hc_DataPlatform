@@ -357,6 +357,7 @@ export function DataVisualizationWorkbench({
           robotScene={adapter.robotScene}
           robotSceneUnavailableReason={adapter.robotSceneUnavailableReason}
           streams={adapter.cameraStreams}
+          emptyMessage={adapter.cameraEmptyMessage}
         />
       </section>
       {!preview ? (

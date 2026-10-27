@@ -54,11 +54,12 @@ def present_recordings(connection_factory, items: tuple[ContinuousRecording, ...
         with connection.cursor() as cursor:
             cursor.execute(
                 """SELECT r.recording_id,t.task_code,robot.display_name,
-                          COALESCE(m.source_path,source.asset_path)
+                          COALESCE(m.source_path,source.asset_path),t.description,t.name
                    FROM ingest.continuous_recordings r
                    LEFT JOIN collection_tasks.collection_tasks t
                      ON t.organization_id=r.organization_id AND t.project_id=r.project_id
                     AND t.collection_task_id=r.collection_task_id
+                    AND t.upload_region_code=r.region_code
                    LEFT JOIN robotics.robot_assets robot
                      ON robot.organization_id=r.organization_id AND robot.robot_id=r.robot_id
                    LEFT JOIN LATERAL (
@@ -88,16 +89,19 @@ def present_recordings(connection_factory, items: tuple[ContinuousRecording, ...
     finally:
         connection.close()
     return tuple(
-        _present(item, *labels.get(item.recording_id, (None, None, None))) for item in items
+        _present(item, *labels.get(item.recording_id, (None, None, None, None, None)))
+        for item in items
     )
 
 
-def _present(recording, task_code, robot_name, source):
+def _present(recording, task_code, robot_name, source, task_description=None, task_name=None):
+    description = (task_description or "").strip() or (task_name or "").strip()
     return recording.model_copy(
         update={
             "file_name": recording_filename(recording, task_code, source),
             "source_file_name": decoded_filename(source),
             "robot_name": robot_name,
             "task_code": task_code,
+            "default_task_labels": (description,) if description else (),
         }
     )

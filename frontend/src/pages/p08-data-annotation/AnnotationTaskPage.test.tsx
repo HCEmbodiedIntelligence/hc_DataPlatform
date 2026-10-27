@@ -12,7 +12,7 @@ import {
 } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TagReviewTaskPage } from "./AnnotationTaskPage";
+import { AnnotationTaskPage, TagReviewTaskPage } from "./AnnotationTaskPage";
 import type { AnnotationWorkbenchView } from "./AnnotationWorkbenchView";
 import type { RuntimeAnnotationBundle } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
@@ -20,10 +20,11 @@ import {
   visualAnnotationScope,
 } from "./testing/annotation-fixture";
 
-const { grantedCapabilities, loadBundleMock, reviewMock } = vi.hoisted(() => ({
+const { grantedCapabilities, loadBundleMock, reviewMock, reopenMock } = vi.hoisted(() => ({
   grantedCapabilities: new Set<string>(),
   loadBundleMock: vi.fn(),
   reviewMock: vi.fn(),
+  reopenMock: vi.fn(),
 }));
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
@@ -35,13 +36,13 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
 }));
 
 vi.mock("../../shared/scope/shell-store", () => ({
-  useShellStore: (selector: (state: object) => unknown) =>
+  useShellStore: Object.assign((selector: (state: object) => unknown) =>
     selector({
       principal: { actorId: "visual-annotator" },
       scope: visualAnnotationScope,
       sessionRevision: 1,
       capabilityRevision: 1,
-    }),
+    }), { subscribe: () => () => {} }),
 }));
 
 vi.mock("../../features/robots/api/hooks", () => ({
@@ -61,7 +62,7 @@ vi.mock(
       typeof import("../../features/annotation/runtime/runtime-annotation-adapter")
     >()),
     loadRuntimeAnnotationBundle: loadBundleMock,
-    createRuntimeAnnotationCommands: () => ({ review: reviewMock }),
+    createRuntimeAnnotationCommands: () => ({ review: reviewMock, reopen: reopenMock }),
   }),
 );
 
@@ -69,9 +70,14 @@ vi.mock("./AnnotationWorkbenchView", () => ({
   AnnotationWorkbenchView: ({
     permissions,
     onReview,
+    onReopenAnnotation,
   }: ComponentProps<typeof AnnotationWorkbenchView>) => (
     <section>
       {permissions.readOnlyReason ? <p>{permissions.readOnlyReason}</p> : null}
+      <button disabled={!permissions.canReopen} onClick={() => void onReopenAnnotation?.()}>
+        修改标注
+      </button>
+      <output aria-label="可编辑">{String(permissions.canEdit)}</output>
       {(["APPROVE", "NEEDS_REVISION", "REJECT"] as const).map((decision) => (
         <button
           key={decision}
@@ -85,7 +91,7 @@ vi.mock("./AnnotationWorkbenchView", () => ({
   ),
 }));
 
-function renderReview(bundle: RuntimeAnnotationBundle) {
+function renderReview(bundle: RuntimeAnnotationBundle, mode: "annotation" | "tag-review" = "tag-review") {
   loadBundleMock.mockResolvedValue(bundle);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -98,16 +104,17 @@ function renderReview(bundle: RuntimeAnnotationBundle) {
       visualAnnotationScope.projectId,
       visualAnnotationScope.regionCode,
       bundle.task.task_id,
-      "tag-review",
+      mode,
     ],
     bundle,
   );
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter
-        initialEntries={[`/annotations/tag-review/${bundle.task.task_id}`]}
+        initialEntries={[mode === "tag-review" ? `/annotations/tag-review/${bundle.task.task_id}` : `/annotations/tasks/${bundle.task.task_id}`]}
       >
         <Routes>
+          <Route path="/annotations/tasks/:taskId" element={<AnnotationTaskPage />} />
           <Route
             path="/annotations/tag-review/:taskId"
             element={<TagReviewTaskPage />}
@@ -128,6 +135,8 @@ beforeEach(() => {
   ])
     grantedCapabilities.add(capability);
   reviewMock.mockResolvedValue(undefined);
+  reopenMock.mockReset();
+  reopenMock.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -182,4 +191,43 @@ describe("TagReviewTaskPage self review", () => {
     expect(screen.getByRole("button", { name: "APPROVE" })).toBeDisabled();
     expect(reviewMock).not.toHaveBeenCalled();
   });
+});
+
+describe("completed annotation editing", () => {
+  function completedBundle(mode: "annotation" | "tag-review") {
+    const bundle = createVisualAnnotationBundle({ mode });
+    return { ...bundle, task: { ...bundle.task, status: "APPROVED" as const,
+      approved_revision: bundle.task.current_revision, approved_review_id: "approved-review" } };
+  }
+  function allowEditing() {
+    for (const capability of ["annotation.edit", "annotation_draft.edit", "annotation.save"])
+      grantedCapabilities.add(capability);
+  }
+
+  it.each(["annotation", "tag-review"] as const)("reopens from the %s result page", async mode => {
+    allowEditing();
+    const completed = completedBundle(mode);
+    renderReview(completed, mode);
+    expect(screen.getByRole("button", { name: "修改标注" })).toBeEnabled();
+    expect(screen.getByLabelText("可编辑")).toHaveTextContent("false");
+    const draft = createVisualAnnotationBundle({ mode: "annotation" });
+    reopenMock.mockImplementation(async () => { loadBundleMock.mockResolvedValue(draft); });
+    fireEvent.click(screen.getByRole("button", { name: "修改标注" }));
+    await waitFor(() => expect(reopenMock).toHaveBeenCalledWith(completed.task));
+    await waitFor(() => expect(screen.getByRole("button", { name: "修改标注" })).toBeDisabled());
+    expect(screen.getByLabelText("可编辑")).toHaveTextContent("true");
+  });
+
+  it.each(["annotation.edit", "annotation_draft.edit", "annotation.save", "assignee"])(
+    "keeps completed editing unavailable without %s", missing => {
+      allowEditing();
+      const completed = completedBundle("annotation");
+      if (missing === "assignee") completed.task.assignee_id = "another-annotator";
+      else grantedCapabilities.delete(missing);
+      renderReview(completed, "annotation");
+      expect(screen.getByRole("button", { name: "修改标注" })).toBeDisabled();
+      fireEvent.click(screen.getByRole("button", { name: "修改标注" }));
+      expect(reopenMock).not.toHaveBeenCalled();
+    },
+  );
 });

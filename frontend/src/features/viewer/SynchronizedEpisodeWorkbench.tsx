@@ -91,6 +91,7 @@ export function SynchronizedEpisodeWorkbench({
               }}
             >
               <ViewerRobotPosePanel
+                clock={adapter.clock}
                 scene={adapter.robotScene}
                 unavailableReason={adapter.robotSceneUnavailableReason}
               />
@@ -100,7 +101,6 @@ export function SynchronizedEpisodeWorkbench({
             <div className={styles.jointAngleDock}>
               {available.length > 1 ? (
                 <label className={styles.numericStreamSelector}>
-                  数值通道
                   <select
                     aria-label="数值通道"
                     value={selected?.id ?? ""}
@@ -108,7 +108,7 @@ export function SynchronizedEpisodeWorkbench({
                   >
                     {available.map((stream) => (
                       <option key={stream.id} value={stream.id}>
-                        {stream.displayName}
+                        {stream.modality === "joint_state" ? "关节" : stream.modality === "action" ? "动作" : stream.displayName}
                       </option>
                     ))}
                   </select>

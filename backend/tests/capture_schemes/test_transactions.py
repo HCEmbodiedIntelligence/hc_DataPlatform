@@ -172,7 +172,9 @@ def test_automatic_scheme_uses_one_real_sample_without_fabricating_other_format_
 
 
 @pytest.mark.parametrize("change_existing", [False, True])
-def test_locked_plan_can_add_format_without_changing_old_recordings(environment, change_existing):
+def test_started_plan_can_change_sources_without_changing_old_recordings(
+    environment, change_existing
+):
     dsn, scope, tasks = environment
     org = scope[0]
     with psycopg.connect(dsn) as db:
@@ -261,18 +263,13 @@ def test_locked_plan_can_add_format_without_changing_old_recordings(environment,
                 }
             ],
         )
-        if change_existing:
-            with pytest.raises(ProblemException, match="CAPTURE_PLAN_LOCKED"):
-                plans.save_plan(db, scope, tasks[0], selection2, "tester")
-            assert plans.get_plan(db, scope, tasks[0])["revision"] == 1
-        else:
-            updated = plans.save_plan(db, scope, tasks[0], selection2, "tester")
-            assert updated["revision"] == 2 and updated["locked_at"] is not None
-            assert updated["output"] == original["output"]
-            assert (
-                plans.for_robot(db, scope, tasks[0], "robot-1", "MCAP")["scheme"]
-                == upgraded.model_dump()
-            )
+        updated = plans.save_plan(db, scope, tasks[0], selection2, "tester")
+        assert updated["revision"] == 2 and updated["locked_at"] is not None
+        assert updated["output"] == original["output"]
+        assert (
+            plans.for_robot(db, scope, tasks[0], "robot-1", "MCAP")["scheme"]
+            == upgraded.model_dump()
+        )
         assert (
             plans.prepare_recording(db, scope, tasks[0], "robot-1", command, "tester") == original
         )
@@ -333,8 +330,25 @@ def test_cross_instance_reuse_independent_tasks_and_immutable_snapshots(environm
             )
             == snapshot
         )
-    with psycopg.connect(dsn) as db, pytest.raises(ProblemException, match="CAPTURE_PLAN_LOCKED"):
-        plans.save_plan(db, scope, tasks[0], selection(other, "robot-1", revision=1), "tester")
+    with psycopg.connect(dsn) as db:
+        replacement = plans.save_plan(
+            db, scope, tasks[0], selection(other, "robot-1", revision=1), "tester"
+        )
+        assert replacement["revision"] == 2
+        assert replacement["scheme"] == other.model_dump()
+        assert (
+            plans.prepare_recording(
+                db,
+                scope,
+                tasks[0],
+                "robot-1",
+                PrepareRecording(
+                    expected_plan_revision=1, recording_id="recording-1", source_format="LEROBOT_V3"
+                ),
+                "tester",
+            )
+            == snapshot
+        )
     with psycopg.connect(dsn) as db, pytest.raises(psycopg.errors.RaiseException):
         db.execute(
             "UPDATE ingest.capture_scheme_versions SET document='{}' WHERE organization_id=%s",
@@ -388,7 +402,45 @@ def test_archive_remove_do_not_break_locked_tasks_but_block_new_use(environment)
         schemes.version(db, "foreign", ref)
 
 
-def test_start_racing_plan_change_has_one_consistent_winner(environment):
+def test_started_task_can_select_new_output_without_rewriting_frozen_history(environment):
+    dsn, scope, tasks = environment
+    with psycopg.connect(dsn) as db:
+        ref = publish(db, scope[0])
+        revised = publish(db, scope[0], "revised", units="degree")
+        associate(db, scope[0], "robot-1", ref)
+        associate(db, scope[0], "robot-1", revised, make_default=False)
+        plans.save_plan(db, scope, tasks[0], selection(ref, "robot-1"), "tester")
+        command = PrepareRecording(
+            expected_plan_revision=1, recording_id="original", source_format="LEROBOT_V3"
+        )
+        original = plans.prepare_recording(db, scope, tasks[0], "robot-1", command, "tester")
+        replacement = selection(revised, "robot-1", revision=1)
+        changed = plans.save_plan(db, scope, tasks[0], replacement, "editor")
+        assert changed["revision"] == 2
+        assert changed["output"]["features"]["action"]["units"] == ["degree", "degree"]
+        assert plans.save_plan(db, scope, tasks[0], replacement, "editor") == changed
+        assert (
+            plans.prepare_recording(db, scope, tasks[0], "robot-1", command, "tester") == original
+        )
+        history = db.execute(
+            "SELECT document FROM collection_tasks.capture_plans "
+            "WHERE organization_id=%s AND collection_task_id=%s ORDER BY revision",
+            (scope[0], tasks[0]),
+        ).fetchall()
+        assert len(history) == 2
+        assert history[0][0]["output"] == original["output"]
+        assert history[1][0]["output"] == changed["output"]
+        assert (
+            db.execute(
+                "SELECT document FROM episode_store.dataset_capture_contracts "
+                "WHERE organization_id=%s AND dataset_id=%s",
+                (scope[0], original["dataset_id"]),
+            ).fetchone()[0]
+            == original["output"]
+        )
+
+
+def test_start_racing_plan_change_keeps_each_recording_on_its_requested_revision(environment):
     dsn, scope, tasks = environment
     with psycopg.connect(dsn) as db:
         ref = publish(db, scope[0])
@@ -421,15 +473,18 @@ def test_start_racing_plan_change_has_one_consistent_winner(environment):
 
     with ThreadPoolExecutor(2) as workers:
         results = list(workers.map(start_or_change, (True, False)))
-    assert sum(isinstance(r, dict) for r in results) == 1
-    assert any(
-        r in ("CAPTURE_REVISION_CONFLICT", "CAPTURE_PLAN_LOCKED")
-        for r in results
-        if isinstance(r, str)
-    )
+    # Saving a newer selection is allowed after preparation. If saving wins
+    # first, a stale preparation must still fail rather than use another plan.
+    assert isinstance(results[1], dict) and results[1]["revision"] == 2
+    if isinstance(results[0], dict):
+        assert results[0]["plan_revision"] == 1
+        assert results[0]["scheme"] == ref.model_dump()
+    else:
+        assert results[0] == "CAPTURE_REVISION_CONFLICT"
     with psycopg.connect(dsn) as db:
         head = plans.get_plan(db, scope, tasks[0])
-        assert (head["revision"], bool(head["locked_at"])) in {(1, True), (2, False)}
+        assert head["revision"] == 2
+        assert bool(head["locked_at"]) == isinstance(results[0], dict)
 
 
 def test_stale_validation_cannot_publish_and_lost_publication_is_idempotent(environment):

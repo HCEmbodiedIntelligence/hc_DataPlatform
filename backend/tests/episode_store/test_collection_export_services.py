@@ -186,12 +186,14 @@ def test_collection_preserves_unmeasured_depth_and_only_pools_valid_statistics(
 
 @pytest.mark.integration
 @pytest.mark.parametrize("segment_ids", [("parent",), ()])
+@pytest.mark.parametrize("processor", [None, "hc-lerobot-collection/1"])
 def test_annotation_collection_keeps_full_tags_and_global_subtasks(
     pair,
     files,  # noqa: F811
     tmp_path,
     monkeypatch,
     segment_ids,
+    processor,
 ):
     source, first, second = pair
     _, task, service, auth = files
@@ -221,7 +223,12 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
                 CollectionSource(second),
             ],
             modalities="rgbd",
+            processor_version=processor,
         )
+        compact = processor is None
+        assert manifest["total_frames"] == (7 if compact else 8)
+        trace = pq.read_table(output / "hc/collection_frames.parquet").to_pylist()
+        assert [row["index"] for row in trace] == list(range(manifest["total_frames"]))
         for member in manifest["members"]:
             table = pq.read_table(output / member["data_path"])
             if member["annotation"]:
@@ -229,9 +236,20 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
                     output / member["attachments_root"] / "hc/annotation.json"
                 ).read_bytes() == annotation.content
                 assert table["subtask_index"].to_pylist() == (
-                    [0, 0, -1, -1] if segment_ids else [-1] * 4
+                    ([0, 0, -1] if compact else [0, 0, -1, -1])
+                    if segment_ids else [-1] * (3 if compact else 4)
                 )
-                assert table["hc.annotation.excluded"].to_pylist() == [False, False, True, False]
+                assert table["hc.annotation.excluded"].to_pylist() == (
+                    [False] * 3 if compact else [False, False, True, False]
+                )
+                assert [row["parent_frame_index"] for row in trace
+                        if row["episode_index"] == member["episode_index"]] == (
+                    [0, 1, 3] if compact else [0, 1, 2, 3]
+                )
+                import av
+                for media in member["media"].values():
+                    with av.open(str(output / media["path"])) as video:
+                        assert len(list(video.decode(video=0))) == len(table)
                 assert (
                     member["annotation"]["revision_content_hash"]
                     == annotation.file.revision_content_hash
@@ -400,7 +418,7 @@ def test_two_selected_revisions_rebase_segment_ids_across_episode_boundary(
         for i, member in enumerate(manifest["members"]):
             indices = pq.read_table(output / member["data_path"])["subtask_index"].to_pylist()
             if member["data"]["data_version_id"] == first.receipt.data.data_version_id:
-                assert indices == [i, i, -1, -1]
+                assert indices == [i, i, -1]
             else:
                 assert indices == [-1, i, i, -1]
             assert segments[i]["episode_index"] == i and segments[i]["source_subtask_index"] == 0

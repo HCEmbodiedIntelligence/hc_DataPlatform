@@ -103,6 +103,8 @@ components:
           enum:
           - hc-lerobot-collection/1
           - hc-lerobot-collection/2
+          - hc-lerobot-collection/3
+          - hc-lerobot-collection/4
           - hc-export/1
           title: Processor Version
           type: string
@@ -264,8 +266,7 @@ components:
       type: object
     DataReviewLocation:
       additionalProperties: false
-      description: Zero-based half-open Episode frames, never parent recording frame
-        numbers.
+      description: Zero-based half-open Episode frames, never parent recording frame numbers.
       properties:
         comment:
           maxLength: 2000
@@ -1083,8 +1084,10 @@ components:
           title: Modalities
           type: string
         processor_version:
-          const: hc-episode-archive/1
-          default: hc-episode-archive/1
+          default: hc-episode-archive/2
+          enum:
+          - hc-episode-archive/1
+          - hc-episode-archive/2
           title: Processor Version
           type: string
         reader_version:
@@ -1530,39 +1533,6 @@ components:
       - author_id
       - created_at
       title: EpisodeRevisionIdentity
-      type: object
-    ExportCameraCalibration:
-      additionalProperties: false
-      properties:
-        configuration:
-          $ref: '#/components/schemas/RobotCameraCalibration'
-        configuration_sha256:
-          pattern: ^[0-9a-f]{64}$
-          title: Configuration Sha256
-          type: string
-        feature_bindings:
-          additionalProperties:
-            maxItems: 2
-            minItems: 2
-            prefixItems:
-            - type: string
-            - type: string
-            type: array
-          title: Feature Bindings
-          type: object
-        robot_id:
-          title: Robot Id
-          type: string
-        snapshot_policy:
-          default: robot_configuration_at_export_request
-          title: Snapshot Policy
-          type: string
-      required:
-      - robot_id
-      - configuration
-      - configuration_sha256
-      - feature_bindings
-      title: ExportCameraCalibration
       type: object
     JsonValue: {}
     LegacyEpisodeRef:
@@ -2023,8 +1993,7 @@ components:
       type: object
     TagDerivationView:
       additionalProperties: false
-      description: Browser projection of the command; nanosecond integers remain exact
-        strings.
+      description: Browser projection of the command; nanosecond integers remain exact strings.
       properties:
         annotation_task_id:
           anyOf:
@@ -2104,13 +2073,6 @@ components:
       - selection
       title: TagDerivationView
       type: object
-    hc_data_platform__quality__models__QualityStatus:
-      enum:
-      - PASS
-      - RISK
-      - REJECT
-      title: QualityStatus
-      type: string
 info:
   title: HC Episode package contract
   version: '2026-09-29'
@@ -2163,8 +2125,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/TagDerivationView'
-                title: Response List Tag Episodes Api V1 Projects  Project Id  Regions  Region
-                  Code  Annotation Tasks  Task Id  Tag Episodes Get
+                title: Response List Tag Episodes Api V1 Projects  Project Id  Regions  Region Code  Annotation
+                  Tasks  Task Id  Tag Episodes Get
                 type: array
           description: Successful Response
         '422':
@@ -2288,8 +2250,7 @@ paths:
       - episode_data
   /api/v1/projects/{project_id}/regions/{region_code}/annotation-tasks/{task_id}/tag-episodes/{job_id}/cancel:
     post:
-      description: Cancel only a never-started command; started primary data is never
-        deleted.
+      description: Cancel only a never-started command; started primary data is never deleted.
       operationId: cancelTagEpisode
       parameters:
       - in: path
@@ -2585,9 +2546,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/DataVersionRef'
-                title: Response Versions Api V1 Projects  Project Id  Regions  Region
-                  Code  Datasets  Dataset Id  Episodes  Episode Id  Data Versions
-                  Get
+                title: Response Versions Api V1 Projects  Project Id  Regions  Region Code  Datasets  Dataset
+                  Id  Episodes  Episode Id  Data Versions Get
                 type: array
           description: Successful Response
         '422':
@@ -3571,8 +3531,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/EpisodeDeliveryJob'
-                title: Response List Episode Deliveries Api V1 Projects  Project Id  Regions  Region
-                  Code  Episode Deliveries Get
+                title: Response List Episode Deliveries Api V1 Projects  Project Id  Regions  Region Code  Episode
+                  Deliveries Get
                 type: array
           description: Successful Response
         '422':

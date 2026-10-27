@@ -32,6 +32,13 @@ def processing_configuration(
     project_id: str, region_code: str, dataset_id: str
 ) -> NativeConfiguration:
     with connections()() as connection, connection.cursor() as cursor:
+        from hc_data_platform.annotation.task_labels import collection_task_label_binding
+
+        task_binding = collection_task_label_binding(
+            cursor, project_id=project_id, region_code=region_code, dataset_id=dataset_id
+        )
+        if task_binding is not None:
+            return NativeConfiguration(configured=True, schema_id=task_binding[0])
         cursor.execute(
             """SELECT DISTINCT binding.schema_id, binding.dataset_schema_snapshot_id
             FROM annotation.tag_schema_bindings binding
@@ -163,7 +170,7 @@ def configure_labels(
             frozen = cursor.fetchone()
             snapshot_id = "capture-" + frozen[0] if frozen else "native-lerobot-v3-v1"
     existing = processing_configuration(project_id, region_code, dataset_id)
-    if existing.configured and existing.schema_snapshot_id == snapshot_id:
+    if existing.configured:
         return existing
     identity = hashlib.sha256(
         f"{organization_id}/{project_id}/{region_code}/{dataset_id}/{snapshot_id}".encode()

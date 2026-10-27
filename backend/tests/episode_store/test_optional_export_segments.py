@@ -4,6 +4,7 @@ import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
@@ -22,10 +23,12 @@ from tests.annotation.test_subtasks import snapshot  # noqa: F401
 
 
 @pytest.mark.parametrize("segment_ids", [(), ("segment-0",)])
+@pytest.mark.parametrize("invalid_index", [None, 1])
 def test_collection_writer_preserves_all_tags_with_optional_segments(
     snapshot,  # noqa: F811
     tmp_path,
     segment_ids,
+    invalid_index,
 ):
     document, data, _ = snapshot
     identity = data.identity
@@ -63,6 +66,16 @@ def test_collection_writer_preserves_all_tags_with_optional_segments(
         metadata={"task": "optional export segments"},
     )
     manifest = validate_package(root, source)
+    selected_data = root / "data/chunk-000/file-000.parquet"
+    if invalid_index is not None:
+        table = pq.read_table(selected_data)
+        table = table.set_column(
+            table.schema.get_field_index("hc.sample_valid"),
+            "hc.sample_valid",
+            pa.array([i != invalid_index for i in range(data.frame_count)]),
+        )
+        selected_data = tmp_path / "historical-invalid-row.parquet"
+        pq.write_table(table, selected_data)
     data = data.model_copy(update={"content_hash": manifest.content_hash})
     reference = data.model_dump(mode="json")
     document["data_binding"]["data_ref"] = reference
@@ -96,7 +109,7 @@ def test_collection_writer_preserves_all_tags_with_optional_segments(
 
     @contextmanager
     def file(relative):
-        yield root / relative
+        yield selected_data if relative == "data/chunk-000/file-000.parquet" else root / relative
 
     package = SimpleNamespace(
         manifest=manifest,
@@ -114,9 +127,12 @@ def test_collection_writer_preserves_all_tags_with_optional_segments(
     member = result["members"][0]
     assert (output / member["attachments_root"] / "hc/annotation.json").read_bytes() == body
     table = pq.read_table(output / member["data_path"])
-    assert len(table) == data.frame_count
-    assert table["subtask_index"].to_pylist() == (
-        [0, 0] + [-1] * 16 if segment_ids else [-1] * data.frame_count
-    )
+    retained = [i for i in range(data.frame_count) if i != invalid_index]
+    assert len(table) == len(retained)
+    assert table["frame_index"].to_pylist() == list(range(len(retained)))
+    expected_tags = [0, 0] + [-1] * 16 if segment_ids else [-1] * data.frame_count
+    assert table["subtask_index"].to_pylist() == [expected_tags[i] for i in retained]
+    mapping = pq.read_table(output / "hc/collection_frames.parquet")
+    assert mapping["parent_frame_index"].to_pylist() == retained
     assert (output / "hc/subtasks.jsonl").exists() == bool(segment_ids)
     assert all(entry["size"] > 0 for entry in result["files"])

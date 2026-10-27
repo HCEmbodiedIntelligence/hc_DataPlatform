@@ -54,13 +54,14 @@ pytest_plugins = ["tests.episode_store.test_commit_services"]
 @pytest.mark.integration
 @pytest.mark.asyncio
 @pytest.mark.parametrize("include_camera", [False, True])
-@pytest.mark.parametrize("shared_output", [False, True, "adopted_legacy"])
+@pytest.mark.parametrize("shared_output", [False, True, "adopted_legacy", "versioned"])
 async def test_mcap_temporal_without_annotation(
     uploaded_raw,  # noqa: F811
     tmp_path,
     monkeypatch,
     include_camera,
     shared_output,
+    with_labels=False,
 ):
     if os.getenv("HC_CAPTURE_PROCESSING_INFRA") != "1":
         pytest.skip("explicit isolated infrastructure required")
@@ -120,6 +121,13 @@ async def test_mcap_temporal_without_annotation(
                 "names": ["seconds_since_first_log_time"],
                 "role": "timestamp",
             }
+            if shared_output == "versioned":
+                fields["algorithm"] = "capture-structure/v2"
+                for name in ("action", "observation.state"):
+                    f = fields["features"][name]
+                    f["required_axes"] = f["names"]
+                    f["validity_feature"] = name + ".valid"
+                    fields["features"][name + ".valid"] = dict(role="validity", dtype="bool", shape=f["shape"], names=f["names"])
             output = OutputContract.model_validate(fields)
             configuration["semantic_output"] = output.model_dump(mode="json")
             # A previous LeRobot upload has already frozen this exact dataset
@@ -201,7 +209,7 @@ async def test_mcap_temporal_without_annotation(
         )
         frozen["effective_adapter"] = {
             "source_format": "MCAP",
-            "parser_version": "native-mcap-recording/2",
+            "parser_version": "native-mcap-recording/3",
             "configuration": configuration,
         }
         frozen["snapshot_sha256"] = digest(
@@ -276,6 +284,21 @@ async def test_mcap_temporal_without_annotation(
         assert result["status"] == "READY", result
         records = PostgresContinuousRecordingRepository(repository.connections)
         recording = records.get(target, result["recording_id"])
+        if with_labels:
+            from hc_data_platform.annotation.ingest_queries import ensure_dataset_tag_schema_binding
+
+            description = "抓取桌面物体，放入指定容器，再回到起始姿态。" * 30
+            with repository.transaction() as cursor:
+                cursor.execute(
+                    """UPDATE collection_tasks.collection_tasks SET description=%s
+                    WHERE organization_id=%s AND project_id=%s AND collection_task_id=%s""",
+                    (description, org, project, task),
+                )
+                ensure_dataset_tag_schema_binding(
+                    cursor, organization_id=org, project_id=project,
+                    storage_region_code=region, dataset_id=dataset,
+                )
+            assert records.present((recording,))[0].default_task_labels == (description,)
         args = dict(
             auth=actor,
             **target.model_dump(),
@@ -299,6 +322,19 @@ async def test_mcap_temporal_without_annotation(
             if_match=recording.etag,
             request_id="capture-draft",
         )
+        if with_labels:
+            assert draft.revision.slices[0].task_labels == (description,)
+            edited = draft.revision.slices[0]
+            draft = runtime.continuous_recordings.save_draft(
+                **args,
+                command=SaveSliceDraftCommand.model_validate({"slices": [{
+                    "episode_id": edited.episode_id,
+                    "start_offset_ns": str(edited.start_offset_ns),
+                    "end_offset_ns": str(edited.end_offset_ns),
+                    "task_labels": [description, "保持物体直立"],
+                }]}),
+                if_match=draft.recording.etag, request_id="capture-description-edit",
+            )
         finalized = runtime.continuous_recordings.finalize(
             **args,
             expected_draft_revision=draft.revision.revision,
@@ -316,6 +352,8 @@ async def test_mcap_temporal_without_annotation(
             finalized_revision=finalized.revision.revision,
         )
         assert request.alignment_profile.frequency_hz == 15
+        if with_labels:
+            assert request.task_labels == (description, "保持物体直立")
         configure_activity_dependencies(runtime.activities)
         queue = "mcap-capture-" + uuid4().hex
         client = await Client.connect("temporal:7233", data_converter=pydantic_data_converter)
@@ -333,11 +371,25 @@ async def test_mcap_temporal_without_annotation(
             )
             result = await asyncio.wait_for(handle.result(), 120)
         assert result.status.value == "SUCCEEDED", result
-        assert result.result["annotation_status"] == "PENDING_CONFIGURATION"
+        if not with_labels:
+            assert result.result["annotation_status"] == "PENDING_CONFIGURATION"
         ready = records.get_episode_processing(
             target, recording.recording_id, "episode_capture_all"
         )
-        assert ready.status.value == "READY" and ready.annotation_task_id is None
+        assert ready.status.value == "READY"
+        if with_labels:
+            from hc_data_platform.annotation import AnnotationActor
+
+            actor = AnnotationActor(
+                actor_id="description-reader", project_ids=frozenset({project}),
+                capabilities=frozenset({"annotation_task.read", "annotation_task.claim"}),
+            )
+            runtime.annotation.claim(ready.annotation_task_id, actor)
+            saved = runtime.annotation.get_draft(ready.annotation_task_id, actor)
+            assert [tag.label for tag in saved.tags] == [description, "保持物体直立"]
+            assert all((tag.start_step, tag.end_step) == (0, 167) for tag in saved.tags)
+        else:
+            assert ready.annotation_task_id is None
         data = ready.data_ref
         assert data.frame_count == 167
         window = ParquetStepReader(runtime.episode_packages.files).read_steps(
@@ -357,7 +409,21 @@ async def test_mcap_temporal_without_annotation(
         package = runtime.episode_packages.files.open(data.identity, data.data_version_id)
         write_collection(tmp_path / "export", [CollectionSource(package)], modalities="rgb")
         assert json.loads((tmp_path / "export/meta/info.json").read_text())["total_frames"] == 167
+        if with_labels:
+            import pyarrow.parquet as pq
+
+            tasks = pq.read_table(tmp_path / "export/meta/tasks.parquet").to_pylist()
+            assert tasks[0]["task"] == description
         assert bool(list((tmp_path / "export").rglob("*.mp4"))) is include_camera
         await Replayer(workflows=workflows, data_converter=pydantic_data_converter).replay_workflow(
             await handle.fetch_history()
         )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_slice_task_descriptions_reach_annotation_and_export(uploaded_raw, tmp_path, monkeypatch):
+    await test_mcap_temporal_without_annotation(
+        uploaded_raw, tmp_path, monkeypatch, include_camera=False,
+        shared_output=False, with_labels=True,
+    )

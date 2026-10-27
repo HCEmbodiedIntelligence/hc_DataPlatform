@@ -132,8 +132,16 @@ class EpisodeCollections:
                     current.schema_fingerprint != schema.fingerprint
                     or current.frequency_hz != schema.frequency_hz
                 ):
-                    raise PackageConflict("collection schema/frequency changed")
-                entries = list(current.episodes)
+                    if (schema.semantic_contract or {}).get("algorithm") not in {"capture-structure/v2", "capture-structure/v3"}:
+                        raise PackageConflict("collection schema/frequency changed")
+                    # Start/resume only this format's collection. The previous
+                    # collection remains available by version; never mix formats.
+                    compatible = [v for v in self.list_versions(identity.dataset_id)
+                                  if v.schema_fingerprint == schema.fingerprint
+                                  and v.frequency_hz == schema.frequency_hz]
+                    entries = list(compatible[-1].episodes) if compatible else []
+                else:
+                    entries = list(current.episodes)
                 # An undrained historical writer cannot silently overwrite collection numbering.
                 if legacy is not None and legacy.version >= current.version:
                     raise PackageConflict("legacy writer advanced after Episode collection switch")
@@ -142,7 +150,9 @@ class EpisodeCollections:
                     legacy.schema_fingerprint != schema.fingerprint
                     or legacy.frequency_hz != schema.frequency_hz
                 ):
-                    raise PackageConflict("legacy and new collection schema/frequency differ")
+                    if (schema.semantic_contract or {}).get("algorithm") not in {"capture-structure/v2", "capture-structure/v3"}:
+                        raise PackageConflict("legacy and new collection schema/frequency differ")
+                    legacy = None
                 if legacy is not None and self.legacy_entries is None:
                     raise PackageConflict(
                         "historical Episodes require explicit bindings before switch"

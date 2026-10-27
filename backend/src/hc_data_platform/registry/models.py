@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -273,6 +274,29 @@ class RobotModelAssetDownloadAuthorization(BaseModel):
     expires_at: datetime
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     media_type: str = Field(min_length=1, max_length=128)
+
+
+class RobotModelPreviewGrant(RobotModelAssetDownloadAuthorization):
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(gt=0)
+    policy: Literal["mesh-qem-v1", "mesh-indexed-glb-v2"]
+
+
+class RobotModelViewerAssetGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    asset: RobotModelAsset
+    authorization: RobotModelAssetDownloadAuthorization
+    preview: RobotModelPreviewGrant | None = None
+
+
+class RobotModelViewerAssetPage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    version_id: str
+    items: tuple[RobotModelViewerAssetGrant, ...]
+    scope: RegistryScope
+    request_id: str
 
 
 class RobotModelJointMapping(BaseModel):

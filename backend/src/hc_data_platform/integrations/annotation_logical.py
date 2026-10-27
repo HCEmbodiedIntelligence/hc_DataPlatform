@@ -37,6 +37,7 @@ class AnnotationLogicalService:
         project_id: str,
         region_code: str,
         auth: AuthContext,
+        include_model: bool = False,
     ) -> AnnotationLogicalSnapshot:
         task = self.annotations.read_task(task_id, auth)
         if (task.project_id, task.region_code) != (project_id, region_code):
@@ -82,13 +83,18 @@ class AnnotationLogicalService:
                     raise self._unavailable("Task package differs from the fixed logical source.")
             elif stream.package_binding is not None:
                 raise self._unavailable("Historical task cannot be rebound to a migrated package.")
-        view = self.logical.snapshot(
-            SnapshotSelection(**scope, revision_id=revision.revision_id),
-            auth=auth,
-            snapshot_token=bootstrap.snapshot_token,
-        )
+        selection = SnapshotSelection(**scope, revision_id=revision.revision_id)
+        robot, assets = None, ()
+        prepare = getattr(self.logical, "prepare_revision", None)
+        if include_model and callable(prepare):
+            # rollout_revision above already authorized this exact frozen target.
+            # Resolve its scene/grants here instead of 2 more browser round trips.
+            view, robot, assets = prepare(selection, revision, auth)
+        else:
+            view = self.logical.snapshot(selection, auth=auth, snapshot_token=bootstrap.snapshot_token)
         return AnnotationLogicalSnapshot(
-            **view.model_dump(), task_id=task.task_id, snapshot_token=bootstrap.snapshot_token
+            **view.model_dump(), task_id=task.task_id, snapshot_token=bootstrap.snapshot_token,
+            robot=robot, robot_assets=assets,
         )
 
     @staticmethod

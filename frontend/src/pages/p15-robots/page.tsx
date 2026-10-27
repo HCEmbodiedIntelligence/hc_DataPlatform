@@ -52,6 +52,7 @@ function SummaryItem({
 }
 
 export function Component() {
+  const viewerScope = useShellStore((state) => state.scope);
   const [params, setParams] = useSearchParams();
   const search = robotsQueryCodec.parse(params);
   const organizationId = useShellStore(
@@ -142,6 +143,7 @@ export function Component() {
         versionId,
         currentAssets.data ?? [],
         signal,
+        { scope: viewerScope ?? undefined, onLoadProgress: _props.onLoadProgress },
       );
       return {
         manifest: { modelId, modelVersion: versionId, requiredJoints },
@@ -155,6 +157,7 @@ export function Component() {
     currentMappings.data,
     currentUrdf,
     organizationId,
+    viewerScope,
   ]);
 
   const selectModel = (modelId: string) => {

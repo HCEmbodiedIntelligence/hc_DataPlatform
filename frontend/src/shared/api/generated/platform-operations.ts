@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: fc51e1380b6a9447cea9b4859f1ca781bbab4a0e2290399849cf81f4a42bfec7
+// Runtime-OpenAPI-SHA256: 9c79839deb443bfccbb563ea23771f70aee36fa9ccfff4486cb0422ac4ac6450
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -108,6 +108,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/organizations/{organization_id}/robot-model-versions/{version_id}/joint-mappings" },
   { method: "PUT", path: "/organizations/{organization_id}/robot-model-versions/{version_id}/joint-mappings" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}/upload-sessions" },
+  { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}/viewer-assets:authorize" },
   { method: "GET", path: "/organizations/{organization_id}/robot-models" },
   { method: "POST", path: "/organizations/{organization_id}/robot-models" },
   { method: "GET", path: "/organizations/{organization_id}/robot-processing-templates" },
@@ -321,6 +322,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene/assets/{asset_id}/authorize" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/robot-scene/assets/authorize" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/media/authorize" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/versions/{version_id}/episode-revisions/{revision_id}/logical/streams/{stream_id}/samples" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/device-capture-facts" },
@@ -339,6 +341,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:commit" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:process-mcap" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:reprocess-mcap" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}:retry" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:complete" },
@@ -350,6 +353,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/episodes/{episode_index}/resolution" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/files" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-channels" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-plan-versions" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-processing" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/mcap-versions" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/processing" },
@@ -407,6 +411,7 @@ export const runtimeOperations = [
   { method: "GET", path: "/projects/{project_id}/robot-ingest/robots/{robot_id}/statistics" },
   { method: "GET", path: "/projects/{project_id}/robot-ingest/successful-volume" },
   { method: "GET", path: "/projects/{project_id}/robot-ingest/uploads" },
+  { method: "POST", path: "/projects/{project_id}/robot-ingest/uploads/{upload_id}:cancel" },
   { method: "GET", path: "/projects/{project_id}/robot-ingest/uploads/{upload_id}/episodes" },
   { method: "GET", path: "/projects/{project_id}/rollouts/{rollout_id}/approved-annotation" },
   { method: "GET", path: "/projects/{project_id}/storage/capacity" },

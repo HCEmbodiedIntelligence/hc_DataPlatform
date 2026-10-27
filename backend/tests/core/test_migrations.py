@@ -56,6 +56,9 @@ HISTORICAL_CHECKSUMS = {
     "security/007_auth_abuse_protection.sql": (
         "7d4cdb817da4ff5fe937df11fb39aa786699f8c6a24f72f31e873abcef0c9311"
     ),
+    "ingest/026_mcap_stored_binding.sql": (
+        "887864580565302a0ee4416300d6ebf12d2b2fc86c1069ee2889aab007d4854b"
+    ),
 }
 
 EXPECTED_MANIFEST = (
@@ -225,6 +228,15 @@ EXPECTED_MANIFEST = (
     "ingest/025_joint_only_recordings.sql",
     "ingest/026_mcap_stored_binding.sql",
     "robotics/0007_robot_deletion_actions.sql",
+    "ingest/027_shared_capture_schemes.sql",
+    "ingest/028_raw_capture_snapshots.sql",
+    "ingest/029_independent_annotation.sql",
+    "ingest/030_capture_bundle_scheme_format.sql",
+    "episode_store/0020_capture_format_versions.sql",
+    "annotation/0018_collection_task_labels.sql",
+    "ingest/031_recording_annotation_link.sql",
+    "collection_tasks/0007_optional_task_category.sql",
+    "collection_tasks/0008_complete_task_deletion_graph.sql",
 )
 
 
@@ -389,6 +401,111 @@ def _expected_session_lifecycle_index_state() -> migration_module._SessionLifecy
         ),
         predicate="(revoked_at IS NULL)",
     )
+
+
+@pytest.mark.asyncio
+async def test_upgrade_reconciles_known_newline_once_without_replaying_sql(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    migrations = load_migrations()
+    target = next(
+        item for item in migrations if item.version == "ingest/026_mcap_stored_binding.sql"
+    )
+    historical = "4cde20a2a567c1c1d9299c7845c10caf1945e7301738a1f1334174bf2298e72f"
+    assert hashlib.sha256((target.sql + "\n").encode()).hexdigest() == historical
+    applied = {item.version: item.checksum_sha256 for item in migrations}
+    applied[target.version] = historical
+
+    class FakeConnection(_RecordingConnection):
+        async def fetchval(self, query: str) -> bool:
+            return True
+
+        async def fetch(self, query: str) -> list[dict[str, str]]:
+            return [
+                {"version": version, "checksum_sha256": checksum}
+                for version, checksum in applied.items()
+            ]
+
+        async def execute(self, query: str, *args: object) -> str:
+            await super().execute(query, *args)
+            if "UPDATE core.schema_migrations" in query:
+                assert args == (target.version, target.checksum_sha256, historical)
+                assert self.in_transaction
+                applied[target.version] = target.checksum_sha256
+                return "UPDATE 1"
+            return "SELECT 1"
+
+        async def close(self) -> None:
+            pass
+
+    connection = FakeConnection()
+
+    async def connect(_: str) -> FakeConnection:
+        return connection
+
+    monkeypatch.setattr(migration_module.asyncpg, "connect", connect)
+    before = await migration_status("postgresql://localhost/test")
+    assert before["checksum_drift"] == [target.version]
+    assert await apply_migrations("postgresql://localhost/test") == []
+    assert (await migration_status("postgresql://localhost/test"))["status"] == "current"
+    assert await apply_migrations("postgresql://localhost/test") == []
+    updates = [
+        query for _, query, _ in connection.executed if "UPDATE core.schema_migrations" in query
+    ]
+    assert len(updates) == 1
+    assert "applied_at" not in updates[0]
+    assert all(query != target.sql for _, query, _ in connection.executed)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed_source", (False, True), ids=("unknown-history", "changed-sql"))
+async def test_newline_compatibility_still_rejects_unrecognized_checksum_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    changed_source: bool,
+) -> None:
+    migrations = load_migrations()
+    target = next(
+        item for item in migrations if item.version == "ingest/026_mcap_stored_binding.sql"
+    )
+    historical = "4cde20a2a567c1c1d9299c7845c10caf1945e7301738a1f1334174bf2298e72f"
+    applied = {item.version: item.checksum_sha256 for item in migrations}
+    applied[target.version] = historical if changed_source else "f" * 64
+    if changed_source:
+        changed_sql = target.sql + "SELECT 1;\n"
+        altered = replace(
+            target, sql=changed_sql,
+            checksum_sha256=hashlib.sha256(changed_sql.encode()).hexdigest(),
+        )
+        monkeypatch.setattr(
+            migration_module,
+            "load_migrations",
+            lambda: tuple(
+                altered if item.version == target.version else item for item in migrations
+            ),
+        )
+
+    class FakeConnection(_RecordingConnection):
+        async def fetchval(self, query: str) -> bool:
+            return True
+
+        async def fetch(self, query: str) -> list[dict[str, str]]:
+            return [
+                {"version": version, "checksum_sha256": checksum}
+                for version, checksum in applied.items()
+            ]
+
+        async def close(self) -> None:
+            pass
+
+    connection = FakeConnection()
+
+    async def connect(_: str) -> FakeConnection:
+        return connection
+
+    monkeypatch.setattr(migration_module.asyncpg, "connect", connect)
+    with pytest.raises(RuntimeError, match="applied migration checksum drift: ingest/026"):
+        await apply_migrations("postgresql://localhost/test")
+    assert all("UPDATE core.schema_migrations" not in query for _, query, _ in connection.executed)
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { qualityPolicySchema } from "./quality-contract";
 import type { components } from "../../shared/api/generated/platform";
 
 // Runtime response projections are checked against the generated service contract.
@@ -24,22 +25,35 @@ export const featureSchema = z.object({
   required: z.boolean().default(true),
   missing: z.literal("presence_and_validity").default("presence_and_validity"),
   validity_feature: z.string().nullable().default(null),
+  required_axes: z.array(z.string()).nullable().optional(),
   media: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
     .default({}),
 });
 export type Feature = z.infer<typeof featureSchema>;
+const normalizationSchema = z.object({
+  profile: z.literal("hc_tj_17dof/v1"),
+  clock_domain: z.string(), clock_evidence: z.string(),
+  capture_clock: z.literal("header_stamp"), waist_fallback_ms: z.literal(20),
+  invalid_action: z.literal("drop"), camera_mode: z.enum(["legacy_reference", "calibrated"]),
+  hand_encoding: z.literal("independent_ban_command"),
+});
 export const outputSchema = z.object({
-  algorithm: z.literal("capture-structure/v1"),
+  algorithm: z.enum(["capture-structure/v1", "capture-structure/v2", "capture-structure/v3"]),
+  normalization: normalizationSchema.nullable().optional(),
+  metadata_features: z.array(z.enum(["head.calibration", "head.extrinsics"])).default([]),
   frequency_hz: z.number().positive().max(1000).nullable().default(null),
   frequency_policy: z.literal("PRESERVE"),
   time_source: z.enum(["FRAME_TIMESTAMP", "STATE_LOG_TIME", "RGB_LOG_TIME"]),
   features: z.record(z.string(), featureSchema),
+  validity_max_age_ms: z.number().positive().max(1000).default(50),
 });
 const draftOutputSchema = outputSchema.extend({
   frequency_hz: z.number().positive().max(1000).nullable().default(null),
 });
 export const mcapConfigSchema = z.object({
+  normalization: normalizationSchema.nullable().optional(),
+  metadata_sources: z.record(z.enum(["head.calibration", "head.extrinsics"]), z.string()).optional(),
   collection_mode: z.enum(["RGB", "JOINT_ONLY"]),
   time_source: z.enum(["RGB_LOG_TIME", "STATE_LOG_TIME"]),
   cameras: z.array(
@@ -54,6 +68,9 @@ export const mcapConfigSchema = z.object({
   state_topic: z.string().nullable(),
   action_topic: z.string().nullable(),
   primary_camera: z.string().nullable(),
+  topic_aliases: z.record(z.string(), z.array(z.string())).optional(),
+  state_required_axes: z.array(z.string()).nullable().optional(),
+  action_required_axes: z.array(z.string()).nullable().optional(),
   joint_names: z.array(z.string()),
   joint_units: z.array(z.string()),
   state_joint_names: z.array(z.string()).default([]),
@@ -87,7 +104,7 @@ export const adapterSchema = z.discriminatedUnion("source_format", [
   }),
   z.object({
     source_format: z.literal("MCAP"),
-    parser_version: z.literal("native-mcap-recording/2"),
+    parser_version: z.enum(["native-mcap-recording/2", "native-mcap-recording/3", "native-mcap-recording/4"]),
     configuration: mcapConfigSchema,
   }),
   z.object({
@@ -105,7 +122,7 @@ export const documentSchema = z.object({
   model_version_ids: z.array(z.string()),
   adapters: z.array(adapterSchema).min(1),
   output: draftOutputSchema,
-  quality_policy: z.record(z.string(), z.string()),
+  quality_policy: qualityPolicySchema,
 }) satisfies z.ZodType<components["schemas"]["CaptureDraftDefinition"]>;
 export type SchemeDocument = z.infer<typeof documentSchema>;
 export type SchemeDraft = SchemeDocument & { expected_revision: number };

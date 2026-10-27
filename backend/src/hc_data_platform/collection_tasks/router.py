@@ -379,6 +379,7 @@ def list_capture_progress(
     collection_task_id: Annotated[str | None, Query(max_length=128)] = None,
     robot_id: Annotated[str | None, Query(max_length=128)] = None,
     dataset_id: Annotated[str | None, Query(min_length=1, max_length=128)] = None,
+    unfinished_uploads_only: bool = False,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CaptureProgressPage:
@@ -393,4 +394,5 @@ def list_capture_progress(
         offset=offset,
         robot_id=robot_id,
         dataset_id=dataset_id,
+        unfinished_uploads_only=unfinished_uploads_only,
     )

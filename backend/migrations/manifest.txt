@@ -172,3 +172,8 @@ ingest/027_shared_capture_schemes.sql
 ingest/028_raw_capture_snapshots.sql
 ingest/029_independent_annotation.sql
 ingest/030_capture_bundle_scheme_format.sql
+episode_store/0020_capture_format_versions.sql
+annotation/0018_collection_task_labels.sql
+ingest/031_recording_annotation_link.sql
+collection_tasks/0007_optional_task_category.sql
+collection_tasks/0008_complete_task_deletion_graph.sql

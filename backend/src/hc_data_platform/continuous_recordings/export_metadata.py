@@ -37,6 +37,9 @@ def frozen_metadata(cursor, storage, organization, region, manifest, rollout):
     result = {
         "task": episode.get("task_label") or episode.get("title") or "Robot demonstration",
         "source_episode": episode,
+        "task_labels": episode.get("task_labels")
+        if episode.get("task_labels") is not None
+        else ([episode["task_label"]] if episode.get("task_label") else []),
         "recording_upload": command,
     }
     from hc_data_platform.data_formats.holobrain_depth import DEPTH_INFO

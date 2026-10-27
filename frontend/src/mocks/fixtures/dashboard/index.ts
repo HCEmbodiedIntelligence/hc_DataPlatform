@@ -32,6 +32,7 @@ function taskStage(
     succeeded: 0,
     risk: 0,
     isolated: 0,
+    cancelled: 0,
     blocked: 0,
     failed: 0,
     unavailable: 0,

@@ -27,15 +27,22 @@ class EpisodeSchemas:
             raise PackageConflict("logical schema fingerprint/frequency is invalid")
         return snapshot
 
-    def schema_for(self, project_id, dataset_id):
+    def schema_for(self, project_id, dataset_id, schema_snapshot_id=None):
         scope = collection_scope(dataset_id, project_id)
         with self.repository.transaction() as cursor:
             cursor.execute(
                 """SELECT document,content_hash FROM episode_store.dataset_schemas
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
-                scope,
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s
+                AND (%s::text IS NULL OR schema_snapshot_id=%s)
+                UNION ALL SELECT document,content_hash FROM episode_store.dataset_schema_versions
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s
+                AND (%s::text IS NULL OR schema_snapshot_id=%s)""",
+                (*scope, schema_snapshot_id, schema_snapshot_id, *scope, schema_snapshot_id, schema_snapshot_id),
             )
-            row = cursor.fetchone()
+            rows = cursor.fetchall()
+            if len(rows) > 1:
+                raise PackageConflict("dataset has multiple formats; select an explicit schema version")
+            row = rows[0] if rows else None
             if row is None:
                 return None
             if digest(row[0]) != row[1]:
@@ -46,13 +53,15 @@ class EpisodeSchemas:
             return snapshot
 
     def register_schema(self, snapshot):
-        """Idempotent freeze. Schema evolution requires a separately defined migration."""
+        """Immutable per-format registration, retaining the historical v1 table."""
         scope = collection_scope(snapshot.dataset_id, snapshot.project_id)
         self.validate(snapshot)
         document = snapshot.model_dump(mode="json")
+        versioned = (snapshot.semantic_contract or {}).get("algorithm") in {"capture-structure/v2", "capture-structure/v3"}
+        table = "episode_store.dataset_schema_versions" if versioned else "episode_store.dataset_schemas"
         with self.repository.transaction() as cursor:
             cursor.execute(
-                """INSERT INTO episode_store.dataset_schemas
+                f"""INSERT INTO {table}
                 (organization_id,project_id,region_code,dataset_id,schema_snapshot_id,
                  document,content_hash) VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s)
                 ON CONFLICT DO NOTHING""",
@@ -64,9 +73,10 @@ class EpisodeSchemas:
                 ),
             )
             cursor.execute(
-                """SELECT document,content_hash FROM episode_store.dataset_schemas
-                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s""",
-                scope,
+                f"""SELECT document,content_hash FROM {table}
+                WHERE organization_id=%s AND project_id=%s AND region_code=%s AND dataset_id=%s"""
+                + (" AND schema_snapshot_id=%s" if versioned else ""),
+                (*scope, snapshot.schema_snapshot_id) if versioned else scope,
             )
             row = cursor.fetchone()
             if row is None or row[0] != document or row[1] != digest(document):
@@ -78,5 +88,7 @@ class EpisodeSchemas:
 
         scope = collection_scope(snapshot.dataset_id, snapshot.project_id)
         self.validate(snapshot)
+        if (snapshot.semantic_contract or {}).get("algorithm") in {"capture-structure/v2", "capture-structure/v3"}:
+            return snapshot
         with self.repository.transaction() as cursor:
             return self.validate(physical_schema(cursor.connection, scope[:3], snapshot))

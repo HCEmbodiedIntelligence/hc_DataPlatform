@@ -1163,25 +1163,91 @@ class RobotIngestService:
     def cancel_upload(self, *, token: str, upload_id: str) -> RobotIngestUploadEnvelope:
         auth = self.authenticate(token)
         upload = self._owned_upload(auth, upload_id)
-        if upload.state is UploadState.CANCELLED:
-            return RobotIngestUploadEnvelope(data=upload, resumed=True)
-        if upload.state is UploadState.COMMITTED:
-            raise self._upload_state_problem(upload)
-        assets: list[RobotIngestAsset] = []
-        for asset in upload.assets:
-            if asset.state is AssetState.UPLOADING:
-                self.storage.abort_multipart(asset.object_key, asset.multipart_upload_id)
-                assets.append(asset.model_copy(update={"state": AssetState.CANCELLED}))
-            else:
-                assets.append(asset)
-        updated = upload.model_copy(
-            update={
-                "assets": tuple(assets),
-                "state": UploadState.CANCELLED,
-                "updated_at": self._clock(),
-            }
+        return self._cancel_scoped_upload(
+            (upload.target.organization_id, upload.target.project_id, upload.target.region_code),
+            upload_id,
+            f"robot:{auth.ingest_identity_id}",
         )
-        return RobotIngestUploadEnvelope(data=self.repository.save_upload(updated))
+
+    def cancel_upload_as_operator(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        region_code: str,
+        upload_id: str,
+    ) -> RobotIngestUploadEnvelope:
+        from hc_data_platform.security.http import authorize_scope
+
+        authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+        # Human operators can close expired uploads without the original robot token.
+        return self._cancel_scoped_upload(
+            (organization_id, project_id, region_code),
+            upload_id,
+            auth.subject_id,
+        )
+
+    def _cancel_scoped_upload(
+        self,
+        scope: tuple[str, str, str],
+        upload_id: str,
+        actor_id: str,
+    ) -> RobotIngestUploadEnvelope:
+        resumed = False
+
+        def cancel(current: RobotIngestUpload) -> RobotIngestUpload:
+            nonlocal resumed
+            if current.state is UploadState.CANCELLED:
+                resumed = True
+                return current
+            if current.state is UploadState.COMMITTED or current.raw_source_id is not None:
+                raise problem(
+                    status=409,
+                    code="ROBOT_UPLOAD_ALREADY_COMMITTED",
+                    title="上传已接收",
+                    detail="这条上传已经提交为原始数据，不能取消。请刷新记录。",
+                )
+            assets = []
+            for asset in current.assets:
+                if asset.state in {AssetState.UPLOADING, AssetState.FAILED}:
+                    try:
+                        self.storage.abort_multipart(asset.object_key, asset.multipart_upload_id)
+                    except Exception as exc:
+                        code = getattr(exc, "code", None)
+                        response = getattr(exc, "response", None)
+                        if isinstance(response, dict):
+                            code = response.get("Error", {}).get("Code", code)
+                        if code not in {"NoSuchUpload", "MULTIPART_UPLOAD_NOT_FOUND"}:
+                            raise problem(
+                                status=503,
+                                code="ROBOT_UPLOAD_CANCEL_STORAGE_UNAVAILABLE",
+                                title="取消上传暂未完成",
+                                detail="暂时无法清理上传分片，请重试。",
+                            ) from exc
+                    assets.append(asset.model_copy(update={"state": AssetState.CANCELLED}))
+                else:
+                    assets.append(asset)
+            now = self._clock()
+            return current.model_copy(
+                update={
+                    "assets": tuple(assets),
+                    "state": UploadState.CANCELLED,
+                    "updated_at": now,
+                    "cancelled_at": now,
+                    "cancelled_by": actor_id,
+                }
+            )
+
+        updated = self.repository.cancel_upload_locked(scope, upload_id, cancel)
+        if updated is None:
+            raise problem(
+                status=404,
+                code="ROBOT_INGEST_UPLOAD_NOT_FOUND",
+                title="未找到上传记录",
+                detail="当前项目和区域中没有这条机器人上传。",
+            )
+        return RobotIngestUploadEnvelope(data=updated, resumed=resumed)
 
     def list_robot_uploads(
         self,

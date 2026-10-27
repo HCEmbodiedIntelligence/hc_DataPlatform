@@ -154,7 +154,7 @@ def test_profile_read_update_etag_idempotency_and_safe_audit() -> None:
         auth = _headers(token)
         current = client.get("/api/v1/account/profile", headers=auth)
         assert current.status_code == 200
-        assert current.headers["cache-control"] == "private, no-store"
+        assert current.headers["cache-control"] == "private, no-store, no-transform"
         assert current.headers["etag"] == '"v1"'
         assert current.json()["profile"] == {
             "principal_id": current.json()["profile"]["principal_id"],

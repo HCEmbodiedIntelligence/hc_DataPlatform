@@ -639,14 +639,14 @@ export function CollectionTaskPage({
               className={styles.filterField}
               htmlFor="collection-task-type"
             >
-              <span>采集类型</span>
+              <span>任务分类</span>
               <Input
                 id="collection-task-type"
-                aria-label="当前窗口筛选采集类型"
+                aria-label="当前窗口筛选任务分类"
                 autoComplete="off"
                 maxLength={100}
                 name="collection-task-type"
-                placeholder="当前窗口筛选类型"
+                placeholder="当前窗口筛选任务分类"
                 value={search.type}
                 onChange={(event) =>
                   changeSearch({ type: event.currentTarget.value }, true)
@@ -855,16 +855,20 @@ export function CollectionTaskPage({
         }}
         okText={
           lifecycleTask.isPending
-            ? lifecycleAction === "close"
-              ? "正在关闭…"
-              : lifecycleAction === "cancel"
-                ? "正在取消…"
-                : "正在重新开启…"
+            ? lifecycleAction === "delete"
+              ? "正在删除…"
+              : lifecycleAction === "close"
+                ? "正在关闭…"
+                : lifecycleAction === "cancel"
+                  ? "正在取消…"
+                  : "正在重新开启…"
             : lifecycleTask.error &&
                 isDomainError(lifecycleTask.error) &&
                 (lifecycleTask.error.code === "VERSION_CONFLICT" ||
                   lifecycleTask.error.code === "PRECONDITION_FAILED")
-              ? `重新加载并${lifecycleAction === "reopen" ? "开启" : lifecycleAction === "cancel" ? "取消" : "关闭"}`
+              ? lifecycleAction === "delete"
+                ? "重新加载并删除"
+                : `重新加载并${lifecycleAction === "reopen" ? "开启" : lifecycleAction === "cancel" ? "取消" : "关闭"}`
               : lifecycleConfirm
         }
         open={lifecycleTarget !== null}
@@ -904,7 +908,9 @@ export function CollectionTaskPage({
                   isDomainError(lifecycleTask.error) &&
                   lifecycleTask.error.code === "RATE_LIMITED"
                     ? "请求频率受限"
-                    : "任务状态未更新"
+                    : lifecycleAction === "delete"
+                      ? "任务删除未完成"
+                      : "任务状态未更新"
                 }
                 description={
                   <Space orientation="vertical" size={4}>

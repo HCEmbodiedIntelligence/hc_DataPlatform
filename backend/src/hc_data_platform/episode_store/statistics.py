@@ -36,3 +36,41 @@ class Moments:
             "mean": self.mean.tolist(),
             "std": np.sqrt(self.m2 / self.count).tolist(),
         }
+
+
+def refresh_numeric_statistics(root):
+    """Recompute dense indices and valid numerical features after selection."""
+    import json
+
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH
+
+    from .models import canonical
+
+    info = json.loads((root / "meta/info.json").read_bytes())
+    stats = json.loads((root / "meta/stats.json").read_bytes())
+    moments = {
+        k: Moments()
+        for k, f in info["features"].items()
+        if f["dtype"] not in {"string", "binary", "video"}
+    }
+    for batch in pq.ParquetFile(root / DATA_PATH).iter_batches():
+        columns = batch.to_pydict()
+        for key, accumulator in moments.items():
+            mask = columns.get("hc.valid." + key, [True] * batch.num_rows)
+            values = [v for v, valid in zip(columns[key], mask, strict=True) if valid]
+            if values:
+                accumulator.add(values)
+    for key, accumulator in moments.items():
+        stats.pop(key, None)
+        if accumulator.count:
+            stats[key] = accumulator.document()
+    episode = pq.read_table(root / EPISODES_PATH).to_pylist()[0]
+    episode = {k: v for k, v in episode.items() if not k.startswith("stats/")}
+    for key, values in stats.items():
+        for name, value in values.items():
+            episode[f"stats/{key}/{name}"] = value
+    pq.write_table(pa.Table.from_pylist([episode]), root / EPISODES_PATH)
+    (root / "meta/stats.json").write_bytes(canonical(stats))

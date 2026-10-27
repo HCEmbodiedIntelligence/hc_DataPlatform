@@ -20,6 +20,7 @@ from hc_data_platform.data_formats.holobrain_depth import DepthProfile
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
 from .models import CommitReceipt, FileEntry, PackageInput, PackageManifest
+from .validation_cache import reuse_verified_package
 
 
 def package_file(root: Path, relative: str, *, receipt=False) -> Path:
@@ -341,6 +342,7 @@ def validate_depth(
     return totals
 
 
+@reuse_verified_package
 def validate_package(root: Path, source: PackageInput) -> PackageManifest:
     root = Path(root)
     info = document(root, "meta/info.json")
@@ -511,14 +513,13 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
             )
             if compacted:
                 # Media is dense; depth association evidence retains the original grid time.
-                evidence_columns = list(dict.fromkeys([*target_columns, "hc.sample_valid"]))
+                evidence_columns = list(dict.fromkeys([*target_columns, "hc.alignment_timestamp_ns"]))
                 target_rows = (
-                    row
-                    for batch in evidence_parquet.iter_batches(
+                    {**row, "hc.timestamp_ns": row["hc.alignment_timestamp_ns"]}
+                    for batch in parquet.iter_batches(
                         batch_size=128, columns=evidence_columns
                     )
                     for row in batch.to_pylist()
-                    if row["hc.sample_valid"]
                 )
             else:
                 target_rows = (

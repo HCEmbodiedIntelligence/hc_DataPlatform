@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
+from hc_data_platform.capture_schemes.reprocess import ReprocessMcap
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
@@ -239,6 +240,35 @@ def process_mcap(
             detail="请选择绑定数据集的 MCAP 原始数据。",
         )
     return start((organization_id, project_id, region_code), raw, browser.manifest(raw), command)
+
+
+@router.post("/{import_id}:reprocess-mcap", operation_id="reprocessMcapWithTaskPlan")
+def reprocess_mcap(project_id: str, region_code: str, import_id: str, command: ReprocessMcap,
+                   auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
+    from hc_data_platform.capture_schemes.reprocess import request as reprocess
+    from .configuration import connections
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    raw = browser.source(organization_id, project_id, region_code, import_id)
+    with connections()() as db:
+        return reprocess(db, (organization_id, project_id, region_code), raw,
+                         browser.manifest(raw), command, auth.subject_id)
+
+
+@router.get("/{import_id}/mcap-plan-versions", operation_id="listMcapTaskPlanVersions")
+def mcap_plan_versions(project_id: str, region_code: str, import_id: str,
+                       auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
+    from .configuration import connections
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(organization_id, project_id, region_code, import_id)
+    with connections()() as db:
+        rows = db.execute(
+            """SELECT p.document FROM collection_tasks.capture_plans p
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s
+            AND collection_task_id=%s ORDER BY revision DESC""",
+            (organization_id, project_id, region_code, raw.collection_task_id),
+        ).fetchall()
+    return {"items": [r[0] for r in rows]}
 
 
 @router.get("/{import_id}/mcap-processing")

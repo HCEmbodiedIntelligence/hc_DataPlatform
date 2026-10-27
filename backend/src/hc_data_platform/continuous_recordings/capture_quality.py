@@ -8,15 +8,55 @@ from mcap.reader import make_reader
 POLICY = "capture-availability/v1"
 
 
-def summarize(paths, start_ns, end_ns, profile):
+def alignment_offsets(paths, start_ns, end_ns):
+    """Read measured source-to-anchor deltas, including rejected nearest matches.
+
+    Old recordings without a nearest diagnostic contribute accepted matches only;
+    their missing rows remain visible in the independent completeness evidence.
+    """
+    from collections import defaultdict
+
+    frames = defaultdict(dict)
+    for path in paths:
+        with path.open("rb") as stream:
+            for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages():
+                if start_ns <= message.log_time < end_ns and channel.topic in {
+                    "/action", "/observation/state", "source.timestamp_ns"
+                }:
+                    frames[message.log_time][channel.topic] = json.loads(message.data)
+    offsets = defaultdict(list)
+    for frame in frames.values():
+        anchor = frame.get("source.timestamp_ns")
+        if type(anchor) is not int:
+            continue
+        for topic in ("/action", "/observation/state"):
+            value = frame.get(topic, {})
+            stamp = value.get("source_timestamp_ns")
+            if stamp is None:
+                stamp = value.get("nearest_source_timestamp_ns")
+            reference = value.get("alignment_reference_timestamp_ns", anchor)
+            if type(stamp) is int and type(reference) is int:
+                offsets[topic].append(stamp - reference)
+    return dict(offsets)
+
+
+def summarize(paths, start_ns, end_ns, profile, *, output=None):
     frames = {}
+    vectors = {"/action": {}, "/observation/state": {}}
+    versioned = (output or {}).get("algorithm") in {"capture-structure/v2", "capture-structure/v3"}
     for path in paths:
         with path.open("rb") as stream:
             for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages():
                 if (
-                    channel.topic != "/openarm/capture_validity"
-                    or not start_ns <= message.log_time < end_ns
+                    not start_ns <= message.log_time < end_ns
                 ):
+                    continue
+                if versioned and channel.topic in vectors:
+                    if message.log_time in vectors[channel.topic]:
+                        raise ValueError("duplicate joint validity evidence")
+                    vectors[channel.topic][message.log_time] = json.loads(message.data)
+                    continue
+                if channel.topic != "/openarm/capture_validity":
                     continue
                 value = json.loads(message.data)
                 if (
@@ -27,14 +67,41 @@ def summarize(paths, start_ns, end_ns, profile):
                 ):
                     raise ValueError("malformed or duplicate capture validity evidence")
                 frames[message.log_time] = value
-    return aggregate(frames, start_ns, end_ns, profile)
+    axes = {}
+    if versioned:
+        for topic, name in (("/action", "action"), ("/observation/state", "observation.state")):
+            declaration = output["features"][name]
+            names = declaration["names"]
+            required = declaration.get("required_axes")
+            required = set(names if required is None else required)
+            if set(vectors[topic]) != set(frames):
+                raise ValueError("joint validity evidence does not cover the selected window")
+            missing = Counter()
+            for stamp, value in vectors[topic].items():
+                mask = value.get("validity", [])
+                if value.get("names") != names or len(mask) != len(names) or any(type(v) is not bool for v in mask):
+                    raise ValueError("malformed per-axis validity")
+                missing.update(n for n, valid in zip(names, mask, strict=True) if not valid)
+                absent = [n for n, valid in zip(names, mask, strict=True) if n in required and not valid]
+                if absent:
+                    frames[stamp]["valid"] = False
+                    frames[stamp]["reasons"].extend(name + ":missing:" + n for n in absent)
+            axes[name] = {"required_axes": sorted(required), "missing_rows_by_axis": dict(missing),
+                          "optional_axes": [n for n in names if n not in required]}
+    result = aggregate(frames, start_ns, end_ns, profile, preserve_source=versioned)
+    if versioned:
+        result["axis_validity"] = axes
+        result["policy"] = "capture-availability/v2"
+        if any(v["missing_rows_by_axis"].get(n) for v in axes.values() for n in v["optional_axes"]):
+            result["warning_codes"].append("CAPTURE_OPTIONAL_AXES_UNAVAILABLE")
+    return result
 
 
-def aggregate(frames, start_ns, end_ns, profile):
+def aggregate(frames, start_ns, end_ns, profile, *, preserve_source=False):
     total = len(frames)
     fps = profile.default_timing.target_frequency_hz
     expected = round(end_ns * fps / 1e9) - round(start_ns * fps / 1e9)
-    if total != expected:
+    if not total or (not preserve_source and total != expected):
         raise ValueError("capture validity evidence does not cover the selected window")
     invalid = {stamp for stamp, value in frames.items() if not value["valid"]}
     reasons = Counter(reason for value in frames.values() for reason in set(value["reasons"]))

@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { AppProviders } from "./app/providers";
+import { router } from "./app/router";
 import { readAppEnvironment, StartupErrorPage } from "./app/env";
 import { configureRuntime } from "./shared/config/runtime";
 import { configureReleaseIdentity } from "./shared/config/release-identity";
@@ -39,8 +40,6 @@ async function bootstrap(): Promise<void> {
     await startBrowserMocks();
   }
 
-  const { router } = await import("./app/router");
-
   root.render(
     <StrictMode>
       <AppProviders router={router} />
@@ -48,4 +47,6 @@ async function bootstrap(): Promise<void> {
   );
 }
 
-void bootstrap();
+void bootstrap().catch(() => {
+  globalThis.dispatchEvent(new Event("hc:startup-error"));
+});

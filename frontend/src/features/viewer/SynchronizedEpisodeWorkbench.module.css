@@ -260,11 +260,11 @@
   }
 
   .workbenchFrame :global(.viewer-media-grid[data-camera-layout="single"]) {
-    grid-template-columns: minmax(0, 320px);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .workbenchFrame :global(.viewer-media-grid[data-camera-layout="pair"]) {
-    grid-template-columns: repeat(2, minmax(0, 240px));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .workbenchFrame :global(.viewer-panel__error),
@@ -473,7 +473,7 @@
     margin-inline: 0;
     grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr);
     grid-template-rows:
-      auto auto auto minmax(210px, auto) minmax(210px, auto)
+      auto auto auto minmax(360px, auto) minmax(160px, auto)
       auto;
     grid-template-areas:
       "header header"
@@ -633,7 +633,7 @@
   .workbenchFrame[data-workspace-layout="synchronized"]
     .robotPoseInspector
     :global(.viewer-robot-panel > header) {
-    min-height: 38px;
+    min-height: 30px;
     color: var(--desk-ink);
     background: var(--desk-surface);
     border-color: var(--desk-line);
@@ -651,7 +651,7 @@
   .workbenchFrame[data-workspace-layout="synchronized"]
     .robotPoseInspector
     :global(.robot-scene-core) {
-    min-height: 0;
+    min-height: 330px;
     max-height: none;
     flex: 1 1 auto;
     aspect-ratio: auto;
@@ -670,7 +670,7 @@
   .workbenchFrame[data-workspace-layout="synchronized"]
     .jointAngleDock
     :global(.viewer-joint-curves > header) {
-    min-height: 38px;
+    min-height: 28px;
     border-color: var(--desk-line);
     background: var(--desk-surface);
   }
@@ -741,8 +741,9 @@
      the remaining viewport instead of letting it extend behind the controls. */
   .workbenchFrame[data-workspace-layout="synchronized"]
     :global([data-mode="published-readonly"][data-navigation-visible="false"]) {
-    height: calc(100dvh - 104px);
-    grid-template-rows: auto auto auto minmax(0, 1fr) minmax(0, 1fr) auto;
+    height: auto;
+    min-height: calc(100dvh - 104px);
+    grid-template-rows: auto auto auto clamp(360px, 48dvh, 540px) minmax(160px, auto) auto;
   }
 
   .workbenchFrame[data-workspace-layout="synchronized"]
@@ -775,16 +776,25 @@
 .numericStreamSelector {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  font-size: 12px;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 10px;
 }
 .numericStreamSelector select {
   min-width: 0;
   max-width: 100%;
-  padding: 4px 8px;
+  padding: 2px 6px;
   border: 1px solid var(--hc-color-border);
   border-radius: 6px;
   color: var(--hc-color-text);
   background: var(--hc-color-surface);
+}
+
+/* Expand video frames within the existing workspace; keep the robot and timeline in place. */
+.workbenchFrame :global(.viewer-media-grid:is([data-camera-layout="single"], [data-camera-layout="pair"]) .viewer-panel > video) {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  aspect-ratio: auto 16 / 9;
+  object-fit: contain;
 }

@@ -86,6 +86,9 @@ class NativeEpisodePlan(FrozenModel):
 
     @classmethod
     def freeze(cls, *, input, **facts):
+        from .frame_policy import PROCESSING_POLICY
+
+        facts["metadata"] = {**facts["metadata"], "frame_selection_policy": PROCESSING_POLICY}
         value = cls.model_construct(input=input, **facts)
         frozen = input.model_copy(update={"configuration_sha256": value.configuration_sha256})
         return cls.model_validate({**value.model_dump(mode="json"), "input": frozen})

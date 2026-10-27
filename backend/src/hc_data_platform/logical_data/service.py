@@ -20,6 +20,10 @@ class LogicalDataService:
             snapshot_token=snapshot_token,
             request_id=current_request_context().request_id,
         ).data
+        return revision, self.describe_revision(selection, revision)
+
+    def describe_revision(self, selection, revision):
+        """Describe a revision already authorized by the owning product service."""
         if (
             revision.scope.organization_id != selection.organization_id
             or revision.scope.project_id != selection.project_id
@@ -36,7 +40,15 @@ class LogicalDataService:
             content_sha256=revision.content_sha256.lower(),
             streams=streams,
         )
-        return revision, LogicalSnapshotView(snapshot_id=snapshot.snapshot_id, snapshot=snapshot)
+        return LogicalSnapshotView(snapshot_id=snapshot.snapshot_id, snapshot=snapshot)
+
+    def prepare_revision(self, selection, revision, auth):
+        view = self.describe_revision(selection, revision)
+        if self.scenes is None or not auth.has_organization_capability(selection.organization_id, "robot_model.read"):
+            return view, None, ()
+        scene = self.scenes.scene(revision, view.snapshot_id)
+        grants = self.scenes.authorize_assets(revision, scene, auth, "glb")
+        return view, scene, tuple(grants)
 
     def snapshot(self, selection, *, auth, snapshot_token):
         return self._resolve(selection, auth, snapshot_token)[1]
@@ -129,3 +141,10 @@ class LogicalDataService:
             selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
         )
         return self.scenes.authorize_asset(revision, view, asset_id, auth)
+
+    def authorize_robot_assets(self, selection, *, auth, snapshot_token, snapshot_id, preview_format="stl"):
+        # One snapshot/permission check and one metadata-only registry read.
+        revision, view = self._scene(
+            selection, auth=auth, snapshot_token=snapshot_token, snapshot_id=snapshot_id
+        )
+        return self.scenes.authorize_assets(revision, view, auth, preview_format)

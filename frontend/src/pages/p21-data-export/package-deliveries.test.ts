@@ -168,9 +168,9 @@ it.each(["mcap", "original", "hdf5"])(
     const f = packageDeliveryFixture(true);
     if (f.job.plan.format !== "hc-collection-delivery-plan/1")
       throw new Error("fixture");
-    f.job.plan.archive_format = `${mode}_collection_zip/1`;
+    f.job.plan.archive_format = mode === "mcap" ? "mcap_collection_zip/2" : `${mode}_collection_zip/1`;
     f.job.plan.processor_version = "hc-export/1";
-    f.job.plan.reader_version = mode === "mcap" ? "mcap/1" : "original-bytes/1";
+    f.job.plan.reader_version = mode === "mcap" ? "hc-selected-mcap/2" : "original-bytes/1";
     if (mode === "hdf5")
       vi.mocked(request).mockResolvedValueOnce([
         {

@@ -85,6 +85,39 @@ def create(client: TestClient, *, project_id: str = "project-a") -> Any:
     )
 
 
+@pytest.mark.parametrize("category", [None, ""])
+def test_category_can_be_omitted_or_empty_on_creation(api, category):
+    client, _ = api
+    body = payload()
+    if category is None:
+        body.pop("type")
+    else:
+        body["type"] = category
+    response = client.post(
+        "/api/v1/projects/project-a/collection-tasks",
+        json=body,
+        headers={"Idempotency-Key": "unclassified-task"},
+    )
+    assert response.status_code == 201
+    assert response.json()["type"] == ""
+    task_id = response.json()["collection_task_id"]
+    assert client.get(f"/api/v1/projects/project-a/collection-tasks/{task_id}").json()["type"] == ""
+
+
+def test_category_is_preserved_when_omitted_and_can_be_cleared(api):
+    client, _ = api
+    created = create(client)
+    path = "/api/v1/projects/project-a/collection-tasks/" + created.json()["collection_task_id"]
+    unchanged = client.patch(
+        path, json={"description": "Updated"}, headers={"If-Match": created.headers["ETag"]}
+    )
+    assert unchanged.status_code == 200
+    assert unchanged.json()["type"] == "COLLECTION"
+    cleared = client.patch(path, json={"type": ""}, headers={"If-Match": unchanged.headers["ETag"]})
+    assert cleared.status_code == 200
+    assert client.get(path).json()["type"] == ""
+
+
 def test_delete_requires_management_scope_and_version_headers(api):
     from types import SimpleNamespace
     from unittest.mock import Mock
@@ -189,7 +222,11 @@ def test_create_list_detail_update_close_progress(api: tuple[TestClient, dict[st
     assert listed.headers["Cache-Control"] == "no-store"
     assert [item["collection_task_id"] for item in listed.json()["items"]] == [task_id]
 
-    detail = client.get(f"/api/v1/projects/project-a/collection-tasks/{task_id}")
+    # Browsers advertise compression; proxies must preserve the strong If-Match token.
+    detail = client.get(
+        f"/api/v1/projects/project-a/collection-tasks/{task_id}",
+        headers={"Accept-Encoding": "gzip, br"},
+    )
     assert detail.status_code == 200
     assert detail.headers["Cache-Control"] == "no-store"
     assert detail.headers["ETag"] == '"v1"'

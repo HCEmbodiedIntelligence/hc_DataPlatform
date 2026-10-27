@@ -33,7 +33,7 @@ class AnnotationDeliveryPlan(FrozenModel):
     submission: AnnotationSubmission | None = None
     # The parent's manifest binds all media, masks, source mappings and depth profiles.
     parent_manifest_sha256: Digest
-    processor_version: Literal["hc-annotated-delivery-queue/1"] = "hc-annotated-delivery-queue/1"
+    processor_version: Literal["hc-annotated-delivery-queue/1", "hc-annotated-delivery-queue/2"] = "hc-annotated-delivery-queue/2"
     reader_version: Literal["lerobot/0.6.1"] = "lerobot/0.6.1"
     archive_format: Literal["independent_episode_zip/1"] = "independent_episode_zip/1"
     includes_collected_depth: Literal[True] = True

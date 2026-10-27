@@ -70,7 +70,10 @@ def test_openapi_fragment_matches_router_and_all_local_refs_resolve() -> None:
     app.include_router(router)
     generated = app.openapi()
 
-    assert _operations(fragment) == _operations(generated)
+    # This composed router also exposes the endpoint owned by logical_data.yaml.
+    logical = yaml.safe_load((OPENAPI_PATH.parent / "logical_data.yaml").read_text())
+    assert _operations(fragment) == _operations(generated) - _operations(logical)
+    assert _operations(generated) <= _operations(aggregate)
     for ref in _local_refs(fragment):
         for document in (fragment, aggregate):
             current: object = document

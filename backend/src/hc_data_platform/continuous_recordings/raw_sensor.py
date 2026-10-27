@@ -124,12 +124,23 @@ def read_sensor_asset_window(
             summary = reader.get_summary()
             if summary is not None:
                 topic_found = any(channel.topic == topic for channel in summary.channels.values())
+            invalid = set()
+            # Normalized recordings carry the same row mask used by package
+            # writing and video selection. Keep the acquisition offsets intact.
+            for _, channel, message in reader.iter_messages(
+                topics=("/openarm/capture_validity",), start_time=source_start_ns,
+                end_time=source_end_ns,
+            ):
+                if not json.loads(message.data)["valid"]:
+                    invalid.add(message.log_time)
             for schema, channel, message in reader.iter_messages(
                 topics=(topic,),
                 start_time=source_start_ns,
                 end_time=source_end_ns,
             ):
                 topic_found = True
+                if message.log_time in invalid:
+                    continue
                 if schema is None or not decoder.supports(
                     channel.message_encoding, schema.encoding
                 ):

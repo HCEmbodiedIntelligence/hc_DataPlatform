@@ -54,6 +54,7 @@ def physical_schema(db, scope, proposed):
         package_digest(row[0]) != row[1]
         or proof[0]["legacy_schema_sha256"] != row[1]
         or old.fields != proposed.fields
+        or old.frequency_hz != proposed.frequency_hz
     ):
         reject("CAPTURE_DATASET_INCOMPATIBLE", "上传数据与已核验的历史数据集结构不同")
     frozen = db.execute(

@@ -23,7 +23,7 @@ export const captureProblemLabels: Record<string, string> = {
   CAPTURE_FORMAT_UNSUPPORTED: "方案不支持该输入格式",
   CAPTURE_SAMPLE_VALIDATION_REQUIRED: "当前方案需要样本验证",
   CAPTURE_REVISION_CONFLICT: "版本已变化，请重新加载后核对修改",
-  CAPTURE_PLAN_LOCKED: "任务计划已固定，请为新结构创建新任务",
+  CAPTURE_PLAN_LOCKED: "服务仍限制任务方案修改，请刷新后重试",
   CAPTURE_SCHEME_ARCHIVED: "方案已归档",
   ANNOTATION_PENDING: "标注待配置",
   ANNOTATION_NOT_CONFIGURED: "标注待配置",

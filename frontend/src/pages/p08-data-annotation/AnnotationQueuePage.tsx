@@ -5,7 +5,7 @@ import {
 import { annotationDataLabel } from "../../features/annotation/runtime/annotation-package";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pagination } from "antd";
 import {
   BadgeCheck,
@@ -32,6 +32,7 @@ import {
   annotationTaskStatusLabel,
   claimRuntimeAnnotationTask,
   listRuntimeAnnotationTasks,
+  reopenRuntimeAnnotationTask,
   runtimeAnnotationScopeFromShell,
 } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import type {
@@ -44,6 +45,8 @@ import {
   type AnnotationQueueStage,
 } from "../../features/annotation/query-codec";
 import { annotationRoutes } from "../../features/annotation/routing";
+import { annotationTaskListKey } from "../../features/annotation/runtime/task-preload";
+import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import "./p08.css";
 
 interface QueueStageDefinition {
@@ -83,8 +86,8 @@ export const ANNOTATION_QUEUE_STAGES: readonly QueueStageDefinition[] = [
   {
     status: "APPROVED",
     label: "标注完成",
-    description: "查看已批准标注结果",
-    queueDescription: "审核已通过，批准修订可供发布流程读取。",
+    description: "查看结果或修改标注",
+    queueDescription: "审核已通过，仍可修改标注。修改会保留历史记录，并需重新提交审核。",
     emptyDescription: "当前没有审核通过的标注结果。",
     icon: BadgeCheck,
   },
@@ -154,12 +157,15 @@ function QueueRow(props: {
   readonly actorId: string | null;
   readonly canClaim: boolean;
   readonly canEdit: boolean;
+  readonly canSave: boolean;
   readonly canOpen: boolean;
   readonly canReview: boolean;
   readonly returnTo: string;
-  readonly onChanged: () => void;
+  readonly onChanged: () => Promise<unknown>;
 }): JSX.Element {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const scopeRevision = useScopeQueryRevision();
   const entering = useRef(false);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -176,6 +182,33 @@ function QueueRow(props: {
     props.canReview &&
     fixedSubmissionExists;
   const canModify = assignedToCurrent && props.canEdit;
+  const canReopen =
+    props.canOpen && canModify && props.canSave &&
+    props.task.status === "APPROVED" &&
+    props.task.approved_revision === props.task.current_revision;
+
+  const reopenTask = async () => {
+    if (!canReopen || entering.current) return;
+    entering.current = true;
+    setClaiming(true);
+    setClaimError(null);
+    try {
+      await reopenRuntimeAnnotationTask(props.scope, props.task);
+      await queryClient.invalidateQueries({
+        queryKey: ["p08-runtime-annotation", props.scope.organizationId, scopeRevision,
+          props.scope.projectId, props.scope.regionCode, props.task.task_id],
+        refetchType: "none",
+      });
+      await props.onChanged();
+      await navigate(taskTarget(props.task, props.returnTo));
+    } catch (error) {
+      setClaimError(isDomainError(error) || error instanceof Error
+        ? error.message : "重新打开标注失败，请重试。");
+    } finally {
+      entering.current = false;
+      setClaiming(false);
+    }
+  };
 
   const openTask = async () => {
     if (!props.canOpen || entering.current) return;
@@ -314,6 +347,7 @@ function QueueRow(props: {
           <Link
             className="p08-row-action"
             to={taskTarget(props.task, props.returnTo)}
+            onClick={(event) => { if (claiming) event.preventDefault(); }}
           >
             {operationLabel}
           </Link>
@@ -327,6 +361,20 @@ function QueueRow(props: {
             {operationLabel}
           </button>
         )}
+        {props.task.status === "APPROVED" ? (
+          <button
+            className="p08-row-action p08-reopen-action"
+            disabled={!canReopen || claiming}
+            title={canReopen
+              ? "保留标注内容和历史记录，重新打开为待标注任务。"
+              : !assignedToCurrent ? "请由该任务的标注人员修改标注。"
+                : "当前账号没有修改已完成标注的权限。"}
+            type="button"
+            onClick={() => void reopenTask()}
+          >
+            {claiming ? "正在打开…" : "修改标注"}
+          </button>
+        ) : null}
         {claimError ? (
           <small className="p08-row-error" role="alert">
             {claimError}
@@ -343,6 +391,7 @@ function RuntimeAnnotationQueuePage({
   readonly mode: AnnotationWorkbenchMode;
 }): JSX.Element {
   const capabilities = useCapabilities();
+  const scopeRevision = useScopeQueryRevision();
   const shellScope = useShellStore((state) => state.scope);
   const unscopedAccount = useShellStore(
     (state) =>
@@ -372,13 +421,13 @@ function RuntimeAnnotationQueuePage({
   const canRead = capabilities.has("annotation_task.read");
   const tasks = useQuery({
     queryKey: scope
-      ? ["p08-runtime-annotation-list", scope.projectId, scope.regionCode]
+      ? annotationTaskListKey(scope, scopeRevision)
       : ["p08-runtime-annotation-list", "disabled"],
     queryFn: ({ signal }) => listRuntimeAnnotationTasks(scope!, signal),
     enabled:
       !!scope && canRead && !capabilities.loading && !capabilities.failed,
     retry: false,
-    staleTime: 0,
+    staleTime: 15_000,
   });
   const counts = useMemo<Record<AnnotationQueueStage, number>>(() => {
     const next: Record<AnnotationQueueStage, number> = {
@@ -570,7 +619,8 @@ function RuntimeAnnotationQueuePage({
                 returnTo={returnTo}
                 scope={scope!}
                 task={task}
-                onChanged={() => void tasks.refetch()}
+                canSave={capabilities.has("annotation.save")}
+                onChanged={() => tasks.refetch()}
               />
             ))}
           </tbody>

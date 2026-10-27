@@ -49,23 +49,7 @@ import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import styles from "./workbench.module.css";
 import { defaultAnnotationNavigatorPreferences } from "./AnnotationNavigator";
-
-function taskQueryKey(
-  scope: RuntimeAnnotationScope,
-  taskId: string,
-  mode: AnnotationWorkbenchMode,
-  revision: string,
-) {
-  return [
-    "p08-runtime-annotation",
-    scope.organizationId,
-    revision,
-    scope.projectId,
-    scope.regionCode,
-    taskId,
-    mode,
-  ] as const;
-}
+import { annotationTaskListKey, taskQueryKey, taskQueryOptions } from "../../features/annotation/runtime/task-preload";
 
 function workbenchErrorKind(
   error: unknown,
@@ -107,22 +91,21 @@ function WorkbenchState(props: {
             readOnly: true,
             clock,
             cameraStreams: [],
+            cameraEmptyMessage: props.kind === "first-loading" ? "" : "数据加载失败，请重试。",
+            robotSceneUnavailableReason: props.kind === "first-loading" ? "" : "数据加载失败，请重试。",
             collectionItems: [],
             findings: [],
             timelineTracks: [],
             actions: [],
-            banner: {
-              label: props.kind === "first-loading" ? "正在加载" : "加载状态",
-              title:
-                props.kind === "first-loading"
-                  ? "正在读取标注事实"
-                  : "标注数据暂时不可用",
+            ...(props.kind === "first-loading" ? {} : { banner: {
+              label: "加载失败",
+              title: "标注数据暂时不可用",
               description: props.detail ?? "请稍后重试或返回任务队列。",
-              tone: props.kind === "first-loading" ? "info" : "warning",
-            },
+              tone: "warning",
+            } }),
           }}
           slots={{
-            inspector: () => (
+            inspector: () => props.kind === "first-loading" ? null : (
               <section className={styles.inspectorPanel}>
                 <header className={styles.inspectorHeader}>
                   <span>
@@ -144,7 +127,7 @@ function WorkbenchState(props: {
                 />
               </section>
             ),
-            actionDock: () => (
+            actionDock: () => props.kind === "first-loading" ? null : (
               <section className={styles.actionDock}>
                 {props.onRetry ? (
                   <button type="button" onClick={props.onRetry}>
@@ -197,6 +180,16 @@ function permissionSnapshot(input: {
     input.has("annotation.edit") &&
     input.has("annotation_draft.edit");
   const canSave = canEdit && input.has("annotation.save");
+  const canReopen =
+    task.status === "APPROVED" &&
+    task.approved_revision === task.current_revision &&
+    assignedToCurrent &&
+    input.has("annotation.edit") &&
+    input.has("annotation_draft.edit") &&
+    input.has("annotation.save");
+  const reopenUnavailableReason = !assignedToCurrent
+    ? "请由该任务的标注人员修改标注。"
+    : "当前账号没有修改已完成标注的权限。";
   const canSubmit = canEdit && !input.dirty && input.has("annotation.submit");
   const canCreate =
     input.mode === "annotation" &&
@@ -223,7 +216,9 @@ function permissionSnapshot(input: {
       : task.status !== "DRAFT"
         ? `任务状态为 ${task.status}，不能创建新的标注草稿。`
         : "当前任务尚不能创建标注草稿。";
-  const annotationUnavailableReason = !hasAnnotationDraft
+  const annotationUnavailableReason = canReopen
+    ? "点击“修改标注”后可继续编辑。"
+    : !hasAnnotationDraft
     ? "请先创建标注草稿。"
     : !editableStatus
       ? `任务状态为 ${task.status}，标注编辑已锁定。`
@@ -245,7 +240,9 @@ function permissionSnapshot(input: {
         ? "当前没有可用于数据修订的历史版本。"
         : undefined;
   let readOnlyReason: string | undefined;
-  if (input.mode === "tag-review" && task.status !== "SUBMITTED")
+  if (canReopen)
+    readOnlyReason = "标注已完成，可点击“修改标注”创建新草稿；修改后需重新提交审核。";
+  else if (input.mode === "tag-review" && task.status !== "SUBMITTED")
     readOnlyReason = `任务状态为 ${task.status}，没有待审核提交。`;
   else if (input.mode === "tag-review" && !input.has("annotation.review"))
     readOnlyReason = "当前授权仅允许查看，不允许创建审核决定。";
@@ -263,6 +260,8 @@ function permissionSnapshot(input: {
     canSubmit,
     canReview,
     canRevise,
+    canReopen,
+    reopenUnavailableReason,
     createUnavailableReason,
     ...(annotationUnavailableReason ? { annotationUnavailableReason } : {}),
     ...(reviewUnavailableReason ? { reviewUnavailableReason } : {}),
@@ -301,14 +300,23 @@ function RuntimeAnnotationTaskPage({
         ? taskQueryKey(scope, taskId, mode, scopeRevision)
         : ["p08-runtime-annotation", "disabled"],
     queryFn: ({ signal }) =>
-      loadRuntimeAnnotationBundle(scope!, taskId!, mode, signal),
+      loadRuntimeAnnotationBundle(scope!, taskId!, mode, signal,
+        queryClient.getQueryData(annotationTaskListKey(scope!, scopeRevision))),
     enabled:
       !!scope &&
       !!taskId &&
       canRead &&
       !capabilities.loading &&
       !capabilities.failed,
-    staleTime: 0,
+    placeholderData: (previous, previousQuery) => {
+      const oldKey = previousQuery?.queryKey;
+      if (!scope || !oldKey || !canRead) return;
+      const nextKey = taskQueryKey(scope, taskId!, mode, scopeRevision);
+      // Preserve the picture only inside the same authorized workspace/mode.
+      return [0, 1, 2, 3, 4, 6].every(index => oldKey[index] === nextKey[index]) ? previous : undefined;
+    },
+    staleTime: 15_000,
+    gcTime: 120_000,
     retry: false,
   });
   const [tags, setTags] = useState<readonly RuntimeAnnotationTag[]>([]);
@@ -321,6 +329,14 @@ function RuntimeAnnotationTaskPage({
   >(null);
   const initializedBaseline = useRef<string | null>(null);
   const bundle = query.data;
+  const changingTask = query.isPlaceholderData || bundle?.task.task_id !== taskId;
+  useEffect(() => {
+    if (!bundle || !scope || !canRead || changingTask) return;
+    const index = bundle.tasks.findIndex(task => task.task_id === taskId);
+    const neighbors = [bundle.tasks[index + 1], bundle.tasks[index - 1]].filter(task => task !== undefined);
+    for (const task of neighbors)
+      void queryClient.prefetchQuery(taskQueryOptions(scope, task.task_id, mode, scopeRevision, bundle.tasks));
+  }, [bundle, scope, canRead, changingTask, taskId, mode, scopeRevision, queryClient]);
   const jointAngleStream = useMemo(
     () =>
       bundle && scope ? buildRuntimeJointAngleStream({ bundle, scope }) : null,
@@ -432,14 +448,19 @@ function RuntimeAnnotationTaskPage({
   }
 
   const commands = createRuntimeAnnotationCommands(scope);
-  const permissions = permissionSnapshot({
+  const availablePermissions = permissionSnapshot({
     mode,
     bundle,
     principalId: principal?.actorId,
     dirty,
     has: capabilities.has,
   });
+  const permissions = changingTask ? {
+    ...availablePermissions, canCreate: false, canEdit: false, canSave: false,
+    canSubmit: false, canReview: false, canRevise: false, canReopen: false,
+  } : availablePermissions;
   const canReportDataIssue =
+    !changingTask &&
     capabilities.has("manual_issue.create") &&
     capabilities.has(
       mode === "tag-review" ? "annotation.review" : "annotation.edit",
@@ -534,6 +555,26 @@ function RuntimeAnnotationTaskPage({
     )
       throw new Error("任务已领取，但标注草稿尚未就绪，请重试刷新。");
   };
+  const reopenAnnotation = async () => {
+    if (!permissions.canReopen)
+      throw new Error(permissions.reopenUnavailableReason);
+    await commands.reopen(bundle.task);
+    if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
+    setRecoveryTags(null);
+    setDirty(false);
+    await queryClient.invalidateQueries({
+      queryKey: annotationTaskListKey(scope, scopeRevision),
+      refetchType: "all",
+    });
+    await queryClient.invalidateQueries({
+      queryKey: taskQueryKey(scope, bundle.task.task_id, mode, scopeRevision).slice(0, 6),
+      refetchType: "none",
+    });
+    const refreshed = await query.refetch();
+    if (refreshed.error) throw refreshed.error;
+    if (refreshed.data?.task.status !== "DRAFT")
+      throw new Error("标注任务状态已变化，请刷新后重试。");
+  };
   const selectTask = (selectedTaskId: string) => {
     if (selectedTaskId === bundle.task.task_id) return;
     const target =
@@ -581,7 +622,7 @@ function RuntimeAnnotationTaskPage({
             scope={scope}
             history={bundle.history}
             dirty={dirty}
-            canRetry={capabilities.has("annotation.save")}
+            canRetry={!changingTask && capabilities.has("annotation.save")}
             canDownload={capabilities.has("export.download")}
           />
           {bundle.task.data_ref && (
@@ -590,7 +631,7 @@ function RuntimeAnnotationTaskPage({
               scope={scope}
               history={bundle.history}
               dirty={dirty}
-              canCreate={capabilities.has("export.create")}
+              canCreate={!changingTask && capabilities.has("export.create")}
               canDownload={capabilities.has("export.download")}
             />
           )}
@@ -600,7 +641,7 @@ function RuntimeAnnotationTaskPage({
               scope={scope}
               history={bundle.history}
               dirty={dirty}
-              canCreate={capabilities.has("upload.manage")}
+              canCreate={!changingTask && capabilities.has("upload.manage")}
               canRead={[
                 "dataset_version.read",
                 "annotation_task.read",
@@ -640,6 +681,7 @@ function RuntimeAnnotationTaskPage({
         setRecoveryTags(null);
       }}
       onCreateAnnotation={createAnnotation}
+      onReopenAnnotation={reopenAnnotation}
       onDiscardChanges={() => {
         setTags(tagsForBundle(bundle, mode));
         setDirty(false);

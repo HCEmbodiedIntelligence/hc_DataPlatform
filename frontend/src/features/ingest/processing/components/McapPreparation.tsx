@@ -22,7 +22,12 @@ type Version = {
   name: string;
   configuration: Record<string, unknown>;
   error?: string;
+  plan_revision?: number;
+  scheme?: { scheme_id: string; version: number };
+  effective_adapter?: { parser_version: string };
+  reprocessing?: { format_version: string };
 };
+type PlanVersion = { revision: number; scheme: { scheme_id: string; version: number }; output: unknown };
 type File = {
   processing_id: string;
   path: string;
@@ -58,15 +63,15 @@ function McapFile({
     [selection, setSelection] = useState("original"),
     [showChannels, setShowChannels] = useState(false);
   const root = `${nativeRoot(scope)}/${encodeURIComponent(importId)}`;
+  const [requestId] = useState(() => crypto.randomUUID());
   const versions = useQuery({
     queryKey: ["mcap-retry-versions", scope, importId, file.robot_id],
     enabled: opened,
     queryFn: () =>
-      request<{ items: Version[] }>({
+      request<{ items: PlanVersion[] }>({
         method: "GET",
-        path: `${root}/mcap-versions`,
+        path: `${root}/mcap-plan-versions`,
         scope,
-        query: { robot_id: file.robot_id },
       }),
   });
   const channels = useQuery({
@@ -81,26 +86,17 @@ function McapFile({
       }),
   });
   const chosen = versions.data?.items.find(
-    (v) => `${v.scheme_id}:${v.version}` === selection,
+    (v) => String(v.revision) === selection,
   );
   const retry = useMutation({
     mutationFn: () =>
       request({
         method: "POST",
-        path: `${root}:process-mcap`,
+        path: chosen ? `${root}:reprocess-mcap` : `${root}:process-mcap`,
         scope,
-        body: {
+        body: chosen ? { request_id: requestId, plan_revision: chosen.revision } : {
           robot_id: file.robot_id,
           collection_task_id: file.collection_task_id,
-          ...(chosen
-            ? {
-                processing_config: {
-                  scheme_id: chosen.scheme_id,
-                  version: chosen.version,
-                  content_sha256: chosen.content_sha256,
-                },
-              }
-            : {}),
         },
       }),
     onSuccess: () => {
@@ -120,10 +116,10 @@ function McapFile({
         } as Record<string, string>
       )[file.status] ?? file.status}
       <p>
-        本次配置：{file.config_reference?.name ?? "历史快照"} ·{" "}
-        {file.config_reference?.version
-          ? `v${file.config_reference.version}`
-          : "未版本化"}
+        本次方案：{file.config_reference?.scheme?.scheme_id ?? file.config_reference?.name ?? "历史快照"}
+        {` · 任务方案 v${file.config_reference?.plan_revision ?? "未记录"}`}
+        {` · ${file.config_reference?.effective_adapter?.parser_version ?? "历史解析器"}`}
+        {file.config_reference?.reprocessing?.format_version && <><br />格式版本：{file.config_reference.reprocessing.format_version}</>}
       </p>
       {file.error && <Alert type="error" title={file.error} />}
       <Space wrap>
@@ -178,7 +174,7 @@ function McapFile({
         ]}
       />
       <Modal
-        title="选择重试配置版本"
+        title="选择任务方案版本重处理"
         open={opened}
         onCancel={() => setOpened(false)}
         onOk={() => retry.mutate()}
@@ -193,7 +189,7 @@ function McapFile({
         }}
       >
         <p>
-          普通故障重试沿用原快照。选择其他已发布版本会建立新的处理记录，原记录保留。
+          普通故障重试沿用原快照。选择任务方案版本会建立新的执行快照和处理记录，原接收快照、处理结果与原件保留。
         </p>
         <Select
           aria-label="重试配置版本"
@@ -203,15 +199,15 @@ function McapFile({
           options={[
             { value: "original", label: "沿用上次实际配置" },
             ...(versions.data?.items ?? []).map((v) => ({
-              value: `${v.scheme_id}:${v.version}`,
-              label: `${v.name} · v${v.version}`,
+              value: String(v.revision),
+              label: `任务方案 v${v.revision} · ${v.scheme.scheme_id} v${v.scheme.version}`,
             })),
           ]}
         />
         {chosen && (
           <pre style={{ whiteSpace: "pre-wrap" }}>
             {JSON.stringify(
-              { 上次: file.configuration, 本次: chosen.configuration },
+              { 上次: file.configuration, 本次字段定义: chosen.output },
               null,
               2,
             )}

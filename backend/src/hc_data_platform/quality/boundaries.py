@@ -132,7 +132,7 @@ def common_window(start_ns: int, end_ns: int, findings: Iterable[QcFinding]) -> 
 
 def conversion_window(report: QcReportV1, frequency_hz: int) -> tuple[int, int]:
     """Keep the original grid phase while starting derived step/frame indices at zero."""
-    if report.engine_version != BOUNDARY_QUALITY_ENGINE_VERSION:
+    if report.engine_version not in {BOUNDARY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
         return report.start_ns, report.end_ns
     start, end = common_window(report.start_ns, report.end_ns, report.findings)
     first_step = ((start - report.start_ns) * frequency_hz + _SECOND - 1) // _SECOND

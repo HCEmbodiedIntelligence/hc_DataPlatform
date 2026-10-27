@@ -26,7 +26,7 @@ def test_lerobot_to_mcap_is_rejected_before_queueing(queued):  # noqa: F811
     with scoped(source), pytest.raises(ProblemException) as caught:
         service.request_collection(body, "mcap-export", auth)
     assert caught.value.problem.status == 422
-    assert caught.value.problem.code == "EPISODE_DELIVERY_MCAP_ORIGINAL_REQUIRED"
+    assert caught.value.problem.code == "EPISODE_DELIVERY_MCAP_SELECTION_REQUIRED"
 
 
 def test_slice_keeps_ros_field_keys_schema_channel_metadata_and_exact_bytes(tmp_path):

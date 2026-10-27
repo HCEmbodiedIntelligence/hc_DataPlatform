@@ -625,6 +625,28 @@ class PostgresAnnotationRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            from .task_labels import collection_task_label_binding
+
+            task_binding = collection_task_label_binding(
+                cursor,
+                project_id=project_id,
+                region_code=region_code,
+                dataset_id=dataset_id,
+                task_kind=task_kind.value,
+            )
+            if task_binding is not None:
+                cursor.execute(
+                    """SELECT schema_id,version,project_id,name,status,document,
+                       compatible_targets,content_hash,created_by,created_at,
+                       published_by,published_at
+                    FROM annotation.tag_schema_versions
+                    WHERE schema_id=%s AND version=%s AND project_id=%s
+                      AND organization_id=NULLIF(current_setting('app.organization_id',true),'')
+                      AND status='PUBLISHED'""",
+                    (*task_binding, project_id),
+                )
+                raw = cursor.fetchone()
+                return None if raw is None else self._schema_from_row(_row(cursor, raw))
             cursor.execute(
                 """
                 SELECT schema.schema_id, schema.version, schema.project_id, schema.name,

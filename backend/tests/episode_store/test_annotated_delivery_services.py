@@ -21,11 +21,13 @@ from tests.episode_store.test_depth_window import forbid_quantization
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("compact_invalid", [False, True])
 def test_full_annotation_derivative_reuses_depth_media_and_preserves_parent(
     files,  # noqa: F811
     target,
     tmp_path,
     monkeypatch,  # noqa: F811
+    compact_invalid,
 ):
     source, task, service, auth = files
     packages = target[0]
@@ -54,7 +56,8 @@ def test_full_annotation_derivative_reuses_depth_media_and_preserves_parent(
             / "annotated-delivery"
             / data.data_version_id
         )
-        manifest, content_hash = write_annotated_delivery(destination, package, annotation, track)
+        manifest, content_hash = write_annotated_delivery(destination, package, annotation, track,
+                                                         compact_invalid=compact_invalid)
         assert manifest.review.status == "UNREVIEWED"
         assert manifest.base_data == data and manifest.includes_collected_depth
         assert manifest.subtasks.revision == 1
@@ -62,17 +65,24 @@ def test_full_annotation_derivative_reuses_depth_media_and_preserves_parent(
         with package.file("data/chunk-000/file-000.parquet") as path:
             original = pq.read_table(path)
         output = pq.read_table(destination / "data/chunk-000/file-000.parquet")
-        assert output.select(original.column_names).equals(original)
-        assert output["subtask_index"].to_pylist() == [0, 0, -1, -1]
-        assert output["hc.annotation.excluded"].to_pylist() == [False, False, True, False]
+        parents = [0,1,3] if compact_invalid else [0,1,2,3]
+        if not compact_invalid:
+            assert output.select(original.column_names).equals(original)
+        else:
+            assert output["frame_index"].to_pylist() == [0,1,2]
+            assert output["action"].to_pylist() == original["action"].take(parents).to_pylist()
+            assert output["observation.state"].to_pylist() == original["observation.state"].take(parents).to_pylist()
+            assert manifest.exclusion_policy == "drop_invalid_and_excluded_frames"
+        assert output["subtask_index"].to_pylist() == ([0,0,-1] if compact_invalid else [0,0,-1,-1])
+        assert output["hc.annotation.excluded"].to_pylist() == ([False]*3 if compact_invalid else [False, False, True, False])
         mapping = pq.read_table(destination / "hc/annotation_source_frames.parquet").to_pylist()
-        assert [row["source_frame_index"] for row in mapping] == [0, 1, 2, 3]
+        assert [row["source_frame_index"] for row in mapping] == parents
         assert [row["source_timestamp_ns"] for row in mapping] == original[
             "hc.timestamp_ns"
-        ].to_pylist()
+        ].take(parents).to_pylist()
         copied = []
         for entry in package.manifest.files:
-            if entry.path.startswith(("videos/", "hc/depth/")):
+            if entry.path.startswith(("videos/", "hc/depth/")) and not compact_invalid:
                 assert (
                     hashlib.sha256((destination / entry.path).read_bytes()).hexdigest()
                     == entry.sha256
@@ -82,7 +92,13 @@ def test_full_annotation_derivative_reuses_depth_media_and_preserves_parent(
             with package.file(entry.path):
                 pass
         assert package.manifest.content_hash == parent_hash
-        assert any(name.endswith("validity/flags.parquet") for name in copied)
+        if not compact_invalid:
+            assert any(name.endswith("validity/flags.parquet") for name in copied)
+        else:
+            import av
+            for path in (destination / "videos").rglob("*.mp4"):
+                with av.open(str(path)) as video:
+                    assert len(list(video.decode(video=0))) == 3
         document = json.loads((destination / "hc/annotation.json").read_text())
         assert len(document["revision"]["tags"]) == 2
         assert document["revision"]["tags"][1]["relations"][0]["target"]["object_id"] == "cup"

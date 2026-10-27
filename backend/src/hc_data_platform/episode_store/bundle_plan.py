@@ -75,6 +75,9 @@ class EpisodeBundlePlan(FrozenModel):
     @classmethod
     def freeze(cls, *, input, artifacts, **facts):
         """Bind derived receipts/configuration to the stable package version key."""
+        from .frame_policy import PROCESSING_POLICY
+
+        facts["metadata"] = {**facts["metadata"], "frame_selection_policy": PROCESSING_POLICY}
         provisional = cls.model_construct(
             input=input, media_inputs_sha256=media_inputs_hash(artifacts), **facts
         )

@@ -5,6 +5,9 @@ import type {
   ViewerWindowSource,
 } from "../../features/viewer";
 import { createDomainError } from "../../shared/api/domain-error";
+import { bufferJointWindows } from "../../features/viewer/buffered-joint-window-source";
+import { createSessionScopeLease } from "../../shared/api/session-scope-lease";
+import { getShellState } from "../../shared/scope/shell-store";
 import type { RecordingGateway, RecordingScope } from "./api";
 
 interface JointVector {
@@ -167,6 +170,27 @@ export function buildRecordingJointAngleStream(input: {
   readonly recordingId: string;
   readonly durationNs: string;
 }): StreamDescriptor {
+  const authorization = getShellState();
+  const assertAuthorization = () => {
+    const current = getShellState();
+    if (current.sessionRevision !== authorization.sessionRevision ||
+        current.capabilityRevision !== authorization.capabilityRevision)
+      throw new DOMException("Recording viewer authorization changed", "AbortError");
+  };
+  const source = createRawJointWindowSource(input);
+  const buffered = bufferJointWindows({
+    async loadWindow(window, signal) {
+      assertAuthorization();
+      const lease = createSessionScopeLease(input.scope, signal);
+      try {
+        lease.signal.throwIfAborted();
+        const payload = await source.loadWindow(window, lease.signal);
+        lease.signal.throwIfAborted();
+        assertAuthorization();
+        return payload;
+      } finally { lease.release(); }
+    },
+  }, "0", input.durationNs);
   return {
     id: `p23-raw-joint-angle-${input.recordingId}`,
     canonicalPath: "状态通道（按录制配置）",
@@ -182,6 +206,13 @@ export function buildRecordingJointAngleStream(input: {
     availability: "ready",
     accessibleSummary:
       "直接从连续录制 SENSOR_DATA MCAP 读取的原始关节角；不依赖 Episode、QC、对齐或 Lance。",
-    windowSource: createRawJointWindowSource(input),
+    windowSource: {
+      async loadWindow(window, signal) {
+        assertAuthorization();
+        const payload = await buffered.loadWindow(window, signal);
+        assertAuthorization();
+        return payload;
+      },
+    },
   };
 }

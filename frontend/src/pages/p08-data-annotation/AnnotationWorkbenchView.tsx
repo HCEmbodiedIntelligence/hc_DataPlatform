@@ -107,6 +107,8 @@ export interface AnnotationWorkbenchPermissions {
   readonly canSubmit: boolean;
   readonly canReview: boolean;
   readonly canRevise: boolean;
+  readonly canReopen?: boolean;
+  readonly reopenUnavailableReason?: string;
   readonly readOnlyReason?: string;
   readonly createUnavailableReason?: string;
   readonly annotationUnavailableReason?: string;
@@ -136,6 +138,7 @@ export interface AnnotationWorkbenchViewProps {
   readonly reportDataIssueUnavailableReason?: string;
   readonly onTagsChange: (tags: readonly RuntimeAnnotationTag[]) => void;
   readonly onCreateAnnotation?: () => Promise<void>;
+  readonly onReopenAnnotation?: () => Promise<void>;
   readonly onDiscardChanges?: () => void;
   readonly onSave: () => Promise<void>;
   readonly onPreSubmitCheck?: () => Promise<readonly TagReviewCheckResult[]>;
@@ -169,6 +172,7 @@ interface StepSelection {
 
 type PendingAction =
   | "create"
+  | "reopen"
   | "save"
   | "precheck"
   | "submit"
@@ -568,20 +572,27 @@ function TagEditorInspector(props: {
         </div>
         <label className={styles.compactTagField} htmlFor="manual-tag-label">
           <span>Tag 名称 *</span>
-          <input
+          <textarea
             autoComplete="off"
             disabled={props.disabled}
             id="manual-tag-label"
-            maxLength={256}
+            maxLength={10000}
             name="manual-tag-label"
+            rows={2}
             placeholder={
               editingTag ? "修改名称，按 Enter 应用" : "输入标签，按 Enter 创建"
             }
             value={newLabel}
             onChange={(event) => setNewLabel(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.nativeEvent.isComposing)
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
                 addInterval();
+              }
             }}
           />
         </label>
@@ -1209,6 +1220,7 @@ function WorkspaceToolbar(props: {
   readonly createButtonRef: RefObject<HTMLSpanElement | null>;
   readonly onRequestMode: (mode: AnnotationWorkspaceMode) => void;
   readonly onCreate: () => void;
+  readonly onReopen: () => void;
   readonly onOpenSave: () => void;
   readonly onOpenSubmit: () => void;
   readonly onOpenReview: (decision: RuntimeReviewDecision) => void;
@@ -1216,6 +1228,7 @@ function WorkspaceToolbar(props: {
   readonly onOpenRestore: (revision: number) => void;
 }): JSX.Element {
   const [lockedMessage, setLockedMessage] = useState<string | null>(null);
+  useEffect(() => setLockedMessage(null), [props.taskStatus, props.mode]);
   const modeRefs = useRef<
     Partial<Record<AnnotationWorkspaceMode, HTMLButtonElement | null>>
   >({});
@@ -1295,7 +1308,14 @@ function WorkspaceToolbar(props: {
                       icon: <Eye aria-hidden="true" size={14} />,
                     };
   const hint =
-    props.requestedRouteMode === "tag-review" &&
+    props.taskStatus === "APPROVED"
+      ? {
+          tone: "view",
+          text: props.navigationPermissions.canReopen
+            ? "标注已完成。点击“修改标注”后恢复为待标注，保留原有内容和历史记录；修改后需重新提交审核。"
+            : props.navigationPermissions.reopenUnavailableReason ?? "标注已完成，当前账号可查看标注结果。",
+        }
+      : props.requestedRouteMode === "tag-review" &&
     !props.navigationPermissions.canReview
       ? {
           tone: "empty",
@@ -1364,7 +1384,9 @@ function WorkspaceToolbar(props: {
   };
   const busy = props.pending !== null;
   const pendingAnnouncement =
-    props.pending === "create"
+    props.pending === "reopen"
+      ? "正在重新打开标注"
+      : props.pending === "create"
       ? "正在创建标注草稿"
       : props.pending === "save"
         ? "正在保存标注修改"
@@ -1590,6 +1612,23 @@ function WorkspaceToolbar(props: {
                   回退为该修订
                 </TooltipAction>
               </>
+            ) : props.taskStatus === "APPROVED" ? (
+              <TooltipAction
+                busy={props.pending === "reopen"}
+                disabled={!props.permissions.canReopen || busy}
+                label="修改标注"
+                tooltip={props.permissions.canReopen
+                  ? "保留已完成的标注内容，创建新草稿并重新提交审核。"
+                  : props.permissions.reopenUnavailableReason ?? "当前账号不能修改此标注。"}
+                onClick={props.onReopen}
+              >
+                {props.pending === "reopen" ? (
+                  <LoaderCircle aria-hidden="true" className={styles.loadingIcon} size={15} />
+                ) : (
+                  <PencilLine aria-hidden="true" size={15} />
+                )}
+                修改标注
+              </TooltipAction>
             ) : !props.permissions.hasAnnotationDraft &&
               props.requestedRouteMode === "annotation" &&
               props.taskStatus === "DRAFT" ? (
@@ -1887,6 +1926,8 @@ export function AnnotationWorkbenchView(
         canSubmit: false,
         canReview: false,
         canRevise: false,
+        canReopen: false,
+        reopenUnavailableReason: "并发版本已变化，请刷新任务后重试。",
         createUnavailableReason: "并发版本已变化，刷新真实任务后才能创建草稿。",
         readOnlyReason: "并发版本已变化；刷新真实任务后才能继续写入。",
       }
@@ -2314,6 +2355,13 @@ export function AnnotationWorkbenchView(
       if (created) activateWorkspaceMode("annotation");
     })();
   };
+  const reopenAnnotation = () => {
+    if (!permissions.canReopen || !props.onReopenAnnotation) return;
+    void (async () => {
+      const reopened = await invoke("reopen", props.onReopenAnnotation!);
+      if (reopened) activateWorkspaceMode("annotation");
+    })();
+  };
   const discardAndSwitch = () => {
     const target = modeSwitchTarget;
     if (!target) return;
@@ -2668,6 +2716,7 @@ export function AnnotationWorkbenchView(
               reviewIssueCount={reviewIssueIds.size}
               taskStatus={props.bundle.task.status}
               onCreate={createAnnotation}
+              onReopen={reopenAnnotation}
               onOpenRestore={(revision) => {
                 setRestoreTargetRevision(revision);
                 setDialogDecision("RESTORE");
