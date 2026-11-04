@@ -204,15 +204,6 @@ function McapFile({
             })),
           ]}
         />
-        {chosen && (
-          <pre style={{ whiteSpace: "pre-wrap" }}>
-            {JSON.stringify(
-              { 上次: file.configuration, 本次字段定义: chosen.output },
-              null,
-              2,
-            )}
-          </pre>
-        )}
         {(retry.error || versions.error) && (
           <Alert
             type="error"
