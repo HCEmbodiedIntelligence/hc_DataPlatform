@@ -182,8 +182,14 @@ class CaptureDraftDefinition(Strict):
         if self.input_mode == "AUTO":
             if set(formats) != {"MCAP", "CAPTURE_BUNDLE", "LEROBOT_V3"}:
                 raise ValueError("automatic schemes require all three input formats")
-            configs = [a.configuration for a in self.adapters if not isinstance(a, LeRobotAdapter)]
-            if configs[0] != configs[1] or configs[0].semantic_output is None:
+            mcap = next(a.configuration for a in self.adapters if a.source_format == "MCAP")
+            bundle = next(a.configuration for a in self.adapters if a.source_format == "CAPTURE_BUNDLE")
+            # V2 joint edits may be scoped to standalone ROS MCAP. Keep the shared
+            # source mapping invariant, including for older frozen configurations.
+            shared = mcap
+            if mcap.postprocessing_rules and mcap.postprocessing_rules.version == 2 and bundle.postprocessing_rules is None:
+                shared = mcap.model_copy(update={"postprocessing_rules": None})
+            if shared != bundle or mcap.semantic_output is None:
                 raise ValueError("automatic schemes share one MCAP source configuration")
             if self.output.time_source != "FRAME_TIMESTAMP":
                 raise ValueError("automatic schemes use the shared frame timestamp")

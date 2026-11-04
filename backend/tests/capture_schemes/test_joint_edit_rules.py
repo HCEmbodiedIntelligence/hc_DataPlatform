@@ -118,17 +118,22 @@ def test_new_scheme_with_independent_layout_runs_full_decoder(tmp_path, algorith
     output = cfg["semantic_output"]
     output.pop("normalization", None)
     output["algorithm"] = algorithm
+    output["time_source"] = "FRAME_TIMESTAMP"
     for key,names in (("observation.state",axes),("action",actions)):
         output["features"][key].update(names=names,shape=[len(names)],units=["rad"]*len(names))
         output["features"][key].pop("required_axes",None)
     ops = [{"kind":"zero_joints","enabled":True,"axes":["tilt"]},
            {"kind":"action_from_state","enabled":True,"axes":["mast"],"match":"at_or_after"}]
-    cfg.update(normalization=None,joint_names=[],joint_units=[],state_topic="/rig/status",action_topic="/rig/action",
+    cfg.update(normalization=None,maximum_time_error_ms=output.get("validity_max_age_ms",50),joint_names=[],joint_units=[],state_topic="/rig/status",action_topic="/rig/action",
         state_joint_names=axes,state_joint_units=["rad"]*3,action_joint_names=actions,action_joint_units=["rad"]*2,
         postprocessing_rules={"version":2,"rules":ops})
     doc = complete_adapters({"input_mode":"AUTO","output":output,"adapters":[{"source_format":"MCAP","configuration":cfg}]})
     assert doc["adapters"][1]["configuration"]["postprocessing_rules"]["rules"] == ops
     assert "postprocessing_rules" not in doc["adapters"][2]["configuration"]
+    from hc_data_platform.capture_schemes.models import SchemeDraft
+    draft=SchemeDraft.model_validate({**doc,"name":"new test rig","expected_revision":0})
+    saved=next(a.configuration for a in draft.adapters if a.source_format=="MCAP")
+    assert set(saved.postprocessing_rules.active) == {"zero_joints","action_from_state"}
     raw = tmp_path/"rig.mcap"
     encode=serialize_dynamic("sensor_msgs/msg/JointState",JOINT)["sensor_msgs/msg/JointState"]
     with raw.open("wb") as stream:
