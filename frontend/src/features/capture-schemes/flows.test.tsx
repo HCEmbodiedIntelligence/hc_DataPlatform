@@ -349,10 +349,10 @@ it("saves a new task plan revision after recording has started", async () => {
     screen.queryByRole("button", { name: "保存任务采集方案" }),
   ).not.toBeInTheDocument();
   await user.click(
-    await screen.findByRole("combobox", { name: "任务采集方案" }),
+    await screen.findByRole("combobox", { name: "采集方案版本" }),
   );
   await user.click(
-    await screen.findByText("X1 关节方案", {
+    await screen.findByText("v2（最新）", {
       selector: ".ant-select-item-option-content",
     }),
   );
@@ -383,6 +383,28 @@ it("saves a new task plan revision after recording has started", async () => {
     ).not.toBeInTheDocument(),
   );
   expect(screen.getByRole("combobox", { name: "任务采集方案" })).toBeVisible();
+});
+it("saves the explicitly selected scheme version with the task drawer save button", async () => {
+  const user = userEvent.setup();
+  state.latest_version = 2;
+  state.versions.push(fixtureVersion(2));
+  const close = vi.fn(), submit = vi.fn().mockResolvedValue(undefined);
+  mount(<CollectionTaskDrawer mode="edit" projectId="project" scope={scope}
+    initialTask={{schema_version:"1", collection_task_id:"task", dataset_id:"dataset",
+      organization_id:"org", project_id:"project", task_code:"00000029", name:"X1 测试",
+      type:"", scenario:"测试", description:"", target:null, quality_threshold:null, status:"ACTIVE"}}
+    onClose={close} onSubmit={submit} />);
+  const version = await screen.findByRole("combobox", {name:"采集方案版本"});
+  await waitFor(() => expect(version).toBeEnabled());
+  await user.click(version);
+  await user.click(await screen.findByText("v2（最新）", {selector:".ant-select-item-option-content"}));
+  expect(taskPlan.scheme.version).toBe(1);
+  expect(screen.queryByRole("button", {name:"保存任务采集方案"})).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", {name:"保存修改"}));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  expect(taskPlan.scheme.version).toBe(2);
+  expect(taskPlan.revision).toBe(3);
+  expect(submit).not.toHaveBeenCalled();
 });
 it("rejects a task plan response from another project or task", async () => {
   taskPlan.project_id = "other-project";

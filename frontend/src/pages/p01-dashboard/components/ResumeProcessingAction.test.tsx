@@ -165,7 +165,10 @@ it("shows MCAP preparation errors and retries the stored source", async () => {
     };
   });
   setup();
-  expect(await screen.findByText(/MCAP_DEPTH_UNITS_REQUIRED/)).toBeVisible();
+  await screen.findByRole("button", { name: "重试处理" });
+  const toggle = screen.queryByRole("button", { name: "source.mcap 详情" });
+  if (toggle) fireEvent.click(toggle);
+  await waitFor(() => expect(screen.getByText(/MCAP_DEPTH_UNITS_REQUIRED/)).toBeVisible());
   const button = await screen.findByRole("button", { name: "重试处理" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
@@ -178,5 +181,38 @@ it("shows MCAP preparation errors and retries the stored source", async () => {
       body: { robot_id: "robot-a", collection_task_id: "task-a" },
     }),
   );
-  await waitFor(() => expect(button).toBeDisabled());
+  await waitFor(() => expect(screen.queryByRole("button", { name: "重试处理" })?.matches(":enabled")).toBeFalsy());
+});
+
+it("defaults to the current task plan when the intake configuration is unusable", async () => {
+  vi.mocked(request).mockImplementation(async (input) => {
+    if (input.path.endsWith("/mcap-plan-versions")) {
+      return { items: [
+        { revision: 7, scheme: { scheme_id: "x1", version: 3 } },
+        { revision: 6, scheme: { scheme_id: "x1", version: 2 } },
+      ] };
+    }
+    if (input.path.endsWith("/mcap-processing")) {
+      return {
+        files: [{
+          processing_id: "mcap-a", path: "source.mcap", status: "FAILED",
+          recording_id: null, robot_id: "robot-a", collection_task_id: "task-a",
+          configuration: {}, config_reference: { error: "CAPTURE_PLAN_REQUIRED" },
+          channel_inventory: null, error: "CAPTURE_MAPPING_UNVERIFIED",
+        }],
+        history: [], same_recording: null,
+      };
+    }
+    return { ...progress, source_format: "MCAP", status: "FAILED" };
+  });
+  setup();
+  fireEvent.click(await screen.findByRole("button", { name: "重试处理" }));
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(dialog).toHaveTextContent("任务方案 v7 · 采集方案 v3"));
+  fireEvent.click(await screen.findByRole("button", { name: "确认重试处理" }));
+  await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
+    method: "POST",
+    path: "/projects/project/regions/region/lerobot-imports/import-a:reprocess-mcap",
+    body: { request_id: expect.any(String), plan_revision: 7 },
+  })));
 });

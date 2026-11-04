@@ -42,7 +42,7 @@ import {
   saveDraft,
 } from "../../../features/capture-schemes/navigation";
 import { captureError } from "../../../features/capture-schemes/presentation";
-import { TaskPlanManager } from "../../../features/capture-schemes/TaskPlanManager";
+import { TaskPlanManager, type TaskPlanForm } from "../../../features/capture-schemes/TaskPlanManager";
 
 interface TaskFormValues {
   name: string;
@@ -251,7 +251,7 @@ export function CollectionTaskDrawer({
   onReload,
   onReloadDatasets,
   onSubmit,
-  pending = false,
+  pending: parentPending = false,
   projectId,
   scope,
 }: Readonly<CollectionTaskDrawerProps>) {
@@ -273,6 +273,9 @@ export function CollectionTaskDrawer({
   const headingId = useId();
   const firstInputRef = useRef<InputRef>(null);
   const submitLock = useRef(false);
+  const planForm = useRef<TaskPlanForm>(null);
+  const [savingForm, setSavingForm] = useState(false);
+  const pending = parentPending || savingForm;
   const datasetOptions = useMemo(
     () => datasetTreeData(datasets, initialTask?.dataset_id),
     [datasets, initialTask?.dataset_id],
@@ -341,10 +344,26 @@ export function CollectionTaskDrawer({
   const submit = async (values: TaskFormValues) => {
     if (submitLock.current || pending) return;
     submitLock.current = true;
+    setSavingForm(true);
+    setPlanError("");
+    let savedPlan = false;
     try {
       if (mode === "create" && scope && !capturePlan) {
         setPlanError("请选择已发布的采集方案。");
         return;
+      }
+      if (mode === "edit" && planForm.current) {
+        const result = await planForm.current.commit();
+        if (result === "unavailable") {
+          setPlanError("请选择可用的采集方案版本后再保存。");
+          return;
+        }
+        savedPlan = result === "saved";
+        if (savedPlan && JSON.stringify(commandFromValues(values)) === JSON.stringify(commandFromValues(initialValues(initialTask)))) {
+          setDirty(false);
+          onClose();
+          return;
+        }
       }
       await onSubmit({
         ...commandFromValues(values),
@@ -355,8 +374,9 @@ export function CollectionTaskDrawer({
       if (mode === "create") clearDraft(storageKey);
       setDirty(false);
     } catch {
-      // The parent mutation owns the visible RFC 9457 error state.
+      if (savedPlan) setPlanError("采集方案版本已保存，其他任务修改未保存。");
     } finally {
+      setSavingForm(false);
       submitLock.current = false;
     }
   };
@@ -525,6 +545,7 @@ export function CollectionTaskDrawer({
             {mode === "create" && scope && (
               <>
                 <TaskPlanSelector
+                  showVersions
                   organizationId={scope.organizationId}
                   value={selection}
                   disabled={pending}
@@ -548,10 +569,14 @@ export function CollectionTaskDrawer({
               <TaskPlanManager
                 key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}/${initialTask.collection_task_id}`}
                 scope={scope}
+                formRef={planForm}
+                disabled={pending}
+                onEdited={() => { setDirty(true); setPlanError(""); onFormChanged?.(); }}
                 taskId={initialTask.collection_task_id}
                 active={initialTask.status === "ACTIVE"}
               />
             )}
+            {mode === "edit" && planError && <Alert type="warning" title={planError} />}
             <Form.Item
               label="任务分类（选填）"
               name="type"

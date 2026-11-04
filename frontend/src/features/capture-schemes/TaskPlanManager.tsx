@@ -1,5 +1,5 @@
 import { Alert, Button, Form, Spin } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useImperativeHandle, useState, type Ref } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { CollectionTaskScope } from "../collection-tasks/api";
 import {
@@ -17,14 +17,20 @@ import { captureError } from "./presentation";
 import { TaskPlanSelector, type TaskPlanSelection } from "./TaskPlanSelector";
 import type { SetTaskPlan } from "./contracts";
 
+export type TaskPlanForm = { commit: () => Promise<"unchanged" | "saved" | "unavailable"> };
+
 export function TaskPlanManager({
   scope,
   taskId,
   active,
+  formRef, onEdited, disabled = false,
 }: {
   scope: CollectionTaskScope;
   taskId: string;
   active: boolean;
+  formRef?: Ref<TaskPlanForm>;
+  onEdited?: () => void;
+  disabled?: boolean;
 }) {
   const permissions = useCapabilities();
   const organization = useOrganizationCapabilities(scope.organizationId);
@@ -76,9 +82,6 @@ export function TaskPlanManager({
     taskId,
     plan?.revision,
   ]);
-  if (!permissions.has("upload.read"))
-    return <Alert type="info" title="查看任务采集方案需要采集读取权限" />;
-  if (query.isPending) return <Spin size="small" />;
   const writable =
     active &&
     permissions.has("upload.manage") &&
@@ -92,6 +95,18 @@ export function TaskPlanManager({
     : { versionKey: "" };
   const changed =
     selection !== null && selection.versionKey !== savedSelection.versionKey;
+  async function commit(): Promise<"unchanged" | "saved" | "unavailable"> {
+    if (!changed) return "unchanged";
+    if (!writable || !candidate || query.isFetching) return "unavailable";
+    await save.mutateAsync({
+      kind: "replace", plan: { ...candidate, expected_revision: plan?.revision ?? 0 },
+    });
+    return "saved";
+  }
+  useImperativeHandle(formRef, () => ({ commit }));
+  if (!permissions.has("upload.read"))
+    return <Alert type="info" title="查看任务采集方案需要采集读取权限" />;
+  if (query.isPending) return <Spin size="small" />;
   return (
     <section aria-label="已保存的任务采集计划">
       {query.error && (
@@ -116,31 +131,24 @@ export function TaskPlanManager({
         <TaskPlanSelector
           organizationId={scope.organizationId}
           value={selection ?? savedSelection}
+          showVersions
           selectedName={selection ? undefined : version.data?.name}
           onSelectionChange={(value) => {
+            onEdited?.();
             setSelection(value);
             setCandidate(null);
             save.reset();
           }}
           onChange={setCandidate}
-          disabled={save.isPending || query.isFetching}
+          disabled={disabled || save.isPending || query.isFetching}
           action={
-            changed && (
+            !formRef && changed && (
               <Button
                 type="primary"
                 aria-label="保存任务采集方案"
                 loading={save.isPending}
                 disabled={query.isFetching || !candidate}
-                onClick={() =>
-                  candidate &&
-                  save.mutate({
-                    kind: "replace",
-                    plan: {
-                      ...candidate,
-                      expected_revision: plan?.revision ?? 0,
-                    },
-                  })
-                }
+                onClick={() => { void commit().catch(() => {}); }}
               >
                 保存
               </Button>
@@ -149,7 +157,7 @@ export function TaskPlanManager({
         />
       ) : (
         <Form.Item label="采集方案">
-          {version.data?.name ?? (plan ? "方案名称暂不可用" : "未配置")}
+          <span>{version.data?.name ?? (plan ? "方案名称暂不可用" : "未配置")}</span>{plan && ` · v${plan.scheme.version}`}
         </Form.Item>
       )}
     </section>

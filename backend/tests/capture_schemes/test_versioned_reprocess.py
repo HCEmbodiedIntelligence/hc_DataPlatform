@@ -50,7 +50,7 @@ def publish(db, org, name, *, old=False):
     return VersionReference(**{k:version[k] for k in ("scheme_id","version","content_sha256")})
 
 
-def seed(fixture):
+def seed(fixture, *, intake_error=None):
     dsn,scope,tasks=fixture
     task=tasks[0]
     raw=SimpleNamespace(raw_source_id="raw-"+uuid4().hex,dataset_id="dataset_capture_"+task,storage_prefix="raw/fixture")
@@ -70,6 +70,9 @@ def seed(fixture):
             (organization_id,project_id,region_code,raw_source_id,job_id,job_type,adapter_name,status,created_at,updated_at)
             VALUES(%s,%s,%s,%s,%s,'CONTINUOUS_RECORDING_DISCOVERY','mcap','FAILED',now(),now())""",
             (*scope,raw.raw_source_id,"job-"+raw.raw_source_id))
+        if intake_error:
+            from hc_data_platform.capture_schemes.ports import unresolved_receipt
+            original = unresolved_receipt(intake_error, "intake preflight rejected")
         save_raw_snapshot(db,scope,raw.raw_source_id,original)
         record_rejection(db,scope,raw,manifest,SimpleNamespace(collection_task_id=task,robot_id="robot-1"),{**original,"error":"MCAP_JOINT_LAYOUT_MISMATCH"})
         new=publish(db,scope[0],"new")
@@ -142,3 +145,22 @@ def test_ready_source_can_create_new_revision_without_erasing_old_result(environ
         assert rows == [("READY", "historic-recording"), ("PENDING", None)]
         assert resolve_raw_snapshot(db, scope, raw.raw_source_id) == original
         assert result["original_snapshot"] == original
+
+@pytest.mark.parametrize("intake_error", ["CAPTURE_PLAN_REQUIRED", "CAPTURE_MAPPING_UNVERIFIED"])
+def test_bound_upload_pins_selected_version_and_retains_its_rejected_receipt(environment, intake_error):
+    dsn, scope, task, raw, manifest, original = seed(environment, intake_error=intake_error)
+    cmd = ReprocessMcap(request_id="late-bound", plan_revision=2)
+    with psycopg.connect(dsn) as db:
+        plans.save_plan(db, scope, task, selection(VersionReference.model_validate(
+            plans.get_plan(db, scope, task)["scheme"]), revision=2), "test")
+        result = request(db, scope, raw, manifest, cmd, "test")
+        assert request(db, scope, raw, manifest, cmd, "test") == result
+        snap = result["execution_snapshot"]
+        assert snap["plan_revision"] == 2
+        assert snap["robot_id"] == "robot-1"
+        assert result["original_snapshot"] == resolve_raw_snapshot(db, scope, raw.raw_source_id) == original
+        assert execution_snapshot(db, scope, raw.raw_source_id, snap) == snap
+        with pytest.raises(ProblemException):
+            execution_snapshot(db, scope, raw.raw_source_id, {**snap, "robot_id": "another"})
+        with pytest.raises(ProblemException):
+            execution_snapshot(db, scope, raw.raw_source_id, original)

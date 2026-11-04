@@ -4,6 +4,7 @@ import { Alert, Button, Collapse, Modal, Select, Space } from "antd";
 import { Link } from "react-router-dom";
 import type { IngestScope } from "../../../../entities/data-source";
 import { request } from "../../../../shared/api/http-client";
+import { isDomainError } from "../../../../shared/api/domain-error";
 import { useCapabilities } from "../../../../shared/auth/use-capabilities";
 import { RobotProcessingLink } from "../../../capture-schemes/RobotProcessingLink";
 import { nativeRoot } from "../lerobot-processing";
@@ -60,13 +61,14 @@ function McapFile({
 }) {
   const canManage = useCapabilities().has("upload.manage");
   const [opened, setOpened] = useState(false),
-    [selection, setSelection] = useState("original"),
+    [picked, setPicked] = useState<string>(),
     [showChannels, setShowChannels] = useState(false);
   const root = `${nativeRoot(scope)}/${encodeURIComponent(importId)}`;
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const versions = useQuery({
     queryKey: ["mcap-retry-versions", scope, importId, file.robot_id],
     enabled: opened,
+    staleTime: 0,
     queryFn: () =>
       request<{ items: PlanVersion[] }>({
         method: "GET",
@@ -85,6 +87,10 @@ function McapFile({
         query: { path: file.path },
       }),
   });
+  const canReuseOriginal = !file.config_reference?.error && !!file.configuration.state_topic;
+  // The server returns plan revisions newest first.
+  const latestPlan = versions.data?.items[0];
+  const selection = picked ?? (canReuseOriginal ? "original" : latestPlan && String(latestPlan.revision));
   const chosen = versions.data?.items.find(
     (v) => String(v.revision) === selection,
   );
@@ -100,10 +106,17 @@ function McapFile({
         },
       }),
     onSuccess: () => {
+      setRequestId(crypto.randomUUID());
       setOpened(false);
       onRetry();
     },
   });
+  const problem = isDomainError(retry.error) ? retry.error.problemCode : undefined;
+  const mappingHelp = problem === "CAPTURE_MAPPING_UNVERIFIED"
+    ? "请先用这台机器人的 MCAP 样本验证所选采集方案"
+    : problem === "CAPTURE_MAPPING_MISMATCH" || problem === "CAPTURE_ASSOCIATION_REQUIRED"
+      ? "请先为这台机器人关联所选版本的采集方案"
+      : undefined;
   return (
     <div>
       <strong>{file.path}</strong> ·{" "}
@@ -134,7 +147,7 @@ function McapFile({
         </Button>
         <Button
           disabled={linked || !canManage || file.status !== "FAILED"}
-          onClick={() => setOpened(true)}
+          onClick={() => { setPicked(undefined); retry.reset(); setOpened(true); }}
         >
           重试处理
         </Button>
@@ -181,35 +194,40 @@ function McapFile({
         confirmLoading={retry.isPending}
         okText="确认重试处理"
         okButtonProps={{
-          disabled:
-            !chosen &&
-            (selection !== "original" ||
-              !!file.config_reference?.error ||
-              !file.configuration.state_topic),
+          disabled: (selection !== "original" && versions.isFetching) || (!chosen && !(selection === "original" && canReuseOriginal)),
         }}
       >
         <p>
-          普通故障重试沿用原快照。选择任务方案版本会建立新的执行快照和处理记录，原接收快照、处理结果与原件保留。
+          选择这次处理使用的任务方案。
         </p>
         <Select
           aria-label="重试配置版本"
           style={{ width: "100%" }}
+          placeholder={versions.isFetching ? "正在读取任务方案…" : "暂无任务方案"}
           value={selection}
-          onChange={setSelection}
+          onChange={(value) => {
+            setPicked(value);
+            setRequestId(crypto.randomUUID());
+            retry.reset();
+          }}
           options={[
-            { value: "original", label: "沿用上次实际配置" },
+            { value: "original", label: "沿用上次实际配置", disabled: !canReuseOriginal },
             ...(versions.data?.items ?? []).map((v) => ({
               value: String(v.revision),
-              label: `任务方案 v${v.revision} · ${v.scheme.scheme_id} v${v.scheme.version}`,
+              label: `任务方案 v${v.revision} · 采集方案 v${v.scheme.version}`,
             })),
           ]}
         />
-        {(retry.error || versions.error) && (
+        {mappingHelp ? (
           <Alert
-            type="error"
-            title={(retry.error || versions.error)?.message}
+            type="warning"
+            title={mappingHelp}
+            action={<RobotProcessingLink robotId={file.robot_id} scheme={chosen?.scheme.scheme_id}
+              sample={importId} file={file.path} />}
           />
-        )}
+        ) : (retry.error || versions.error) ? (
+          <Alert type="error" title={(retry.error || versions.error)?.message} />
+        ) : null}
       </Modal>
     </div>
   );

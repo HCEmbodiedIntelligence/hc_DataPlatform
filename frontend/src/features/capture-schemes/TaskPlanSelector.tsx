@@ -16,6 +16,7 @@ export function TaskPlanSelector({
   onSelectionChange,
   onChange,
   disabled = false,
+  showVersions = false,
   selectedName,
   action,
 }: {
@@ -24,6 +25,7 @@ export function TaskPlanSelector({
   onSelectionChange: (value: TaskPlanSelection) => void;
   onChange: (plan: SetTaskPlan | null) => void;
   disabled?: boolean;
+  showVersions?: boolean;
   selectedName?: string;
   action?: ReactNode;
 }) {
@@ -130,10 +132,24 @@ export function TaskPlanSelector({
             loading={list.isFetching || source.isFetching}
             value={schemeId || undefined}
             options={options}
-            onSelect={(id: string) =>
+            onChange={(id: string) =>
               onSelectionChange({ schemeId: id, versionKey: "" })
             }
           />
+          {showVersions && schemeId && (
+            <Select
+              aria-label="采集方案版本"
+              style={{ width: 140, flexShrink: 0 }}
+              placeholder="选择版本"
+              disabled={disabled || !ready}
+              value={chosen ? keyOf(chosen) : undefined}
+              options={[...(detail?.versions ?? [])].sort((a, b) => b.version - a.version).map((v) => ({
+                value: keyOf(v),
+                label: `v${v.version}${v.version === detail?.latest_version ? "（最新）" : ""}`,
+              }))}
+              onChange={(versionKey) => onSelectionChange({ schemeId, versionKey })}
+            />
+          )}
           {action}
         </Space.Compact>
       </Form.Item>
