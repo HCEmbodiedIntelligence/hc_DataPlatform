@@ -14,15 +14,13 @@ const original = {
 export function PostprocessingRules({
   document,
   onChange,
-  initiallyOpen = false,
 }: {
   document: SchemeDocument;
-  initiallyOpen?: boolean;
   onChange: (next: SchemeDocument) => void;
 }) {
   const adapter = document.adapters.find((a) => a.source_format === "MCAP");
-  const [editing, setEditing] = useState(initiallyOpen);
-  const [text, setText] = useState(() => JSON.stringify(adapter?.configuration.postprocessing_rules ?? original, null, 2));
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
   const [error, setError] = useState("");
   const rules = adapter?.configuration.postprocessing_rules ?? original;
   const available = !!adapter?.configuration.normalization;

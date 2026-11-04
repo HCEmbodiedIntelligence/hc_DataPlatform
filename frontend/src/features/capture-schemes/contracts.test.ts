@@ -18,15 +18,14 @@ import { documentSchema } from "./contracts";
 import { buildPageCatalog } from "../../shared/routing/page-descriptor";
 import { page as schemes } from "../../pages/p24-capture-schemes/routes";
 import { page as models } from "../../pages/p14-robot-models/routes";
-import { page as rules } from "../../pages/p25-postprocessing-rules/routes";
 import { page as robots } from "../../pages/p15-robots/routes";
 describe("shared capture contracts", () => {
   it("keeps the governance order and allocates a new page id", () => {
     expect(
-      buildPageCatalog([robots, schemes, models, rules]).navigation[0]?.items.map(
+      buildPageCatalog([robots, schemes, models]).navigation[0]?.items.map(
         (i) => i.label,
       ),
-    ).toEqual(["机器人模型", "采集方案", "数据后处理规则", "机器人实例"]);
+    ).toEqual(["机器人模型", "采集方案", "机器人实例"]);
     expect(schemes.id).toBe("P24");
   });
   it.each([

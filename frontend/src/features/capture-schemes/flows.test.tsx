@@ -14,7 +14,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 import { request } from "../../shared/api/http-client";
 import { useShellStore } from "../../shared/scope/shell-store";
-import { Component as RulesList } from "../../pages/p25-postprocessing-rules/page";
 import { Component as Library } from "../../pages/p24-capture-schemes/page";
 import { CollectionTaskDrawer } from "../../pages/p20-collection-tasks/components/CollectionTaskDrawer";
 import { TaskPlanSelector, type TaskPlanSelection } from "./TaskPlanSelector";
@@ -36,7 +35,7 @@ import type {
 } from "./contracts";
 import { draftKey, saveDraft } from "./navigation";
 import { versionSchema } from "./contracts";
-import { mcapConfiguration, normalizeAdapters } from "./editor-model";
+import { normalizeAdapters } from "./editor-model";
 import { QualityFields } from "./QualityFields";
 const flags = vi.hoisted(() => ({ manage: true, taskManage: true }));
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
@@ -116,7 +115,6 @@ function mount(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="*" element={child} />
-          <Route path="/settings/postprocessing-rules" element={<RulesList />} />
           <Route path="/settings/capture-schemes/new" element={child} />
           <Route path="/settings/capture-schemes/:schemeId" element={child} />
         </Routes>
@@ -1037,22 +1035,4 @@ it("edits QC as part of the capture document and preserves other rules", async (
   await waitFor(() => expect(JSON.parse(screen.getByTestId('quality-value').textContent!)).toMatchObject({
     completeness: {minimum_ratio_reject: .6}, joint_limits: {left: [-1, 1]},
   }));
-});
-
-it("opens the rules editor directly from the governance rules page", async () => {
-  state.draft.adapters = [{
-    source_format: "MCAP", parser_version: "native-mcap-recording/4",
-    configuration: {
-      ...mcapConfiguration(state.draft),
-      normalization: {
-        profile: "hc_tj_17dof/v1", clock_domain: "ros_system_time", clock_evidence: "fixture",
-        capture_clock: "header_stamp", waist_fallback_ms: 20, invalid_action: "drop",
-        camera_mode: "legacy_reference", hand_encoding: "independent_ban_command",
-      },
-    },
-  }];
-  mount(<Library />, "/settings/postprocessing-rules");
-  await userEvent.click(await screen.findByRole("link", { name: "编辑规则" }));
-  await waitFor(() => expect(screen.getByRole("dialog", { name: "编辑数据后处理规则" })).toBeVisible());
-  expect((screen.getByRole("textbox", { name: "后处理规则 JSON" }) as HTMLTextAreaElement).value).toContain("missing_position_axes");
 });

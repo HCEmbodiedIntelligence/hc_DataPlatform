@@ -165,7 +165,6 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P13: <Clock3 aria-hidden="true" size={18} strokeWidth={1.8} />,
   P14: <Bot aria-hidden="true" size={18} strokeWidth={1.8} />,
   P24: <SlidersHorizontal aria-hidden="true" size={18} strokeWidth={1.8} />,
-  P25: <ListChecks aria-hidden="true" size={18} strokeWidth={1.8} />,
   P15: <BotMessageSquare aria-hidden="true" size={18} strokeWidth={1.8} />,
   P16: <Crosshair aria-hidden="true" size={18} strokeWidth={1.8} />,
   P18: <UserRound aria-hidden="true" size={18} strokeWidth={1.8} />,
