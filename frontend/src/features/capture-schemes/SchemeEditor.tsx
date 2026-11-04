@@ -1,7 +1,18 @@
-import { Alert, Button, Form, Input, Select, Space, Steps } from "antd";
+import {
+  Alert,
+  Button,
+  Form,
+  Input,
+  Select,
+  Space,
+  Steps,
+  type AlertProps,
+} from "antd";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useScopedRobotModels } from "../robot-models/api/hooks";
+import { isDomainError } from "../../shared/api/domain-error";
+import { CompareServerDraft } from "./CompareServerDraft";
 import { captureApi, useCaptureMutation } from "./api";
 import {
   documentSchema,
@@ -33,7 +44,7 @@ import { SchemeSourcePicker } from "./SchemeSourcePicker";
 export function SchemeEditor({
   organizationId,
   schemeId,
-  detail,
+  detail: incoming,
   initial,
   onSaved,
   back,
@@ -46,54 +57,87 @@ export function SchemeEditor({
   back?: string;
 }) {
   const navigate = useNavigate();
+  const [confirmed, setConfirmed] = useState<SchemeDetail>();
+  const detail =
+    confirmed &&
+    (!incoming ||
+      confirmed.revision > incoming.revision ||
+      (confirmed.revision === incoming.revision &&
+        confirmed.versions.length >= incoming.versions.length &&
+        confirmed.validations.length > incoming.validations.length))
+      ? confirmed
+      : incoming;
+  function accept(result: SchemeDetail) {
+    setConfirmed(result);
+    setEdited(undefined);
+    setBaseRevision(result.revision);
+    clearDraft(key);
+    onSaved(result);
+  }
   const key = draftKey(`scheme:${schemeId}`, { organizationId });
   const saved = readDraft<{
     revision: number;
-    document: SchemeDocument;
+    document?: SchemeDocument;
     step: number;
   }>(key);
-  const [doc, setDoc] = useState<SchemeDocument>(() => {
-    const restored =
-      saved?.document ?? initial ?? detail?.draft ?? emptyDocument();
+  const [edited, setEdited] = useState<SchemeDocument | undefined>(() => {
+    const restored = saved?.document;
+    if (!restored) return detail ? undefined : (initial ?? emptyDocument());
     // Older local forms used zero to represent an empty input.
-    return saved && restored.output.frequency_hz === 0
+    return restored.output.frequency_hz === 0
       ? { ...restored, output: { ...restored.output, frequency_hz: null } }
       : restored;
   });
+  const doc = edited ?? detail?.draft ?? initial ?? emptyDocument();
   const [step, setStep] = useState(saved?.step ?? 0);
   const [sample, setSample] = useState<Sample | null>(null);
-  const [localError, setLocalError] = useState("");
   const models = useScopedRobotModels(organizationId);
   const [baseRevision, setBaseRevision] = useState(
-    saved?.revision ?? detail?.revision ?? 0,
+    (saved?.document ? saved.revision : detail?.revision) ?? 0,
   );
-  const currentRevision = baseRevision;
   const dirty = !detail || JSON.stringify(doc) !== JSON.stringify(detail.draft);
+  const currentRevision = !dirty && detail ? detail.revision : baseRevision;
+  const stale = !!detail && currentRevision !== detail.revision;
   const change = (next: SchemeDocument) => {
     if (next.input_mode === "AUTO") next = normalizeAdapters(next);
-    setDoc(next);
-    setLocalError("");
-    saveDraft(key, { document: next, revision: currentRevision, step });
+    const matchesServer =
+      !!detail && JSON.stringify(next) === JSON.stringify(detail.draft);
+    setEdited(matchesServer ? undefined : next);
+    setBaseRevision(currentRevision);
+    if (action.error && !revisionConflict) action.reset();
+    saveDraft(key, {
+      document: matchesServer ? undefined : next,
+      revision: currentRevision,
+      step,
+    });
   };
   const goToStep = (value: number) => {
     setStep(value);
-    saveDraft(key, { document: doc, revision: currentRevision, step: value });
+    if (dirty)
+      saveDraft(key, { document: doc, revision: currentRevision, step: value });
+    else saveDraft(key, { step: value, revision: currentRevision });
   };
   const action = useCaptureMutation(
     organizationId,
     async (kind: "save" | "validate" | "publish") => {
       if (kind === "save") {
-        const normalized = normalizeAdapters({ ...doc, output: { ...doc.output, algorithm: doc.output.algorithm === "capture-structure/v3" ? "capture-structure/v3" : "capture-structure/v2" } });
+        const normalized = normalizeAdapters({
+          ...doc,
+          output: {
+            ...doc.output,
+            algorithm:
+              doc.output.algorithm === "capture-structure/v3"
+                ? "capture-structure/v3"
+                : "capture-structure/v2",
+          },
+        });
         const errors = validateEditor(normalized);
         if (errors.length) throw new Error(errors.join("；"));
         const result = await captureApi.save(organizationId, schemeId, {
           ...documentSchema.parse(normalized),
           expected_revision: currentRevision,
         });
-        setDoc(result.draft);
-        setBaseRevision(result.revision);
-        onSaved(result);
-        clearDraft(key);
+        accept(result);
         navigate(
           schemeLibraryPath(back, schemeId) + (back ? "&" : "?") + "edit=1",
           { replace: true },
@@ -109,10 +153,7 @@ export function SchemeEditor({
           currentRevision,
           sample,
         );
-        setDoc(result.draft);
-        setBaseRevision(result.revision);
-        clearDraft(key);
-        onSaved(result);
+        accept(result);
       } else {
         await captureApi.publish(organizationId, schemeId, currentRevision);
         clearDraft(key);
@@ -134,6 +175,55 @@ export function SchemeEditor({
           v.revision === detail.revision,
       ),
     );
+  const revisionConflict =
+    isDomainError(action.error) &&
+    (action.error.problemCode === "CAPTURE_REVISION_CONFLICT" ||
+      action.error.code === "VERSION_CONFLICT");
+  const conflict = stale || revisionConflict;
+  const uncertain =
+    action.variables === "save" &&
+    isDomainError(action.error) &&
+    ["NETWORK_ERROR", "SERVER_ERROR", "CONTRACT_MISMATCH"].includes(
+      action.error.code,
+    );
+  const operation =
+    action.variables === "validate"
+      ? "验证"
+      : action.variables === "publish"
+        ? "发布"
+        : "保存";
+  const status = ((): {
+    type: AlertProps["type"];
+    title: string;
+    reason?: string;
+  } => {
+    if (action.isPending)
+      return { type: "info", title: "正在" + operation + "…" };
+    if (conflict)
+      return {
+        type: "warning",
+        title:
+          (revisionConflict && operation !== "保存"
+            ? operation + "未完成"
+            : "本页修改未保存") + "：服务器草稿已更新",
+      };
+    if (uncertain)
+      return { type: "warning", title: "保存结果未确认，请核对服务器草稿" };
+    if (action.error)
+      return {
+        type: "error",
+        title: operation + "失败",
+        reason: captureError(action.error),
+      };
+    if (dirty) return { type: "info", title: "草稿未保存" };
+    if (latest && latest.draft_revision === detail?.revision)
+      return { type: "success", title: "已保存 · 已发布 v" + latest.version };
+    if (allValidated)
+      return { type: "success", title: "草稿已保存 · 验证通过，可发布" };
+    if (detail?.validations.some((v) => v.status === "FAILED"))
+      return { type: "warning", title: "草稿已保存 · 验证未通过" };
+    return { type: "success", title: "草稿已保存 · 待验证" };
+  })();
   return (
     <Form
       layout="vertical"
@@ -153,40 +243,26 @@ export function SchemeEditor({
         ].map((title) => ({ title }))}
       />
       <div style={{ marginTop: 24 }}>
-        {detail && baseRevision !== detail.revision && (
-          <Alert
-            type="warning"
-            title="方案已被更新，当前输入已保留，请核对差异后再保存。"
-            description={
-              <details>
-                <summary>当前输入与已保存方案的差异</summary>
-                <Differences items={structureDiff(detail.draft, doc)} />
-              </details>
-            }
-          />
-        )}
-        {latest && (
-          <Alert
-            type="info"
-            title={`保存后需验证并发布才会生效。已有任务继续使用已发布的 v${latest.version}。`}
-          />
-        )}
-        {dirty && detail?.validations.length ? (
-          <Alert
-            type="warning"
-            title={
-              doc.input_mode === "AUTO"
-                ? "方案已修改，保存后请用一个实际样本重新验证。"
-                : "方案已修改，保存后请重新验证每种输入格式。"
-            }
-          />
-        ) : null}
-        {(localError || action.error) && (
-          <Alert
-            type="error"
-            title={localError || captureError(action.error)}
-          />
-        )}
+        <Alert
+          showIcon
+          type={status.type}
+          title={<span role="status">{status.title}</span>}
+          description={status.reason}
+          action={
+            (conflict || uncertain) && !action.isPending ? (
+              <CompareServerDraft
+                organizationId={organizationId}
+                schemeId={schemeId}
+                current={doc}
+                onLoad={(result) => {
+                  accept(result);
+                  setSample(null);
+                  action.reset();
+                }}
+              />
+            ) : undefined
+          }
+        />
         {step === 0 && (
           <>
             <Form.Item label="方案名称" required>
@@ -276,17 +352,16 @@ export function SchemeEditor({
             <Button
               type="primary"
               loading={action.isPending && action.variables === "save"}
-              disabled={!dirty || action.isPending}
+              disabled={!dirty || conflict || action.isPending}
               onClick={() => action.mutate("save")}
             >
               保存方案
             </Button>
-            {!dirty && <p>方案已保存。验证通过并发布后，即可用于采集任务。</p>}
             <h3>验证与发布</h3>
             <p>
               {doc.input_mode === "AUTO"
-                ? "任选一种格式的实际样本验证方案，平台自动读取未填写的帧率。发布后接收三种格式，每次上传仍会检查实际字段和数据完整性。"
-                : "保存完整配置后，为每种原始文件格式选择真实样本验证。未填写的帧率会在验证通过后自动读取；也可以保存后稍后再验证。"}
+                ? "任选一种输入格式的样本进行验证。"
+                : "每种输入格式各验证一个样本。"}
             </p>
             <SamplePicker
               formats={doc.adapters.map((a) => a.source_format)}
@@ -295,31 +370,25 @@ export function SchemeEditor({
             />
             <Button
               loading={action.isPending && action.variables === "validate"}
-              disabled={dirty || !sample?.source_path || action.isPending}
+              disabled={
+                dirty || conflict || !sample?.source_path || action.isPending
+              }
               onClick={() => action.mutate("validate")}
             >
               {doc.input_mode === "AUTO" ? "验证采集方案" : "验证当前格式"}
             </Button>
-            {action.isPending && action.variables === "validate" && (
-              <Alert
-                type="info"
-                showIcon
-                title="正在验证样本"
-                description="大文件可能需要几分钟。响应超时后会自动查询验证结果，请等待，无需重复保存。"
-              />
-            )}
             {!dirty && <EvidenceView items={detail?.validations ?? []} />}
             {latest && (
-              <>
-                <h3>与最新发布版本的明确差异</h3>
+              <details>
+                <summary>与已发布 v{latest.version} 的差异</summary>
                 <Differences
                   items={structureDiff(documentSchema.parse(latest), doc)}
                 />
-              </>
+              </details>
             )}
             <Button
               type="primary"
-              disabled={!allValidated || action.isPending}
+              disabled={!allValidated || conflict || action.isPending}
               onClick={() => action.mutate("publish")}
             >
               发布新版本

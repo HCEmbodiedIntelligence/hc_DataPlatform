@@ -18,7 +18,8 @@ import { Component as Library } from "../../pages/p24-capture-schemes/page";
 import { CollectionTaskDrawer } from "../../pages/p20-collection-tasks/components/CollectionTaskDrawer";
 import { TaskPlanSelector, type TaskPlanSelection } from "./TaskPlanSelector";
 import { TaskPlanManager } from "./TaskPlanManager";
-import { taskPlanRequest } from "./api";
+import { captureApi, taskPlanRequest } from "./api";
+import { createDomainError } from "../../shared/api/domain-error";
 import { RobotSchemeAssociations } from "./RobotSchemeAssociations";
 import {
   fixtureDetail,
@@ -1035,4 +1036,40 @@ it("edits QC as part of the capture document and preserves other rules", async (
   await waitFor(() => expect(JSON.parse(screen.getByTestId('quality-value').textContent!)).toMatchObject({
     completeness: {minimum_ratio_reject: .6}, joint_limits: {left: [-1, 1]},
   }));
+});
+
+it("preserves local input after a revision conflict and loads the reviewed server revision", async () => {
+  const user = userEvent.setup();
+  mount(<Library />, "/settings/capture-schemes/shared?edit=1");
+  await user.type(await screen.findByLabelText("方案名称"), " 本地");
+  await user.click(screen.getByText("确认与保存"));
+  expect(screen.getByText("草稿未保存")).toBeVisible();
+  state = {...state, revision: state.revision + 1, draft: {...state.draft, name: "服务器草稿"}};
+  const save = vi.spyOn(captureApi, "save").mockRejectedValueOnce(createDomainError({
+    code: "VERSION_CONFLICT", problemCode: "CAPTURE_REVISION_CONFLICT", message: "内容已被修改，请刷新后比较再保存",
+    fieldErrors: [], operationErrors: [], blockedReasons: [], requestId: null, retryable: false, httpStatus: 409,
+  }));
+  try {
+    await user.click(screen.getByRole("button", {name:"保存方案"}));
+    expect(await screen.findByText("本页修改未保存：服务器草稿已更新")).toBeVisible();
+    expect(screen.queryByText(/请刷新后比较再保存/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name:"保存方案"})).toBeDisabled();
+    await user.click(screen.getByRole("button", {name:"核对服务器草稿"}));
+    await user.click(await screen.findByRole("button", {name:"保留本页输入"}));
+    await user.click(screen.getByText("适用范围"));
+    expect(screen.getByLabelText("方案名称")).toHaveValue("X1 关节方案 本地");
+    await user.click(screen.getByRole("button", {name:"核对服务器草稿"}));
+    const load = await screen.findByRole("button", {name:"载入服务器草稿"});
+    await waitFor(()=>expect(load).toBeEnabled());
+    await user.click(load);
+    expect(screen.getByLabelText("方案名称")).toHaveValue("服务器草稿");
+    expect(await screen.findByText("草稿已保存 · 待验证")).toBeVisible();
+    await user.type(screen.getByLabelText("方案名称"), " 新");
+    await user.click(screen.getByText("确认与保存"));
+    await user.click(screen.getByRole("button", {name:"保存方案"}));
+    await waitFor(()=>expect(save).toHaveBeenLastCalledWith("org","shared",expect.objectContaining({expected_revision:2})));
+    expect(await screen.findByText("草稿已保存 · 待验证")).toBeVisible();
+  } finally {
+    save.mockRestore();
+  }
 });
