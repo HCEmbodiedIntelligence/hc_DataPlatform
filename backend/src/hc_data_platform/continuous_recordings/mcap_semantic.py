@@ -116,6 +116,8 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
         normalization = selection.get("normalization") or {}
         if normalization.get("generated_action_messages"):
             evidence["action_origin"] = "generated_from_state"
+        elif normalization.get("replaced_action_messages"):
+            evidence["action_origin"] = "sent_with_state_replacement"
         elif normalization.get("postprocessing_rules") and normalization.get("fallback_messages"):
             evidence["action_origin"] = "sent_with_state_fallback"
         evidence["selected_mcap"] = selection

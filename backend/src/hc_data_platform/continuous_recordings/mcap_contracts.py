@@ -1,6 +1,7 @@
 """Pure MCAP configuration contracts, independent of decoding and media dependencies."""
 
-from typing import Any, Literal
+from functools import cached_property
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
@@ -29,6 +30,77 @@ class ActionPostprocessingRules(BaseModel):
     nan_position_axes: tuple[str, ...]
     max_state_delta_ms: float = Field(gt=0, le=1000)
     missing_action_topic: Literal["reject", "copy_state"]
+
+
+AxisNames = Annotated[tuple[Annotated[str, Field(min_length=1, max_length=128)], ...], Field(max_length=64)]
+
+
+class RuleOption(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
+    enabled: bool
+
+
+class ZeroJoints(RuleOption):
+    kind: Literal["zero_joints"]
+    axes: AxisNames
+
+
+class ActionFromState(RuleOption):
+    kind: Literal["action_from_state"]
+    axes: AxisNames
+    match: Literal["at_or_after"]
+
+
+class FillPosition(RuleOption):
+    kind: Literal["fill_position"]
+    missing_position_axes: AxisNames | None
+    nan_position_axes: AxisNames
+    max_state_delta_ms: float = Field(gt=0, le=1000)
+
+
+class GenerateAction(RuleOption):
+    kind: Literal["generate_action"]
+    source: Literal["state"]
+
+
+Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction, Field(discriminator="kind")]
+
+
+class JointEditRules(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    version: Literal[2]
+    rules: tuple[Operation, ...] = Field(max_length=4)
+
+    @cached_property
+    def active(self):
+        return {op.kind: op for op in self.rules if op.enabled}
+
+    @property
+    def zero_joints(self):
+        return self.active["zero_joints"].axes if "zero_joints" in self.active else ()
+
+    @property
+    def action_from_state(self):
+        return self.active["action_from_state"].axes if "action_from_state" in self.active else ()
+
+    @property
+    def missing_action_topic(self):
+        return "copy_state" if "generate_action" in self.active else "reject"
+
+    @model_validator(mode="after")
+    def distinct_operations(self) -> Self:
+        if len({op.kind for op in self.rules}) != len(self.rules):
+            raise ValueError("duplicate rule")
+        for op in self.rules:
+            groups = ((op.axes,) if isinstance(op, (ZeroJoints, ActionFromState)) else
+                      (op.missing_position_axes or (), op.nan_position_axes) if isinstance(op, FillPosition) else ())
+            if any(len(set(g)) != len(g) for g in groups):
+                raise ValueError("duplicate joint in rule")
+            if isinstance(op, (ZeroJoints, ActionFromState)) and op.enabled and not op.axes:
+                raise ValueError("select at least one joint")
+        if set(self.zero_joints) & set(self.action_from_state):
+            raise ValueError("enabled zero and replacement joints must be disjoint")
+        return self
 
 
 class CameraMapping(BaseModel):
@@ -85,7 +157,7 @@ class McapDraftConfig(BaseModel):
     state_required_axes: tuple[str, ...] | None = None
     action_required_axes: tuple[str, ...] | None = None
     normalization: JointNormalization | None = None
-    postprocessing_rules: ActionPostprocessingRules | None = Field(
+    postprocessing_rules: ActionPostprocessingRules | JointEditRules | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
     # Selected calibration evidence is retained without becoming a tensor column.
@@ -98,7 +170,13 @@ class McapDraftConfig(BaseModel):
             if not self.normalization or not self.state_topic or self.state_topic == self.action_topic:
                 raise ValueError("action repair requires distinct HC TJ state and action topics")
             axes = set(self.layout("action")[0])
-            for names in (rules.missing_position_axes, rules.nan_position_axes):
+            if isinstance(rules, JointEditRules):
+                groups = [g for op in rules.rules for g in (
+                    (op.axes,) if isinstance(op, ActionFromState) else
+                    (op.missing_position_axes or (), op.nan_position_axes) if isinstance(op, FillPosition) else ())]
+            else:
+                groups = (rules.missing_position_axes, rules.nan_position_axes)
+            for names in groups:
                 if len(names) != len(set(names)) or set(names) - axes:
                     raise ValueError("action repair axes must be unique named action joints")
             if self.layout("state") != self.layout("action"):

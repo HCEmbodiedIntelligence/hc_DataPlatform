@@ -82,6 +82,7 @@ def select_mcap(path, target, cfg, progress=lambda: None):
     decoder = McapRos2DecoderProbe()
     encoders, schemas, channels = {}, {}, {}
     states, state_times, audit, dropped = [], [], [], []
+    edits = cfg.postprocessing_rules if cfg.postprocessing_rules and cfg.postprocessing_rules.version == 2 else None
     synthesize_action = False
     if cfg.normalization:
         from .joint_normalization import JOINTS, capture_time, normalize, reference
@@ -105,7 +106,11 @@ def select_mcap(path, target, cfg, progress=lambda: None):
                     continue
                 value = decoded(schema, channel, message, decoder)
                 stamp = capture_time(value, message)
-                measured = joint_values(value, JOINTS, JOINTS, topic=channel.topic, stamp=stamp)
+                if edits:
+                    from .joint_edits import read_fields
+                    measured = read_fields(value, [n for n in JOINTS if n not in edits.zero_joints], topic=channel.topic, stamp=stamp)
+                else:
+                    measured = joint_values(value, JOINTS, JOINTS, topic=channel.topic, stamp=stamp)
                 states.append((measured, reference(message, stamp, ordinal)))
         states.sort(key=lambda item: (item[1]["capture_time_ns"], item[1]["message_index"]))
         state_times = [item[1]["capture_time_ns"] for item in states]
@@ -143,10 +148,27 @@ def select_mcap(path, target, cfg, progress=lambda: None):
                         required.add(parts[1])
                 if not cfg.normalization:
                     selected = joint_values(value, names, required, topic=topic, stamp=message.log_time)
-                elif numeric:
+                elif numeric and not (edits and roles):
                     mapped = [field.split(".")[1] for mapping in numeric.values() for field in mapping.fields]
                     joint_values(value, mapped, mapped, topic=topic, stamp=message.log_time)
-                if cfg.normalization:
+                if edits and roles:
+                    from .joint_edits import edit_joints
+                    try:
+                        projected, evidence = edit_joints(
+                            value, names, rules=edits, action="action" in roles, states=states, state_times=state_times,
+                            topic=topic, message=message, ordinal=ordinal,
+                        )
+                    except ValueError as exc:
+                        if not str(exc).startswith("MCAP_WAIST_STATE_UNAVAILABLE:"):
+                            raise
+                        dropped.append({"topic": topic, "message_index": ordinal, "log_time_ns": message.log_time, "reason": str(exc)})
+                        continue
+                    if "action" in roles:
+                        audit.append(evidence)
+                    elif edits.zero_joints:
+                        audit.append({**evidence, "axes": {n: evidence["axes"][n] for n in edits.zero_joints}})
+                    selected = dict(zip(projected["name"], projected["position"], strict=True))
+                elif cfg.normalization:
                     try:
                         projected, evidence = normalize(
                             value, names, topic=topic, message=message, ordinal=ordinal,
@@ -194,15 +216,17 @@ def select_mcap(path, target, cfg, progress=lambda: None):
             if synthesize_action and topic == cfg.state_topic:
                 if channel.id not in generated_channels:
                     generated_channels[channel.id] = writer.register_channel(cfg.action_topic, channel.message_encoding, schemas[schema.id])
-                action = {**projected, "velocity": [], "effort": []}
+                action = projected if edits else {**projected, "velocity": [], "effort": []}
                 payload = canonical(action) if channel.message_encoding == "json" else encoders[schema.id](action)
                 writer.add_message(generated_channels[channel.id], message.log_time, payload, message.publish_time, message.sequence)
                 counts[cfg.action_topic] += 1
                 state_ref = evidence["message"]
                 audit.append({
                     "topic": cfg.action_topic, "action": state_ref, "generated_from_state": True,
-                    "axes": {name: {"source": "state_fallback", "state": state_ref, "delta_ns": 0}
-                             for name in action["name"]}, "unavailable_fields": ["velocity", "effort"],
+                    "axes": {name: ({"source": "constant", "value": 0} if edits and name in edits.zero_joints
+                                    else {"source": "state_fallback", "state": state_ref, "delta_ns": 0})
+                             for name in action["name"]},
+                    "unavailable_fields": [key for key in ("velocity", "effort") if not action[key]],
                 })
         if synthesize_action:
             layouts[cfg.action_topic] = layouts[cfg.state_topic]
@@ -227,6 +251,9 @@ def select_mcap(path, target, cfg, progress=lambda: None):
             **({"postprocessing_rules": cfg.postprocessing_rules.model_dump(mode="json"),
                 "generated_action_messages": counts[cfg.action_topic] if synthesize_action else 0}
                if cfg.postprocessing_rules else {}),
+            **({"replaced_action_messages": sum(any(v["source"] == "state_replacement"
+                                                       for v in row["axes"].values()) for row in audit)}
+               if edits else {}),
             "fallback_by_axis": dict(fallback_counts),
             "fallback_messages": sum(any(v["source"] == "state_fallback" for v in row["axes"].values()) for row in audit),
             "dropped_action_messages": len(dropped),

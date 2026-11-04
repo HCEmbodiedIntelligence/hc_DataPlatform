@@ -51,13 +51,26 @@ export const outputSchema = z.object({
 const draftOutputSchema = outputSchema.extend({
   frequency_hz: z.number().positive().max(1000).nullable().default(null),
 });
-export const postprocessingRulesSchema = z.object({
+const fallbackRules = z.object({
   version: z.literal(1),
   missing_position_axes: z.array(z.string().min(1)),
   nan_position_axes: z.array(z.string().min(1)),
   max_state_delta_ms: z.number().positive().max(1000),
   missing_action_topic: z.enum(["reject", "copy_state"]),
 }).strict();
+const axisNames = z.array(z.string().min(1).max(128)).max(64);
+const baseOption = z.object({ enabled: z.boolean() });
+export const processingOperationSchema = z.discriminatedUnion("kind", [
+  baseOption.extend({ kind: z.literal("zero_joints"), axes: axisNames }).strict(),
+  baseOption.extend({ kind: z.literal("action_from_state"), axes: axisNames, match: z.literal("at_or_after") }).strict(),
+  baseOption.extend({ kind: z.literal("generate_action"), source: z.literal("state") }).strict(),
+  baseOption.extend({ kind: z.literal("fill_position"), missing_position_axes: axisNames.nullable(),
+    nan_position_axes: axisNames, max_state_delta_ms: z.number().positive().max(1000) }).strict(),
+]);
+export type ProcessingOperation = z.infer<typeof processingOperationSchema>;
+export const postprocessingRulesSchema = z.discriminatedUnion("version", [
+  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(4)}).strict(),
+]);
 export const mcapConfigSchema = z.object({
   postprocessing_rules: postprocessingRulesSchema.nullable().optional(),
   normalization: normalizationSchema.nullable().optional(),

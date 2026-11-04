@@ -1,15 +1,16 @@
-import { Alert, Button, Input, Modal, Space } from "antd";
-import { useState } from "react";
-import { postprocessingRulesSchema, type SchemeDocument } from "./contracts";
-import styles from "./definition.module.css";
-
-const original = {
-  version: 1,
-  missing_position_axes: ["leg_1", "leg_2", "zhi"],
-  nan_position_axes: [],
-  max_state_delta_ms: 20,
-  missing_action_topic: "reject",
-} as const;
+import { Button, Checkbox, Input, Modal } from "antd";
+import { ChevronRight } from "lucide-react";
+import { useId, useRef, useState } from "react";
+import { type ProcessingOperation, type SchemeDocument } from "./contracts";
+import {
+  initialRows,
+  labels,
+  parseRow,
+  sample,
+  type Kind,
+  type RuleRow,
+} from "./rule-options";
+import styles from "./postprocessing.module.css";
 
 export function PostprocessingRules({
   document,
@@ -19,157 +20,203 @@ export function PostprocessingRules({
   onChange: (next: SchemeDocument) => void;
 }) {
   const adapter = document.adapters.find((a) => a.source_format === "MCAP");
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState("");
+  const cfg = adapter?.configuration;
+  const active = cfg ? initialRows(cfg).filter((r) => r.enabled) : [];
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<RuleRow[]>([]);
+  const [selected, select] = useState<Kind>("zero_joints");
+  const row = rows.find((r) => r.kind === selected);
   const [error, setError] = useState("");
-  const rules = adapter?.configuration.postprocessing_rules ?? original;
-  const available = !!adapter?.configuration.normalization;
-  function apply() {
-    try {
-      const parsed = postprocessingRulesSchema.parse(JSON.parse(text));
-      const allowed = adapter?.configuration.action_joint_names ?? [];
-      for (const axes of [
-        parsed.missing_position_axes,
-        parsed.nan_position_axes,
-      ]) {
-        if (
-          new Set(axes).size !== axes.length ||
-          axes.some((axis) => !allowed.includes(axis))
-        ) {
-          throw new Error("请填写动作轴列表中的关节名，同一列表内不能重复。");
-        }
-      }
-      onChange({
-        ...document,
-        adapters: document.adapters.map((a) =>
-          a === adapter && a.source_format === "MCAP"
-            ? {
-                ...a,
-                configuration: {
-                  ...a.configuration,
-                  postprocessing_rules: parsed,
-                },
-              }
-            : a,
-        ),
-      });
-      setEditing(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "规则格式无效");
-    }
+  const fileRef = useRef<HTMLInputElement>(null);
+  const sequence = useRef(0);
+  const id = useId();
+  function patch(
+    kind: Kind,
+    changes: Partial<Pick<RuleRow, "text" | "enabled">>,
+  ) {
+    sequence.current++;
+    setRows((prev) =>
+      prev.map((r) => (r.kind === kind ? { ...r, ...changes } : r)),
+    );
+    setError("");
   }
-
+  function close() {
+    sequence.current++;
+    setOpen(false);
+  }
+  function focus(kind: Kind) {
+    sequence.current++;
+    select(kind);
+    setError("");
+  }
+  function apply() {
+    if (!cfg || !adapter) return;
+    const ops: ProcessingOperation[] = [];
+    for (const r of rows) {
+      try {
+        ops.push(parseRow(r, cfg));
+      } catch (e) {
+        focus(r.kind);
+        setError(e instanceof Error ? e.message : "规则格式有误。");
+        return;
+      }
+    }
+    const zero = ops.find((o) => o.kind === "zero_joints" && o.enabled);
+    const copy = ops.find((o) => o.kind === "action_from_state" && o.enabled);
+    if (zero?.kind === "zero_joints" && copy?.kind === "action_from_state") {
+      const conflict = copy.axes.find((n) => zero.axes.includes(n));
+      if (conflict) {
+        focus(copy.kind);
+        setError("关节 " + conflict + " 已启用置零，不能同时跟随状态。");
+        return;
+      }
+    }
+    onChange({
+      ...document,
+      adapters: document.adapters.map((a) =>
+        a === adapter
+          ? {
+              ...adapter,
+              configuration: {
+                ...cfg,
+                postprocessing_rules: { version: 2, rules: ops },
+              },
+            }
+          : a,
+      ),
+    });
+    close();
+  }
   return (
     <section className={styles.card} aria-label="数据后处理规则">
-      <h3>数据后处理规则</h3>
-      {available ? (
+      <div>
+        <h3>数据后处理规则</h3>
+        <p>
+          {!cfg?.normalization
+            ? "当前方案不支持此规则。"
+            : (active.map((r) => labels[r.kind]).join("、") || "未启用规则") +
+              " · 质检前执行"}
+        </p>
+      </div>
+      {cfg?.normalization && (
         <>
-          <p>
-            先按规则处理
-            MCAP，再对处理结果质检。补值来源与时间差会保存在处理记录中。
-          </p>
-          <p>
-            缺失关节补值：{rules.missing_position_axes.join("、") || "关闭"}
-            。NaN 补值：{rules.nan_position_axes.join("、") || "关闭"}
-            。时间容差：{rules.max_state_delta_ms} 毫秒。
-          </p>
-          <p>
-            整个主动作话题没有消息时：
-            {rules.missing_action_topic === "copy_state"
-              ? "按每条状态消息生成动作帧"
-              : "报错"}
-            。
-          </p>
           <Button
             onClick={() => {
-              setText(JSON.stringify(rules, null, 2));
-              setError("");
-              setEditing(true);
+              setRows(initialRows(cfg));
+              focus("zero_joints");
+              setOpen(true);
             }}
           >
-            编辑后处理规则
+            选择规则
           </Button>
           <Modal
-            open={editing}
-            title="编辑数据后处理规则"
-            onCancel={() => setEditing(false)}
+            open={open}
+            title="数据后处理规则"
+            width={760}
+            onCancel={close}
             onOk={apply}
             okText="应用到草稿"
             cancelText="取消"
-            width={700}
           >
-            <p>
-              可直接编辑或导入 JSON。missing_position_axes 和 nan_position_axes
-              分别指定关节缺失、位置为 NaN
-              时允许从最近状态补值的轴。max_state_delta_ms 范围为大于 0 至 1000
-              毫秒。
-            </p>
-            <p>
-              missing_action_topic 设为 copy_state
-              时，仅在主动作话题完全没有消息时生成动作；设为 reject
-              时报告缺失。独立手指话题仍按方案校验。
-            </p>
-            <p>
-              可选动作轴：{adapter?.configuration.action_joint_names.join("、")}
-            </p>
-            <Space wrap>
-              <Button
-                onClick={() => {
-                  setText(
-                    JSON.stringify(
-                      {
-                        ...original,
-                        nan_position_axes: original.missing_position_axes,
-                        missing_action_topic: "copy_state",
-                      },
-                      null,
-                      2,
-                    ),
-                  );
-                  setError("");
-                }}
+            <div className={styles.layout}>
+              <div
+                className={styles.options}
+                role="group"
+                aria-label="常用规则"
               >
-                载入新录制方式示例
-              </Button>
-              <label>
-                导入规则文件{" "}
-                <input
-                  type="file"
-                  accept=".json,application/json"
-                  onChange={async (e) => {
-                    const file = e.currentTarget.files?.[0];
-                    e.currentTarget.value = "";
-                    if (!file) return;
-                    if (file.size > 65536) {
-                      setError("规则文件不能超过 64 KiB。");
-                      return;
-                    }
-                    try {
-                      setText(await file.text());
-                      setError("");
-                    } catch {
-                      setError("规则文件读取失败。");
-                    }
-                  }}
-                />
-              </label>
-            </Space>
-            <Input.TextArea
-              aria-label="后处理规则 JSON"
-              value={text}
-              rows={12}
-              onChange={(e) => {
-                setText(e.target.value);
-                setError("");
-              }}
-            />
-            {error && (
-              <Alert type="error" title="规则未应用" description={error} />
-            )}
+                <h4>常用规则</h4>
+                {rows.map((r) => (
+                  <div
+                    key={r.kind}
+                    className={styles.option}
+                    data-current={r.kind === selected}
+                  >
+                    <Checkbox
+                      aria-label={"启用" + labels[r.kind]}
+                      checked={r.enabled}
+                      onChange={(e) => {
+                        focus(r.kind);
+                        patch(r.kind, { enabled: e.target.checked });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className={styles.choose}
+                      aria-pressed={selected === r.kind}
+                      aria-label={"编辑" + labels[r.kind]}
+                      onClick={() => focus(r.kind)}
+                    >
+                      {labels[r.kind]}
+                      <ChevronRight size={14} aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {row && (
+                <div className={styles.params}>
+                  <div className={styles.toolbar}>
+                    <label htmlFor={id}>{labels[row.kind]} · JSON</label>
+                    <div className={styles.actions}>
+                      <Button
+                        type="text"
+                        onClick={() =>
+                          patch(row.kind, { text: sample(row.kind) })
+                        }
+                      >
+                        载入示例
+                      </Button>
+                      <Button
+                        type="text"
+                        onClick={() => fileRef.current?.click()}
+                      >
+                        导入 JSON
+                      </Button>
+                    </div>
+                  </div>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    hidden
+                    accept=".json,application/json"
+                    onChange={async (e) => {
+                      const file = e.currentTarget.files?.[0];
+                      e.currentTarget.value = "";
+                      if (!file) return;
+                      const seq = ++sequence.current;
+                      if (file.size > 65536) {
+                        setError("请选择不超过 64 KiB 的 JSON 文件。");
+                        return;
+                      }
+                      try {
+                        const text = await file.text();
+                        if (seq === sequence.current) patch(row.kind, { text });
+                      } catch {
+                        if (seq === sequence.current)
+                          setError("文件读取失败，请重新选择。");
+                      }
+                    }}
+                  />
+                  <Input.TextArea
+                    id={id}
+                    className={styles.code}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    value={row.text}
+                    aria-invalid={!!error}
+                    aria-describedby={error ? id + "-error" : undefined}
+                    onChange={(e) => patch(row.kind, { text: e.target.value })}
+                  />
+                  {error && (
+                    <p className={styles.error} id={id + "-error"} role="alert">
+                      {error}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </Modal>
         </>
-      ) : (
-        <p>状态补动作规则适用于启用了 HC TJ 17 轴归一化的 MCAP 方案。</p>
       )}
     </section>
   );

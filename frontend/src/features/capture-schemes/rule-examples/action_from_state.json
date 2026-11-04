@@ -1,0 +1,15 @@
+{
+  "axes": [
+    "Joint1_L",
+    "Joint2_L",
+    "Joint3_L",
+    "Joint4_L",
+    "Joint5_L",
+    "Joint6_L",
+    "Joint7_L",
+    "leg_1",
+    "leg_2",
+    "zhi"
+  ],
+  "match": "at_or_after"
+}
