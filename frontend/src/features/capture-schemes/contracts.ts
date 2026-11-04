@@ -51,7 +51,15 @@ export const outputSchema = z.object({
 const draftOutputSchema = outputSchema.extend({
   frequency_hz: z.number().positive().max(1000).nullable().default(null),
 });
+export const postprocessingRulesSchema = z.object({
+  version: z.literal(1),
+  missing_position_axes: z.array(z.string().min(1)),
+  nan_position_axes: z.array(z.string().min(1)),
+  max_state_delta_ms: z.number().positive().max(1000),
+  missing_action_topic: z.enum(["reject", "copy_state"]),
+}).strict();
 export const mcapConfigSchema = z.object({
+  postprocessing_rules: postprocessingRulesSchema.nullable().optional(),
   normalization: normalizationSchema.nullable().optional(),
   metadata_sources: z.record(z.enum(["head.calibration", "head.extrinsics"]), z.string()).optional(),
   collection_mode: z.enum(["RGB", "JOINT_ONLY"]),

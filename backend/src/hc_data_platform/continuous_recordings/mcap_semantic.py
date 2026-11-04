@@ -113,6 +113,11 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             path.with_suffix(".audit.json").replace(destination / "source/normalization.json")
         path.replace(target)
         path = target
+        normalization = selection.get("normalization") or {}
+        if normalization.get("generated_action_messages"):
+            evidence["action_origin"] = "generated_from_state"
+        elif normalization.get("postprocessing_rules") and normalization.get("fallback_messages"):
+            evidence["action_origin"] = "sent_with_state_fallback"
         evidence["selected_mcap"] = selection
         from hc_data_platform.capture_schemes.schema import format_version
         evidence["format_version"] = format_version(cfg.semantic_output)

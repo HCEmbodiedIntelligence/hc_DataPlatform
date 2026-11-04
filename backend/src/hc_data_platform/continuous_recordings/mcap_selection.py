@@ -39,25 +39,29 @@ def selected_topics(cfg):
     } | {m.topic for m in cfg.numeric_sources.values()} | set(cfg.metadata_sources.values())
 
 
-def joint_values(value, selected, required, *, topic, stamp):
+def joint_values(value, selected, required, *, topic, stamp, nan_as_missing=(), allow_empty=False):
     names = list(get_field(value, "name", []))
     positions = list(get_field(value, "position", []))
-    if not names or len(names) != len(positions) or len(set(names)) != len(names):
+    empty = allow_empty and not positions
+    if (not names and not empty) or (not empty and len(names) != len(positions)) or len(set(names)) != len(names):
         raise ValueError(f"MCAP_JOINT_LAYOUT_MISMATCH: {topic} duplicate names or name/position length at {stamp}")
     indices = {name: i for i, name in enumerate(names)}
-    absent = set(required) - indices.keys()
+    absent = set(required) if empty else set(required) - indices.keys()
     if absent:
         raise ValueError(f"MCAP_JOINT_LAYOUT_MISMATCH: {topic} missing={sorted(absent)} at {stamp}")
+    ignored = {
+        n for n in nan_as_missing if positions and n in indices and math.isnan(float(positions[indices[n]]))
+    }
     for field in ("position", "velocity", "effort"):
         values = list(get_field(value, field, []))
         if values and len(values) != len(names):
             raise ValueError(f"MCAP_JOINT_LAYOUT_MISMATCH: {topic} name/{field} length at {stamp}")
         if values and any(
             isinstance(values[indices[n]], bool) or not math.isfinite(float(values[indices[n]]))
-            for n in selected if n in indices
+            for n in selected if n in indices and not (field == "position" and n in ignored)
         ):
             raise ValueError(f"MCAP_NONFINITE_JOINT: {topic}.{field} at {stamp}")
-    return {n: float(positions[indices[n]]) for n in selected if n in indices}
+    return {n: float(positions[indices[n]]) for n in selected if positions and n in indices and n not in ignored}
 
 
 def select_mcap(path, target, cfg, progress=lambda: None):
@@ -78,10 +82,19 @@ def select_mcap(path, target, cfg, progress=lambda: None):
     decoder = McapRos2DecoderProbe()
     encoders, schemas, channels = {}, {}, {}
     states, state_times, audit, dropped = [], [], [], []
+    synthesize_action = False
     if cfg.normalization:
         from .joint_normalization import JOINTS, capture_time, normalize, reference
 
         absent = selected_topics(cfg) - set(sources.values())
+        if (
+            cfg.action_topic in absent
+            and cfg.postprocessing_rules
+            and cfg.postprocessing_rules.missing_action_topic == "copy_state"
+            and all(signal.topic != cfg.action_topic for signal in cfg.numeric_sources.values())
+        ):
+            absent.remove(cfg.action_topic)
+            synthesize_action = True
         if absent:
             raise ValueError(f"MCAP_SELECTED_SOURCE_MISSING: {sorted(absent)}")
         with Path(path).open("rb") as source:
@@ -101,6 +114,7 @@ def select_mcap(path, target, cfg, progress=lambda: None):
     with Path(path).open("rb") as source, Path(target).open("wb") as output:
         reader = make_reader(source, validate_crcs=True)
         writer = Writer(output, enable_crcs=True, enable_data_crcs=True)
+        generated_channels = {}
         writer.start(profile="ros2", library="hc-selected-mcap/2" if cfg.normalization else "hc-selected-mcap/1")
         for ordinal, (schema, channel, message) in enumerate(reader.iter_messages(log_time_order=False)):
             progress()
@@ -127,22 +141,16 @@ def select_mcap(path, target, cfg, progress=lambda: None):
                         if parts[1] not in names:
                             names.append(parts[1])
                         required.add(parts[1])
-                selected = joint_values(value, names, set(required) - ({"leg_1", "leg_2", "zhi"} if cfg.normalization and "action" in roles else set()), topic=topic, stamp=message.log_time)
-                order = [i for n in names for i, old in enumerate(get_field(value, "name")) if n == old]
-                header = get_field(value, "header", {})
-                stamp = get_field(header, "stamp", {})
-                projected = {"header": {
-                    "stamp": {"sec": get_field(stamp, "sec", 0), "nanosec": get_field(stamp, "nanosec", 0)},
-                    "frame_id": get_field(header, "frame_id", ""),
-                }}
-                for field in ("name", "position", "velocity", "effort"):
-                    values = list(get_field(value, field, []))
-                    replacement = [values[i] for i in order] if values else []
-                    projected[field] = replacement
+                if not cfg.normalization:
+                    selected = joint_values(value, names, required, topic=topic, stamp=message.log_time)
+                elif numeric:
+                    mapped = [field.split(".")[1] for mapping in numeric.values() for field in mapping.fields]
+                    joint_values(value, mapped, mapped, topic=topic, stamp=message.log_time)
                 if cfg.normalization:
                     try:
                         projected, evidence = normalize(
                             value, names, topic=topic, message=message, ordinal=ordinal,
+                            rules=cfg.postprocessing_rules if "action" in roles else None,
                             states=states, state_times=state_times, action="action" in roles or topic.startswith("/action/"),
                         )
                     except ValueError as exc:
@@ -154,6 +162,18 @@ def select_mcap(path, target, cfg, progress=lambda: None):
                     if "action" in roles or numeric:
                         audit.append(evidence)
                     selected = dict(zip(projected["name"], projected["position"], strict=True))
+                else:
+                    order = [i for n in names for i, old in enumerate(get_field(value, "name")) if n == old]
+                    header = get_field(value, "header", {})
+                    stamp = get_field(header, "stamp", {})
+                    projected = {"header": {
+                        "stamp": {"sec": get_field(stamp, "sec", 0), "nanosec": get_field(stamp, "nanosec", 0)},
+                        "frame_id": get_field(header, "frame_id", ""),
+                    }}
+                    for field in ("name", "position", "velocity", "effort"):
+                        values = list(get_field(value, field, []))
+                        replacement = [values[i] for i in order] if values else []
+                        projected[field] = replacement
                 if channel.message_encoding == "json":
                     data = canonical(projected)
                 else:
@@ -171,6 +191,21 @@ def select_mcap(path, target, cfg, progress=lambda: None):
                 channels[channel.id] = writer.register_channel(topic, channel.message_encoding, schemas[schema.id])
             writer.add_message(channels[channel.id], message.log_time, data, message.publish_time, message.sequence)
             counts[topic] += 1
+            if synthesize_action and topic == cfg.state_topic:
+                if channel.id not in generated_channels:
+                    generated_channels[channel.id] = writer.register_channel(cfg.action_topic, channel.message_encoding, schemas[schema.id])
+                action = {**projected, "velocity": [], "effort": []}
+                payload = canonical(action) if channel.message_encoding == "json" else encoders[schema.id](action)
+                writer.add_message(generated_channels[channel.id], message.log_time, payload, message.publish_time, message.sequence)
+                counts[cfg.action_topic] += 1
+                state_ref = evidence["message"]
+                audit.append({
+                    "topic": cfg.action_topic, "action": state_ref, "generated_from_state": True,
+                    "axes": {name: {"source": "state_fallback", "state": state_ref, "delta_ns": 0}
+                             for name in action["name"]}, "unavailable_fields": ["velocity", "effort"],
+                })
+        if synthesize_action:
+            layouts[cfg.action_topic] = layouts[cfg.state_topic]
         # Source metadata/attachments are not an implicit export whitelist.
         writer.add_metadata("hc.capture.format", {"parser_version": "native-mcap-recording/4" if cfg.normalization else "native-mcap-recording/3", "output": json.dumps(cfg.semantic_output)})
         writer.finish()
@@ -189,6 +224,9 @@ def select_mcap(path, target, cfg, progress=lambda: None):
         )
         normalization = {
             "policy": cfg.normalization.model_dump(mode="json"),
+            **({"postprocessing_rules": cfg.postprocessing_rules.model_dump(mode="json"),
+                "generated_action_messages": counts[cfg.action_topic] if synthesize_action else 0}
+               if cfg.postprocessing_rules else {}),
             "fallback_by_axis": dict(fallback_counts),
             "fallback_messages": sum(any(v["source"] == "state_fallback" for v in row["axes"].values()) for row in audit),
             "dropped_action_messages": len(dropped),

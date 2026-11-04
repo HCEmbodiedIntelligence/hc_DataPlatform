@@ -91,3 +91,49 @@ def test_invalid_commands_cannot_become_state_fallback(tmp_path, names, corrupt)
     raw = fixture(tmp_path / "raw.mcap", [(120, names)], corrupt=corrupt)
     with pytest.raises(ValueError, match="MCAP_(NONFINITE_JOINT|JOINT_LAYOUT_MISMATCH)"):
         select_mcap(raw, tmp_path / "out.mcap", config())
+
+
+def ruled_config(**overrides):
+    from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
+
+    doc = config().model_dump()
+    doc["postprocessing_rules"] = {
+        "version": 1, "missing_position_axes": ["leg_1"], "nan_position_axes": ["leg_1"],
+        "max_state_delta_ms": 20, "missing_action_topic": "copy_state", **overrides,
+    }
+    return McapProcessingConfig.model_validate(doc)
+
+
+def test_selected_rule_repairs_nan_only_on_allowed_axes(tmp_path):
+    raw = fixture(tmp_path / "raw.mcap", [(110, list(JOINTS))], corrupt="nan")
+    target = tmp_path / "derived.mcap"
+    result = select_mcap(raw, target, ruled_config())
+    assert result["normalization"]["fallback_by_axis"] == {"leg_1": 1}
+    assert result["normalization"]["generated_action_messages"] == 0
+    with target.open("rb") as stream:
+        row, = make_reader(stream).iter_messages(topics=["/action/joint_states"])
+        assert decoded(*row, McapRos2DecoderProbe()).position[14] == pytest.approx(14.1)
+    with pytest.raises(ValueError, match="MCAP_NONFINITE_JOINT"):
+        select_mcap(raw, target, ruled_config(nan_position_axes=[]))
+    summary = select_mcap(raw, target, ruled_config(max_state_delta_ms=9))["normalization"]
+    assert summary["dropped_action_messages"] == 1
+    assert summary["generated_action_messages"] == 0
+
+
+def test_absent_action_topic_uses_state_frames_only_if_selected(tmp_path):
+    raw = fixture(tmp_path / "raw.mcap", [], old=True)
+    target = tmp_path / "derived.mcap"
+    with pytest.raises(ValueError, match="MISSING"):
+        select_mcap(raw, target, ruled_config(missing_action_topic="reject"))
+    result = select_mcap(raw, target, ruled_config())
+    assert result["normalization"]["generated_action_messages"] == 3
+    assert result["message_counts"]["/action/joint_states"] == 3
+    decoder = McapRos2DecoderProbe()
+    with target.open("rb") as stream:
+        rows = list(make_reader(stream).iter_messages())
+        def positions(topic):
+            return [(m.log_time, m.sequence, list(decoded(s,c,m,decoder).position))
+                    for s,c,m in rows if c.topic == topic]
+        assert positions("/action/joint_states") == positions("/observation/joint_states")
+    audit = json.loads(target.with_suffix(".audit.json").read_bytes())
+    assert all(row["generated_from_state"] for row in audit["messages"])

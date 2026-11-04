@@ -20,6 +20,17 @@ class JointNormalization(BaseModel):
     hand_encoding: Literal["independent_ban_command"] = "independent_ban_command"
 
 
+class ActionPostprocessingRules(BaseModel):
+    """Rules applied to the derived MCAP before quality checks."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
+    version: Literal[1]
+    missing_position_axes: tuple[str, ...]
+    nan_position_axes: tuple[str, ...]
+    max_state_delta_ms: float = Field(gt=0, le=1000)
+    missing_action_topic: Literal["reject", "copy_state"]
+
+
 class CameraMapping(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     camera_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
@@ -74,11 +85,24 @@ class McapDraftConfig(BaseModel):
     state_required_axes: tuple[str, ...] | None = None
     action_required_axes: tuple[str, ...] | None = None
     normalization: JointNormalization | None = None
+    postprocessing_rules: ActionPostprocessingRules | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     # Selected calibration evidence is retained without becoming a tensor column.
     metadata_sources: dict[Literal["head.calibration", "head.extrinsics"], str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def axes(self) -> Self:
+        rules = self.postprocessing_rules
+        if rules is not None:
+            if not self.normalization or not self.state_topic or self.state_topic == self.action_topic:
+                raise ValueError("action repair requires distinct HC TJ state and action topics")
+            axes = set(self.layout("action")[0])
+            for names in (rules.missing_position_axes, rules.nan_position_axes):
+                if len(names) != len(set(names)) or set(names) - axes:
+                    raise ValueError("action repair axes must be unique named action joints")
+            if self.layout("state") != self.layout("action"):
+                raise ValueError("state fallback requires matching state/action joints and units")
         if self.normalization:
             from .joint_normalization import JOINTS
 

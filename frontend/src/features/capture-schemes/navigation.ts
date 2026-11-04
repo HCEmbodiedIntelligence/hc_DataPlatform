@@ -13,7 +13,7 @@ export function safeReturnTo(value: string | null | undefined): string | null {
     const url = new URL(value, "https://capture.invalid");
     if (url.origin !== "https://capture.invalid") return null;
     const validPath =
-      /^\/(?:settings\/robot-instances|settings\/capture-schemes(?:\/[A-Za-z0-9._-]+)?|collection-tasks|ingest\/sources|ingest\/uploads(?:\/[A-Za-z0-9._-]+)?)\/?$/u.test(
+      /^\/(?:settings\/postprocessing-rules|settings\/robot-instances|settings\/capture-schemes(?:\/[A-Za-z0-9._-]+)?|collection-tasks|ingest\/sources|ingest\/uploads(?:\/[A-Za-z0-9._-]+)?)\/?$/u.test(
         url.pathname,
       );
     if (!validPath) return null;

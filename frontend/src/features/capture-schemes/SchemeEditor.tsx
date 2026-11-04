@@ -1,6 +1,6 @@
 import { Alert, Button, Form, Input, Select, Space, Steps } from "antd";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useScopedRobotModels } from "../robot-models/api/hooks";
 import { captureApi, useCaptureMutation } from "./api";
 import {
@@ -11,6 +11,7 @@ import {
 } from "./contracts";
 import { AdapterFields } from "./AdapterFields";
 import { DefinitionFields } from "./DefinitionFields";
+import { PostprocessingRules } from "./PostprocessingRules";
 import { QualityFields } from "./QualityFields";
 import { Differences, EvidenceView } from "./EvidenceView";
 import {
@@ -59,7 +60,9 @@ export function SchemeEditor({
       ? { ...restored, output: { ...restored.output, frequency_hz: null } }
       : restored;
   });
-  const [step, setStep] = useState(saved?.step ?? 0);
+  const [params] = useSearchParams();
+  const [openRules, setOpenRules] = useState(params.get("section") === "postprocessing");
+  const [step, setStep] = useState(openRules ? 1 : saved?.step ?? 0);
   const [sample, setSample] = useState<Sample | null>(null);
   const [localError, setLocalError] = useState("");
   const models = useScopedRobotModels(organizationId);
@@ -75,6 +78,7 @@ export function SchemeEditor({
     saveDraft(key, { document: next, revision: currentRevision, step });
   };
   const goToStep = (value: number) => {
+    setOpenRules(false);
     setStep(value);
     saveDraft(key, { document: doc, revision: currentRevision, step: value });
   };
@@ -241,6 +245,7 @@ export function SchemeEditor({
               />
             )}
             <DefinitionFields document={doc} onChange={change} />
+            <PostprocessingRules initiallyOpen={openRules} document={doc} onChange={change} />
             <QualityFields document={doc} onChange={change} />
           </>
         )}

@@ -1,7 +1,7 @@
 """Name-based HC TJ normalization, shared by all derived formats.
 
-Only absent waist position commands may use measured state. Auxiliary fields
-remain absent when incomplete; the original message and all clocks stay intact.
+The legacy profile fills absent waist commands. Explicit rules select which missing
+or NaN commands may use measured state. Raw messages and clocks stay intact.
 """
 
 from bisect import bisect_left
@@ -46,26 +46,35 @@ def reference(message, stamp, ordinal):
             "publish_time_ns": message.publish_time}
 
 
-def normalize(value, names, *, topic, message, ordinal, states=(), state_times=(), action=False):
+def normalize(value, names, *, topic, message, ordinal, states=(), state_times=(), action=False, rules=None):
     from .mcap_selection import joint_values
 
     stamp = capture_time(value, message)
-    selected = joint_values(value, names, names[:14] if action else names,
-                            topic=topic, stamp=stamp)
+    fallback_axes = set(rules.missing_position_axes if rules else JOINTS[14:]) if action else set()
+    selected = joint_values(
+        value, names, set(names) - fallback_axes, topic=topic, stamp=stamp,
+        nan_as_missing=rules.nan_position_axes if rules else (), allow_empty=rules is not None,
+    )
     source = reference(message, stamp, ordinal)
     axes = {name: {"source": "command" if action else "measured_state"}
             for name in selected}
     missing = [name for name in names if name not in selected]
     fallback = None
     if missing:
-        match = nearest_index(state_times, stamp, 20_000_000)
-        if not action or set(missing) - set(JOINTS[14:]) or match is None:
-            raise ValueError(f"MCAP_WAIST_STATE_UNAVAILABLE: {topic} axes={missing} capture_time_ns={stamp} tolerance_ms=20")
+        tolerance_ms = rules.max_state_delta_ms if rules else 20
+        match = nearest_index(state_times, stamp, round(tolerance_ms * 1_000_000))
+        if not action or match is None:
+            raise ValueError(f"MCAP_WAIST_STATE_UNAVAILABLE: {topic} axes={missing} capture_time_ns={stamp} tolerance_ms={tolerance_ms}")
         measured, fallback = states[match]
         for name in missing:
             selected[name] = measured[name]
             axes[name] = {"source": "state_fallback", "state": fallback,
                           "delta_ns": fallback["capture_time_ns"] - stamp}
+            if rules:
+                axes[name]["trigger"] = (
+                    "nan_position" if name in get_field(value, "name", [])
+                    and len(get_field(value, "position", [])) else "missing_position"
+                )
     header = get_field(value, "header", {})
     raw_stamp = get_field(header, "stamp", {})
     result = {"header": {"stamp": {"sec": get_field(raw_stamp, "sec"),
