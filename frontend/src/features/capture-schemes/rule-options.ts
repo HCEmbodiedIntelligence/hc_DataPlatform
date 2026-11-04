@@ -42,7 +42,33 @@ function pretty(v: object) {
     "\n}"
   );
 }
-export function sample(kind: Kind) {
+function axes(cfg: McapConfig, role: "action" | "state") {
+  const names =
+    role === "action" ? cfg.action_joint_names : cfg.state_joint_names;
+  return (names.length ? names : cfg.joint_names).filter((n) => n.trim());
+}
+export function sample(kind: Kind, cfg: McapConfig) {
+  if (!cfg.normalization) {
+    const action = axes(cfg, "action"),
+      state = axes(cfg, "state");
+    const common = action.filter((n) => state.includes(n));
+    const zero =
+      state.find((n) => !action.includes(n)) ?? state.at(-1) ?? action.at(-1);
+    if (kind === "zero_joints") return pretty({ axes: zero ? [zero] : [] });
+    if (kind === "action_from_state")
+      return pretty({
+        axes: [common.find((n) => n !== zero) ?? common[0]].filter(
+          (n) => n !== undefined,
+        ),
+        match: "at_or_after",
+      });
+    if (kind === "fill_position")
+      return pretty({
+        missing_position_axes: common.slice(0, 1),
+        nan_position_axes: [],
+        max_state_delta_ms: 20,
+      });
+  }
   return pretty(examples[kind]);
 }
 
@@ -69,11 +95,11 @@ export function initialRows(cfg: McapConfig): RuleRow[] {
       };
     }
     const enabled =
-      (!saved && kind === "fill_position") ||
+      (!saved && !!cfg.normalization && kind === "fill_position") ||
       (saved?.version === 1 &&
         kind === "generate_action" &&
         saved.missing_action_topic === "copy_state");
-    return { kind, enabled, text: sample(kind) };
+    return { kind, enabled, text: sample(kind, cfg) };
   });
 }
 
@@ -122,8 +148,29 @@ export function parseRow(row: RuleRow, cfg: McapConfig): ProcessingOperation {
     if (new Set(group).size !== group.length)
       throw new Error("同一组内不能重复填写关节。");
     const unknown =
-      op.kind !== "zero_joints" && group.find((n) => !allowed.includes(n));
+      op.enabled &&
+      op.kind !== "zero_joints" &&
+      group.find((n) => !allowed.includes(n));
     if (unknown) throw new Error("当前方案没有动作轴：" + unknown);
+  }
+  if (op.enabled) {
+    if (!axes(cfg, "action").length || !axes(cfg, "state").length)
+      throw new Error("请先在数据定义中填写状态和动作的关节名称。");
+    const source = axes(cfg, "state");
+    const fromState =
+      op.kind === "action_from_state"
+        ? op.axes
+        : op.kind === "fill_position"
+          ? [...(op.missing_position_axes ?? []), ...op.nan_position_axes]
+          : [];
+    if (
+      op.kind === "fill_position" &&
+      op.missing_position_axes === null &&
+      !cfg.normalization
+    )
+      throw new Error("请填写需要补值的关节，或使用空数组 []。");
+    const missing = fromState.find((n) => !source.includes(n));
+    if (missing) throw new Error("当前方案没有对应状态轴：" + missing);
   }
   return op;
 }

@@ -106,3 +106,52 @@ def test_independent_selection_preserves_other_commands(tmp_path):
         assert list(action.name) == list(JOINTS)
         assert action.position[7] == pytest.approx(7.11)
         assert action.position[14] == pytest.approx(14.1)
+
+
+@pytest.mark.parametrize("algorithm", ["capture-structure/v1", "capture-structure/v2"])
+def test_new_scheme_with_independent_layout_runs_full_decoder(tmp_path, algorithm):
+    from hc_data_platform.continuous_recordings.mcap_native import prepare
+    from hc_data_platform.capture_schemes.automatic import complete_adapters
+    axes = ["mast", "tilt", "lift"]
+    actions = ["lift", "mast"]
+    cfg = config().model_dump(mode="json")
+    output = cfg["semantic_output"]
+    output.pop("normalization", None)
+    output["algorithm"] = algorithm
+    for key,names in (("observation.state",axes),("action",actions)):
+        output["features"][key].update(names=names,shape=[len(names)],units=["rad"]*len(names))
+        output["features"][key].pop("required_axes",None)
+    ops = [{"kind":"zero_joints","enabled":True,"axes":["tilt"]},
+           {"kind":"action_from_state","enabled":True,"axes":["mast"],"match":"at_or_after"}]
+    cfg.update(normalization=None,joint_names=[],joint_units=[],state_topic="/rig/status",action_topic="/rig/action",
+        state_joint_names=axes,state_joint_units=["rad"]*3,action_joint_names=actions,action_joint_units=["rad"]*2,
+        postprocessing_rules={"version":2,"rules":ops})
+    doc = complete_adapters({"input_mode":"AUTO","output":output,"adapters":[{"source_format":"MCAP","configuration":cfg}]})
+    assert doc["adapters"][1]["configuration"]["postprocessing_rules"]["rules"] == ops
+    assert "postprocessing_rules" not in doc["adapters"][2]["configuration"]
+    raw = tmp_path/"rig.mcap"
+    encode=serialize_dynamic("sensor_msgs/msg/JointState",JOINT)["sensor_msgs/msg/JointState"]
+    with raw.open("wb") as stream:
+        writer=Writer(stream); writer.start(profile="ros2")
+        schema=writer.register_schema("sensor_msgs/msg/JointState","ros2msg",JOINT.encode())
+        for topic,names,offset in (("/rig/status",axes,0),("/rig/action",actions,100)):
+            c=writer.register_channel(topic,"cdr",schema)
+            for i in range(8):
+                ms=100+i*40-(5 if offset else 0)
+                obj={"header":{"stamp":{"sec":1,"nanosec":ms*10**6},"frame_id":"world"},"name":names,
+                     "position":[offset+i+j+1 for j in range(len(names))],"velocity":[],"effort":[]}
+                writer.add_message(c, 10**12+ms*10**6, encode(obj), 10**12+ms*10**6,i)
+        writer.finish()
+    dest=tmp_path/"derived"
+    _,evidence=prepare(raw,dest,McapProcessingConfig.model_validate(doc["adapters"][1]["configuration"]))
+    assert evidence["output_features"]["action"]["names"] == actions
+    assert evidence["output_features"]["observation.state"]["names"] == axes
+    assert evidence["selected_mcap"]["normalization"]["replaced_action_messages"]==8
+    with (dest/"source/selected.mcap").open("rb") as stream:
+        for s,c,m in make_reader(stream).iter_messages():
+            v=decoded(s,c,m,McapRos2DecoderProbe())
+            positions=dict(zip(v.name,v.position,strict=True))
+            assert positions["tilt"]==0
+            if c.topic=="/rig/action":
+                assert positions["mast"]==m.sequence+1
+                assert positions["lift"]==m.sequence+101

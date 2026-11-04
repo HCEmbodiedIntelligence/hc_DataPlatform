@@ -20,15 +20,20 @@ def read_fields(value, names, *, topic, stamp, optional=(), nan_axes=()):
     return result
 
 
-def edit_joints(value, names, *, rules, action, states, state_times, topic, message, ordinal):
-    stamp = capture_time(value, message)
+def edit_joints(value, names, *, rules, action, states, state_times, topic, message, ordinal, profile=True, required=None):
+    aligns = rules.action_from_state or "fill_position" in rules.active
+    stamp = capture_time(value, message, verify_domain=profile) if profile or aligns else message.log_time
     names = list(dict.fromkeys([*names, *rules.zero_joints]))
     zeros = set(rules.zero_joints)
     copies = set(rules.action_from_state) if action else set()
     kept = [n for n in names if n not in zeros and n not in copies]
     fill = rules.active.get("fill_position") if action else None
     optional = (JOINTS[14:] if fill.missing_position_axes is None else fill.missing_position_axes) if fill else ()
-    raw = read_fields(value, kept, topic=topic, stamp=stamp, optional=optional, nan_axes=fill.nan_position_axes if fill else ())
+    sparse = set(kept) - set(required) if required is not None and not profile else set()
+    raw = read_fields(value, kept, topic=topic, stamp=stamp, optional=set(optional) | sparse, nan_axes=fill.nan_position_axes if fill else ())
+    absent = sparse - raw["position"].keys() - set(optional) - set(fill.nan_position_axes if fill else ())
+    kept = [n for n in kept if n not in absent]
+    names = [n for n in names if n not in absent]
     missing = [n for n in kept if n not in raw["position"]]
     audited = {n: {"source": "command" if action else "measured_state"} for n in kept}
     measured = {}
@@ -51,7 +56,7 @@ def edit_joints(value, names, *, rules, action, states, state_times, topic, mess
     audited.update({n: {"source": "constant", "value": 0} for n in zeros})
     header = get_field(value, "header", {})
     raw_stamp = get_field(header, "stamp", {})
-    result = {"header": {"stamp": {"sec": get_field(raw_stamp, "sec"), "nanosec": get_field(raw_stamp, "nanosec")},
+    result = {"header": {"stamp": {"sec": get_field(raw_stamp, "sec", 0), "nanosec": get_field(raw_stamp, "nanosec", 0)},
                          "frame_id": get_field(header, "frame_id", "")}, "name": names}
     unavailable = []
     for field in FIELDS:

@@ -10,6 +10,7 @@ import {
   type Kind,
   type RuleRow,
 } from "./rule-options";
+import { mcapConfiguration } from "./editor-model";
 import styles from "./postprocessing.module.css";
 
 export function PostprocessingRules({
@@ -20,7 +21,7 @@ export function PostprocessingRules({
   onChange: (next: SchemeDocument) => void;
 }) {
   const adapter = document.adapters.find((a) => a.source_format === "MCAP");
-  const cfg = adapter?.configuration;
+  const cfg = adapter ? mcapConfiguration(document, "MCAP") : undefined;
   const active = cfg ? initialRows(cfg).filter((r) => r.enabled) : [];
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<RuleRow[]>([]);
@@ -79,6 +80,7 @@ export function PostprocessingRules({
               ...adapter,
               configuration: {
                 ...cfg,
+                semantic_output: document.output,
                 postprocessing_rules: { version: 2, rules: ops },
               },
             }
@@ -92,13 +94,13 @@ export function PostprocessingRules({
       <div>
         <h3>数据后处理规则</h3>
         <p>
-          {!cfg?.normalization
-            ? "当前方案不支持此规则。"
+          {!cfg
+            ? "选择 MCAP 输入后可配置关节规则。"
             : (active.map((r) => labels[r.kind]).join("、") || "未启用规则") +
-              " · 质检前执行"}
+              " · MCAP 质检前执行"}
         </p>
       </div>
-      {cfg?.normalization && (
+      {cfg && (
         <>
           <Button
             onClick={() => {
@@ -160,7 +162,7 @@ export function PostprocessingRules({
                       <Button
                         type="text"
                         onClick={() =>
-                          patch(row.kind, { text: sample(row.kind) })
+                          patch(row.kind, { text: sample(row.kind, cfg) })
                         }
                       >
                         载入示例

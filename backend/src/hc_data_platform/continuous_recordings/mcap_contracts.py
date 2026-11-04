@@ -167,11 +167,11 @@ class McapDraftConfig(BaseModel):
     def axes(self) -> Self:
         rules = self.postprocessing_rules
         if rules is not None:
-            if not self.normalization or not self.state_topic or self.state_topic == self.action_topic:
+            if rules.version == 1 and (not self.normalization or not self.state_topic or self.state_topic == self.action_topic):
                 raise ValueError("action repair requires distinct HC TJ state and action topics")
             axes = set(self.layout("action")[0])
             if isinstance(rules, JointEditRules):
-                groups = [g for op in rules.rules for g in (
+                groups = [g for op in rules.rules if op.enabled for g in (
                     (op.axes,) if isinstance(op, ActionFromState) else
                     (op.missing_position_axes or (), op.nan_position_axes) if isinstance(op, FillPosition) else ())]
             else:
@@ -179,7 +179,28 @@ class McapDraftConfig(BaseModel):
             for names in groups:
                 if len(names) != len(set(names)) or set(names) - axes:
                     raise ValueError("action repair axes must be unique named action joints")
-            if self.layout("state") != self.layout("action"):
+            if isinstance(rules, JointEditRules) and rules.active:
+                state, state_units = self.layout("state")
+                action, action_units = self.layout("action")
+                if not self.state_topic or not self.action_topic or self.state_topic == self.action_topic:
+                    raise ValueError("joint edits require distinct state/action topics")
+                if self.derive_action_from_next_state or not state or not action:
+                    raise ValueError("joint edits require explicitly named state/action layouts")
+                if not self.semantic_output:
+                    raise ValueError("joint edits require a capture scheme output definition")
+                needed = set(rules.action_from_state)
+                fill = rules.active.get("fill_position")
+                if fill:
+                    if fill.missing_position_axes is None and not self.normalization:
+                        raise ValueError("select explicit missing position axes for this scheme")
+                    needed.update(fill.missing_position_axes or ())
+                    needed.update(fill.nan_position_axes)
+                if rules.missing_action_topic == "copy_state":
+                    needed.update(set(action) - set(rules.zero_joints))
+                su, au = dict(zip(state, state_units)), dict(zip(action, action_units))
+                if any(n not in su or not su[n] or su[n] != au.get(n) for n in needed):
+                    raise ValueError("state source joints must have matching names and units")
+            if rules.version == 1 and self.layout("state") != self.layout("action"):
                 raise ValueError("state fallback requires matching state/action joints and units")
         if self.normalization:
             from .joint_normalization import JOINTS

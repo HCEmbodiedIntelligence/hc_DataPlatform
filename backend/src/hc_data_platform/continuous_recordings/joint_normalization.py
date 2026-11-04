@@ -18,7 +18,7 @@ def get_field(value, name, default=None):
     return value.get(name, default) if isinstance(value, dict) else getattr(value, name, default)
 
 
-def capture_time(value, message):
+def capture_time(value, message, *, verify_domain=True):
     """Read integer ROS acquisition time; reject missing or unrelated clocks."""
     stamp = get_field(get_field(value, "header", {}), "stamp", {})
     sec, ns = get_field(stamp, "sec", None), get_field(stamp, "nanosec", None)
@@ -26,7 +26,7 @@ def capture_time(value, message):
         raise ValueError(f"MCAP_CAPTURE_CLOCK_REQUIRED: log_time={message.log_time}")
     result = sec * 10**9 + ns
     # Evidence is explicitly bound in the profile; this catches epoch/domain errors.
-    if result <= 0 or abs(result - message.log_time) > 2_000_000_000:
+    if result < 0 or (verify_domain and (result == 0 or abs(result - message.log_time) > 2_000_000_000)):
         raise ValueError(f"MCAP_CLOCK_DOMAIN_MISMATCH: header={result} log={message.log_time}")
     return result
 

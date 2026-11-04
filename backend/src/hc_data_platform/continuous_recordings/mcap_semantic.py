@@ -98,12 +98,12 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
         raise ValueError("MCAP_FRAME_CLOCK_REQUIRES_STATE")
     versioned = output.algorithm in {"capture-structure/v2", "capture-structure/v3"}
     selection = None
-    if versioned:
+    if versioned or (cfg.postprocessing_rules and cfg.postprocessing_rules.version == 2 and cfg.postprocessing_rules.active):
         selected = destination.parent / (destination.name + "-selected.mcap")
         selection = select_mcap(path, selected, cfg, progress)
         path = selected
     base = cfg.model_copy(update={
-        "semantic_output": None, "numeric_sources": {}, "alignment_policy": "PRESERVE",
+        "semantic_output": None, "postprocessing_rules": None, "numeric_sources": {}, "alignment_policy": "PRESERVE",
         **({role + "_required_axes": cfg.required_axes(role) for role in ("state", "action")} if versioned else {}),
     })
     recording, evidence = prepare(path, destination, base, progress, preserve_source=True)

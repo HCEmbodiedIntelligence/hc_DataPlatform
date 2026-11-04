@@ -206,6 +206,8 @@ export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
 
   if (doc.input_mode === "AUTO") {
     const configuration = mcapConfiguration(doc);
+    const bundleConfiguration = structuredClone(configuration);
+    if (bundleConfiguration.postprocessing_rules?.version === 2) delete bundleConfiguration.postprocessing_rules;
     const lerobot = doc.adapters.find((a) => a.source_format === "LEROBOT_V3");
     return {
       ...doc,
@@ -228,7 +230,7 @@ export function normalizeAdapters(doc: SchemeDocument): SchemeDocument {
         {
           source_format: "CAPTURE_BUNDLE",
           parser_version: "capture-bundle/1",
-          configuration: structuredClone(configuration),
+          configuration: bundleConfiguration,
         },
       ],
     };

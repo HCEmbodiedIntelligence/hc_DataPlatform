@@ -101,10 +101,13 @@ def complete_adapters(document):
     lerobot["feature_sources"] = {
         k: v for k, v in lerobot.get("feature_sources", {}).items() if k in features
     }
+    bundle_cfg = copy.deepcopy(configuration)
+    if (bundle_cfg.get("postprocessing_rules") or {}).get("version") == 2:
+        bundle_cfg.pop("postprocessing_rules")
     result["adapters"] = [
         lerobot,
         {"source_format": "MCAP", "configuration": configuration},
-        {"source_format": "CAPTURE_BUNDLE", "configuration": copy.deepcopy(configuration)},
+        {"source_format": "CAPTURE_BUNDLE", "configuration": bundle_cfg},
     ]
     return result
 
