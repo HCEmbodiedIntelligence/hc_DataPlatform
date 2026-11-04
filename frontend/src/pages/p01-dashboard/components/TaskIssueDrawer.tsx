@@ -1,5 +1,6 @@
 import { Alert, Button, Descriptions, Space, Spin, Table } from "antd";
 import { lazy, Suspense, useState } from "react";
+import { captureProblemLabels } from "../../../features/capture-schemes/presentation";
 import { RecordingProcessingDetails } from "../../../features/quality/RecordingProcessingDetails";
 import type {
   DashboardDataIssue,
@@ -124,7 +125,9 @@ export default function TaskIssueDrawer({
               {
                 key: "code",
                 label: "原因代码",
-                children: selected.reason_code,
+                children: selected.reason_code && captureProblemLabels[selected.reason_code]
+                  ? `${captureProblemLabels[selected.reason_code]}（${selected.reason_code}）`
+                  : selected.reason_code,
               },
               ...(selected.duplicate_of_rollout_id
                 ? [
@@ -215,6 +218,7 @@ export default function TaskIssueDrawer({
                 key={selected.source_import_id}
                 scope={scope}
                 importId={selected.source_import_id}
+                displayedReasonCode={selected.reason_code}
               />
             </Suspense>
           ) : null}

@@ -14,10 +14,12 @@ import { McapPreparationProgress } from "./components/McapPreparation";
 export default function ResumeProcessingAction({
   scope,
   importId,
+  displayedReasonCode,
 }: Readonly<{
   scope: IngestScope;
   importId: string;
   robotId?: string;
+  displayedReasonCode?: string | null;
 }>) {
   const client = useQueryClient();
   const capabilities = useCapabilities();
@@ -106,6 +108,7 @@ export default function ResumeProcessingAction({
       ) : null}
       {isMcap && <McapPreparationProgress scope={scope} importId={importId} />}
       {result?.last_error_code &&
+        result.last_error_code !== displayedReasonCode &&
         captureProblemLabels[result.last_error_code] && (
           <Alert
             type="warning"
