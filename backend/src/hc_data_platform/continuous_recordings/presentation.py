@@ -54,7 +54,7 @@ def present_recordings(connection_factory, items: tuple[ContinuousRecording, ...
         with connection.cursor() as cursor:
             cursor.execute(
                 """SELECT r.recording_id,t.task_code,robot.display_name,
-                          COALESCE(m.source_path,source.asset_path),t.description,t.name
+                          COALESCE(m.source_path,source.asset_path),t.description,t.name,p.status
                    FROM ingest.continuous_recordings r
                    LEFT JOIN collection_tasks.collection_tasks t
                      ON t.organization_id=r.organization_id AND t.project_id=r.project_id
@@ -76,6 +76,12 @@ def present_recordings(connection_factory, items: tuple[ContinuousRecording, ...
                        ORDER BY (a.asset_path LIKE 'source/original/%%') DESC,a.asset_path
                        LIMIT 1
                    ) source ON true
+                   LEFT JOIN ingest.recording_episode_processing p
+                     ON (p.organization_id,p.project_id,p.region_code,p.recording_id)
+                      =(r.organization_id,r.project_id,r.region_code,r.recording_id)
+                    AND p.episode_id='episode_full_recording'
+                    AND p.finalized_revision=r.finalized_revision
+                    AND r.recording_document->>'ingest_mode'='WHOLE_RECORDING'
                    WHERE r.organization_id=%s AND r.project_id=%s AND r.region_code=%s
                      AND r.recording_id=ANY(%s)""",
                 (
@@ -89,15 +95,19 @@ def present_recordings(connection_factory, items: tuple[ContinuousRecording, ...
     finally:
         connection.close()
     return tuple(
-        _present(item, *labels.get(item.recording_id, (None, None, None, None, None)))
+        _present(item, *labels.get(item.recording_id, (None, None, None, None, None, None)))
         for item in items
     )
 
 
-def _present(recording, task_code, robot_name, source, task_description=None, task_name=None):
+def _present(
+    recording, task_code, robot_name, source, task_description=None,
+    task_name=None, whole_episode_status=None,
+):
     description = (task_description or "").strip() or (task_name or "").strip()
     return recording.model_copy(
         update={
+            "whole_episode_status": whole_episode_status,
             "file_name": recording_filename(recording, task_code, source),
             "source_file_name": decoded_filename(source),
             "robot_name": robot_name,

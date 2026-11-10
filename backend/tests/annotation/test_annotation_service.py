@@ -522,3 +522,79 @@ def test_unconfigured_vlm_provider_fails_with_retryable_service_error() -> None:
         provider.request(task_id="task-1", revision=1)
     assert error.value.code == "AUTO_ANNOTATION_PROVIDER_UNAVAILABLE"
     assert error.value.status == 503
+
+
+@pytest.mark.parametrize("outcome", ["success", "fail"])
+def test_episode_outcome_is_versioned_reviewed_and_exported_without_tags(outcome):
+    from hc_data_platform.annotation.models import EpisodeOutcome
+    from hc_data_platform.annotation.revision_files import revision_document
+    from hc_data_platform.annotation.validation import default_flat_schema
+
+    service, annotator = service_with_claimed_task()
+    initial = service.get_draft("task-1", annotator)
+    assert initial.episode_outcome == EpisodeOutcome.SUCCESS
+    revision = service.save_draft(
+        "task-1", annotator, (), episode_outcome=EpisodeOutcome(outcome),
+        expected_revision=0, if_match=initial.etag, client_mutation_id="outcome",
+    )
+    assert revision.tags == ()
+    assert service.get_draft("task-1", annotator).episode_outcome == outcome
+    assert (revision.content_hash == service.get_revision("task-1", 0).content_hash) == (outcome == "success")
+    document = revision_document(
+        service.get_history("task-1", annotator), 1, default_flat_schema("project-a"), "org-a"
+    )
+    assert document["revision"]["episode_outcome"] == outcome
+    submitted = service.submit(
+        "task-1", annotator, expected_revision=1, if_match=service.get_task("task-1").etag,
+    )
+    approved = service.review(
+        "task-1", actor("bob", *REVIEWER_CAPABILITIES), ReviewDecision.APPROVE,
+        revision=1, if_match=submitted.etag,
+    )
+    assert approved.episode_outcome == outcome
+    # Omitted fields in older clients and automatic Tag updates preserve the result.
+    inherited = service.save_draft(
+        "task-1", annotator, (), expected_revision=1,
+        if_match=service.get_task("task-1").etag, client_mutation_id="inherit",
+    )
+    assert inherited.episode_outcome == outcome
+    before_restore = service.get_task("task-1")
+    restored = service.restore_revision(
+        "task-1", annotator, target_revision=0, expected_revision=2,
+        if_match=before_restore.etag, client_mutation_id="restore-outcome",
+    )
+    assert restored.episode_outcome == EpisodeOutcome.SUCCESS
+    assert restored.content_hash == service.get_revision("task-1", 0).content_hash
+    assert service.restore_revision(
+        "task-1", annotator, target_revision=0, expected_revision=2,
+        if_match=before_restore.etag, client_mutation_id="restore-outcome",
+    ) == restored
+    assert service.get_revision("task-1", 1).episode_outcome == outcome
+
+
+def test_episode_outcome_idempotency_conflict_and_clear():
+    from hc_data_platform.annotation.service import AnnotationMutationConflictError
+    from hc_data_platform.annotation.models import EpisodeOutcome
+
+    service, annotator = service_with_claimed_task()
+    task = service.get_task("task-1")
+    def save(outcome):
+        return service.save_draft(
+            "task-1", annotator, (), episode_outcome=outcome, expected_revision=0,
+            if_match=task.etag, client_mutation_id="same-outcome-mutation",
+        )
+    first = save(EpisodeOutcome.SUCCESS)
+    assert save(EpisodeOutcome.SUCCESS) == first
+    with pytest.raises(AnnotationMutationConflictError):
+        save(EpisodeOutcome.FAILURE)
+    with pytest.raises(AnnotationConflictError):
+        service.save_draft(
+            "task-1", annotator, (), episode_outcome=EpisodeOutcome.FAILURE,
+            expected_revision=0, if_match=task.etag, client_mutation_id="stale-outcome",
+        )
+    cleared = service.save_draft(
+        "task-1", annotator, (), episode_outcome=EpisodeOutcome.UNMARKED,
+        expected_revision=1, if_match=service.get_task("task-1").etag,
+        client_mutation_id="clear-outcome",
+    )
+    assert cleared.episode_outcome == EpisodeOutcome.UNMARKED

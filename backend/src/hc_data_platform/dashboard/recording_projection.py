@@ -3,6 +3,7 @@
 from dataclasses import dataclass, replace
 
 from hc_data_platform.collection_tasks.captures import CaptureProgress
+from hc_data_platform.quality.processing_errors import recording_preparation_error
 
 from .models import TaskIssueFinding
 from .repository import TaskStatusPackageFact
@@ -17,6 +18,7 @@ class RecordingEpisodeWorkflow:
     processing_status: str = "READY"
     qc_status: str | None = "PASS"
     error_code: str | None = None
+    failure_stage: str | None = None
 
 
 def read_recording_workflows(cursor, organization_id, project_id, region_code):
@@ -36,7 +38,7 @@ def read_recording_workflows(cursor, organization_id, project_id, region_code):
                     WHEN p.qc_report_id IS NOT NULL
                       AND p.status IN ('PENDING_ALIGNMENT','ALIGNING','READY','FAILED')
                     THEN 'PASS' END,
-               COALESCE(p.failure_code, dispatch.last_error_code)
+               COALESCE(p.failure_code, dispatch.last_error_code), p.failure_stage
         FROM ingest.continuous_recordings r
         JOIN ingest.recording_episode_slices s
           ON s.organization_id=r.organization_id AND s.project_id=r.project_id
@@ -66,9 +68,9 @@ def read_recording_workflows(cursor, organization_id, project_id, region_code):
         (organization_id, project_id, region_code),
     )
     result = {}
-    for recording, task_id, status, review, published, processing, qc, error in cursor.fetchall():
+    for recording, task_id, status, review, published, processing, qc, error, stage in cursor.fetchall():
         result.setdefault(recording, []).append(
-            RecordingEpisodeWorkflow(task_id, status, review, published, processing, qc, error)
+            RecordingEpisodeWorkflow(task_id, status, review, published, processing, qc, error, stage)
         )
     return {recording: tuple(episodes) for recording, episodes in result.items()}
 
@@ -98,8 +100,16 @@ def read_recording_findings(cursor, organization_id, project_id, region_code):
                            p.recording_id,p.episode_id,p.qc_report_id)
         WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
           AND p.status='QC_FAILED'
+        UNION ALL
+        SELECT r.recording_id, q.report_document
+        FROM ingest.continuous_recordings r JOIN ingest.recording_quality_reports q
+          ON (q.organization_id,q.project_id,q.region_code,q.recording_id,q.report_id)=
+             (r.organization_id,r.project_id,r.region_code,r.recording_id,
+              r.recording_document->'quality_summary'->>'report_id')
+        WHERE r.organization_id=%s AND r.project_id=%s AND r.region_code=%s
+          AND r.status='QC_FAILED'
         """,
-        (organization_id, project_id, region_code),
+        (organization_id, project_id, region_code) * 2,
     )
     result = {}
     for recording, document in cursor.fetchall():
@@ -134,6 +144,11 @@ def recording_package(
     episodes: tuple[RecordingEpisodeWorkflow, ...] = (),
 ) -> TaskStatusPackageFact:
     downstream = min(episodes, key=_annotation_priority) if episodes else RecordingEpisodeWorkflow()
+    failure_stage = next(
+        (ep.failure_stage for ep in episodes if ep.failure_stage and ep.error_code == capture.error_code),
+        None,
+    ) if capture.stage == "FAILED" and capture.error_code else None
+    error_code = recording_preparation_error(capture.error_code)
     fact = TaskStatusPackageFact(
         task_id=capture.collection_task_id,
         rollout_id=capture.rollout_id,
@@ -153,7 +168,7 @@ def recording_package(
             if capture.recording_id
             else None
         ),
-        verification_reason_code=capture.error_code,
+        verification_reason_code=error_code,
         qc_status=capture.qc_outcome,
         lance_ready=capture.stage == "READY",
         annotation_task_id=downstream.annotation_task_id,
@@ -166,19 +181,21 @@ def recording_package(
             else "SUCCEEDED"
             if capture.stage == "READY"
             else "RUNNING"
-            if capture.stage in {"PREPARING", "PROCESSING"}
+            if capture.stage in {"PREPARING", "QC_RUNNING", "PROCESSING"}
             else "PENDING"
         ),
-        workflow_stage=(
+        workflow_stage=failure_stage or (
             "dispatch"
             if capture.stage == "BLOCKED"
             else "awaiting_slice"
             if capture.stage == "AWAITING_SLICE"
+            else "qc"
+            if capture.stage in {"PENDING_QC", "QC_RUNNING", "QC_FAILED"}
             else "alignment"
             if capture.qc_outcome == "PASS"
             else "verification"
         ),
-        workflow_error_code=capture.error_code,
+        workflow_error_code=error_code,
         quality_findings=findings,
     )
     return replace(
@@ -210,7 +227,7 @@ def _episode_fact(
             if status == "READY"
             else "PENDING"
         ),
-        workflow_stage=(
+        workflow_stage=episode.failure_stage or (
             "dispatch"
             if status == "PENDING_QC" and episode.error_code
             else "alignment"

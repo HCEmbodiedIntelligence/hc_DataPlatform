@@ -1,4 +1,4 @@
-import type { RuntimeAnnotationTag } from "../../features/annotation/runtime/runtime-annotation-adapter";
+import type { RuntimeAnnotationTag, RuntimeEpisodeOutcome } from "../../features/annotation/runtime/runtime-annotation-adapter";
 
 const PREFIX = "hc:p08:tag-recovery:v2:";
 const TTL_MS = 2 * 60 * 60 * 1000;
@@ -11,7 +11,8 @@ export interface TagDraftRecoveryIdentity {
   readonly revision: number;
 }
 
-interface StoredRecovery {
+export interface StoredRecovery {
+  readonly episodeOutcome?: RuntimeEpisodeOutcome | "UNMARKED" | "SUCCESS" | "FAILURE";
   readonly identity: TagDraftRecoveryIdentity;
   readonly expiresAt: number;
   readonly tags: readonly RuntimeAnnotationTag[];
@@ -97,7 +98,9 @@ function isRecovery(value: unknown): value is StoredRecovery {
     typeof record.expiresAt === "number" &&
     Number.isFinite(record.expiresAt) &&
     Array.isArray(record.tags) &&
-    record.tags.every(isTag)
+    record.tags.every(isTag) &&
+    (record.episodeOutcome === undefined ||
+      ["success", "fail", "UNMARKED", "SUCCESS", "FAILURE"].includes(String(record.episodeOutcome)))
   );
 }
 
@@ -105,10 +108,11 @@ export function saveTagDraftRecovery(
   identity: TagDraftRecoveryIdentity,
   tags: readonly RuntimeAnnotationTag[],
   now = Date.now(),
+  episodeOutcome?: RuntimeEpisodeOutcome,
 ): void {
   const storage = recoveryStorage();
   if (!storage) return;
-  const payload: StoredRecovery = { identity, expiresAt: now + TTL_MS, tags };
+  const payload: StoredRecovery = { identity, expiresAt: now + TTL_MS, tags, episodeOutcome };
   try {
     storage.setItem(key(identity), JSON.stringify(payload));
   } catch {
@@ -116,10 +120,10 @@ export function saveTagDraftRecovery(
   }
 }
 
-export function loadTagDraftRecovery(
+export function loadAnnotationDraftRecovery(
   identity: TagDraftRecoveryIdentity,
   now = Date.now(),
-): readonly RuntimeAnnotationTag[] | null {
+): StoredRecovery | null {
   const storage = recoveryStorage();
   const raw = storage?.getItem(key(identity));
   if (!storage || !raw) return null;
@@ -133,7 +137,7 @@ export function loadTagDraftRecovery(
       storage.removeItem(key(identity));
       return null;
     }
-    return parsed.tags;
+    return parsed;
   } catch {
     storage.removeItem(key(identity));
     return null;
@@ -148,4 +152,10 @@ export function clearTagDraftRecovery(
   } catch {
     // Recovery cleanup is best effort.
   }
+}
+
+export function loadTagDraftRecovery(
+  identity: TagDraftRecoveryIdentity, now = Date.now(),
+): readonly RuntimeAnnotationTag[] | null {
+  return loadAnnotationDraftRecovery(identity, now)?.tags ?? null;
 }

@@ -1,3 +1,5 @@
+import { deliveryUrl, waitForDeliveryCache } from "../../../shared/lib/delivery-cache";
+import { localObjectStorageUrl } from "../../../shared/lib/object-storage-url";
 import { z } from "zod";
 import type { Scope } from "../../../shared/scope/model";
 import { episodeDataReferenceWireSchema as dataWire } from "../api/episode-package-wire";
@@ -33,7 +35,7 @@ const jobWire = z
         ]),
         modalities: z.literal("all_collected"),
         annotation_selection: z.literal("package_contents_only"),
-        processor_version: z.literal("hc-episode-archive/1"),
+        processor_version: z.enum(["hc-episode-archive/1", "hc-episode-archive/2"]),
         reader_version: z.literal("lerobot/0.6.1"),
       })
       .strict(),
@@ -199,20 +201,20 @@ export async function authorizeCompleteDelivery(
       job_id: z.string(),
       artifact_sha256: digest,
       size_bytes: count.positive(),
-      url: z.url(),
+      url: deliveryUrl,
       expires_seconds: z.literal(300),
     })
     .strict()
     .parse(
-      await request({
+      await waitForDeliveryCache(() => request({
         method: "POST",
         path: `${base(scope, data)}/${job.job_id}/download`,
         scope,
         signal,
         cache: "no-store",
-      }),
+      }), signal),
     );
-  const url = new URL(grant.url);
+  const url = new URL(grant.url, typeof window === "undefined" ? "http://localhost" : window.location.origin);
   if (
     grant.job_id !== job.job_id ||
     grant.artifact_sha256 !== job.artifact_sha256 ||
@@ -222,5 +224,5 @@ export async function authorizeCompleteDelivery(
     url.password
   )
     throw new Error("下载授权与完整包身份不一致。");
-  return grant;
+  return { ...grant, url: localObjectStorageUrl(grant.url) };
 }

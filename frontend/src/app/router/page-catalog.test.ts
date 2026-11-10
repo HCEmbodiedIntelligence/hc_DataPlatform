@@ -4,7 +4,7 @@ import { safeReturnTo } from "../../shared/routing/route-registry";
 
 describe("application page catalog", () => {
   it("discovers ingestion and account pages alongside all enabled business pages", () => {
-    expect(pageCatalog.routes).toHaveLength(32);
+    expect(pageCatalog.routes).toHaveLength(35);
     expect(pageCatalog.availability).toMatchObject({
       P02: true,
       P03: true,
@@ -17,6 +17,18 @@ describe("application page catalog", () => {
     expect(
       pageCatalog.routes.every((route) => typeof route.lazy === "function"),
     ).toBe(true);
+  });
+
+  it("uses one model navigation entry for the preview and keeps instance management separate", () => {
+    const entries = pageCatalog.navigation.flatMap((group) => group.items);
+    expect(
+      entries
+        .filter((item) => item.label === "机器人模型")
+        .map((item) => item.path),
+    ).toEqual(["/settings/robot-models"]);
+    expect(entries.find((item) => item.label === "机器人实例")?.path).toBe(
+      "/settings/robot-instances",
+    );
   });
 
   it("registers only real enabled routes as return destinations", () => {

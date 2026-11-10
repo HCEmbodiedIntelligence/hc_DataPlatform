@@ -149,7 +149,7 @@ class RecordingResult(StrictModel):
     upload_id: str
     raw_source_id: str | None
     recording_id: str | None
-    status: Literal["REGISTERING", "AWAITING_SLICE", "SLICED", "FAILED"]
+    status: Literal["REGISTERING", "PENDING_QC", "QC_RUNNING", "QC_FAILED", "QC_ERROR", "AWAITING_SLICE", "SLICED", "FAILED"]
     page_path: str | None
     terminal: bool
     poll_after_seconds: int = Field(ge=0, le=60)

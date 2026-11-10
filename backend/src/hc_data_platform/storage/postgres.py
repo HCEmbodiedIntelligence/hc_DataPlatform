@@ -233,6 +233,9 @@ class PostgresStorageRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            from .inventory_retention import lock_inventory
+
+            lock_inventory(cursor, snapshot.project_id)
             cursor.execute(
                 """
                 INSERT INTO storage.inventory_snapshots (
@@ -306,10 +309,10 @@ class PostgresStorageRepository:
             cursor.execute(
                 """
                 UPDATE storage.inventory_snapshots
-                SET sealed = true
+                SET sealed = true, summary = %s::jsonb
                 WHERE project_id = %s AND snapshot_id = %s AND sealed = false
                 """,
-                (snapshot.project_id, snapshot.snapshot_id),
+                (snapshot.model_dump_json(), snapshot.project_id, snapshot.snapshot_id),
             )
             if getattr(cursor, "rowcount", 1) != 1:
                 raise RuntimeError("capacity snapshot could not be sealed")
@@ -319,6 +322,35 @@ class PostgresStorageRepository:
             raise
         finally:
             cursor.close()
+            connection.close()
+
+    def capacity_summary(self, *, project_id: str, snapshot_id: str) -> CapacitySnapshot | None:
+        connection = self._connection_factory()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT summary FROM storage.inventory_snapshots "
+                "WHERE project_id = %s AND snapshot_id = %s",
+                (project_id, snapshot_id),
+            )
+            raw = cursor.fetchone()
+            payload = None if raw is None else _row(cursor, raw)["summary"]
+            return None if payload is None else CapacitySnapshot.model_validate(payload)
+        finally:
+            connection.close()
+
+    def inventory_details_expired(self, *, project_id: str, snapshot_id: str) -> bool:
+        connection = self._connection_factory()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "SELECT details_expired_at IS NOT NULL AS expired FROM storage.inventory_snapshots "
+                "WHERE project_id=%s AND snapshot_id=%s",
+                (project_id, snapshot_id),
+            )
+            raw = cursor.fetchone()
+            return raw is not None and bool(_row(cursor, raw)["expired"])
+        finally:
             connection.close()
 
     def latest_snapshot_id(self, *, project_id: str) -> str | None:
@@ -683,32 +715,15 @@ class PostgresStorageRepository:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
+            direction = "ASC" if before else "DESC"
+            comparison = ">" if before else "<"
             cursor.execute(
-                f"""
-                SELECT {_AUDIT_COLUMNS}
-                FROM storage.lifecycle_audit_events
-                WHERE project_id = %s
-                  AND (
-                    %s::text IS NULL
-                    OR (%s AND audit_id < %s)
-                    OR (NOT %s AND audit_id > %s)
-                  )
-                ORDER BY
-                  CASE WHEN %s THEN audit_id END DESC,
-                  CASE WHEN NOT %s THEN audit_id END ASC
-                LIMIT %s
-                """,
-                (
-                    project_id,
-                    anchor_audit_id,
-                    before,
-                    anchor_audit_id,
-                    before,
-                    anchor_audit_id,
-                    before,
-                    before,
-                    limit,
-                ),
+                f"""SELECT {_AUDIT_COLUMNS} FROM storage.lifecycle_audit_events
+                WHERE project_id=%s AND (%s::text IS NULL OR (occurred_at,audit_id) {comparison}
+                  (SELECT occurred_at,audit_id FROM storage.lifecycle_audit_events
+                   WHERE project_id=%s AND audit_id=%s))
+                ORDER BY occurred_at {direction}, audit_id {direction} LIMIT %s""",
+                (project_id, anchor_audit_id, project_id, anchor_audit_id, limit),
             )
             return tuple(self._audit(row) for row in _rows(cursor, cursor.fetchall()))
         finally:

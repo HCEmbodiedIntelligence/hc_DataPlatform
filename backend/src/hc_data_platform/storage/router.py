@@ -41,6 +41,7 @@ from .models import (
     UpdateLifecycleScheduleRequest,
 )
 from .service import StorageGovernanceService
+from .task_usage_models import ProjectTaskStorage, TaskStorageFilePage, UsageCategory
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}/storage", tags=["storage"])
 
@@ -102,6 +103,46 @@ def _select_project_scope(auth: VerifiedAuth, project_id: str) -> None:
 
 def _read_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "private, no-store"
+
+
+@router.get("/task-usage", response_model=ProjectTaskStorage, operation_id="getTaskStorageUsage")
+def get_task_storage_usage(
+    project_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+    refresh: bool = False,
+) -> ProjectTaskStorage:
+    _select_project_scope(auth, project_id)
+    _read_headers(response)
+    return service.task_storage_overview(project_id=project_id, actor=auth, refresh=refresh)
+
+
+@router.get(
+    "/task-usage/files", response_model=TaskStorageFilePage, operation_id="listTaskStorageFiles"
+)
+def list_task_storage_files(
+    project_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    service: ServiceDependency,
+    group_id: str = Query(min_length=1, max_length=300),
+    category: UsageCategory | None = None,
+    search: str = Query(default="", max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: Limit = 50,
+) -> TaskStorageFilePage:
+    _select_project_scope(auth, project_id)
+    _read_headers(response)
+    return service.task_storage_files(
+        project_id=project_id,
+        actor=auth,
+        group_id=group_id,
+        category=category,
+        search=search,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get(

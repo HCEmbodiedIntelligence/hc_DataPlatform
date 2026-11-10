@@ -112,6 +112,9 @@ class InMemoryObjectStorage:
                 raise KeyError(upload_id)
             self._uploads.pop(upload_id, None)
 
+    def list_object_keys(self, prefix: str) -> tuple[str, ...]:
+        return tuple(key for key in self.objects if key.startswith(prefix))
+
     def delete_object(self, key: str) -> None:
         """Test-only cleanup hook used by failed robot-model imports."""
 

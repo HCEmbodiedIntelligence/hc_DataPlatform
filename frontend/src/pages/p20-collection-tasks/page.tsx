@@ -10,6 +10,7 @@ import {
   useQueries,
   useQuery,
   useQueryClient,
+  type Query,
 } from "@tanstack/react-query";
 import { Alert, Button, Input, Modal, Select, Space, Typography } from "antd";
 import { Plus, RefreshCw, RotateCcw, Search } from "lucide-react";
@@ -27,10 +28,15 @@ import {
   collectionTaskGateway,
   type CollectionTask,
   type CollectionTaskGateway,
+  type CollectionTaskProgress,
   type CollectionTaskScope,
   type CreateCollectionTask,
 } from "../../features/collection-tasks/api";
 import { CollectionTaskDrawer } from "./components/CollectionTaskDrawer";
+import {
+  idleProgressInterval,
+  progressRefreshInterval,
+} from "../../features/collection-tasks/progress-polling";
 import {
   CollectionTaskTable,
   type TaskProgressState,
@@ -234,9 +240,15 @@ export function CollectionTaskPage({
           task.collection_task_id,
           signal,
         ),
-      enabled: listEnabled,
-      staleTime: 5_000,
-      refetchInterval: 5_000,
+      enabled: listEnabled && !list.isPlaceholderData,
+      staleTime: idleProgressInterval,
+      refetchInterval: (query: Query<CollectionTaskProgress>) =>
+        progressRefreshInterval(
+          (query.state.data?.captures?.processing_count ?? 0) > 0 ||
+            (query.state.data?.qc.pending_count ?? 0) > 0,
+          query.state.error,
+        ),
+      refetchIntervalInBackground: false,
       retry: false,
     })),
   });
@@ -327,6 +339,10 @@ export function CollectionTaskPage({
       await queryClient.invalidateQueries({
         queryKey: ["collection-tasks", scopeKey],
       });
+      await queryClient.invalidateQueries({
+        queryKey: ["collection-task-progress", scopeKey, task.collection_task_id],
+        exact: true,
+      });
       closeDrawer();
     },
   });
@@ -409,12 +425,22 @@ export function CollectionTaskPage({
       await queryClient.invalidateQueries({
         queryKey: ["collection-tasks", scopeKey],
       });
+      if (request.action !== "delete") {
+        await queryClient.invalidateQueries({
+          queryKey: ["collection-task-progress", scopeKey, request.task.collection_task_id],
+          exact: true,
+        });
+      }
       if (request.action === "delete") {
         if (search.taskId === request.task.collection_task_id) {
           setParams(
             collectionTaskQueryCodec.build({ ...search, taskId: undefined }),
           );
         }
+        queryClient.removeQueries({
+          queryKey: ["collection-task-progress", scopeKey, request.task.collection_task_id],
+          exact: true,
+        });
         queryClient.removeQueries({
           queryKey: [
             "collection-task-detail",
@@ -674,7 +700,12 @@ export function CollectionTaskPage({
               aria-label="刷新采集任务"
               disabled={!scope || list.isFetching}
               icon={<RefreshCw aria-hidden="true" size={16} />}
-              onClick={() => void list.refetch()}
+              onClick={() => {
+                void list.refetch();
+                void queryClient.invalidateQueries({
+                  queryKey: ["collection-task-progress", scopeKey],
+                });
+              }}
             >
               {list.isFetching ? "刷新中…" : "刷新"}
             </Button>

@@ -77,7 +77,7 @@ def test_add_after_start_retains_lock_old_mapping_and_snapshot_with_idempotent_r
         )
 
 
-def test_addition_requires_verified_mapping_and_unarchived_scheme(environment):  # noqa: F811
+def test_addition_accepts_unsampled_mapping_and_requires_unarchived_scheme(environment):  # noqa: F811
     dsn, scope, tasks = environment
     with psycopg.connect(dsn) as db:
         reference = publish(db, scope[0])
@@ -103,16 +103,17 @@ def test_addition_requires_verified_mapping_and_unarchived_scheme(environment): 
     command = AddParticipants(
         expected_revision=1, participants=[{"robot_id": "robot-2", "mapping_version": 1}]
     )
-    with psycopg.connect(dsn) as db, pytest.raises(ProblemException) as exc:
-        plans.add_participants(db, scope, tasks[0], command, "tester")
-    assert exc.value.problem.code == "CAPTURE_MAPPING_UNVERIFIED"
     with psycopg.connect(dsn) as db:
+        updated = plans.add_participants(db, scope, tasks[0], command, "tester")
+        assert updated["revision"] == 2
+        assert plans.for_robot(db, scope, tasks[0], "robot-2", "LEROBOT_V3")["mapping"]["mapping_version"] == 1
+        plans.save_plan(db, scope, tasks[1], selection(reference, "robot-1"), "tester")
         schemes.archive(db, scope[0], reference.scheme_id, 1, "tester")
     with psycopg.connect(dsn) as db, pytest.raises(ProblemException) as exc:
-        plans.add_participants(db, scope, tasks[0], command, "tester")
+        plans.add_participants(db, scope, tasks[1], command, "tester")
     assert exc.value.problem.code == "CAPTURE_SCHEME_ARCHIVED"
     with psycopg.connect(dsn) as db:
-        assert plans.get_plan(db, scope, tasks[0])["revision"] == 1
+        assert plans.get_plan(db, scope, tasks[1])["revision"] == 1
         assert (
             plans.for_robot(db, scope, tasks[0], "robot-1", "LEROBOT_V3")["scheme"]
             == reference.model_dump()

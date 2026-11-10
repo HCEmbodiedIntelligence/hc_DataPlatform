@@ -575,3 +575,33 @@ def test_annotation_success_responses_are_not_cacheable(
     )
     assert published.status_code == 200
     assert_no_store(published)
+
+
+@pytest.mark.parametrize("outcome", ["success", "fail"])
+def test_episode_outcome_api_roundtrip_without_a_tag(api, outcome):
+    client, _, _ = api
+    claimed = client.post("/api/v1/annotation-tasks/task-api/claim")
+    saved = client.post(
+        "/api/v1/annotation-tasks/task-api/revisions",
+        headers={"If-Match": claimed.headers["etag"]},
+        json={"expected_revision": 0, "client_mutation_id": "outcome-api",
+              "operations": [], "episode_outcome": outcome},
+    )
+    assert saved.status_code == 201
+    assert saved.json()["episode_outcome"] == outcome
+    assert saved.json()["tags"] == []
+    draft = client.get("/api/v1/annotation-tasks/task-api/draft")
+    assert draft.status_code == 200
+    assert draft.json()["episode_outcome"] == outcome
+
+
+def test_episode_outcome_api_rejects_unknown_values(api):
+    client, _, _ = api
+    claimed = client.post("/api/v1/annotation-tasks/task-api/claim")
+    response = client.post(
+        "/api/v1/annotation-tasks/task-api/revisions",
+        headers={"If-Match": claimed.headers["etag"]},
+        json={"expected_revision": 0, "client_mutation_id": "bad-outcome",
+              "operations": [], "episode_outcome": "MAYBE"},
+    )
+    assert response.status_code == 422

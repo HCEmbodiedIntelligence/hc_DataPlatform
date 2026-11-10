@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 9c79839deb443bfccbb563ea23771f70aee36fa9ccfff4486cb0422ac4ac6450
+// Runtime-OpenAPI-SHA256: 493a7d4d60eb7e9b96f60a3dca1464c4c1f58b8b7cf87a6a7eddf656fb4e3e83
 // Response projections: unknown object fields are stripped; defaults are not filled.
 import { z } from "zod";
 import type { components } from "./platform";
@@ -182,3 +182,111 @@ export const UploadProcessingStatusV1Wire = z.object({
   viewer: z.union([DatasetIngestViewerTargetWire, z.null()]),
   workflow_id: z.string().min(1),
 }) satisfies z.ZodType<components["schemas"]["UploadProcessingStatusV1"]>;
+export const TaskStorageCategoryWire = z.object({
+  bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  category: z
+    .string()
+    .pipe(
+      z.literal([
+        "RAW",
+        "EPISODE",
+        "PROCESSING",
+        "ANNOTATION",
+        "EXPORT",
+        "OTHER",
+      ]),
+    ),
+  file_count: z.number().int().min(0),
+}) satisfies z.ZodType<components["schemas"]["TaskStorageCategory"]>;
+export const StorageDiskUsageWire = z.object({
+  available_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  reserved_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  total_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  used_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+}) satisfies z.ZodType<components["schemas"]["StorageDiskUsage"]>;
+export const StoragePurposeUsageWire = z.object({
+  bytes: z.union([
+    z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+    z.null(),
+  ]),
+  category: z.string(),
+  description: z.string(),
+  label: z.string(),
+  retention: z.string().pipe(z.literal(["KEEP", "CONDITIONAL", "REVIEW"])),
+}) satisfies z.ZodType<components["schemas"]["StoragePurposeUsage"]>;
+export const StorageLocationUsageWire = z.object({
+  categories: z.array(StoragePurposeUsageWire),
+  complete: z.boolean(),
+  label: z.string(),
+  location: z.string().pipe(z.literal(["LOCAL", "OSS"])),
+  note: z.string(),
+  scope: z.string(),
+  total_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+}) satisfies z.ZodType<components["schemas"]["StorageLocationUsage"]>;
+export const TaskStorageSummaryWire = z.object({
+  annotation_complete_count: z.number().int().min(0),
+  categories: z.array(TaskStorageCategoryWire),
+  episode_count: z.number().int().min(0),
+  export_count: z.number().int().min(0),
+  file_count: z.number().int().min(0),
+  group_id: z.string(),
+  raw_count: z.number().int().min(0),
+  shared_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  task_code: z.union([z.string(), z.null()]).optional(),
+  task_name: z.string(),
+  total_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+}) satisfies z.ZodType<components["schemas"]["TaskStorageSummary"]>;
+export const ProjectTaskStorageWire = z.object({
+  categories: z.array(TaskStorageCategoryWire),
+  database_bytes: z
+    .union([z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")), z.null()])
+    .optional(),
+  disk: z.union([StorageDiskUsageWire, z.null()]).optional(),
+  file_count: z.number().int().min(0),
+  object_store_bytes: z
+    .union([z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")), z.null()])
+    .optional(),
+  object_store_file_count: z
+    .union([z.number().int().min(0), z.null()])
+    .optional(),
+  observed_at: z.iso.datetime({ offset: true }),
+  project_id: z.string(),
+  storage_locations: z.array(StorageLocationUsageWire),
+  tasks: z.array(TaskStorageSummaryWire),
+  total_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  warnings: z.array(z.string()),
+}) satisfies z.ZodType<components["schemas"]["ProjectTaskStorage"]>;
+export const TaskStorageFileWire = z.object({
+  bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  category: z
+    .string()
+    .pipe(
+      z.literal([
+        "RAW",
+        "EPISODE",
+        "PROCESSING",
+        "ANNOTATION",
+        "EXPORT",
+        "OTHER",
+      ]),
+    ),
+  file_id: z.string(),
+  name: z.string(),
+  record_name: z.string(),
+  related_task_names: z.array(z.string()),
+  relative_path: z.string(),
+  robot_name: z.string(),
+  shared: z.boolean(),
+  status: z.string(),
+  updated_at: z.iso.datetime({ offset: true }),
+}) satisfies z.ZodType<components["schemas"]["TaskStorageFile"]>;
+export const TaskStorageFilePageWire = z.object({
+  group_id: z.string(),
+  items: z.array(TaskStorageFileWire),
+  limit: z.number().int().min(1).max(100),
+  observed_at: z.iso.datetime({ offset: true }),
+  offset: z.number().int().min(0),
+  project_id: z.string(),
+  total_bytes: z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")),
+  total_count: z.number().int().min(0),
+}) satisfies z.ZodType<components["schemas"]["TaskStorageFilePage"]>;

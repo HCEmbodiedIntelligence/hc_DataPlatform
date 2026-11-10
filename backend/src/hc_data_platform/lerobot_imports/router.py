@@ -7,11 +7,11 @@ from typing import Annotated, BinaryIO, cast
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from starlette.background import BackgroundTask
 
-from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
 from hc_data_platform.capture_schemes.reprocess import ReprocessMcap
+from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
@@ -29,6 +29,7 @@ from .models import (
     LeRobotSourceFileV1,
     lerobot_part_plan,
 )
+from .oss_imports import CommitOssImport, InspectOssImport, commit_source, inspect_source
 from .processing import (
     NativeImportProgress,
     StartStoredProcessing,
@@ -71,6 +72,48 @@ def get_service(request: Request) -> LeRobotWebUploadService:
 
 
 Service = Annotated[LeRobotWebUploadService, Depends(get_service)]
+
+
+@router.post("/oss:inspect", operation_id="inspectOssImport")
+def inspect_oss_import(
+    project_id: str,
+    region_code: str,
+    command: InspectOssImport,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+    response: Response,
+):
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    response.headers["Cache-Control"] = "no-store"
+    return inspect_source(service.storage, command.source_uri)
+
+
+@router.post("/oss:commit", response_model=LeRobotImportAcceptedV1, operation_id="commitOssImport")
+def commit_oss_import(
+    project_id: str,
+    region_code: str,
+    command: CommitOssImport,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+):
+    try:
+        return commit_source(
+            service,
+            auth=auth,
+            organization_id=organization_id,
+            project_id=project_id,
+            region_code=region_code,
+            command=command,
+        )
+    except ValidationError as exc:
+        raise problem(
+            status=422,
+            code="OSS_IMPORT_SELECTION_INVALID",
+            title="导入选项无效",
+            detail="请重新检查数据格式、处理能力和目标采集任务。",
+        ) from exc
 
 
 class NativeLabelsRequest(BaseModel):
@@ -159,7 +202,12 @@ def process_stored_source(
         )
     stored = browser.manifest(raw)
     info = json.loads(
-        read_bounded(service.storage, f"{raw.storage_prefix}/meta/info.json", 1024**2)
+        read_bounded(
+            service.storage,
+            next(f for f in stored["files"] if f["path"] == "meta/info.json").get("object_key")
+            or f"{raw.storage_prefix}/meta/info.json",
+            1024**2,
+        )
     )
     try:
         manifest = CreateLeRobotImportV1(
@@ -239,28 +287,50 @@ def process_mcap(
             title="需要 MCAP 原始数据",
             detail="请选择绑定数据集的 MCAP 原始数据。",
         )
-    return start((organization_id, project_id, region_code), raw, browser.manifest(raw), command)
+    return start(
+        (organization_id, project_id, region_code),
+        raw,
+        browser.manifest(raw),
+        command,
+        actor=auth.subject_id,
+    )
 
 
 @router.post("/{import_id}:reprocess-mcap", operation_id="reprocessMcapWithTaskPlan")
 def reprocess_mcap(project_id: str, region_code: str, import_id: str, command: ReprocessMcap,
                    auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
     from hc_data_platform.capture_schemes.reprocess import request as reprocess
+
     from .configuration import connections
     authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     raw = browser.source(organization_id, project_id, region_code, import_id)
     with connections()() as db:
-        return reprocess(db, (organization_id, project_id, region_code), raw,
-                         browser.manifest(raw), command, auth.subject_id)
+        return reprocess(
+            db,
+            (organization_id, project_id, region_code),
+            raw,
+            browser.manifest(raw),
+            command,
+            auth.subject_id,
+        )
 
 
 @router.get("/{import_id}/mcap-plan-versions", operation_id="listMcapTaskPlanVersions")
-def mcap_plan_versions(project_id: str, region_code: str, import_id: str,
-                       auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
+def mcap_plan_versions(
+    project_id: str,
+    region_code: str,
+    import_id: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+    service: Service,
+):
     from .configuration import connections
+
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
-    raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(organization_id, project_id, region_code, import_id)
+    raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(
+        organization_id, project_id, region_code, import_id
+    )
     with connections()() as db:
         rows = db.execute(
             """SELECT p.document FROM collection_tasks.capture_plans p

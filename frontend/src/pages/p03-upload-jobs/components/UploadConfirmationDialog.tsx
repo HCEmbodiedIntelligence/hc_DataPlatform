@@ -29,7 +29,8 @@ function joined(values: readonly string[]): string {
   return `${values.slice(0, 2).join("、")} 等 ${values.length} 项`;
 }
 
-function OriginalDatasetField(props: {
+export function OriginalDatasetField(props: {
+  readonly disabled?: boolean;
   readonly datasetId: string;
   readonly onChange: (id: string) => void;
 }) {
@@ -45,6 +46,7 @@ function OriginalDatasetField(props: {
       <dd>
         <Select
           aria-label="目标数据集 ID"
+          disabled={props.disabled}
           className={styles.confirmTargetSelect}
           showSearch
           filterOption={false}
@@ -81,7 +83,8 @@ export function UploadConfirmationDialog(props: {
   readonly onCancel: () => void;
   readonly onConfirm: (binding: LeRobotTargetBinding | null) => void;
 }) {
-  const [datasetId, setDatasetId] = useState("");
+  const [taskDatasetId, setTaskDatasetId] = useState("");
+  const [archiveDatasetId, setArchiveDatasetId] = useState("");
   const [collectionTaskId, setCollectionTaskId] = useState("");
   const [robotId, setRobotId] = useState("");
   const needsCapabilities = props.selection.lerobot?.format === "lerobot";
@@ -91,11 +94,13 @@ export function UploadConfirmationDialog(props: {
     props.open && props.canManage && props.online,
   );
   const supportsProcessing =
-    needsCapabilities && capabilities.data?.processing_supported === true;
+    props.selection.lerobot?.format === "mcap" ||
+    (needsCapabilities && capabilities.data?.processing_supported === true);
   const [processingMode, setProcessingMode] = useState<
     "PROCESS" | "STORE_ONLY"
   >("PROCESS");
   const processing = supportsProcessing && processingMode === "PROCESS";
+  const datasetId = processing ? taskDatasetId : archiveDatasetId;
   const targets = selectionTargetFacts(props.selection, props.scope);
   const lerobotBindingValid =
     props.selection.lerobot === null ||
@@ -197,6 +202,9 @@ export function UploadConfirmationDialog(props: {
               { value: "STORE_ONLY", label: "仅存档，稍后处理" },
             ]}
           />
+        ) : null}
+        {processing && props.selection.lerobot?.format === "mcap" ? (
+          <p>上传完成后将自动登记到所选采集任务，并按任务方案准备录制。</p>
         ) : null}
         {props.selection.problems.length > 0 ? (
           <Alert
@@ -305,14 +313,14 @@ export function UploadConfirmationDialog(props: {
                 datasetId={datasetId}
                 collectionTaskId={collectionTaskId}
                 robotId={robotId}
-                onDatasetIdChange={setDatasetId}
+                onDatasetIdChange={setTaskDatasetId}
                 onCollectionTaskIdChange={setCollectionTaskId}
                 onRobotIdChange={setRobotId}
               />
             ) : (
               <OriginalDatasetField
                 datasetId={datasetId}
-                onChange={setDatasetId}
+                onChange={setArchiveDatasetId}
               />
             )
           ) : (

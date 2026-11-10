@@ -153,6 +153,16 @@ class EpisodePreviews:
         ):
             raise PackageConflict("preview source file differs from the committed camera")
         head = self.storage.head(receipt.object_key)
+        if head is None and not receipt.source_reused:
+            from hc_data_platform.storage.local_cache import local_cache_for
+            cache = local_cache_for(self.storage)
+            if cache is not None:
+                with cache.rebuild_lock(receipt.object_key):
+                    if self.storage.head(receipt.object_key) is None:
+                        rebuilt = self._materialize(package, feature, info, camera, source, source_hash)
+                        if rebuilt != receipt:
+                            raise PackageConflict("rebuilt preview differs from its committed receipt")
+                head = self.storage.head(receipt.object_key)
         if head is None or head.size != receipt.file.size:
             raise PackageConflict("ready preview file is missing or changed")
         if verify_bytes:
@@ -392,7 +402,19 @@ class EpisodePreviews:
             raise RuntimeError("Episode preview URL signer is not configured")
         ttl = timedelta(minutes=5)
         now = datetime.now(timezone.utc)
-        url = self.signer(receipt.object_key, expires_in=ttl)
+        preview_key = receipt.object_key
+        from hc_data_platform.storage.local_cache import local_cache_for
+        cache = local_cache_for(self.storage)
+        if cache is not None and receipt.source_reused:
+            # Keep the formal package in OSS; browser playback uses a local cache copy.
+            preview_key = f"{self._prefix(data, feature)}/{receipt.file.sha256}.mp4"
+            with cache.rebuild_lock(preview_key):
+                if self.storage.head(preview_key) is None:
+                    from hc_data_platform.object_storage.immutable import MultipartImmutableWriter
+                    with package.file(receipt.file.path) as path, path.open("rb") as stream:
+                        MultipartImmutableWriter(self.storage).write_immutable(
+                            preview_key, stream, size=receipt.file.size, sha256=receipt.file.sha256)
+        url = self.signer(preview_key, expires_in=ttl)
         # Audit contains immutable identities and expiry, never signed credentials.
         with self.repository.transaction() as cursor:
             cursor.execute(

@@ -50,6 +50,15 @@ const policyAction = z.enum([
   "ARCHIVE",
   "TRANSITION_TO_COLD",
   "CLEAN_REBUILDABLE_CACHE",
+  "CLEAN_PROCESSING_CACHE",
+  "CLEAN_RECORDING_PREVIEWS",
+  "CLEAN_EPISODE_PREVIEWS",
+  "CLEAN_EXPORT_ARCHIVES",
+  "CLEAN_PROCESSING_STAGING",
+  "CLEAN_MEDIA_STAGING",
+  "CLEAN_OSS_TEST_COPIES",
+  "CLEAN_INVENTORY_DETAILS",
+  "CLEAN_INVENTORY_HISTORY",
 ]);
 const policyState = z.enum(["DRAFT", "ENABLED", "PAUSED"]);
 const executionStatus = z.enum([
@@ -91,7 +100,7 @@ export const lifecyclePolicyWireSchema: z.ZodType<LifecyclePolicy> = z
   .strict()
   .superRefine((value, context) => {
     if (
-      value.action === "CLEAN_REBUILDABLE_CACHE" &&
+      value.action.startsWith("CLEAN_") &&
       value.object_role !== "REBUILDABLE_DERIVATIVE"
     ) {
       context.addIssue({

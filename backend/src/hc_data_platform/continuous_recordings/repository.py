@@ -16,13 +16,18 @@ from .models import (
     ContinuousRecording,
     EpisodeSlice,
     RecordingScope,
+    RecordingStatus,
     RecordingSliceRevision,
     SliceRevisionStatus,
 )
+from .quality import enqueue_quality, prepare_quality_retry, quality_request, save_quality_state
 from .retry import prepare_retry, retry_event_id, retry_postgres
 
 
 class ContinuousRecordingRepository(Protocol):
+    def retry_quality(self, scope: RecordingScope, recording_id: str, request_id: str
+                      ) -> ContinuousRecording: ...
+
     def retry_episode(
         self,
         scope: RecordingScope,
@@ -55,6 +60,10 @@ class ContinuousRecordingRepository(Protocol):
         self, scope: RecordingScope, recording_id: str, revision: int
     ) -> RecordingSliceRevision | None: ...
 
+    def reusable_slices(self, recording, storage): ...
+
+    def reuse_slices(self, scope, recording_id, storage, if_match, *, actor_id, request_id): ...
+
     def save_revision(
         self,
         *,
@@ -84,6 +93,21 @@ class ContinuousRecordingRepository(Protocol):
 
 
 class InMemoryContinuousRecordingRepository:
+    def retry_quality(self, scope, recording_id, request_id):
+        with self._lock:
+            key = _recording_key(scope, recording_id)
+            current = self._recordings.get(key)
+            if current is None:
+                raise _not_found()
+            _, requested = quality_request(current, request_id)
+            if requested.event_id in self.outbox_events:
+                return current
+            updated, event = prepare_quality_retry(current, request_id)
+            self._recordings[key] = updated
+            if event:
+                self.outbox_events[event.event_id] = event
+            return updated
+
     def present(self, items: tuple[ContinuousRecording, ...]) -> tuple[ContinuousRecording, ...]:
         return items
 
@@ -149,6 +173,9 @@ class InMemoryContinuousRecordingRepository:
                 return existing
             if upload_owner is not None and upload_owner != recording.recording_id:
                 raise _identity_conflict()
+            if recording.status is RecordingStatus.PENDING_QC:
+                recording, event = quality_request(recording)
+                self.outbox_events[event.event_id] = event
             self._recordings[key] = recording
             self._by_upload[upload_key] = recording.recording_id
             return recording
@@ -184,6 +211,13 @@ class InMemoryContinuousRecordingRepository:
     ) -> RecordingSliceRevision | None:
         with self._lock:
             return self._revisions.get((*_recording_key(scope, recording_id), revision))
+
+    def reusable_slices(self, recording, storage):
+        # Raw processing generations are persisted by the MCAP worker.
+        return None
+
+    def reuse_slices(self, scope, recording_id, storage, if_match, *, actor_id, request_id):
+        return None
 
     def save_revision(
         self,
@@ -262,6 +296,33 @@ class InMemoryContinuousRecordingRepository:
 
 
 class PostgresContinuousRecordingRepository:
+    def retry_quality(self, scope, recording_id, request_id):
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                current = self._get_locked(cursor, scope, recording_id)
+                if current is None:
+                    raise _not_found()
+                _, requested = quality_request(current, request_id)
+                cursor.execute(
+                    """SELECT 1 FROM core.outbox_events WHERE event_id=%s
+                    AND organization_id=%s AND project_id=%s AND region_code=%s""",
+                    (requested.event_id, *_scope_values(scope)),
+                )
+                if cursor.fetchone():
+                    return current
+                updated, event = prepare_quality_retry(current, request_id)
+                if event:
+                    save_quality_state(cursor, updated)
+                    enqueue_quality(cursor, event)
+            connection.commit()
+            return updated
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def present(self, items: tuple[ContinuousRecording, ...]) -> tuple[ContinuousRecording, ...]:
         from .presentation import present_recordings
 
@@ -296,6 +357,9 @@ class PostgresContinuousRecordingRepository:
         self, recording: ContinuousRecording, *, actor_id: str, request_id: str
     ) -> ContinuousRecording:
         connection = self._connection_factory()
+        event = None
+        if recording.status is RecordingStatus.PENDING_QC:
+            recording, event = quality_request(recording)
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -325,6 +389,21 @@ class PostgresContinuousRecordingRepository:
                     raise RuntimeError("PostgreSQL did not return the continuous recording")
                 if existing != recording:
                     raise _identity_conflict()
+                if event:
+                    # Publish the committed upload and its QC request together;
+                    # a fast dispatcher must never observe a half-committed input.
+                    cursor.execute(
+                        """UPDATE ingest.recording_uploads SET status='COMMITTED',
+                        upload_document=upload_document || jsonb_build_object(
+                            'status','COMMITTED','updated_at',%s::timestamptz), updated_at=%s
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                        AND upload_id=%s AND status IN ('READY_TO_COMMIT','COMMITTED')""",
+                        (recording.updated_at, recording.updated_at,
+                         *_scope_values(recording.scope), recording.recording_upload_id),
+                    )
+                    if cursor.rowcount != 1:
+                        raise _identity_conflict()
+                    enqueue_quality(cursor, event)
                 self._append_audit(
                     cursor,
                     recording=recording,
@@ -404,6 +483,31 @@ class PostgresContinuousRecordingRepository:
         finally:
             connection.close()
 
+    def reusable_slices(self, recording, storage):
+        from .slice_reuse import previous_confirmed
+
+        with self._connection_factory() as db, db.cursor() as cursor:
+            return previous_confirmed(cursor, recording, storage)
+
+    def reuse_slices(self, scope, recording_id, storage, if_match, *, actor_id, request_id):
+        from .slice_reuse import finalize_previous
+
+        with self._connection_factory() as db, db.cursor() as cursor:
+            current = self._get_locked(cursor, scope, recording_id)
+            if current is None:
+                raise _not_found()
+            if current.status is RecordingStatus.SLICED:
+                # A repeated click or a racing quality worker already finished this recording.
+                cursor.execute(
+                    """SELECT revision_document FROM ingest.recording_slice_revisions
+                       WHERE (organization_id,project_id,region_code,recording_id,revision)=(%s,%s,%s,%s,%s)""",
+                    (*_scope_values(scope), recording_id, current.finalized_revision),
+                )
+                return current, RecordingSliceRevision.model_validate(cursor.fetchone()[0])
+            if current.etag != if_match:
+                raise _version_conflict(current.etag)
+            return finalize_previous(cursor, current, storage=storage, actor_id=actor_id, request_id=request_id)
+
     def save_revision(
         self,
         *,
@@ -421,61 +525,8 @@ class PostgresContinuousRecordingRepository:
                     raise _not_found()
                 if current.current_revision != expected_version:
                     raise _version_conflict(current.etag)
-                cursor.execute(
-                    """
-                    INSERT INTO ingest.recording_slice_revisions (
-                        organization_id, project_id, region_code, recording_id,
-                        revision, status, revision_document, created_by, created_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
-                    """,
-                    (
-                        *_scope_values(recording.scope),
-                        recording.recording_id,
-                        revision.revision,
-                        revision.status.value,
-                        revision.model_dump_json(),
-                        revision.created_by,
-                        revision.created_at,
-                    ),
-                )
-                for episode in revision.slices:
-                    self._insert_episode(cursor, episode)
-                    if revision.status is SliceRevisionStatus.FINALIZED:
-                        self._insert_episode_processing(cursor, episode, revision.created_at)
-                cursor.execute(
-                    """
-                    UPDATE ingest.continuous_recordings
-                    SET status = %s, current_revision = %s, finalized_revision = %s,
-                        resource_version = %s, recording_document = %s::jsonb,
-                        updated_at = %s
-                    WHERE organization_id = %s AND project_id = %s AND region_code = %s
-                      AND recording_id = %s AND current_revision = %s
-                    """,
-                    (
-                        recording.status.value,
-                        recording.current_revision,
-                        recording.finalized_revision,
-                        recording.current_revision + 1,
-                        recording.model_dump_json(),
-                        recording.updated_at,
-                        *_scope_values(recording.scope),
-                        recording.recording_id,
-                        expected_version,
-                    ),
-                )
-                if cursor.rowcount != 1:
-                    raise _version_conflict(current.etag)
-                self._append_audit(
-                    cursor,
-                    recording=recording,
-                    actor_id=actor_id,
-                    request_id=request_id,
-                    action=(
-                        "continuous_recording.slices_finalized"
-                        if revision.status.value == "FINALIZED"
-                        else "continuous_recording.slice_draft_saved"
-                    ),
-                )
+                self.write_revision(cursor, recording=recording, revision=revision,
+                                    expected_version=expected_version, actor_id=actor_id, request_id=request_id)
             connection.commit()
             return recording
         except Exception:
@@ -483,6 +534,65 @@ class PostgresContinuousRecordingRepository:
             raise
         finally:
             connection.close()
+
+    @classmethod
+    def write_revision(cls, cursor: Any, *, recording: ContinuousRecording, revision: RecordingSliceRevision,
+                       expected_version: int, actor_id: str, request_id: str) -> None:
+        cursor.execute(
+            """
+            INSERT INTO ingest.recording_slice_revisions (
+                organization_id, project_id, region_code, recording_id,
+                revision, status, revision_document, created_by, created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s)
+            """,
+            (
+                *_scope_values(recording.scope),
+                recording.recording_id,
+                revision.revision,
+                revision.status.value,
+                revision.model_dump_json(),
+                revision.created_by,
+                revision.created_at,
+            ),
+        )
+        for episode in revision.slices:
+            cls._insert_episode(cursor, episode)
+            if revision.status is SliceRevisionStatus.FINALIZED:
+                cls._insert_episode_processing(cursor, episode, revision.created_at)
+        cursor.execute(
+            """
+            UPDATE ingest.continuous_recordings
+            SET status = %s, current_revision = %s, finalized_revision = %s,
+                resource_version = %s, recording_document = %s::jsonb,
+                updated_at = %s
+            WHERE organization_id = %s AND project_id = %s AND region_code = %s
+              AND recording_id = %s AND current_revision = %s
+            """,
+            (
+                recording.status.value,
+                recording.current_revision,
+                recording.finalized_revision,
+                recording.current_revision + 1,
+                recording.model_dump_json(),
+                recording.updated_at,
+                *_scope_values(recording.scope),
+                recording.recording_id,
+                expected_version,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise _version_conflict(recording.etag)
+        cls._append_audit(
+            cursor,
+            recording=recording,
+            actor_id=actor_id,
+            request_id=request_id,
+            action=(
+                "continuous_recording.slices_finalized"
+                if revision.status.value == "FINALIZED"
+                else "continuous_recording.slice_draft_saved"
+            ),
+        )
 
     def list_episode_qc(self, scope: RecordingScope, recording_id: str) -> tuple:
         from .asset_models import RecordingEpisodeQc
@@ -786,15 +896,16 @@ class PostgresContinuousRecordingRepository:
         cursor.execute(
             """
             INSERT INTO core.audit_events (
-                audit_id, project_id, region_code, actor_id, action,
+                audit_id, organization_id, project_id, region_code, actor_id, action,
                 resource_type, resource_id, request_id, before_hash,
                 after_hash, details, occurred_at
-            ) VALUES (%s, %s, %s, %s, %s, 'continuous_recording', %s, %s,
+            ) VALUES (%s, %s, %s, %s, %s, %s, 'continuous_recording', %s, %s,
                       NULL, %s, %s::jsonb, %s)
             ON CONFLICT (audit_id) DO NOTHING
             """,
             (
                 audit_id,
+                recording.scope.organization_id,
                 recording.scope.project_id,
                 recording.scope.region_code,
                 actor_id,

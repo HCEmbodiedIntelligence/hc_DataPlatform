@@ -1515,6 +1515,7 @@
     transform 160ms ease;
 }
 
+.packagePicker[data-dragging] .folderPickerLabel,
 .folderPickerLabel:hover {
   border-color: var(--hc-color-primary, #5965d8);
   box-shadow: 0 14px 30px
@@ -1583,21 +1584,17 @@
   }
 }
 
-.alternativeMethods {
+.filePickerAction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   margin-top: 14px;
-  color: var(--hc-color-text-muted, #676b80);
-  font-size: 0.72rem;
 }
 
-.alternativeMethods summary {
-  width: max-content;
-  margin-inline: auto;
-  cursor: pointer;
-  font-weight: 650;
-}
-
-.alternativeMethods .secondaryPicker {
-  margin-top: 12px;
+.filePickerAction > button {
+  min-height: 36px;
 }
 
 .idleQueueHint {

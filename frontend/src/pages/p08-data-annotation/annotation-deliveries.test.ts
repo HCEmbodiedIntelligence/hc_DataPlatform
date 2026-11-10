@@ -7,6 +7,24 @@ import {
 import { deliveryFixture } from "./testing/delivery-fixture";
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
+it("loads historical and current annotation delivery plans together", async () => {
+  const f = deliveryFixture();
+  const legacy = structuredClone(f.job);
+  legacy.job_id = "ad_" + "1".repeat(64);
+  legacy.plan.processor_version = "hc-annotated-delivery-queue/1";
+  vi.mocked(request).mockResolvedValue([f.job, legacy]);
+  await expect(listAnnotationDeliveries(f.scope, f.history)).resolves.toEqual([
+    f.job,
+    legacy,
+  ]);
+});
+it("rejects an unsupported annotation processor version", async () => {
+  const f = deliveryFixture();
+  vi.mocked(request).mockResolvedValue([
+    { ...f.job, plan: { ...f.job.plan, processor_version: "hc-annotated-delivery-queue/99" } },
+  ]);
+  await expect(listAnnotationDeliveries(f.scope, f.history)).rejects.toThrow();
+});
 it.each(["scope", "revision", "data", "ready receipt"])(
   "rejects a mismatched %s",
   async (field) => {

@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import type { PlaybackClock } from './PlaybackClock';
 import { ViewerResourceRegistry } from './runtime/ViewerResourceRegistry';
 import './RobotSceneCore.css';
 
 export interface RobotSceneCoreProps {
+  /** Current authorized assets, scope and frozen scene identity; permits pose-source reuse. */
+  readonly reuseKey?: string;
   modelRef: { modelId: string; modelVersion: string };
   jointMapping: Readonly<Record<string, string>>;
   calibrationRef?: { setId: string; version: string };
@@ -83,10 +85,26 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
   const [reason, setReason] = useState<string>('');
   const [retry, setRetry] = useState(0);
   const [slow, setSlow] = useState(false);
+  const [readyRuntime, setReadyRuntime] = useState<RobotSceneRuntime | null>(null);
+  const latestProps = useRef(p);
+  latestProps.current = p;
+  const defaultIdentity = useMemo(() => ({}),
+    [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible, providedRuntimeLoader]);
+  const runtimeIdentity = p.reuseKey === undefined ? defaultIdentity : JSON.stringify([
+    p.reuseKey, modelRef.modelId, modelRef.modelVersion,
+    Object.entries(jointMapping).sort(([a], [b]) => a.localeCompare(b)), calibrationRef, frameGraphRef,
+  ]);
+
+  useEffect(() => {
+    if (readyRuntime && clock)
+      return clock.subscribe(ns => readyRuntime.applyTime(ns));
+  }, [readyRuntime, clock, jointFrameSource]);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    const { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource,
+      onContextLost, onIncompatible, runtimeLoader: providedRuntimeLoader, reuseKey } = latestProps.current;
     const controller = new AbortController();
     const resources = new ViewerResourceRegistry();
     let recoveryAttempted = false;
@@ -103,7 +121,18 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       return () => { controller.abort(); resources.dispose(); };
     }
 
-    const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible,
+    // A retained model follows the next dataset's source; a late sample from
+    // the previous dataset must never update its pose.
+    const liveFrameSource: RobotJointFrameSource | undefined = reuseKey === undefined ? jointFrameSource : {
+      async sampleAt(ns, signal) {
+        const source = latestProps.current.jointFrameSource;
+        const frame = await source?.sampleAt(ns, signal) ?? {};
+        if (signal.aborted || source !== latestProps.current.jointFrameSource)
+          throw new DOMException('Pose source changed', 'AbortError');
+        return frame;
+      },
+    };
+    const runtimeProps: RobotSceneCoreProps = { modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource: liveFrameSource, onContextLost, onIncompatible,
       onLoadProgress: (loaded, total, bytes, totalBytes) => { if (!controller.signal.aborted) setReason(
         totalBytes ? `模型 ${Math.min(100, Math.round((bytes ?? 0) / totalBytes * 100))}%` : `正在加载模型（${loaded}/${total}）…`
       ); } };
@@ -122,7 +151,7 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
       if (controller.signal.aborted) { runtime.dispose(); return; }
       resources.add(runtime);
       host.replaceChildren(runtime.canvas);
-      if (clock) resources.add(clock.subscribe((ns) => runtime.applyTime(ns)));
+      setReadyRuntime(runtime);
       const contextLost = (event: Event) => {
         event.preventDefault();
         setStatus('context-lost');
@@ -156,9 +185,10 @@ export function RobotSceneCore(p: RobotSceneCoreProps): JSX.Element {
     return () => {
       controller.abort();
       resources.dispose();
+      setReadyRuntime(null);
       host.replaceChildren();
     };
-  }, [modelRef, jointMapping, calibrationRef, frameGraphRef, clock, jointFrameSource, onContextLost, onIncompatible, providedRuntimeLoader, retry]);
+  }, [runtimeIdentity, retry]);
 
   return (
     <section className="robot-scene-core" data-status={status} aria-label="机器人 3D 场景">

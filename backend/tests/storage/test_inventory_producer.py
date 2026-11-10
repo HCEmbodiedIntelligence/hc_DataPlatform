@@ -136,7 +136,9 @@ def reader(*project_ids: str) -> AuthContext:
 
 def producer() -> tuple[StorageInventorySnapshotProducer, StorageGovernanceService]:
     service = StorageGovernanceService(
-        InMemoryStorageRepository(), cursor_secret="inventory-producer-test"
+        InMemoryStorageRepository(),
+        cursor_secret="inventory-producer-test",
+        clock=lambda: OBSERVED_AT,
     )
     return (
         StorageInventorySnapshotProducer(Catalog(), Provider(), service, clock=lambda: OBSERVED_AT),
@@ -238,6 +240,98 @@ def test_postgres_catalog_includes_immutable_published_exports() -> None:
     assert entries[0].object_key == "artifacts/exports/project-inventory/dataset-1/artifact.zip"
     assert entries[0].business_category is BusinessCapacityCategory.ANNOTATION_COMPLETE
     assert entries[0].object_role is ObjectRole.REBUILDABLE_DERIVATIVE
+
+
+def test_package_catalog_counts_shared_raw_and_preview_objects_once() -> None:
+    class PackageCursor(CatalogCursor):
+        def execute(self, query: str, parameters: tuple[str, ...]) -> None:
+            assert parameters == ("project-inventory",)
+            if "WITH selected_project" not in query:
+                self._rows = ()
+                return
+            self._rows = tuple(
+                {
+                    "identity": identity,
+                    "object_key": key,
+                    "expected_bytes": size,
+                    "business_category": category,
+                    "object_role": role,
+                    "observed_at": OBSERVED_AT,
+                    "prefix": prefix,
+                    "priority": priority,
+                }
+                for identity, key, size, category, role, prefix, priority in (
+                    ("raw-source:one", "raw/source/", None, "RAW", "RAW", True, 65),
+                    (
+                        "raw-manifest:one",
+                        "raw/source/manifest.json",
+                        None,
+                        "RAW",
+                        "MANIFEST",
+                        False,
+                        66,
+                    ),
+                    ("recording-asset:one", "raw/source/video.mp4", 100, "RAW", "RAW", False, 60),
+                    (
+                        "episode:one",
+                        "episodes/one/",
+                        None,
+                        "ANNOTATION_COMPLETE",
+                        "REBUILDABLE_DERIVATIVE",
+                        True,
+                        75,
+                    ),
+                    (
+                        "preview:one",
+                        "episodes/one/video.mp4",
+                        40,
+                        "ANNOTATION_COMPLETE",
+                        "REBUILDABLE_DERIVATIVE",
+                        False,
+                        74,
+                    ),
+                    (
+                        "delivery:one",
+                        "exports/one.zip",
+                        80,
+                        "ANNOTATION_COMPLETE",
+                        "REBUILDABLE_DERIVATIVE",
+                        False,
+                        80,
+                    ),
+                )
+            )
+
+    class PackageConnection(CatalogConnection):
+        def __init__(self) -> None:
+            self.catalog_cursor = PackageCursor()
+
+    class PackageProvider(Provider):
+        objects = {
+            key: ProviderInventoryObject(key, size, OBSERVED_AT)
+            for key, size in (
+                ("raw/source/manifest.json", 10),
+                ("raw/source/video.mp4", 100),
+                ("episodes/one/video.mp4", 40),
+                ("episodes/one/hc/manifest.json", 5),
+                ("exports/one.zip", 80),
+                ("raw/other-project/video.mp4", 999),
+            )
+        }
+
+    catalog = PostgresStorageInventoryCatalog(
+        PackageConnection, object_store_bucket="inventory-bucket", artifact_prefix="artifacts"
+    )
+    service = StorageGovernanceService.in_memory()
+    target = StorageInventorySnapshotProducer(
+        catalog, PackageProvider(), service, clock=lambda: OBSERVED_AT
+    )
+    result = target.run(project_id="project-inventory")
+    assert result.physical_total_bytes == "235"
+    assert result.physical_instance_count == 5
+    assert result.categories[0].candidate_bytes == "110"
+    assert result.categories[1].candidate_bytes == "125"
+    assert target.run(project_id="project-inventory") == result
 
 
 def test_postgres_catalog_counts_committed_aligned_media_exact_receipts() -> None:

@@ -34,6 +34,11 @@ export interface RecordingSensorWindowQuery {
 }
 
 export interface RecordingGateway {
+  retryQuality?(
+    scope: RecordingScope,
+    recordingId: string,
+    requestId: string,
+  ): Promise<ContinuousRecordingEnvelope>;
   list(
     scope: RecordingScope,
     signal?: AbortSignal,
@@ -78,6 +83,13 @@ function root(scope: RecordingScope): string {
 }
 
 export const recordingGateway: RecordingGateway = {
+  retryQuality: (scope, recordingId, requestId) =>
+    request<ContinuousRecordingEnvelope>({
+      method: "POST",
+      path: `${root(scope)}/${encodeURIComponent(recordingId)}/quality:retry`,
+      scope,
+      body: { request_id: requestId },
+    }),
   list: (scope, signal) =>
     request<ContinuousRecordingPage>({
       method: "GET",

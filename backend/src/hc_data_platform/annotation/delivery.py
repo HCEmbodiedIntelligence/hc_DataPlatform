@@ -14,6 +14,7 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.episode_store.annotated_delivery import (
     write_annotated_delivery,
 )
+from hc_data_platform.episode_store.download_names import episode_download_name
 from hc_data_platform.episode_store.errors import PackageConflict
 from hc_data_platform.episode_store.models import canonical, digest
 from hc_data_platform.ingest.models import CompletedPart
@@ -146,7 +147,12 @@ class AnnotationDeliveryService:
         url = self.storage.presign_read(
             row["artifact_key"],
             300,
-            download_name=f"episode-{plan.binding.data.data_version_id}-r{plan.binding.revision}-{plan.review.status.lower()}.zip",
+            download_name=episode_download_name(
+                self.packages.repository,
+                (plan.binding.data,),
+                exported_at=row["updated_at"],
+                variant=f"LeRobot_r{plan.binding.revision}_{plan.review.status.lower()}",
+            ),
         )
         self.repository.audit_delivery_download(row, auth.subject_id)
         return AnnotationDeliveryDownload(

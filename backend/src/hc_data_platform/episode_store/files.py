@@ -29,6 +29,9 @@ class VerifiedFileCache:
         directory.mkdir(parents=True, exist_ok=True)
         self._temporary = tempfile.TemporaryDirectory(prefix="episode-reader-", dir=directory)
         self.root = Path(self._temporary.name)
+        from hc_data_platform.storage.staging_lease import staging_lease
+        self._staging_lease = staging_lease(self.root)
+        self._staging_lease.__enter__()
         self.capacity, self.max_object = capacity_bytes, max_object_bytes
         self.entries = OrderedDict()
         self.total = 0
@@ -41,6 +44,7 @@ class VerifiedFileCache:
             self.entries.clear()
             self.total = 0
             self._temporary.cleanup()
+            self._staging_lease.__exit__(None, None, None)
 
     @contextmanager
     def file(self, storage, key: str, entry: FileEntry):

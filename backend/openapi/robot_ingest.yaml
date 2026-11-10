@@ -460,6 +460,10 @@ components:
         status:
           enum:
           - REGISTERING
+          - PENDING_QC
+          - QC_RUNNING
+          - QC_FAILED
+          - QC_ERROR
           - AWAITING_SLICE
           - SLICED
           - FAILED

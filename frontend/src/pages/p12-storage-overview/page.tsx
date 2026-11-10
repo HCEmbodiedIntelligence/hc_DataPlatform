@@ -23,6 +23,7 @@ import {
 import { ManagedStorageObjectsPanel } from "./components/ManagedStorageObjectsPanel";
 import { CapacityInventoryPanel } from "./components/CapacityInventoryPanel";
 import styles from "./styles.module.css";
+import { TaskStoragePage } from "./TaskStoragePage";
 
 type BusinessCapacityCategory =
   components["schemas"]["BusinessCapacityCategory"];
@@ -662,6 +663,9 @@ export function CapacityPane() {
     return { from: start.toISOString(), to: end.toISOString() };
   }, [trendAnchor, trendDays]);
   const capacity = useCapacitySnapshot(scope, canRead);
+  useEffect(() => {
+    if (capacity.data?.snapshot_id) setTrendAnchor(new Date().toISOString());
+  }, [capacity.data?.snapshot_id]);
   const history = useCapacityHistory(scope, trendWindow, canRead);
   const portfolio = useCapacityPortfolio(
     scope,
@@ -757,6 +761,7 @@ export function CapacityPane() {
             onClick={() => {
               setTrendAnchor(new Date().toISOString());
               void capacity.refetch();
+              void portfolio.refetch();
             }}
           />
         </div>
@@ -773,11 +778,7 @@ export function CapacityPane() {
 }
 
 export function StorageOverviewPage() {
-  return (
-    <div className={styles.page} data-page-id="P12">
-      <CapacityPane />
-    </div>
-  );
+  return <TaskStoragePage />;
 }
 
 export const Component = StorageOverviewPage;

@@ -13,6 +13,8 @@ import { RobotResolutionActions } from "./RobotResolutionActions";
 const labels: Record<DeletionKind, string> = {
   raw: "原始数据",
   upload: "上传记录",
+  collection_job: "采集作业文件",
+  recording_upload: "连续采集文件",
   configuration: "已发布采集配置",
   component: "拓扑组件",
   calibration: "标定记录",

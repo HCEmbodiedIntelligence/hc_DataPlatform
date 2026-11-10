@@ -13,6 +13,9 @@ export const labels: Record<Kind, string> = {
   action_from_state: "动作跟随状态",
   fill_position: "缺失位置补值",
   generate_action: "缺少动作话题时生成动作",
+  fill_initial_action: "首条动作前用关节状态补齐",
+  fill_action_from_next_frame: "缺动作时取下一训练帧的关节状态",
+  forward_fill_hands: "手部空值沿用上一条指令",
 };
 const examples = {
   zero_joints: zeroExample,
@@ -23,6 +26,9 @@ const examples = {
     max_state_delta_ms: 20,
   },
   generate_action: { source: "state" },
+  fill_initial_action: {},
+  fill_action_from_next_frame: {},
+  forward_fill_hands: {},
 };
 export const kinds = Object.keys(labels) as Kind[];
 function pretty(v: object) {
@@ -152,6 +158,11 @@ export function parseRow(row: RuleRow, cfg: McapConfig): ProcessingOperation {
       op.kind !== "zero_joints" &&
       group.find((n) => !allowed.includes(n));
     if (unknown) throw new Error("当前方案没有动作轴：" + unknown);
+  }
+  if (op.enabled && op.kind === "forward_fill_hands") {
+    if (!["action.hand.left", "action.hand.right"].some((key) => cfg.numeric_sources?.[key]))
+      throw new Error("请先在 MCAP 来源中映射左手或右手指令。");
+    return op;
   }
   if (op.enabled) {
     if (!axes(cfg, "action").length || !axes(cfg, "state").length)

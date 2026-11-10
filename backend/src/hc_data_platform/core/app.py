@@ -1408,6 +1408,8 @@ def create_app(
             app.include_router(onboarding_router)
             from hc_data_platform.robot_ingest.connection_api import router as connection_router
             app.include_router(connection_router)
+    from hc_data_platform.storage.local_cache_http import router as local_cache_router
+    app.include_router(local_cache_router)
     original_openapi = app.openapi
 
     def normalized_openapi() -> dict[str, Any]:

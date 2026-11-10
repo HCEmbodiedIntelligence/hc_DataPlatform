@@ -8,6 +8,7 @@ import logging
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from hc_data_platform.core.context import (
@@ -48,6 +49,35 @@ class StorageInventoryRuntime:
     producer: StorageInventorySnapshotProducer
     scopes: tuple[str, ...]
     interval_seconds: float
+    scope_provider: Callable[[], tuple[str, ...]] | None = None
+    cache_retention: Callable[[str], None] | None = None
+    inventory_retention: Callable[[str], object] | None = None
+
+
+def local_inventory_scopes(postgres_dsn: str) -> tuple[str, ...]:
+    """Discover persisted storage scopes only for the explicit local profile."""
+    import psycopg
+
+    from hc_data_platform.core.dbapi import normalize_postgres_dsn
+
+    with psycopg.connect(normalize_postgres_dsn(postgres_dsn)) as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT s.organization_id, s.project_id, s.region_code
+            FROM (
+                SELECT organization_id, project_id, region_code FROM dataset_registry.datasets
+                UNION
+                SELECT organization_id, project_id, region_code FROM ingest.raw_sources
+                UNION
+                SELECT organization_id, project_id, region_code FROM ingest.rollout_objects
+                UNION
+                SELECT organization_id, project_id, 'global' FROM storage.managed_objects
+            ) s JOIN registry.organization_projects p USING (organization_id, project_id)
+            WHERE s.region_code IS NOT NULL
+            ORDER BY 1, 2, 3
+            """
+        ).fetchall()
+    return tuple("/".join(str(part) for part in row) for row in rows)
 
 
 def parse_inventory_scope(value: str) -> InventoryScope:
@@ -62,6 +92,8 @@ def run_inventory_cycle(
     *,
     scopes: tuple[str, ...],
     strict: bool = False,
+    cache_retention: Callable[[str], None] | None = None,
+    inventory_retention: Callable[[str], object] | None = None,
 ) -> tuple[CapacitySnapshot, ...]:
     """Run one exact-scope cycle; deterministic snapshot IDs make retries idempotent."""
 
@@ -78,8 +110,12 @@ def run_inventory_cycle(
             )
         )
         try:
+            if cache_retention is not None:
+                cache_retention(raw_scope)
             snapshot = producer.run(project_id=scope.project_id)
             published.append(snapshot)
+            if inventory_retention is not None:
+                inventory_retention(raw_scope)
             logger.info(
                 "storage inventory snapshot published",
                 extra={
@@ -124,6 +160,17 @@ async def serve_inventory(
     if task_lease_repository is not None:
         if owner_instance_id is None:
             raise ValueError("owner_instance_id is required with a platform task lease repository")
+        if runtime.scope_provider is not None:
+            await _serve_discovered_scopes(
+                runtime,
+                interval_seconds_provider=interval_seconds_provider,
+                maintenance_gate=maintenance_gate,
+                environment_id=environment_id,
+                writer_id=writer_id,
+                task_lease_repository=task_lease_repository,
+                owner_instance_id=owner_instance_id,
+            )
+            return
         await asyncio.gather(
             *(
                 _serve_singleton_scope(
@@ -143,6 +190,11 @@ async def serve_inventory(
 
     while True:
         try:
+            discovered = (
+                await asyncio.to_thread(runtime.scope_provider)
+                if runtime.scope_provider is not None
+                else ()
+            )
             with writer_permit_scope(
                 maintenance_gate,
                 environment_id=environment_id,
@@ -152,7 +204,9 @@ async def serve_inventory(
                 await asyncio.to_thread(
                     run_inventory_cycle,
                     runtime.producer,
-                    scopes=runtime.scopes,
+                    scopes=tuple(dict.fromkeys((*runtime.scopes, *discovered))),
+                    cache_retention=runtime.cache_retention,
+                    inventory_retention=runtime.inventory_retention,
                 )
         except MaintenanceContractError as exc:
             if exc.code != "PLATFORM_MAINTENANCE":
@@ -165,6 +219,37 @@ async def serve_inventory(
         if next_interval <= 0:
             raise ValueError("storage inventory interval must be positive")
         await asyncio.sleep(next_interval)
+
+
+async def _serve_discovered_scopes(
+    runtime: StorageInventoryRuntime,
+    **kwargs: Any,
+) -> None:
+    """Keep one leased scanner per discovered scope, including newly created projects."""
+    tasks: dict[str, asyncio.Task[None]] = {}
+    assert runtime.scope_provider is not None
+    try:
+        while True:
+            discovered = await asyncio.to_thread(runtime.scope_provider)
+            scopes = set((*runtime.scopes, *discovered))
+            for raw_scope in scopes:
+                parse_inventory_scope(raw_scope)
+                if raw_scope not in tasks:
+                    tasks[raw_scope] = asyncio.create_task(
+                        _serve_singleton_scope(runtime, raw_scope=raw_scope, **kwargs)
+                    )
+            for raw_scope in set(tasks) - scopes:
+                task = tasks.pop(raw_scope)
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            for task in tasks.values():
+                if task.done():
+                    task.result()
+            await asyncio.sleep(30)
+    finally:
+        for task in tasks.values():
+            task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
 
 
 def _inventory_task_id(raw_scope: str) -> str:
@@ -239,6 +324,8 @@ async def _serve_singleton_scope(
                         run_inventory_cycle,
                         runtime.producer,
                         scopes=(raw_scope,),
+                        cache_retention=runtime.cache_retention,
+                        inventory_retention=runtime.inventory_retention,
                     )
                 delay = asyncio.create_task(asyncio.sleep(next_interval))
                 done, _pending = await asyncio.wait(

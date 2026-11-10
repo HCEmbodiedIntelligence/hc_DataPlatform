@@ -6,6 +6,8 @@ import { useScopedQuery } from "../../../shared/api/use-scoped-query";
 const kindSchema = z.enum([
   "raw",
   "upload",
+  "collection_job",
+  "recording_upload",
   "configuration",
   "component",
   "calibration",

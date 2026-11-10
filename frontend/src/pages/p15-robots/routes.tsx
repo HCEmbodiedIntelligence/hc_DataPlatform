@@ -6,7 +6,8 @@ import {
 export const routes: PageRoute[] = [
   {
     path: "/settings/robots",
-    requiredCapabilities: ["robot.read"],
+    // The destination enforces model or instance read access.
+    requiredCapabilities: [],
     navigationOwnerPageId: "P14",
     lazy: () => import("./page"),
   },

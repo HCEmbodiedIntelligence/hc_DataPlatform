@@ -1,5 +1,16 @@
 """Processing configuration, structure and corruption are distinct actionable failures."""
 
+MCAP_ASSET_CONFLICT = "MCAP_RECORDING_ASSET_CONFLICT"
+
+
+def recording_preparation_error(error: str | None) -> str | None:
+    # Legacy workers persisted the database exception instead of a domain code.
+    constraint = 'duplicate key value violates unique constraint "recording_upload_assets_object_key_key"'
+    if error and constraint in error:
+        return MCAP_ASSET_CONFLICT
+    return error
+
+
 PROCESSING_ERRORS = {
     "CAPTURE_PLAN_REQUIRED": "任务采集方案待配置",
     "CAPTURE_VERSION_MISMATCH": "采集方案版本不匹配",

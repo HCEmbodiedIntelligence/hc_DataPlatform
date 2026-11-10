@@ -226,7 +226,7 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
             processor_version=processor,
         )
         compact = processor is None
-        assert manifest["total_frames"] == (7 if compact else 8)
+        assert manifest["total_frames"] == ((6 if segment_ids else 7) if compact else 8)
         trace = pq.read_table(output / "hc/collection_frames.parquet").to_pylist()
         assert [row["index"] for row in trace] == list(range(manifest["total_frames"]))
         for member in manifest["members"]:
@@ -236,15 +236,15 @@ def test_annotation_collection_keeps_full_tags_and_global_subtasks(
                     output / member["attachments_root"] / "hc/annotation.json"
                 ).read_bytes() == annotation.content
                 assert table["subtask_index"].to_pylist() == (
-                    ([0, 0, -1] if compact else [0, 0, -1, -1])
+                    ([0, 0] if compact else [0, 0, -1, -1])
                     if segment_ids else [-1] * (3 if compact else 4)
                 )
                 assert table["hc.annotation.excluded"].to_pylist() == (
-                    [False] * 3 if compact else [False, False, True, False]
+                    [False] * (2 if segment_ids else 3) if compact else [False, False, True, False]
                 )
                 assert [row["parent_frame_index"] for row in trace
                         if row["episode_index"] == member["episode_index"]] == (
-                    [0, 1, 3] if compact else [0, 1, 2, 3]
+                    ([0, 1] if segment_ids else [0, 1, 3]) if compact else [0, 1, 2, 3]
                 )
                 import av
                 for media in member["media"].values():
@@ -417,8 +417,5 @@ def test_two_selected_revisions_rebase_segment_ids_across_episode_boundary(
         assert [s["subtask_index"] for s in segments] == [0, 1]
         for i, member in enumerate(manifest["members"]):
             indices = pq.read_table(output / member["data_path"])["subtask_index"].to_pylist()
-            if member["data"]["data_version_id"] == first.receipt.data.data_version_id:
-                assert indices == [i, i, -1]
-            else:
-                assert indices == [-1, i, i, -1]
+            assert indices == [i, i]
             assert segments[i]["episode_index"] == i and segments[i]["source_subtask_index"] == 0

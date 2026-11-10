@@ -419,7 +419,48 @@ def test_data_cleanup_resumes_after_storage_failure_and_allows_instance_deletion
                 published_models=published_model_for_binding,
             )
         )
+        raw_key = f"raw/{org}/fixture/sample.mcap"
+        unrelated_key = f"raw/{org}/other/sample.mcap"
+        for object_key in (raw_key, unrelated_key):
+            storage._client.put_object(Bucket=storage._bucket, Key=object_key, Body=b"test capture")
+        with repo.connections() as db:
+            db.execute(
+                """INSERT INTO ingest.data_sources VALUES(
+                %s,%s,%s,'src','Test','ROBOT','MCAP','ENABLED','UNKNOWN','MISSING',1,
+                %s::jsonb,now(),now())""",
+                (
+                    org,
+                    project,
+                    region,
+                    json.dumps(
+                        {
+                            "id": "src",
+                            "source_type": "ROBOT",
+                            "administrative_state": "ENABLED",
+                            "binding": {"kind": "ROBOT", "robot_id": rid},
+                            "configuration": {"kind": "ROBOT"},
+                        }
+                    ),
+                ),
+            )
         auth = manager(actor(org, project, region))
+        auth = replace(
+            auth,
+            organization_scoped_capabilities=auth.organization_scoped_capabilities
+            | {(org, project, "ingest_source.read"), (org, project, "ingest_source.manage")},
+        )
+
+        def delete_source():
+            current = resolution.plan(org, rid, auth)
+            cmd = RobotResolutionCommand(
+                action="DELETE_SOURCE",
+                revision=current.revision,
+                source=dict(project_id=project, region_code=region, source_id="src"),
+            )
+            return resolution.execute(org, rid, auth, cmd, uuid4().hex)
+
+        with pytest.raises(ProblemException, match="ROBOT_FILES_REMAIN"):
+            delete_source()
         plan = resolution.plan(org, rid, auth)
         assert len(plan.tasks) == 1 and plan.tasks[0].can_delete
         key = uuid4().hex
@@ -444,9 +485,136 @@ def test_data_cleanup_resumes_after_storage_failure_and_allows_instance_deletion
         assert retry.tasks[0].retry_key == key
         assert not assets.deletion_check(auth=auth, organization_id=org, robot_id=rid).can_delete
         assert storage.head(receipt.data.package_prefix + "/meta/info.json")
+        with pytest.raises(ProblemException, match="ROBOT_FILES_PENDING"):
+            delete_source()
+        assert storage.head(raw_key)
         objects.broken = False
         result = resolution.execute(org, rid, auth, command, key)
         assert resolution.execute(org, rid, auth, command, key) == result
         assert storage.head(receipt.data.package_prefix + "/meta/info.json") is None
+        assert storage.head(raw_key) is None
+        assert storage.head(unrelated_key)
         assert not resolution.plan(org, rid, auth).tasks
+        delete_source()
         assets.delete_robot(auth=auth, organization_id=org, robot_id=rid, request_id="done")
+
+
+def test_delete_source_without_transfer(robot):  # noqa: F811
+    import psycopg
+
+    from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
+
+    dsn, org, rid, repo = robot
+    resolution = PostgresRobotResolution(lambda: psycopg.connect(dsn))
+    service = OrganizationRobotAssetService(repo)
+    reader = actor(org, "p", "region")
+    reader = replace(
+        reader,
+        organization_scoped_capabilities=reader.organization_scoped_capabilities
+        | {(org, "p", "ingest_source.read")},
+    )
+    auth = replace(
+        reader,
+        organization_scoped_capabilities=reader.organization_scoped_capabilities
+        | {(org, "p", "ingest_source.manage")},
+    )
+    with psycopg.connect(dsn) as db:
+        for region, owner in (("region", rid), ("elsewhere", target(db, org))):
+            document = dict(
+                id="src",
+                source_type="ROBOT",
+                administrative_state="ENABLED",
+                binding=dict(kind="ROBOT", robot_id=owner),
+                configuration=dict(kind="ROBOT"),
+            )
+            db.execute(
+                """INSERT INTO ingest.data_sources VALUES(
+                %s,'p',%s,'src','Source','ROBOT','MCAP','ENABLED','UNKNOWN','CONFIGURED',1,
+                %s::jsonb,now(),now())""",
+                (org, region, json.dumps(document)),
+            )
+        db.execute(
+            """INSERT INTO ingest.data_source_credentials VALUES
+                   (%s,'p','region','src',1,'TOKEN','test',now())""",
+            (org,),
+        )
+        db.execute(
+            """INSERT INTO ingest.data_source_connection_test_jobs VALUES
+                   (%s,'p','region','job','src','RUNNING',1,
+                   '{"connection_test":{"id":"job"},"async_job":{"job_id":"job"}}',now(),now())""",
+            (org,),
+        )
+    args = dict(organization_id=org, robot_id=rid, auth=auth)
+    assert not service.deletion_check(**args).can_delete
+    plan = resolution.plan(org, rid, auth)
+    assert [s.source_id for s in plan.sources if s.can_delete] == ["src"]
+    command = RobotResolutionCommand(
+        action="DELETE_SOURCE",
+        revision=plan.revision,
+        source=dict(project_id="p", region_code="region", source_id="src"),
+    )
+    key = uuid4().hex
+    for operator, cmd, error in (
+        (reader, command, "ROBOT_SOURCE_DELETE_DENIED"),
+        (auth, command.model_copy(update={"revision": "outdated"}), "ROBOT_RESOLUTION_STALE"),
+        (auth, command, "ROBOT_SOURCE_IN_USE"),
+    ):
+        with pytest.raises(ProblemException, match=error):
+            resolution.execute(org, rid, operator, cmd, key)
+    with psycopg.connect(dsn) as db:
+        db.execute(
+            """UPDATE ingest.data_source_connection_test_jobs SET status='SUCCEEDED'
+                   WHERE organization_id=%s AND job_id='job'""",
+            (org,),
+        )
+    result = resolution.execute(org, rid, auth, command, key)
+    assert resolution.execute(org, rid, auth, command, key) == result
+    assert service.deletion_check(**args).can_delete
+    service.delete_robot(**args, request_id="remove-after-source")
+    with psycopg.connect(dsn) as db:
+        assert db.execute(
+            "SELECT region_code FROM ingest.data_sources WHERE organization_id=%s", (org,)
+        ).fetchall() == [("elsewhere",)]
+        for table in ("data_source_credentials", "data_source_connection_test_jobs"):
+            assert not db.execute(
+                f"SELECT 1 FROM ingest.{table} WHERE organization_id=%s", (org,)
+            ).fetchone()
+
+
+def test_uncommitted_recording_upload_blocks_robot_and_foreign_file_cleanup(robot):  # noqa: F811
+    import psycopg
+
+    from hc_data_platform.collection_tasks.deletion import verify_robot_files
+    from hc_data_platform.collection_tasks.deletion_plan import DeletionPlan
+    from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
+
+    dsn, org, rid, repo = robot
+    scope = (org, "p", "region")
+    auth = actor(*scope)
+    key = uuid4()
+    with psycopg.connect(dsn) as db:
+        db.execute(
+            """INSERT INTO ingest.recording_uploads VALUES
+            (%s,%s,%s,%s,'recording',%s,'UPLOADING',%s::jsonb,'test',now(),now())""",
+            (
+                *scope,
+                key,
+                "a" * 64,
+                json.dumps({"command": {"robot_id": rid, "collection_task_id": "task"}}),
+            ),
+        )
+    service = OrganizationRobotAssetService(repo)
+    report = service.deletion_check(auth=auth, organization_id=org, robot_id=rid)
+    assert not report.can_delete
+    assert [(r.kind, r.id, r.collection_task_id) for r in report.items] == [
+        ("recording_upload", str(key), "task"),
+    ]
+    with pytest.raises(ProblemException, match="ROBOT_IN_USE"):
+        service.delete_robot(auth=auth, organization_id=org, robot_id=rid, request_id="pending")
+    plan = DeletionPlan()
+    plan.rows["ingest.recording_uploads"].append({"upload_id": str(key), "status": "UPLOADING"})
+    with psycopg.connect(dsn) as db:
+        with pytest.raises(ProblemException, match="ROBOT_FILES_SHARED"):
+            verify_robot_files(db.cursor(), plan, scope, "another-instance")
+        with pytest.raises(ProblemException, match="ROBOT_FILES_BUSY"):
+            verify_robot_files(db.cursor(), plan, scope, rid)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -400,6 +400,7 @@ class SaveDraftRequest(BaseModel):
     expected_revision: int = Field(ge=0)
     client_mutation_id: str = Field(min_length=1, max_length=256)
     tags: tuple[AnnotationTag, ...] | None = None
+    episode_outcome: Literal["success", "fail"] | None = None
     operations: tuple[AnnotationOperation, ...]
 
 
@@ -725,6 +726,7 @@ def save_annotation_draft(
         auth,
         command.operations,
         tags=command.tags,
+        episode_outcome=command.episode_outcome,
         expected_revision=command.expected_revision,
         if_match=if_match,
         client_mutation_id=command.client_mutation_id,

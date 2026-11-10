@@ -9,7 +9,7 @@ from hc_data_platform.core.events import DomainEventEnvelope
 
 from .delivery_errors import failure as failure
 from .delivery_models import EpisodeDeliveryJob
-from .models import canonical, digest
+from .models import DataVersionRef, canonical, digest
 from .postgres import PostgresEpisodeStore
 
 SCOPE = "organization_id=%s AND project_id=%s AND region_code=%s"
@@ -41,6 +41,17 @@ def public_job(row):
 
 
 class PostgresEpisodeDeliveries(PostgresEpisodeStore):
+    def approved_data_versions(self, dataset_id):
+        with self.transaction() as cursor:
+            cursor.execute(
+                f"""SELECT DISTINCT data_ref FROM annotation.annotation_tasks
+                WHERE {SCOPE} AND dataset_id=%s AND status='APPROVED'
+                  AND approved_revision=current_revision AND approved_review_id IS NOT NULL
+                  AND data_ref IS NOT NULL""",
+                (*scope_key(), dataset_id),
+            )
+            return tuple(DataVersionRef.model_validate(row[0]) for row in cursor.fetchall())
+
     @staticmethod
     def _get(cursor, job_id, *, lock=False):
         cursor.execute(

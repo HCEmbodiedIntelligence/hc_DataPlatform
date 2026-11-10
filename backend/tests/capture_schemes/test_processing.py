@@ -201,3 +201,15 @@ def test_source_validity_uses_frozen_feature_names_not_positional_assumptions(va
     values = {"observation.source_valid": flags, "observation.source_available": [1] * len(flags)}
     assert not any(feature_mask("action", output, values))
     assert all(feature_mask("observation.state", output, values))
+
+def test_implicit_hand_validity_uses_value_presence_without_overriding_source_masks():
+    from hc_data_platform.episode_store.capture_validity import feature_mask
+
+    hand = "action.hand.left"
+    contract = {"features": {hand: {"role": "numeric", "shape": [1]}}}
+    assert feature_mask(hand, contract, {hand: [None]}) == (False,)
+    assert feature_mask(hand, contract, {hand: [0]}) == (True,)
+    assert feature_mask(hand, contract, {hand: [1]}, default=False) == (False,)
+    # An explicit source claim must reach the writer unchanged so it can reject a contradiction.
+    contract["features"]["mask"] = {"role": "validity", "names": [hand]}
+    assert feature_mask(hand, contract, {hand: [None], "mask": [True]}) == (True,)

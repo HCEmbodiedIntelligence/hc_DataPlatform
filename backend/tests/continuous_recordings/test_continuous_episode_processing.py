@@ -309,6 +309,12 @@ def test_real_qc_rejects_video_time_base_mismatch(tmp_path: Path) -> None:
     assert result.inspected_sensor_message_count == 30
     assert processor.report is not None
     assert processor.report["status"] == "REJECT"
+    processor.report = None
+    recording_report = processor.inspect_quality(request, recording_quality=True)
+    assert recording_report["schema_version"] == "continuous-recording-qc/v1"
+    assert recording_report["status"] == "REJECT"
+    assert recording_report["finding_codes"] == ["VIDEO_TIME_BASE_MISMATCH"]
+    assert processor.report is None  # Whole-recording QC never writes an Episode report.
 
 
 def test_upload_contract_rejects_a_missing_configured_camera() -> None:
@@ -438,3 +444,27 @@ def test_dataset_version_reservation_blocks_a_sibling_episode() -> None:
     assert not any(
         statement.startswith("INSERT") for statement in connection.cursor_instance.statements
     )
+
+
+@pytest.mark.parametrize("planned,expected_error", [
+    ("dv_" + "2" * 64, "differs from the committed Episode"),
+    ("dv_" + "1" * 64, "committed Episode for this retry is missing"),
+])
+def test_pinned_registration_retry_cannot_create_a_new_package(planned, expected_error):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from hc_data_platform.continuous_recordings.processing import (
+        ContinuousEpisodeProcessingError, ContinuousEpisodeProcessingService,
+    )
+
+    packages = Mock()
+    packages.recover_bundle.return_value = None
+    service = SimpleNamespace(_episode_packages=packages)
+    request = SimpleNamespace(resume_data_version_id="dv_" + "1" * 64)
+    plan = SimpleNamespace(
+        input=SimpleNamespace(data_version_id=planned), validate_recording_bundle=Mock()
+    )
+    with pytest.raises(ContinuousEpisodeProcessingError, match=expected_error):
+        ContinuousEpisodeProcessingService._commit_package(service, request, None, None, None, plan)
+    packages.write_and_publish.assert_not_called()

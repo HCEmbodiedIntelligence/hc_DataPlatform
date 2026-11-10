@@ -15,6 +15,8 @@ function queryError(error: unknown, fallback: string): string {
 
 export function ProcessingTargetFields(props: {
   readonly scope: IngestScope;
+  readonly sourceKind?: "oss" | "oss-archive";
+  readonly disabled?: boolean;
   readonly datasetId: string;
   readonly fixedDatasetId?: string;
   readonly collectionTaskId: string;
@@ -82,7 +84,7 @@ export function ProcessingTargetFields(props: {
           <Select<string>
             aria-label="采集任务 ID"
             className={styles.confirmTargetSelect}
-            disabled={tasks.isError}
+            disabled={props.disabled || tasks.isError}
             loading={tasks.isPending}
             showSearch
             optionFilterProp="label"
@@ -132,7 +134,7 @@ export function ProcessingTargetFields(props: {
           <Select<string>
             aria-label="目标机器人 ID"
             className={styles.confirmTargetSelect}
-            disabled={robotSources.isError}
+            disabled={props.disabled || robotSources.isError}
             loading={robotSources.isPending}
             showSearch
             optionFilterProp="label"
@@ -169,7 +171,13 @@ export function ProcessingTargetFields(props: {
       </div>
       <div>
         <dt>Raw 写入方式</dt>
-        <dd>按原目录逐对象上传；不转 MCAP，不打 ZIP/TAR</dd>
+        <dd>
+          {props.sourceKind === "oss-archive"
+            ? "服务器解压 ZIP，按原目录保存并关联采集任务"
+            : props.sourceKind === "oss"
+              ? "引用已有 OSS 原始文件，无需重新上传"
+              : "按原目录逐对象上传；不转 MCAP，不打 ZIP/TAR"}
+        </dd>
       </div>
     </>
   );

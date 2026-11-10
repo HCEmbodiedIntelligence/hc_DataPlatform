@@ -136,6 +136,7 @@ def selected_content(snapshot, revision_number):
                 tag_schema_id=revised.tag_schema_id,
                 tag_schema_version=revised.tag_schema_version,
                 tags=revised.tags,
+                episode_outcome=revised.episode_outcome,
                 operations=cumulative_operations,
             )
         ):
@@ -365,6 +366,7 @@ class MigrationAnnotations:
             parent_revision=0,
             client_mutation_id="migration-restore",
             tags=selected.tags,
+            episode_outcome=selected.episode_outcome,
             operations=operations,
             origin=RevisionOrigin.ANNOTATION_RESTORE,
             content_hash=revision_content_hash(
@@ -373,6 +375,7 @@ class MigrationAnnotations:
                 tag_schema_id=selected.tag_schema_id,
                 tag_schema_version=selected.tag_schema_version,
                 tags=selected.tags,
+                episode_outcome=selected.episode_outcome,
                 operations=operations,
             ),
         )

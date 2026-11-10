@@ -231,6 +231,8 @@ def test_runtime_openapi_has_storage_object_and_approval_bound_execution_contrac
     document = app.openapi()
     storage_paths = {path: item for path, item in document["paths"].items() if "/storage/" in path}
     assert set(storage_paths) == {
+        "/api/v1/projects/{project_id}/storage/task-usage",
+        "/api/v1/projects/{project_id}/storage/task-usage/files",
         "/api/v1/projects/{project_id}/storage/capacity",
         "/api/v1/projects/{project_id}/storage/capacity/history",
         "/api/v1/projects/{project_id}/storage/capacity/portfolio",

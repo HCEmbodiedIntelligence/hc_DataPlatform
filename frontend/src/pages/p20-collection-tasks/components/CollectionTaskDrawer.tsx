@@ -618,6 +618,7 @@ export function CollectionTaskDrawer({
             <Form.Item
               label="任务描述"
               name="description"
+              extra="新切片会将完整描述作为默认 Tag，覆盖整个 Episode；留空时使用任务名称。可在切片或标注时增删修改。"
               rules={[
                 { max: 10_000, message: "任务描述不能超过 10,000 个字符。" },
               ]}
@@ -627,7 +628,7 @@ export function CollectionTaskDrawer({
                 autoComplete="off"
                 maxLength={10_000}
                 name="description"
-                placeholder="补充采集要求与验收说明…"
+                placeholder="例如：抓起桌面上的水瓶，放入指定区域，机械臂回到初始位置。"
                 rows={3}
                 showCount
               />

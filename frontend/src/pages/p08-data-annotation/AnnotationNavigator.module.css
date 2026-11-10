@@ -48,6 +48,10 @@
 .navigator :global(.ant-input) {
   font-size: 12px;
 }
+.navigator :global(.ant-segmented-item-label) {
+  padding-inline: 5px;
+  font-size: 12px;
+}
 .count,
 .item small,
 .empty {
@@ -75,6 +79,7 @@
   scrollbar-width: thin;
 }
 .item {
+  position: relative;
   display: grid;
   min-width: 0;
   gap: 5px;
@@ -86,6 +91,13 @@
   text-align: start;
   font: inherit;
   cursor: pointer;
+}
+.loading {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--hc-color-primary-active);
+  font-size: 11px;
 }
 .item strong {
   font-size: 13px;

@@ -127,7 +127,9 @@ export function RecordingProcessingDetails({
         <Alert
           type="info"
           title="尚未生成 Episode"
-          description="在录制切片中提交片段后，将自动开始质检与入库。"
+          description={recording?.ingest_mode === "WHOLE_RECORDING"
+            ? "上传完成后自动检查并整段入库，完成后即可切片与标注。"
+            : "上传完成后自动检查整段录制，通过质检后即可切片，提交后自动对齐入库。"}
         />
       )}
       {episodes.map((episode) => {
@@ -161,7 +163,7 @@ export function RecordingProcessingDetails({
             }
           >
             <Typography.Paragraph style={{ overflowWrap: "anywhere" }}>
-              <strong>切片：</strong>
+              <strong>{recording?.ingest_mode === "WHOLE_RECORDING" ? "完整录制：" : "切片："}</strong>
               {episode.episode_id}
               {" · "}
               {seconds(episode.start_offset_ns)}～

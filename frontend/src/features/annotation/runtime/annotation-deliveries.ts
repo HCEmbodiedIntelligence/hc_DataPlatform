@@ -1,3 +1,4 @@
+import { localObjectStorageUrl } from "../../../shared/lib/object-storage-url";
 import { z } from "zod";
 import { episodeDataReferenceWireSchema } from "../../datasets/api/episode-package-wire";
 import type { components } from "../../../shared/api/generated/platform";
@@ -45,7 +46,10 @@ const wire = z
         approval: z.record(z.string(), z.unknown()).nullable(),
         submission: z.record(z.string(), z.unknown()).nullable(),
         parent_manifest_sha256: digest,
-        processor_version: z.literal("hc-annotated-delivery-queue/1"),
+        processor_version: z.enum([
+          "hc-annotated-delivery-queue/1",
+          "hc-annotated-delivery-queue/2",
+        ]),
         reader_version: z.literal("lerobot/0.6.1"),
         archive_format: z.literal("independent_episode_zip/1"),
         includes_collected_depth: z.literal(true),
@@ -207,5 +211,5 @@ export async function authorizeAnnotationDelivery(
   ) {
     throw new Error("下载授权与选定归档不一致。");
   }
-  return grant;
+  return { ...grant, url: localObjectStorageUrl(grant.url) };
 }

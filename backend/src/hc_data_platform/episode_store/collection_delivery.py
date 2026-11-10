@@ -214,12 +214,13 @@ class CollectionDelivery:
             checkpoint=checkpoint,
             **({"processor_version": plan.processor_version} if adapter.homogeneous else {}),
         )
-        extra = {
+        prefix = "" if adapter.standalone_dataset else "collection/"
+        extra = {} if adapter.standalone_dataset else {
             "collection/hc/collection_manifest.json": canonical(manifest),
             "delivery.json": inventory_document(plan),
         }
         inventory = [
-            ("collection/" + entry["path"], entry["size"], entry["sha256"], root / entry["path"])
+            (prefix + entry["path"], entry["size"], entry["sha256"], root / entry["path"])
             for entry in manifest["files"]
         ] + [
             (name, len(body), hashlib.sha256(body).hexdigest(), body)

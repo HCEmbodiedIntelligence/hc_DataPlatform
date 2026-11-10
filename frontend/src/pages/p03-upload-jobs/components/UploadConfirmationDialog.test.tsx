@@ -82,7 +82,7 @@ const scope = {
   regionCode: "cn-shanghai",
 };
 let capability: LeRobotCapabilities;
-function renderDialog() {
+function renderDialog(input = selection) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -90,7 +90,7 @@ function renderDialog() {
     <QueryClientProvider client={client}>
       <UploadConfirmationDialog
         open
-        selection={selection}
+        selection={input}
         scope={{
           organizationId: "org-alpha",
           projectId: "project-alpha",
@@ -208,6 +208,23 @@ describe("UploadConfirmationDialog original storage", () => {
       robotId: null,
       processingMode: "STORE_ONLY",
       processingCapabilityRevision: "server-profile/7",
+    });
+  });
+
+  it("binds a native MCAP to its task and robot in the initial upload confirmation", async () => {
+    const user = userEvent.setup();
+    renderDialog({ ...selection, lerobot: { ...selection.lerobot!, format: "mcap" } });
+    const confirm = screen.getByRole("button", { name: "确认上传" });
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole("combobox", { name: "采集任务 ID" }));
+    await user.click(await screen.findByText("合成采集 · task-a"));
+    expect(confirm).toBeDisabled();
+    await user.click(screen.getByRole("combobox", { name: "目标机器人 ID" }));
+    await user.click(await screen.findByText("采集机器人 · serial-a · robot-a"));
+    await user.click(confirm);
+    expect(onConfirmMock).toHaveBeenCalledWith({
+      datasetId: "dataset_alpha", collectionTaskId: "task-a", robotId: "robot-a",
+      processingMode: "PROCESS",
     });
   });
 

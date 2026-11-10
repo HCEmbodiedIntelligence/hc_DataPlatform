@@ -11,6 +11,7 @@ from mcap.writer import Writer
 from hc_data_platform.episode_store.collection_delivery_models import RequestCollectionDelivery
 from hc_data_platform.episode_store.mcap_export import slice_original
 from hc_data_platform.episode_store.original_export import write_original_collection
+from tests.annotation.test_subtasks import snapshot  # noqa: F401
 from tests.episode_store.test_collection_delivery_services import queued  # noqa
 from tests.episode_store.test_collection_export_services import pair  # noqa
 from tests.episode_store.test_commit_services import scoped
@@ -81,7 +82,10 @@ def test_slice_keeps_ros_field_keys_schema_channel_metadata_and_exact_bytes(tmp_
         assert next(r.iter_metadata()).metadata == {"robot": "arm"}
 
 
-def test_originals_keep_bytes_with_annotation_sidecars_and_deduplicate(tmp_path):
+@pytest.mark.parametrize("outcome", ["success", "fail"])
+def test_originals_keep_bytes_with_annotation_sidecars_and_deduplicate(tmp_path, snapshot, outcome):
+    from tests.episode_store.test_episode_outcome_exports import frozen_result
+    annotation, track = frozen_result(snapshot, snapshot[1], outcome)
     raw = b"original video bytes\x00\x01"
     ref = {
         "relative_path": "video.mp4",
@@ -93,12 +97,13 @@ def test_originals_keep_bytes_with_annotation_sidecars_and_deduplicate(tmp_path)
     }
     package = SimpleNamespace(
         document=lambda _: {"original_inventory": [ref], "episode_index": 3},
-        receipt=SimpleNamespace(data=SimpleNamespace(model_dump=lambda **_: {"episode": "three"})),
+        receipt=SimpleNamespace(data=snapshot[1]),
         manifest=SimpleNamespace(files=[]),
     )
     selected = SimpleNamespace(
         package=package,
-        annotation_file=SimpleNamespace(content=b'{"tags":[{"label":"pick"}]}'),
+        annotation_file=annotation,
+        track=track,
         review_document=None,
     )
     storage = SimpleNamespace(read_chunks=lambda _: iter([raw[:3], raw[3:]]))
@@ -106,12 +111,10 @@ def test_originals_keep_bytes_with_annotation_sidecars_and_deduplicate(tmp_path)
     files = list((tmp_path / "out/sources").rglob("*.mp4"))
     assert len(files) == 1 and files[0].read_bytes() == raw
     assert len(manifest["members"]) == 2
-    assert (
-        json.loads((tmp_path / "out/selections/000000.json").read_bytes())["annotations"]["tags"][
-            0
-        ]["label"]
-        == "pick"
-    )
+    result = json.loads((tmp_path / "out/selections/000000.json").read_bytes())
+    assert result["episode_outcome"] == outcome
+    assert "success" not in result
+    assert result["annotations"]["revision"]["tags"] == []
     bad = SimpleNamespace(read_chunks=lambda _: iter([b"corrupted"]))
     with pytest.raises(ValueError, match="hash"):
         write_original_collection(tmp_path / "bad", [selected], storage=bad)

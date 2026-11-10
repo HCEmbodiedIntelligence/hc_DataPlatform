@@ -513,6 +513,24 @@ class ObjectStoreConfigurationService:
             ),
         )
 
+    def saved(self) -> ObjectStoreConfigurationStatus:
+        """Read the encrypted OSS candidate without changing the active provider."""
+        stored = self.repository.current(self.environment_id)
+        if stored is not None:
+            return _status_from_stored(stored, active_revision=self.active_revision)
+        return ObjectStoreConfigurationStatus(
+            environment_id=self.environment_id,
+            revision=0,
+            source="unconfigured",
+            configured=False,
+            provider="oss",
+            endpoint="",
+            public_endpoint="",
+            bucket="",
+            region="",
+            access_key_configured=False,
+        )
+
     def save(
         self,
         command: ObjectStoreConfigurationUpdate,

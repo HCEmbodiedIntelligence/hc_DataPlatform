@@ -49,12 +49,15 @@ function windowSource(
   view: LogicalSnapshot,
   stream: LogicalStream,
   valueKind: StepValueBinding["value_kind"],
+  startNs: string,
+  endNs: string,
+  frameTime?: (index: number) => string,
 ): ViewerWindowSource {
   return {
     async loadWindow(window, signal) {
       const bounds = stepWindowForTime(window, {
-        streamStartNs: stream.start_ns!,
-        streamEndNs: stream.end_ns!,
+        streamStartNs: startNs,
+        streamEndNs: endNs,
         binding: { start_step: 0, end_step: stream.sample_count },
       });
       const lease = createSessionScopeLease(selection.scope, signal);
@@ -80,7 +83,7 @@ function windowSource(
         lease.signal.throwIfAborted();
         return decodeTemporalValues(
           samples.map((s) => ({
-            timestampNs: s.timestamp_ns!,
+            timestampNs: frameTime ? frameTime(s.sample_index) : s.timestamp_ns!,
             value: s.value,
             valid: s.valid,
           })),
@@ -97,6 +100,7 @@ function windowSource(
 export function adaptLogicalViewerStreams(
   selection: LogicalSelection,
   view: LogicalSnapshot,
+  frameTime?: (index: number) => string,
 ): readonly StreamDescriptor[] {
   const session = getShellState();
   // Check before cache access as well as transport: a retained viewer must not
@@ -126,6 +130,10 @@ export function adaptLogicalViewerStreams(
     const media =
       stream.value_kind == null && (modality === "rgb" || modality === "depth");
     const available = stream.sample_count > 0;
+    // Annotation videos and tags use the retained Episode frame index. Source
+    // timestamps may start later or have gaps, and remain intact in the API.
+    const startNs = frameTime ? frameTime(0) : stream.start_ns;
+    const endNs = frameTime ? frameTime(stream.sample_count) : stream.end_ns;
     const source =
       numeric && available
         ? windowSource(
@@ -133,6 +141,7 @@ export function adaptLogicalViewerStreams(
             view,
             stream,
             stream.value_kind as StepValueBinding["value_kind"],
+            startNs, endNs, frameTime,
           )
         : null;
     const authorize = async (signal: AbortSignal) => {
@@ -162,7 +171,7 @@ export function adaptLogicalViewerStreams(
     };
     const buffered =
       source && modality === "joint_state"
-        ? bufferJointWindows(source, stream.start_ns, stream.end_ns)
+        ? bufferJointWindows(source, startNs, endNs)
         : source;
     return [
       {
@@ -174,8 +183,8 @@ export function adaptLogicalViewerStreams(
           id: `hc.${stream.kind.toLowerCase()}`,
           version: "logical-v1",
         },
-        startNs: stream.start_ns,
-        endNs: stream.end_ns,
+        startNs,
+        endNs,
         availability: !available
           ? "missing"
           : numeric || media

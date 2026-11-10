@@ -169,7 +169,7 @@ def test_new_recordings_resolve_mapping_but_retries_keep_original_snapshot(envir
 
 
 @pytest.mark.parametrize(
-    "problem", ["missing", "version", "unverified", "disabled", "foreign", "format"]
+    "problem", ["missing", "version", "disabled", "foreign", "format"]
 )
 def test_open_task_still_rejects_incompatible_or_unavailable_robots(environment, problem):  # noqa: F811
     dsn, scope, tasks = environment
@@ -179,11 +179,6 @@ def test_open_task_still_rejects_incompatible_or_unavailable_robots(environment,
         if problem == "version":
             newer = publish(db, scope[0], revision=1, fps=30)
             associate(db, scope[0], "robot-2", newer)
-        elif problem == "unverified":
-            associate(db, scope[0], "robot-2", ref)
-            associations.associate(
-                db, scope[0], "robot-2", AssociateScheme(expected_revision=1, scheme=ref), "tester"
-            )
         elif problem not in {"missing", "foreign"}:
             associate(db, scope[0], "robot-2", ref)
         if problem == "disabled":
@@ -195,7 +190,6 @@ def test_open_task_still_rejects_incompatible_or_unavailable_robots(environment,
     code = {
         "missing": "CAPTURE_ASSOCIATION_REQUIRED",
         "version": "CAPTURE_MAPPING_MISMATCH",
-        "unverified": "CAPTURE_MAPPING_UNVERIFIED",
         "disabled": "CAPTURE_ROBOT_UNAVAILABLE",
         "foreign": "CAPTURE_ROBOT_UNAVAILABLE",
         "format": "CAPTURE_FORMAT_UNSUPPORTED",
@@ -210,3 +204,15 @@ def test_open_task_still_rejects_incompatible_or_unavailable_robots(environment,
         )
     with psycopg.connect(dsn) as db:
         assert plans.get_plan(db, scope, tasks[0])["locked_at"] is None
+
+def test_open_task_uses_current_association_without_a_sample(environment):  # noqa: F811
+    dsn, scope, tasks = environment
+    with psycopg.connect(dsn) as db:
+        ref = publish(db, scope[0])
+        plans.save_plan(db, scope, tasks[0], SetTaskPlan(expected_revision=0, scheme=ref), "tester")
+        links = associations.associate(
+            db, scope[0], "robot-2", AssociateScheme(expected_revision=0, scheme=ref), "tester"
+        )
+        snap = plans.prepare_recording(db, scope, tasks[0], "robot-2", preparation(), "tester")
+        assert snap["mapping_version"] == links[0]["mapping_version"]
+        assert associations.list_links(db, scope[0], "robot-2")[0]["validations"] == []

@@ -288,7 +288,7 @@ export function OnboardRobotDialog({
             {!schemeReady && (
               <Alert
                 type="info"
-                title="可以先完成接入；方案关联或映射验证未完成时，采集方案待配置。"
+                title="可以先完成接入。关联已发布的方案后，即可用于采集。"
               />
             )}
             <Button style={{ marginTop: 16 }} onClick={() => setStep(3)}>

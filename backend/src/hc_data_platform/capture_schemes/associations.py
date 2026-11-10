@@ -205,8 +205,7 @@ def task_mapping(db: Any, org: str, robot: str, document: Document) -> Document:
     """Resolve this robot's mapping for the task version without enrolling it.
 
     An active association can keep serving an older task version after an
-    upgrade. Use the latest mapping for that exact version, and validate it;
-    never silently fall back from an unverified mapping to an older one.
+    upgrade. Always use the latest mapping for that exact scheme version.
     """
     require_robot(db, org, robot, document)
     link = db.execute(
@@ -230,6 +229,7 @@ def task_mapping(db: Any, org: str, robot: str, document: Document) -> Document:
 def require_mapping(
     db: Any, org: str, robot: str, document: Document, version: int, *, new_use: bool
 ) -> Document:
+    """Check the bound mapping identity. Sample validation is an optional diagnostic."""
     require_robot(db, org, robot, document)
     scheme = document["scheme_id"]
     if new_use:
@@ -246,24 +246,6 @@ def require_mapping(
         reject("CAPTURE_MAPPING_MISMATCH", "实例映射不属于任务选择的方案版本")
     if mapping["scheme"]["content_sha256"] != document["content_sha256"]:
         reject("CAPTURE_MAPPING_MISMATCH", "实例映射与共享版本内容摘要不一致")
-    validations = db.execute(
-        """SELECT document FROM ingest.capture_mapping_validations
-        WHERE organization_id=%s AND robot_id=%s AND scheme_id=%s AND mapping_version=%s""",
-        (org, robot, scheme, version),
-    ).fetchall()
-    passed = {
-        v[0]["source_format"]
-        for v in validations
-        if v[0]["status"] == "PASSED" and v[0]["mapping_sha256"] == mapping["content_sha256"]
-    }
-    required = {a["source_format"] for a in document["adapters"]}
-    if required - validation_coverage(document, passed):
-        reject(
-            "CAPTURE_MAPPING_UNVERIFIED",
-            "实例映射尚未通过实际样本验证",
-            missing_formats=sorted(required - passed),
-            robot_id=robot,
-        )
     return mapping
 
 

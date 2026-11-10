@@ -35,6 +35,7 @@ from .models import (
     AnnotationTaskCreationSource,
     AnnotationTaskKind,
     AutoAnnotationCapability,
+    EpisodeOutcome,
     ExclusionRange,
     OperationKind,
     ReviewCheckKind,
@@ -178,6 +179,7 @@ def _fingerprint_save(
     actor_id: str,
     operations: Sequence[AnnotationOperation],
     tags: Sequence[AnnotationTag],
+    episode_outcome: EpisodeOutcome,
     expected_revision: int,
     if_match: str,
 ) -> str:
@@ -188,6 +190,8 @@ def _fingerprint_save(
         "operations": [operation.model_dump(mode="json") for operation in operations],
         "tags": [tag.model_dump(mode="json") for tag in tags],
     }
+    if episode_outcome != EpisodeOutcome.UNMARKED:
+        payload["episode_outcome"] = episode_outcome.value
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 
@@ -432,6 +436,7 @@ class AnnotationService:
             tag_schema_id=tag_schema_id,
             tag_schema_version=tag_schema_version,
             tags=(),
+            episode_outcome=EpisodeOutcome.SUCCESS,
             operations=(),
         )
         initial_revision = AnnotationRevision(
@@ -445,6 +450,7 @@ class AnnotationService:
             tag_schema_id=tag_schema_id,
             tag_schema_version=tag_schema_version,
             tags=(),
+            episode_outcome=EpisodeOutcome.SUCCESS,
             operations=(),
             content_hash=initial_hash,
             created_at=now,
@@ -545,6 +551,7 @@ class AnnotationService:
         operations: Sequence[AnnotationOperation],
         *,
         tags: Sequence[AnnotationTag] | None = None,
+        episode_outcome: EpisodeOutcome | None = None,
         expected_revision: int,
         if_match: str,
         client_mutation_id: str,
@@ -563,10 +570,20 @@ class AnnotationService:
                 else ()
             )
             resolved_tags = tuple(tags) if tags is not None else inherited_tags
+            inherited_outcome = (
+                aggregate.revisions[expected_revision].episode_outcome
+                if 0 <= expected_revision < len(aggregate.revisions)
+                else EpisodeOutcome.UNMARKED
+            )
+            resolved_outcome = (
+                EpisodeOutcome(episode_outcome) if episode_outcome is not None
+                else inherited_outcome
+            )
             fingerprint = _fingerprint_save(
                 actor_id=identity.actor_id,
                 operations=operations,
                 tags=resolved_tags,
+                episode_outcome=resolved_outcome,
                 expected_revision=expected_revision,
                 if_match=if_match,
             )
@@ -611,6 +628,7 @@ class AnnotationService:
                 tag_schema_id=aggregate.task.tag_schema_id,
                 tag_schema_version=aggregate.task.tag_schema_version,
                 tags=resolved_tags,
+                episode_outcome=resolved_outcome,
                 operations=tuple(operations),
                 origin=origin,
                 content_hash=revision_content_hash(
@@ -619,6 +637,7 @@ class AnnotationService:
                     tag_schema_id=aggregate.task.tag_schema_id,
                     tag_schema_version=aggregate.task.tag_schema_version,
                     tags=resolved_tags,
+                    episode_outcome=resolved_outcome,
                     operations=cumulative_operations,
                 ),
                 created_at=now,
@@ -700,6 +719,7 @@ class AnnotationService:
                 actor,
                 restored.operations,
                 tags=restored.tags,
+                episode_outcome=restored.episode_outcome,
                 expected_revision=expected_revision,
                 if_match=if_match,
                 client_mutation_id=client_mutation_id,
@@ -745,6 +765,7 @@ class AnnotationService:
             actor,
             operations,
             tags=target.tags,
+            episode_outcome=target.episode_outcome,
             expected_revision=expected_revision,
             if_match=if_match,
             client_mutation_id=client_mutation_id,
@@ -1028,6 +1049,7 @@ class AnnotationService:
             tag_schema_id=aggregate.task.tag_schema_id,
             tag_schema_version=aggregate.task.tag_schema_version,
             tags=revision.tags,
+            episode_outcome=revision.episode_outcome,
             operations=revision.operations,
             effective_exclusions=normalize_operations(
                 aggregate.revisions, aggregate.task.current_revision
@@ -1302,6 +1324,7 @@ class AnnotationService:
             review_id=review.review_id,
             reviewer_id=review.reviewer_id,
             excluded_ranges=normalize_operations(aggregate.revisions, review.revision),
+            episode_outcome=aggregate.revisions[review.revision].episode_outcome,
             approved_at=review.created_at,
         )
 
@@ -1355,6 +1378,7 @@ class AnnotationService:
             tag_schema_id=aggregate.task.tag_schema_id,
             tag_schema_version=aggregate.task.tag_schema_version,
             tags=revision.tags,
+            episode_outcome=revision.episode_outcome,
             operations=cumulative_operations,
         )
         if revision.content_hash != expected_hash:

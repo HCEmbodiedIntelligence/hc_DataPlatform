@@ -239,10 +239,23 @@ class LifecyclePolicyAction(str, Enum):
     ARCHIVE = "ARCHIVE"
     TRANSITION_TO_COLD = "TRANSITION_TO_COLD"
     CLEAN_REBUILDABLE_CACHE = "CLEAN_REBUILDABLE_CACHE"
+    CLEAN_PROCESSING_CACHE = "CLEAN_PROCESSING_CACHE"
+    CLEAN_RECORDING_PREVIEWS = "CLEAN_RECORDING_PREVIEWS"
+    CLEAN_EPISODE_PREVIEWS = "CLEAN_EPISODE_PREVIEWS"
+    CLEAN_EXPORT_ARCHIVES = "CLEAN_EXPORT_ARCHIVES"
+    CLEAN_PROCESSING_STAGING = "CLEAN_PROCESSING_STAGING"
+    CLEAN_MEDIA_STAGING = "CLEAN_MEDIA_STAGING"
+    CLEAN_OSS_TEST_COPIES = "CLEAN_OSS_TEST_COPIES"
+    CLEAN_INVENTORY_DETAILS = "CLEAN_INVENTORY_DETAILS"
+    CLEAN_INVENTORY_HISTORY = "CLEAN_INVENTORY_HISTORY"
+
+    @property
+    def automatic_cache(self) -> bool:
+        return self.value.startswith("CLEAN_") and self is not self.CLEAN_REBUILDABLE_CACHE
 
     @property
     def dangerous(self) -> bool:
-        return self is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
+        return self.automatic_cache or self is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
 
     @property
     def physical(self) -> bool:
@@ -279,14 +292,19 @@ class LifecyclePolicy(BaseModel):
     @model_validator(mode="after")
     def protect_immutable_roles(self) -> LifecyclePolicy:
         if (
-            self.object_role.protected
-            and self.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
+            self.action.automatic_cache
+            and self.action is not LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS
+            and self.minimum_age_days < 1
         ):
-            raise ValueError("Raw and Manifest roles cannot be cache-cleanup policy targets")
+            raise ValueError("automatic cache retention must be at least one day")
         if (
-            self.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
-            and self.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE
+            self.action.automatic_cache
+            and self.business_category is not BusinessCapacityCategory.PENDING_ANNOTATION
         ):
+            raise ValueError("processing cache policies use the all-ingested-data scope")
+        if self.object_role.protected and self.action.dangerous:
+            raise ValueError("Raw and Manifest roles cannot be cache-cleanup policy targets")
+        if self.action.dangerous and self.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE:
             raise ValueError("cache cleanup is limited to rebuildable derivatives")
         return self
 
@@ -335,9 +353,17 @@ class CreateLifecyclePolicy(BaseModel):
     @model_validator(mode="after")
     def validate_cleanup_target(self) -> CreateLifecyclePolicy:
         if (
-            self.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
-            and self.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE
+            self.action.automatic_cache
+            and self.action is not LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS
+            and self.minimum_age_days < 1
         ):
+            raise ValueError("automatic cache retention must be at least one day")
+        if (
+            self.action.automatic_cache
+            and self.business_category is not BusinessCapacityCategory.PENDING_ANNOTATION
+        ):
+            raise ValueError("processing cache policies use the all-ingested-data scope")
+        if self.action.dangerous and self.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE:
             raise ValueError("cache cleanup is limited to rebuildable derivatives")
         return self
 
@@ -355,9 +381,17 @@ class UpdateLifecyclePolicy(BaseModel):
     @model_validator(mode="after")
     def validate_cleanup_target(self) -> UpdateLifecyclePolicy:
         if (
-            self.action is LifecyclePolicyAction.CLEAN_REBUILDABLE_CACHE
-            and self.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE
+            self.action.automatic_cache
+            and self.action is not LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS
+            and self.minimum_age_days < 1
         ):
+            raise ValueError("automatic cache retention must be at least one day")
+        if (
+            self.action.automatic_cache
+            and self.business_category is not BusinessCapacityCategory.PENDING_ANNOTATION
+        ):
+            raise ValueError("processing cache policies use the all-ingested-data scope")
+        if self.action.dangerous and self.object_role is not ObjectRole.REBUILDABLE_DERIVATIVE:
             raise ValueError("cache cleanup is limited to rebuildable derivatives")
         return self
 

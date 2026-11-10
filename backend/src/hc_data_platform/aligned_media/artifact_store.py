@@ -551,6 +551,7 @@ class S3AlignedMediaOrphanReconciler:
         *,
         prefix: str = "aligned-media",
         orphan_ttl: timedelta = timedelta(hours=2),
+        retention=None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._client = client
@@ -558,11 +559,15 @@ class S3AlignedMediaOrphanReconciler:
         self._is_referenced = is_referenced
         self._prefix = f"{prefix.strip('/')}/organizations/"
         self._ttl = orphan_ttl
+        self._retention = retention
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def run_once(self) -> int:
         now = self._clock()
-        cutoff = now - self._ttl
+        ttl = self._retention() if self._retention is not None else self._ttl
+        if ttl is None:
+            return 0
+        cutoff = now - ttl
         deleted = 0
         continuation: str | None = None
         while True:
@@ -589,15 +594,17 @@ class S3AlignedMediaOrphanReconciler:
                     or modified > cutoff
                 ):
                     continue
-                deleted += self._reconcile(key, now)
+                deleted += self._reconcile(key, now, modified=modified)
             if not response.get("IsTruncated"):
+                if self._retention is not None:
+                    self._retention.audit(deleted)
                 return deleted
             token = response.get("NextContinuationToken")
             if not isinstance(token, str) or not token:
                 raise RuntimeError("aligned media orphan listing omitted continuation token")
             continuation = token
 
-    def _reconcile(self, intent_key: str, now: datetime) -> int:
+    def _reconcile(self, intent_key: str, now: datetime, *, modified=None) -> int:
         response = self._client.get_object(Bucket=self._bucket, Key=intent_key)
         body = cast(S3StreamingBody, response["Body"])
         try:
@@ -621,6 +628,10 @@ class S3AlignedMediaOrphanReconciler:
             not item.key.startswith(f"{object_prefix}/") for item in objects
         ):
             raise ValueError("aligned media publication intent identity is invalid")
+        if self._retention is not None:
+            current = self._retention()
+            if current is None or modified is None or modified > self._clock() - current:
+                return 0
         for item in objects:
             self._client.delete_object(Bucket=self._bucket, Key=item.key)
         self._client.delete_object(Bucket=self._bucket, Key=intent_key)

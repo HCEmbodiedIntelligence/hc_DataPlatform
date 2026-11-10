@@ -20,7 +20,7 @@ import {
   it,
   vi,
 } from "vitest";
-import { useState, type ReactElement } from "react";
+import { StrictMode, useState, type ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { JSX } from "react";
 import { createDomainError } from "../../shared/api/domain-error";
@@ -146,6 +146,8 @@ function bundleWithoutDraft(
 }
 
 function renderWorkbench(input: {
+  readonly episodeOutcome?: "success" | "fail";
+  readonly onEpisodeOutcomeChange?: (value: "success" | "fail") => void;
   readonly cameraCount: number;
   readonly mode?: "annotation" | "tag-review";
   readonly editable?: boolean;
@@ -153,9 +155,11 @@ function renderWorkbench(input: {
   readonly externalError?: unknown;
   readonly autoAnnotationPanel?: JSX.Element;
   readonly onSelectTask?: (taskId: string) => void;
+  readonly onPrepareTask?: (taskId: string) => Promise<void>;
   readonly onPreSubmitCheck?: () => Promise<readonly TagReviewCheckResult[]>;
   readonly onRestoreRevision?: (targetRevision: number) => Promise<void>;
   readonly onSave?: () => Promise<void>;
+  readonly onRefresh?: () => Promise<void>;
   readonly onSubmit?: () => Promise<void>;
   readonly onCreateAnnotation?: () => Promise<void>;
   readonly onReview?: (
@@ -228,6 +232,8 @@ function renderWorkbench(input: {
       {...(input.onPreSubmitCheck
         ? { onPreSubmitCheck: input.onPreSubmitCheck }
         : {})}
+      episodeOutcome={input.episodeOutcome}
+      onEpisodeOutcomeChange={input.onEpisodeOutcomeChange}
       autoAnnotationPanel={input.autoAnnotationPanel}
       bundle={bundle}
       dirty={input.dirty ?? false}
@@ -245,7 +251,9 @@ function renderWorkbench(input: {
       onOpenRevisions={onOpenRevisions}
       onRestoreRevision={onRestoreRevision}
       onSave={onSave}
+      onRefresh={input.onRefresh}
       onSelectTask={input.onSelectTask}
+      onPrepareTask={input.onPrepareTask}
       onSubmit={onSubmit}
       onTagsChange={onTagsChange}
     />,
@@ -282,6 +290,135 @@ const failedPreSubmitChecks: readonly TagReviewCheckResult[] = [
 ];
 
 describe("P08 page-level workspace navigation", () => {
+  it("keeps editing and navigation available while preparing a slow destination", async () => {
+    const user = userEvent.setup();
+    let ready!: () => void;
+    const loading = new Promise<void>(resolve => { ready = resolve; });
+    const onPrepareTask = vi.fn(() => loading);
+    const onSelectTask = vi.fn();
+    renderWorkbench({ cameraCount: 1, onPrepareTask, onSelectTask });
+    const input = screen.getByLabelText("Tag 名称 *");
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "提交审核" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "下一条待标注" })).toBeEnabled();
+    expect(input).toBeEnabled();
+    expect(screen.getByText("加载中")).toBeVisible();
+    await act(async () => ready());
+    expect(onSelectTask).toHaveBeenCalledWith("annotation-task-0143");
+    expect(screen.getByLabelText("Tag 名称 *")).toBe(input);
+  });
+
+  it("only switches to the last requested destination when preparation finishes out of order", async () => {
+    const user = userEvent.setup();
+    let finishFirst!: () => void;
+    let finishSecond!: () => void;
+    const first = new Promise<void>(resolve => { finishFirst = resolve; });
+    const second = new Promise<void>(resolve => { finishSecond = resolve; });
+    const onSelectTask = vi.fn();
+    renderWorkbench({ cameraCount: 1, onSelectTask,
+      onPrepareTask: id => id === "annotation-task-0143" ? first : second });
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    const rail = screen.getByRole("complementary", { name: "标注数据切换" });
+    await user.click(within(rail).getByRole("button", { name: /切换到标注数据.*0144/u }));
+    await act(async () => finishSecond());
+    expect(onSelectTask).toHaveBeenCalledExactlyOnceWith("annotation-task-0144");
+    await act(async () => finishFirst());
+    expect(onSelectTask).toHaveBeenCalledOnce();
+  });
+
+  it("asks to retain edits made while the destination is loading", async () => {
+    const user = userEvent.setup();
+    let finish!: () => void;
+    const loading = new Promise<void>(resolve => { finish = resolve; });
+    const onPrepareTask = () => loading;
+    const onSelectTask = vi.fn();
+    const bundle = createVisualAnnotationBundle({ mode: "annotation", cameraCount: 1 });
+    const view = (dirty: boolean) => <AnnotationWorkbenchView bundle={bundle} mode="annotation"
+      scope={visualAnnotationScope} dirty={dirty} tags={bundle.draft!.tags} renderPanel={panel}
+      permissions={{ hasAnnotationDraft: true, canCreate: false, canEdit: true, canSave: true,
+        canSubmit: true, canReview: false, canRevise: false }}
+      onPrepareTask={onPrepareTask} onSelectTask={onSelectTask}
+      onSave={async () => {}} onSubmit={async () => {}} onReview={async () => {}} onTagsChange={() => {}} />;
+    const { rerender } = render(view(false));
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    rerender(view(true));
+    await act(async () => finish());
+    expect(onSelectTask).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "当前数据有未保存的标注" })).toBeVisible());
+    await user.click(screen.getByRole("button", { name: "继续标注" }));
+    expect(onSelectTask).not.toHaveBeenCalled();
+  });
+
+  it("retains the current editable task when loading another task fails", async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn();
+    renderWorkbench({ cameraCount: 1, onSelectTask,
+      onPrepareTask: async () => { throw new Error("Offline"); } });
+    await user.click(screen.getByRole("button", { name: "下一条待标注" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("下一条数据加载失败");
+    expect(onSelectTask).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "提交审核" })).toBeEnabled();
+    expect(screen.getByLabelText("Tag 名称 *")).toBeEnabled();
+  });
+
+  it("does not let a previous task's delayed save error interrupt the next task's save", async () => {
+    const user = userEvent.setup();
+    const first = createVisualAnnotationBundle({ mode: "annotation", cameraCount: 1 });
+    const next = { ...first, task: { ...first.task, task_id: "next-task-during-save" } };
+    let rejectFirst!: (error: Error) => void;
+    let finishNext!: () => void;
+    const saveFirst = vi.fn(() => new Promise<void>((_, reject) => { rejectFirst = reject; }));
+    const saveNext = vi.fn(() => new Promise<void>(resolve => { finishNext = resolve; }));
+    const view = (bundle: RuntimeAnnotationBundle, onSave: () => Promise<void>) => <AnnotationWorkbenchView
+      bundle={bundle} mode="annotation" scope={visualAnnotationScope} dirty
+      tags={bundle.draft!.tags} renderPanel={panel}
+      permissions={{ hasAnnotationDraft: true, canCreate: false, canEdit: true, canSave: true,
+        canSubmit: false, canReview: false, canRevise: false }}
+      onSave={onSave} onSubmit={async () => {}} onReview={async () => {}} onTagsChange={() => {}} />;
+    const { rerender } = render(view(first, saveFirst));
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    rerender(view(next, saveNext));
+    await user.click(screen.getByRole("button", { name: "保存修改" }));
+    await act(async () => rejectFirst(new Error("上一条数据保存失败")));
+    expect(screen.queryByText(/上一条数据保存失败/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeDisabled();
+    await act(async () => finishNext());
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeEnabled();
+  });
+
+  it.each(["annotation", "tag-review"] as const)("keeps the %s workspace and camera choice while clearing the previous task's input", async mode => {
+    const user = userEvent.setup();
+    const first = createVisualAnnotationBundle({ mode, cameraCount: 1 });
+    const next = { ...first, task: { ...first.task, task_id: "another-task" } };
+    const view = (bundle: RuntimeAnnotationBundle) => <AnnotationWorkbenchView
+      bundle={bundle} mode={mode} scope={visualAnnotationScope} dirty={false}
+      tags={bundle.history.revisions.at(-1)!.tags} renderPanel={panel}
+      permissions={{ hasAnnotationDraft: mode === "annotation", canCreate: false,
+        canEdit: mode === "annotation", canSave: mode === "annotation", canSubmit: mode === "annotation",
+        canReview: mode === "tag-review", canRevise: false }}
+      onSave={async () => {}} onSubmit={async () => {}} onReview={async () => {}} onTagsChange={() => {}} />;
+    const { container, rerender } = render(view(first));
+    const frame = container.querySelector('[data-episode-workbench]');
+    await user.selectOptions(screen.getByLabelText("显示视频"), "__all__");
+    if (mode === "annotation") {
+      await user.selectOptions(screen.getByLabelText("编辑已有 Tag"), first.history.revisions.at(-1)!.tags[0]!.annotation_id);
+      await user.type(screen.getByLabelText("Tag 名称 *"), "仅属于第一条数据");
+    } else {
+      await user.click(screen.getByRole("button", { name: "问题与意见" }));
+      await user.type(screen.getByLabelText(/补充审核意见/), "仅属于第一条数据");
+      await user.click(screen.getByRole("checkbox", { name: /^标记问题：/ }));
+    }
+    rerender(view(next));
+    expect(container.querySelector('[data-episode-workbench]')).toBe(frame);
+    expect(screen.getByLabelText("显示视频")).toHaveValue("__all__");
+    if (mode === "annotation") expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("");
+    else {
+      expect(screen.getByLabelText(/补充审核意见/)).toHaveValue("");
+      expect(screen.getByRole("checkbox", { name: /^标记问题：/ })).not.toBeChecked();
+    }
+  });
+
   it.each(["annotation", "tag-review"] as const)("reopens a completed result from %s and enables editing", async mode => {
     const user = userEvent.setup();
     const draft = createVisualAnnotationBundle({ mode: "annotation", cameraCount: 1 });
@@ -369,27 +506,28 @@ describe("P08 page-level workspace navigation", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("defaults to view without a draft, locks unavailable modes, and focuses create", async () => {
+  it("explains read-only access without offering a create step when the task cannot be claimed", async () => {
     const user = userEvent.setup();
     const { onCreateAnnotation } = renderWorkbench({
       cameraCount: 1,
       noDraft: true,
       permissions: {
-        annotationUnavailableReason: "请先创建标注草稿。",
+        canCreate: false,
+        annotationUnavailableReason: "该标注任务已由其他标注人员领取。",
+        readOnlyReason: "该标注任务已由其他标注人员领取。",
         reviewUnavailableReason: "创建并提交标注后才能进入审核。",
-        revisionUnavailableReason: "请先创建标注草稿。",
+        revisionUnavailableReason: "标注草稿尚未就绪。",
       },
     });
 
     const view = workspaceTab("查看");
     const annotation = workspaceTab("标注");
     const review = workspaceTab("Tag 审核");
-    const create = screen.getByRole("button", { name: "创建标注" });
     expect(view).toHaveAttribute("aria-selected", "true");
     expect(annotation).toHaveAttribute("aria-disabled", "true");
     expect(review).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByText("查看模式")).toBeVisible();
-    expect(create).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "创建标注" })).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "保存修改" }),
     ).not.toBeInTheDocument();
@@ -399,17 +537,15 @@ describe("P08 page-level workspace navigation", () => {
 
     annotation.focus();
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "请先创建标注草稿。",
+      "该标注任务已由其他标注人员领取。",
     );
     await user.click(annotation);
     expect(view).toHaveAttribute("aria-selected", "true");
-    expect(screen.getAllByText("请先创建标注草稿。").length).toBeGreaterThan(0);
-    expect(create).toHaveFocus();
+    expect(screen.getAllByText("该标注任务已由其他标注人员领取。").length).toBeGreaterThan(0);
     expect(onCreateAnnotation).not.toHaveBeenCalled();
   });
 
-  it("calls the real create callback once and enters annotation after the draft arrives", async () => {
-    const user = userEvent.setup();
+  it("automatically prepares the task once in StrictMode and enables annotation when the draft arrives", async () => {
     const fullBundle = createVisualAnnotationBundle({
       mode: "annotation",
       cameraCount: 1,
@@ -439,7 +575,7 @@ describe("P08 page-level workspace navigation", () => {
             canSubmit: created,
             canReview: false,
             canRevise: created,
-            annotationUnavailableReason: "请先创建标注草稿。",
+            annotationUnavailableReason: "正在准备标注。",
           }}
           renderPanel={panel}
           scope={visualAnnotationScope}
@@ -456,25 +592,60 @@ describe("P08 page-level workspace navigation", () => {
       );
     }
 
-    render(<CreateHarness />);
-    await user.dblClick(screen.getByRole("button", { name: "创建标注" }));
+    render(<StrictMode><CreateHarness /></StrictMode>);
     expect(createRequest).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "创建标注" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "创建标注" })).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
+    expect(screen.queryByRole("button", { name: "创建标注" })).not.toBeInTheDocument();
+    expect(screen.getByText("正在准备标注…")).toBeVisible();
+    expect(workspaceTab("标注")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" })).toBeDisabled();
 
     await act(async () => finishCreate?.());
     await waitFor(() =>
       expect(workspaceTab("标注")).toHaveAttribute("aria-selected", "true"),
     );
     expect(screen.getByRole("heading", { name: "多级 Tag" })).toBeVisible();
+    expect(screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" })).toBeEnabled();
+    expect(createRequest).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("正在准备标注…")).not.toBeInTheDocument();
+  });
+
+  it("offers a retry after automatic preparation fails without looping or discarding the page", async () => {
+    const user = userEvent.setup();
+    const onCreateAnnotation = vi.fn().mockRejectedValueOnce(new Error("准备标注暂时失败")).mockResolvedValue(undefined);
+    renderWorkbench({ cameraCount: 1, noDraft: true, onCreateAnnotation });
+    expect(await screen.findByText(/准备标注暂时失败；当前数据已保留/u)).toBeVisible();
+    expect(onCreateAnnotation).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "创建标注" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "重试进入标注" }));
+    expect(onCreateAnnotation).toHaveBeenCalledTimes(2);
+  });
+
+  it("enters annotation when edit permission arrives late and still allows explicitly viewing", async () => {
+    const user = userEvent.setup();
+    const bundle = createVisualAnnotationBundle({ mode: "annotation", cameraCount: 1 });
+    function Harness() {
+      const [ready, setReady] = useState(false);
+      return <>
+        <button onClick={() => setReady(true)}>完成加载</button>
+        <AnnotationWorkbenchView bundle={bundle} dirty={false} mode="annotation" renderPanel={panel}
+          scope={visualAnnotationScope} tags={bundle.draft!.tags}
+          permissions={{ hasAnnotationDraft: ready, canCreate: false, canEdit: ready, canSave: ready,
+            canSubmit: ready, canReview: false, canRevise: ready }}
+          onReview={async () => {}} onSave={async () => {}} onSubmit={async () => {}} onTagsChange={() => {}} />
+      </>;
+    }
+    render(<Harness />);
+    expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByRole("button", { name: "完成加载" }));
+    expect(workspaceTab("标注")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" })).toBeEnabled();
+    await user.click(workspaceTab("查看"));
+    expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
   });
 
   it("keeps view mode hard read-only across controls, drag events, and shortcuts", () => {
     const { onCreateAnnotation, onSave, onSubmit, onTagsChange } =
-      renderWorkbench({ cameraCount: 1, noDraft: true });
+      renderWorkbench({ cameraCount: 1, noDraft: true, permissions: { canCreate: false } });
     const timeline = screen.getByLabelText("共享视频时间轴区域");
     const surface = timeline.querySelector(".viewer-timeline__surface");
     expect(surface).not.toBeNull();
@@ -603,6 +774,43 @@ describe("P08 page-level workspace navigation", () => {
     expect(onReview).toHaveBeenCalledWith("APPROVE", "");
   });
 
+  it("labels a submitted task as pending review and explains how to resume reviewing from view", async () => {
+    const user = userEvent.setup();
+    renderWorkbench({ cameraCount: 1, mode: "tag-review" });
+    await user.click(workspaceTab("查看"));
+    const toolbar = screen.getByLabelText("页面工作模式与操作");
+    expect(within(toolbar).getByText("待审核", { exact: true })).toBeVisible();
+    expect(within(toolbar).queryByText("审核中", { exact: true })).not.toBeInTheDocument();
+    expect(within(toolbar).getByText("标注已提交，等待审核。点击“Tag 审核”可检查标注并提交审核结果。")).toBeVisible();
+    await user.click(workspaceTab("Tag 审核"));
+    expect(within(toolbar).getByRole("button", { name: "提交审核" })).toBeEnabled();
+  });
+
+  it("restores review mode when a submitted task becomes reviewable without overriding a later choice to view", async () => {
+    const user = userEvent.setup();
+    const bundle = createVisualAnnotationBundle({ mode: "tag-review", cameraCount: 1 });
+    const baseProps = {
+      bundle, dirty: false, mode: "tag-review" as const, scope: visualAnnotationScope,
+      tags: bundle.history.revisions.at(-1)!.tags, renderPanel: panel,
+      onReview: vi.fn().mockResolvedValue(undefined), onSave: vi.fn().mockResolvedValue(undefined),
+      onSubmit: vi.fn().mockResolvedValue(undefined), onTagsChange: vi.fn(),
+    };
+    const permissions = {
+      hasAnnotationDraft: false, canCreate: false, canEdit: false, canSave: false,
+      canSubmit: false, canReview: false, canRevise: false,
+    };
+    const view = render(<AnnotationWorkbenchView {...baseProps} permissions={permissions} />);
+    expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
+    const ready = { ...permissions, canReview: true };
+    view.rerender(<AnnotationWorkbenchView {...baseProps} permissions={ready} />);
+    expect(workspaceTab("Tag 审核")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "提交审核" })).toBeEnabled();
+    await user.click(workspaceTab("查看"));
+    view.rerender(<AnnotationWorkbenchView {...baseProps} permissions={{ ...ready }} />);
+    expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
+    expect(baseProps.onReview).not.toHaveBeenCalled();
+  });
+
   it("returns the task for modification with the selected annotation location", async () => {
     const user = userEvent.setup();
     const { onReview } = renderWorkbench({
@@ -664,7 +872,7 @@ describe("P08 page-level workspace navigation", () => {
       },
     });
     expect(
-      screen.getByText(/当前没有待审核提交。标注尚未提交。/u),
+      screen.getByText("标注尚未提交。"),
     ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "提交审核" }),
@@ -930,6 +1138,19 @@ describe("P08 viewer-slot composition", () => {
     );
 
     expect(observedStreams.at(-1)).toBe(initialStream);
+  });
+
+  it("filters pending reviews from the annotation sidebar and switches directly", async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn<(taskId: string) => void>();
+    const { bundle } = renderWorkbench({ cameraCount: 1, onSelectTask });
+    const rail = screen.getByRole("complementary", { name: "标注数据切换" });
+    await user.click(within(rail).getByRole("radio", { name: "待审核" }).closest("label")!);
+    expect(within(rail).getAllByRole("button", { name: /切换到标注数据/u })).toHaveLength(2);
+    await user.click(within(rail).getByRole("button", { name: "下一条待审核" }));
+    expect(onSelectTask).toHaveBeenCalledWith(bundle.tasks.find(task => task.status === "SUBMITTED")!.task_id);
+    await user.click(within(rail).getByRole("radio", { name: "待标注" }).closest("label")!);
+    expect(within(rail).getByRole("button", { name: "下一条待标注" })).toBeEnabled();
   });
 
   it("shows a task rail and preserves the detailed collection drawer", async () => {
@@ -1510,18 +1731,70 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(screen.getByText(/已标记 1 处问题/u)).toBeVisible();
   });
 
-  it("requires explicit confirmation before persisting an immutable modification", async () => {
+  it("explains invalid state separately from version conflicts and refreshes without losing review notes", async () => {
     const user = userEvent.setup();
-    const { onSave } = renderWorkbench({ cameraCount: 1, dirty: true });
+    const error = createDomainError({ code: "VERSION_CONFLICT", problemCode: "ANNOTATION_INVALID_STATE",
+      message: "only a submitted revision may be reviewed", fieldErrors: [], operationErrors: [], blockedReasons: [],
+      requestId: "review-state-request", retryable: false, httpStatus: 409 });
+    const onReview = vi.fn().mockRejectedValue(error);
+    const onRefresh = vi.fn().mockRejectedValueOnce(new Error("暂时离线")).mockResolvedValue(undefined);
+    renderWorkbench({ cameraCount: 1, mode: "tag-review", onReview, onRefresh });
+    await user.click(screen.getByRole("button", { name: "问题与意见" }));
+    await user.type(screen.getByLabelText(/补充审核意见/), "请检查夹爪标签");
+    await user.click(screen.getByRole("button", { name: "提交审核" }));
+    await user.click(screen.getByRole("button", { name: "确认提交审核" }));
+    expect(await screen.findByText("任务状态已变化")).toBeVisible();
+    expect(screen.queryByText("并发版本冲突，写操作已暂停")).not.toBeInTheDocument();
+    expect(screen.getByText(/review-state-request/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "提交审核" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "刷新任务状态" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新任务状态" })).toBeEnabled());
+    expect(screen.getByText("任务状态已变化")).toBeVisible();
+    expect(screen.getByRole("button", { name: "提交审核" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "刷新任务状态" }));
+    await waitFor(() => expect(screen.queryByText("任务状态已变化")).not.toBeInTheDocument());
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+    expect(onReview).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText(/补充审核意见/)).toHaveValue("请检查夹爪标签");
+  });
 
+  it("saves directly without confirmation and blocks duplicate saves while pending", async () => {
+    const user = userEvent.setup();
+    let finishSave!: () => void;
+    const onSave = vi.fn(() => new Promise<void>((resolve) => { finishSave = resolve; }));
+    renderWorkbench({ cameraCount: 1, dirty: true, onSave });
+    const save = screen.getByRole("button", { name: "保存修改" });
+    const slider = screen.getByRole("slider", { name: "共享播放位置" });
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    await waitFor(() => expect(slider).not.toHaveAttribute("aria-valuenow", "0"));
+    const position = slider.getAttribute("aria-valuenow");
+
+    await user.click(save);
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(save).toBeDisabled();
+    await user.click(save);
+    expect(onSave).toHaveBeenCalledOnce();
+
+    await act(async () => finishSave());
+    expect(save).toBeEnabled();
+    expect(screen.getByRole("slider", { name: "共享播放位置" })).toBe(slider);
+    expect(slider).toHaveAttribute("aria-valuenow", position);
+  });
+
+  it("keeps the workbench and edited input available after a direct save fails", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValue(new Error("保存服务暂时不可用"));
+    renderWorkbench({ cameraCount: 1, dirty: true, onSave });
+    const input = screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" });
+    await user.type(input, "待保存的标注");
     await user.click(screen.getByRole("button", { name: "保存修改" }));
 
-    const dialog = screen.getByRole("dialog", { name: "保存标注修改" });
-    expect(dialog).toHaveTextContent("新的不可变标注修订");
-    expect(onSave).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole("button", { name: "确认保存修改" }));
-    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/保存服务暂时不可用；当前数据已保留/u)).toBeVisible();
+    expect(input).toHaveValue("待保存的标注");
+    expect(screen.getByRole("button", { name: "保存修改" })).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("restores a selected historical data revision only after explicit confirmation", async () => {
@@ -1597,7 +1870,6 @@ describe("P08 submit precheck timing", () => {
     ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "保存修改" }));
-    await user.click(screen.getByRole("button", { name: "确认保存修改" }));
     expect(onPreSubmitCheck).not.toHaveBeenCalled();
   });
 
@@ -1689,4 +1961,20 @@ describe("P08 submit precheck timing", () => {
     expect(onPreSubmitCheck).toHaveBeenCalledTimes(2);
     expect(onSubmit).not.toHaveBeenCalled();
   });
+});
+
+it("edits the whole Episode result independently of Tag tools", async () => {
+  const onChange = vi.fn();
+  renderWorkbench({ cameraCount: 2, onEpisodeOutcomeChange: onChange });
+  expect(screen.getByText("成功（success）")).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Episode 结果" })).toHaveAttribute("readonly");
+  fireEvent.mouseDown(screen.getByRole("combobox", { name: "Episode 结果" }));
+  fireEvent.click(await screen.findByText("失败（fail）"));
+  expect(onChange).toHaveBeenCalledWith("fail", expect.anything());
+});
+
+it.each(["annotation", "tag-review"] as const)("keeps the Episode result read only in %s without edit permission", mode => {
+  renderWorkbench({ cameraCount: 2, mode, editable: false, episodeOutcome: "fail", onEpisodeOutcomeChange: vi.fn() });
+  expect(screen.getByRole("combobox", { name: "Episode 结果" })).toBeDisabled();
+  expect(screen.getByText("失败（fail）")).toBeInTheDocument();
 });

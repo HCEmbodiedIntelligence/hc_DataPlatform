@@ -16,6 +16,28 @@ afterEach(() => {
 });
 
 describe("video-driven playback clock", () => {
+  it("holds all synchronized media at the same playhead until the slow camera is buffered", () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
+    let secondReady = false;
+    clock.attachMediaClock!(() => "500000000", () => true);
+    const detach = clock.attachMediaClock!(() => "500000000", () => secondReady);
+    clock.play();
+    frame(16);
+    expect(clock.isPlaying()).toBe(true);
+    expect(clock.canPlayMedia!()).toBe(false);
+    expect(clock.currentNs()).toBe("0");
+    secondReady = true;
+    frame(32);
+    expect(clock.currentNs()).toBe("500000000");
+    secondReady = false;
+    clock.seek("2000000000");
+    frame(48);
+    expect(clock.currentNs()).toBe("2000000000");
+    detach();
+    expect(clock.canPlayMedia!()).toBe(true);
+    clock.dispose();
+  });
+
   it("holds time while the master buffers and resumes from the decoded frame", () => {
     const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
     let decoded: string | null = "500000000";

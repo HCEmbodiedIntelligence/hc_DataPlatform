@@ -48,6 +48,10 @@ export type RuntimeAnnotationRevisionThreadPage =
   components["schemas"]["AnnotationRevisionThreadPage"];
 export type RuntimeAnnotationSubmission =
   components["schemas"]["AnnotationSubmission"];
+export type RuntimeEpisodeOutcome = "success" | "fail";
+export function normalizeEpisodeOutcome(value: string | undefined): RuntimeEpisodeOutcome {
+  return value === "fail" || value === "FAILURE" ? "fail" : "success";
+}
 export type RuntimeAnnotationTag = components["schemas"]["AnnotationTag"];
 export type RuntimeAutoAnnotationCapability =
   components["schemas"]["AutoAnnotationCapability"];
@@ -148,6 +152,7 @@ export interface RuntimeAnnotationCommands {
     task: RuntimeAnnotationTask,
     draft: RuntimeAnnotationDraft,
     tags: readonly RuntimeAnnotationTag[],
+    episodeOutcome?: RuntimeEpisodeOutcome,
   ) => Promise<RuntimeAnnotationRevision>;
   readonly submit: (
     task: RuntimeAnnotationTask,
@@ -520,10 +525,13 @@ export async function loadRuntimeAnnotationBundle(
         ? Promise.resolve(null) : loadManifestForTask(scope, task, signal))
         .then(manifest => ({ manifest, manifestIssue: null as DomainError | null }))
         .catch((error: unknown) => ({ manifest: null, manifestIssue: asDomainError(error, "数据清单加载失败。") }));
+      const versionRequest = getRuntimeDatasetVersion(scope, task, signal);
       const [schema, manifestResult, datasetVersion, logical] = await Promise.all([
         getRuntimeTagSchema(scope, task, signal), manifestRequest,
-        getRuntimeDatasetVersion(scope, task, signal),
-        loadAnnotationLogicalData(scope, task, signal, logicalRequest),
+        versionRequest,
+        versionRequest.then(version => loadAnnotationLogicalData(
+          scope, task, index => stepToTimelineNs(index, version.frequency_hz), signal, logicalRequest,
+        )),
       ]);
       return { schema, manifestResult, datasetVersion, logical };
     }),
@@ -573,7 +581,7 @@ export async function loadRuntimeAnnotationBundle(
         : manifestResult.manifest,
     manifestIssue:
       "data" in datasetVersion ? null : manifestResult.manifestIssue,
-    tasks,
+    tasks: tasks.map(candidate => candidate.task_id === task.task_id ? task : candidate),
   };
 }
 
@@ -582,6 +590,7 @@ export async function saveRuntimeAnnotationDraft(
   task: RuntimeAnnotationTask,
   draft: RuntimeAnnotationDraft,
   tags: readonly RuntimeAnnotationTag[],
+  episodeOutcome?: RuntimeEpisodeOutcome,
 ): Promise<RuntimeAnnotationRevision> {
   if (
     (task.status !== "DRAFT" && task.status !== "NEEDS_REVISION") ||
@@ -596,6 +605,7 @@ export async function saveRuntimeAnnotationDraft(
     expected_revision: task.current_revision,
     operations: draft.operations,
     tags: [...tags],
+    episode_outcome: episodeOutcome ?? normalizeEpisodeOutcome(draft.episode_outcome),
   } satisfies components["schemas"]["SaveDraftRequest"];
   const revision = await request<components["schemas"]["AnnotationRevision"]>({
     method: "POST",
@@ -612,6 +622,43 @@ export async function saveRuntimeAnnotationDraft(
     contractMismatch("保存后的修订与当前任务或标签结构不一致。");
   }
   return revision;
+}
+
+/** Refresh task facts without replacing the loaded video and robot sources. */
+export async function refreshRuntimeAnnotationBundle(
+  scope: RuntimeAnnotationScope,
+  bundle: RuntimeAnnotationBundle,
+  mode: AnnotationWorkbenchMode = "annotation",
+): Promise<RuntimeAnnotationBundle> {
+  const [history, draft] = await Promise.all([
+    getRuntimeAnnotationHistory(scope, bundle.task.task_id),
+    mode === "annotation" ? getRuntimeAnnotationDraftOrNull(scope, bundle.task.task_id) : Promise.resolve(null),
+  ]);
+  const task = history.task;
+  assertTaskIdentity(task, scope, bundle.task.task_id);
+  if (
+    !sameAnnotationBinding(bundle.task, task) ||
+    task.tag_schema_id !== bundle.task.tag_schema_id ||
+    task.tag_schema_version !== bundle.task.tag_schema_version ||
+    (draft !== null && (draft.task_id !== task.task_id ||
+    !sameAnnotationBinding(task, draft) ||
+    draft.tag_schema_id !== task.tag_schema_id ||
+    draft.tag_schema_version !== task.tag_schema_version ||
+    draft.revision !== task.current_revision ||
+    draft.etag !== task.etag)) ||
+    history.revisions.some((revision) => !sameAnnotationBinding(task, revision)) ||
+    history.submissions.some((submission) => !sameAnnotationBinding(task, submission)) ||
+    history.reviews.some((review) => !sameAnnotationDataRef(task.data_ref, review.data_ref))
+  ) {
+    contractMismatch("任务、草稿或历史版本不一致，请重新加载任务。");
+  }
+  return {
+    ...bundle,
+    task,
+    draft,
+    history,
+    tasks: bundle.tasks.map((candidate) => candidate.task_id === task.task_id ? task : candidate),
+  };
 }
 
 /** Start a new draft from the approved snapshot; historic reviews stay immutable. */
@@ -646,6 +693,7 @@ export async function reopenRuntimeAnnotationTask(
     // Operations are incremental. The new draft inherits all existing ranges.
     operations: [],
     tags: [...source.tags],
+    episode_outcome: normalizeEpisodeOutcome(source.episode_outcome),
   } satisfies components["schemas"]["SaveDraftRequest"];
   const revision = await request<RuntimeAnnotationRevision>({
     method: "POST",
@@ -906,8 +954,8 @@ export function createRuntimeAnnotationCommands(
   scope: RuntimeAnnotationScope,
 ): RuntimeAnnotationCommands {
   return {
-    saveDraft: (task, draft, tags) =>
-      saveRuntimeAnnotationDraft(scope, task, draft, tags),
+    saveDraft: (task, draft, tags, episodeOutcome) =>
+      saveRuntimeAnnotationDraft(scope, task, draft, tags, episodeOutcome),
     submit: (task, revision) =>
       submitRuntimeAnnotationRevision(scope, task, revision),
     review: (task, submission, decision, comment) =>
@@ -1214,7 +1262,7 @@ export function buildRuntimeWorkbenchAdapter(input: {
   const paddedCameraStreams = buildRuntimeCameraStreams(input);
   return {
     mode,
-    id: `p08-${mode}-${bundle.task.task_id}`,
+    id: `p08-task-${bundle.task.task_id}`,
     title: mode === "tag-review" ? "Tag 审核" : "数据标注",
     description: `固定 ${annotationDataLabel(bundle.task)} · ${input.names?.[bundle.task.task_id] ?? readableFallback("rollout", bundle.task.rollout_id)}`,
     readOnly: input.readOnly,

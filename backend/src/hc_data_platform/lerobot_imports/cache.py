@@ -17,12 +17,13 @@ class SourceCacheLimitExceeded(RuntimeError):
 
 
 class SourceCache:
-    def __init__(self, root: Path, *, max_bytes: int, ttl_seconds: float) -> None:
+    def __init__(self, root: Path, *, max_bytes: int, ttl_seconds: float, retention=None) -> None:
         if max_bytes <= 0 or ttl_seconds <= 0:
             raise ValueError("source cache limits must be positive")
         self.root = root
         self.max_bytes = max_bytes
         self.ttl_seconds = ttl_seconds
+        self.retention = retention
 
     @contextmanager
     def _lock(self, key: str, *, blocking: bool = True) -> Iterator[bool]:
@@ -90,14 +91,23 @@ class SourceCache:
             )
             entries.append((path.stat().st_mtime, path, size))
         total = sum(size for _, _, size in entries)
-        cutoff = time.time() - self.ttl_seconds
+        ttl = self.retention() if self.retention is not None else None
+        if self.retention is not None and ttl is None:
+            return 0, total
+        cutoff = time.time() - (ttl.total_seconds() if ttl is not None else self.ttl_seconds)
         deleted = 0
         for modified, path, size in sorted(entries):
-            if modified > cutoff and total + additional_bytes <= self.max_bytes:
+            if modified > cutoff and (self.retention is not None or total + additional_bytes <= self.max_bytes):
                 continue
             with self._lock(path.name, blocking=False) as acquired:
+                if acquired and self.retention is not None:
+                    current = self.retention()
+                    if current is None or path.stat().st_mtime > time.time() - current.total_seconds():
+                        continue
                 if acquired:
                     shutil.rmtree(path)
                     total -= size
                     deleted += 1
+        if self.retention is not None:
+            self.retention.audit(deleted)
         return deleted, total

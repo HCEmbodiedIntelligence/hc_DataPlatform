@@ -156,6 +156,10 @@ export function PostprocessingRules({
               </div>
               {row && (
                 <div className={styles.params}>
+                  {row.kind === "forward_fill_hands" ? (
+                    <p>左手和右手分别补值。缺少指令时沿用本次录制中同一只手上一条有效指令；首次有效指令前保持为空。数值 0 会保留。</p>
+                  ) : (
+                    <>
                   <div className={styles.toolbar}>
                     <label htmlFor={id}>{labels[row.kind]} · JSON</label>
                     <div className={styles.actions}>
@@ -209,6 +213,8 @@ export function PostprocessingRules({
                     aria-describedby={error ? id + "-error" : undefined}
                     onChange={(e) => patch(row.kind, { text: e.target.value })}
                   />
+                    </>
+                  )}
                   {error && (
                     <p className={styles.error} id={id + "-error"} role="alert">
                       {error}

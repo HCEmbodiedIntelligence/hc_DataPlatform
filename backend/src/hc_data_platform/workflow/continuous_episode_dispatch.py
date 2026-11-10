@@ -92,6 +92,12 @@ class ContinuousEpisodeOutboxHandler:
             if not exc.problem.code.startswith("CAPTURE_") or exc.problem.retryable:
                 raise
             return self._resolver.record_plan_failure(exc, **scope)
+        if "resume_data_version_id" in payload:
+            if retry_id is None:
+                raise ValueError("only a retry may resume a committed Episode")
+            request = ContinuousEpisodeWorkflowInput.model_validate({
+                **request.model_dump(), "resume_data_version_id": _required(payload, "resume_data_version_id"),
+            })
         source = request.projection
         if (
             source.organization_id != event.organization_id

@@ -36,3 +36,16 @@ EXPORT_WORKFLOW = "ExportWorkflow"
 CATALOG_RECONCILIATION_WORKFLOW = "CatalogReconciliationWorkflow"
 PUBLISH_RECONCILIATION_WORKFLOW = "PublishReconciliationWorkflow"
 ANNOTATION_REVIEW_PREPARATION_WORKFLOW = "AnnotationReviewPreparationWorkflow"
+
+# These short operations must not wait behind video decoding/package generation.
+CONTINUOUS_CONTROL_ACTIVITIES = frozenset(
+    {
+        UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY,
+        CREATE_ANNOTATION_TASK_ACTIVITY,
+        CLEANUP_ALIGNMENT_STAGING_ACTIVITY,
+    }
+)
+
+
+def control_task_queue(main_task_queue: str) -> str:
+    return f"{main_task_queue}-control"

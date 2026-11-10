@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,7 +17,6 @@ import type {
   JSX,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
-  RefObject,
 } from "react";
 import { Alert, Button, Form, Input, Modal, Select, Tooltip } from "antd";
 import {
@@ -26,7 +26,6 @@ import {
   CircleAlert,
   Database,
   Eye,
-  FilePlus2,
   GitCompareArrows,
   Info,
   ListTree,
@@ -34,6 +33,7 @@ import {
   LockKeyhole,
   PencilLine,
   Plus,
+  RefreshCw,
   RotateCcw,
   Save,
   Send,
@@ -117,6 +117,8 @@ export interface AnnotationWorkbenchPermissions {
 }
 
 export interface AnnotationWorkbenchViewProps {
+  readonly episodeOutcome?: "success" | "fail";
+  readonly onEpisodeOutcomeChange?: (value: "success" | "fail") => void;
   readonly bundle: RuntimeAnnotationBundle;
   readonly scope: RuntimeAnnotationScope;
   readonly mode: AnnotationWorkbenchMode;
@@ -125,6 +127,7 @@ export interface AnnotationWorkbenchViewProps {
   readonly onNavigatorChange?: (next: AnnotationNavigatorPreferences) => void;
   readonly tags: readonly RuntimeAnnotationTag[];
   readonly dirty: boolean;
+  readonly switchingTask?: boolean;
   readonly permissions: AnnotationWorkbenchPermissions;
   readonly recoveryAvailable?: boolean;
   readonly renderPanel?: ViewerPanelRenderer;
@@ -139,6 +142,7 @@ export interface AnnotationWorkbenchViewProps {
   readonly onTagsChange: (tags: readonly RuntimeAnnotationTag[]) => void;
   readonly onCreateAnnotation?: () => Promise<void>;
   readonly onReopenAnnotation?: () => Promise<void>;
+  readonly onRefresh?: () => Promise<void>;
   readonly onDiscardChanges?: () => void;
   readonly onSave: () => Promise<void>;
   readonly onPreSubmitCheck?: () => Promise<readonly TagReviewCheckResult[]>;
@@ -152,6 +156,7 @@ export interface AnnotationWorkbenchViewProps {
   readonly onDiscardRecovery?: () => void;
   readonly onOpenRevisions?: () => void;
   readonly onSelectTask?: (taskId: string) => void;
+  readonly onPrepareTask?: (taskId: string) => Promise<void>;
   readonly onSwitchMode?: (mode: AnnotationWorkbenchMode) => void;
   readonly onReportDataIssue?: (input: DataIssueReportInput) => Promise<void>;
 }
@@ -177,10 +182,10 @@ type PendingAction =
   | "precheck"
   | "submit"
   | "restore"
+  | "refresh"
   | RuntimeReviewDecision
   | null;
 type DialogDecision =
-  | "SAVE"
   | "SUBMIT"
   | "RESTORE"
   | RuntimeReviewDecision
@@ -1180,7 +1185,9 @@ function TooltipAction(props: {
   readonly onClick: () => void;
 }): JSX.Element {
   return (
-    <Tooltip title={props.tooltip} trigger={["hover", "focus"]}>
+    <Tooltip title={props.tooltip} trigger={["hover", "focus"]}
+      classNames={{ root: styles.actionTooltip }} mouseEnterDelay={0.3}
+      motion={{ motionName: "" }}>
       <span
         aria-label={
           props.disabled ? `${props.label}：${props.tooltip}` : undefined
@@ -1217,11 +1224,11 @@ function WorkspaceToolbar(props: {
     readonly origin: string;
   }[];
   readonly restoreTargetRevision: number | null;
-  readonly createButtonRef: RefObject<HTMLSpanElement | null>;
+  readonly preparationFailed: boolean;
   readonly onRequestMode: (mode: AnnotationWorkspaceMode) => void;
   readonly onCreate: () => void;
   readonly onReopen: () => void;
-  readonly onOpenSave: () => void;
+  readonly onSave: () => void;
   readonly onOpenSubmit: () => void;
   readonly onOpenReview: (decision: RuntimeReviewDecision) => void;
   readonly onRestoreTargetChange: (revision: number | null) => void;
@@ -1250,7 +1257,7 @@ function WorkspaceToolbar(props: {
         props.navigationPermissions.canEdit,
       unavailableReason:
         props.navigationPermissions.annotationUnavailableReason ??
-        "请先创建标注草稿。",
+        "标注尚未就绪，请稍后重试。",
     },
     {
       id: "tag-review",
@@ -1285,7 +1292,7 @@ function WorkspaceToolbar(props: {
           ? { label: "修订模式", icon: <Wrench aria-hidden="true" size={14} /> }
           : props.taskStatus === "SUBMITTED"
             ? {
-                label: "审核中",
+                label: "待审核",
                 icon: <ShieldCheck aria-hidden="true" size={14} />,
               }
             : props.taskStatus === "APPROVED"
@@ -1319,12 +1326,14 @@ function WorkspaceToolbar(props: {
     !props.navigationPermissions.canReview
       ? {
           tone: "empty",
-          text: `当前没有待审核提交。${props.navigationPermissions.reviewUnavailableReason ?? ""}`,
+          text: props.navigationPermissions.reviewUnavailableReason ?? "当前没有可审核的提交。",
         }
       : props.mode === "annotation"
         ? {
             tone: "edit",
-            text: "正在编辑标注草稿。请保存修改后再提交审核。",
+            text: props.pending === "create"
+              ? "正在准备标注，完成后即可直接编辑。"
+              : "正在编辑标注草稿。请保存修改后再提交审核。",
           }
         : props.mode === "tag-review"
           ? {
@@ -1339,27 +1348,24 @@ function WorkspaceToolbar(props: {
                 tone: "revision",
                 text: "正在查看不可变数据修订。回退会创建新修订，不会覆盖历史版本。",
               }
+            : props.taskStatus === "SUBMITTED"
+              ? {
+                  tone: "view",
+                  text: props.navigationPermissions.canReview
+                    ? "标注已提交，等待审核。点击“Tag 审核”可检查标注并提交审核结果。"
+                    : props.navigationPermissions.reviewUnavailableReason ?? "标注已提交，等待有审核权限的人员处理。",
+                }
             : {
                 tone: "view",
-                text: "当前处于查看模式，所有编辑操作均已锁定。创建标注后才能修改 Tag 区间和数据修订。",
+                text: props.navigationPermissions.readOnlyReason
+                  ? "当前任务仅可查看。"
+                  : "当前处于查看模式，可切换到标注模式继续编辑。",
               };
 
   const requestMode = (item: WorkspaceModeItem) => {
     if (!item.available) {
       const reason = item.unavailableReason ?? "当前模式不可用。";
       setLockedMessage(reason);
-      if (
-        item.id === "annotation" &&
-        !props.navigationPermissions.hasAnnotationDraft &&
-        props.createButtonRef.current
-      ) {
-        const createButton =
-          props.createButtonRef.current.querySelector<HTMLButtonElement>(
-            "button",
-          );
-        if (createButton && !createButton.disabled) createButton.focus();
-        else props.createButtonRef.current.focus();
-      }
       return;
     }
     setLockedMessage(null);
@@ -1384,10 +1390,12 @@ function WorkspaceToolbar(props: {
   };
   const busy = props.pending !== null;
   const pendingAnnouncement =
-    props.pending === "reopen"
+    props.pending === "refresh"
+      ? "正在刷新任务状态"
+      : props.pending === "reopen"
       ? "正在重新打开标注"
       : props.pending === "create"
-      ? "正在创建标注草稿"
+      ? "正在准备标注"
       : props.pending === "save"
         ? "正在保存标注修改"
         : props.pending === "precheck"
@@ -1457,11 +1465,23 @@ function WorkspaceToolbar(props: {
             className={styles.workspaceStatus}
             data-mode={props.mode}
             data-task-status={props.taskStatus}
+            title={hint.text}
           >
             {status.icon}
             {status.label}
           </span>
           <div className={styles.workspaceActions}>
+            {props.pending === "create" ? (
+              <span role="status">
+                <LoaderCircle aria-hidden="true" className={styles.loadingIcon} size={15} />
+                正在准备标注…
+              </span>
+            ) : props.preparationFailed && props.permissions.canCreate ? (
+              <TooltipAction label="重试进入标注" tooltip="重新准备当前任务的标注草稿。" disabled={busy} onClick={props.onCreate}>
+                <RefreshCw aria-hidden="true" size={15} />
+                重试进入标注
+              </TooltipAction>
+            ) : null}
             {props.mode === "tag-review" ? (
               <TooltipAction
                 busy={
@@ -1515,7 +1535,7 @@ function WorkspaceToolbar(props: {
                       ? "暂无需要保存的修改"
                       : "保存当前修改为草稿，不会进入审核。"
                   }
-                  onClick={props.onOpenSave}
+                  onClick={props.onSave}
                 >
                   {props.pending === "save" ? (
                     <LoaderCircle
@@ -1629,50 +1649,6 @@ function WorkspaceToolbar(props: {
                 )}
                 修改标注
               </TooltipAction>
-            ) : !props.permissions.hasAnnotationDraft &&
-              props.requestedRouteMode === "annotation" &&
-              props.taskStatus === "DRAFT" ? (
-              <Tooltip
-                title={
-                  props.permissions.canCreate
-                    ? "创建标注草稿后可编辑 Tag 区间和数据修订。"
-                    : props.permissions.createUnavailableReason
-                }
-                trigger={["hover", "focus"]}
-              >
-                <span
-                  className={styles.actionTooltipTarget}
-                  ref={props.createButtonRef}
-                  tabIndex={props.permissions.canCreate ? -1 : 0}
-                >
-                  <button
-                    aria-disabled={!props.permissions.canCreate || busy}
-                    aria-busy={props.pending === "create" || undefined}
-                    className={styles.createAction}
-                    disabled={!props.permissions.canCreate || busy}
-                    type="button"
-                    onClick={() => {
-                      if (props.permissions.canCreate) props.onCreate();
-                      else
-                        setLockedMessage(
-                          props.permissions.createUnavailableReason ??
-                            "当前账号不能创建标注草稿。",
-                        );
-                    }}
-                  >
-                    {props.pending === "create" ? (
-                      <LoaderCircle
-                        aria-hidden="true"
-                        className={styles.loadingIcon}
-                        size={15}
-                      />
-                    ) : (
-                      <FilePlus2 aria-hidden="true" size={15} />
-                    )}
-                    创建标注
-                  </button>
-                </span>
-              </Tooltip>
             ) : null}
           </div>
         </div>
@@ -1830,20 +1806,23 @@ function ActionDock(props: {
 
 function errorMessage(
   error: unknown,
-): { message: string; requestId?: string; conflict: boolean } | null {
+): { message: string; requestId?: string; conflict: boolean; stateChanged: boolean } | null {
   if (!error) return null;
   if (isDomainError(error)) {
+    const stateChanged = error.problemCode === "ANNOTATION_INVALID_STATE";
     return {
-      message: `${error.message}${error.problemCode ? `（问题代码：${error.problemCode}）` : ""}${error.retryable ? "；当前数据已保留，可重试。" : "；当前数据已保留。"}`,
+      message: `${stateChanged ? "任务已不处于刚才操作所需的状态，请查看最新任务状态后继续。" : error.message}${error.problemCode ? `（问题代码：${error.problemCode}）` : ""}${error.retryable ? "；当前数据已保留，可重试。" : "；当前数据已保留。"}`,
       ...(error.requestId ? { requestId: error.requestId } : {}),
       conflict:
-        error.code === "VERSION_CONFLICT" ||
-        error.code === "PRECONDITION_FAILED",
+        !stateChanged && (error.code === "VERSION_CONFLICT" ||
+        error.code === "PRECONDITION_FAILED"),
+      stateChanged,
     };
   }
   return {
     message: `${error instanceof Error ? error.message : "操作未完成。"}；当前数据已保留，可再次尝试。`,
     conflict: false,
+    stateChanged: false,
   };
 }
 
@@ -1870,7 +1849,7 @@ export function AnnotationWorkbenchView(
   const [pending, setPending] = useState<PendingAction>(null);
   const [preSubmitCheckState, setPreSubmitCheckState] =
     useState<PreSubmitCheckState>(idlePreSubmitCheck);
-  const [localError, setLocalError] = useState<unknown>(null);
+  const [localError, setLocalError] = useState<{ error: unknown; taskEtag: string } | null>(null);
   const [dialogDecision, setDialogDecision] = useState<DialogDecision>(null);
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
   const [revisionFilesOpen, setRevisionFilesOpen] = useState(false);
@@ -1886,12 +1865,11 @@ export function AnnotationWorkbenchView(
   const [reportSuccess, setReportSuccess] = useState<string | null>(null);
   const dataInfoTriggerRef = useRef<HTMLButtonElement>(null);
   const revisionFilesTriggerRef = useRef<HTMLButtonElement>(null);
-  const createButtonRef = useRef<HTMLSpanElement>(null);
   const [workspaceMode, setWorkspaceMode] = useState<AnnotationWorkspaceMode>(
     () =>
       props.mode === "tag-review" && props.permissions.canReview
         ? "tag-review"
-        : props.permissions.hasAnnotationDraft && props.permissions.canEdit
+        : props.mode === "annotation" && (props.permissions.canEdit || props.permissions.canCreate)
           ? "annotation"
           : "view",
   );
@@ -1906,18 +1884,71 @@ export function AnnotationWorkbenchView(
   >(null);
   const [resourceErrors, setResourceErrors] = useState<readonly string[]>([]);
   const actionInFlightRef = useRef(false);
+  const taskEpoch = useRef(0);
+  const navigationSequence = useRef(0);
+  const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
+  const [preparedTask, setPreparedTask] = useState<{ id: string; sequence: number } | null>(null);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const automaticEntryAttempt = useRef<string | null>(null);
+  const previousCanEdit = useRef(props.permissions.canEdit);
+  const previousCanReview = useRef(props.permissions.canReview);
+  const previousRouteMode = useRef(props.mode);
   const currentTaskIdRef = useRef(props.bundle.task.task_id);
+  const currentTaskEtagRef = useRef(props.bundle.task.etag);
+  const previousTaskId = useRef(props.bundle.task.task_id);
   const currentTagsRef = useRef(props.tags);
   currentTaskIdRef.current = props.bundle.task.task_id;
+  currentTaskEtagRef.current = props.bundle.task.etag;
   currentTagsRef.current = props.tags;
+  useLayoutEffect(() => {
+    if (previousTaskId.current === props.bundle.task.task_id) return;
+    previousTaskId.current = props.bundle.task.task_id;
+    taskEpoch.current += 1;
+    navigationSequence.current += 1;
+    setLoadingTaskId(null);
+    setPreparedTask(null);
+    setNavigationError(null);
+    actionInFlightRef.current = false;
+    // Reset task-specific edits without destroying the media/model workspace
+    // or the user's navigation and camera preferences.
+    setTaskSwitchTarget(null);
+    setSelection(null);
+    setSelectedTagId(null);
+    setDeletedTag(null);
+    setReviewComment("");
+    setReviewIssueIds(new Set());
+    setPending(null);
+    setPreSubmitCheckState(idlePreSubmitCheck);
+    setLocalError(null);
+    setDialogDecision(null);
+    setDataInfoOpen(false);
+    setRevisionFilesOpen(false);
+    setReportDialogOpen(false);
+    setReportStreamRef("");
+    setReportIssueType("OTHER");
+    setReportSeverity("MEDIUM");
+    setReportNote("");
+    setReportPending(false);
+    setReportError(null);
+    setReportSuccess(null);
+    setModeSwitchTarget(null);
+    setRestoreTargetRevision(null);
+    setResourceErrors([]);
+    automaticEntryAttempt.current = null;
+    setWorkspaceMode(props.mode === "tag-review" && props.permissions.canReview
+      ? "tag-review" : props.mode === "annotation" && (props.permissions.canEdit || props.permissions.canCreate)
+        ? "annotation" : "view");
+  }, [props.bundle.task.task_id, props.mode, props.permissions.canReview, props.permissions.canEdit, props.permissions.canCreate]);
   const preSubmitCheck =
     preSubmitCheckState.status !== "idle" &&
     preSubmitCheckState.taskId === props.bundle.task.task_id &&
     preSubmitCheckState.tags === props.tags
       ? preSubmitCheckState
       : idlePreSubmitCheck;
-  const visibleError = errorMessage(localError ?? props.externalError);
-  const permissions = visibleError?.conflict
+  const visibleError = errorMessage(localError?.error ?? props.externalError);
+  const requiresRefresh = Boolean(visibleError?.conflict || visibleError?.stateChanged);
+  const writesBlocked = requiresRefresh && (!localError || localError.taskEtag === props.bundle.task.etag);
+  const permissions = writesBlocked
     ? {
         ...props.permissions,
         canCreate: false,
@@ -1927,13 +1958,24 @@ export function AnnotationWorkbenchView(
         canReview: false,
         canRevise: false,
         canReopen: false,
-        reopenUnavailableReason: "并发版本已变化，请刷新任务后重试。",
-        createUnavailableReason: "并发版本已变化，刷新真实任务后才能创建草稿。",
-        readOnlyReason: "并发版本已变化；刷新真实任务后才能继续写入。",
+        reopenUnavailableReason: "任务状态已变化，请刷新任务后重试。",
+        createUnavailableReason: "任务状态已变化，请刷新任务后再创建草稿。",
+        readOnlyReason: "任务状态已变化，请刷新任务后继续。",
       }
     : props.permissions;
   useEffect(() => {
-    if (workspaceMode === "annotation" && !props.permissions.canEdit)
+    if (props.switchingTask) return;
+    const becameEditable = !previousCanEdit.current && props.permissions.canEdit;
+    const becameReviewable = !previousCanReview.current && props.permissions.canReview;
+    const changedRouteMode = previousRouteMode.current !== props.mode;
+    previousRouteMode.current = props.mode;
+    previousCanEdit.current = props.permissions.canEdit;
+    previousCanReview.current = props.permissions.canReview;
+    if (props.mode === "annotation" && props.permissions.canEdit && (becameEditable || changedRouteMode))
+      setWorkspaceMode("annotation");
+    else if (props.mode === "tag-review" && props.permissions.canReview && (becameReviewable || changedRouteMode))
+      setWorkspaceMode("tag-review");
+    else if (workspaceMode === "annotation" && !props.permissions.canEdit && !props.permissions.canCreate)
       setWorkspaceMode("view");
     else if (workspaceMode === "tag-review" && !props.permissions.canReview)
       setWorkspaceMode("view");
@@ -1941,8 +1983,11 @@ export function AnnotationWorkbenchView(
       setWorkspaceMode("view");
   }, [
     props.permissions.canEdit,
+    props.permissions.canCreate,
     props.permissions.canReview,
     props.permissions.canRevise,
+    props.mode,
+    props.switchingTask,
     workspaceMode,
   ]);
   const stepCount = Math.max(1, props.bundle.task.base_step_count ?? 1);
@@ -2112,16 +2157,57 @@ export function AnnotationWorkbenchView(
     ]),
     props.scope,
   );
+  const prefetchTask = useCallback((taskId: string) => {
+    if (taskId === props.bundle.task.task_id) return;
+    void props.onPrepareTask?.(taskId).catch(() => undefined);
+  }, [props.onPrepareTask, props.bundle.task.task_id]);
+  // Prepare the destination before changing routes. Playback, navigation and
+  // edits on the current task stay usable while the next task is loading.
+  const prepareSelection = useCallback((taskId: string) => {
+    const sequence = ++navigationSequence.current;
+    setPreparedTask(null);
+    setNavigationError(null);
+    if (!props.onPrepareTask) {
+      props.onSelectTask?.(taskId);
+      return;
+    }
+    setLoadingTaskId(taskId);
+    void props.onPrepareTask(taskId).then(() => {
+      if (sequence === navigationSequence.current)
+        setPreparedTask({ id: taskId, sequence });
+    }).catch(() => {
+      if (sequence !== navigationSequence.current) return;
+      setLoadingTaskId(null);
+      setNavigationError("下一条数据加载失败，当前内容已保留。请点击条目重试。");
+    });
+  }, [props.onPrepareTask, props.onSelectTask]);
+  useEffect(() => {
+    if (!preparedTask || preparedTask.sequence !== navigationSequence.current ||
+        pending !== null || reportPending || actionInFlightRef.current) return;
+    setPreparedTask(null);
+    setLoadingTaskId(null);
+    if (props.dirty) setTaskSwitchTarget(preparedTask.id);
+    else props.onSelectTask?.(preparedTask.id);
+  }, [preparedTask, pending, reportPending, props.dirty, props.onSelectTask]);
   const requestTask = useCallback(
     (taskId: string) => {
-      if (taskId === props.bundle.task.task_id || pending !== null) return;
+      if (pending !== null) return;
+      if (taskId === props.bundle.task.task_id) {
+        navigationSequence.current += 1;
+        setPreparedTask(null);
+        setLoadingTaskId(null);
+        setNavigationError(null);
+        if (props.bundle.task.status === "SUBMITTED") props.onSwitchMode?.("tag-review");
+        return;
+      }
       if (props.dirty) {
+        prefetchTask(taskId);
         setTaskSwitchTarget(taskId);
         return;
       }
-      props.onSelectTask?.(taskId);
+      prepareSelection(taskId);
     },
-    [props.bundle.task.task_id, props.dirty, props.onSelectTask, pending],
+    [props.bundle.task.task_id, props.bundle.task.status, props.dirty, props.onSwitchMode, pending, prefetchTask, prepareSelection],
   );
   const adapter = useMemo(() => {
     const adapterMode: AnnotationWorkbenchMode =
@@ -2230,25 +2316,32 @@ export function AnnotationWorkbenchView(
       props.robotSceneUnavailableReason,
     ],
   );
-  const invoke = async (
+  const invoke = useCallback(async (
     action: PendingAction,
     task: () => Promise<void>,
   ): Promise<boolean> => {
     if (!action || pending || actionInFlightRef.current) return false;
+    const epoch = taskEpoch.current;
     actionInFlightRef.current = true;
+    const taskEtag = currentTaskEtagRef.current;
     setPending(action);
-    setLocalError(null);
+    if (action !== "refresh") setLocalError(null);
     try {
       await task();
+      if (epoch !== taskEpoch.current) return false;
+      if (action === "refresh") setLocalError(null);
       return true;
     } catch (error) {
-      setLocalError(error);
+      if (epoch !== taskEpoch.current) return false;
+      setLocalError(previous => action === "refresh" && previous ? previous : { error, taskEtag });
       return false;
     } finally {
-      setPending(null);
-      actionInFlightRef.current = false;
+      if (epoch === taskEpoch.current) {
+        setPending(null);
+        actionInFlightRef.current = false;
+      }
     }
-  };
+  }, [pending]);
   const runPreSubmitCheck = async () => {
     if (
       actionInFlightRef.current ||
@@ -2259,6 +2352,7 @@ export function AnnotationWorkbenchView(
     )
       return;
     const taskId = props.bundle.task.task_id;
+    const epoch = taskEpoch.current;
     const tags = props.tags;
     actionInFlightRef.current = true;
     setPending("precheck");
@@ -2275,7 +2369,7 @@ export function AnnotationWorkbenchView(
             }),
           );
       if (
-        currentTaskIdRef.current !== taskId ||
+        epoch !== taskEpoch.current || currentTaskIdRef.current !== taskId ||
         currentTagsRef.current !== tags
       )
         return;
@@ -2287,21 +2381,21 @@ export function AnnotationWorkbenchView(
       }
     } catch {
       if (
-        currentTaskIdRef.current === taskId &&
+        epoch === taskEpoch.current && currentTaskIdRef.current === taskId &&
         currentTagsRef.current === tags
       )
         setPreSubmitCheckState({ status: "error", taskId, tags });
     } finally {
-      setPending(null);
-      actionInFlightRef.current = false;
+      if (epoch === taskEpoch.current) {
+        setPending(null);
+        actionInFlightRef.current = false;
+      }
     }
   };
   const confirmDecision = () => {
     const decision = dialogDecision;
     setDialogDecision(null);
-    if (decision === "SAVE" && permissions.canSave && props.dirty)
-      void invoke("save", props.onSave);
-    else if (decision === "SUBMIT") {
+    if (decision === "SUBMIT") {
       if (permissions.canSubmit && preSubmitCheck.status === "passed") {
         setPreSubmitCheckState(idlePreSubmitCheck);
         void invoke("submit", props.onSubmit);
@@ -2331,7 +2425,7 @@ export function AnnotationWorkbenchView(
         ),
       );
   };
-  const activateWorkspaceMode = (nextMode: AnnotationWorkspaceMode) => {
+  const activateWorkspaceMode = useCallback((nextMode: AnnotationWorkspaceMode) => {
     setSelectedTagId(null);
     setSelection(null);
     setWorkspaceMode(nextMode);
@@ -2339,7 +2433,7 @@ export function AnnotationWorkbenchView(
       props.onSwitchMode?.("tag-review");
     else if (nextMode === "annotation" && props.mode !== "annotation")
       props.onSwitchMode?.("annotation");
-  };
+  }, [props.mode, props.onSwitchMode]);
   const requestWorkspaceMode = (nextMode: AnnotationWorkspaceMode) => {
     if (nextMode === workspaceMode) return;
     if (workspaceMode === "annotation" && props.dirty) {
@@ -2348,13 +2442,23 @@ export function AnnotationWorkbenchView(
     }
     activateWorkspaceMode(nextMode);
   };
-  const createAnnotation = () => {
+  const createAnnotation = useCallback(() => {
     if (!permissions.canCreate || !props.onCreateAnnotation) return;
     void (async () => {
       const created = await invoke("create", props.onCreateAnnotation!);
       if (created) activateWorkspaceMode("annotation");
     })();
-  };
+  }, [permissions.canCreate, props.onCreateAnnotation, invoke, activateWorkspaceMode]);
+  useEffect(() => {
+    if (
+      props.mode !== "annotation" ||
+      !permissions.canCreate ||
+      !props.onCreateAnnotation ||
+      automaticEntryAttempt.current === props.bundle.task.task_id
+    ) return;
+    automaticEntryAttempt.current = props.bundle.task.task_id;
+    createAnnotation();
+  }, [props.mode, permissions.canCreate, props.onCreateAnnotation, props.bundle.task.task_id, createAnnotation]);
   const reopenAnnotation = () => {
     if (!permissions.canReopen || !props.onReopenAnnotation) return;
     void (async () => {
@@ -2436,6 +2540,7 @@ export function AnnotationWorkbenchView(
       !reportNote.trim()
     )
       return;
+    const epoch = taskEpoch.current;
     setReportPending(true);
     setReportError(null);
     try {
@@ -2450,13 +2555,14 @@ export function AnnotationWorkbenchView(
         severity: reportSeverity,
         note: reportNote.trim(),
       });
+      if (epoch !== taskEpoch.current) return;
       setReportDialogOpen(false);
       setReportNote("");
       setReportSuccess("已登记为问题数据，可到“问题数据”页面继续分诊和处理。");
     } catch (error) {
-      setReportError(error);
+      if (epoch === taskEpoch.current) setReportError(error);
     } finally {
-      setReportPending(false);
+      if (epoch === taskEpoch.current) setReportPending(false);
     }
   };
   const latestNeedsRevisionReview = props.bundle.history.reviews.findLast(
@@ -2497,6 +2603,21 @@ export function AnnotationWorkbenchView(
           </span>
         </Tooltip>
       ) : null}
+      <div className={styles.episodeOutcome} role="group" aria-label="Episode 结果">
+        <span>Episode 结果</span>
+        <Select
+          aria-label="Episode 结果"
+          showSearch={false}
+          size="small"
+          value={props.episodeOutcome ?? "success"}
+          disabled={workspaceMode !== "annotation" || !permissions.canEdit || pending !== null || props.switchingTask || !props.onEpisodeOutcomeChange}
+          options={[
+            { value: "success", label: "成功（success）" },
+            { value: "fail", label: "失败（fail）" },
+          ]}
+          onChange={props.onEpisodeOutcomeChange}
+        />
+      </div>
       <button
         aria-expanded={dataInfoOpen}
         aria-haspopup="dialog"
@@ -2531,7 +2652,7 @@ export function AnnotationWorkbenchView(
         <section className={styles.recoveryBanner} role="status">
           <RotateCcw aria-hidden="true" size={15} />
           <span>
-            <strong>发现本会话未保存的 Tag 草稿</strong>
+            <strong>发现本会话未保存的标注草稿</strong>
             恢复前不会覆盖服务器草稿。
           </span>
           <button type="button" onClick={props.onRecover}>
@@ -2545,14 +2666,16 @@ export function AnnotationWorkbenchView(
       {visibleError ? (
         <section
           className={styles.operationError}
-          data-conflict={visibleError.conflict || undefined}
+          data-conflict={requiresRefresh || undefined}
           role="alert"
         >
           <AlertTriangle aria-hidden="true" size={16} />
           <span>
             <strong>
-              {visibleError.conflict
-                ? "并发版本冲突，写操作已暂停"
+              {visibleError.stateChanged
+                ? "任务状态已变化"
+                : visibleError.conflict
+                ? writesBlocked ? "并发版本冲突，写操作已暂停" : "任务版本已更新"
                 : "操作未完成"}
             </strong>
             {visibleError.message}
@@ -2560,6 +2683,12 @@ export function AnnotationWorkbenchView(
               ? `（请求 ID：${visibleError.requestId}）`
               : ""}
           </span>
+          {requiresRefresh && props.onRefresh ? (
+            <button type="button" disabled={pending !== null}
+              onClick={() => void invoke("refresh", props.onRefresh!)}>
+              刷新任务状态
+            </button>
+          ) : null}
         </section>
       ) : null}
       {reportSuccess ? (
@@ -2701,7 +2830,7 @@ export function AnnotationWorkbenchView(
             : {}),
           workspaceToolbar: () => (
             <WorkspaceToolbar
-              createButtonRef={createButtonRef}
+              preparationFailed={localError !== null}
               dirty={props.dirty}
               mode={workspaceMode}
               navigationPermissions={props.permissions}
@@ -2722,9 +2851,10 @@ export function AnnotationWorkbenchView(
                 setDialogDecision("RESTORE");
               }}
               onOpenReview={setDialogDecision}
-              onOpenSave={() => {
+              onSave={() => {
+                if (!permissions.canSave || !props.dirty) return;
                 setPreSubmitCheckState(idlePreSubmitCheck);
-                setDialogDecision("SAVE");
+                void invoke("save", props.onSave);
               }}
               onOpenSubmit={() => void runPreSubmitCheck()}
               onRequestMode={requestWorkspaceMode}
@@ -2787,7 +2917,7 @@ export function AnnotationWorkbenchView(
               onClick={() => {
                 if (!taskSwitchTarget) return;
                 props.onDiscardChanges?.();
-                props.onSelectTask?.(taskSwitchTarget);
+                prepareSelection(taskSwitchTarget);
                 setTaskSwitchTarget(null);
               }}
             >
@@ -2809,7 +2939,7 @@ export function AnnotationWorkbenchView(
                 void (async () => {
                   if (await invoke("save", props.onSave)) {
                     setTaskSwitchTarget(null);
-                    props.onSelectTask?.(target);
+                    prepareSelection(target);
                   }
                 })();
               }}
@@ -2820,7 +2950,7 @@ export function AnnotationWorkbenchView(
         }
       >
         <p>
-          切换到下一条前，请保存当前 Tag
+          切换到下一条前，请保存当前标注
           修改或选择放弃。继续标注会保留当前内容。
         </p>
         {visibleError && (
@@ -3013,52 +3143,43 @@ export function AnnotationWorkbenchView(
       </Modal>
       <DangerousActionDialog
         confirmLabel={
-          dialogDecision === "SAVE"
-            ? "确认保存修改"
-            : dialogDecision === "SUBMIT"
-              ? "确认提交审核"
-              : dialogDecision === "RESTORE"
-                ? `确认回退为 r${restoreTargetRevision ?? "?"}`
-                : dialogDecision
-                  ? "确认提交审核"
-                  : "确认"
+          dialogDecision === "SUBMIT"
+            ? "确认提交审核"
+            : dialogDecision === "RESTORE"
+              ? `确认回退为 r${restoreTargetRevision ?? "?"}`
+              : dialogDecision
+                ? "确认提交审核"
+                : "确认"
         }
         impact={
-          dialogDecision === "SAVE"
+          dialogDecision === "SUBMIT"
             ? [
-                "当前多级 Tag、区间、属性与数据排除/恢复操作将写入新的不可变标注修订",
-                "原修订继续保留，可在数据修订历史中追溯",
+                "当前已保存修订将生成固定提交版本",
+                "提交后进入审核流程，可能无法继续编辑",
               ]
-            : dialogDecision === "SUBMIT"
+            : dialogDecision === "RESTORE"
               ? [
-                  "当前已保存修订将生成固定提交版本",
-                  "提交后进入审核流程，可能无法继续编辑",
+                  `当前多级 Tag 与区间将按历史 r${restoreTargetRevision ?? "?"} 生成新的不可变数据修订`,
+                  "原修订、提交版本与审核记录继续保留；不会覆盖历史数据",
                 ]
-              : dialogDecision === "RESTORE"
+              : dialogDecision === "APPROVE"
                 ? [
-                    `当前多级 Tag 与区间将按历史 r${restoreTargetRevision ?? "?"} 生成新的不可变数据修订`,
-                    "原修订、提交版本与审核记录继续保留；不会覆盖历史数据",
+                    "创建不可变审核通过记录",
+                    "固定该 Revision、提交与标签结构版本",
                   ]
-                : dialogDecision === "APPROVE"
-                  ? [
-                      "创建不可变审核通过记录",
-                      "固定该 Revision、提交与标签结构版本",
-                    ]
-                  : ["创建不可变审核决定", "原提交版本和全部审核历史仍保留"]
+                : ["创建不可变审核决定", "原提交版本和全部审核历史仍保留"]
         }
         open={dialogDecision !== null}
         pending={pending !== null}
         stableResourceId={props.bundle.task.task_id}
         title={
-          dialogDecision === "SAVE"
-            ? "保存标注修改"
-            : dialogDecision === "SUBMIT"
-              ? "确认提交审核？"
-              : dialogDecision === "RESTORE"
-                ? "回退标注数据修订"
-                : dialogDecision
-                  ? "提交审核"
-                  : "确认操作"
+          dialogDecision === "SUBMIT"
+            ? "确认提交审核？"
+            : dialogDecision === "RESTORE"
+              ? "回退标注数据修订"
+              : dialogDecision
+                ? "提交审核"
+                : "确认操作"
         }
         onCancel={() => {
           if (dialogDecision === "SUBMIT")
@@ -3079,7 +3200,6 @@ export function AnnotationWorkbenchView(
           </>
         ) : null}
         {dialogDecision &&
-        dialogDecision !== "SAVE" &&
         dialogDecision !== "SUBMIT" &&
         dialogDecision !== "RESTORE" ? (
           <p>
@@ -3107,6 +3227,7 @@ export function AnnotationWorkbenchView(
   return (
     <div
       className={styles.annotationWorkspace}
+      aria-busy={props.switchingTask || undefined}
       data-navigation-visible={!!props.onSelectTask}
       data-navigator-collapsed={navigatorPreferences.collapsed}
     >
@@ -3120,6 +3241,9 @@ export function AnnotationWorkbenchView(
           preferences={navigatorPreferences}
           onChange={props.onNavigatorChange ?? setLocalNavigatorPreferences}
           onSelect={requestTask}
+          onPrefetch={props.onPrepareTask ? prefetchTask : undefined}
+          loadingTaskId={loadingTaskId}
+          error={navigationError}
           disabled={pending !== null || reportPending}
         />
       )}

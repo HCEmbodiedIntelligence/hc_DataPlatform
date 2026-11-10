@@ -13,6 +13,7 @@ import type {
   RecordingScope,
 } from "./api";
 import { formatDuration, parseNanoseconds } from "./model";
+import { recordingQualityLabel, wholeRecordingLabel } from "./quality";
 import {
   recordingFileName,
   recordingRobotName,
@@ -25,6 +26,16 @@ export interface RecordingFilter {
   search: string;
   sameTask: boolean;
   stage: "all" | "pending" | "sliced";
+}
+
+function awaitingSlices(item: ContinuousRecording) {
+  return item.ingest_mode === "WHOLE_RECORDING"
+    ? item.whole_episode_status === "READY"
+    : item.status === "READY_FOR_SLICING";
+}
+
+function legacyFinalized(item: ContinuousRecording) {
+  return item.ingest_mode !== "WHOLE_RECORDING" && item.status === "SLICED";
 }
 
 export function RecordingNavigator({
@@ -82,7 +93,7 @@ export function RecordingNavigator({
   const matches = recordings.filter(
     (item) =>
       (filter.stage === "all" ||
-        (item.status === "SLICED") === (filter.stage === "sliced")) &&
+        (filter.stage === "sliced" ? legacyFinalized(item) : awaitingSlices(item))) &&
       (!search ||
         recordingSearchValues(item).some((value) =>
           value.toLocaleLowerCase("zh-CN").includes(search),
@@ -102,7 +113,7 @@ export function RecordingNavigator({
   const nextPending = [
     ...visible.slice(index + 1),
     ...visible.slice(0, index),
-  ].find((item) => item.status !== "SLICED");
+  ].find(awaitingSlices);
   return (
     <aside
       className={styles.recordingNavigator}
@@ -136,7 +147,7 @@ export function RecordingNavigator({
       >
         <span className={styles.navigatorCount}>
           {recordings.length} 条 · 待分片{" "}
-          {recordings.filter((item) => item.status !== "SLICED").length} 条
+          {recordings.filter(awaitingSlices).length} 条
         </span>
         <Input.Search
           aria-label="搜索原始录制"
@@ -229,18 +240,18 @@ export function RecordingNavigator({
                 </time>
                 <Tag
                   color={
-                    item.status === "SLICED"
+                    (legacyFinalized(item) || item.whole_episode_status === "READY")
                       ? "success"
                       : item.current_revision > 0
                         ? "warning"
                         : "blue"
                   }
                 >
-                  {item.status === "SLICED"
+                  {wholeRecordingLabel(item) ?? recordingQualityLabel(item) ?? (item.status === "SLICED"
                     ? "已成片"
                     : item.current_revision > 0
                       ? "草稿"
-                      : "待分片"}
+                      : "待分片")}
                 </Tag>
               </span>
               <strong title={recordingFileName(item)}>

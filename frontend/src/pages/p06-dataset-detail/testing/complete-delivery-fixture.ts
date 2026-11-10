@@ -19,7 +19,7 @@ export function completeDeliveryFixture() {
       archive_format: "independent_episode_zip/1",
       modalities: "all_collected",
       annotation_selection: "package_contents_only",
-      processor_version: "hc-episode-archive/1",
+      processor_version: "hc-episode-archive/2",
       reader_version: "lerobot/0.6.1",
     },
     status: "READY",

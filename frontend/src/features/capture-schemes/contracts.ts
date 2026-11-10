@@ -63,18 +63,21 @@ const baseOption = z.object({ enabled: z.boolean() });
 export const processingOperationSchema = z.discriminatedUnion("kind", [
   baseOption.extend({ kind: z.literal("zero_joints"), axes: axisNames }).strict(),
   baseOption.extend({ kind: z.literal("action_from_state"), axes: axisNames, match: z.literal("at_or_after") }).strict(),
+  baseOption.extend({ kind: z.literal("fill_action_from_next_frame") }).strict(),
+  baseOption.extend({ kind: z.literal("fill_initial_action") }).strict(),
+  baseOption.extend({ kind: z.literal("forward_fill_hands") }).strict(),
   baseOption.extend({ kind: z.literal("generate_action"), source: z.literal("state") }).strict(),
   baseOption.extend({ kind: z.literal("fill_position"), missing_position_axes: axisNames.nullable(),
     nan_position_axes: axisNames, max_state_delta_ms: z.number().positive().max(1000) }).strict(),
 ]);
 export type ProcessingOperation = z.infer<typeof processingOperationSchema>;
 export const postprocessingRulesSchema = z.discriminatedUnion("version", [
-  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(4)}).strict(),
+  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(7)}).strict(),
 ]);
 export const mcapConfigSchema = z.object({
   postprocessing_rules: postprocessingRulesSchema.nullable().optional(),
   normalization: normalizationSchema.nullable().optional(),
-  metadata_sources: z.record(z.enum(["head.calibration", "head.extrinsics"]), z.string()).optional(),
+  metadata_sources: z.partialRecord(z.enum(["head.calibration", "head.extrinsics"]), z.string()).optional(),
   collection_mode: z.enum(["RGB", "JOINT_ONLY"]),
   time_source: z.enum(["RGB_LOG_TIME", "STATE_LOG_TIME"]),
   cameras: z.array(

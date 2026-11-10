@@ -29,6 +29,11 @@ class FakeOssBucket:
         return SimpleNamespace(etag="ABC123")
 
     def get_object_meta(self, key: str) -> Any:
+        result = self.head_object(key)
+        result.headers = {"Content-Length": str(result.content_length)}
+        return result
+
+    def head_object(self, key: str) -> Any:
         content, headers = self.objects[key]
         return SimpleNamespace(
             content_length=len(content),
@@ -122,3 +127,24 @@ def test_oss_client_maps_boto_presign_parameters_to_native_oss() -> None:
         "params": {"uploadId": "upload-1", "partNumber": "3"},
         "slash_safe": True,
     }
+
+
+def test_oss_projection_retry_recognizes_existing_content(tmp_path):
+    import hashlib
+
+    from hc_data_platform.object_storage.artifact_adapters import S3ProjectionArtifactStore
+    from hc_data_platform.storage.oss_prefix import PrefixedOssBucket
+
+    bucket = FakeOssBucket()
+    client = OssBotoCompatClient(PrefixedOssBucket(bucket, "hc_dataplatform"))
+    store = S3ProjectionArtifactStore(client, bucket.bucket_name, tmp_path)
+    source = tmp_path / "sample.arrow"
+    source.write_bytes(b"projection contents")
+    checksum = hashlib.sha256(source.read_bytes()).hexdigest()
+    assert store.publish_file("staging/sample.arrow", source, sha256=checksum) == 19
+    assert store.publish_file("staging/sample.arrow", source, sha256=checksum) == 19
+    source.write_bytes(b"conflicting content")
+    with pytest.raises(RuntimeError, match="collision"):
+        store.publish_file(
+            "staging/sample.arrow", source, sha256=hashlib.sha256(source.read_bytes()).hexdigest()
+        )

@@ -11,6 +11,7 @@ import type {
   RuntimeAnnotationTask,
 } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import { annotationTaskStatusLabel } from "../../features/annotation/runtime/runtime-annotation-adapter";
+import { compareAnnotationTasks } from "../../features/annotation/runtime/task-order";
 import type { WorkbenchCollectionItem } from "../../features/viewer/workbench-contract";
 import styles from "./AnnotationNavigator.module.css";
 
@@ -18,7 +19,7 @@ export interface AnnotationNavigatorPreferences {
   readonly collapsed: boolean;
   readonly search: string;
   readonly sameDataset: boolean;
-  readonly stage: "all" | "pending";
+  readonly stage: "all" | "pending" | "review";
 }
 
 export const defaultAnnotationNavigatorPreferences: AnnotationNavigatorPreferences =
@@ -38,6 +39,9 @@ export function AnnotationNavigator({
   preferences,
   onChange,
   onSelect,
+  onPrefetch,
+  loadingTaskId,
+  error,
   disabled,
 }: {
   readonly task: RuntimeAnnotationTask;
@@ -48,6 +52,9 @@ export function AnnotationNavigator({
   readonly preferences: AnnotationNavigatorPreferences;
   readonly onChange: (next: AnnotationNavigatorPreferences) => void;
   readonly onSelect: (id: string) => void;
+  readonly onPrefetch?: (id: string) => void;
+  readonly loadingTaskId?: string | null;
+  readonly error?: string | null;
   readonly disabled: boolean;
 }) {
   const contentId = useId();
@@ -56,7 +63,8 @@ export function AnnotationNavigator({
   useEffect(() => {
     selectedRow.current?.scrollIntoView?.({ block: "nearest" });
   }, [task.task_id, collapsed]);
-  const review = mode === "tag-review";
+  const review =
+    stage === "review" || (stage === "all" && mode === "tag-review");
   const pendingLabel = review ? "待审核" : "待标注";
   const isPending = (item: RuntimeAnnotationTask) =>
     review
@@ -72,8 +80,12 @@ export function AnnotationNavigator({
     .filter((item) => !sameDataset || item.dataset_id === task.dataset_id)
     .sort(
       (a, b) =>
-        (a.created_at ?? "").localeCompare(b.created_at ?? "") ||
-        a.task_id.localeCompare(b.task_id, "zh-CN", { numeric: true }),
+        compareAnnotationTasks(
+          a,
+          b,
+          labels.get(a.task_id)?.label,
+          labels.get(b.task_id)?.label,
+        ),
     );
   const query = search.trim().toLocaleLowerCase("zh-CN");
   const matches = scoped.filter((item) => {
@@ -96,6 +108,10 @@ export function AnnotationNavigator({
     ...visible.slice(index + 1),
     ...visible.slice(0, index),
   ].find(isPending);
+  useEffect(() => {
+    for (const id of new Set([previous?.task_id, next?.task_id, nextPending?.task_id]))
+      if (id) onPrefetch?.(id);
+  }, [previous?.task_id, next?.task_id, nextPending?.task_id, onPrefetch]);
   return (
     <aside
       className={styles.navigator}
@@ -152,7 +168,8 @@ export function AnnotationNavigator({
           value={stage}
           options={[
             { label: "全部", value: "all" },
-            { label: pendingLabel, value: "pending" },
+            { label: "待标注", value: "pending" },
+            { label: "待审核", value: "review" },
           ]}
           onChange={(value) => onChange({ ...preferences, stage: value })}
         />
@@ -162,6 +179,8 @@ export function AnnotationNavigator({
             icon={<ChevronLeft size={14} />}
             disabled={disabled || !previous}
             onClick={() => previous && onSelect(previous.task_id)}
+            onPointerEnter={() => previous && onPrefetch?.(previous.task_id)}
+            onFocus={() => previous && onPrefetch?.(previous.task_id)}
           >
             上一条
           </Button>
@@ -169,6 +188,8 @@ export function AnnotationNavigator({
             size="small"
             disabled={disabled || !next}
             onClick={() => next && onSelect(next.task_id)}
+            onPointerEnter={() => next && onPrefetch?.(next.task_id)}
+            onFocus={() => next && onPrefetch?.(next.task_id)}
           >
             下一条 <ChevronRight size={14} />
           </Button>
@@ -177,6 +198,8 @@ export function AnnotationNavigator({
           size="small"
           disabled={disabled || !nextPending}
           onClick={() => nextPending && onSelect(nextPending.task_id)}
+          onPointerEnter={() => nextPending && onPrefetch?.(nextPending.task_id)}
+          onFocus={() => nextPending && onPrefetch?.(nextPending.task_id)}
         >
           下一条{pendingLabel}
         </Button>
@@ -194,7 +217,10 @@ export function AnnotationNavigator({
                 }
                 aria-label={`切换到标注数据 ${label?.label ?? "Episode"}`}
                 disabled={disabled}
+                aria-busy={item.task_id === loadingTaskId || undefined}
                 onClick={() => onSelect(item.task_id)}
+                onPointerEnter={() => onPrefetch?.(item.task_id)}
+                onFocus={() => onPrefetch?.(item.task_id)}
               >
                 <Tag
                   color={
@@ -214,6 +240,7 @@ export function AnnotationNavigator({
                   {label?.label ?? "Episode"}
                 </strong>
                 <small title={label?.description}>{label?.description}</small>
+                {item.task_id === loadingTaskId && <span className={styles.loading} role="status">加载中</span>}
               </button>
             );
           })}
@@ -222,6 +249,7 @@ export function AnnotationNavigator({
               没有符合条件的数据，当前条目保留显示。
             </p>
           )}
+          {error && <p className={styles.empty} role="alert">{error}</p>}
         </div>
       </div>
     </aside>

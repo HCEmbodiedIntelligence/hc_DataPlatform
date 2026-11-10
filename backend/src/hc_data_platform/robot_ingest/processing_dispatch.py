@@ -146,7 +146,9 @@ def mcap_result(connections, upload):
         "upload_id": upload.upload_id,
         "raw_source_id": upload.raw_source_id,
         "recording_id": recording,
-        "status": ("SLICED" if all(r[1] == "SLICED" for r in rows) else "AWAITING_SLICE")
+        "status": next((state for state in ("QC_ERROR", "QC_FAILED", "QC_RUNNING", "PENDING_QC")
+                        if any(r[1] == state for r in rows)),
+                       "SLICED" if all(r[1] == "SLICED" for r in rows) else "AWAITING_SLICE")
         if done
         else "FAILED"
         if failed

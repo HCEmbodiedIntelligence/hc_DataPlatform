@@ -19,6 +19,7 @@ import type { RobotSceneAssetResolver } from "../../viewer/lazy-three-loader";
 
 const calls = vi.hoisted(() => ({
   compatibility: vi.fn(),
+  boundVersionId: "version-old",
   resolver: null as RobotSceneAssetResolver | null,
 }));
 vi.mock("../api/logical-robot-scene", () => ({
@@ -28,7 +29,11 @@ vi.mock("../api/logical-robot-scene", () => ({
 vi.mock("../../viewer/use-episode-robot-scene", () => ({
   useEpisodeRobotScene: (...args: unknown[]) => {
     calls.compatibility(...args);
-    return { robotSceneUnavailableReason: "历史数据使用当前绑定兼容预览" };
+    return {
+      useSnapshotAssets: Boolean(args[0]) && args[4] === calls.boundVersionId,
+      robotScene: args[0] ? { modelRef: { modelId: "bound-model", modelVersion: calls.boundVersionId } } : undefined,
+      robotSceneUnavailableReason: "历史数据使用当前绑定兼容预览",
+    };
   },
 }));
 vi.mock("../../viewer/lazy-three-loader", () => ({
@@ -171,9 +176,10 @@ afterEach(() => {
   client.clear();
   vi.resetAllMocks();
   calls.resolver = null;
+  calls.boundVersionId = "version-old";
   useShellStore.getState().setSession(null, null);
 });
-it("uses fixed identity, mapping direction, calibration and asset grants even when the current robot changes", async () => {
+it("reuses snapshot assets and directions while the recorded instance still binds that version", async () => {
   const { result, rerender } = mount();
   await waitFor(() =>
     expect(result.current.robotScene?.modelRef).toEqual({
@@ -210,7 +216,7 @@ it("uses fixed identity, mapping direction, calibration and asset grants even wh
   expect(result.current.robotScene?.modelRef.modelVersion).toBe("version-old");
   expect(
     calls.compatibility.mock.calls.every(
-      ([id, , scope]) => id === null && scope === null,
+      ([id]) => id === null || id === view.scene!.robot_id,
     ),
   ).toBe(true);
 });
@@ -228,12 +234,30 @@ it("enables explicitly labelled compatibility only for missing historical eviden
       stream,
       scope,
       currentBindingPreview,
+      undefined,
     ),
   );
   expect(result.current.robotSceneUnavailableReason).toContain("历史数据");
   expect(result.current.frozenEvidence).toBeNull();
 });
-it("does not substitute a current binding when processing explicitly froze no binding", async () => {
+it("reuses only the same authorized model assets and frozen scene across episode switches", async () => {
+  const grants = await authorizeLogicalRobotAssets(target.selection, view, new AbortController().signal);
+  const first: LogicalRobotTarget = { ...target, robot: view, robotAssets: grants };
+  const { result, rerender } = renderHook(
+    ({ selected }) => useLogicalRobotScene(selected, stream, "robot", currentBindingPreview),
+    { wrapper, initialProps: { selected: first } },
+  );
+  const key = result.current.robotScene?.reuseKey;
+  expect(key).toBeDefined();
+  rerender({ selected: { ...first, selection: { ...first.selection, episodeId: "next-episode" } } });
+  expect(result.current.robotScene?.reuseKey).toBe(key);
+  rerender({ selected: { ...first, robot: { ...view, scene_sha256: "1".repeat(64) } } });
+  expect(result.current.robotScene?.reuseKey).not.toBe(key);
+  rerender({ selected: { ...first, robotAssets: grants.map(file => ({ ...file,
+    grant: { ...file.grant, expires_at: "2000-01-01T00:00:00Z" } })) } });
+  expect(result.current.robotScene?.reuseKey).toBeUndefined();
+});
+it("uses the recorded instance when it gained a binding after processing", async () => {
   vi.mocked(loadLogicalRobotScene).mockResolvedValue({
     ...view,
     scene: {
@@ -249,15 +273,16 @@ it("does not substitute a current binding when processing explicitly froze no bi
     },
   });
   const { result } = mount();
-  await waitFor(() =>
-    expect(result.current.robotSceneUnavailableReason).toContain(
-      "处理规划时未绑定",
-    ),
-  );
-  expect(result.current.robotScene).toBeUndefined();
-  expect(calls.compatibility.mock.calls.every(([id]) => id === null)).toBe(
-    true,
-  );
+  await waitFor(() => expect(result.current.robotScene?.modelRef.modelVersion).toBe("version-old"));
+  expect(calls.compatibility.mock.calls.at(-1)?.[0]).toBe("robot");
+});
+it("uses the recorded instance's new version after rebinding and retains the frozen evidence", async () => {
+  calls.boundVersionId = "version-rebound";
+  const { result } = mount("another-robot");
+  await waitFor(() => expect(result.current.robotScene?.modelRef.modelVersion).toBe("version-rebound"));
+  expect(calls.compatibility.mock.calls.at(-1)?.[0]).toBe("robot");
+  expect(result.current.frozenEvidence?.scene?.model_version_id).toBe("version-old");
+  expect(authorizeLogicalRobotAssets).not.toHaveBeenCalled();
 });
 it("does not fall back on a failed frozen-scene request", async () => {
   vi.mocked(loadLogicalRobotScene).mockRejectedValue(new Error("403"));

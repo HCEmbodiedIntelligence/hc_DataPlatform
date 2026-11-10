@@ -151,6 +151,7 @@ def episode_delivery_candidates(
     collection_version_id: str | None = Query(None, max_length=256),
     offset: int = Query(0, ge=0),
     limit: int = Query(25, ge=1, le=100),
+    data_stage: Literal["dataset", "annotated"] = "dataset",
 ):
     response.headers["Cache-Control"] = "no-store"
     with delivery_service(packages, auth, project_id, region_code) as service:
@@ -160,6 +161,7 @@ def episode_delivery_candidates(
             collection_version_id=collection_version_id,
             offset=offset,
             limit=limit,
+            data_stage=data_stage,
         )
 
 

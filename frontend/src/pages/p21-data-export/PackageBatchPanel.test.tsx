@@ -74,7 +74,8 @@ function mount(annotated = false, canDownload = true) {
     },
   });
   vi.mocked(loadCollectionAnnotationHistory).mockResolvedValue(
-    f.annotation.history,
+    { ...f.annotation.history, task: { ...f.annotation.history.task,
+      status: "APPROVED", approved_revision: f.annotation.revision.revision } },
   );
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -122,7 +123,7 @@ it("shows RGB depth exclusion and retains the key after an interrupted request",
   expect(calls[0]![3]).toBe(calls[1]![3]);
   expect(calls[0]![1]).toEqual([{ data: f.data, annotation: null }]);
 });
-it("exports saved annotations directly after selecting an Episode", async () => {
+it("requests only completed candidates and exports approved annotations after selecting an Episode", async () => {
   const f = mount(true),
     user = userEvent.setup();
   await user.click(
@@ -132,6 +133,8 @@ it("exports saved annotations directly after selecting an Episode", async () => 
   );
   const create = screen.getByRole("button", { name: "导出" });
   await waitFor(() => expect(create).toBeEnabled());
+  expect(loadPackageCandidates).toHaveBeenCalledWith(f.scope, f.data.identity.dataset_id, expect.any(AbortSignal), undefined, "annotated");
+  expect(screen.getByText("标注完成 1 条 · 已选 1 条")).toBeVisible();
   vi.mocked(createPackageBatch).mockResolvedValue(f.job);
   await user.click(create);
   await waitFor(() =>
@@ -143,7 +146,7 @@ it("exports saved annotations directly after selecting an Episode", async () => 
           annotation: expect.objectContaining({
             task_id: f.annotation.task.task_id,
             revision: f.annotation.revision.revision,
-            allow_unreviewed: true,
+            allow_unreviewed: false,
             track: expect.objectContaining({ annotation_ids: [] }),
           }),
         },

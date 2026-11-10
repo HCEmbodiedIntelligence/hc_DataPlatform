@@ -8,6 +8,8 @@ from urllib.parse import quote, unquote, urlparse
 
 from hc_data_platform.core.context import retain_current_writer_permit
 
+from hc_data_platform.storage.oss_zip import is_member
+
 from .checksums import normalize_etag
 from .models import CompletedPartReference, MultipartPart, ObjectMetadata
 from .validation import validate_completion_parts
@@ -29,6 +31,19 @@ class S3ObjectStorage:
     def from_boto3(cls, bucket: str, **client_options: Any) -> S3ObjectStorage:
         boto3 = importlib.import_module("boto3")
         return cls(boto3.client("s3", **client_options), bucket)
+
+    def list_object_keys(self, prefix: str) -> tuple[str, ...]:
+        keys, token = [], None
+        while True:
+            page = self._client.list_objects_v2(Bucket=self._bucket, Prefix=prefix,
+                **({"ContinuationToken": token} if token else {}))
+            keys.extend(str(o["Key"]) for o in page.get("Contents", ()))
+            if not page.get("IsTruncated"):
+                return tuple(keys)
+            token = page["NextContinuationToken"]
+
+    def delete_object(self, key: str) -> None:
+        self._client.delete_object(Bucket=self._bucket, Key=key)
 
     def create_multipart(self, key: str) -> str:
         if self.head(key) is not None:
@@ -242,11 +257,76 @@ class OssObjectStorage:
         bucket: Any,
         *,
         presign_bucket: Any | None = None,
+        zip_sources: Any | None = None,
         part_info_factory: Callable[[int, str, int], Any] | None = None,
     ) -> None:
+        self.zip_sources = zip_sources
         self._bucket = bucket
         self._presign_bucket = presign_bucket or bucket
         self._part_info_factory = part_info_factory or _oss_part_info
+
+    def list_object_keys(self, prefix: str) -> tuple[str, ...]:
+        import oss2
+        return tuple(item.key for item in oss2.ObjectIteratorV2(self._bucket, prefix=prefix))
+
+    def inspect_reference(self, uri: str, *, max_files: int = 10000) -> dict[str, Any]:
+        from hc_data_platform.storage.oss_prefix import normalize_prefix
+        from hc_data_platform.storage.oss_reference import reference_key, reference_uri
+
+        if self.zip_sources and self.zip_sources.allows(uri):
+            return self.zip_sources.inventory(uri)
+        bucket = self._bucket.bucket_name
+        prefix = normalize_prefix(getattr(self._bucket, "key_prefix", ""))
+        key = reference_key(uri, bucket, prefix)
+        logical = key[len(prefix) :]
+        exact = None if key.endswith("/") else self.head(logical)
+        root = key.rpartition("/")[0] if exact else key.rstrip("/")
+        files = []
+        if exact:
+            files.append(
+                dict(
+                    path=key.rsplit("/", 1)[-1],
+                    object_key=reference_uri(bucket, key),
+                    size=exact.size,
+                    etag=exact.etag,
+                )
+            )
+        else:
+            token = ""
+            while True:
+                page = self._bucket.list_objects_v2(
+                    prefix=logical.rstrip("/") + "/", continuation_token=token, max_keys=1000
+                )
+                for item in page.object_list:
+                    if item.key.endswith("/"):
+                        continue
+                    physical = prefix + item.key
+                    files.append(
+                        dict(
+                            path=physical[len(root) + 1 :],
+                            object_key=reference_uri(bucket, physical),
+                            size=int(item.size),
+                            etag=normalize_etag(str(item.etag)),
+                        )
+                    )
+                    if len(files) > max_files:
+                        raise ValueError("一次最多导入 10000 个文件，请选择更小的目录。")
+                if not page.is_truncated:
+                    break
+                next_token = page.next_continuation_token
+                if not next_token or next_token == token:
+                    raise ValueError("OSS 列举未能继续，请重试。")
+                token = next_token
+        if not files:
+            raise ValueError("OSS 地址下没有文件，请检查地址和读取权限。")
+        return dict(
+            source_uri=reference_uri(bucket, key) + ("/" if not exact else ""),
+            source_prefix=reference_uri(bucket, root),
+            files=sorted(files, key=lambda f: f["path"]),
+        )
+
+    def delete_object(self, key: str) -> None:
+        self._bucket.delete_object(key)
 
     def create_multipart(self, key: str) -> str:
         if self.head(key) is not None:
@@ -360,18 +440,21 @@ class OssObjectStorage:
         )
         if not bucket_name:
             raise RuntimeError("OSS bucket adapter does not expose its bucket name")
+        prefix = getattr(self._bucket, "key_prefix", "")
         key = _authorized_key(
             uri,
             scheme="oss",
             bucket=bucket_name,
-            expected_key=expected_key,
+            expected_key=prefix + expected_key,
         )
-        metadata = self.head(key)
+        metadata = self.head(key[len(prefix):])
         if metadata is None:
             raise _object_reference_not_found()
         return metadata
 
     def head(self, key: str) -> ObjectMetadata | None:
+        if self.zip_sources and is_member(key):
+            return self.zip_sources.head(key)
         try:
             result = self._bucket.get_object_meta(key)
         except Exception as exc:
@@ -392,6 +475,9 @@ class OssObjectStorage:
         )
 
     def read_chunks(self, key: str, chunk_size: int = 8 * 1024 * 1024) -> Iterable[bytes]:
+        if self.zip_sources and is_member(key):
+            yield from self.zip_sources.chunks(key, chunk_size)
+            return
         result = self._bucket.get_object(key)
         try:
             while chunk := result.read(chunk_size):
@@ -406,6 +492,8 @@ class OssObjectStorage:
             raise ValueError("invalid object byte range")
         if start == end:
             return b""
+        if self.zip_sources and is_member(key):
+            return b"".join(self.zip_sources.chunks(key, 1024**2, start=start, end=end))
         result = self._bucket.get_object(key, byte_range=(start, end - 1))
         try:
             return bytes(result.read())
@@ -419,6 +507,9 @@ class OssObjectStorage:
     ) -> str:
         if expires_seconds < 1:
             raise ValueError("expires_seconds must be positive")
+        if self.zip_sources and is_member(key):
+            from hc_data_platform.storage.oss_zip_download import download_url
+            return download_url(key, expires_seconds, download_name)
         return str(
             self._presign_bucket.sign_url(
                 "GET",

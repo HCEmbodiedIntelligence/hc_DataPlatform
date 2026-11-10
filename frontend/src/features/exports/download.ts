@@ -1,3 +1,4 @@
+import { localObjectStorageUrl } from "../../shared/lib/object-storage-url";
 import type { PublishedExportDownload } from "./api";
 
 /** Media types describe artifacts; format identifiers never imply ZIP bytes. */
@@ -17,7 +18,7 @@ export function downloadExport(
   stem = "data-export",
 ): void {
   const anchor = document.createElement("a");
-  anchor.href = authorization.download_url;
+  anchor.href = localObjectStorageUrl(authorization.download_url);
   anchor.download = exportDownloadName(stem, authorization.media_type);
   anchor.rel = "noopener noreferrer";
   document.body.append(anchor);

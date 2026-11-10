@@ -88,8 +88,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     from hc_data_platform.capture_schemes.models import OutputContract
     from hc_data_platform.capture_schemes.schema import native_topic
 
+    from .mcap_contracts import HAND_COMMAND_FEATURES, JointEditRules
     from .mcap_native import decoded, prepare
-    from .mcap_selection import ros_type, select_mcap
+    from .mcap_selection import empty_hand_position, ros_type, select_mcap
 
     path, destination = Path(path), Path(destination)
     output = OutputContract.model_validate(cfg.semantic_output)
@@ -97,8 +98,10 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     if output.time_source == "FRAME_TIMESTAMP" and cfg.time_source != "STATE_LOG_TIME":
         raise ValueError("MCAP_FRAME_CLOCK_REQUIRES_STATE")
     versioned = output.algorithm in {"capture-structure/v2", "capture-structure/v3"}
+    edits = cfg.postprocessing_rules.active if isinstance(cfg.postprocessing_rules, JointEditRules) else {}
+    held_hands = HAND_COMMAND_FEATURES.intersection(cfg.numeric_sources) if "forward_fill_hands" in edits else set()
     selection = None
-    if versioned or (cfg.postprocessing_rules and cfg.postprocessing_rules.version == 2 and cfg.postprocessing_rules.active):
+    if versioned or (edits.keys() - {"forward_fill_hands"}):
         selected = destination.parent / (destination.name + "-selected.mcap")
         selection = select_mcap(path, selected, cfg, progress)
         path = selected
@@ -106,7 +109,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
         "semantic_output": None, "postprocessing_rules": None, "numeric_sources": {}, "alignment_policy": "PRESERVE",
         **({role + "_required_axes": cfg.required_axes(role) for role in ("state", "action")} if versioned else {}),
     })
-    recording, evidence = prepare(path, destination, base, progress, preserve_source=True)
+    fill_gaps = "fill_action_from_next_frame" in edits
+    recording, evidence = prepare(path, destination, base, progress, preserve_source=True,
+                                  fill_action_gaps=fill_gaps)
     if selection:
         target = destination / selection["path"]
         if selection.get("normalization"):
@@ -114,7 +119,11 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
         path.replace(target)
         path = target
         normalization = selection.get("normalization") or {}
-        if normalization.get("generated_action_messages"):
+        if evidence.get("action_gap_fill", {}).get("filled_frames"):
+            evidence["action_origin"] = "sent_with_training_state_labels"
+        elif normalization.get("initial_action_messages"):
+            evidence["action_origin"] = "sent_with_initial_state_fill"
+        elif normalization.get("generated_action_messages"):
             evidence["action_origin"] = "generated_from_state"
         elif normalization.get("replaced_action_messages"):
             evidence["action_origin"] = "sent_with_state_replacement"
@@ -170,7 +179,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
                 if reference_frames.setdefault(name, frame) != frame:
                     raise ValueError(f"MCAP_REFERENCE_FRAME_CHANGED: {name}")
                 numbers = [
-                    _number(value, field, dtype=features[name].dtype) for field in mapping.fields
+                    None if name in held_hands and empty_hand_position(value, field)
+                    else _number(value, field, dtype=features[name].dtype)
+                    for field in mapping.fields
                 ]
                 values[name].append(_cast(numbers, features[name]))
     for name in source_times:
@@ -231,6 +242,11 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     original = destination / "sensors/robot.mcap"
     replacement = destination / "sensors/semantic.mcap"
     present = {name for name, samples in values.items() if samples} | (set(features) & GENERATED)
+    # History belongs to one recording and one side; carried values never become observations.
+    last_hand = {}
+    aligned_action = None
+    fill_counts = {name: 0 for name in held_hands}
+    no_history = {name: 0 for name in held_hands}
     with original.open("rb") as source, replacement.open("wb") as target:
         writer = Writer(target, enable_crcs=True, enable_data_crcs=True)
         writer.start(profile=evidence["format"])
@@ -257,6 +273,8 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             )
             if logical in features:
                 value["values"] = _cast(value["values"], features[logical])
+            if fill_gaps and channel.topic == "/action":
+                aligned_action = (message.sequence, value)
             emit(channel.topic, value, message)
             if logical in features:
                 emit(native_topic(logical), value, message)
@@ -266,6 +284,10 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
             if channel.topic != "source.timestamp_ns":
                 continue
             stamp = value
+            if fill_gaps:
+                if aligned_action is None or aligned_action[0] != message.sequence:
+                    raise ValueError("MCAP_ACTION_EVIDENCE_MISSING")
+                action_row = aligned_action[1]
             selected = {
                 name: bisect.bisect_right(times, stamp) - 1 for name, times in source_times.items()
             }
@@ -274,12 +296,22 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
 
                 selected = {name: nearest_index(times, stamp, 150_000_000) for name, times in source_times.items()}
                 selected = {name: -1 if pos is None else pos for name, pos in selected.items()}
+            carried = {}
             for name in present:
                 feature = features[name]
                 if name in values:
                     pos = selected[name]
                     fresh = pos >= 0 and abs(stamp - source_times[name][pos]) <= (150_000_000 if cfg.normalization else round(cfg.maximum_time_error_ms * 1e6))
                     row = values[name][pos] if fresh else [None] * feature.shape[0]
+                    if name in held_hands:
+                        if row[0] is not None:
+                            last_hand[name] = (row, message.sequence, source_times[name][pos])
+                        elif name in last_hand and last_hand[name][2] <= stamp:
+                            row, frame, observed_ns = last_hand[name]
+                            carried[name] = {"source_frame": frame, "source_timestamp_ns": observed_ns}
+                            fill_counts[name] += 1
+                        else:
+                            no_history[name] += 1
                 elif name == "observation.recording_time":
                     row = [(stamp - origin) / 1e9]
                 else:
@@ -287,6 +319,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
                     for key in feature.names:
                         pos = selected[key]
                         source_stamp = source_times[key][pos] if pos >= 0 else None
+                        if fill_gaps and key == "action":
+                            source_stamp = action_row["source_timestamp_ns"]
+                            pos = 0 if source_stamp is not None else -1
                         age = (stamp - source_stamp) / 1e9 if source_stamp is not None else -1.0
                         row.append(
                             (source_stamp - origin) / 1e9
@@ -300,7 +335,16 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
                             else pos >= 0 and age <= (0.25 if key in cameras else 0.2)
                         )
                 emit(native_topic(name), _cast(row, feature), message)
-            emit("/metadata/source", {"format": "MCAP", "source_timestamp_ns": stamp}, message)
+            provenance = {"format": "MCAP", "source_timestamp_ns": stamp}
+            if fill_gaps:
+                provenance["recording_origin_ns"] = origin
+            if fill_gaps and action_row.get("action_origin"):
+                provenance["action_fill"] = {k: action_row[k] for k in (
+                    "action_origin", "source_frame", "source_timestamp_ns", "source_topic",
+                    "state_reference_timestamp_ns", "nearest_source_timestamp_ns")}
+            if carried:
+                provenance["hand_command_forward_fill"] = carried
+            emit("/metadata/source", provenance, message)
         writer.finish()
     replacement.replace(original)
     canonical_sensors = {
@@ -319,6 +363,10 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     )
     for camera in recording["cameras"]:
         camera["topic"] = native_topic(camera["topic"])
+    if held_hands:
+        evidence["hand_command_forward_fill"] = {
+            "filled_frames": fill_counts, "unfilled_frames": no_history,
+        }
     evidence.update(
         config={
             **cfg.model_dump(mode="json"),

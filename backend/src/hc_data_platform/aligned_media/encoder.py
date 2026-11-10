@@ -89,6 +89,9 @@ class FFmpegMp4Encoder:
             raise AlignedMediaEncodingError("aligned media staging target is incomplete")
 
         temporary = Path(tempfile.mkdtemp(prefix=f".{artifact_key}.", dir=self._root))
+        from hc_data_platform.storage.staging_lease import staging_lease
+        lease = staging_lease(temporary, touch=True)
+        lease.__enter__()
         try:
             output = temporary / "media.mp4"
             if request.mp4_source is None:
@@ -113,8 +116,11 @@ class FFmpegMp4Encoder:
                     raise AlignedMediaEncodingError(
                         "could not atomically commit aligned media staging"
                     ) from exc
+            import os
+            os.utime(final_dir, None)
             return encoded.model_copy(update={"file_uri": final_file.resolve().as_uri()})
         finally:
+            lease.__exit__(None, None, None)
             if temporary.exists():
                 shutil.rmtree(temporary)
 

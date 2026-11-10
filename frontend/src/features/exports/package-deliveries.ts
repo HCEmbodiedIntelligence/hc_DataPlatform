@@ -1,3 +1,5 @@
+import { deliveryUrl, waitForDeliveryCache } from "../../shared/lib/delivery-cache";
+import { localObjectStorageUrl } from "../../shared/lib/object-storage-url";
 import { z } from "zod";
 import type { Scope } from "../../shared/scope/model";
 import { episodeDataReferenceWireSchema as dataWire } from "../datasets/api/episode-package-wire";
@@ -48,7 +50,7 @@ const collectionPlan = z
       .regex(/^[a-z][a-z0-9_]*_collection_zip\/[1-9][0-9]*$/u),
     annotation_selection: z.literal("per_episode_fixed_selection"),
     contract_sha256: digest,
-    processor_version: z.enum(["hc-lerobot-collection/1", "hc-lerobot-collection/2", "hc-lerobot-collection/3", "hc-export/1"]),
+    processor_version: z.enum(["hc-lerobot-collection/1", "hc-lerobot-collection/2", "hc-lerobot-collection/3", "hc-lerobot-collection/4", "hc-lerobot-collection/5", "hc-export/1"]),
     archive_version: z.literal("hc-collection-archive/1"),
     reader_version: z.string().min(1),
   })
@@ -154,6 +156,7 @@ export async function loadPackageCandidates(
   datasetId: string,
   signal?: AbortSignal,
   page?: { collectionId: string; offset: number },
+  dataStage: "dataset" | "annotated" = "dataset",
 ) {
   const wire = z
     .object({
@@ -175,6 +178,7 @@ export async function loadPackageCandidates(
       cache: "no-store",
       query: {
         dataset_id: datasetId,
+        data_stage: dataStage,
         limit: 25,
         ...(page
           ? { collection_version_id: page.collectionId, offset: page.offset }
@@ -249,15 +253,11 @@ export async function createPackageBatch(
   const expectedArchive =
     mode === "rgb" || mode === "rgbd"
       ? "lerobot_collection_zip/1"
-      : mode === "mcap"
-        ? "mcap_collection_zip/2"
-        : mode === "original"
-          ? "original_collection_zip/1"
-          : mode === "independent"
-            ? "independent_episode_batch_zip/1"
-            : (await loadExportFormats(scope, signal)).find(
-                (f) => f.id === mode,
-              )?.archive_format;
+      : mode === "independent"
+        ? "independent_episode_batch_zip/1"
+        : (await loadExportFormats(scope, signal)).find(
+            (f) => f.id === mode,
+          )?.archive_format;
   if (!expectedArchive) throw new Error("当前平台不支持所选导出格式。");
   const body =
     mode === "independent"
@@ -357,20 +357,20 @@ export async function downloadPackageJob(
       job_id: z.string(),
       artifact_sha256: digest,
       size_bytes: count.positive(),
-      url: z.url(),
+      url: deliveryUrl,
       expires_seconds: z.literal(300),
     })
     .strict()
     .parse(
-      await request({
+      await waitForDeliveryCache(() => request({
         method: "POST",
         path: `${base(scope)}/${job.job_id}/download`,
         scope,
         signal,
         cache: "no-store",
-      }),
+      }), signal),
     );
-  const url = new URL(grant.url);
+  const url = new URL(grant.url, typeof window === "undefined" ? "http://localhost" : window.location.origin);
   if (
     grant.job_id !== job.job_id ||
     grant.artifact_sha256 !== job.artifact_sha256 ||
@@ -380,7 +380,7 @@ export async function downloadPackageJob(
     url.password
   )
     throw new Error("下载授权与归档身份不一致。");
-  return grant;
+  return { ...grant, url: localObjectStorageUrl(grant.url) };
 }
 
 const tagWire = z
@@ -407,6 +407,9 @@ export async function loadCollectionAnnotationHistory(
           data_ref: dataWire,
           current_revision: count,
           approved_revision: count.nullable(),
+          status: z.enum([
+            "DRAFT", "SUBMITTED", "APPROVED", "NEEDS_REVISION", "REJECTED",
+          ]),
         })
         .passthrough(),
       revisions: z.array(

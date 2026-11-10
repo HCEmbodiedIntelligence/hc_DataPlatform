@@ -163,16 +163,39 @@ def retry_postgres(
                 return previous
             rollout = f"{recording_id}:{episode_id}"
             cursor.execute(
-                """SELECT 1 FROM episode_store.versions v JOIN episode_store.bindings b USING
+                """SELECT v.data_version_id,b.current_data_version_id FROM episode_store.versions v
+                JOIN episode_store.bindings b USING
                   (organization_id,project_id,region_code,dataset_id,episode_id)
                 WHERE v.organization_id=%s AND v.project_id=%s AND v.region_code=%s
                   AND b.rollout_id=%s AND v.status='COMMITTED'
-                UNION ALL SELECT 1 FROM lance_rollout_lineage
-                WHERE organization_id=%s AND project_id=%s AND rollout_id=%s LIMIT 1""",
+                UNION ALL SELECT NULL,NULL FROM lance_rollout_lineage
+                WHERE organization_id=%s AND project_id=%s AND rollout_id=%s LIMIT 2""",
                 (*scoped, rollout, scope.organization_id, scope.project_id, rollout),
             )
-            if cursor.fetchone() is not None:
-                raise committed_conflict()
+            committed = cursor.fetchall()
+            resume_version = None
+            if committed:
+                # The immutable Episode can already exist when its dataset projection fails.
+                # Resume only this version, never a deletion, replacement, or legacy Lance write.
+                if (
+                    discard or len(committed) != 1 or not committed[0][0]
+                    or committed[0][0] != committed[0][1]
+                    or previous.status != EpisodeProcessingStatus.FAILED
+                ):
+                    raise committed_conflict()
+                resume_version = committed[0][0]
+                if not (previous.failure_stage == "episode_commit"
+                        and previous.qc_report_id and previous.alignment_attempt_id):
+                    # A temporary error on a prior pinned retry must not strand that publication.
+                    cursor.execute(
+                        """SELECT 1 FROM core.outbox_events WHERE event_id=%s
+                           AND (organization_id,project_id,region_code)=(%s,%s,%s)
+                           AND envelope->'payload'->>'workflow_id'=%s
+                           AND envelope->'payload'->>'resume_data_version_id'=%s""",
+                        (previous.event_id, *scoped, previous.workflow_id, resume_version),
+                    )
+                    if not cursor.fetchone():
+                        raise committed_conflict()
             if previous.status == EpisodeProcessingStatus.PENDING_QC:
                 # Lock the old dispatch before checking its lease: a UI snapshot
                 # must never cancel or duplicate an activity that is being started.
@@ -188,6 +211,10 @@ def retry_postgres(
                     update={"dispatch_error_code": delivery[0] if delivery else None}
                 )
             episode, event = prepare_retry(previous, command, discard=discard)
+            if resume_version is not None:
+                event = event.model_copy(update={
+                    "payload": {**event.payload, "resume_data_version_id": resume_version},
+                })
             if previous.status == EpisodeProcessingStatus.PENDING_QC and not discard:
                 # Retire the blocked event in the same transaction as its replacement.
                 cursor.execute(

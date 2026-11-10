@@ -88,7 +88,7 @@ export function deliveryFixture() {
       approval: null,
       submission: null,
       parent_manifest_sha256: "b".repeat(64),
-      processor_version: "hc-annotated-delivery-queue/1",
+      processor_version: "hc-annotated-delivery-queue/2",
       reader_version: "lerobot/0.6.1",
       archive_format: "independent_episode_zip/1",
       includes_collected_depth: true,

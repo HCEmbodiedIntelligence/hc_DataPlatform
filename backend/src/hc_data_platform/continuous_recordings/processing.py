@@ -278,6 +278,11 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             failed, expected_status=current.status
         ).model_dump(mode="json")
 
+    def resolve_recording(self, **scope):
+        return self.resolve(
+            **scope, episode_id="recording-quality", finalized_revision=0, recording_quality=True
+        )
+
     def resolve(
         self,
         *,
@@ -288,85 +293,118 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         episode_id: str,
         finalized_revision: int,
         expected_workflow_id: str | None = None,
+        recording_quality: bool = False,
     ) -> ContinuousEpisodeWorkflowInput:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT processing.episode_document, recording.recording_document,
-                           upload.upload_document, slice.episode_document
-                      FROM ingest.recording_episode_processing processing
-                      JOIN ingest.continuous_recordings recording
-                        ON recording.organization_id = processing.organization_id
-                       AND recording.project_id = processing.project_id
-                       AND recording.region_code = processing.region_code
-                       AND recording.recording_id = processing.recording_id
-                      JOIN ingest.recording_uploads upload
-                        ON upload.organization_id = recording.organization_id
-                       AND upload.project_id = recording.project_id
-                       AND upload.region_code = recording.region_code
-                       AND upload.upload_id = recording.recording_upload_id
-                      JOIN ingest.recording_episode_slices slice
-                        ON slice.organization_id = processing.organization_id
-                       AND slice.project_id = processing.project_id
-                       AND slice.region_code = processing.region_code
-                       AND slice.recording_id = processing.recording_id
-                       AND slice.episode_id = processing.episode_id
-                       AND slice.revision = processing.finalized_revision
-                     WHERE processing.organization_id = %s AND processing.project_id = %s
-                       AND processing.region_code = %s AND processing.recording_id = %s
-                       AND processing.episode_id = %s AND upload.status = 'COMMITTED'
-                    """,
-                    (organization_id, project_id, region_code, recording_id, episode_id),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    raise _blocked("the finalized continuous Episode input is missing")
-                from .asset_models import EpisodeProcessing
+                if recording_quality:
+                    from types import SimpleNamespace
 
-                processing = EpisodeProcessing.model_validate(row[0])
-                if (
-                    expected_workflow_id is not None
-                    and processing.workflow_id != expected_workflow_id
-                ):
-                    raise _blocked("the continuous Episode workflow differs from its scoped ledger")
-                recording = ContinuousRecording.model_validate(row[1])
-                upload = RecordingUpload.model_validate(row[2])
-                from .models import EpisodeSlice
+                    cursor.execute(
+                        """SELECT r.recording_document,u.upload_document
+                        FROM ingest.continuous_recordings r JOIN ingest.recording_uploads u
+                        ON (u.organization_id,u.project_id,u.region_code,u.upload_id)=
+                           (r.organization_id,r.project_id,r.region_code,r.recording_upload_id)
+                        WHERE r.organization_id=%s AND r.project_id=%s AND r.region_code=%s
+                        AND r.recording_id=%s AND u.status='COMMITTED'""",
+                        (organization_id, project_id, region_code, recording_id),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise _blocked("the committed recording quality input is missing")
+                    recording = ContinuousRecording.model_validate(row[0])
+                    upload = RecordingUpload.model_validate(row[1])
+                    processing = SimpleNamespace(
+                        start_offset_ns=0, end_offset_ns=recording.duration_ns
+                    )
+                    task_labels = None
+                    cursor.execute(
+                        """SELECT asset_document FROM ingest.recording_upload_assets
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                        AND upload_id=%s AND status='COMMITTED' ORDER BY asset_path""",
+                        (organization_id, project_id, region_code, recording.recording_upload_id),
+                    )
+                    raw_assets = tuple(RecordingAsset.model_validate(item[0])
+                                       for item in cursor.fetchall())
+                else:
+                    cursor.execute(
+                        """
+                        SELECT processing.episode_document, recording.recording_document,
+                               upload.upload_document, slice.episode_document
+                          FROM ingest.recording_episode_processing processing
+                          JOIN ingest.continuous_recordings recording
+                            ON recording.organization_id = processing.organization_id
+                           AND recording.project_id = processing.project_id
+                           AND recording.region_code = processing.region_code
+                           AND recording.recording_id = processing.recording_id
+                          JOIN ingest.recording_uploads upload
+                            ON upload.organization_id = recording.organization_id
+                           AND upload.project_id = recording.project_id
+                           AND upload.region_code = recording.region_code
+                           AND upload.upload_id = recording.recording_upload_id
+                          JOIN ingest.recording_episode_slices slice
+                            ON slice.organization_id = processing.organization_id
+                           AND slice.project_id = processing.project_id
+                           AND slice.region_code = processing.region_code
+                           AND slice.recording_id = processing.recording_id
+                           AND slice.episode_id = processing.episode_id
+                           AND slice.revision = processing.finalized_revision
+                         WHERE processing.organization_id = %s AND processing.project_id = %s
+                           AND processing.region_code = %s AND processing.recording_id = %s
+                           AND processing.episode_id = %s AND upload.status = 'COMMITTED'
+                        """,
+                        (organization_id, project_id, region_code, recording_id, episode_id),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise _blocked("the finalized continuous Episode input is missing")
+                    from .asset_models import EpisodeProcessing
 
-                saved_slice = EpisodeSlice.model_validate(row[3])
-                task_labels = saved_slice.task_labels
-                if task_labels is None and saved_slice.task_label:
-                    task_labels = (saved_slice.task_label,)
-                if processing.finalized_revision != finalized_revision:
-                    raise _blocked("the continuous Episode finalized revision has changed")
-                if processing.status in {
-                    EpisodeProcessingStatus.QC_FAILED,
-                    EpisodeProcessingStatus.READY,
-                    EpisodeProcessingStatus.DISCARDED,
-                }:
-                    raise _blocked("the continuous Episode is already terminal")
-                cursor.execute(
-                    """
-                    SELECT asset.asset_document
-                      FROM ingest.recording_episode_asset_windows asset_window
-                      JOIN ingest.recording_upload_assets asset
-                        ON asset.organization_id = asset_window.organization_id
-                       AND asset.project_id = asset_window.project_id
-                       AND asset.region_code = asset_window.region_code
-                       AND asset.upload_id = asset_window.upload_id
-                       AND asset.asset_id = asset_window.asset_id
-                     WHERE asset_window.organization_id = %s AND asset_window.project_id = %s
-                       AND asset_window.region_code = %s AND asset_window.recording_id = %s
-                       AND asset_window.episode_id = %s AND asset.status = 'COMMITTED'
-                     ORDER BY asset.asset_path
-                    """,
-                    (organization_id, project_id, region_code, recording_id, episode_id),
-                )
-                raw_assets = tuple(
-                    RecordingAsset.model_validate(item[0]) for item in cursor.fetchall()
-                )
+                    processing = EpisodeProcessing.model_validate(row[0])
+                    if (
+                        expected_workflow_id is not None
+                        and processing.workflow_id != expected_workflow_id
+                    ):
+                        raise _blocked(
+                            "the continuous Episode workflow differs from its scoped ledger"
+                        )
+                    recording = ContinuousRecording.model_validate(row[1])
+                    upload = RecordingUpload.model_validate(row[2])
+                    from .models import EpisodeSlice
+
+                    saved_slice = EpisodeSlice.model_validate(row[3])
+                    task_labels = saved_slice.task_labels
+                    if task_labels is None and saved_slice.task_label:
+                        task_labels = (saved_slice.task_label,)
+                    if processing.finalized_revision != finalized_revision:
+                        raise _blocked("the continuous Episode finalized revision has changed")
+                    if processing.status in {
+                        EpisodeProcessingStatus.QC_FAILED,
+                        EpisodeProcessingStatus.READY,
+                        EpisodeProcessingStatus.DISCARDED,
+                    }:
+                        raise _blocked("the continuous Episode is already terminal")
+                    cursor.execute(
+                        """
+                        SELECT asset.asset_document
+                          FROM ingest.recording_episode_asset_windows asset_window
+                          JOIN ingest.recording_upload_assets asset
+                            ON asset.organization_id = asset_window.organization_id
+                           AND asset.project_id = asset_window.project_id
+                           AND asset.region_code = asset_window.region_code
+                           AND asset.upload_id = asset_window.upload_id
+                           AND asset.asset_id = asset_window.asset_id
+                         WHERE asset_window.organization_id = %s AND asset_window.project_id = %s
+                           AND asset_window.region_code = %s AND asset_window.recording_id = %s
+                           AND asset_window.episode_id = %s AND asset.status = 'COMMITTED'
+                         ORDER BY asset.asset_path
+                        """,
+                        (organization_id, project_id, region_code, recording_id, episode_id),
+                    )
+                    raw_assets = tuple(
+                        RecordingAsset.model_validate(item[0]) for item in cursor.fetchall()
+                    )
                 configuration = upload.command.recording_config
                 modality_keys = frozenset(
                     [camera.modality_key for camera in configuration.cameras]
@@ -492,9 +530,10 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             connection.close()
 
         schemas = self._package_schemas or self._catalog
-        if self._package_schemas is not None and frozen is not None:
+        if not recording_quality and self._package_schemas is not None and frozen is not None:
             snapshot = schemas.resolve_capture_schema(snapshot)
-        schemas.register_schema(snapshot)
+        if not recording_quality:
+            schemas.register_schema(snapshot)
         source_sha256 = canonical_hash(
             {
                 "pipeline": "continuous-episode-package/3"
@@ -537,7 +576,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
         )
         expected_version = (
             None
-            if self._package_schemas is not None
+            if recording_quality or self._package_schemas is not None
             else self._reserve_dataset_version(
                 organization_id=organization_id,
                 project_id=project_id,
@@ -583,7 +622,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             quality_profile=quality_profile,
             alignment_profile=AlignmentProfileV1(
                 profile_id=f"continuous:{snapshot.schema_snapshot_id}",
-                converter_version=("continuous-episode-package/4" if configuration.recorder_version in {"native-mcap-recording/3", "native-mcap-recording/4"} else "continuous-episode-package/3")
+                converter_version="continuous-episode-package/5"
                 if self._package_schemas is not None
                 else "continuous-mp4-sensor/1",
                 frequency_hz=frequency_hz,
@@ -594,7 +633,9 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             start_offset_ns=processing.start_offset_ns,
             end_offset_ns=processing.end_offset_ns,
             expected_dataset_version=expected_version,
-            storage_format="lerobot_v3" if self._package_schemas is not None else "lance",
+            storage_format=(
+                "lerobot_v3" if recording_quality or self._package_schemas is not None else "lance"
+            ),
             media_task_queue=self._media_task_queue,
         )
 
@@ -844,7 +885,7 @@ class ContinuousEpisodeProcessingService:
         self._settle_version_reservation(persisted)
         return ContinuousEpisodeStateActivityOutput(episode=persisted)
 
-    def qc(self, request: ContinuousEpisodeWorkflowInput) -> ContinuousEpisodeQcActivityOutput:
+    def inspect_quality(self, request: ContinuousEpisodeWorkflowInput, *, recording_quality=False):
         findings: set[str] = set()
         sensor_count = 0
         capture_quality = None
@@ -881,6 +922,7 @@ class ContinuousEpisodeProcessingService:
                 and request.storage_format == "lerobot_v3"
             ):
                 from .capture_quality import summarize
+                from .action_labels import window_config
 
                 capture_quality = summarize(
                     [
@@ -891,6 +933,7 @@ class ContinuousEpisodeProcessingService:
                     request.end_offset_ns,
                     request.quality_profile,
                     output=(request.capture_snapshot or {}).get("output"),
+                    label_config=window_config(request.capture_snapshot),
                 )
                 findings.update(capture_quality["reject_codes"])
                 warning_codes.update(capture_quality["warning_codes"])
@@ -929,6 +972,7 @@ class ContinuousEpisodeProcessingService:
             measured_offsets = alignment_offsets(
                 [localized[a.asset_id] for a in _assets_for_role(request.assets, RecordingAssetRole.SENSOR_DATA)],
                 request.start_offset_ns, request.end_offset_ns,
+                label_config=window_config(request.capture_snapshot),
             ) if capture_quality is not None else {}
             quality_data = QualityInputV1(
                 rollout_id=request.projection.rollout_id,
@@ -948,9 +992,12 @@ class ContinuousEpisodeProcessingService:
                     quality_data, request.quality_profile, observations=quality_observations()
                 )
                 report, rule_evidence = evaluation.report, evaluation.evidence
-                if self._episode_packages is None:
-                    raise ContinuousEpisodeProcessingError("Episode package service is required")
-                self._episode_packages.quality_evidence.put(evaluation)
+                if not recording_quality:
+                    if self._episode_packages is None:
+                        raise ContinuousEpisodeProcessingError(
+                            "Episode package service is required"
+                        )
+                    self._episode_packages.quality_evidence.put(evaluation)
             else:
                 report = self._quality.evaluate_stream(
                     quality_data, quality_observations(), request.quality_profile
@@ -965,7 +1012,9 @@ class ContinuousEpisodeProcessingService:
 
         status = "PASS" if not findings else "REJECT"
         report_document = {
-            "schema_version": "continuous-episode-qc/v1",
+            "schema_version": (
+                "continuous-recording-qc/v1" if recording_quality else "continuous-episode-qc/v1"
+            ),
             "recording_id": request.projection.recording_id,
             "episode_id": request.projection.episode_id,
             "rollout_id": request.projection.rollout_id,
@@ -979,17 +1028,22 @@ class ContinuousEpisodeProcessingService:
             "quality_report": report.model_dump(mode="json"),
             **({"rule_evidence": rule_evidence.model_dump(mode="json")} if rule_evidence else {}),
         }
+        return report_document
+
+    def qc(self, request: ContinuousEpisodeWorkflowInput) -> ContinuousEpisodeQcActivityOutput:
+        report_document = self.inspect_quality(request)
+        status = report_document["status"]
         report_sha = canonical_hash(report_document)
         report_id = f"crqc_{report_sha[:32]}"
         self._put_qc_report(request, report_id, report_sha, status, report_document)
         return ContinuousEpisodeQcActivityOutput(
             report_id=report_id,
             status=status,
-            finding_codes=tuple(sorted(findings)),
+            finding_codes=tuple(report_document["finding_codes"]),
             inspected_video_count=len(
                 _assets_for_role(request.assets, RecordingAssetRole.RAW_VIDEO)
             ),
-            inspected_sensor_message_count=sensor_count,
+            inspected_sensor_message_count=report_document["sensor_message_count"],
         )
 
     def align(
@@ -1329,7 +1383,11 @@ class ContinuousEpisodeProcessingService:
         if self._episode_packages is None:
             raise ContinuousEpisodeProcessingError("recording Episode store is not configured")
         plan.validate_recording_bundle(request, alignment, manifest, staging)
+        if request.resume_data_version_id and plan.input.data_version_id != request.resume_data_version_id:
+            raise ContinuousEpisodeProcessingError("retry plan differs from the committed Episode")
         published = self._episode_packages.recover_bundle(plan)
+        if published is None and request.resume_data_version_id:
+            raise ContinuousEpisodeProcessingError("the committed Episode for this retry is missing")
         if published is None:
             with (
                 recording_files(request, self._connection_factory, self._storage) as (_, paths),
@@ -1502,27 +1560,24 @@ class ContinuousEpisodeProcessingService:
         with tempfile.TemporaryDirectory(prefix="continuous-episode-") as raw_directory:
             root = Path(raw_directory)
             localized: dict[str, Path] = {}
+            from .derived_cache import DerivedCache
+
+            source = request.projection
+            derived = DerivedCache(
+                self._storage,
+                self._connection_factory,
+                (source.organization_id, source.project_id, source.region_code),
+                root,
+            )
             for asset in selected:
                 suffix = Path(urlparse(asset.object_key).path).suffix or ".raw"
-                path = root / f"{asset.asset_id}{suffix}"
-                digest = hashlib.sha256()
-                written = 0
-                with path.open("wb") as target:
-                    for chunk in self._storage.read_chunks(asset.object_key):
-                        if not isinstance(chunk, bytes):
-                            raise TypeError("object storage returned non-bytes")
-                        written += len(chunk)
-                        if written > asset.size_bytes:
-                            raise ContinuousEpisodeProcessingError(
-                                "localized raw asset exceeded its receipt"
-                            )
-                        digest.update(chunk)
-                        target.write(chunk)
-                if written != asset.size_bytes or digest.hexdigest() != asset.content_sha256:
-                    raise ContinuousEpisodeProcessingError(
-                        "localized raw asset differs from its immutable receipt"
-                    )
-                localized[asset.asset_id] = path
+                localized[asset.asset_id] = derived.localize(
+                    asset.object_key,
+                    asset.relative_path,
+                    asset.size_bytes,
+                    asset.content_sha256,
+                    root / f"{asset.asset_id}{suffix}",
+                )
             yield localized
 
     def _openarm_numeric_quality(self, request, localized, findings, capture_quality=None):
@@ -1546,7 +1601,7 @@ class ContinuousEpisodeProcessingService:
         )
         for asset in _assets_for_role(request.assets, RecordingAssetRole.SENSOR_DATA):
             for count, (_, channel, message) in enumerate(
-                _mcap_messages(localized[asset.asset_id]), start=1
+                _episode_messages(localized[asset.asset_id], request), start=1
             ):
                 if count > _MAX_SENSOR_MESSAGES:
                     raise ContinuousEpisodeProcessingError(
@@ -1635,7 +1690,7 @@ class ContinuousEpisodeProcessingService:
         configured = {sensor.topic: sensor for sensor in request.recording_config.sensors}
         seen: set[str] = set()
         try:
-            for count, (schema, channel, message) in enumerate(_mcap_messages(path), start=1):
+            for count, (schema, channel, message) in enumerate(_episode_messages(path, request), start=1):
                 if count > _MAX_SENSOR_MESSAGES:
                     raise ContinuousEpisodeProcessingError(
                         "sensor MCAP exceeds the bounded message limit"
@@ -1873,7 +1928,7 @@ class ContinuousEpisodeProcessingService:
     ) -> Iterator[tuple[int, str, TimedSampleV1]]:
         configured = {sensor.topic: sensor for sensor in request.recording_config.sensors}
         previous = -1
-        for count, (schema, channel, message) in enumerate(_mcap_messages(path), start=1):
+        for count, (schema, channel, message) in enumerate(_episode_messages(path, request), start=1):
             if count > _MAX_SENSOR_MESSAGES:
                 raise ContinuousEpisodeProcessingError(
                     "sensor MCAP exceeds the bounded message limit"
@@ -2083,6 +2138,13 @@ def _only_role(
     if len(selected) != 1:
         raise ContinuousEpisodeProcessingError(f"Episode requires exactly one {role.value}")
     return selected[0]
+
+
+def _episode_messages(path, request):
+    from .action_labels import window_config, window_messages
+
+    return window_messages(_mcap_messages(path), request.start_offset_ns, request.end_offset_ns,
+                           window_config(getattr(request, "capture_snapshot", None)))
 
 
 def _mcap_messages(path: Path) -> Iterator[tuple[Any, Any, Any]]:

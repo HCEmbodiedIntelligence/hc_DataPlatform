@@ -9,12 +9,47 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from fractions import Fraction
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .errors import format_error
+
+RGB_STATISTICS_HISTOGRAM = "uint8-histogram/1"
+
+
+class RgbHistogram:
+    """Exact counts of all RGB pixels, without full-frame float64 reductions."""
+
+    def __init__(self) -> None:
+        self.counts = np.zeros((3, 256), dtype=np.int64)
+
+    def add(self, frame: bytes) -> None:
+        pixels = np.frombuffer(frame, dtype=np.uint8)
+        for channel in range(3):
+            self.counts[channel] += np.bincount(pixels[channel::3], minlength=256)
+
+    def statistics(self) -> dict[str, Any]:
+        samples = self.counts.sum(axis=1)
+        if np.any(samples == 0):
+            raise ValueError("RGB statistics require a nonempty stream")
+        values = np.arange(256, dtype=np.float64) / 255
+        mean = self.counts @ values / samples
+        # Centered variance avoids cancellation for constant/near-constant images.
+        variance = (self.counts * np.square(values - mean[:, None])).sum(axis=1) / samples
+        present = self.counts > 0
+        minimum = present.argmax(axis=1) / 255
+        maximum = (255 - present[:, ::-1].argmax(axis=1)) / 255
+        return {
+            key: value.reshape(3, 1, 1).tolist()
+            for key, value in {
+                "min": minimum,
+                "max": maximum,
+                "mean": mean,
+                "std": np.sqrt(variance),
+            }.items()
+        }
 
 
 @contextmanager
@@ -46,8 +81,15 @@ def video_process(command: list[str], *, encode: bool = False) -> Iterator[subpr
 
 
 def inspect_video(
-    path: Path, *, frame_count: int, fps: float
+    path: Path,
+    *,
+    frame_count: int,
+    fps: float,
+    statistics_method: Literal["legacy", "uint8-histogram/1"] = "legacy",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    if statistics_method not in {"legacy", RGB_STATISTICS_HISTOGRAM}:
+        raise ValueError("unsupported RGB statistics method")
+    histogram = RgbHistogram() if statistics_method == RGB_STATISTICS_HISTOGRAM else None
     probe = subprocess.run(
         [
             "ffprobe",
@@ -106,11 +148,17 @@ def inspect_video(
                     "EXPORT_MEDIA_FRAMES_MISSING",
                     "Exported MP4 contains a damaged or missing frame.",
                 )
-            pixels = np.frombuffer(frame, dtype=np.uint8).reshape(-1, 3).astype(np.float64) / 255
-            total += pixels.sum(axis=0)
-            square += np.square(pixels).sum(axis=0)
-            minimum = np.minimum(minimum, pixels.min(axis=0))
-            maximum = np.maximum(maximum, pixels.max(axis=0))
+            if histogram is not None:
+                histogram.add(frame)
+            else:
+                # Preserve byte-for-byte statistics for frozen older package inputs.
+                pixels = (
+                    np.frombuffer(frame, dtype=np.uint8).reshape(-1, 3).astype(np.float64) / 255
+                )
+                total += pixels.sum(axis=0)
+                square += np.square(pixels).sum(axis=0)
+                minimum = np.minimum(minimum, pixels.min(axis=0))
+                maximum = np.maximum(maximum, pixels.max(axis=0))
         if decoder.stdout.read(1):
             raise format_error(
                 "EXPORT_MEDIA_FRAME_COUNT_MISMATCH", "Exported MP4 contains extra frames."
@@ -121,6 +169,8 @@ def inspect_video(
         key: value.reshape(3, 1, 1).tolist()
         for key, value in {"min": minimum, "max": maximum, "mean": mean, "std": std}.items()
     }
+    if histogram is not None:
+        stats = histogram.statistics()
     stats["count"] = [frame_count]
     feature: dict[str, Any] = {
         "dtype": "video",

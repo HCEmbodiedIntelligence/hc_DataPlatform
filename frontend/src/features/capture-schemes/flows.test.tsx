@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -38,6 +38,8 @@ import { draftKey, saveDraft } from "./navigation";
 import { versionSchema } from "./contracts";
 import { normalizeAdapters } from "./editor-model";
 import { QualityFields } from "./QualityFields";
+expect.extend(matchers);
+
 const flags = vi.hoisted(() => ({ manage: true, taskManage: true }));
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 vi.mock("../../shared/auth/use-capabilities", () => ({
@@ -218,6 +220,8 @@ beforeEach(() => {
           {
             ...fixtureLink(9),
             status: "MAPPING_UNVERIFIED",
+            validated_formats: [],
+            validations: [],
             mapping: {
               ...fixtureLink().mapping,
               mapping: command.mapping,
@@ -637,10 +641,11 @@ it("restores task form and submits capture_plan in the creation command", async 
       ),
   ).toBe(false);
 });
-it("updates only device mapping and requires validation before READY", async () => {
+it("makes a saved device mapping available immediately and keeps sample validation optional", async () => {
   const user = userEvent.setup();
+  const onReadyChange = vi.fn();
   mount(
-    <RobotSchemeAssociations organizationId="org" robotId="r1" canManage />,
+    <RobotSchemeAssociations organizationId="org" robotId="r1" canManage onReadyChange={onReadyChange} />,
   );
   await user.click(await screen.findByRole("button", { name: "映射与默认项" }));
   await user.type(
@@ -648,7 +653,10 @@ it("updates only device mapping and requires validation before READY", async () 
     "actual.state",
   );
   await user.click(screen.getByRole("button", { name: "保存关联" }));
-  expect(await screen.findByText("已关联 · 映射待验证")).toBeVisible();
+  await waitFor(() => expect(onReadyChange).toHaveBeenCalledWith(true));
+  expect(screen.getByText("可用于采集")).toBeVisible();
+  expect(screen.getByRole("button", { name: "验证映射" })).toBeEnabled();
+  expect(vi.mocked(request).mock.calls.some(([o]) => o.path.endsWith(":validate"))).toBe(false);
   const command = vi
     .mocked(request)
     .mock.calls.find(([o]) => o.method === "PUT")![0].body;
@@ -661,6 +669,8 @@ it("updates only device mapping and requires validation before READY", async () 
     make_default: true,
   });
   expect(command).not.toHaveProperty("output");
+  await user.click(screen.getByRole("button", { name: "验证映射" }));
+  expect(await screen.findByRole("dialog", { name: "验证设备映射" })).toBeInTheDocument();
 });
 
 it("checks published model compatibility and filters actual published software", async () => {

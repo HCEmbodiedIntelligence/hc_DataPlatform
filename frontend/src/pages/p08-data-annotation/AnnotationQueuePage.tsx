@@ -1,6 +1,7 @@
 import {
   ResourceLabel,
   readableFallback,
+  useResourceNames,
 } from "../../shared/lib/resource-labels";
 import { annotationDataLabel } from "../../features/annotation/runtime/annotation-package";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
@@ -46,6 +47,7 @@ import {
 } from "../../features/annotation/query-codec";
 import { annotationRoutes } from "../../features/annotation/routing";
 import { annotationTaskListKey } from "../../features/annotation/runtime/task-preload";
+import { compareAnnotationTasks } from "../../features/annotation/runtime/task-order";
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import "./p08.css";
 
@@ -63,8 +65,8 @@ export const ANNOTATION_QUEUE_STAGES: readonly QueueStageDefinition[] = [
     status: "DRAFT",
     label: "待标注",
     description: "选择任务开始标注",
-    queueDescription: "点击任务行即可进入标注。",
-    emptyDescription: "新任务会在 Lance 与标签结构固定后进入此队列。",
+    queueDescription: "点击任务进入工作台，可先划分片段，再直接标注，无需重新入库。",
+    emptyDescription: "录制入库完成并关联标注规则后，会进入此队列。",
     icon: PencilLine,
   },
   {
@@ -153,6 +155,7 @@ function taskTarget(task: RuntimeAnnotationTask, returnTo: string): string {
 
 function QueueRow(props: {
   readonly task: RuntimeAnnotationTask;
+  readonly label?: string;
   readonly scope: RuntimeAnnotationScope;
   readonly actorId: string | null;
   readonly canClaim: boolean;
@@ -281,11 +284,7 @@ function QueueRow(props: {
           className="p08-cell-primary p08-truncate"
           title={props.task.rollout_id}
         >
-          <ResourceLabel
-            kind="annotation_task"
-            id={props.task.task_id}
-            fallback={readableFallback("rollout", props.task.rollout_id)}
-          />
+          {props.label ?? readableFallback("rollout", props.task.rollout_id)}
         </span>
       </th>
       <td>
@@ -429,6 +428,16 @@ function RuntimeAnnotationQueuePage({
     retry: false,
     staleTime: 15_000,
   });
+  const taskReferences = useMemo(
+    () =>
+      (tasks.data ?? []).map((task) => ({
+        kind: "annotation_task" as const,
+        id: task.task_id,
+      })),
+    [tasks.data],
+  );
+  // Resolve every row before sorting so numbering stays correct across pages.
+  const taskNames = useResourceNames(taskReferences);
   const counts = useMemo<Record<AnnotationQueueStage, number>>(() => {
     const next: Record<AnnotationQueueStage, number> = {
       DRAFT: 0,
@@ -460,9 +469,14 @@ function RuntimeAnnotationQueuePage({
         );
       })
       .toSorted((left, right) =>
-        (right.updated_at ?? "").localeCompare(left.updated_at ?? ""),
+        compareAnnotationTasks(
+          left,
+          right,
+          taskNames.data?.[left.task_id],
+          taskNames.data?.[right.task_id],
+        ),
       );
-  }, [deferredQueryText, queueSearch.stage, tasks.data]);
+  }, [deferredQueryText, queueSearch.stage, tasks.data, taskNames.data]);
   const page = Math.min(
     queueSearch.page,
     Math.max(1, Math.ceil(visible.length / queueSearch.limit)),
@@ -507,7 +521,10 @@ function RuntimeAnnotationQueuePage({
     setSearchParams(next);
   };
 
-  if (!unscopedAccount && (capabilities.loading || tasks.isLoading))
+  if (
+    !unscopedAccount &&
+    (capabilities.loading || tasks.isLoading || taskNames.isLoading)
+  )
     return <AnnotationPageState kind="first-loading" />;
   if (!unscopedAccount && (capabilities.failed || !canRead))
     return <AnnotationPageState kind="forbidden" />;
@@ -586,7 +603,7 @@ function RuntimeAnnotationQueuePage({
         label: "搜索任务、Rollout、Dataset 或数据结构",
         placeholder: "搜索任务 / Rollout / Dataset…",
         value: queryText,
-        meta: `按最近更新时间展示 · ${counts[queueSearch.stage]} 项处于此状态`,
+        meta: `按任务编号、Episode 编号升序展示 · ${counts[queueSearch.stage]} 项处于此状态`,
         onChange: updateQuery,
       }}
       tableLabel="任务表"
@@ -616,6 +633,7 @@ function RuntimeAnnotationQueuePage({
                 canOpen={capabilities.has("episode.read")}
                 canReview={capabilities.has("annotation.review")}
                 key={task.task_id}
+                label={taskNames.data?.[task.task_id]}
                 returnTo={returnTo}
                 scope={scope!}
                 task={task}

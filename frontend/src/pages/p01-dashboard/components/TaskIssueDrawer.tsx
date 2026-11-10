@@ -69,6 +69,19 @@ export default function TaskIssueDrawer({
     scope &&
     selected?.source_import_id &&
     selected.source_episode_index != null;
+  const commitIssue = selected?.reason_code === "EPISODE_PACKAGE_COMMIT_FAILED" && !!selected.recording_id;
+  const rawProcessing = selected && scope && selected.source_import_id &&
+    (selected.category === "RESUME_REQUIRED" || selected.category === "TECHNICAL" ||
+      selected.reason_code === "RAW_PREPARATION_FAILED") ? (
+      <Suspense fallback={<Spin description="正在加载处理操作" />}>
+        <ResumeProcessingAction
+          key={selected.source_import_id}
+          scope={scope}
+          importId={selected.source_import_id}
+          displayedReasonCode={selected.reason_code}
+        />
+      </Suspense>
+    ) : null;
   return (
     <EntityDrawer
       open
@@ -208,20 +221,7 @@ export default function TaskIssueDrawer({
               />
             </Suspense>
           ) : null}
-          {(selected.category === "RESUME_REQUIRED" ||
-            selected.category === "TECHNICAL" ||
-            selected.reason_code === "RAW_RECORDING_PREPARATION_FAILED") &&
-          scope &&
-          selected.source_import_id ? (
-            <Suspense fallback={<Spin description="正在加载处理操作" />}>
-              <ResumeProcessingAction
-                key={selected.source_import_id}
-                scope={scope}
-                importId={selected.source_import_id}
-                displayedReasonCode={selected.reason_code}
-              />
-            </Suspense>
-          ) : null}
+          {!commitIssue && rawProcessing}
           {selected.recording_id && scope ? (
             <RecordingProcessingDetails
               scope={scope}
@@ -233,6 +233,12 @@ export default function TaskIssueDrawer({
             </Button>
           ) : (
             <p>此记录暂无可预览的原始数据来源。</p>
+          )}
+          {commitIssue && rawProcessing && (
+            <details>
+              <summary>改用其他方案重新准备录制</summary>
+              {rawProcessing}
+            </details>
           )}
         </Space>
       ) : (

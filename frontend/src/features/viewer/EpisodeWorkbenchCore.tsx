@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
   CSSProperties,
@@ -19,6 +27,12 @@ import {
 } from "lucide-react";
 import type { PlaybackClock, PlaybackClockUpdate } from "./PlaybackClock";
 import { useClockText } from "./PlaybackClock";
+import {
+  JOINT_CURVE_PREFETCH_NS,
+  jointCurveBuffer,
+  jointCurveViewport,
+  nearestJointSample,
+} from "./joint-curve-window";
 import { resolveViewerComposition } from "./ViewerCompositionResolver";
 import { RobotSceneCore } from "./RobotSceneCore";
 import type { RobotSceneCoreProps } from "./RobotSceneCore";
@@ -249,6 +263,15 @@ function StreamPanel({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const visible = usePanelVisibility(hostRef);
+  const isVideo = panel.kind === "video" || panel.kind === "depth";
+  const [mediaActivated, setMediaActivated] = useState(false);
+  useEffect(() => {
+    if (visible && isVideo) setMediaActivated(true);
+  }, [visible, isVideo]);
+  // Scrolling to the timeline must not discard decoded frames or detach the
+  // video's clock. Source changes and unmount still release the media resource.
+  const resourcesActive = visible || (isVideo && mediaActivated);
+  const [buffering, setBuffering] = useState(false);
   const [error, setError] = useState<DomainError | null>(null);
   const [windowSummary, setWindowSummary] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -259,9 +282,10 @@ function StreamPanel({
   }, [onResourceError]);
 
   useEffect(() => {
-    if (!visible || panel.state === "missing" || panel.state === "unsupported")
+    if (!resourcesActive || panel.state === "missing" || panel.state === "unsupported")
       return;
     setError(null);
+    setBuffering(false);
     setWindowSummary(null);
     const controller = new AbortController();
     const resources = new ViewerResourceRegistry();
@@ -290,8 +314,41 @@ function StreamPanel({
       let lastHardSeekAt = Number.NEGATIVE_INFINITY;
       let lastPlayAttemptAt = Number.NEGATIVE_INFINITY;
       let waiting = false;
+      let primed = false;
+      let mediaFailed = false;
+      let reportedBuffering = false;
       let sourceStartSeconds = stream.mediaStartSeconds ?? 0;
       let sourceEndSeconds = stream.mediaEndSeconds ?? Number.POSITIVE_INFINITY;
+      const readyToPlay = () => {
+        if (!mediaAttached || video.readyState < 2 || video.seeking) return false;
+        if (primed) return true;
+        // Keep a short cushion for a cold first play (or an unbuffered seek).
+        // Respect browsers that deliberately stop preloading before that point.
+        if (video.networkState === 1 && video.readyState >= 3) {
+          primed = true;
+          return true;
+        }
+        const remaining = Math.max(
+          0,
+          Math.min(
+            Number.isFinite(video.duration) ? video.duration : Infinity,
+            sourceEndSeconds,
+            sourceStartSeconds +
+              Number(BigInt(clock.endNs) - BigInt(clock.startNs)) / 1e9,
+          ) - video.currentTime,
+        );
+        const needed = Math.min(3 * clock.playbackRate(), remaining);
+        for (let i = 0; i < video.buffered.length; i += 1) {
+          if (
+            video.buffered.start(i) <= video.currentTime + 0.05 &&
+            video.buffered.end(i) >= video.currentTime + needed - 0.05
+          ) {
+            primed = true;
+            return true;
+          }
+        }
+        return false;
+      };
       const detachClock = clock.attachMediaClock?.(() => {
         if (!mediaAttached || video.readyState < 2 || video.seeking || waiting)
           return null;
@@ -299,20 +356,33 @@ function StreamPanel({
         return (
           BigInt(clock.startNs) + BigInt(Math.round(elapsed * 1_000_000_000))
         ).toString();
-      });
+      }, readyToPlay);
       if (detachClock) resources.add(detachClock);
+      const failMedia = (cause: unknown) => {
+        if (controller.signal.aborted) return;
+        mediaFailed = true;
+        detachClock?.();
+        if (!video.paused) video.pause();
+        setBuffering(false);
+        fail(cause);
+      };
       const onWaiting = () => {
         waiting = true;
+        if (video.readyState < 3) primed = false;
       };
       const onPlaying = () => {
         waiting = false;
       };
+      const onStalled = () => {
+        // A stalled download can still have playable buffered frames.
+        if (video.readyState < 3) onWaiting();
+      };
       video.addEventListener("waiting", onWaiting);
-      video.addEventListener("stalled", onWaiting);
+      video.addEventListener("stalled", onStalled);
       video.addEventListener("playing", onPlaying);
       resources.add(() => {
         video.removeEventListener("waiting", onWaiting);
-        video.removeEventListener("stalled", onWaiting);
+        video.removeEventListener("stalled", onStalled);
         video.removeEventListener("playing", onPlaying);
       });
       const streamRateHz = Math.max(stream.rateHz ?? 30, 1);
@@ -352,7 +422,7 @@ function StreamPanel({
         const restarted =
           update.reason === "play" && BigInt(ns) < BigInt(latestClockNs);
         latestClockNs = ns;
-        if (!mediaAttached) return;
+        if (!mediaAttached || mediaFailed) return;
         const clockSeconds =
           sourceStartSeconds +
           Number(BigInt(ns) - BigInt(clock.startNs)) / 1_000_000_000;
@@ -391,6 +461,7 @@ function StreamPanel({
           (directClockMove || performance.now() - lastHardSeekAt >= 1_000)
         ) {
           try {
+            primed = false;
             video.currentTime = seconds;
             lastHardSeekAt = performance.now();
           } catch {
@@ -408,7 +479,14 @@ function StreamPanel({
           );
         }
 
-        if (update.playing) requestPlayback();
+        const bufferingNow =
+          update.playing && !(clock.canPlayMedia?.() ?? readyToPlay());
+        if (reportedBuffering !== bufferingNow) {
+          reportedBuffering = bufferingNow;
+          video.dataset.buffering = String(bufferingNow);
+          setBuffering(bufferingNow);
+        }
+        if (update.playing && !bufferingNow) requestPlayback();
         else {
           playRequested = false;
           lastPlayAttemptAt = Number.NEGATIVE_INFINITY;
@@ -463,6 +541,7 @@ function StreamPanel({
           stream.mediaEndSeconds ??
           Number.POSITIVE_INFINITY;
         initialPositionPending = true;
+        primed = false;
         playRequested = false;
         detachMedia?.();
         revokeDescriptor?.();
@@ -474,10 +553,10 @@ function StreamPanel({
             if (controller.signal.aborted) return;
             if (!mediaErrorRefreshUsed) {
               mediaErrorRefreshUsed = true;
-              void installMedia(true, "error").catch(fail);
+              void installMedia(true, "error").catch(failMedia);
               return;
             }
-            fail(cause);
+            failMedia(cause);
           },
         );
         if (controller.signal.aborted) {
@@ -497,7 +576,7 @@ function StreamPanel({
             () => {
               expiryRefreshTimer = undefined;
               if (!controller.signal.aborted)
-                void installMedia(true, "expiry").catch(fail);
+                void installMedia(true, "expiry").catch(failMedia);
             },
             Math.min(refreshDelay, 2_147_483_647),
           );
@@ -507,7 +586,7 @@ function StreamPanel({
       // mount/cleanup probe. The discarded effect is aborted before it can
       // launch a duplicate authorization request.
       queueMicrotask(() => {
-        if (!controller.signal.aborted) void installMedia(false).catch(fail);
+        if (!controller.signal.aborted) void installMedia(false).catch(failMedia);
       });
       resources.add(() => {
         if (expiryRefreshTimer !== undefined)
@@ -622,7 +701,7 @@ function StreamPanel({
       latestPayloadDispose?.();
       resources.dispose();
     };
-  }, [clock, panel.kind, panel.state, retryKey, stream, visible]);
+  }, [clock, panel.kind, panel.state, retryKey, stream, resourcesActive]);
 
   const pending = panel.state === "pending";
   const unavailable =
@@ -644,7 +723,7 @@ function StreamPanel({
       <header>
         <h3 id={`${panel.panelId}-title`}>{panel.title}</h3>
         <span>
-          {cameraSlotPlaceholder ? "未接入" : panelStateLabel(panel.state)}
+          {cameraSlotPlaceholder ? "未接入" : buffering ? "视频缓冲中…" : panelStateLabel(panel.state)}
         </span>
       </header>
       {error ? (
@@ -805,6 +884,7 @@ interface JointCurveWindowState {
   readonly startNs: string;
   readonly endNs: string;
   readonly error: DomainError | null;
+  readonly valueRange?: { readonly low: number; readonly high: number };
 }
 
 function clampTimelinePosition(
@@ -857,6 +937,13 @@ export function ViewerJointAngleCurvePanel({
     formatElapsedNs(BigInt(ns), BigInt(clock.startNs));
   const [retryKey, setRetryKey] = useState(0);
   const cursorNs = useClockText(clock, 10);
+  const clipId = useId();
+  const chartRef = useRef<SVGSVGElement>(null);
+  const pathsRef = useRef<SVGGElement>(null);
+  const cursorRef = useRef<SVGLineElement>(null);
+  const pointsRef = useRef<SVGGElement>(null);
+  const startLabelRef = useRef<SVGTextElement>(null);
+  const endLabelRef = useRef<SVGTextElement>(null);
   const [windowState, setWindowState] = useState<JointCurveWindowState>({
     status: "idle",
     payload: null,
@@ -878,8 +965,8 @@ export function ViewerJointAngleCurvePanel({
       return;
     }
     const controller = new AbortController();
-    const fourSeconds = 4_000_000_000n;
-    const guardBand = 1_000_000_000n;
+    const timelineStart = BigInt(clock.startNs);
+    const timelineEnd = BigInt(clock.endNs);
     let loadedStart: bigint | null = null;
     let loadedEnd: bigint | null = null;
     let loadGeneration = 0;
@@ -888,12 +975,14 @@ export function ViewerJointAngleCurvePanel({
     let pendingStart: bigint | null = null;
     let pendingEnd: bigint | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let valueRange: JointCurveWindowState["valueRange"];
 
     const insideSafeWindow = (current: bigint, start: bigint, end: bigint) => {
+      const view = jointCurveViewport(current, timelineStart, timelineEnd);
       const safeStart =
-        start === BigInt(clock.startNs) ? start : start + guardBand;
-      const safeEnd = end === BigInt(clock.endNs) ? end : end - guardBand;
-      return current >= safeStart && current < safeEnd;
+        start === timelineStart ? start : start + JOINT_CURVE_PREFETCH_NS;
+      const safeEnd = end === timelineEnd ? end : end - JOINT_CURVE_PREFETCH_NS;
+      return view.start >= safeStart && view.end <= safeEnd;
     };
 
     const clearRetryTimer = () => {
@@ -933,12 +1022,25 @@ export function ViewerJointAngleCurvePanel({
           loadedEnd = end;
           pendingStart = null;
           pendingEnd = null;
+          // Keep the vertical scale from shrinking at every buffer handoff.
+          let low = valueRange?.low ?? Infinity;
+          let high = valueRange?.high ?? -Infinity;
+          for (const row of payload.values ?? []) {
+            for (const value of row.slice(0, 64)) {
+              if (!Number.isFinite(value)) continue;
+              low = Math.min(low, value);
+              high = Math.max(high, value);
+            }
+          }
+          if (Number.isFinite(low) && Number.isFinite(high))
+            valueRange = { low, high };
           setWindowState({
             status: "ready",
             payload,
             startNs: start.toString(),
             endNs: end.toString(),
             error: null,
+            valueRange,
           });
         })
         .catch((cause) => {
@@ -1006,6 +1108,7 @@ export function ViewerJointAngleCurvePanel({
 
     const loadAround = (ns: string) => {
       const current = BigInt(ns);
+      const view = jointCurveViewport(current, timelineStart, timelineEnd);
       if (
         loadedStart !== null &&
         loadedEnd !== null &&
@@ -1015,18 +1118,15 @@ export function ViewerJointAngleCurvePanel({
       if (
         pendingStart !== null &&
         pendingEnd !== null &&
-        current >= pendingStart &&
-        current < pendingEnd
+        view.start >= pendingStart &&
+        view.end <= pendingEnd
       )
         return;
-      const start =
-        current > BigInt(clock.startNs) + fourSeconds
-          ? current - fourSeconds
-          : BigInt(clock.startNs);
-      const end =
-        current + fourSeconds < BigInt(clock.endNs)
-          ? current + fourSeconds
-          : BigInt(clock.endNs);
+      const { start, end } = jointCurveBuffer(
+        current,
+        timelineStart,
+        timelineEnd,
+      );
       if (end <= start) return;
       loadWindow(start, end, 0);
     };
@@ -1055,20 +1155,30 @@ export function ViewerJointAngleCurvePanel({
         .filter((value) => typeof value === "number" && Number.isFinite(value)),
     );
     if (!dimension || !finiteValues.length) return null;
-    const rawLow = finiteValues.reduce(
-      (low, value) => Math.min(low, value),
-      Infinity,
-    );
-    const rawHigh = finiteValues.reduce(
-      (high, value) => Math.max(high, value),
-      -Infinity,
-    );
+    const rawLow =
+      windowState.valueRange?.low ??
+      finiteValues.reduce((low, value) => Math.min(low, value), Infinity);
+    const rawHigh =
+      windowState.valueRange?.high ??
+      finiteValues.reduce((high, value) => Math.max(high, value), -Infinity);
     const padding = Math.max(0.08, (rawHigh - rawLow) * 0.08);
     const low = rawLow - padding;
     const high = rawHigh + padding;
     const span = high - low || 1;
     const plot = { left: 52, right: 592, top: 14, bottom: 188 };
-    const stride = Math.max(1, Math.ceil(values.length / 260));
+    const view = jointCurveViewport(
+      BigInt(clock.startNs),
+      BigInt(clock.startNs),
+      BigInt(clock.endNs),
+    );
+    const viewSpan = Number(view.end - view.start);
+    const bufferSpan = Number(
+      BigInt(windowState.endNs) - BigInt(windowState.startNs),
+    );
+    const stride = Math.max(
+      1,
+      Math.ceil(values.length / ((260 * bufferSpan) / viewSpan)),
+    );
     const paths = Array.from({ length: dimension }, (_, seriesIndex) => {
       const segments: { x: number; y: number }[][] = [[]];
       values.forEach((sample, sampleIndex) => {
@@ -1081,11 +1191,8 @@ export function ViewerJointAngleCurvePanel({
           return;
         const timestamp =
           payload?.timestampsNs[sampleIndex] ?? windowState.startNs;
-        const position = clampTimelinePosition(
-          timestamp,
-          windowState.startNs,
-          windowState.endNs,
-        );
+        const position =
+          Number(BigInt(timestamp) - BigInt(windowState.startNs)) / viewSpan;
         segments[segments.length - 1]?.push({
           x: plot.left + position * (plot.right - plot.left),
           y: plot.bottom - ((value - low) / span) * (plot.bottom - plot.top),
@@ -1094,40 +1201,81 @@ export function ViewerJointAngleCurvePanel({
       return segments.map(smoothJointPath).join(" ");
     });
     return { dimension, high, low, paths, plot };
-  }, [windowState.endNs, windowState.payload, windowState.startNs]);
+  }, [
+    clock,
+    windowState.endNs,
+    windowState.payload,
+    windowState.startNs,
+    windowState.valueRange,
+  ]);
 
   const sampleTimes = useMemo(
     () =>
       (windowState.payload?.timestampsNs ?? []).map((value) => BigInt(value)),
     [windowState.payload],
   );
-  const nearestSampleIndex = useMemo(() => {
-    if (!sampleTimes.length) return -1;
-    const current = BigInt(cursorNs);
-    let low = 0;
-    let high = sampleTimes.length;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (sampleTimes[middle]! < current) low = middle + 1;
-      else high = middle;
-    }
-    if (low === 0) return 0;
-    if (low === sampleTimes.length) return low - 1;
-    return current - sampleTimes[low - 1]! <= sampleTimes[low]! - current
-      ? low - 1
-      : low;
-  }, [cursorNs, sampleTimes]);
+  const nearestSampleIndex = useMemo(
+    () => nearestJointSample(sampleTimes, BigInt(cursorNs)),
+    [cursorNs, sampleTimes],
+  );
+
+  // The clock already ticks with animation frames. Move the cached paths and
+  // playhead directly; React text updates and network reads stay off this path.
+  useLayoutEffect(() => {
+    if (!chart || !chartRef.current) return;
+    const svg = chartRef.current;
+    const points = pointsRef.current?.querySelectorAll("circle");
+    const timelineStart = BigInt(clock.startNs);
+    const timelineEnd = BigInt(clock.endNs);
+    const bufferStart = BigInt(windowState.startNs);
+    const width = chart.plot.right - chart.plot.left;
+    return clock.subscribe((ns) => {
+      const current = BigInt(ns);
+      const view = jointCurveViewport(current, timelineStart, timelineEnd);
+      const span = Number(view.end - view.start);
+      const offset = (Number(bufferStart - view.start) / span) * width;
+      const x = chart.plot.left + (Number(current - view.start) / span) * width;
+      pathsRef.current?.setAttribute("transform", `translate(${offset} 0)`);
+      cursorRef.current?.setAttribute("x1", String(x));
+      cursorRef.current?.setAttribute("x2", String(x));
+      if (startLabelRef.current)
+        startLabelRef.current.textContent = formatElapsedNs(
+          view.start,
+          timelineStart,
+        );
+      if (endLabelRef.current)
+        endLabelRef.current.textContent = formatElapsedNs(
+          view.end,
+          timelineStart,
+        );
+      svg.dataset.startNs = view.start.toString();
+      svg.dataset.endNs = view.end.toString();
+      svg.dataset.currentNs = ns;
+      const index = nearestJointSample(sampleTimes, current);
+      const values = windowState.payload?.values?.[index] ?? [];
+      points?.forEach((point, seriesIndex) => {
+        const value = values[seriesIndex];
+        const present = typeof value === "number" && Number.isFinite(value);
+        point.setAttribute("visibility", present ? "visible" : "hidden");
+        if (!present) return;
+        point.setAttribute("cx", String(x));
+        point.setAttribute(
+          "cy",
+          String(
+            chart.plot.bottom -
+              ((value - chart.low) / (chart.high - chart.low)) *
+                (chart.plot.bottom - chart.plot.top),
+          ),
+        );
+      });
+    });
+  }, [chart, clock, sampleTimes, windowState.payload, windowState.startNs]);
 
   const series = windowState.payload?.series ?? [];
   const currentValues =
     nearestSampleIndex >= 0
       ? (windowState.payload?.values?.[nearestSampleIndex] ?? [])
       : [];
-  const cursorX = chart
-    ? chart.plot.left +
-      clampTimelinePosition(cursorNs, windowState.startNs, windowState.endNs) *
-        (chart.plot.right - chart.plot.left)
-    : 0;
   const unavailable =
     !stream || stream.availability === "missing" || !stream.windowSource;
 
@@ -1140,11 +1288,11 @@ export function ViewerJointAngleCurvePanel({
       <header>
         <span>
           <Activity aria-hidden="true" size={15} />
-          <strong id="joint-angle-curves-title">{isJoint ? "关节" : stream?.modality === "action" ? "动作" : "曲线"}</strong>
+          <strong id="joint-angle-curves-title">
+            {isJoint ? "关节" : stream?.modality === "action" ? "动作" : "曲线"}
+          </strong>
         </span>
-        <small>
-          {elapsed(cursorNs)}
-        </small>
+        <small>{elapsed(cursorNs)}</small>
       </header>
       {unavailable ? (
         <div className="viewer-joint-curves__empty" role="status">
@@ -1177,11 +1325,22 @@ export function ViewerJointAngleCurvePanel({
       ) : chart ? (
         <div className="viewer-joint-curves__body">
           <svg
+            ref={chartRef}
             aria-label={`${subject}时间序列，共 ${chart.dimension} 个${isJoint ? "关节" : "维度"}，当前时间 ${elapsed(cursorNs)}`}
             className="viewer-joint-curves__chart"
             role="img"
             viewBox="0 0 606 216"
           >
+            <defs>
+              <clipPath id={clipId}>
+                <rect
+                  x={chart.plot.left}
+                  y={chart.plot.top}
+                  width={chart.plot.right - chart.plot.left}
+                  height={chart.plot.bottom - chart.plot.top}
+                />
+              </clipPath>
+            </defs>
             <g className="viewer-joint-curves__grid">
               {Array.from({ length: 5 }, (_, index) => {
                 const x =
@@ -1223,57 +1382,55 @@ export function ViewerJointAngleCurvePanel({
             <text x="6" y={chart.plot.bottom + 4}>
               {chart.low.toFixed(2)}
             </text>
-            <text x={chart.plot.left} y="207">
-              {elapsed(windowState.startNs)}
-            </text>
-            <text x={chart.plot.right} y="207" textAnchor="end">
-              {elapsed(windowState.endNs)}
-            </text>
-            {chart.paths.map((path, index) => (
-              <path
-                d={path}
-                fill="none"
-                key={`joint-path-${index}`}
-                stroke={jointCurveColors[index % jointCurveColors.length]}
-                strokeDasharray={
-                  index % 4 === 1
-                    ? "5 3"
-                    : index % 4 === 2
-                      ? "2 3"
-                      : index % 4 === 3
-                        ? "7 2 2 2"
-                        : undefined
-                }
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="1.6"
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-            <line
-              className="viewer-joint-curves__cursor"
-              x1={cursorX}
-              x2={cursorX}
-              y1={chart.plot.top}
-              y2={chart.plot.bottom}
+            <text ref={startLabelRef} x={chart.plot.left} y="207" />
+            <text
+              ref={endLabelRef}
+              x={chart.plot.right}
+              y="207"
+              textAnchor="end"
             />
-            {currentValues.map((value, index) =>
-              Number.isFinite(value) ? (
-                <circle
-                  key={`joint-current-${index}`}
-                  cx={cursorX}
-                  cy={
-                    chart.plot.bottom -
-                    ((value - chart.low) / (chart.high - chart.low)) *
-                      (chart.plot.bottom - chart.plot.top)
-                  }
-                  r="2.5"
-                  fill={jointCurveColors[index % jointCurveColors.length]}
-                  stroke="white"
-                  strokeWidth="0.8"
-                />
-              ) : null,
-            )}
+            <g clipPath={`url(#${clipId})`}>
+              <g ref={pathsRef} className="viewer-joint-curves__paths">
+                {chart.paths.map((path, index) => (
+                  <path
+                    d={path}
+                    fill="none"
+                    key={`joint-path-${index}`}
+                    stroke={jointCurveColors[index % jointCurveColors.length]}
+                    strokeDasharray={
+                      index % 4 === 1
+                        ? "5 3"
+                        : index % 4 === 2
+                          ? "2 3"
+                          : index % 4 === 3
+                            ? "7 2 2 2"
+                            : undefined
+                    }
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth="1.6"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </g>
+              <line
+                ref={cursorRef}
+                className="viewer-joint-curves__cursor"
+                y1={chart.plot.top}
+                y2={chart.plot.bottom}
+              />
+              <g ref={pointsRef}>
+                {Array.from({ length: chart.dimension }, (_, index) => (
+                  <circle
+                    key={`joint-current-${index}`}
+                    r="2.5"
+                    fill={jointCurveColors[index % jointCurveColors.length]}
+                    stroke="white"
+                    strokeWidth="0.8"
+                  />
+                ))}
+              </g>
+            </g>
           </svg>
           <div
             className="viewer-joint-curves__legend"
@@ -1308,7 +1465,7 @@ export function ViewerJointAngleCurvePanel({
           </div>
           <p className="viewer-joint-curves__summary">
             {windowState.payload?.values?.length.toLocaleString("zh-CN")}{" "}
-            个真实样本 · 8 秒滑动窗口 · 橙色竖线为共享光标
+            个真实样本 · 居中跟随播放 · 橙色竖线为当前位置
             {windowState.error ? " · 最近一次刷新失败，已保留上一窗口" : ""}
           </p>
         </div>

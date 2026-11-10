@@ -321,6 +321,32 @@ def get_robot_model_version(
 
 
 @router.delete(
+    "/robot-models/{model_id}",
+    operation_id="deleteRobotModel",
+    status_code=204,
+    responses=PROBLEM_RESPONSES,
+)
+def delete_robot_model(
+    organization_id: str,
+    model_id: str,
+    response: Response,
+    request: Request,
+    auth: VerifiedAuth,
+    project_id: ProjectScope,
+    service: ServiceDependency,
+) -> None:
+    select_request_scope(project_id, organization_id=organization_id)
+    _no_store(response)
+    service.delete_robot_model(
+        auth=auth,
+        organization_id=organization_id,
+        project_id=project_id,
+        model_id=model_id,
+        request_id=_request_id(request),
+    )
+
+
+@router.delete(
     "/robot-model-versions/{version_id}:discard-import",
     operation_id="discardRobotModelImport",
     status_code=204,

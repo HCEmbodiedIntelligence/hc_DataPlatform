@@ -356,7 +356,7 @@ def test_cross_instance_reuse_independent_tasks_and_immutable_snapshots(environm
         )
 
 
-def test_archive_remove_do_not_break_locked_tasks_but_block_new_use(environment):
+def test_archive_detaches_instances_preserves_locked_tasks_and_blocks_new_use(environment):
     dsn, scope, tasks = environment
     org = scope[0]
     with psycopg.connect(dsn) as db:
@@ -375,8 +375,17 @@ def test_archive_remove_do_not_break_locked_tasks_but_block_new_use(environment)
             ),
             "tester",
         )
-        associations.remove(db, org, "robot-1", "joints", 1, "tester")
+        associate(db, org, "robot-2", ref)
+        other = publish(db, org, "other")
+        associate(db, org, "robot-2", other, make_default=False)
         schemes.archive(db, org, "joints", 1, "tester")
+        schemes.archive(db, org, "joints", 1, "tester")
+        for robot in ("robot-1", "robot-2"):
+            links = {link["scheme_id"]: link for link in associations.list_links(db, org, robot)}
+            assert not links["joints"]["active"]
+            assert not links["joints"]["is_default"]
+            assert links["joints"]["revision"] == 2
+        assert links["other"]["active"]
         result = plans.prepare_recording(
             db,
             scope,

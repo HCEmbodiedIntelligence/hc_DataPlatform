@@ -5,10 +5,12 @@ from collections import Counter
 
 from mcap.reader import make_reader
 
+from .action_labels import window_messages
+
 POLICY = "capture-availability/v1"
 
 
-def alignment_offsets(paths, start_ns, end_ns):
+def alignment_offsets(paths, start_ns, end_ns, *, label_config=None):
     """Read measured source-to-anchor deltas, including rejected nearest matches.
 
     Old recordings without a nearest diagnostic contribute accepted matches only;
@@ -19,7 +21,9 @@ def alignment_offsets(paths, start_ns, end_ns):
     frames = defaultdict(dict)
     for path in paths:
         with path.open("rb") as stream:
-            for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages():
+            for _, channel, message in window_messages(
+                make_reader(stream, validate_crcs=True).iter_messages(), start_ns, end_ns, label_config
+            ):
                 if start_ns <= message.log_time < end_ns and channel.topic in {
                     "/action", "/observation/state", "source.timestamp_ns"
                 }:
@@ -40,13 +44,15 @@ def alignment_offsets(paths, start_ns, end_ns):
     return dict(offsets)
 
 
-def summarize(paths, start_ns, end_ns, profile, *, output=None):
+def summarize(paths, start_ns, end_ns, profile, *, output=None, label_config=None):
     frames = {}
     vectors = {"/action": {}, "/observation/state": {}}
     versioned = (output or {}).get("algorithm") in {"capture-structure/v2", "capture-structure/v3"}
     for path in paths:
         with path.open("rb") as stream:
-            for _, channel, message in make_reader(stream, validate_crcs=True).iter_messages():
+            for _, channel, message in window_messages(
+                make_reader(stream, validate_crcs=True).iter_messages(), start_ns, end_ns, label_config
+            ):
                 if (
                     not start_ns <= message.log_time < end_ns
                 ):

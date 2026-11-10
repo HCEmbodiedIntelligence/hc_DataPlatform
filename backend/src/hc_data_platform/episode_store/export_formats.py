@@ -4,9 +4,11 @@ Adding a format registers its contract and writer here. All adapters use the sam
 scoped selections, annotation snapshots, durable jobs, integrity checks and ZIP.
 """
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,8 @@ class ExportFormat:
     writer: Callable
     originals: bool = False
     reader_version: str = "original-bytes/1"
+    # Write dataset files at the ZIP root without platform delivery sidecars.
+    standalone_dataset: bool = False
 
 
 _FORMATS: dict[str, ExportFormat] = {}
@@ -46,8 +50,21 @@ def from_archive(archive):
     if archive == "mcap_collection_zip/2":
         return ExportFormat("mcap", archive, "MCAP（历史断段策略）", False, legacy_selected_mcap,
                             reader_version="hc-selected-mcap/2")
+    if archive == "mcap_collection_zip/3":
+        return ExportFormat("mcap", archive, "MCAP", False,
+                            partial(mcap, split_annotations=False),
+                            reader_version="hc-selected-mcap/2")
+    if archive == "holobrain_collection_zip/3":
+        return ExportFormat("holobrain", archive, "HoloBrain", False,
+                            partial(holobrain, split_annotations=False),
+                            reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1",
+                            standalone_dataset=True)
     if archive == "holobrain_collection_zip/1":
         return ExportFormat("holobrain", archive, "HoloBrain（历史断段策略）", False, legacy_holobrain,
+                            reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1")
+    if archive == "holobrain_collection_zip/2":
+        return ExportFormat("holobrain", archive, "HoloBrain（历史附加报告）", False,
+                            partial(holobrain, reference_layout=False, split_annotations=False),
                             reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1")
     for adapter in _FORMATS.values():
         if adapter.archive == archive:
@@ -80,10 +97,11 @@ def lerobot(root, selections, *, storage, modalities, checkpoint, processor_vers
     )
 
 
-def mcap(root, selections, *, storage, modalities, checkpoint):
+def mcap(root, selections, *, storage, modalities, checkpoint, split_annotations=True):
     from .normalized_export import write_mcap_collection
 
-    return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint)
+    return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint,
+                                 split_annotations=split_annotations)
 
 
 def legacy_mcap(root, selections, *, storage, modalities, checkpoint):
@@ -94,18 +112,30 @@ def legacy_mcap(root, selections, *, storage, modalities, checkpoint):
 def legacy_selected_mcap(root, selections, *, storage, modalities, checkpoint):
     from .normalized_export import write_mcap_collection
     return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint,
-                                 compact_invalid=False)
+                                 compact_invalid=False, split_annotations=False)
 
 
-def holobrain(root, selections, *, storage, modalities, checkpoint):
+def holobrain(root, selections, *, storage, modalities, checkpoint, reference_layout=True,
+              split_annotations=True):
     from .holobrain_export import write_collection
-    return write_collection(root, selections, storage=storage, modalities=modalities, checkpoint=checkpoint)
+    manifest, _ = write_collection(
+        root, selections, storage=storage, modalities=modalities, checkpoint=checkpoint,
+        reference_report=reference_layout, split_annotations=split_annotations,
+    )
+    if reference_layout:
+        state = json.loads((root / "state.json").read_bytes())
+        required = {"dataset_info.json", "state.json", "meta_db.duckdb", "conversion_report.json"}
+        required.update(entry["filename"] for entry in state["_data_files"])
+        manifest = {**manifest, "files": [f for f in manifest["files"] if f["path"] in required]}
+        if {f["path"] for f in manifest["files"]} != required:
+            raise ValueError("HOLOBRAIN_DATASET_FILES_MISSING")
+    return manifest, None
 
 
 def legacy_holobrain(root, selections, *, storage, modalities, checkpoint):
     from .holobrain_export import write_collection
     return write_collection(root, selections, storage=storage, modalities=modalities,
-                            checkpoint=checkpoint, compact_invalid=False)
+                            checkpoint=checkpoint, compact_invalid=False, split_annotations=False)
 
 
 def original(root, selections, *, storage, modalities, checkpoint):
@@ -127,7 +157,7 @@ register(
 register(
     ExportFormat(
         "mcap",
-        "mcap_collection_zip/3",
+        "mcap_collection_zip/4",
         "MCAP",
         False,
         mcap,
@@ -135,5 +165,5 @@ register(
     )
 )
 register(ExportFormat("original", "original_collection_zip/1", "原始文件", False, original, True))
-register(ExportFormat("holobrain", "holobrain_collection_zip/2", "HoloBrain（19维，含腰部）", False, holobrain,
-                      reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1"))
+register(ExportFormat("holobrain", "holobrain_collection_zip/4", "HoloBrain（19维，含腰部）", False, holobrain,
+                      reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1", standalone_dataset=True))

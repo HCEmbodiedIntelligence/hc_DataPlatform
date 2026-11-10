@@ -1,39 +1,15 @@
+import type { BrowserFileCandidate as RobotModelFileCandidate } from "../../../shared/lib/files-from-drop";
+export {
+  filesFromDrop as robotModelFilesFromDrop,
+  type BrowserFileCandidate as RobotModelFileCandidate,
+} from "../../../shared/lib/files-from-drop";
 import type { RobotModelAssetUploadInput } from "../api/client";
 
 export type PendingRobotModelAsset = Omit<RobotModelAssetUploadInput, "sha256">;
 
-export interface RobotModelFileCandidate {
-  readonly file: File;
-  readonly relativePath?: string;
-}
-
 export interface RobotModelFileSelection {
   readonly assets: readonly PendingRobotModelAsset[];
   readonly rejectedPaths: readonly string[];
-}
-
-interface FileSystemEntryLike {
-  readonly isFile: boolean;
-  readonly isDirectory: boolean;
-  readonly name: string;
-}
-
-interface FileSystemFileEntryLike extends FileSystemEntryLike {
-  file(
-    successCallback: (file: File) => void,
-    errorCallback?: (error: DOMException) => void,
-  ): void;
-}
-
-interface FileSystemDirectoryReaderLike {
-  readEntries(
-    successCallback: (entries: readonly FileSystemEntryLike[]) => void,
-    errorCallback?: (error: DOMException) => void,
-  ): void;
-}
-
-interface FileSystemDirectoryEntryLike extends FileSystemEntryLike {
-  createReader(): FileSystemDirectoryReaderLike;
 }
 
 const assetRoleForExtension: Record<
@@ -113,69 +89,6 @@ export function classifyRobotModelFiles(
     });
   }
   return { assets: [...assets.values()], rejectedPaths };
-}
-
-function fileFromEntry(entry: FileSystemFileEntryLike): Promise<File> {
-  return new Promise((resolve, reject) => entry.file(resolve, reject));
-}
-
-function directoryBatch(
-  reader: FileSystemDirectoryReaderLike,
-): Promise<readonly FileSystemEntryLike[]> {
-  return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
-}
-
-async function allDirectoryEntries(
-  directory: FileSystemDirectoryEntryLike,
-): Promise<readonly FileSystemEntryLike[]> {
-  const reader = directory.createReader();
-  const entries: FileSystemEntryLike[] = [];
-  let batch: readonly FileSystemEntryLike[];
-  do {
-    batch = await directoryBatch(reader);
-    entries.push(...batch);
-  } while (batch.length);
-  return entries;
-}
-
-async function candidatesFromEntry(
-  entry: FileSystemEntryLike,
-  parentPath: string,
-): Promise<readonly RobotModelFileCandidate[]> {
-  if (entry.isFile) {
-    const file = await fileFromEntry(entry as FileSystemFileEntryLike);
-    return [{ file, relativePath: `${parentPath}${file.name}` }];
-  }
-  if (!entry.isDirectory) return [];
-  const directory = entry as FileSystemDirectoryEntryLike;
-  const children = await allDirectoryEntries(directory);
-  const directoryPath = `${parentPath}${directory.name}/`;
-  return (
-    await Promise.all(
-      children.map((child) => candidatesFromEntry(child, directoryPath)),
-    )
-  ).flat();
-}
-
-export async function robotModelFilesFromDrop(
-  dataTransfer: DataTransfer,
-): Promise<readonly RobotModelFileCandidate[]> {
-  const items = Array.from(dataTransfer.items ?? []);
-  const entries = items.flatMap((item) => {
-    const getEntry = (
-      item as DataTransferItem & {
-        webkitGetAsEntry?: () => FileSystemEntryLike | null;
-      }
-    ).webkitGetAsEntry;
-    const entry = item.kind === "file" ? getEntry?.call(item) : null;
-    return entry ? [entry] : [];
-  });
-  if (entries.length) {
-    return (
-      await Promise.all(entries.map((entry) => candidatesFromEntry(entry, "")))
-    ).flat();
-  }
-  return Array.from(dataTransfer.files ?? []).map((file) => ({ file }));
 }
 
 export function modelAssetSelectionError(

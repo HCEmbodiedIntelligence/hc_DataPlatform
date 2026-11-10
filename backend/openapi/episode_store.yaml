@@ -105,6 +105,7 @@ components:
           - hc-lerobot-collection/2
           - hc-lerobot-collection/3
           - hc-lerobot-collection/4
+          - hc-lerobot-collection/5
           - hc-export/1
           title: Processor Version
           type: string
@@ -3611,6 +3612,14 @@ paths:
         schema:
           title: Region Code
           type: string
+      - in: query
+        name: data_stage
+        required: false
+        schema:
+          type: string
+          enum: [dataset, annotated]
+          default: dataset
+          title: Data Stage
       - in: query
         name: dataset_id
         required: true

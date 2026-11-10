@@ -194,6 +194,9 @@ components:
           - UPLOADING
           - RECEIVED
           - PREPARING
+          - PENDING_QC
+          - QC_RUNNING
+          - QC_FAILED
           - AWAITING_SLICE
           - PROCESSING
           - READY

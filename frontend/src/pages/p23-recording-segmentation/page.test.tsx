@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,7 +9,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import "@testing-library/jest-dom/vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +25,8 @@ import type {
 } from "./api";
 import RecordingSegmentationPageEntry from "./page";
 
+expect.extend(matchers);
+
 const scope = {
   organizationId: "org-test",
   projectId: "project-test",
@@ -32,6 +35,7 @@ const scope = {
 
 const recording: ContinuousRecording = {
   schema_version: "continuous-recording/v2",
+  ingest_mode: "SLICE_FIRST",
   default_task_labels: [],
   scope: {
     organization_id: scope.organizationId,
@@ -202,7 +206,7 @@ async function markFirstSlice(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: /设为出点并添加/ }));
 }
 
-function renderPage(gateway: RecordingGateway, initialEntry: string) {
+function renderPage(gateway: RecordingGateway, initialEntry: string, reactStrictMode = false) {
   return render(
     <ProviderHarness>
       <MemoryRouter initialEntries={[initialEntry]}>
@@ -225,10 +229,12 @@ function renderPage(gateway: RecordingGateway, initialEntry: string) {
               />
             }
           />
+        <Route path="/annotations/tasks/:taskId" element={<h1>标注时间线</h1>} />
         </Routes>
         <LocationProbe />
       </MemoryRouter>
     </ProviderHarness>,
+    { reactStrictMode },
   );
 }
 
@@ -276,6 +282,77 @@ afterEach(() => {
 });
 
 describe("P23 recording segmentation", () => {
+  it("resumes confirmed intervals on an already waiting reprocessed recording", async () => {
+    const user = userEvent.setup();
+    const gateway = makeGateway();
+    const sample = await gateway.saveDraft(scope, "previous-recording", { slices: [{
+      episode_id: "episode_0001", start_offset_ns: "10520832000", end_offset_ns: "76800000000",
+      title: "已确认区间", task_labels: ["进行测试"],
+    }] }, '"v1"');
+    vi.mocked(gateway.saveDraft).mockClear();
+    const previous = { ...sample.revision, recording_id: "previous-recording", status: "FINALIZED" as const };
+    vi.mocked(gateway.detail).mockResolvedValue({
+      data: recording, current_slice_revision: null, reusable_slices: previous,
+    });
+    vi.mocked(gateway.finalize).mockResolvedValue({
+      recording: { ...recording, status: "SLICED", finalized_revision: 1 },
+      revision: { ...previous, recording_id: recording.recording_id, reused_from: {
+        recording_id: previous.recording_id, revision: previous.revision, episode_count: 1,
+      } },
+    });
+    renderPage(gateway, "/recordings/recording_three_hours/slice");
+    await user.click(await screen.findByRole("button", { name: "沿用上次切片并继续入库" }));
+    await waitFor(() => expect(gateway.finalize).toHaveBeenCalledWith(scope, recording.recording_id, 0, recording.etag));
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+    expect(await screen.findByText("已沿用上次确认的切片")).toBeVisible();
+  });
+
+  it.each(["PENDING_QC", "QC_RUNNING", "QC_FAILED", "QC_ERROR"] as const)(
+    "blocks slice authoring while recording quality is %s", async (status) => {
+      const gateway = makeGateway();
+      vi.mocked(gateway.detail).mockResolvedValue({
+        data: { ...recording, status }, current_slice_revision: null,
+      });
+      renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+      expect(await screen.findByRole("button", { name: "提交成片" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled();
+      expect(screen.getByText("上传完成后自动检查整段录制，通过后才能切片。")).toBeVisible();
+      expect(gateway.saveDraft).not.toHaveBeenCalled();
+      expect(gateway.finalize).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retries failed whole-recording quality without making slices", async () => {
+    const gateway = makeGateway();
+    vi.mocked(gateway.detail).mockResolvedValue({
+      data: { ...recording, status: "QC_ERROR", quality_error_code: "CAPTURE_PLAN_REQUIRED" },
+      current_slice_revision: null,
+    });
+    gateway.retryQuality = vi.fn(async () => ({
+      data: { ...recording, status: "PENDING_QC" as const }, current_slice_revision: null,
+    }));
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    await userEvent.click(await screen.findByRole("button", { name: "重新质检" }));
+    await waitFor(() => expect(gateway.retryQuality).toHaveBeenCalledWith(
+      scope, recording.recording_id, expect.any(String),
+    ));
+    expect((await screen.findAllByText("等待整段质检"))[0]).toBeVisible();
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("keeps unchecked recordings out of the slicing queue", async () => {
+    const gateway = makeGateway();
+    vi.mocked(gateway.list).mockResolvedValue({items: [
+      recording, { ...recording, recording_id: "unchecked", file_name: "unchecked.mcap", status: "PENDING_QC" },
+    ], total: 2});
+    renderPage(gateway, "/recordings");
+    expect(await screen.findByRole("button", { name: "开始切片" })).toBeVisible();
+    expect(screen.queryByText("unchecked.mcap")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("link", { name: /录制质检/ }));
+    expect(await screen.findByText("unchecked.mcap")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "开始切片" })).not.toBeInTheDocument();
+  });
+
   it("starts video authorization while recording details are still loading", async () => {
     const gateway = makeGateway();
     vi.mocked(gateway.detail).mockImplementation(() => new Promise(() => {}));
@@ -337,12 +414,78 @@ describe("P23 recording segmentation", () => {
     ).toHaveAttribute("aria-valuenow", "0");
     expect(gateway.saveDraft).not.toHaveBeenCalled();
     expect(gateway.processing).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("录制切片工作台")).toBe(workspace);
+    expect(screen.getByRole("complementary", { name: "原始录制切换" })).toBe(sidebar);
     await user.click(screen.getByRole("button", { name: "上一条" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
         `/recordings/${recording.recording_id}/slice`,
       ),
     );
+  });
+
+  it("keeps the workspace visible during a slow switch and resets a same-duration recording", async () => {
+    const { gateway, second } = makeSwitchingGateway();
+    const next = { ...second, duration_ns: recording.duration_ns };
+    let resolveNext!: (value: Awaited<ReturnType<RecordingGateway["detail"]>>) => void;
+    vi.mocked(gateway.detail).mockImplementation(async (_scope, id) =>
+      id === second.recording_id
+        ? new Promise((resolve) => { resolveNext = resolve; })
+        : { data: recording, current_slice_revision: null },
+    );
+    const user = userEvent.setup();
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    const workspace = await screen.findByLabelText("录制切片工作台");
+    const sidebar = screen.getByRole("complementary", { name: "原始录制切换" });
+    const slider = screen.getByRole("slider", { name: "共享播放位置" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "显示视频" }), "__all__");
+    fireEvent.keyDown(slider, { key: "End" });
+    await waitFor(() => expect(slider).not.toHaveAttribute("aria-valuenow", "0"));
+    await user.click(screen.getByRole("button", { name: /开始标记/ }));
+    await user.click(await within(sidebar).findByRole("button", { name: "下一条" }));
+    await screen.findByText("正在切换录制…");
+    expect(workspace).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByLabelText("录制切片工作台")).toBe(workspace);
+    expect(screen.getByRole("complementary", { name: "原始录制切换" })).toBe(sidebar);
+    expect(slider.isConnected).toBe(true);
+    expect(workspace.querySelector("[data-episode-workbench]")).toHaveAttribute("inert");
+    expect(screen.getByTestId("location")).toHaveTextContent(recording.recording_id);
+    await waitFor(() => expect(gateway.videoSources).toHaveBeenCalledWith(
+      scope, second.recording_id, expect.any(AbortSignal),
+    ));
+
+    await act(async () => resolveNext({ data: next, current_slice_revision: null }));
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent(second.recording_id));
+    expect(screen.getByLabelText("录制切片工作台")).toBe(workspace);
+    expect(screen.getByRole("complementary", { name: "原始录制切换" })).toBe(sidebar);
+    expect(screen.getByRole("slider", { name: "共享播放位置" })).toBe(slider);
+    expect(slider).toHaveAttribute("aria-valuenow", "0");
+    expect(workspace).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("combobox", { name: "显示视频" })).toHaveValue("__all__");
+    expect(screen.getByRole("button", { name: /开始标记/ })).toBeVisible();
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current recording and unsaved slices when the next recording cannot load", async () => {
+    const { gateway, second } = makeSwitchingGateway();
+    vi.mocked(gateway.detail).mockImplementation(async (_scope, id) => {
+      if (id === second.recording_id) throw new Error("next recording unavailable");
+      return { data: recording, current_slice_revision: null };
+    });
+    const user = userEvent.setup();
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    await markFirstSlice(user);
+    const workspace = screen.getByLabelText("录制切片工作台");
+    await user.click(screen.getByRole("button", { name: "下一条" }));
+    await user.click(screen.getByRole("button", { name: "放弃修改并切换" }));
+    await screen.findByText("切换录制失败");
+    expect(screen.getByTestId("location")).toHaveTextContent(recording.recording_id);
+    expect(screen.getByLabelText("录制切片工作台")).toBe(workspace);
+    expect(workspace).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByText("有未保存修改")).toBeVisible();
+    expect(screen.getByRole("button", { name: "下一条" })).toBeEnabled();
+    expect(screen.getAllByText("Episode 0001")[0]).toBeVisible();
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
   });
 
   it("keeps unsaved slices when switching is cancelled, then saves the current source before switching", async () => {
@@ -505,13 +648,13 @@ describe("P23 recording segmentation", () => {
       name: "录制切片状态",
     });
     expect(
-      within(stages).getByRole("link", { name: /^待分割，.*1 项/u }),
+      within(stages).getByRole("link", { name: /^切片与标注，.*1 项/u }),
     ).toHaveAttribute("aria-current", "page");
     expect(
       within(stages).getByRole("link", { name: /^待检查，.*1 项/u }),
     ).toHaveAttribute("href", "/recordings?stage=REVIEW");
     expect(
-      within(stages).getByRole("link", { name: /^已分割，.*1 项/u }),
+      within(stages).getByRole("link", { name: /^历史切片，.*1 项/u }),
     ).toHaveAttribute("href", "/recordings?stage=SLICED");
   });
 
@@ -534,6 +677,20 @@ describe("P23 recording segmentation", () => {
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/recordings/recording_three_hours/slice",
     );
+  });
+
+  it("can seek and mark after reopening a cached draft in Strict Mode", async () => {
+    const gateway = makeGateway();
+    const user = userEvent.setup();
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`, true);
+    await user.click(await screen.findByRole("button", { name: "返回录制列表" }));
+    await user.click(await screen.findByText(recording.file_name!));
+    await markFirstSlice(user);
+    await user.click(screen.getByRole("button", { name: "保存草稿" }));
+    await waitFor(() => expect(gateway.saveDraft).toHaveBeenCalledOnce());
+    expect(vi.mocked(gateway.saveDraft).mock.calls[0]?.[2].slices[0]).toMatchObject({
+      start_offset_ns: "0", end_offset_ns: "100000000",
+    });
   });
 
   it("creates an I/O slice and saves canonical nanosecond boundaries", async () => {
@@ -843,5 +1000,67 @@ describe("P23 recording segmentation", () => {
     expect(screen.queryByRole("button", { name: "删除选中的 Episode" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "删除 Episode 1" })).toBeDisabled();
     expect(gateway.processing).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("ingest before interval authoring", () => {
+  function wholeGateway(status: "ALIGNING" | "READY" | "FAILED", annotationTask: string | null = "task-full") {
+    const gateway = makeGateway();
+    const source: ContinuousRecording = { ...recording, ingest_mode: "WHOLE_RECORDING",
+      status: "SLICED", current_revision: 1, finalized_revision: 1, whole_episode_status: status };
+    vi.mocked(gateway.detail).mockResolvedValue({ data: source, current_slice_revision: null });
+    vi.mocked(gateway.list).mockResolvedValue({ items: [source], total: 1 });
+    vi.mocked(gateway.processing).mockResolvedValue({ items: [{
+      schema_version: "recording-episode/v1", scope: recording.scope, recording_id: recording.recording_id,
+      episode_id: "episode_full_recording", finalized_revision: 1, start_offset_ns: "0", end_offset_ns: recording.duration_ns,
+      status, dataset_id: status === "READY" ? "dataset-full" : null,
+      annotation_task_id: status === "READY" ? annotationTask : null,
+    }], total: 1, qc_reports: [] });
+    return gateway;
+  }
+
+  it("waits for the data receipt and never offers pre-ingest slicing", async () => {
+    const gateway = wholeGateway("ALIGNING");
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    expect(within(await screen.findByRole("dialog")).getByText("正在对齐入库")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "提交成片" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "进入切片与标注" })).not.toBeInTheDocument();
+    expect(gateway.saveDraft).not.toHaveBeenCalled();
+    expect(gateway.finalize).not.toHaveBeenCalled();
+  });
+
+  it.each(["saved URL", "queue"])("opens the annotation workbench directly from %s", async entry => {
+    const gateway = wholeGateway("READY");
+    renderPage(gateway, entry === "queue" ? "/recordings" : `/recordings/${recording.recording_id}/slice`);
+    if (entry === "queue") {
+      await userEvent.setup().click(await screen.findByRole("button", { name: "切片与标注" }));
+    }
+    expect(await screen.findByRole("heading", { name: "标注时间线" })).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent("/annotations/tasks/task-full");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(gateway.finalize).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unconfigured annotation separate from successful ingestion", async () => {
+    const gateway = wholeGateway("READY", null);
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    expect(await screen.findByText("数据已入库，标注任务待准备")).toBeVisible();
+    expect(screen.getByRole("link", { name: "查看已入库数据" })).toBeVisible();
+    expect(screen.queryByRole("link", { name: "进入切片与标注" })).not.toBeInTheDocument();
+  });
+
+  it("shows failed ingestion without offering annotation", async () => {
+    const gateway = wholeGateway("FAILED");
+    renderPage(gateway, `/recordings/${recording.recording_id}/slice`);
+    expect(within(await screen.findByRole("dialog")).getByText("整段入库失败")).toBeVisible();
+    expect(screen.queryByRole("link", { name: "进入切片与标注" })).not.toBeInTheDocument();
+  });
+
+  it("keeps processing recordings out of the ready-to-author queue", async () => {
+    const gateway = wholeGateway("ALIGNING");
+    renderPage(gateway, "/recordings?stage=INGESTING");
+    expect(await screen.findByRole("link", { name: /^整段入库，.*1 项/u })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: "查看入库进度" })).toBeVisible();
   });
 });

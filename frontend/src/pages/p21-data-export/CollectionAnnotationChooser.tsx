@@ -29,7 +29,16 @@ export function CollectionAnnotationChooser({
     queryKey: ["batch-annotation-overview", scope, data],
     queryFn: ({ signal }) => loadEpisodeOverview(scope, data, {}, signal),
   });
-  const chosenTask = taskId ?? overview.data?.annotation.task_id ?? undefined;
+  const approvedTasks =
+    overview.data?.annotation.task_options.filter(
+      (task) => task.status === "APPROVED",
+    ) ?? [];
+  const chosenTask =
+    taskId ??
+    (approvedTasks.length === 1
+      ? approvedTasks[0]?.task_id
+      : overview.data?.annotation.task_id) ??
+    undefined;
   const history = useQuery({
     queryKey: ["batch-annotation-history", scope, data, chosenTask],
     enabled: Boolean(chosenTask),
@@ -48,7 +57,9 @@ export function CollectionAnnotationChooser({
   }, [onChange]);
   const saved = history.data?.revisions.find((r) => r.revision === selected);
   const approved =
-    selected !== undefined && selected === history.data?.task.approved_revision;
+    history.data?.task.status === "APPROVED" &&
+    selected !== undefined &&
+    selected === history.data.task.approved_revision;
   const tags = (saved?.tags ?? [])
     .filter((t) => members.includes(t.annotation_id))
     .toSorted((a, b) => a.start_step - b.start_step);
@@ -59,6 +70,7 @@ export function CollectionAnnotationChooser({
   const ready = Boolean(
     chosenTask &&
       saved &&
+      approved &&
       !overview.error &&
       !history.error &&
       !loading &&
@@ -70,7 +82,7 @@ export function CollectionAnnotationChooser({
         ? {
             task_id: chosenTask,
             revision: selected,
-            allow_unreviewed: !approved,
+            allow_unreviewed: false,
             track: {
               format: "hc-subtask-track/1",
               track_id: "task-segments",
@@ -94,8 +106,11 @@ export function CollectionAnnotationChooser({
         {saved && !loading && !overview.error && !history.error && (
           <span role="status">
             已保存 {saved.tags.length} 个标签{" "}
+            <Tag color={saved.episode_outcome === "fail" || saved.episode_outcome === "FAILURE" ? "error" : "success"}>
+              Episode 结果：{saved.episode_outcome === "fail" || saved.episode_outcome === "FAILURE" ? "失败（fail）" : "成功（success）"}
+            </Tag>
             <Tag color={approved ? "success" : "default"}>
-              {approved ? "已审核" : "未审核 · 将按当前内容导出"}
+              {approved ? "已审核" : "尚未完成审核"}
             </Tag>
           </span>
         )}
@@ -122,19 +137,25 @@ export function CollectionAnnotationChooser({
       {overview.data?.annotation.availability === "NOT_CREATED" && (
         <Alert
           type="warning"
-          title="此 Episode 尚无标注，请先保存标注，或选择不带标注的数据导出。"
+          title="此 Episode 尚无标注，请先完成标注审核。"
         />
       )}
       {overview.data?.annotation.availability === "FORBIDDEN" && (
         <Alert type="warning" title="缺少标注读取权限" />
       )}
-      {overview.data && overview.data.annotation.task_options.length > 1 && (
+      {saved && !approved && !loading && !history.error && (
+        <Alert
+          type="warning"
+          title="此数据尚未完成标注审核，请完成审核后重新选择。"
+        />
+      )}
+      {approvedTasks.length > 1 && (
         <Select
           aria-label={`标注任务 ${data.identity.episode_id}`}
           value={chosenTask}
           placeholder="明确选择一个标注任务"
           style={{ width: "100%" }}
-          options={overview.data.annotation.task_options.map((t) => ({
+          options={approvedTasks.map((t) => ({
             value: t.task_id,
             label: <ResourceLabel kind="annotation_task" id={t.task_id} />,
           }))}
@@ -161,7 +182,7 @@ export function CollectionAnnotationChooser({
                 {members.length > 0 && ` · 已选 ${members.length} 段`}
               </summary>
               <p>
-                全部标签都会导出。需要为数据帧添加动作分段编号时，再勾选对应标签；不选也可直接导出。
+                LeRobot、MCAP 和 HoloBrain 勾选后仅导出所选标签区间，每条标签生成独立 Episode；同名标签也分别生成。不勾选则导出完整有效数据。
               </p>
               <Checkbox.Group
                 className={styles.tags}

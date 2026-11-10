@@ -34,6 +34,16 @@ BE-11 中依赖繁重训练栈的 LeRobot 校验器被隔离在仅支持 Python 
 `data` 扩展依赖，并在构建时验证 Arrow、MCAP 和 Lance 能否导入。后端自身的
 LeRobot v3 导出器使用 PyArrow 和 Lance，不会导入 LeRobot 官方包。
 
+HoloBrain 新下载包（`holobrain_collection_zip/3`）在 ZIP 根目录只包含
+`state.json` 引用的全部 Arrow 分片、`dataset_info.json`、`state.json`、
+`meta_db.duckdb` 和 `conversion_report.json`，保持 19 维关节数据。
+转换报告沿用 hc_tj 参考格式：`episode_count`、`episodes`、`total_frames`，
+逐段记录源 MCAP、消息数量、帧数、丢帧原因和对齐误差。本阶段输入是已规范化的完整
+MCAP；没有执行截断恢复或旧消息尾部修剪，对应计数为零。标注切段时，候选帧分配到
+时间上前一个输出段，开头的排除帧归第一段，确保每个候选帧只计数一次。
+来源明细和完整性校验仍在打包前执行，辅助文件与平台清单不进入下载包。
+历史 `/1`、`/2` 导出任务保留原冻结契约；重新发起导出使用 `/3`，不会复用旧版 ZIP。
+
 ```bash
 uv sync --frozen --extra dev --extra database --extra workflow --extra storage --extra data
 uv run uvicorn hc_data_platform.core.app:create_app --factory --reload

@@ -56,6 +56,7 @@ TABLES = tuple(
         "ingest.recording_episode_asset_windows",
         "ingest.recording_episode_processing",
         "ingest.recording_episode_qc_reports",
+        "ingest.recording_quality_reports",
         "ingest.recording_episode_dataset_version_reservations",
         "dataset_registry.datasets",
         "dataset_registry.dataset_detail_facts",
@@ -212,6 +213,8 @@ def locators(document, bucket, *, ignore_external=False):
                 if "/" in value and "://" not in value:
                     keys.add(value)
             elif name in PREFIX_FIELDS:
+                if value.startswith("oss://"):
+                    continue
                 prefixes.add(value.rstrip("/") + "/")
             elif name in URI_FIELDS and "://" in value:
                 uri = urlsplit(value)
@@ -371,6 +374,9 @@ def build_plan(cursor, task, scope, bucket, objects):
                 match = any(row.get(key) in ids[key] for key in IDENTITIES if row.get(key))
                 if table == "ingest.collection_jobs":
                     match |= row.get("task_id") in ids["collection_task_id"]
+                elif table == "ingest.recording_uploads":
+                    command = row["upload_document"].get("command", {})
+                    match |= command.get("collection_task_id") == task["collection_task_id"]
                 elif table.startswith("annotation."):
                     match |= row.get("task_id") in ids["annotation_task_id"]
                 if table == "workflow.jobs":
@@ -415,6 +421,15 @@ def build_plan(cursor, task, scope, bucket, objects):
             if key in names:
                 for value in ids[key]:
                     plan.selectors[table].append({**scope_selector, key: value})
+        if table == "ingest.recording_uploads":
+            plan.selectors[table].append(
+                {
+                    **scope_selector,
+                    "upload_document": {
+                        "command": {"collection_task_id": task["collection_task_id"]}
+                    },
+                }
+            )
         if "task_id" in names:
             values = (
                 ids["collection_task_id"]

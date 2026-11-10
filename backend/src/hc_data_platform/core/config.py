@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     worker_graceful_shutdown_seconds: int = Field(default=60, ge=1, le=600)
     worker_max_concurrent_workflow_tasks: int = Field(default=4, ge=1, le=1_000)
     worker_max_concurrent_activities: int = Field(default=2, ge=1, le=128)
+    worker_control_max_concurrent_activities: int = Field(default=2, ge=1, le=32)
     ingest_max_active_per_dataset: int = Field(default=8, ge=1, le=128)
     worker_max_cached_workflows: int = Field(default=16, ge=1, le=10_000)
     outbox_scopes: tuple[str, ...] = ()
@@ -62,9 +63,18 @@ class Settings(BaseSettings):
     storage_inventory_scopes: tuple[str, ...] = ()
     storage_inventory_interval_seconds: float = Field(default=3_600, ge=10, le=86_400)
     object_store_local_path: str | None = Field(default=None, max_length=4096)
+    storage_oss_usage_prefix: str | None = Field(default=None, min_length=1, max_length=512)
+    storage_local_usage_roots: dict[str, str] = Field(default_factory=dict)
+    storage_disk_usage_path: str | None = Field(default=None, max_length=4096)
     object_store_browser_path: str | None = Field(default=None, max_length=4096)
     object_store_raw_browser_path: str | None = Field(default=None, max_length=4096)
     object_store_provider: Literal["s3", "oss"] = "s3"
+    oss_import_archives: dict[str, list[str]] = Field(default_factory=dict)
+    object_store_local_processing_cache: bool = False
+    object_store_cache_root: str | None = None
+    object_store_cache_ttl_days: int = Field(default=30, ge=1, le=365)
+    object_store_compact_paths: bool = False
+    object_store_prefix: str = Field(default="", max_length=512)
     object_store_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_public_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_bucket: str = Field(default="hc-data-local", max_length=63)

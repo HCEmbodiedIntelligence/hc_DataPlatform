@@ -20,6 +20,7 @@ export function useEpisodeRobotScene(
   jointAngleStream: StreamDescriptor | null,
   scope: Scope | null,
   provenance: RobotSceneProvenance = currentBindingPreview,
+  snapshotVersionId?: string | null,
 ) {
   const organizationId = scope?.organizationId ?? null;
   const robotBootstrap = useScopedRobotBootstrap(
@@ -28,17 +29,17 @@ export function useEpisodeRobotScene(
   );
   const boundVersionId =
     robotBootstrap.data?.effectiveModelBinding?.robotModelVersionId ?? null;
-  const robotModelVersion = useScopedRobotModelVersion(
-    organizationId,
-    boundVersionId,
-  );
+  const useSnapshotAssets = Boolean(boundVersionId && !robotBootstrap.isError &&
+    boundVersionId === snapshotVersionId);
+  const versionId = useSnapshotAssets || robotBootstrap.isError ? null : boundVersionId;
+  const robotModelVersion = useScopedRobotModelVersion(organizationId, versionId);
   const robotModelAssets = useScopedRobotModelAssets(
     organizationId,
-    boundVersionId,
+    versionId,
   );
   const robotJointMappings = useScopedRobotModelJointMappings(
     organizationId,
-    boundVersionId,
+    versionId,
   );
   const jointFrameSource = useMemo(() => {
     const base = buildJointFrameSource(jointAngleStream);
@@ -68,7 +69,9 @@ export function useEpisodeRobotScene(
     if (
       !scope ||
       provenance.availability !== "available" ||
+      !versionId ||
       !robotModelVersion.data ||
+      robotModelVersion.data.id !== versionId ||
       robotModelVersion.data.lifecycle !== "PUBLISHED" ||
       !urdfAsset ||
       !jointFrameSource ||
@@ -88,7 +91,7 @@ export function useEpisodeRobotScene(
       (mapping) => mapping.source_joint_name,
     );
     return {
-      title: provenance.title,
+      title: snapshotVersionId !== undefined ? `${provenance.title} · ${robotModelVersion.data.versionLabel}` : provenance.title,
       modelRef: { modelId, modelVersion },
       jointMapping,
       jointFrameSource,
@@ -107,6 +110,8 @@ export function useEpisodeRobotScene(
       }),
     };
   }, [
+    versionId,
+    snapshotVersionId,
     jointFrameSource,
     robotJointMappings.data,
     robotJointMappings.isPending,
@@ -121,14 +126,10 @@ export function useEpisodeRobotScene(
     if (provenance.availability === "unavailable") return provenance.reason;
     if (!jointAngleStream)
       return "当前数据未发现关节角 Topic；写入关节角数据后才能同步机器人姿态。";
-    if (!manifestRobotId)
-      return "采集数据清单未返回 robot_id，无法解析本次数据对应的机器人。请重新生成采集清单。";
-    if (robotBootstrap.isPending)
-      return `正在解析机器人 ${manifestRobotId} 的模型绑定…`;
-    if (robotBootstrap.isError)
-      return `无法读取机器人 ${manifestRobotId} 的配置或当前账号无权访问。`;
-    if (!boundVersionId)
-      return `机器人 ${manifestRobotId} 尚未绑定已发布 URDF 模型。请在“机器人管理 → 模型配置”中完成绑定。`;
+    if (!manifestRobotId) return "此数据缺少机器人实例引用，无法解析回放模型。";
+    if (robotBootstrap.isError) return "机器人实例配置读取失败，请重新加载。";
+    if (robotBootstrap.isPending) return "正在读取机器人实例当前绑定的模型…";
+    if (!boundVersionId) return "此机器人实例当前没有绑定已发布的模型。";
     if (robotModelVersion.isPending || robotModelAssets.isPending)
       return "正在加载已发布模型版本与 URDF 资产…";
     if (robotModelVersion.isError || robotModelAssets.isError)
@@ -156,5 +157,5 @@ export function useEpisodeRobotScene(
     robotModelVersion.isPending,
     urdfAsset,
   ]);
-  return { robotScene, robotSceneUnavailableReason };
+  return { robotScene, robotSceneUnavailableReason, useSnapshotAssets };
 }

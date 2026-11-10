@@ -26,7 +26,7 @@ import type {
   CollectionTaskProgress,
 } from "../../features/collection-tasks/api";
 import { CollectionTaskPage } from "./page";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   configureRuntime,
   resetRuntimeConfigForTests,
@@ -359,9 +359,82 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  focusManager.setFocused(undefined);
   resetRuntimeConfigForTests();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+it("reads idle progress once per minute and refreshes it immediately on user request", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const gateway = makeGateway();
+  gateway.progress.mockResolvedValue({ ...progress, qc: { ...progress.qc, pending_count: 0 } });
+  renderPage(gateway);
+  await screen.findByText("8 包 / 20 包");
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(gateway.progress).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "刷新采集任务" }));
+  await waitFor(() => expect(gateway.progress).toHaveBeenCalledTimes(2));
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  await waitFor(() => expect(gateway.progress).toHaveBeenCalledTimes(3));
+});
+
+it("polls live work quickly, pauses while hidden, and slows down when processing finishes", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const gateway = makeGateway();
+  gateway.progress
+    .mockResolvedValueOnce(progress)
+    .mockResolvedValue({ ...progress, qc: { ...progress.qc, pending_count: 0 } });
+  const view = renderPage(gateway);
+  await screen.findByText("8 包 / 20 包");
+  focusManager.setFocused(false);
+  await act(async () => vi.advanceTimersByTimeAsync(30_000));
+  expect(gateway.progress).toHaveBeenCalledTimes(1);
+  focusManager.setFocused(true);
+  await act(async () => vi.advanceTimersByTimeAsync(5_000));
+  await waitFor(() => expect(gateway.progress).toHaveBeenCalledTimes(2));
+  await act(async () => vi.advanceTimersByTimeAsync(55_000));
+  expect(gateway.progress).toHaveBeenCalledTimes(2);
+  await act(async () => vi.advanceTimersByTimeAsync(5_000));
+  await waitFor(() => expect(gateway.progress).toHaveBeenCalledTimes(3));
+  view.unmount();
+  await act(async () => vi.advanceTimersByTimeAsync(60_000));
+  expect(gateway.progress).toHaveBeenCalledTimes(3);
+});
+
+it("stops polling a missing task until the user retries", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const gateway = makeGateway();
+  gateway.progress.mockRejectedValueOnce(createDomainError({
+    code: "NOT_FOUND", problemCode: "COLLECTION_TASK_NOT_FOUND", message: "任务已不存在。",
+    fieldErrors: [], operationErrors: [], blockedReasons: [], requestId: "missing-task",
+    retryable: false, httpStatus: 404,
+  }));
+  renderPage(gateway);
+  await screen.findByLabelText(/COLLECTION_TASK_NOT_FOUND.*missing-task/u);
+  await act(async () => vi.advanceTimersByTimeAsync(120_000));
+  expect(gateway.progress).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await screen.findByText("8 包 / 20 包");
+  expect(gateway.progress).toHaveBeenCalledTimes(2);
+});
+
+it("respects Retry-After instead of repeating a rate-limited request every five seconds", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  const gateway = makeGateway();
+  gateway.progress.mockRejectedValueOnce(createDomainError({
+    code: "RATE_LIMITED", message: "请稍后刷新。",
+    fieldErrors: [], operationErrors: [], blockedReasons: [], requestId: "slow-progress",
+    retryable: true, retryAfterSeconds: 120, httpStatus: 429,
+  }));
+  renderPage(gateway);
+  await screen.findByLabelText(/slow-progress/u);
+  await act(async () => vi.advanceTimersByTimeAsync(119_000));
+  expect(gateway.progress).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(1_000));
+  await screen.findByText("8 包 / 20 包");
+  expect(gateway.progress).toHaveBeenCalledTimes(2);
 });
 
 it("keeps capture records open when task progress and task-list reads refresh", async () => {
@@ -785,6 +858,10 @@ describe("P20 collection tasks", () => {
     );
 
     await fillMinimumCreateForm(user);
+    await user.type(
+      within(drawer).getByLabelText("任务描述"),
+      "抓起水瓶，放到指定区域。\n机械臂回到初始位置。",
+    );
     await user.dblClick(screen.getByRole("button", { name: "创建任务" }));
     await waitFor(() => expect(gateway.create).toHaveBeenCalledTimes(1));
     expect(gateway.create).toHaveBeenCalledWith(
@@ -802,7 +879,7 @@ describe("P20 collection tasks", () => {
         },
         type: "抓取采集",
         scenario: "夜间灯光条件",
-        description: "",
+        description: "抓起水瓶，放到指定区域。\n机械臂回到初始位置。",
         target: null,
         quality_threshold: null,
       },

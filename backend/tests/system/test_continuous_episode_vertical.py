@@ -968,6 +968,11 @@ async def test_continuous_v2_four_camera_real_media_temporal_vertical(
                 task_queue="continuous-vertical-media",
                 activities=list(ALL_ACTIVITIES),
             ),
+            Worker(
+                environment.client,
+                task_queue="continuous-vertical-main-control",
+                activities=list(ALL_ACTIVITIES),
+            ),
         ):
             assert await dispatcher.dispatch_one(
                 organization_id=ORGANIZATION_ID,
@@ -1200,6 +1205,10 @@ async def test_continuous_episode_temporal_qc_reject_sets_terminal_evidence() ->
             environment.client,
             task_queue="continuous-qc-reject",
             workflows=[ContinuousRecordingEpisodeWorkflow],
+            activities=list(ALL_ACTIVITIES),
+        ), Worker(
+            environment.client,
+            task_queue="continuous-qc-reject-control",
             activities=list(ALL_ACTIVITIES),
         ):
             result = await environment.client.execute_workflow(

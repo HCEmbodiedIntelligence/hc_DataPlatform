@@ -1,3 +1,4 @@
+import { cachePolicies, cacheRule, isCacheAction } from "./cache-policies";
 import {
   Alert,
   Button,
@@ -65,11 +66,20 @@ const roleLabels: Record<ObjectRole, string> = {
 };
 
 const actionLabels: Record<LifecyclePolicyAction, string> = {
+  CLEAN_INVENTORY_DETAILS: "自动精简 · 容量盘点历史明细",
+  CLEAN_INVENTORY_HISTORY: "自动回收 · 容量历史汇总",
   RETAIN: "保留",
   REVIEW_EXPIRATION: "到期复核",
   ARCHIVE: "归档",
   TRANSITION_TO_COLD: "迁移到冷存储",
   CLEAN_REBUILDABLE_CACHE: "清理可重建缓存",
+  CLEAN_PROCESSING_CACHE: "自动回收 · 解析中间缓存",
+  CLEAN_RECORDING_PREVIEWS: "自动回收 · 原始录制预览",
+  CLEAN_EPISODE_PREVIEWS: "自动回收 · 成片播放预览",
+  CLEAN_EXPORT_ARCHIVES: "自动回收 · 数据导出包",
+  CLEAN_PROCESSING_STAGING: "自动回收 · 处理暂存与源文件缓存",
+  CLEAN_MEDIA_STAGING: "自动回收 · 媒体生成暂存",
+  CLEAN_OSS_TEST_COPIES: "自动回收 · 接入测试副本",
 };
 
 const stateLabels = {
@@ -224,7 +234,7 @@ export function LifecycleProtectionSummary() {
       <div className={styles.protectionHeading}>
         <ShieldCheck aria-hidden="true" size={17} />
         <h3 id="lifecycle-protection-title">保护状态</h3>
-        <span>生产执行需独立审批</span>
+        <span>自动缓存策略按保留期执行；其他物理操作独立审批</span>
       </div>
       <div className={styles.protectionItems}>
         {protectedObjects.map((item) => (
@@ -244,7 +254,7 @@ export function LifecycleProtectionSummary() {
 function PolicyTarget({ policy }: Readonly<{ policy: LifecyclePolicy }>) {
   return (
     <span className={styles.cellStack}>
-      <span>{categoryLabels[policy.business_category]}</span>
+      <span>{isCacheAction(policy.action) ? cachePolicies[policy.action].label : categoryLabels[policy.business_category]}</span>
       <small>{roleLabels[policy.object_role]}</small>
       <ProtectionState role={policy.object_role} />
     </span>
@@ -306,7 +316,7 @@ export function LifecyclePolicyTable({
           <span className={styles.cellStack}>
             <span>{actionLabels[row.original.action]}</span>
             <small>
-              ≥ {row.original.minimum_age_days} 天 · P{row.original.priority} ·
+              {row.original.action === "CLEAN_INVENTORY_DETAILS" && row.original.minimum_age_days === 0 ? "仅保留最新一轮明细" : `${cacheRule(row.original.action)?.clock ?? "≥"} ${row.original.minimum_age_days} 天`} · P{row.original.priority} ·
               v{row.original.version}
             </small>
           </span>
@@ -413,6 +423,14 @@ function AuditIdentity({ event }: Readonly<{ event: LifecycleAuditEvent }>) {
 }
 
 function AuditChange({ event }: Readonly<{ event: LifecycleAuditEvent }>) {
+  if (event.action.endsWith(".expired")) {
+    const detail = event.details ?? {};
+    const bytes = Number(detail.reclaimed_bytes);
+    return <span className={styles.cellStack}>
+      <span>{detail.cache_action === "CLEAN_INVENTORY_DETAILS" ? `已精简 ${Number(detail.deleted_entries ?? 0).toLocaleString()} 条明细，保留 ${detail.summarized_snapshots ?? 0} 份汇总` : detail.cache_action === "CLEAN_INVENTORY_HISTORY" ? `已回收 ${detail.deleted_summaries ?? 0} 份历史汇总` : Number.isFinite(bytes) ? `已回收 ${(bytes / 1024 ** 2).toFixed(2)} MiB` : `已回收 ${detail.deleted_entries ?? 0} 项`}</span>
+      <small>保留 {String(detail.minimum_age_days ?? "—")} 天 · 策略 v{String(detail.policy_version ?? "—")}</small>
+    </span>;
+  }
   return (
     <span className={styles.cellStack}>
       <span>
@@ -451,7 +469,7 @@ function LifecycleAuditTable({
         id: "action",
         header: "事件",
         size: 142,
-        cell: ({ row }) => <code>{row.original.action}</code>,
+        cell: ({ row }) => <span>{row.original.action.endsWith(".expired") ? (cacheRule(String(row.original.details?.cache_action ?? "CLEAN_PROCESSING_CACHE"))?.label ?? "缓存") + "已回收" : ({ "storage.lifecycle_policy.created": "创建策略", "storage.lifecycle_policy.enabled": "启用策略", "storage.lifecycle_policy.paused": "暂停策略", "storage.lifecycle_policy.updated": "修改策略" } as Record<string, string>)[row.original.action] ?? row.original.action}</span>,
       },
       {
         id: "identity",
@@ -461,7 +479,7 @@ function LifecycleAuditTable({
       },
       {
         id: "change",
-        header: "变更指纹",
+        header: "执行结果与变更",
         size: 176,
         cell: ({ row }) => <AuditChange event={row.original} />,
       },
@@ -634,7 +652,7 @@ export function LifecyclePane() {
 
   const submitPolicy = (command: PolicyFormValues) => {
     if (
-      command.action === "CLEAN_REBUILDABLE_CACHE" &&
+      command.action.startsWith("CLEAN_") &&
       command.object_role !== "REBUILDABLE_DERIVATIVE"
     ) {
       form.setFields([
@@ -767,6 +785,8 @@ export function LifecyclePane() {
           </Button>
         </div>
       </header>
+      <Alert type="info" showIcon title="可回收数据按用途独立配置"
+        description="编辑对应策略可修改保留天数，暂停后停止该策略的自动回收。预览与导出包从最近使用计时，解析缓存从入库完成计时。策略作用于当前启动版本和项目；本地版与 OSS 版分别管理。" />
 
       <div className={styles.lifecycleBody}>
         <LifecycleProtectionSummary />
@@ -898,10 +918,10 @@ export function LifecyclePane() {
           <div className={styles.formGrid}>
             <Form.Item
               name="business_category"
-              label="业务容量分类"
+              label={isCacheAction(selectedAction) ? "适用范围" : "业务容量分类"}
               rules={[{ required: true }]}
             >
-              <Select options={categoryOptions} />
+              <Select options={isCacheAction(selectedAction) ? [{ value: "PENDING_ANNOTATION", label: "当前项目的对应数据（不按标注状态区分）" }] : categoryOptions} disabled={isCacheAction(selectedAction)} />
             </Form.Item>
             <Form.Item
               name="action"
@@ -911,7 +931,10 @@ export function LifecyclePane() {
               <Select
                 options={actionOptions}
                 onChange={(value: LifecyclePolicyAction) => {
-                  if (value === "CLEAN_REBUILDABLE_CACHE")
+                  if (isCacheAction(value)) {
+                    form.setFieldsValue({ business_category: "PENDING_ANNOTATION", minimum_age_days: cachePolicies[value].days });
+                  }
+                  if ((value === "CLEAN_REBUILDABLE_CACHE" || isCacheAction(value)))
                     form.setFieldValue("object_role", "REBUILDABLE_DERIVATIVE");
                 }}
               />
@@ -925,18 +948,19 @@ export function LifecyclePane() {
                 options={formRoleOptions.map((option) => ({
                   ...option,
                   disabled:
-                    selectedAction === "CLEAN_REBUILDABLE_CACHE" &&
+                    (selectedAction === "CLEAN_REBUILDABLE_CACHE" || isCacheAction(selectedAction)) &&
                     option.value !== "REBUILDABLE_DERIVATIVE",
                 }))}
               />
             </Form.Item>
             <Form.Item
               name="minimum_age_days"
-              label="最小年龄（天）"
+              label={isCacheAction(selectedAction) ? `${cachePolicies[selectedAction].clock}保留天数` : "最小年龄（天）"}
+              extra={isCacheAction(selectedAction) ? `${cachePolicies[selectedAction].detail} 多个同类策略启用时采用最长保留期；全部暂停后停止自动回收。` : undefined}
               rules={[{ required: true }]}
             >
               <InputNumber
-                min={0}
+                min={isCacheAction(selectedAction) && selectedAction !== "CLEAN_INVENTORY_DETAILS" ? 1 : 0}
                 max={36_500}
                 precision={0}
                 className={styles.fullWidth}
@@ -988,7 +1012,9 @@ export function LifecyclePane() {
         resourceId={confirmAction?.policy.policy_id ?? "unknown"}
         impact={
           confirmAction?.kind === "enable"
-            ? "启用规则调度状态；不会从本页面触发生产物理执行。"
+            ? isCacheAction(confirmAction.policy.action)
+              ? `启用后，后台按当前保留规则自动检查并回收满足条件的${cachePolicies[confirmAction.policy.action].label}。${cachePolicies[confirmAction.policy.action].detail}`
+              : "启用规则调度状态；不会从本页面触发生产物理执行。"
             : confirmAction?.kind === "pause"
               ? "停止后续规则调度；现有审计记录保留。"
               : "删除草稿或已暂停策略；审计记录仍永久保留。"

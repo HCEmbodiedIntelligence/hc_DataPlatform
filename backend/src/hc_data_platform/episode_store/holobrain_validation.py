@@ -21,8 +21,10 @@ def validate(root, checkpoint=lambda: None):
     state = json.loads((root / "state.json").read_bytes())
     info = json.loads((root / "dataset_info.json").read_bytes())
     conversion = json.loads((root / "conversion_report.json").read_bytes())
+    reference_report = set(conversion) == {"episode_count", "episodes", "total_frames"}
     if (state["robo_orchard_state"]["dataset_format_version"] != "0.1.0"
-            or info["features"] != FEATURES or conversion["target_profile"] != PROFILE):
+            or info["features"] != FEATURES
+            or (not reference_report and conversion["target_profile"] != PROFILE)):
         raise ValueError("HOLOBRAIN_METADATA_MISMATCH")
     counts, starts, lengths = Counter(), {}, []
     source_positions = {}
@@ -91,12 +93,28 @@ def validate(root, checkpoint=lambda: None):
         if episodes != [(i, starts[i], counts[i]) for i in sorted(counts)]:
             raise ValueError("HOLOBRAIN_DATABASE_FRAME_MISMATCH")
         split = info["splits"]["train"]
-        if split["num_examples"] != total or split["shard_lengths"] != lengths or conversion["frames"] != total:
+        reported_frames = conversion["total_frames"] if reference_report else conversion["frames"]
+        if split["num_examples"] != total or split["shard_lengths"] != lengths or reported_frames != total:
             raise ValueError("HOLOBRAIN_SHARD_LENGTH_MISMATCH")
+        if reference_report:
+            report_episodes = conversion["episodes"]
+            if (conversion["episode_count"] != len(episodes)
+                    or len(report_episodes) != len(episodes)
+                    or [e["frames"]["output_frames"] for e in report_episodes]
+                    != [counts[i] for i in sorted(counts)]):
+                raise ValueError("HOLOBRAIN_REPORT_EPISODE_MISMATCH")
+            for entry in report_episodes:
+                frames = entry["frames"]
+                if (frames["candidate_rgb_frames"] != frames["output_frames"] + frames["dropped_frames"]
+                        or sum(frames["dropped_by_reason"].values()) != frames["dropped_frames"]):
+                    raise ValueError("HOLOBRAIN_REPORT_FRAME_MISMATCH")
     finally:
         db.close()
     return {"status": "PASSED", "profile": PROFILE, "frames": total, "episodes": len(counts),
             "all_arrow_rows": True, "all_images_decoded": True, "schema_metadata": True,
             "database_indexes": True, "provenance_indexes": True, "image_bytes_provenance": True,
             "training_integration": "NOT_RUN_BY_STORAGE_VALIDATOR",
-            "accepted_assumptions": conversion["unverified_geometry"]}
+            "accepted_assumptions": conversion.get("unverified_geometry", [
+                "static zero-head mechanical pose",
+                "depth represented with RGB intrinsics; registration unverified",
+            ])}

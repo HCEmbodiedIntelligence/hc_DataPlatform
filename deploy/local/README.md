@@ -33,6 +33,13 @@ IP 或域名（例如 `http://192.168.1.10:8088`），并设置 `HC_GATEWAY_BIND
 `original` 是 `current` 的命令别名，均使用 `hc-data-platform-dev` Compose project；
 不再启动独立 OpenArm、Chayi 或双终端测试平台。
 
+本机网页登录空闲超时默认为 **8 小时**，一次登录最长 **24 小时**。前台页面的
+点击、输入、滚动和视频播放会每分钟至多续期一次；后台或没有操作的页面不持续保活。
+临时断网不会直接退出，重新操作后重试续期。修改 `.env` 中的
+`HC_SESSION_IDLE_TTL_SECONDS` / `HC_SESSION_ABSOLUTE_TTL_SECONDS` 后，执行
+`bash deploy/local/compose.sh current up -d --no-deps api` 使配置生效。
+已过期或已退出的会话需要重新登录，不会因延长期限恢复。
+
 原始上传文件及处理后的 Parquet、视频、JSON 由本机 MinIO 管理；MinIO 内部文件保存在
 `/home/hc_op/workspace/data-platform-storage`（`.env` 的 `HC_MINIO_DATA_DIRECTORY`）。
 账号、项目、索引、任务、模型资源和版本关系存入 PostgreSQL。
@@ -77,6 +84,20 @@ python3 deploy/local/cloudflare.py stop
 需要长期固定地址时，改为 Cloudflare 账号下的命名隧道和自有域名。
 
 ## 直接查看文件及容量
+
+网页“存储容量”按采集任务展示原始文件、入库成片、预览及处理文件、标注文件和导出包，
+关系图绑定同一份实际文件统计；标注进度单独按当前成片条数显示，不作为文件容量分类。
+点击“查看文件”在本页筛选、搜索和展开明细，不跳转到其他业务页面。
+字节数来自对象存储的实际对象元数据，相同文件被多处引用时只计一次；跨任务共享文件
+单独汇总，缺失登记文件明确提示。任务拥有的预览与处理目录也参与盘点。
+页面每分钟更新，手动“刷新用量”重新盘点；缓存按组织、项目和区域隔离。
+
+顶部同时展示存储磁盘实测总量、已用、可用及系统预留空间，以及本机平台全部对象文件、
+数据库（含索引）的实际大小。磁盘统计使用 API 中只读挂载的存储目录；
+`HC_STORAGE_DISK_USAGE_PATH` 未配置或无法读取时明确显示不可用，不估造总量。
+文件内容大小不包含文件系统、MinIO 元数据或未完成分片开销，不能替代整盘统计。
+原有容量快照仍由 Worker 自动发现项目后生成，默认每 5 分钟记录，
+可用 `HC_STORAGE_INVENTORY_INTERVAL_SECONDS` 调整历史快照周期。
 
 用系统文件管理器打开 `/home/hc_op/workspace/data-platform-files`。
 目录按“项目名 → 任务名和任务号 → 录制时间与机器人”展示，可直接双击文件、复制粘贴

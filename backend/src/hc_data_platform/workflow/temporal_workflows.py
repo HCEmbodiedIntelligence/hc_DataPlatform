@@ -104,6 +104,7 @@ with workflow.unsafe.imports_passed_through():
         COMMIT_CONTINUOUS_EPISODE_BUNDLE_ACTIVITY,
         COMMIT_FRAGMENT_ACTIVITY,
         COMMIT_PREPARED_BUNDLE_ACTIVITY,
+        CONTINUOUS_CONTROL_ACTIVITIES,
         CONTINUOUS_EPISODE_WORKFLOW,
         CREATE_ALIGNED_MEDIA_ACTIVITY,
         CREATE_ANNOTATION_TASK_ACTIVITY,
@@ -126,6 +127,7 @@ with workflow.unsafe.imports_passed_through():
         RESERVE_INGEST_ACTIVITY,
         UPDATE_CONTINUOUS_EPISODE_STATE_ACTIVITY,
         VERIFY_EXPORT_ARTIFACT_ACTIVITY,
+        control_task_queue,
     )
 
 _ResultT = TypeVar("_ResultT")
@@ -183,6 +185,18 @@ async def _execute_activity(
     task_queue: str | None = None,
     cancellation_type: ActivityCancellationType = ActivityCancellationType.TRY_CANCEL,
 ) -> _ResultT:
+    if (
+        task_queue is None
+        and name in CONTINUOUS_CONTROL_ACTIVITIES
+        and workflow.info().workflow_type == CONTINUOUS_EPISODE_WORKFLOW
+    ):
+        # Version each logical step: a past state update must replay unchanged,
+        # while a future READY update in that same execution can use control slots.
+        phase = name
+        if isinstance(argument, ContinuousEpisodeStateActivityInput):
+            phase += f":{argument.new_status.value}"
+        if workflow.patched(f"continuous-episode-control-queue-v1:{phase}"):
+            task_queue = control_task_queue(workflow.info().task_queue)
     result = await workflow.execute_activity(
         name,
         argument,
@@ -1240,6 +1254,11 @@ class ContinuousRecordingEpisodeWorkflow(_JobLifecycle):
                 base_step_count=derived.step_count,
                 source_workflow_id=workflow.info().workflow_id,
                 **({"task_labels": request.task_labels} if request.task_labels is not None else {}),
+                has_recorded_takeovers=bool(
+                    aligned.package_plan
+                    and aligned.package_plan.metadata.get("source", {})
+                    .get("mcap", {}).get("takeover_intervals_ns")
+                ),
             )
             annotation, annotation_state = await _create_optional_annotation(annotation_input)
             await self._state(
@@ -1623,6 +1642,7 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
                 schema=request.tag_schema,
                 base_step_count=request.base_step_count,
                 tags=revision.tags,
+                episode_outcome=revision.episode_outcome,
                 operations=request.cumulative_operations,
             )
         except TagValidationIssue as exc:
@@ -1637,6 +1657,7 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
             tag_schema_id=revision.tag_schema_id,
             tag_schema_version=revision.tag_schema_version,
             tags=revision.tags,
+            episode_outcome=revision.episode_outcome,
             operations=request.cumulative_operations,
         )
         if revision.content_hash != expected_hash:
@@ -1711,7 +1732,44 @@ class RetryEpisodeAnnotationWorkflow(_JobLifecycle):
         return result
 
 
+@workflow.defn(name="ContinuousRecordingQualityWorkflow")
+class ContinuousRecordingQualityWorkflow(_JobLifecycle):
+    @workflow.run
+    async def run(self, request: dict) -> JobRecord:
+        self._begin(
+            job_type="ContinuousRecordingQualityWorkflow", project_id=request["project_id"],
+            resource_id=request["recording_id"],
+        )
+        self._stage("qc")
+        try:
+            result = await workflow.execute_activity(
+                "continuous-recording.quality", request,
+                start_to_close_timeout=timedelta(hours=24),
+                heartbeat_timeout=timedelta(seconds=60),
+                retry_policy=RetryPolicy(maximum_attempts=3,
+                                         maximum_interval=timedelta(seconds=30)),
+            )
+        except ActivityError as exc:
+            self._technical_failure(exc)
+            cause = exc.cause
+            code = getattr(cause, "type", None) or "RECORDING_QUALITY_FAILED"
+            await workflow.execute_activity(
+                "continuous-recording.quality.failed", {**request, "error_code": code},
+                start_to_close_timeout=timedelta(minutes=1),
+            )
+            raise
+        return self._finish(
+            JobStatus.SUCCEEDED if result["status"] == "PASS" else JobStatus.QUALITY_REJECTED,
+            result=result,
+        )
+
+    @workflow.query(name="job")
+    def job(self) -> JobRecord:
+        return self._record()
+
+
 ALL_WORKFLOWS = (
+    ContinuousRecordingQualityWorkflow,
     RetryEpisodeAnnotationWorkflow,
     IngestRolloutWorkflow,
     ContinuousRecordingEpisodeWorkflow,

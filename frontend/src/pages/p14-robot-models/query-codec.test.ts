@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { robotsQueryCodec } from "./query-codec";
+import { robotModelsQueryCodec } from "./query-codec";
 
-describe("robotsQueryCodec", () => {
+describe("robotModelsQueryCodec", () => {
   it("round-trips model asset search and selection", () => {
-    const params = robotsQueryCodec.build({
+    const params = robotModelsQueryCodec.build({
       q: "星舟",
       modelId: "model-1",
       limit: 20,
     });
 
-    expect(robotsQueryCodec.parse(params)).toMatchObject({
+    expect(robotModelsQueryCodec.parse(params)).toMatchObject({
       q: "星舟",
       modelId: "model-1",
     });
@@ -18,11 +18,11 @@ describe("robotsQueryCodec", () => {
 
   it("ignores legacy robot connectivity filters", () => {
     expect(
-      robotsQueryCodec.parse(
+      robotModelsQueryCodec.parse(
         new URLSearchParams(
           "lifecycleStatus=UNKNOWN&connectivityState=UNSTABLE",
         ),
       ),
-    ).toEqual({ limit: 20 });
+    ).toEqual(robotModelsQueryCodec.parse(new URLSearchParams()));
   });
 });

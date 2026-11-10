@@ -111,6 +111,7 @@ def verify_snapshot(document, data):
             tag_schema_id=saved.tag_schema_id,
             tag_schema_version=saved.tag_schema_version,
             tags=saved.tags,
+            episode_outcome=saved.episode_outcome,
             operations=operations,
         )
         != saved.content_hash

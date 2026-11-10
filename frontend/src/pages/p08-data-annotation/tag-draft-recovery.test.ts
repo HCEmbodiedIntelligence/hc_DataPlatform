@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearTagDraftRecovery,
   loadTagDraftRecovery,
+  loadAnnotationDraftRecovery,
   saveTagDraftRecovery,
 } from "./tag-draft-recovery";
 import { visualTag } from "./testing/annotation-fixture";
@@ -36,4 +37,9 @@ describe("P08 session-only Tag draft recovery", () => {
     clearTagDraftRecovery(identity);
     expect(loadTagDraftRecovery(identity, 2_001)).toBeNull();
   });
+});
+
+it("recovers an episode result even when there are no Tags", () => {
+  saveTagDraftRecovery(identity, [], 1000, "fail");
+  expect(loadAnnotationDraftRecovery(identity, 2000)).toMatchObject({ tags: [], episodeOutcome: "fail" });
 });

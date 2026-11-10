@@ -148,6 +148,7 @@ class CommittedRawSourceGraph(BaseModel):
     job: RawIngestJob
     # Internal server receipt, not a field accepted from an upload manifest.
     capture_snapshot: dict[str, Any] | None = None
+    mcap_files: list[dict[str, Any]] | None = None
 
 
 class RawSourceRepositoryPort(Protocol):
@@ -374,7 +375,9 @@ class PostgresRawSourceRepository:
         *,
         capture_snapshot_writer: Callable[[Any, tuple[str, str, str], str, dict[str, Any]], None]
         | None = None,
+        mcap_dispatcher: Callable[[Any, RawSource, list[dict[str, Any]]], None] | None = None,
     ) -> None:
+        self._mcap_dispatcher = mcap_dispatcher
         self._connection_factory = connection_factory
         self._capture_snapshot_writer = capture_snapshot_writer
 
@@ -545,6 +548,10 @@ class PostgresRawSourceRepository:
                         source.raw_source_id,
                         graph.capture_snapshot,
                     )
+                if inserted_source and graph.mcap_files is not None:
+                    if self._mcap_dispatcher is None:
+                        raise RuntimeError("MCAP dispatch is not configured")
+                    self._mcap_dispatcher(connection, persisted_source, graph.mcap_files)
                 if job.job_type is RawIngestJobType.LEROBOT_IMPORT and job.workflow_id:
                     event = DomainEventEnvelope(
                         event_id=str(

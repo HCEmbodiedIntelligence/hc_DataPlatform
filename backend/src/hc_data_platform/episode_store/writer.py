@@ -41,7 +41,8 @@ def capture_value(value, enabled):
         and isinstance(value, dict)
         and set(value)
         <= {"values", "names", "units", "source_origins", "validity", "source_timestamp_ns",
-            "nearest_source_timestamp_ns", "alignment_reference_timestamp_ns", "source_topic"}
+            "nearest_source_timestamp_ns", "alignment_reference_timestamp_ns", "source_topic",
+            "action_origin", "source_frame", "state_reference_timestamp_ns"}
         and isinstance(value.get("values"), list)
         and value["values"]
         and all(v is None or (type(v) in (int, float) and np.isfinite(v)) for v in value["values"])
@@ -221,7 +222,8 @@ def write_episode(
             raise ValueError(f"source modality conflicts with standard index: {key}")
         types[key] = type_
         features[key] = {"dtype": dtype, "shape": [1], "names": None}
-    if capture_masking:
+    label_trace = bool(metadata.get("source", {}).get("mcap", {}).get("action_gap_fill"))
+    if capture_masking or label_trace:
         types["hc.action_source_origins"] = pa.string()
         features["hc.action_source_origins"] = {"dtype": "string", "shape": [1], "names": None}
     schema = pa.schema(list(types.items()))
@@ -304,7 +306,8 @@ def write_episode(
                             for axis, valid in zip(axes, mask, strict=True)
                         ):
                             raise ValueError(
-                                "missing numerical value is marked valid or shape differs"
+                                f"missing numerical value is marked valid or shape differs: {target} at frame {count}, "
+                                f"{len(axes)} values for {len(mask)} axes"
                             )
                     row[target] = value[0] if value is not None and source_shapes[target] == [1] else value
                 # Unknown stays unknown in the trace; never infer validity from absent evidence.
@@ -318,11 +321,19 @@ def write_episode(
                     row[f"hc.axis_validity.{target}"] = canonical(
                         step.axis_validity.get(name, ())
                     ).decode()
-            if capture_masking:
+            if label_trace:
+                action = step.modalities[next(name for name, target in mapping.items() if target == "action")]
+                row["hc.action_source_origins"] = canonical({
+                    "origin": action.get("action_origin", "recorded_command"),
+                    **{k: action[k] for k in ("source_topic", "source_frame", "source_timestamp_ns",
+                                              "state_reference_timestamp_ns") if k in action},
+                }).decode()
+            elif capture_masking:
                 action = step.modalities.get("/action", {})
                 row["hc.action_source_origins"] = canonical(
                     action.get("source_origins", {})
                 ).decode()
+            if capture_masking:
                 if step.sample_valid:
                     training_indices.append(count)
             pending.append(row)
@@ -392,7 +403,10 @@ def write_episode(
                 path, frame_count=count, fps=fps, info=depth_info, masks=valid_masks()
             )
         else:
-            feature, statistics = inspect_video(path, frame_count=count, fps=fps)
+            feature, statistics = inspect_video(
+                path, frame_count=count, fps=fps,
+                statistics_method=metadata.get("rgb_statistics", "legacy"),
+            )
         if feature["shape"] != media.feature["shape"]:
             raise ValueError("prepared media dimensions differ from frozen source")
         features[key] = feature

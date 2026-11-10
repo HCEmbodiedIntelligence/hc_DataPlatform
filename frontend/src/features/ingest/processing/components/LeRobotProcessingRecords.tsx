@@ -10,7 +10,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Alert, Button, Modal, Progress, Space, Tag } from "antd";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import { lazy, Suspense, useId, useState } from "react";
 const OriginalSourceBrowser = lazy(
   () => import("../../browser/OriginalSourceBrowser"),
@@ -130,28 +130,29 @@ export function LeRobotProcessingRecords({
   if (!records.isError && !records.data?.length && offset === 0) return null;
   return (
     <section
-      className={compact ? recordStyles.compact : styles.uploadPanel}
+      className={compact ? recordStyles.compact : recordStyles.panel}
       aria-label="原始数据"
     >
-      {compact ? (
-        <header className={recordStyles.header}>
-          <div className={recordStyles.heading}>
-            <h2>原始数据</h2>
-            <span className={recordStyles.summary}>
-              {records.data
-                ? `${records.data.length} 批记录${offset > 0 || records.data.length === 20 ? "（本页）" : ""}`
-                : "正在读取…"}
-            </span>
-          </div>
-          <div className={recordStyles.headerActions}>
-            <Button
-              size="small"
-              type="text"
-              loading={records.isFetching}
-              onClick={() => void records.refetch()}
-            >
-              刷新
-            </Button>
+      <header className={recordStyles.header}>
+        <div className={recordStyles.heading}>
+          <h2>原始数据</h2>
+          <span className={recordStyles.summary}>
+            {records.data
+              ? `${records.data.length} 批记录${offset > 0 || records.data.length === 20 ? "（本页）" : ""}`
+              : "正在读取…"}
+          </span>
+        </div>
+        <div className={recordStyles.headerActions}>
+          <Button
+            size="small"
+            type="text"
+            icon={<RefreshCw size={14} aria-hidden />}
+            loading={records.isFetching}
+            onClick={() => void records.refetch()}
+          >
+            刷新
+          </Button>
+          {compact && (
             <Button
               size="small"
               type="text"
@@ -168,17 +169,9 @@ export function LeRobotProcessingRecords({
             >
               {expanded ? "收起" : "展开记录"}
             </Button>
-          </div>
-        </header>
-      ) : (
-        <>
-          <h2>原始数据</h2>
-          <Button onClick={() => void records.refetch()}>刷新记录</Button>
-          <p>
-            原始文件始终保留。自动质检与对齐完成后，可进入数据集可视化和标注。
-          </p>
-        </>
-      )}
+          )}
+        </div>
+      </header>
       {records.isError ? (
         <Alert
           type="error"
@@ -198,181 +191,183 @@ export function LeRobotProcessingRecords({
         />
       ) : null}
       <div id={recordsId} hidden={compact && !expanded}>
-        <div
-          className={`${styles.queueList} ${compact ? recordStyles.list : ""}`}
-        >
+        <div className={recordStyles.list}>
           {records.data?.map((item) => (
-            <article
-              className={compact ? recordStyles.row : styles.queueItem}
-              key={item.import_id}
-            >
-              <div className={compact ? recordStyles.identity : undefined}>
-                {!compact && (
-                  <strong>
-                    <ResourceLabel
-                      kind="dataset"
-                      id={item.dataset_id}
-                      scope={scope}
-                    />
-                  </strong>
-                )}
-                <small title={item.import_id}>
-                  {item.source_format.toUpperCase()} ·{" "}
-                  {new Date(item.updated_at).toLocaleString("zh-CN", {
-                    hour12: false,
-                  })}
-                </small>
-              </div>
-              <Tag
-                color={
-                  linked.has(item.import_id) ||
-                  ["SUCCEEDED", "RAW_COMMITTED"].includes(item.status)
-                    ? "success"
-                    : item.status.includes("FAILED")
-                      ? "error"
-                      : "processing"
-                }
-              >
-                {linked.has(item.import_id)
-                  ? "同次录制 · 已关联成功结果"
-                  : (labels[item.status] ?? item.status)}
-              </Tag>
-              {!linked.has(item.import_id) &&
-              item.status !== "RAW_COMMITTED" &&
-              (!compact ||
-                ["PENDING", "RUNNING", "PARTIALLY_FAILED"].includes(
-                  item.status,
-                )) ? (
-                <Progress
-                  className={compact ? recordStyles.progress : undefined}
-                  size={compact ? "small" : "middle"}
-                  aria-label="LeRobot 处理进度"
-                  percent={Math.round(
-                    (100 * (item.ready + item.failed + (item.discarded ?? 0))) /
-                      Math.max(1, item.episode_count),
-                  )}
-                  status={
-                    item.failed
-                      ? "exception"
-                      : item.status === "SUCCEEDED"
-                        ? "success"
-                        : "active"
-                  }
-                />
-              ) : null}
-              {linked.has(item.import_id) ? (
-                <p className={recordStyles.recordSummary}>
-                  原始文件已保留，沿用同次录制的成功成片，不重复入库或计数。
-                </p>
-              ) : item.status === "RAW_COMMITTED" ? (
-                <p className={recordStyles.recordSummary}>
-                  {item.source_format} · {item.file_count} 个原始文件
-                </p>
-              ) : (
-                <p className={recordStyles.recordSummary}>
-                  共 {item.episode_count} 个 Episode · 已就绪 {item.ready} ·
-                  处理未完成 {item.failed}
-                  {(item.discarded ?? 0) > 0
-                    ? ` · 已移除 ${item.discarded}`
-                    : ""}
-                </p>
-              )}
-              {(item.resume_required ?? 0) +
-                (item.reprocessing_conflicts ?? 0) >
-              0 ? (
-                <p className={recordStyles.recordSummary}>
-                  未完成明细：待继续处理 {item.resume_required ?? 0} · 处理冲突{" "}
-                  {item.reprocessing_conflicts ?? 0}
-                  {item.failed >
-                  (item.resume_required ?? 0) +
-                    (item.reprocessing_conflicts ?? 0)
-                    ? ` · 其他未完成 ${item.failed - (item.resume_required ?? 0) - (item.reprocessing_conflicts ?? 0)}`
-                    : ""}
-                  。质检通过后仍需完成入库，处理冲突可在首页查看详情。
-                </p>
-              ) : null}
-              {item.readable_episodes !== undefined &&
-                item.readable_episodes !== null && (
-                  <p className={recordStyles.recordSummary}>
-                    数据可读取 {item.readable_episodes} 个 Episode
-                    {Object.entries(item.annotation_counts ?? {}).map(
-                      ([status, count]) => (
-                        <span key={status}>
-                          {" "}
-                          · {annotationStatusLabel(status)} {count}
-                        </span>
-                      ),
+            <article className={recordStyles.batch} key={item.import_id}>
+              <details className={recordStyles.batchDetails}>
+                <summary className={recordStyles.batchHeader}>
+                  <span className={recordStyles.identity}>
+                    {!compact && (
+                      <strong>
+                        <ResourceLabel
+                          kind="dataset"
+                          id={item.dataset_id}
+                          scope={scope}
+                        />
+                      </strong>
                     )}
-                  </p>
-                )}
-              {!linked.has(item.import_id) && item.last_error_code ? (
-                <p className={recordStyles.recordSummary} role="alert">
-                  上次处理问题：
-                  {captureProblemLabels[item.last_error_code] ??
-                    errorLabels[item.last_error_code] ??
-                    item.last_error_code}
-                  {item.last_error_detail ? (
-                    <span className={recordStyles.errorDetail}>
-                      {item.last_error_detail}
-                    </span>
-                  ) : null}
-                </p>
-              ) : null}
-              <Space
-                wrap
-                size={8}
-                className={compact ? recordStyles.actions : undefined}
-              >
-                {canManage &&
-                !linked.has(item.import_id) &&
-                (item.status === "RAW_COMMITTED" ||
-                  (item.source_format === "MCAP" &&
-                    item.status === "FAILED")) &&
-                ["LEROBOT_V3", "MCAP"].includes(item.source_format) ? (
-                  <Button
-                    size={compact ? "small" : "middle"}
-                    onClick={() => {
-                      setProcessingItem(item);
-                      setTaskId("");
-                      setRobotId("");
-                      processStored.reset();
-                    }}
-                  >
-                    {item.source_format === "MCAP"
-                      ? "准备录制 / 重试"
-                      : "开始质检与对齐"}
-                  </Button>
-                ) : null}
-                <Button
-                  size={compact ? "small" : "middle"}
-                  onClick={() => setOpenedId(item.import_id)}
-                >
-                  查看原文件与视频
-                </Button>
-                {!datasetId &&
-                (linked.has(item.import_id) ||
-                  item.ready > 0 ||
-                  item.status === "RAW_COMMITTED") ? (
-                  <Link to={`/datasets/${encodeURIComponent(item.dataset_id)}`}>
-                    查看数据集
-                  </Link>
-                ) : null}
-                {canManage &&
-                !linked.has(item.import_id) &&
-                ["FAILED", "PARTIALLY_FAILED", "CANCELLED"].includes(
-                  item.status,
-                ) ? (
-                  <Button
-                    size={compact ? "small" : "middle"}
-                    loading={
-                      retry.isPending && retry.variables === item.import_id
+                    <small title={item.import_id}>
+                      {item.source_format.toUpperCase()} ·{" "}
+                      {new Date(item.updated_at).toLocaleString("zh-CN", {
+                        hour12: false,
+                      })}
+                    </small>
+                  </span>
+                  <Tag
+                    color={
+                      linked.has(item.import_id) ||
+                      ["SUCCEEDED", "RAW_COMMITTED"].includes(item.status)
+                        ? "success"
+                        : item.status.includes("FAILED")
+                          ? "error"
+                          : "processing"
                     }
-                    onClick={() => retry.mutate(item.import_id)}
                   >
-                    重试未完成处理
-                  </Button>
-                ) : null}
-              </Space>
+                    {linked.has(item.import_id)
+                      ? "同次录制 · 已关联成功结果"
+                      : (labels[item.status] ?? item.status)}
+                  </Tag>
+                  <span className={recordStyles.batchToggle}>
+                    批次详情 <ChevronDown size={14} aria-hidden />
+                  </span>
+                </summary>
+                <div className={recordStyles.batchBody}>
+                  {!linked.has(item.import_id) &&
+                  item.status !== "RAW_COMMITTED" &&
+                  (!compact ||
+                    ["PENDING", "RUNNING", "PARTIALLY_FAILED"].includes(
+                      item.status,
+                    )) ? (
+                    <Progress
+                      size={compact ? "small" : "middle"}
+                      aria-label="LeRobot 处理进度"
+                      percent={Math.round(
+                        (100 *
+                          (item.ready + item.failed + (item.discarded ?? 0))) /
+                          Math.max(1, item.episode_count),
+                      )}
+                      status={
+                        item.failed
+                          ? "exception"
+                          : item.status === "SUCCEEDED"
+                            ? "success"
+                            : "active"
+                      }
+                    />
+                  ) : null}
+                  {linked.has(item.import_id) ? (
+                    <p className={recordStyles.recordSummary}>
+                      原始文件已保留，沿用同次录制的成功成片，不重复入库或计数。
+                    </p>
+                  ) : item.status === "RAW_COMMITTED" ? (
+                    <p className={recordStyles.recordSummary}>
+                      {item.source_format} · {item.file_count} 个原始文件
+                    </p>
+                  ) : (
+                    <p className={recordStyles.recordSummary}>
+                      共 {item.episode_count} 个 Episode · 已就绪 {item.ready} ·
+                      处理未完成 {item.failed}
+                      {(item.discarded ?? 0) > 0
+                        ? ` · 已移除 ${item.discarded}`
+                        : ""}
+                    </p>
+                  )}
+                  {(item.resume_required ?? 0) +
+                    (item.reprocessing_conflicts ?? 0) >
+                  0 ? (
+                    <p className={recordStyles.recordSummary}>
+                      未完成明细：待继续处理 {item.resume_required ?? 0} ·
+                      处理冲突 {item.reprocessing_conflicts ?? 0}
+                      {item.failed >
+                      (item.resume_required ?? 0) +
+                        (item.reprocessing_conflicts ?? 0)
+                        ? ` · 其他未完成 ${item.failed - (item.resume_required ?? 0) - (item.reprocessing_conflicts ?? 0)}`
+                        : ""}
+                      。质检通过后仍需完成入库，处理冲突可在首页查看详情。
+                    </p>
+                  ) : null}
+                  {item.readable_episodes !== undefined &&
+                    item.readable_episodes !== null && (
+                      <p className={recordStyles.recordSummary}>
+                        数据可读取 {item.readable_episodes} 个 Episode
+                        {Object.entries(item.annotation_counts ?? {}).map(
+                          ([status, count]) => (
+                            <span key={status}>
+                              {" "}
+                              · {annotationStatusLabel(status)} {count}
+                            </span>
+                          ),
+                        )}
+                      </p>
+                    )}
+                  {!linked.has(item.import_id) && item.last_error_code ? (
+                    <p className={recordStyles.recordSummary} role="alert">
+                      上次处理问题：
+                      {captureProblemLabels[item.last_error_code] ??
+                        errorLabels[item.last_error_code] ??
+                        item.last_error_code}
+                      {item.last_error_detail ? (
+                        <span className={recordStyles.errorDetail}>
+                          {item.last_error_detail}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  <Space wrap size={8}>
+                    {canManage &&
+                    !linked.has(item.import_id) &&
+                    (item.status === "RAW_COMMITTED" ||
+                      (item.source_format === "MCAP" &&
+                        item.status === "FAILED")) &&
+                    ["LEROBOT_V3", "MCAP"].includes(item.source_format) ? (
+                      <Button
+                        size={compact ? "small" : "middle"}
+                        onClick={() => {
+                          setProcessingItem(item);
+                          setTaskId("");
+                          setRobotId("");
+                          processStored.reset();
+                        }}
+                      >
+                        {item.source_format === "MCAP"
+                          ? "准备录制 / 重试"
+                          : "开始质检与对齐"}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size={compact ? "small" : "middle"}
+                      onClick={() => setOpenedId(item.import_id)}
+                    >
+                      查看原文件与视频
+                    </Button>
+                    {!datasetId &&
+                    (linked.has(item.import_id) ||
+                      item.ready > 0 ||
+                      item.status === "RAW_COMMITTED") ? (
+                      <Link
+                        to={`/datasets/${encodeURIComponent(item.dataset_id)}`}
+                      >
+                        查看数据集
+                      </Link>
+                    ) : null}
+                    {canManage &&
+                    !linked.has(item.import_id) &&
+                    ["FAILED", "PARTIALLY_FAILED", "CANCELLED"].includes(
+                      item.status,
+                    ) ? (
+                      <Button
+                        size={compact ? "small" : "middle"}
+                        loading={
+                          retry.isPending && retry.variables === item.import_id
+                        }
+                        onClick={() => retry.mutate(item.import_id)}
+                      >
+                        重试未完成处理
+                      </Button>
+                    ) : null}
+                  </Space>
+                </div>
+              </details>
               {item.source_format === "MCAP" &&
                 (compact ? (
                   <details className={recordStyles.details}>
@@ -393,8 +388,8 @@ export function LeRobotProcessingRecords({
             </article>
           ))}
         </div>
-        {(!compact || offset > 0 || (records.data?.length ?? 0) >= 20) && (
-          <Space className={compact ? recordStyles.pager : undefined}>
+        {(offset > 0 || (records.data?.length ?? 0) >= 20) && (
+          <Space className={recordStyles.pager}>
             <Button
               size={compact ? "small" : "middle"}
               disabled={offset === 0}

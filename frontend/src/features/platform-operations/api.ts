@@ -490,8 +490,11 @@ export async function getPlatformOperationsOverview(
 
 export async function getPlatformObjectStoreConfig(
   signal?: AbortSignal,
+  saved = false,
 ): Promise<PlatformObjectStoreConfig> {
-  const endpoint = "/platform/object-store-config";
+  const endpoint = saved
+    ? "/platform/object-store-config?saved=true"
+    : "/platform/object-store-config";
   const raw = await request<unknown>({
     method: "GET",
     path: endpoint,

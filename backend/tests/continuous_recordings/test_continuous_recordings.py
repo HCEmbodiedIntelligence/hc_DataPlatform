@@ -233,6 +233,64 @@ def test_task_descriptions_default_once_and_survive_finalization(monkeypatch) ->
     assert finalized.revision.slices[0].end_offset_ns == 1_000_000_000
 
 
+def test_old_slice_drafts_inherit_full_descriptions_only_once_on_finalize(monkeypatch) -> None:
+    service, _, _, session_id = _committed_services()
+    recording = _register(service, session_id).data
+    scope = dict(
+        auth=_auth(), organization_id="org-a", project_id="project-a", region_code="cn-hz",
+        recording_id=recording.recording_id, actor_id="operator-a", request_id="old-draft-tags",
+    )
+    draft = service.save_draft(
+        **scope, if_match=recording.etag,
+        command=SaveSliceDraftCommand.model_validate({"slices": [
+            {"episode_id": f"episode_{index:04d}", "start_offset_ns": str(index * 1_000_000_000),
+             "end_offset_ns": str((index + 1) * 1_000_000_000)}
+            for index in range(4)
+        ]}),
+    )
+    # Persist the old wire representation, including a legacy label, explicit
+    # deletion and an edited multi-label slice alongside the missing defaults.
+    old_values = [
+        {"task_labels": None, "task_label": None},
+        {"task_labels": None, "task_label": "人工填写的旧标签"},
+        {"task_labels": (), "task_label": "已删除的旧标签"},
+        {"task_labels": ("自定义描述", "保持直立"), "task_label": "自定义描述"},
+    ]
+    legacy = draft.revision.model_copy(update={"slices": tuple(
+        item.model_copy(update=values)
+        for item, values in zip(draft.revision.slices, old_values, strict=True)
+    )})
+    revision_key = ("org-a", "project-a", "cn-hz", recording.recording_id, legacy.revision)
+    service._repository._revisions[revision_key] = legacy
+    description = "抓起水瓶，放入指定区域。\n机械臂回到初始位置。" * 40
+    monkeypatch.setattr(service._repository, "present", lambda items: tuple(
+        item.model_copy(update={"default_task_labels": (description,)}) for item in items
+    ))
+
+    finalized = service.finalize(
+        **scope, if_match=draft.recording.etag, expected_draft_revision=legacy.revision,
+    )
+    assert [item.task_labels for item in finalized.revision.slices] == [
+        (description,), ("人工填写的旧标签",), (), ("自定义描述", "保持直立"),
+    ]
+    assert finalized.revision.slices[2].task_label is None
+    assert service._repository.get_revision(
+        recording.scope, recording.recording_id, legacy.revision
+    ) == legacy
+    assert [(item.start_offset_ns, item.end_offset_ns) for item in finalized.revision.slices] == [
+        (item.start_offset_ns, item.end_offset_ns) for item in legacy.slices
+    ]
+
+    # Retrying finalization must keep the frozen labels, even if the task changes.
+    monkeypatch.setattr(service._repository, "present", lambda items: tuple(
+        item.model_copy(update={"default_task_labels": ("之后修改的任务描述",)}) for item in items
+    ))
+    replay = service.finalize(
+        **scope, if_match=finalized.recording.etag, expected_draft_revision=legacy.revision,
+    )
+    assert replay.revision == finalized.revision
+
+
 def test_manual_slice_draft_finalizes_virtual_episodes_without_copying_source() -> None:
     service, _ingest, _persistence, session_id = _committed_services()
     registered = _register(service, session_id)
@@ -618,6 +676,20 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
     assert response.headers["Cache-Control"] == "no-store"
     assert response.json()["samples"][2]["offset_ns"] == "2000000000"
 
+    assert registered.data.status is RecordingStatus.PENDING_QC
+    assert len(recording_repository.outbox_events) == 1
+    assert next(iter(recording_repository.outbox_events.values())).event_type == (
+        "continuous-recording.quality.requested.v1"
+    )
+    assert registered.data.ingest_mode == "WHOLE_RECORDING"
+    # Continue this test as a historical manually sliced recording.
+    # The real decoder is tested separately; this asset API fixture uses fake MP4
+    # bytes and explicitly supplies the worker's successful transition.
+    key = ("org-a", "project-a", "cn-hz", "recording-video-a")
+    recording_repository._recordings[key] = registered.data.model_copy(
+        update={"status": RecordingStatus.READY_FOR_SLICING, "ingest_mode": "SLICE_FIRST"}
+    )
+
     proposed = service.propose_model_slices(
         auth=_auth(),
         organization_id="org-a",
@@ -692,9 +764,9 @@ def test_video_assets_upload_to_oss_then_human_finalizes_model_cut_for_direct_pr
     assert processing.items[0].status is EpisodeProcessingStatus.PENDING_QC
     assert processing.items[0].workflow_id is not None
     assert processing.items[0].event_id is not None
-    assert len(recording_repository.outbox_events) == 1
-    event = next(iter(recording_repository.outbox_events.values()))
-    assert event.event_type == "continuous-recording.episode.workflow.requested.v1"
+    assert len(recording_repository.outbox_events) == 2
+    event = next(event for event in recording_repository.outbox_events.values()
+                 if event.event_type == "continuous-recording.episode.workflow.requested.v1")
     assert event.payload["workflow_id"] == processing.items[0].workflow_id
 
     preview = service.authorize_episode_videos(

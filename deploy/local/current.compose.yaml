@@ -66,17 +66,45 @@ services:
       - ./deploy/local/cloudflare-route.inc:/etc/nginx/conf.d/frontend-route-cloudflare.inc:ro
   api:
     volumes:
+      - oss-runtime-capacity:/var/lib/hc-capacity/oss-runtime-cache:ro
+      - media-staging:/var/lib/hc-capacity/media:ro
       - ../.data-platform-tools/robot-previews:/var/cache/hc-robot-previews:ro
+      - ${HC_MINIO_DATA_DIRECTORY:-/home/hc_op/workspace/data-platform-storage}:/var/lib/hc-storage-capacity:ro
     environment:
+      HC_OBJECT_STORE_CACHE_ROOT: /tmp/hc-data/alignment/preview-cache-policy
+      HC_STORAGE_OSS_USAGE_PREFIX: ${HC_OSS_OBJECT_PREFIX:-hc_dataplatform}
+      HC_STORAGE_DISK_USAGE_PATH: /var/lib/hc-storage-capacity
+      HC_STORAGE_LOCAL_USAGE_ROOTS: '{"oss_cache": "/var/lib/hc-capacity/oss-runtime-cache", "minio": "/var/lib/hc-storage-capacity", "alignment": "/tmp/hc-data/alignment", "media": "/var/lib/hc-capacity/media", "models": "/var/cache/hc-robot-previews"}'
+      # Local annotation sessions span a workday; active pages also renew activity.
+      HC_SESSION_IDLE_TTL_SECONDS: ${HC_SESSION_IDLE_TTL_SECONDS:-28800}
+      HC_SESSION_ABSOLUTE_TTL_SECONDS: ${HC_SESSION_ABSOLUTE_TTL_SECONDS:-86400}
       HC_ROBOT_MODEL_PREVIEW_ROOT: /var/cache/hc-robot-previews
       HC_OBJECT_STORE_BROWSER_PATH: ${HC_LOCAL_FILES_DIRECTORY:-/home/hc_op/workspace/data-platform-files}
       HC_OBJECT_STORE_RAW_BROWSER_PATH: /home/hc_op/workspace/.data-platform-tools/objects
       HC_OBJECT_STORE_LOCAL_PATH: ${HC_MINIO_DATA_DIRECTORY:-/home/hc_op/workspace/data-platform-storage}
   worker:
+    # Long-running commits must drain; watchfiles force-kills after five seconds.
+    command: [python, -m, hc_data_platform.workflow.worker]
+    deploy:
+      replicas: 4
+    stop_grace_period: 330s
     environment:
+      HC_OBJECT_STORE_CACHE_ROOT: /tmp/hc-data/alignment/preview-cache-policy
+      HC_WORKER_MAX_CONCURRENT_ACTIVITIES: "1"
+      HC_WORKER_CONTROL_MAX_CONCURRENT_ACTIVITIES: "2"
+      HC_MEDIA_MAX_CONCURRENT_GENERATIONS: "1"
+      HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS: "4"
+      HC_MEDIA_FFMPEG_THREADS: "2"
+      HC_WORKER_GRACEFUL_SHUTDOWN_SECONDS: "300"
       # A fresh local installation has no fixed project IDs. Discover its
       # persisted project scopes so slicing/QC jobs are actually dispatched.
       HC_LOCAL_SCOPE_DISCOVERY: "true"
+      HC_STORAGE_INVENTORY_INTERVAL_SECONDS: ${HC_STORAGE_INVENTORY_INTERVAL_SECONDS:-300}
       HC_OBJECT_STORE_BROWSER_PATH: ${HC_LOCAL_FILES_DIRECTORY:-/home/hc_op/workspace/data-platform-files}
       HC_OBJECT_STORE_RAW_BROWSER_PATH: /home/hc_op/workspace/.data-platform-tools/objects
       HC_OBJECT_STORE_LOCAL_PATH: ${HC_MINIO_DATA_DIRECTORY:-/home/hc_op/workspace/data-platform-storage}
+
+volumes:
+  oss-runtime-capacity:
+    external: true
+    name: hc-data-platform-oss_oss-runtime-cache

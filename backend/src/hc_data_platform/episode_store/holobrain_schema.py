@@ -66,7 +66,8 @@ def create_database(path, robot, tasks, episodes):
         for episode in episodes:
             db.execute("INSERT INTO episode VALUES (?,0,?,NULL,?,?,?,NULL,?)", [
                 episode["index"], episode["task_index"], episode["begin"], episode["frames"],
-                episode["truncated"], json.dumps(episode["info"], ensure_ascii=False),
+                episode["truncated"],
+                json.dumps(episode["info"], ensure_ascii=False),
             ])
         db.execute("CHECKPOINT")
     finally:

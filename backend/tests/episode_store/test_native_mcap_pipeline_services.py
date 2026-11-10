@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 
+from hc_data_platform.capture_schemes.transactions import bind_raw_snapshot
 from hc_data_platform.continuous_recordings.mcap_native import McapProcessingConfig
 from hc_data_platform.episode_store.collection_delivery_models import RequestCollectionDelivery
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
@@ -70,7 +71,9 @@ def test_bare_mcap_to_slice_package_and_all_exports(
     )
     with b.scoped(source):
         service = LeRobotWebUploadService(
-            storage, raw_sources=PostgresRawSourceRepository(repository.connections)
+            storage, raw_sources=PostgresRawSourceRepository(
+                repository.connections, capture_snapshot_writer=bind_raw_snapshot
+            )
         )
         raw_bytes = synthetic_mcap(
             tmp_path / "source.mcap", joint_only=joint_only, rgb_only=rgb_only

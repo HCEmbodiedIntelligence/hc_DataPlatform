@@ -252,7 +252,20 @@ def archive(db: Any, org: str, scheme: str, revision: int, actor: str) -> Docume
             "WHERE organization_id=%s AND scheme_id=%s",
             (org, scheme),
         )
-        audit(db, org, scheme, actor, "ARCHIVE", {"revision": revision})
+        detached = db.execute(
+            """UPDATE ingest.capture_scheme_links
+            SET active=false,is_default=false,revision=revision+1,updated_at=now()
+            WHERE organization_id=%s AND scheme_id=%s AND (active OR is_default)""",
+            (org, scheme),
+        )
+        audit(
+            db,
+            org,
+            scheme,
+            actor,
+            "ARCHIVE",
+            {"revision": revision, "detached_instances": detached.rowcount},
+        )
     return detail(db, org, scheme)
 
 

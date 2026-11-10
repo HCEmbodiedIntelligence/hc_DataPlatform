@@ -23,6 +23,7 @@ class S3ProjectionStagingSweeper:
         bucket: str,
         *,
         ttl: timedelta,
+        retention=None,
         clock: Any = lambda: datetime.now(timezone.utc),
     ) -> None:
         if not bucket or ttl <= timedelta(0):
@@ -30,13 +31,19 @@ class S3ProjectionStagingSweeper:
         self._client = client
         self._bucket = bucket
         self._ttl = ttl
+        self._retention = retention
         self._clock = clock
 
     def run_once(self) -> int:
-        cutoff = self._clock() - self._ttl
+        ttl = self._retention() if self._retention is not None else self._ttl
+        if ttl is None:
+            return 0
+        cutoff = self._clock() - ttl
         deleted = 0
         for prefix in self._PREFIXES:
             deleted += self._sweep_prefix(prefix, cutoff)
+        if self._retention is not None:
+            self._retention.audit(deleted)
         return deleted
 
     def _sweep_prefix(self, prefix: str, cutoff: datetime) -> int:
@@ -73,6 +80,10 @@ class S3ProjectionStagingSweeper:
                     modified = modified.replace(tzinfo=timezone.utc)
                 if modified > cutoff:
                     continue
+                if self._retention is not None:
+                    current = self._retention()
+                    if current is None or modified > self._clock() - current:
+                        continue
                 self._client.delete_object(Bucket=self._bucket, Key=key)
                 deleted += 1
             if not response.get("IsTruncated"):

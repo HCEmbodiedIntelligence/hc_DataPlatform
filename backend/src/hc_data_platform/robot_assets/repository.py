@@ -1020,6 +1020,11 @@ class PostgresOrganizationRobotAssetRepository:
                 "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
                 (json.dumps(["robot-processing", organization_id, robot_id]),),
             )
+            # Freeze file registrations and transfers during the final dependency check.
+            cursor.execute("""LOCK TABLE ingest.collection_jobs, ingest.data_sources,
+                ingest.raw_sources, ingest.recording_uploads, ingest.robot_ingest_uploads,
+                ingest.rollouts, ingest.upload_sessions, robotics.robot_reference_links
+                IN SHARE ROW EXCLUSIVE MODE""")
             cursor.execute(
                 """SELECT robot_id FROM robotics.robot_assets
                 WHERE organization_id=%s AND robot_id=%s FOR UPDATE""",

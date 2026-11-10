@@ -1,3 +1,4 @@
+import { stepToTimelineNs } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { request } from "../../shared/api/http-client";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -15,6 +16,7 @@ vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 const mocked = vi.mocked(request);
 const bundle = () =>
   createVisualAnnotationBundle({ mode: "annotation", cameraCount: 2 });
+const frameTime = (index: number) => stepToTimelineNs(index, 30);
 beforeEach(() => installAnnotationSession(scope));
 afterEach(() => {
   vi.resetAllMocks();
@@ -25,7 +27,7 @@ it("uses the server task mapping with explicit scope and no latest lookup", asyn
   const fixture = bundle();
   const wire = bundleLogicalFixture(fixture, scope);
   mocked.mockResolvedValue(wire as never);
-  const logical = await loadAnnotationLogicalData(scope, fixture.task);
+  const logical = await loadAnnotationLogicalData(scope, fixture.task, frameTime);
   expect(logical.selection).toMatchObject({
     versionId: wire.snapshot.selection.version_id,
     revisionId: wire.snapshot.selection.revision_id,
@@ -89,7 +91,7 @@ it.each([
     else wire.snapshot.episode_id = "different";
   }
   mocked.mockResolvedValue(wire as never);
-  await expect(loadAnnotationLogicalData(scope, task)).rejects.toMatchObject({
+  await expect(loadAnnotationLogicalData(scope, task, frameTime)).rejects.toMatchObject({
     code: "CONTRACT_MISMATCH",
   });
 });
@@ -99,7 +101,7 @@ it("propagates missing fixed mapping without trying legacy media or latest data"
     code: "ANNOTATION_LOGICAL_BINDING_UNAVAILABLE",
   });
   await expect(
-    loadAnnotationLogicalData(scope, bundle().task),
+    loadAnnotationLogicalData(scope, bundle().task, frameTime),
   ).rejects.toMatchObject({ httpStatus: 409 });
   expect(mocked).toHaveBeenCalledTimes(1);
 });
@@ -114,21 +116,22 @@ it.each(["logout", "revoke"])(
       return bundleLogicalFixture(fixture, scope) as never;
     });
     await expect(
-      loadAnnotationLogicalData(scope, fixture.task),
+      loadAnnotationLogicalData(scope, fixture.task, frameTime),
     ).rejects.toBeDefined();
   },
 );
 
-it("rebases nonzero source time for zero-based annotation ranges while preserving fixed sample reads", async () => {
+it("plays the first retained joint sample at video time zero after a trimmed prefix", async () => {
   const fixture = bundle();
   const wire = bundleLogicalFixture(fixture, scope);
   const origin = 9_000_000_000n;
+  const removedPrefix = 9_533_620_000n;
   for (const stream of wire.snapshot.streams) {
     stream.start_ns = String(origin);
-    stream.end_ns = String(origin + BigInt(stream.end_ns!));
+    stream.end_ns = String(origin + removedPrefix + BigInt(stream.end_ns!));
   }
   mocked.mockResolvedValueOnce(wire as never);
-  const logical = await loadAnnotationLogicalData(scope, fixture.task);
+  const logical = await loadAnnotationLogicalData(scope, fixture.task, frameTime);
   expect(logical.streams.every((stream) => stream.startNs === "0")).toBe(true);
   mocked.mockImplementation(async (options) => {
     const start = Number(options.query?.start),
@@ -147,7 +150,7 @@ it("rebases nonzero source time for zero-based annotation ranges while preservin
         sample_id: `sample-${i}`,
         sample_index: start + i,
         timestamp_ns: String(
-          origin + (BigInt(start + i) * 1_000_000_000n) / 30n,
+          origin + removedPrefix + (BigInt(start + i) * 1_000_000_000n) / 30n,
         ),
         value: [i],
         valid: true,

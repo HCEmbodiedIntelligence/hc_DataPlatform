@@ -8,7 +8,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from hc_data_platform.annotation.models import AnnotationRevision
+from hc_data_platform.annotation.models import AnnotationRevision, EpisodeOutcome
 from hc_data_platform.annotation.revision_models import AnnotationRevisionFile, RevisionFileDownload
 from hc_data_platform.annotation.subtasks import SubtaskTrack
 from hc_data_platform.annotation.validation import revision_content_hash
@@ -22,15 +22,23 @@ from hc_data_platform.lance_catalog.models import StepRecord
 from tests.annotation.test_subtasks import snapshot  # noqa: F401
 
 
-@pytest.mark.parametrize("segment_ids", [(), ("segment-0",)])
+@pytest.mark.parametrize("outcome", [EpisodeOutcome.SUCCESS, EpisodeOutcome.FAILURE])
+@pytest.mark.parametrize("segment_ids", [None, (), ("segment-0",), ("segment-0", "segment-1", "segment-2")])
+@pytest.mark.parametrize("processor", [None, "hc-lerobot-collection/4"])
 @pytest.mark.parametrize("invalid_index", [None, 1])
 def test_collection_writer_preserves_all_tags_with_optional_segments(
     snapshot,  # noqa: F811
     tmp_path,
     segment_ids,
     invalid_index,
+    processor,
+    outcome,
 ):
     document, data, _ = snapshot
+    document["revision"]["episode_outcome"] = outcome.value
+    if segment_ids is None:
+        document["revision"]["tags"] = []
+        segment_ids = ()
     identity = data.identity
     bind_request_context(
         RequestContext(
@@ -87,6 +95,7 @@ def test_collection_writer_preserves_all_tags_with_optional_segments(
         tag_schema_id=revision.tag_schema_id,
         tag_schema_version=revision.tag_schema_version,
         tags=revision.tags,
+        episode_outcome=outcome,
         operations=revision.operations,
     )
     body = canonical(document)
@@ -122,17 +131,33 @@ def test_collection_writer_preserves_all_tags_with_optional_segments(
     track = SubtaskTrack(track_id="task-segments", label="任务分段", annotation_ids=segment_ids)
     output = tmp_path / "collection"
     result, _ = write_collection(
-        output, [CollectionSource(package, annotation, track)], modalities="rgbd"
+        output, [CollectionSource(package, annotation, track)], modalities="rgbd", processor_version=processor
     )
-    member = result["members"][0]
-    assert (output / member["attachments_root"] / "hc/annotation.json").read_bytes() == body
-    table = pq.read_table(output / member["data_path"])
-    retained = [i for i in range(data.frame_count) if i != invalid_index]
-    assert len(table) == len(retained)
-    assert table["frame_index"].to_pylist() == list(range(len(retained)))
-    expected_tags = [0, 0] + [-1] * 16 if segment_ids else [-1] * data.frame_count
-    assert table["subtask_index"].to_pylist() == [expected_tags[i] for i in retained]
+    selected_tags = sorted(
+        (t for t in document["revision"]["tags"] if t["annotation_id"] in segment_ids),
+        key=lambda t: t["start_step"],
+    )
+    split = bool(segment_ids) and processor is None
+    parent_groups = [
+        [i for i in range(t["start_step"], t["end_step"]) if i != invalid_index]
+        for t in selected_tags
+    ] if split else [[i for i in range(data.frame_count) if i != invalid_index]]
+    assert len(result["members"]) == len(parent_groups)
+    episode_rows = pq.read_table(output / "meta/episodes/chunk-000/file-000.parquet").to_pylist()
+    assert [row["episode_outcome"] for row in episode_rows] == [outcome.value] * len(parent_groups)
+    assert all("success" not in row for row in episode_rows)
+    for member, parents in zip(result["members"], parent_groups, strict=True):
+        assert member["episode_outcome"] == outcome.value
+        assert "success" not in member
+        assert (output / member["attachments_root"] / "hc/annotation.json").read_bytes() == body
+        table = pq.read_table(output / member["data_path"])
+        assert len(table) == len(parents)
+        assert table["frame_index"].to_pylist() == list(range(len(parents)))
+        expected_tags = [next((j for j, t in enumerate(selected_tags)
+                              if t["start_step"] <= i < t["end_step"]), -1) for i in parents]
+        assert table["subtask_index"].to_pylist() == expected_tags
+        assert table["observation.state"].to_pylist() == [float(i) for i in parents]
     mapping = pq.read_table(output / "hc/collection_frames.parquet")
-    assert mapping["parent_frame_index"].to_pylist() == retained
+    assert mapping["parent_frame_index"].to_pylist() == [i for group in parent_groups for i in group]
     assert (output / "hc/subtasks.jsonl").exists() == bool(segment_ids)
     assert all(entry["size"] > 0 for entry in result["files"])

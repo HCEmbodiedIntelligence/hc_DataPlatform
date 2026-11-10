@@ -29,6 +29,7 @@ from .models import (
     FinalizeSliceCommand,
     ProposeModelSlicesCommand,
     RegisterContinuousRecordingCommand,
+    RetryRecordingQualityCommand,
     SaveSliceDraftCommand,
     SliceRevisionEnvelope,
 )
@@ -253,6 +254,23 @@ def register_continuous_recording(
     )
     _recording_headers(response, etag=result.data.etag)
     return result
+
+
+@router.post(
+    "/{recording_id}/quality:retry",
+    operation_id="retryRecordingQuality",
+    response_model=ContinuousRecordingEnvelope,
+    responses=PROBLEM_RESPONSES,
+)
+def retry_recording_quality(
+    project_id: str, region_code: str, recording_id: str,
+    command: RetryRecordingQualityCommand, auth: VerifiedAuth,
+    organization_id: OrganizationHeader, service: Service,
+) -> ContinuousRecordingEnvelope:
+    return service.retry_quality(
+        auth=auth, organization_id=organization_id, project_id=project_id,
+        region_code=region_code, recording_id=recording_id, request_id=str(command.request_id),
+    )
 
 
 @router.get(

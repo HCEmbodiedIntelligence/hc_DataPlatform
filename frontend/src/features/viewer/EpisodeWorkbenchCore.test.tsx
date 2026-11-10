@@ -16,8 +16,10 @@ import {
   formatElapsedNs,
   ViewerJointAngleCurvePanel,
   SharedSignalTimeline,
+  ViewerMediaSurface,
 } from "./EpisodeWorkbenchCore";
 import type { ViewerTimelineTrack } from "./EpisodeWorkbenchCore";
+import type { ViewerWindow, ViewerWindowPayload } from "./types";
 
 beforeAll(() => {
   if (!window.PointerEvent) {
@@ -44,6 +46,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const tracks: readonly ViewerTimelineTrack[] = [
@@ -384,6 +387,49 @@ describe("direct Tag manipulation", () => {
 });
 
 describe("EpisodeWorkbenchCore immutable window data", () => {
+  it("retains video buffers while scrolling away and releases them when leaving the recording", async () => {
+    const visibility: Array<(visible: boolean) => void> = [];
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(private callback: IntersectionObserverCallback) {}
+      observe(target: Element) {
+        visibility.push((isIntersecting) => this.callback(
+          [{ target, isIntersecting } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        ));
+      }
+      disconnect() {}
+    });
+    const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    const authorize = vi.fn(async () => ({
+      url: "https://objects.test/camera.mp4",
+      expiresAt: "2099-01-01T00:00:00Z",
+      kind: "rgb-video",
+    }));
+    const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
+    const ui = render(<ViewerMediaSurface clock={clock} streams={[{
+      id: "camera", canonicalPath: "/camera", displayName: "Camera",
+      modality: "rgb", semanticRole: "camera",
+      schema: { id: "video/mp4", version: "1" },
+      startNs: "0", endNs: "10000000000", availability: "ready",
+      mediaSource: { authorize, refresh: authorize },
+    }]} />);
+    expect(authorize).not.toHaveBeenCalled();
+    act(() => visibility.forEach(update => update(true)));
+    const video = screen.getByLabelText("Camera 媒体");
+    await waitFor(() => expect(video).toHaveAttribute("src", "https://objects.test/camera.mp4"));
+    const initialLoads = load.mock.calls.length;
+    act(() => visibility.forEach(update => update(false)));
+    expect(video).toHaveAttribute("src", "https://objects.test/camera.mp4");
+    act(() => visibility.forEach(update => update(true)));
+    expect(authorize).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(initialLoads);
+    ui.unmount();
+    expect(video).not.toHaveAttribute("src");
+    expect(load).toHaveBeenCalledTimes(initialLoads + 1);
+    clock.dispose();
+  });
+
   it("loads a bound non-camera stream only when visible and exposes a real-data summary", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const clock = createPlaybackClock({ startNs: "0", endNs: "10000000000" });
@@ -423,6 +469,155 @@ describe("EpisodeWorkbenchCore immutable window data", () => {
 });
 
 describe("ViewerJointAngleCurvePanel recovery", () => {
+  it("scrolls continuously around the playhead while prefetching outside the visible window", async () => {
+    const clock = createPlaybackClock({ startNs: "0", endNs: "30000000000" });
+    let finishPrefetch!: (payload: ViewerWindowPayload) => void;
+    const data = (start: number, end: number): ViewerWindowPayload => ({
+      generation: 0,
+      timestampsNs: Array.from(
+        { length: end - start },
+        (_, i) => `${(start + i) * 1e9}`,
+      ),
+      values: Array.from({ length: end - start }, (_, i) => [
+        ((start + i) % 4) / 4,
+      ]),
+    });
+    const loadWindow = vi
+      .fn((window: ViewerWindow, _signal: AbortSignal) =>
+        Promise.resolve(
+          data(Number(window.startNs) / 1e9, Number(window.endNs) / 1e9),
+        ),
+      )
+      .mockImplementationOnce(() => Promise.resolve(data(0, 12)))
+      .mockImplementationOnce(
+        () =>
+          new Promise<ViewerWindowPayload>((resolve) => {
+            finishPrefetch = resolve;
+          }),
+      );
+    const { container, unmount } = render(
+      <ViewerJointAngleCurvePanel
+        clock={clock}
+        stream={{
+          id: "following-joints",
+          canonicalPath: "/joint",
+          displayName: "joint",
+          modality: "joint_state",
+          schema: { id: "joint", version: "1" },
+          startNs: clock.startNs,
+          endNs: clock.endNs,
+          availability: "ready",
+          windowSource: { loadWindow },
+        }}
+      />,
+    );
+    const svg = await screen.findByRole("img", { name: /关节角时间序列/ });
+    const cursor = container.querySelector(".viewer-joint-curves__cursor")!;
+    const paths = container.querySelector(".viewer-joint-curves__paths")!;
+    const originalPath = paths.firstElementChild!.getAttribute("d");
+    const assertView = (start: string, end: string, x: number) => {
+      expect(svg).toHaveAttribute("data-start-ns", start);
+      expect(svg).toHaveAttribute("data-end-ns", end);
+      expect(Number(cursor.getAttribute("x1"))).toBeCloseTo(x, 5);
+    };
+    expect(loadWindow.mock.calls[0]![0]).toMatchObject({
+      startNs: "0",
+      endNs: "12000000000",
+    });
+    assertView("0", "8000000000", 52);
+    act(() => clock.seek("4000000000"));
+    assertView("0", "8000000000", 322);
+    act(() => clock.seek("6000000000"));
+    assertView("2000000000", "10000000000", 322);
+    expect(paths).toHaveAttribute("transform", "translate(-135 0)");
+    expect(paths.firstElementChild).toHaveAttribute("d", originalPath);
+    expect(loadWindow).toHaveBeenCalledTimes(1);
+
+    // Two consecutive video frames move the plot immediately, without waiting
+    // for the throttled React readout or the next network response.
+    act(() => clock.seek("6016000000"));
+    assertView("2016000000", "10016000000", 322);
+    expect(loadWindow).toHaveBeenCalledTimes(2);
+    expect(loadWindow.mock.calls[1]![0]).toMatchObject({
+      startNs: "0",
+      endNs: "16000000000",
+    });
+    act(() => clock.seek("6032000000"));
+    assertView("2032000000", "10032000000", 322);
+    expect(paths).toHaveAttribute("transform", "translate(-137.16 0)");
+    expect(loadWindow).toHaveBeenCalledTimes(2);
+    expect(loadWindow.mock.calls[1]![1].aborted).toBe(false);
+    await act(async () => finishPrefetch(data(0, 16)));
+    assertView("2032000000", "10032000000", 322);
+    expect(container.querySelector(".viewer-joint-curves__paths")).toBe(paths);
+
+    // Replacing a buffer with a later origin must preserve screen coordinates.
+    await act(async () => clock.seek("14032000000"));
+    assertView("10032000000", "18032000000", 322);
+    expect(loadWindow.mock.calls[2]![0]).toMatchObject({
+      startNs: "4000000000",
+      endNs: "24000000000",
+    });
+    expect(paths).toHaveAttribute("transform", "translate(-407.16 0)");
+
+    act(() => clock.seek("29000000000"));
+    assertView("22000000000", "30000000000", 524.5);
+    act(() => clock.seek("0"));
+    assertView("0", "8000000000", 52);
+    await act(async () => undefined);
+    unmount();
+    clock.dispose();
+  });
+
+  it("keeps short recordings fully visible and uses relative time for large timestamps", async () => {
+    const start = 1_800_000_000_000_000_000n;
+    const end = start + 3_000_000_000n;
+    const clock = createPlaybackClock({
+      startNs: start.toString(),
+      endNs: end.toString(),
+    });
+    const loadWindow = vi.fn(async () => ({
+      generation: 0,
+      timestampsNs: [start.toString(), (end - 1n).toString()],
+      values: [[0], [1]],
+    }));
+    const { container, unmount } = render(
+      <ViewerJointAngleCurvePanel
+        clock={clock}
+        stream={{
+          id: "short-joints",
+          canonicalPath: "/joint",
+          displayName: "joint",
+          modality: "joint_state",
+          schema: { id: "joint", version: "1" },
+          startNs: clock.startNs,
+          endNs: clock.endNs,
+          availability: "ready",
+          windowSource: { loadWindow },
+        }}
+      />,
+    );
+    const svg = await screen.findByRole("img", { name: /关节角时间序列/ });
+    act(() => clock.seek((start + 1_500_000_000n).toString()));
+    expect(svg).toHaveAttribute("data-start-ns", start.toString());
+    expect(svg).toHaveAttribute("data-end-ns", end.toString());
+    expect(
+      container.querySelector(".viewer-joint-curves__cursor"),
+    ).toHaveAttribute("x1", "322");
+    expect(svg.querySelector('text[y="207"]')).toHaveTextContent("0.00s");
+    act(() => clock.seek(end.toString()));
+    expect(
+      Number(
+        container
+          .querySelector(".viewer-joint-curves__cursor")!
+          .getAttribute("x1"),
+      ),
+    ).toBeCloseTo(592, 5);
+    expect(loadWindow).toHaveBeenCalledTimes(1);
+    unmount();
+    clock.dispose();
+  });
+
   it("breaks the joint curve at missing observations instead of connecting across the gap", async () => {
     const clock = createPlaybackClock({ startNs: "0", endNs: "5000000000" });
     render(

@@ -236,3 +236,34 @@ def test_local_storage_reports_internal_and_browse_paths_without_cloud_setup():
     assert status.local_path == "/local/internal"
     assert status.browser_path == "/local/files"
     assert service.location().local_path == "/local/internal"
+
+def test_saved_oss_can_be_managed_without_switching_local_minio() -> None:
+    settings = Settings(environment="local", runtime_backend="memory", _env_file=None)
+    repository = InMemoryObjectStoreConfigurationRepository()
+    app = create_app(settings=settings, object_store_config_repository=repository)
+    path = "/api/v1/platform/object-store-config"
+    with TestClient(app) as client:
+        assert client.get(path + "?saved=true").status_code == 401
+        app.dependency_overrides[require_auth_context] = _authenticated_user
+        assert client.get(path + "?saved=true").status_code == 403
+        app.dependency_overrides[require_auth_context] = _platform_admin
+        empty = client.get(path + "?saved=true").json()
+        assert empty["provider"] == "oss" and not empty["configured"]
+        response = client.put(path, json={
+            "expected_revision": 0,
+            "endpoint": "https://oss-cn-beijing.aliyuncs.com",
+            "public_endpoint": "https://oss-cn-beijing.aliyuncs.com",
+            "bucket": "test-isolated-bucket",
+            "region": "cn-beijing",
+            "access_key": "test-sensitive-access-key",
+            "secret_key": "test-sensitive-secret-key",
+        })
+        assert response.status_code == 200
+        saved = client.get(path + "?saved=true")
+        assert saved.json()["bucket"] == "test-isolated-bucket"
+        assert saved.json()["revision"] == 1
+        assert "test-sensitive" not in saved.text
+        active = client.get(path).json()
+        assert active["provider"] == "s3"
+        assert active["bucket"] == "hc-data-local"
+        assert client.get("/api/v1/platform/object-store-location").json()["provider"] == "s3"

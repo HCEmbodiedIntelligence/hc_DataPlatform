@@ -237,6 +237,15 @@ EXPECTED_MANIFEST = (
     "ingest/031_recording_annotation_link.sql",
     "collection_tasks/0007_optional_task_category.sql",
     "collection_tasks/0008_complete_task_deletion_graph.sql",
+    "ingest/032_recording_quality_before_slicing.sql",
+    "collection_tasks/0009_recording_quality_deletion_fence.sql",
+    "ingest/033_detach_archived_capture_schemes.sql",
+    "storage/0006_processing_cache_lifecycle.sql",
+    "ingest/034_recording_cache_retirement.sql",
+    "ingest/035_processing_cache_ledger.sql",
+    "ingest/036_shared_original_references.sql",
+    "annotation/0019_episode_outcome.sql",
+    "annotation/0020_episode_outcome_values.sql",
 )
 
 

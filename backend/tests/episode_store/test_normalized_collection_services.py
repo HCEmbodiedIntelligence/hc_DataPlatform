@@ -107,22 +107,22 @@ def test_selected_frames_tasks_media_and_values_agree(pair, files, tmp_path, mon
             SubtaskTrack(track_id="chosen", label="任务分段", annotation_ids=("parent",)),
         )
         frames = frame_selection(selected)
-        assert [r["parent_frame_index"] for r in frames.values()] == [0, 1, 3]
+        assert [r["parent_frame_index"] for r in frames.values()] == [0, 1]
         manifest, _ = write_collection(tmp_path / "selected", [selected], modalities="rgbd")
-        assert manifest["format"] == "hc-lerobot-collection/4"
-        assert manifest["total_frames"] == 3 and len(manifest["members"]) == 2
+        assert manifest["format"] == "hc-lerobot-collection/5"
+        assert manifest["total_frames"] == 2 and len(manifest["members"]) == 1
         rows = pq.read_table(tmp_path / "selected/data").to_pylist()
-        assert [r["index"] for r in rows] == [0, 1, 2]
-        assert [r["episode_index"] for r in rows] == [0, 0, 1]
-        assert [r["frame_index"] for r in rows] == [0, 1, 0]
+        assert [r["index"] for r in rows] == [0, 1]
+        assert [r["episode_index"] for r in rows] == [0, 0]
+        assert [r["frame_index"] for r in rows] == [0, 1]
         with first.file("data/chunk-000/file-000.parquet") as path:
             parent = pq.read_table(path).to_pylist()
-        for row, index in zip(rows, (0, 1, 3), strict=True):
+        for row, index in zip(rows, (0, 1), strict=True):
             for key in ("action", "observation.state", "hc.timestamp_ns"):
                 assert row[key] == parent[index][key]
             assert not row["hc.annotation.excluded"]
         mapping = pq.read_table(tmp_path / "selected/hc/collection_frames.parquet").to_pylist()
-        assert [r["parent_frame_index"] for r in mapping] == [0, 1, 3]
+        assert [r["parent_frame_index"] for r in mapping] == [0, 1]
         info = json.loads((tmp_path / "selected/meta/info.json").read_bytes())
-        assert info["total_episodes"] == 2
+        assert info["total_episodes"] == 1
         assert not list((tmp_path / "selected").rglob("*.mcap"))

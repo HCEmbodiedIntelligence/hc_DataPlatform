@@ -58,11 +58,13 @@ def copy_original(storage, file, destination, checkpoint):
 
 
 def selection_document(selection):
+    from .episode_outcome import selection_outcome
     source = selection.package.document("hc/source.json")
     return {
         "format": "hc-original-selection/1",
         "data": selection.package.receipt.data.model_dump(mode="json"),
         "source": source,
+        **selection_outcome(selection),
         "annotations": json.loads(selection.annotation_file.content)
         if selection.annotation_file
         else None,

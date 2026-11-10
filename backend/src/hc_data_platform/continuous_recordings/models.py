@@ -28,6 +28,17 @@ TaskDescription = Annotated[
 ]
 
 
+def resolve_task_labels(
+    labels: tuple[str, ...] | None,
+    legacy_label: str | None,
+    defaults: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Only missing labels inherit defaults; an explicit empty tuple stays empty."""
+    if labels is None:
+        labels = (legacy_label,) if legacy_label else defaults
+    return tuple(dict.fromkeys(labels))
+
+
 def _parse_nanoseconds(value: object) -> int:
     if isinstance(value, str):
         if not value.isascii() or not value.isdigit() or (len(value) > 1 and value.startswith("0")):
@@ -57,6 +68,10 @@ Nanoseconds = Annotated[
 
 
 class RecordingStatus(str, Enum):
+    PENDING_QC = "PENDING_QC"
+    QC_RUNNING = "QC_RUNNING"
+    QC_FAILED = "QC_FAILED"
+    QC_ERROR = "QC_ERROR"
     READY_FOR_SLICING = "READY_FOR_SLICING"
     SLICED = "SLICED"
 
@@ -68,6 +83,7 @@ class SliceRevisionStatus(str, Enum):
 
 class SliceAuthoringMode(str, Enum):
     HUMAN = "HUMAN"
+    SYSTEM = "SYSTEM"
     MODEL = "MODEL"
 
 
@@ -77,6 +93,22 @@ class RecordingScope(BaseModel):
     organization_id: Identifier
     project_id: Identifier
     region_code: Identifier
+
+
+class RecordingQualitySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    report_id: str
+    status: Literal["PASS", "REJECT"]
+    finding_codes: tuple[str, ...] = ()
+    warning_codes: tuple[str, ...] = ()
+    checked_at: AwareDatetime
+
+
+class RetryRecordingQualityCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_id: UUID
 
 
 class ContinuousRecording(BaseModel):
@@ -109,6 +141,11 @@ class ContinuousRecording(BaseModel):
     manifest_fingerprint: Sha256
     video_asset_count: int = Field(default=0, ge=0, le=128)
     status: RecordingStatus = RecordingStatus.READY_FOR_SLICING
+    ingest_mode: Literal["SLICE_FIRST", "WHOLE_RECORDING"] = "SLICE_FIRST"
+    whole_episode_status: str | None = None
+    quality_workflow_id: str | None = None
+    quality_summary: RecordingQualitySummary | None = None
+    quality_error_code: str | None = None
     current_revision: int = Field(default=0, ge=0)
     finalized_revision: int | None = Field(default=None, ge=1)
     etag: str = Field(pattern=r'^"v[1-9][0-9]*"$')
@@ -201,7 +238,8 @@ class ProposeModelSlicesCommand(BaseModel):
 class FinalizeSliceCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    expected_draft_revision: int = Field(ge=1)
+    # Revision zero can finalize only a server-verified, previously confirmed selection.
+    expected_draft_revision: int = Field(ge=0)
 
 
 class EpisodeSlice(BaseModel):
@@ -232,6 +270,14 @@ class EpisodeSlice(BaseModel):
         return self
 
 
+class ConfirmedSliceSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    recording_id: Identifier
+    revision: int = Field(ge=1)
+    episode_count: int = Field(ge=1)
+
+
 class RecordingSliceRevision(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -241,6 +287,7 @@ class RecordingSliceRevision(BaseModel):
     revision: int = Field(ge=1)
     status: SliceRevisionStatus
     slices: tuple[EpisodeSlice, ...]
+    reused_from: ConfirmedSliceSource | None = None
     authoring_mode: SliceAuthoringMode = SliceAuthoringMode.HUMAN
     model: ModelSliceProposalMetadata | None = None
     created_by: str = Field(min_length=1, max_length=512)
@@ -265,6 +312,7 @@ class ContinuousRecordingEnvelope(BaseModel):
 
     data: ContinuousRecording
     current_slice_revision: RecordingSliceRevision | None = None
+    reusable_slices: RecordingSliceRevision | None = None
 
 
 class SliceRevisionEnvelope(BaseModel):

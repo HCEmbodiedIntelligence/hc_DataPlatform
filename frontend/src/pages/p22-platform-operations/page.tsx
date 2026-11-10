@@ -933,13 +933,15 @@ function objectStoreStatusTone(config: PlatformObjectStoreConfig) {
 function ObjectStoreConfigurationPanel() {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
+  const [editingSaved, setEditingSaved] = useState(false);
+  const configQueryKey = ["platform-operations", "global", "object-store-config", ...(editingSaved ? ["saved"] : [])];
   const [draft, setDraft] = useState<ObjectStoreConfigDraft>(
     emptyObjectStoreConfigDraft,
   );
   const [formError, setFormError] = useState<string | null>(null);
   const config = useQuery({
-    queryKey: ["platform-operations", "global", "object-store-config"],
-    queryFn: ({ signal }) => getPlatformObjectStoreConfig(signal),
+    queryKey: configQueryKey,
+    queryFn: ({ signal }) => getPlatformObjectStoreConfig(signal, editingSaved),
     enabled: expanded,
     staleTime: 5_000,
     gcTime: 0,
@@ -986,7 +988,7 @@ function ObjectStoreConfigurationPanel() {
         secretKey: "",
       }));
       queryClient.setQueryData(
-        ["platform-operations", "global", "object-store-config"],
+        configQueryKey,
         saved,
       );
       await Promise.all([
@@ -1087,10 +1089,8 @@ function ObjectStoreConfigurationPanel() {
               （不要直接修改）
             </p>
           ) : null}
-          <p>
-            当前存储已配置，可以直接上传，无需填写 OSS 的 Key ID、Bucket
-            或地域。
-          </p>
+          <p>当前上传继续使用现有存储。可另外保存 OSS 连接，用于单条数据测试。</p>
+          <Button onClick={() => setEditingSaved(true)}>配置 OSS 测试连接</Button>
           {config.data.local_path ? (
             <>
               <p>更换磁盘目录时，在服务器执行迁移命令，已有文件会一并复制：</p>
@@ -1102,12 +1102,20 @@ function ObjectStoreConfigurationPanel() {
         </div>
       ) : (
         <form className={styles.objectStoreForm} onSubmit={submit}>
+          {editingSaved ? (
+            <>
+              <Alert type="info" showIcon title="OSS 测试连接" description="凭证加密保存在平台。保存后用于独立测试，当前存储不会自动切换；保存成功不代表连接已验证。" />
+              <Button onClick={() => setEditingSaved(false)}>返回当前存储</Button>
+            </>
+          ) : null}
           <div className={styles.objectStoreStatus}>
             <StatusTag
               known
               label={
                 !config.data.configured
                   ? "尚未配置"
+                  : editingSaved
+                    ? "已保存，等待测试"
                   : config.data.activation_required
                     ? "等待重启生效"
                     : "已生效"

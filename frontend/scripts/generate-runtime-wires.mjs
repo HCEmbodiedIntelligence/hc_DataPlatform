@@ -5,6 +5,8 @@ const responseRoots = [
   "CollectionRelease",
   "LeRobotCapabilities",
   "UploadProcessingStatusV1",
+  "ProjectTaskStorage",
+  "TaskStorageFilePage",
 ];
 const annotations = [
   "title",

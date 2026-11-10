@@ -14,7 +14,7 @@ from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.security.scope import ScopeGuard
 
-from .deletion import REFERENCES, read_deletion_check
+from .deletion import FILE_KINDS, REFERENCES, read_deletion_check
 
 
 class ResolutionTask(BaseModel):
@@ -31,6 +31,19 @@ class ResolutionTask(BaseModel):
     retry_key: str | None = None
 
 
+class SourceSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: str = Field(min_length=1)
+    region_code: str = Field(min_length=1)
+    source_id: str = Field(min_length=1)
+
+
+class ResolutionSource(SourceSelection):
+    version: int | None = None
+    name: str
+    can_delete: bool
+
+
 class ResolutionTarget(BaseModel):
     id: str
     name: str
@@ -44,6 +57,7 @@ class RobotResolutionPlan(BaseModel):
     can_transfer: bool
     transfer_reason: str | None = None
     targets: list[ResolutionTarget] = Field(default_factory=list)
+    sources: list[ResolutionSource] = Field(default_factory=list)
     tasks: list[ResolutionTask] = Field(default_factory=list)
     can_clean_config: bool
     config_count: int
@@ -52,7 +66,8 @@ class RobotResolutionPlan(BaseModel):
 
 class RobotResolutionCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["TRANSFER", "DELETE_TASK", "CLEAN_CONFIG"]
+    action: Literal["TRANSFER", "DELETE_TASK", "CLEAN_CONFIG", "DELETE_SOURCE"]
+    source: SourceSelection | None = None
     revision: str = Field(min_length=1, max_length=128)
     target_robot_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -66,7 +81,7 @@ class RobotResolutionCommand(BaseModel):
             valid = self.project_id and self.task_id and not self.target_robot_id
         else:
             valid = not (self.target_robot_id or self.project_id or self.task_id)
-        if not valid:
+        if not valid or (self.source is not None) != (self.action == "DELETE_SOURCE"):
             raise ValueError("请选择该操作所需的目标实例或任务。")
         return self
 
@@ -122,6 +137,8 @@ class PostgresRobotResolution:
             reason = "需要所有关联项目的数据管理权限，才能转移整台机器人的关联。"
         capabilities = {
             "raw": "upload.manage",
+            "collection_job": "upload.manage",
+            "recording_upload": "upload.manage",
             "upload": "upload.manage",
             "calibration": "calibration.manage",
             "source": "ingest_source.manage",
@@ -132,7 +149,11 @@ class PostgresRobotResolution:
             ):
                 reason = "需要所有关联项目的数据管理权限，才能转移整台机器人的关联。"
         if any(
-            (r.kind == "upload" and r.status not in {"COMMITTED", "FAILED", "CANCELLED"})
+            (
+                r.kind in {"upload", "recording_upload"}
+                and r.status not in {"COMMITTED", "FAILED", "CANCELLED"}
+            )
+            or (r.kind == "collection_job" and r.status in {"COLLECTING", "PAUSED"})
             or (r.kind == "raw" and r.status in {"PROCESSING", "RUNNING"})
             for r in report.items
         ):
@@ -208,6 +229,9 @@ class PostgresRobotResolution:
                 (robot, org, project, dataset),
             )
             counts = cursor.fetchone()
+            if counts[1]:
+                can_delete = False
+                task_reason = "任务包含其他机器人或归属未确认的文件，请先拆分数据或转移关联。"
             tasks.append(
                 ResolutionTask(
                     project_id=project,
@@ -223,8 +247,22 @@ class PostgresRobotResolution:
                     retry_key=retries.get((project, task), (None,))[0],
                 )
             )
+        sources = [
+            ResolutionSource(
+                project_id=item.project_id,
+                region_code=item.region_code,
+                source_id=item.id,
+                name=item.name,
+                version=item.version,
+                can_delete=permitted(
+                    auth, org, item.project_id, item.region_code, "ingest_source.manage"
+                ),
+            )
+            for item in report.items
+            if item.kind == "source"
+        ]
         config_count = sum(b.count for b in report.blockers if b.kind == "configuration")
-        has_data = any(b.kind in {"raw", "upload"} for b in report.blockers)
+        has_data = any(b.kind in FILE_KINDS for b in report.blockers)
         clean_reason = (
             "先删除关联数据，或选择转移关联。"
             if has_data
@@ -248,6 +286,7 @@ class PostgresRobotResolution:
             can_transfer=bool(report.blockers) and reason is None,
             transfer_reason=reason,
             targets=targets,
+            sources=sources,
             tasks=tasks,
             can_clean_config=bool(config_count) and clean_reason is None,
             config_count=config_count,
@@ -255,7 +294,9 @@ class PostgresRobotResolution:
         )
 
     def execute(self, org, robot, auth, command, key):
-        fingerprint = digest([robot, command.model_dump(exclude={"revision"})])
+        # Keep pre-existing operation receipts replayable.
+        excluded = {"revision"} if command.source else {"revision", "source"}
+        fingerprint = digest([robot, command.model_dump(exclude=excluded)])
         with self.connections() as db:
             cursor = db.cursor()
             # Match processing publication/deletion lock order. Both robots are
@@ -274,10 +315,20 @@ class PostgresRobotResolution:
                     "ingest.robot_ingest_identities",
                     "ingest.robot_processing_schemes",
                     "ingest.collection_jobs",
+                    "ingest.rollouts",
+                    "ingest.upload_sessions",
                     "ingest.mcap_processing_files",
                     "robotics.robot_reference_links",
                 }
             )
+            if command.action == "DELETE_SOURCE":
+                lock_tables = sorted(
+                    [
+                        *lock_tables,
+                        "ingest.data_source_connection_test_jobs",
+                        "ingest.data_source_credentials",
+                    ]
+                )
             cursor.execute(
                 sql.SQL("LOCK TABLE {} IN SHARE ROW EXCLUSIVE MODE").format(
                     sql.SQL(",").join(sql.Identifier(*t.split(".")) for t in lock_tables)
@@ -311,6 +362,20 @@ class PostgresRobotResolution:
                     "ROBOT_RESOLUTION_STALE", "关联记录已变化，已重新检查，请核对后重试。", 412
                 )
             document = task.model_dump() if task else {}
+            if command.source:
+                selected = command.source
+                if not any(
+                    (s.project_id, s.region_code, s.source_id)
+                    == (selected.project_id, selected.region_code, selected.source_id)
+                    and s.can_delete
+                    for s in plan.sources
+                ):
+                    raise fail(
+                        "ROBOT_SOURCE_DELETE_DENIED",
+                        "该数据源不属于此机器人或缺少数据源管理权限。",
+                        403,
+                    )
+                document = selected.model_dump()
             if not previous:
                 cursor.execute(
                     """INSERT INTO robotics.robot_resolution_operations
@@ -341,6 +406,9 @@ class PostgresRobotResolution:
                     )
                 self._transfer(cursor, org, robot, command.target_robot_id, key, auth.subject_id)
                 message = "目标实例的新关联已创建，旧关联已解除，可以继续删除机器人。"
+            elif command.action == "DELETE_SOURCE":
+                self._delete_source(cursor, org, robot, command.source)
+                message = "已删除选定的数据源。"
             elif command.action == "CLEAN_CONFIG":
                 if not plan.can_clean_config:
                     raise fail(
@@ -357,11 +425,12 @@ class PostgresRobotResolution:
                     document["project_id"], document["region_code"], organization_id=org
                 )
                 try:
-                    self.task_deletion.delete(
+                    purged = self.task_deletion.delete(
                         (org, document["project_id"], document["region_code"]),
                         document["task_id"],
                         document["etag"],
                         key,
+                        robot_id=robot,
                     )
                 except Exception:
                     # A rejected preflight has detached nothing. Do not leave a
@@ -379,7 +448,10 @@ class PostgresRobotResolution:
                         )
                         db.commit()
                     raise
-                message = "任务及关联数据已删除。"
+                message = (
+                    f"任务及关联数据已删除，已清理 {purged.deleted_objects} 个文件"
+                    f"（{purged.deleted_bytes} 字节）。"
+                )
             result = RobotResolutionResult(
                 action=command.action,
                 robot_id=robot,
@@ -417,6 +489,50 @@ class PostgresRobotResolution:
             (organization_id,kind,project_id,region_code,reference_id,origin_robot_id,robot_id,
              operation_id,created_by) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (*identity, target, key, actor),
+        )
+
+    @staticmethod
+    def _delete_source(cursor, org, robot, source):
+        scope = (org, source.project_id, source.region_code, source.source_id)
+        # A source binding can only be removed after physical cleanup in its scope.
+        for ref in REFERENCES:
+            if ref.kind in FILE_KINDS:
+                cursor.execute(
+                    f"SELECT 1 FROM {ref.table} r WHERE r.organization_id=%s AND "
+                    f"r.project_id=%s AND r.region_code=%s AND {ref.condition} LIMIT 1",
+                    (*scope[:3], robot),
+                )
+                if cursor.fetchone():
+                    raise fail("ROBOT_FILES_REMAIN", "请先清理此机器人在该项目和区域的采集文件。")
+        cursor.execute(
+            """SELECT 1 FROM robotics.robot_resolution_operations WHERE organization_id=%s
+            AND robot_id=%s AND action='DELETE_TASK' AND result IS NULL
+            AND document->>'project_id'=%s AND document->>'region_code'=%s LIMIT 1""",
+            (org, robot, source.project_id, source.region_code),
+        )
+        if cursor.fetchone():
+            raise fail("ROBOT_FILES_PENDING", "存储清理尚未完成，请重试清理文件。")
+        selected = "organization_id=%s AND project_id=%s AND region_code=%s AND source_id=%s"
+        cursor.execute(
+            f"SELECT 1 FROM ingest.data_source_connection_test_jobs WHERE {selected} "
+            "AND status IN ('QUEUED','RUNNING') LIMIT 1",
+            scope,
+        )
+        if cursor.fetchone():
+            raise fail("ROBOT_SOURCE_IN_USE", "数据源连接测试尚未结束，请稍后再删除。")
+        for table in ("data_source_connection_test_jobs", "data_source_credentials"):
+            cursor.execute(f"DELETE FROM ingest.{table} WHERE {selected}", scope)
+        cursor.execute(
+            f"DELETE FROM ingest.data_sources WHERE {selected} "
+            "RETURNING source_document #>> '{binding,robot_id}'",
+            scope,
+        )
+        origin = cursor.fetchone()[0]
+        cursor.execute(
+            """UPDATE robotics.robot_reference_links SET active=false,ended_at=now()
+            WHERE organization_id=%s AND project_id=%s AND region_code=%s AND reference_id=%s
+            AND kind='source' AND origin_robot_id=%s AND robot_id=%s AND active""",
+            (*scope, origin, robot),
         )
 
     def _unlink_configs(self, cursor, org, robot, key, actor):
@@ -535,6 +651,8 @@ class PostgresRobotResolution:
             )
         identities = {
             "raw": ("raw_source_id", "robot_id"),
+            "collection_job": ("collection_job_id", "robot_id"),
+            "recording_upload": ("upload_id", None),
             "upload": ("upload_id", "authenticated_robot_id"),
             "component": ("component_id", "robot_id"),
             "calibration": ("set_id", "robot_instance_id"),
@@ -545,6 +663,8 @@ class PostgresRobotResolution:
                 origin = (
                     row[robot_field]
                     if robot_field
+                    else row["upload_document"]["command"]["robot_id"]
+                    if kind == "recording_upload"
                     else row["source_document"]["binding"]["robot_id"]
                 )
                 self._link(

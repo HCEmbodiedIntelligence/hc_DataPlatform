@@ -45,7 +45,9 @@ def resolved_recovery(
     return validate_snapshot(snapshot, scope, raw)
 
 
-def recover_for_retry(db: Any, scope: Scope, raw_source_id: str, actor: str) -> Document:
+def recover_for_retry(
+    db: Any, scope: Scope, raw_source_id: str, actor: str, *, bind_archived_mcap: bool = False
+) -> Document:
     """Pin the current task plan only for an explicitly retried format rejection.
 
     Existing valid snapshots, including prior recoveries, never follow later plan
@@ -56,7 +58,7 @@ def recover_for_retry(db: Any, scope: Scope, raw_source_id: str, actor: str) -> 
 
     row = db.execute(
         """SELECT s.dataset_id,s.collection_task_id,s.robot_id,s.source_format,
-                  s.upload_id,j.status,s.derived_episode_count
+                  s.upload_id,j.status,s.derived_episode_count,j.job_type
         FROM ingest.raw_sources s JOIN ingest.raw_ingest_jobs j
         USING(organization_id,project_id,region_code,raw_source_id)
         WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
@@ -69,9 +71,15 @@ def recover_for_retry(db: Any, scope: Scope, raw_source_id: str, actor: str) -> 
     original = resolve_raw_snapshot(db, scope, raw_source_id)
     if not original.get("error"):
         return original
+    first_binding = (
+        bind_archived_mcap
+        and row[3] == "MCAP"
+        and row[7] in {"RAW_STORAGE", "CONTINUOUS_RECORDING_DISCOVERY"}
+        and original.get("error") == "CAPTURE_PLAN_REQUIRED"
+    )
     if (
         original.get("source") != "TASK_PLAN_UNRESOLVED"
-        or original.get("error") != "CAPTURE_FORMAT_UNSUPPORTED"
+        or (not first_binding and original.get("error") != "CAPTURE_FORMAT_UNSUPPORTED")
         or row[3] not in {"MCAP", "CAPTURE_BUNDLE"}
     ):
         return require_snapshot(original)
@@ -93,7 +101,7 @@ def recover_for_retry(db: Any, scope: Scope, raw_source_id: str, actor: str) -> 
             uuid5(NAMESPACE_URL, "robot-recording:" + row[4]),
         ),
     ).fetchone()
-    if row[5] != "FAILED" or row[6] or prepared:
+    if (row[5] != "FAILED" and not (first_binding and row[5] == "SUCCEEDED")) or row[6] or prepared:
         reject("CAPTURE_RETRY_UNAVAILABLE", "仅尚未生成录制或成果的失败记录可恢复采集方案")
     plan = plans.get_plan(db, scope, row[1])
     if plan is None:

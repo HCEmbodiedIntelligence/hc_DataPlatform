@@ -62,6 +62,7 @@ async def test_mcap_temporal_without_annotation(
     include_camera,
     shared_output,
     with_labels=False,
+    ingest_first=False,
 ):
     if os.getenv("HC_CAPTURE_PROCESSING_INFRA") != "1":
         pytest.skip("explicit isolated infrastructure required")
@@ -284,6 +285,17 @@ async def test_mcap_temporal_without_annotation(
         assert result["status"] == "READY", result
         records = PostgresContinuousRecordingRepository(repository.connections)
         recording = records.get(target, result["recording_id"])
+        from tests.continuous_recordings.test_recording_quality import (
+            check_recording, check_recording_workflow,
+        )
+        if shared_output == "versioned":
+            await check_recording_workflow(repository, runtime, target, recording.recording_id,
+                                           monkeypatch)
+        else:
+            check_recording(repository, runtime.activities.continuous_episode_processing,
+                            target, recording.recording_id, runtime.catalog,
+                            runtime.episode_packages.schemas, ingest_first=ingest_first)
+        recording = records.get(target, recording.recording_id)
         if with_labels:
             from hc_data_platform.annotation.ingest_queries import ensure_dataset_tag_schema_binding
 
@@ -305,42 +317,45 @@ async def test_mcap_temporal_without_annotation(
             recording_id=recording.recording_id,
             actor_id=actor.subject_id,
         )
-        draft = runtime.continuous_recordings.save_draft(
-            **args,
-            command=SaveSliceDraftCommand.model_validate(
-                {
-                    "slices": [
-                        {
-                            "episode_id": "episode_capture_all",
-                            "start_offset_ns": "0",
-                            "end_offset_ns": str(recording.duration_ns),
-                            "title": "synthetic 167 frames",
-                        }
-                    ]
-                }
-            ),
-            if_match=recording.etag,
-            request_id="capture-draft",
-        )
-        if with_labels:
-            assert draft.revision.slices[0].task_labels == (description,)
-            edited = draft.revision.slices[0]
+        if not ingest_first:
             draft = runtime.continuous_recordings.save_draft(
                 **args,
-                command=SaveSliceDraftCommand.model_validate({"slices": [{
-                    "episode_id": edited.episode_id,
-                    "start_offset_ns": str(edited.start_offset_ns),
-                    "end_offset_ns": str(edited.end_offset_ns),
-                    "task_labels": [description, "保持物体直立"],
-                }]}),
-                if_match=draft.recording.etag, request_id="capture-description-edit",
+                command=SaveSliceDraftCommand.model_validate(
+                    {
+                        "slices": [
+                            {
+                                "episode_id": "episode_capture_all",
+                                "start_offset_ns": "0",
+                                "end_offset_ns": str(recording.duration_ns),
+                                "title": "synthetic 167 frames",
+                            }
+                        ]
+                    }
+                ),
+                if_match=recording.etag,
+                request_id="capture-draft",
             )
-        finalized = runtime.continuous_recordings.finalize(
-            **args,
-            expected_draft_revision=draft.revision.revision,
-            if_match=draft.recording.etag,
-            request_id="capture-finalize",
-        )
+            if with_labels:
+                assert draft.revision.slices[0].task_labels == (description,)
+                edited = draft.revision.slices[0]
+                draft = runtime.continuous_recordings.save_draft(
+                    **args,
+                    command=SaveSliceDraftCommand.model_validate({"slices": [{
+                        "episode_id": edited.episode_id,
+                        "start_offset_ns": str(edited.start_offset_ns),
+                        "end_offset_ns": str(edited.end_offset_ns),
+                        "task_labels": [description, "保持物体直立"],
+                    }]}),
+                    if_match=draft.recording.etag, request_id="capture-description-edit",
+                )
+            finalized = runtime.continuous_recordings.finalize(
+                **args,
+                expected_draft_revision=draft.revision.revision,
+                if_match=draft.recording.etag,
+                request_id="capture-finalize",
+            )
+        episode_id = "episode_full_recording" if ingest_first else "episode_capture_all"
+        revision_number = recording.finalized_revision if ingest_first else finalized.revision.revision
         request = PostgresContinuousEpisodeWorkflowInputResolver(
             repository.connections,
             runtime.catalog,
@@ -348,8 +363,8 @@ async def test_mcap_temporal_without_annotation(
         ).resolve(
             **target.model_dump(),
             recording_id=recording.recording_id,
-            episode_id="episode_capture_all",
-            finalized_revision=finalized.revision.revision,
+            episode_id=episode_id,
+            finalized_revision=revision_number,
         )
         assert request.alignment_profile.frequency_hz == 15
         if with_labels:
@@ -359,9 +374,12 @@ async def test_mcap_temporal_without_annotation(
         client = await Client.connect("temporal:7233", data_converter=pydantic_data_converter)
         workflows, activities = discover_temporal_registrations()
         ledger = records.get_episode_processing(
-            target, recording.recording_id, "episode_capture_all"
+            target, recording.recording_id, episode_id
         )
-        async with Worker(client, task_queue=queue, workflows=workflows, activities=activities):
+        async with (
+            Worker(client, task_queue=queue, workflows=workflows, activities=activities),
+            Worker(client, task_queue=queue + "-control", activities=activities),
+        ):
             handle = await client.start_workflow(
                 ContinuousRecordingEpisodeWorkflow.run,
                 request,
@@ -374,7 +392,7 @@ async def test_mcap_temporal_without_annotation(
         if not with_labels:
             assert result.result["annotation_status"] == "PENDING_CONFIGURATION"
         ready = records.get_episode_processing(
-            target, recording.recording_id, "episode_capture_all"
+            target, recording.recording_id, episode_id
         )
         assert ready.status.value == "READY"
         if with_labels:
@@ -426,4 +444,13 @@ async def test_slice_task_descriptions_reach_annotation_and_export(uploaded_raw,
     await test_mcap_temporal_without_annotation(
         uploaded_raw, tmp_path, monkeypatch, include_camera=False,
         shared_output=False, with_labels=True,
+    )
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_whole_recording_ingests_before_any_human_slice(uploaded_raw, tmp_path, monkeypatch):
+    await test_mcap_temporal_without_annotation(
+        uploaded_raw, tmp_path, monkeypatch, include_camera=True,
+        shared_output=False, ingest_first=True,
     )

@@ -1,4 +1,5 @@
 import { createDomainError } from "../../../shared/api/domain-error";
+import { localObjectStorageUrl } from "../../../shared/lib/object-storage-url";
 
 export type MediaFatalHandler = (error: Error) => void;
 
@@ -25,7 +26,7 @@ export async function attachAuthorizedMedia(
     if (!disposed) onFatal(mediaPlaybackError("媒体播放请求失败。"));
   };
   video.addEventListener("error", onError);
-  video.src = url;
+  video.src = localObjectStorageUrl(url);
   video.load();
   return () => {
     disposed = true;

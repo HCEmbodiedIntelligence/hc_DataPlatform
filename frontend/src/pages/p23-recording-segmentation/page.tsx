@@ -45,6 +45,9 @@ import {
 } from "react-router-dom";
 import { EpisodePreview } from "./EpisodePreview";
 import { EpisodeSliceList } from "./EpisodeSliceList";
+import { recordingQualityLabel, wholeRecordingLabel } from "./quality";
+import { progressLocation, RecordingIngestProgress, RecordingSliceTarget } from "./RecordingIngestProgress";
+import { qualityReasonLabels, qualityRuleLabels } from "../../features/quality/labels";
 import { RecordingNavigator, type RecordingFilter } from "./RecordingNavigator";
 import {
   recordingFileName,
@@ -53,9 +56,9 @@ import {
   recordingSearchValues,
 } from "./presentation";
 import { useToast } from "../../shared/ui/ToastProvider";
+import { usePlaybackClock } from "../../features/viewer/use-playback-clock";
 import { useEpisodeRobotScene } from "../../features/viewer/use-episode-robot-scene";
 import {
-  createPlaybackClock,
   CameraViewToolbar,
   selectCameraStreams,
   SynchronizedEpisodeWorkbench,
@@ -123,6 +126,14 @@ function durationOf(recording: ContinuousRecording): number {
 }
 
 function statusTag(recording: ContinuousRecording) {
+  const wholeLabel = wholeRecordingLabel(recording);
+  if (wholeLabel) return <StatusTag status={recording.whole_episode_status ?? recording.status} label={wholeLabel}
+    tone={recording.whole_episode_status === "READY" ? "success" : ["QC_FAILED", "QC_ERROR", "FAILED"].includes(recording.whole_episode_status ?? recording.status) ? "danger" : "info"} />;
+  const qualityLabel = recordingQualityLabel(recording);
+  if (qualityLabel) {
+    return <StatusTag status={recording.status} label={qualityLabel}
+      tone={recording.status === "QC_FAILED" || recording.status === "QC_ERROR" ? "danger" : "info"} />;
+  }
   if (recording.status === "SLICED") {
     return (
       <StatusTag status={recording.status} label="已成片" tone="success" />
@@ -134,19 +145,25 @@ function statusTag(recording: ContinuousRecording) {
   return <StatusTag status={recording.status} label="待分割" tone="info" />;
 }
 
-type RecordingQueueStage = "PENDING" | "REVIEW" | "SLICED";
+type RecordingQueueStage = "QUALITY" | "INGESTING" | "PENDING" | "REVIEW" | "SLICED";
 
 function recordingQueueStage(
   recording: ContinuousRecording,
 ): RecordingQueueStage {
+  if (recording.ingest_mode === "WHOLE_RECORDING") {
+    if (recordingQualityLabel(recording)) return "QUALITY";
+    return recording.whole_episode_status === "READY" ? "PENDING" : "INGESTING";
+  }
   if (recording.status === "SLICED") return "SLICED";
+  if (recordingQualityLabel(recording)) return "QUALITY";
   return recording.current_revision > 0 ? "REVIEW" : "PENDING";
 }
 
 function RecordingListPage({
-  gateway,
+  gateway, capabilityOverride,
 }: {
   readonly gateway: RecordingGateway;
+  readonly capabilityOverride?: PageProps["capabilityOverride"];
 }) {
   const navigate = useNavigate();
   const scope = useRecordingScope();
@@ -158,7 +175,7 @@ function RecordingListPage({
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = 10;
   const stage: RecordingQueueStage =
-    requestedStage === "REVIEW" || requestedStage === "SLICED"
+    requestedStage === "INGESTING" || requestedStage === "QUALITY" || requestedStage === "REVIEW" || requestedStage === "SLICED"
       ? requestedStage
       : "PENDING";
   const list = useQuery({
@@ -168,6 +185,28 @@ function RecordingListPage({
     retry: false,
     refetchInterval: 5_000,
   });
+  const progressId = searchParams.get("progress");
+  const progressRow = list.data?.items.find(item => item.recording_id === progressId);
+  const fallbackDetail = useQuery({
+    queryKey: ["continuous-recording", scopeKey, progressId],
+    queryFn: ({ signal }) => gateway.detail(scope!, progressId!, signal),
+    enabled: Boolean(scope && progressId && list.isSuccess && !progressRow),
+    retry: false,
+  });
+  const selected = progressRow ?? fallbackDetail.data?.data;
+  const capabilities = useCapabilities();
+  const canManage = capabilityOverride === "manage" ||
+    (capabilityOverride === undefined && (capabilities.has("upload.manage") || capabilities.has("annotation.edit")));
+  const openRecording = (item: ContinuousRecording) => {
+    const wholePending = item.ingest_mode === "WHOLE_RECORDING" &&
+      (recordingQualityLabel(item) || item.whole_episode_status !== "READY");
+    navigate(wholePending ? progressLocation(item) : `/recordings/${encodeURIComponent(item.recording_id)}/slice`);
+  };
+  const closeProgress = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("progress");
+    setSearchParams(next, { replace: true });
+  };
   const rows = useMemo(() => {
     const normalized = deferredQuery.trim().toLocaleLowerCase("zh-CN");
     return (list.data?.items ?? [])
@@ -184,7 +223,7 @@ function RecordingListPage({
   }, [deferredQuery, list.data?.items, stage]);
 
   const counts = useMemo<Record<RecordingQueueStage, number>>(() => {
-    const next = { PENDING: 0, REVIEW: 0, SLICED: 0 };
+    const next = { QUALITY: 0, INGESTING: 0, PENDING: 0, REVIEW: 0, SLICED: 0 };
     for (const recording of list.data?.items ?? []) {
       next[recordingQueueStage(recording)] += 1;
     }
@@ -203,6 +242,7 @@ function RecordingListPage({
   const stageHref = (nextStage: RecordingQueueStage) => {
     const next = new URLSearchParams(searchParams);
     next.delete("page");
+    next.delete("progress");
     if (nextStage === "PENDING") next.delete("stage");
     else next.set("stage", nextStage);
     const encoded = next.toString();
@@ -238,6 +278,7 @@ function RecordingListPage({
   }
 
   return (
+    <>
     <WorkflowQueuePage
       title="录制切片"
       density="compact"
@@ -253,11 +294,28 @@ function RecordingListPage({
       }
       stages={[
         {
+          key: "QUALITY",
+          label: "录制质检",
+          description: "上传后自动检查整段录制",
+          queueDescription: "等待质检、正在质检或质检未通过的录制。通过后自动对齐并整段入库。",
+          emptyDescription: "当前没有待完成的录制质检。",
+          icon: ClipboardCheck,
+          count: counts.QUALITY,
+          href: stageHref("QUALITY"),
+        },
+        {
+          key: "INGESTING", label: "整段入库",
+          description: "自动对齐并准备数据",
+          queueDescription: "正在整段入库或需要处理入库问题的录制。",
+          emptyDescription: "当前没有等待入库的录制。",
+          icon: Clock3, count: counts.INGESTING, href: stageHref("INGESTING"),
+        },
+        {
           key: "PENDING",
-          label: "待分割",
-          description: "选择片段并创建 Episode",
-          queueDescription: "尚未建立切片草稿的连续录制。",
-          emptyDescription: "新的连续录制上传完成后会进入此队列。",
+          label: "切片与标注",
+          description: "在已入库数据上划分片段",
+          queueDescription: "新录制整段入库后，在同一工作台划分片段并标注；历史录制仍可继续原有切片。",
+          emptyDescription: "连续录制完成自动入库后会进入此队列。",
           icon: Scissors,
           count: counts.PENDING,
           href: stageHref("PENDING"),
@@ -274,7 +332,7 @@ function RecordingListPage({
         },
         {
           key: "SLICED",
-          label: "已分割",
+          label: "历史切片",
           description: "查看已生成的 Episode",
           queueDescription: "按片段查看与播放已生成的 Episode。",
           emptyDescription: "提交成片后的录制会进入此队列。",
@@ -350,9 +408,7 @@ function RecordingListPage({
                     if (
                       !(event.target as HTMLElement).closest("a,button,input")
                     )
-                      navigate(
-                        `/recordings/${encodeURIComponent(recording.recording_id)}/slice`,
-                      );
+                      openRecording(recording);
                   }}
                   onKeyDown={(event) => {
                     if (
@@ -360,9 +416,7 @@ function RecordingListPage({
                       (event.key === "Enter" || event.key === " ")
                     ) {
                       event.preventDefault();
-                      navigate(
-                        `/recordings/${encodeURIComponent(recording.recording_id)}/slice`,
-                      );
+                      openRecording(recording);
                     }
                   }}
                 >
@@ -412,12 +466,14 @@ function RecordingListPage({
                     <Button
                       type="link"
                       onClick={() =>
-                        navigate(
-                          `/recordings/${encodeURIComponent(recording.recording_id)}/slice`,
-                        )
+                        openRecording(recording)
                       }
                     >
-                      {recording.status === "SLICED"
+                      {recording.ingest_mode === "WHOLE_RECORDING"
+                        ? recording.whole_episode_status === "READY" ? "切片与标注" : "查看入库进度"
+                        : recordingQualityLabel(recording)
+                        ? "查看质检"
+                        : recording.status === "SLICED"
                         ? "查看"
                         : recording.current_revision
                           ? "检查切片"
@@ -436,6 +492,15 @@ function RecordingListPage({
         else void list.refetch();
       }}
     />
+    <Drawer open={Boolean(progressId)} onClose={closeProgress} destroyOnHidden
+      title={selected ? recordingFileName(selected) : "入库进度"}>
+      {scope && selected ? <RecordingIngestProgress key={selected.recording_id}
+        recording={selected} scope={scope} gateway={gateway} canManage={canManage} />
+        : fallbackDetail.isError ? <Alert type="error" title="录制加载失败"
+            action={<Button onClick={() => void fallbackDetail.refetch()}>重试</Button>} />
+        : <PageState state="loading" layout="list" label="录制进度" />}
+    </Drawer>
+    </>
   );
 }
 
@@ -473,6 +538,9 @@ function RecordingSegmentationPage({
       gateway.detail(scope as RecordingScope, recordingId, signal),
     enabled: scope !== null,
     retry: false,
+    refetchInterval: (query) =>
+      ["PENDING_QC", "QC_RUNNING"].includes(query.state.data?.data.status ?? "") ? 3_000 : false,
+    staleTime: 5_000,
   });
   const sources = useQuery({
     queryKey: ["continuous-recording-video-sources", scopeKey, recordingId],
@@ -480,6 +548,7 @@ function RecordingSegmentationPage({
       gateway.videoSources(scope as RecordingScope, recordingId, signal),
     enabled:
       scope !== null &&
+      detail.data?.data.ingest_mode !== "WHOLE_RECORDING" &&
       (!detail.data || detail.data.data.schema_version === "continuous-recording/v2"),
     retry: false,
     staleTime: 5 * 60_000,
@@ -489,7 +558,6 @@ function RecordingSegmentationPage({
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     episodeSearch.get("episode"),
   );
-  const [currentNs, setCurrentNs] = useState(0);
   const [markInNs, setMarkInNs] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [cameraView, setCameraView] = useState("__quad__");
@@ -499,20 +567,28 @@ function RecordingSegmentationPage({
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(
     null,
   );
+  const [switchingPath, setSwitchingPath] = useState<string | null>(null);
+  const navigationGeneration = useRef(0);
+  const initializedRecordingId = useRef<string | null>(null);
   const initializedEtag = useRef<string | null>(null);
   const initializedEditable = useRef(false);
 
   const recording = detail.data?.data;
+  const qualityLabel = recording ? recordingQualityLabel(recording) : null;
+  const retryQuality = useMutation({
+    mutationFn: () => gateway.retryQuality!(scope as RecordingScope, recordingId, crypto.randomUUID()),
+    onSuccess: (result) => {
+      queryClient.setQueryData(detailKey, result);
+      void queryClient.invalidateQueries({ queryKey: ["continuous-recordings", scopeKey] });
+    },
+    onError: (error) => showToast({ tone: "error", title: "重新质检失败",
+      message: pageError(error, "请刷新后重试。") }),
+  });
   const revision = detail.data?.current_slice_revision ?? null;
+  const previousSlices = detail.data?.reusable_slices;
+  const canReuse = !!previousSlices && !revision && !dirty;
   const durationNs = recording ? durationOf(recording) : 0;
-  const clock = useMemo(
-    () =>
-      createPlaybackClock({
-        startNs: "0",
-        endNs: String(Math.max(1, durationNs)),
-      }),
-    [durationNs],
-  );
+  const clock = usePlaybackClock("0", String(Math.max(1, durationNs)), recordingId);
   const firstSource = sources.data?.sources[0];
   const minimumDurationNs = Math.max(
     1,
@@ -526,7 +602,8 @@ function RecordingSegmentationPage({
   const readOnly =
     capabilityOverride === "read-only" ||
     !canManage ||
-    recording?.status === "SLICED";
+    recording?.ingest_mode === "WHOLE_RECORDING" ||
+    recording?.status !== "READY_FOR_SLICING";
   const issues = useMemo(
     () => validateSlices(slices, durationNs, minimumDurationNs),
     [durationNs, minimumDurationNs, slices],
@@ -535,6 +612,7 @@ function RecordingSegmentationPage({
     () =>
       recording &&
       scope &&
+      recording.ingest_mode !== "WHOLE_RECORDING" &&
       recording.schema_version === "continuous-recording/v2"
         ? buildRecordingJointAngleStream({
             gateway,
@@ -576,15 +654,24 @@ function RecordingSegmentationPage({
   const selectedSlice = slices.find((slice) => slice.episodeId === selectedId);
 
   useEffect(() => {
+    const changedRecording = initializedRecordingId.current !== recordingId;
     if (
       !recording ||
-      (initializedEtag.current === recording.etag &&
+      (!changedRecording && initializedEtag.current === recording.etag &&
         (readOnly || initializedEditable.current))
     )
       return;
+    if (changedRecording) {
+      setMarkInNs(null);
+      setPreviewSlice(null);
+      setOriginalFilesOpen(false);
+      setFinalizedNoticeClosed(false);
+      setPendingNavigation(null);
+      setSwitchingPath(null);
+    }
     const defaults = readOnly ? [] : (recording.default_task_labels ?? []);
-    const initial = fromServerSlices(revision?.slices ?? [], defaults);
-    if (!revision && !readOnly && defaults.length && durationNs > 0) {
+    const initial = fromServerSlices(revision?.slices ?? previousSlices?.slices ?? [], previousSlices ? [] : defaults);
+    if (!revision && !previousSlices && !readOnly && defaults.length && durationNs > 0) {
       initial.push({
         episodeId: nextEpisodeId([]),
         startNs: 0,
@@ -596,9 +683,10 @@ function RecordingSegmentationPage({
     }
     setSlices(initial);
     setSelectedId((previous) =>
-      initial.some((slice) => slice.episodeId === previous)
+      !changedRecording && initial.some((slice) => slice.episodeId === previous)
         ? previous
-        : (initial[0]?.episodeId ?? null),
+        : (initial.find((slice) => slice.episodeId === episodeSearch.get("episode"))?.episodeId ??
+          initial[0]?.episodeId ?? null),
     );
     setDirty(
       Boolean(
@@ -609,16 +697,11 @@ function RecordingSegmentationPage({
       ),
     );
     initializedEtag.current = recording.etag;
+    initializedRecordingId.current = recordingId;
     initializedEditable.current = !readOnly;
-  }, [recording, revision, readOnly, durationNs]);
+  }, [recording, recordingId, revision, previousSlices, readOnly, durationNs, episodeSearch]);
 
-  useEffect(() => {
-    const unsubscribe = clock.subscribe((value) => setCurrentNs(Number(value)));
-    return () => {
-      unsubscribe();
-      clock.dispose();
-    };
-  }, [clock]);
+  useEffect(() => () => { navigationGeneration.current += 1; }, [recordingId]);
 
   useEffect(() => {
     if (!dirty) return undefined;
@@ -658,6 +741,7 @@ function RecordingSegmentationPage({
 
   const addSlice = useCallback(() => {
     if (readOnly) return;
+    const currentNs = Number(clock.currentNs());
     if (markInNs === null) {
       setMarkInNs(currentNs);
       showToast({
@@ -695,7 +779,7 @@ function RecordingSegmentationPage({
     setSelectedId(episodeId);
     setMarkInNs(null);
   }, [
-    currentNs,
+    clock,
     durationNs,
     markInNs,
     minimumDurationNs,
@@ -769,6 +853,7 @@ function RecordingSegmentationPage({
 
   const splitSelected = useCallback(() => {
     if (readOnly || !selectedId) return;
+    const currentNs = Number(clock.currentNs());
     const selected = slices.find((slice) => slice.episodeId === selectedId);
     if (
       !selected ||
@@ -799,7 +884,7 @@ function RecordingSegmentationPage({
     updateSlices(next);
     setSelectedId(episodeId);
   }, [
-    currentNs,
+    clock,
     minimumDurationNs,
     readOnly,
     selectedId,
@@ -846,6 +931,9 @@ function RecordingSegmentationPage({
 
   const finalize = useMutation({
     mutationFn: async () => {
+      if (canReuse) {
+        return gateway.finalize(scope as RecordingScope, recordingId, 0, recording!.etag);
+      }
       let current = { recording: recording!, revision };
       if (dirty || !revision || slices.length === 0) {
         const submission = slices.length
@@ -914,6 +1002,7 @@ function RecordingSegmentationPage({
   });
 
   const handleKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (switchingPath) return;
     const target = event.target as HTMLElement;
     if (
       target.matches(
@@ -922,6 +1011,7 @@ function RecordingSegmentationPage({
     )
       return;
     const frameNs = minimumDurationNs;
+    const currentNs = Number(clock.currentNs());
     if (event.key === " ") {
       event.preventDefault();
       if (clock.isPlaying()) clock.pause();
@@ -941,10 +1031,58 @@ function RecordingSegmentationPage({
     }
   };
 
-  const navigateFromRecording = (path: string) => {
-    if (saveDraft.isPending || finalize.isPending) return;
-    if (!dirty) {
+  const resetSaveDraft = saveDraft.reset;
+  const resetFinalize = finalize.reset;
+  useEffect(() => {
+    resetSaveDraft();
+    resetFinalize();
+  }, [recordingId, resetSaveDraft, resetFinalize]);
+
+  const completeNavigation = async (path: string) => {
+    const nextId = /^\/recordings\/([^/]+)\/slice(?:\?.*)?$/.exec(path)?.[1];
+    if (!nextId || !scope) {
       navigate(path);
+      return;
+    }
+    const nextRecordingId = decodeURIComponent(nextId);
+    const generation = ++navigationGeneration.current;
+    clock.pause();
+    setPendingNavigation(null);
+    setSwitchingPath(path);
+    try {
+      // Keep the current workspace mounted until the next recording's data is
+      // ready. A failed video authorization remains a local media-panel error.
+      await Promise.all([
+        queryClient.fetchQuery({
+          queryKey: ["continuous-recording", scopeKey, nextRecordingId],
+          queryFn: ({ signal }) => gateway.detail(scope, nextRecordingId, signal),
+          staleTime: 5_000,
+          retry: false,
+        }),
+        queryClient.fetchQuery({
+          queryKey: ["continuous-recording-video-sources", scopeKey, nextRecordingId],
+          queryFn: ({ signal }) => gateway.videoSources(scope, nextRecordingId, signal),
+          staleTime: 5 * 60_000,
+          retry: false,
+        }).catch(() => undefined),
+      ]);
+      if (navigationGeneration.current === generation) navigate(path);
+    } catch (error) {
+      if (navigationGeneration.current !== generation) return;
+      showToast({
+        title: "切换录制失败",
+        message: pageError(error, "当前录制和修改已保留，请重试。"),
+        tone: "error",
+      });
+    } finally {
+      if (navigationGeneration.current === generation) setSwitchingPath(null);
+    }
+  };
+
+  const navigateFromRecording = (path: string) => {
+    if (saveDraft.isPending || finalize.isPending || switchingPath) return;
+    if (!dirty) {
+      void completeNavigation(path);
       return;
     }
     setPendingNavigation(path);
@@ -991,10 +1129,14 @@ function RecordingSegmentationPage({
     );
   }
 
+  if (recording.ingest_mode === "WHOLE_RECORDING") {
+    return <RecordingSliceTarget recording={recording} gateway={gateway} scope={scope} />;
+  }
+
   const finalizeAllowed =
     !readOnly &&
     durationNs >= minimumDurationNs &&
-    issues.length === 0 &&
+    (canReuse || issues.length === 0) &&
     revision?.authoring_mode !== "MODEL" &&
     !saveDraft.isPending;
   const needsHumanReview = revision?.authoring_mode === "MODEL";
@@ -1028,6 +1170,7 @@ function RecordingSegmentationPage({
     <div
       className={styles.recordingWorkspace}
       data-navigator-collapsed={navigatorCollapsed}
+      aria-busy={switchingPath !== null}
       tabIndex={0}
       onKeyDown={handleKeyboard}
       aria-label="录制切片工作台"
@@ -1041,7 +1184,7 @@ function RecordingSegmentationPage({
         onToggle={onNavigatorToggle}
         filter={recordingFilter}
         onFilterChange={onRecordingFilterChange}
-        disabled={saveDraft.isPending || finalize.isPending}
+        disabled={saveDraft.isPending || finalize.isPending || switchingPath !== null}
         onSelect={(id) => {
           if (id !== recordingId)
             navigateFromRecording(
@@ -1050,7 +1193,13 @@ function RecordingSegmentationPage({
         }}
       />
       <div className={styles.workbenchPage}>
+        {switchingPath && (
+          <div className={styles.switchingNotice} role="status">
+            正在切换录制…
+          </div>
+        )}
         <SynchronizedEpisodeWorkbench
+          inert={switchingPath !== null}
           jointAngleStream={rawJointStream}
           adapter={{
             mode: "episode-slicing",
@@ -1178,6 +1327,10 @@ function RecordingSegmentationPage({
                       disabled={!finalizeAllowed}
                       loading={finalize.isPending}
                       onClick={() => {
+                        if (canReuse) {
+                          finalize.mutate();
+                          return;
+                        }
                         modal.confirm({
                           title: slices.length
                             ? `生成 ${slices.length} 条 Episode？`
@@ -1190,14 +1343,39 @@ function RecordingSegmentationPage({
                         });
                       }}
                     >
-                      提交成片
+                      {canReuse ? "沿用上次切片并继续入库" : "提交成片"}
                     </Button>
                   </Tooltip>
                 </div>
-                {recording.status === "SLICED" && !finalizedNoticeClosed ? (
+                {qualityLabel ? (
+                  <Alert
+                    type={recording.status === "QC_FAILED" || recording.status === "QC_ERROR" ? "error" : "info"}
+                    showIcon
+                    title={qualityLabel}
+                    description={
+                      <>
+                        上传完成后自动检查整段录制，通过后才能切片。
+                        {recording.quality_summary?.finding_codes?.length ? (
+                          <div>检查结果：{recording.quality_summary.finding_codes.map(
+                            (code) => qualityRuleLabels[code] ?? qualityReasonLabels[code] ?? code,
+                          ).join("、")}</div>
+                        ) : null}
+                        {recording.quality_error_code ? <div>执行错误：{
+                          qualityReasonLabels[recording.quality_error_code] ?? recording.quality_error_code
+                        }</div> : null}
+                      </>
+                    }
+                    action={canManage && gateway.retryQuality &&
+                      ["QC_FAILED", "QC_ERROR"].includes(recording.status) ? (
+                        <Button size="small" loading={retryQuality.isPending} onClick={() => retryQuality.mutate()}>
+                          重新质检
+                        </Button>
+                      ) : undefined}
+                  />
+                ) : recording.status === "SLICED" && !finalizedNoticeClosed ? (
                   <div className={styles.finalizedNotice} role="status">
                     <CheckCircle2 size={15} aria-hidden="true" />
-                    <span>切片已最终提交</span>
+                    <span>{revision?.reused_from ? "已沿用上次确认的切片" : "切片已最终提交"}</span>
                     <span className={styles.finalizedNoticeDetail}>
                       · 已生成 Episode，区间只读
                     </span>
@@ -1254,7 +1432,7 @@ function RecordingSegmentationPage({
                     <Button
                       size="small"
                       disabled={readOnly}
-                      onClick={() => setMarkInNs(currentNs)}
+                      onClick={() => setMarkInNs(Number(clock.currentNs()))}
                     >
                       设为入点 <kbd>I</kbd>
                     </Button>
@@ -1361,7 +1539,7 @@ function RecordingSegmentationPage({
               danger
               disabled={saveDraft.isPending}
               onClick={() => {
-                if (pendingNavigation) navigate(pendingNavigation);
+                if (pendingNavigation) void completeNavigation(pendingNavigation);
               }}
             >
               放弃修改并切换
@@ -1379,7 +1557,7 @@ function RecordingSegmentationPage({
               onClick={() =>
                 saveDraft.mutate(undefined, {
                   onSuccess: () => {
-                    if (pendingNavigation) navigate(pendingNavigation);
+                    if (pendingNavigation) void completeNavigation(pendingNavigation);
                   },
                 })
               }
@@ -1436,7 +1614,7 @@ export default function RecordingSegmentationPageEntry({
   });
   return recordingId ? (
     <RecordingSegmentationPage
-      key={`${entryScope?.organizationId}:${entryScope?.projectId}:${entryScope?.regionCode}:${recordingId}`}
+      key={`${entryScope?.organizationId}:${entryScope?.projectId}:${entryScope?.regionCode}`}
       gateway={gateway}
       recordingId={recordingId}
       capabilityOverride={capabilityOverride}
@@ -1446,6 +1624,6 @@ export default function RecordingSegmentationPageEntry({
       onNavigatorToggle={() => setNavigatorCollapsed((value) => !value)}
     />
   ) : (
-    <RecordingListPage gateway={gateway} />
+    <RecordingListPage gateway={gateway} capabilityOverride={capabilityOverride} />
   );
 }

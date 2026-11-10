@@ -13,7 +13,9 @@ export interface PlaybackClock {
   setRate(r: number): void;
   dispose(): void;
   /** The first registered video drives playback; buffering then freezes the clock. */
-  attachMediaClock?(read: () => string | null): () => void;
+  attachMediaClock?(read: () => string | null, ready?: () => boolean): () => void;
+  /** Selected videos start together after their initial playback buffer is ready. */
+  canPlayMedia?(): boolean;
 }
 
 export interface PlaybackClockUpdate {
@@ -78,7 +80,13 @@ export function createPlaybackClock(opts: {
   const listeners = new Set<
     (ns: string, update: PlaybackClockUpdate) => void
   >();
-  const mediaClocks = new Set<() => string | null>();
+  const mediaClocks = new Map<() => string | null, (() => boolean) | undefined>();
+  const canPlayMedia = () => {
+    for (const ready of mediaClocks.values()) {
+      if (ready && !ready()) return false;
+    }
+    return true;
+  };
 
   const emit = (reason: PlaybackClockUpdate["reason"]) => {
     const value = current.toString();
@@ -104,8 +112,8 @@ export function createPlaybackClock(opts: {
     const deltaNs = BigInt(
       Math.max(0, Math.round(elapsedMs * 1_000_000 * rate)),
     );
-    const mediaClock = mediaClocks.values().next().value;
-    const mediaNs = mediaClock?.();
+    const mediaClock = mediaClocks.keys().next().value;
+    const mediaNs = canPlayMedia() ? mediaClock?.() : null;
     const next = mediaClock
       ? mediaNs === null || mediaNs === undefined
         ? current
@@ -127,8 +135,9 @@ export function createPlaybackClock(opts: {
     currentNs: () => current.toString(),
     isPlaying: () => playing,
     playbackRate: () => rate,
-    attachMediaClock(read) {
-      mediaClocks.add(read);
+    canPlayMedia,
+    attachMediaClock(read, ready) {
+      mediaClocks.set(read, ready);
       return () => {
         mediaClocks.delete(read);
       };

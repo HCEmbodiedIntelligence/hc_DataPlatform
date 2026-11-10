@@ -83,6 +83,7 @@ class LeRobotPipeline:
         quality_profiles: QualityProfileWriter,
         cache_max_bytes: int = 5 * 1024**3,
         cache_ttl_hours: int = 24,
+        cache_retention=None,
         native_schemas: NativeSchemaRegistry,
         native_catalog: NativeSampleCatalog,
         schema_builder: DatasetSchemaBuilder = build_dataset_schema,
@@ -103,7 +104,8 @@ class LeRobotPipeline:
         self.staging = staging
         self.cache_root = cache_root
         self.cache = SourceCache(
-            cache_root, max_bytes=cache_max_bytes, ttl_seconds=cache_ttl_hours * 3600
+            cache_root, max_bytes=cache_max_bytes, ttl_seconds=cache_ttl_hours * 3600,
+            retention=cache_retention
         )
         self.raw = raw_sources
 

@@ -133,7 +133,7 @@ class TaskQcCounts(BaseModel):
     awaiting_slice: int = Field(
         default=0,
         ge=0,
-        description="Recordings awaiting slice submission before automatic quality checks.",
+        description="Recordings awaiting slice submission; new recordings pass quality checks first.",
     )
     waiting: int = Field(ge=0)
     passed: int = Field(ge=0)

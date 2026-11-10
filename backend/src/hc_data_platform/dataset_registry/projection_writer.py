@@ -866,6 +866,7 @@ class DatasetProjectionWriter:
         expected_frames = math.ceil(
             (alignment.end_ns - alignment.start_ns) * Fraction(str(frequency_hz)) / 10**9
         )
+        first_source_ns = alignment.start_ns
         source = package.document("hc/source.json")
         if source.get("mcap", {}).get("format") in {"native-mcap-recording/3", "native-mcap-recording/4"}:
             # MCAP acquisition times are irregular. Verify the committed source
@@ -877,6 +878,9 @@ class DatasetProjectionWriter:
             ):
                 raise DatasetIngestProjectionConflict("package source acquisition timeline is invalid")
             expected_frames = len(stamps)
+            # Manual slice boundaries can fall between acquisitions. Both dense rows
+            # and the pre-filter archive begin at the first sample inside the window.
+            first_source_ns = stamps[0]
         if info.get('hc.training_policy') == 'drop_invalid_rows_preserve_source_time/v1':
             from hc_data_platform.episode_store.validation import parquet_rows
             with package.file('hc/recording/aligned_rows.parquet') as path:
@@ -884,9 +888,9 @@ class DatasetProjectionWriter:
             coherent = (info.get('hc.source_frame_count', info['hc.media_frame_count']) == expected_frames
                         and 0 < ready.step_count <= expected_frames
                         and first.timestamp_ns == info['hc.time_origin_ns']
-                        and archive_first['hc.timestamp_ns'] == alignment.start_ns)
+                        and archive_first['hc.timestamp_ns'] == first_source_ns)
         else:
-            coherent = first.timestamp_ns == alignment.start_ns and ready.step_count == expected_frames
+            coherent = first.timestamp_ns == first_source_ns and ready.step_count == expected_frames
         if not coherent:
             raise DatasetIngestProjectionConflict("package and projected alignment window differ")
         streams = []

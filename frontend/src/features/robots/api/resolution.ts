@@ -28,13 +28,26 @@ export const resolutionPlanSchema = z.object({
   targets: z.array(
     z.object({ id: z.string(), name: z.string(), serial_no: z.string() }),
   ),
+  sources: z
+    .array(
+      z.object({
+        project_id: z.string(),
+        region_code: z.string(),
+        source_id: z.string(),
+        version: z.number().nullish(),
+        name: z.string(),
+        can_delete: z.boolean(),
+      }),
+    )
+    .default([]),
   tasks: z.array(taskSchema),
   can_clean_config: z.boolean(),
   config_count: z.number(),
   cleanup_reason: z.string().nullable(),
 });
 export type ResolutionIntent = {
-  action: "TRANSFER" | "DELETE_TASK" | "CLEAN_CONFIG";
+  action: "TRANSFER" | "DELETE_TASK" | "CLEAN_CONFIG" | "DELETE_SOURCE";
+  source?: { project_id: string; region_code: string; source_id: string };
   revision: string;
   target_robot_id?: string;
   project_id?: string;

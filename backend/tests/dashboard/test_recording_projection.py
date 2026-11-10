@@ -17,7 +17,7 @@ from tests.quality.test_router import _report
 NOW = datetime(2026, 10, 10, tzinfo=timezone.utc)
 
 
-def capture(*, status="READY_FOR_SLICING", episodes=(), state="COMMITTED"):
+def capture(*, status="READY_FOR_SLICING", episodes=(), state="COMMITTED", quality=None):
     return capture_from_row(
         (
             "u",
@@ -37,8 +37,32 @@ def capture(*, status="READY_FOR_SLICING", episodes=(), state="COMMITTED"):
             "CONTINUOUS",
             "rollout",
             "pkg",
+            None,
+            None,
+            {"status": quality} if quality else None,
+            None,
         )
     )
+
+
+@pytest.mark.parametrize(("state", "quality", "bucket"), [
+    ("PENDING_QC", None, "waiting"),
+    ("QC_RUNNING", None, "running"),
+    ("QC_FAILED", "REJECT", "isolated"),
+    ("READY_FOR_SLICING", "PASS", "succeeded"),
+])
+def test_unsliced_recordings_already_participate_in_quality(state, quality, bucket):
+    item = capture(status=state, quality=quality)
+    fact = recording_package(item)
+    stages = {stage.stage: stage for stage in _stage_counts((fact,))}
+    assert getattr(stages[TaskProcessingStage.AUTOMATIC_VALIDATION], bucket) == 1
+    assert item.episode_count == 0
+    assert not fact.lance_ready
+    if state == "READY_FOR_SLICING":
+        assert _package_main_state(fact) is TaskPackageMainState.AWAITING_SLICE
+    if state == "QC_FAILED":
+        assert capture_counts((item,)).failed_count == 1
+        assert _data_issues((fact,))[0].category == "QUALITY"
 
 
 def test_receipt_is_not_admission_and_qc_failure_is_visible_in_existing_dashboard():
@@ -224,3 +248,27 @@ def test_recording_annotation_mapping_keeps_tasks_separate_even_in_a_shared_data
         tasks, packages, captures, {}, selected_id, workflows=workflows
     )
     assert refreshed == packages
+
+def test_recording_commit_failure_reports_ingestion_stage_for_package_and_episode():
+    code = "EPISODE_PACKAGE_COMMIT_FAILED"
+    item = capture(status="SLICED", episodes=[{"status": "FAILED", "quality": "PASS", "error": code}])
+    episode = RecordingEpisodeWorkflow(processing_status="FAILED", error_code=code, failure_stage="episode_commit")
+    fact = recording_package(item, episodes=(episode,))
+    assert _package_main_state(fact) == TaskPackageMainState.LANCE_FAILED
+    assert _package_main_state(fact.episode_facts[0]) == TaskPackageMainState.LANCE_FAILED
+    assert _data_issues((fact,))[0].reason_code == code
+
+
+@pytest.mark.parametrize("error", [
+    'duplicate key value violates unique constraint "recording_upload_assets_object_key_key" DETAIL',
+    "MCAP_RECORDING_ASSET_CONFLICT",
+])
+def test_recording_asset_conflict_is_not_reported_as_bad_raw_or_failed_qc(error):
+    item = capture().model_copy(update={
+        "stage": "FAILED", "recording_id": None, "error_code": error, "qc_outcome": None,
+    })
+    issue, = _data_issues((recording_package(item),))
+    assert (issue.category, issue.label, issue.reason_code, issue.qc_status) == (
+        "TECHNICAL", "录制登记失败", "MCAP_RECORDING_ASSET_CONFLICT", None,
+    )
+    assert "质检尚未开始" in issue.description

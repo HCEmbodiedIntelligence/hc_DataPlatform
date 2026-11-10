@@ -42,7 +42,15 @@ def local_operator_client(username: str | None = None):
     if len(rows) != 1:
         raise RuntimeError("Specify --username for exactly one active platform administrator.")
     principal, password_hash, revision = rows[0]
-    repository = PostgresAccessRepository(lambda: psycopg.connect(dsn))
+    # Session admission expires old sessions for this account. Use the API's
+    # configured policy so a local command cannot revoke an otherwise valid login.
+    repository = PostgresAccessRepository.from_dsn(
+        dsn,
+        session_idle_ttl_seconds=settings.session_idle_ttl_seconds,
+        session_absolute_ttl_seconds=settings.session_absolute_ttl_seconds,
+        session_touch_interval_seconds=settings.session_touch_interval_seconds,
+        max_active_sessions=settings.max_active_sessions,
+    )
     token = AccessService.TOKEN_PREFIX + secrets.token_urlsafe(32)
     digest = AccessService.token_hash(token)
     request_id = "local-storage-" + secrets.token_hex(12)

@@ -1,3 +1,5 @@
+import { initialRows, parseRow } from "./rule-options";
+import { postprocessingRulesSchema } from "./contracts";
 import { robotConfigPath } from "./RobotProcessingLink";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,7 +16,7 @@ import {
 } from "./presentation";
 import { safeReturnTo, schemeLibraryPath, draftKey } from "./navigation";
 import { fixtureDocument } from "./fixtures.test-support";
-import { documentSchema } from "./contracts";
+import { documentSchema, mcapConfigSchema } from "./contracts";
 import { buildPageCatalog } from "../../shared/routing/page-descriptor";
 import { page as schemes } from "../../pages/p24-capture-schemes/routes";
 import { page as models } from "../../pages/p14-robot-models/routes";
@@ -123,6 +125,24 @@ it("builds the processing terminal MCAP contract with separate layouts at 15 Hz"
   expect(config.fps).toBe(15);
 });
 
+it.each([
+  {},
+  { "head.calibration": "/camera/info" },
+  { "head.extrinsics": "/tf_static" },
+  { "head.calibration": "/camera/info", "head.extrinsics": "/tf_static" },
+])("preserves the configured subset of camera metadata sources %j", (sources) => {
+  const config = { ...mcapConfiguration(fixtureDocument()), metadata_sources: sources };
+  expect(mcapConfigSchema.parse(config).metadata_sources).toEqual(sources);
+});
+
+it.each([{ unknown: "/topic" }, { "head.extrinsics": 42 }])(
+  "rejects invalid camera metadata sources %j",
+  (sources) => {
+    const config = { ...mcapConfiguration(fixtureDocument()), metadata_sources: sources };
+    expect(mcapConfigSchema.safeParse(config).success).toBe(false);
+  },
+);
+
 it("rejects internal traversal to an unregistered return target", () => {
   expect(safeReturnTo("/settings/robot-instances/../../unknown")).toBeNull();
 });
@@ -225,3 +245,22 @@ it.each(["MCAP", "CAPTURE_BUNDLE"] as const)(
     });
   },
 );
+
+it("round-trips the optional hand rule without enabling it in old plans", () => {
+  const cfg = mcapConfiguration(fixtureDocument());
+  const mapped = {
+    ...cfg,
+    numeric_sources: {
+      "action.hand.left": {
+        topic: "/action/left_hand/joint_states", fields: ["position.L_ban"], message_type: "sensor_msgs/msg/JointState",
+      },
+    },
+  };
+  const rows = initialRows(mapped);
+  expect(rows.find((row) => row.kind === "forward_fill_hands")?.enabled).toBe(false);
+  const rules = rows.map((row) => parseRow({ ...row, enabled: row.kind === "forward_fill_hands" }, mapped));
+  const saved = postprocessingRulesSchema.parse({version: 2, rules});
+  const hand = initialRows({...mapped, postprocessing_rules: saved}).find((row) => row.kind === "forward_fill_hands")!;
+  expect(hand.enabled).toBe(true);
+  expect(() => parseRow(hand, {...cfg, numeric_sources: {}})).toThrow("映射左手或右手指令");
+});

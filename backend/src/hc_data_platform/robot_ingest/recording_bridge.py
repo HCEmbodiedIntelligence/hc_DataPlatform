@@ -445,7 +445,7 @@ def result(connections, upload):
         "upload_id": upload.upload_id,
         "raw_source_id": upload.raw_source_id,
         "recording_id": row[0] if row else None,
-        "status": ("SLICED" if row[1] == "SLICED" else "AWAITING_SLICE")
+        "status": ("AWAITING_SLICE" if row[1] == "READY_FOR_SLICING" else row[1])
         if row
         else "FAILED"
         if failed

@@ -20,6 +20,7 @@ function recording(
 ): ContinuousRecording {
   return {
     schema_version: "continuous-recording/v2",
+  ingest_mode: "SLICE_FIRST",
     default_task_labels: [],
     scope: {
       organization_id: "org_fx_01",

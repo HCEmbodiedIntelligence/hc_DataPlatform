@@ -195,6 +195,7 @@ describe("P03 serial data upload page", () => {
       ),
     ]);
     const dialog = await screen.findByRole("dialog", { name: "确认上传" });
+    await user.click(within(dialog).getByRole("radio", { name: "仅存档，稍后处理" }));
     await user.click(
       within(dialog).getByRole("combobox", { name: "目标数据集 ID" }),
     );
@@ -220,7 +221,7 @@ describe("P03 serial data upload page", () => {
     expect(screen.getByRole("heading", { name: "数据上传" })).toBeVisible();
     expect(screen.getByRole("tab", { name: "新建上传" })).toBeVisible();
     expect(
-      screen.getByRole("heading", { name: "选择采集文件夹" }),
+      screen.getByRole("heading", { name: "选择采集数据" }),
     ).toBeVisible();
     expect(screen.getByText("上传队列为空")).toBeVisible();
     expect(screen.queryByText("暂无上传记录")).toBeNull();
@@ -248,7 +249,7 @@ describe("P03 serial data upload page", () => {
   it("starts with only the folder gate and no precheck or processing progress", () => {
     renderPage();
     expect(
-      screen.getByRole("heading", { name: "选择采集文件夹" }),
+      screen.getByRole("heading", { name: "选择采集数据" }),
     ).toBeVisible();
     expect(screen.getByText("上传队列为空")).toBeVisible();
     expect(
@@ -269,7 +270,7 @@ describe("P03 serial data upload page", () => {
     expect(screen.getByText("上传操作未完成")).toBeVisible();
     expect(screen.getByRole("button", { name: "重新恢复队列" })).toBeEnabled();
     expect(
-      screen.queryByRole("heading", { name: "选择采集文件夹" }),
+      screen.queryByRole("heading", { name: "选择采集数据" }),
     ).not.toBeInTheDocument();
   });
 
@@ -300,7 +301,7 @@ describe("P03 serial data upload page", () => {
     await user.click(within(dialog).getByRole("button", { name: /取\s*消/u }));
 
     expect(
-      screen.getByRole("heading", { name: "选择采集文件夹" }),
+      screen.getByRole("heading", { name: "选择采集数据" }),
     ).toBeVisible();
     expect(preflightMock).not.toHaveBeenCalled();
     expect(createSessionMock).not.toHaveBeenCalled();
@@ -358,6 +359,7 @@ describe("P03 serial data upload page", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "确认上传" });
     expect(within(dialog).queryByText("MANIFEST_FILE_MISSING")).toBeNull();
+    await user.click(within(dialog).getByRole("radio", { name: "仅存档，稍后处理" }));
     await user.click(
       within(dialog).getByRole("combobox", { name: "目标数据集 ID" }),
     );

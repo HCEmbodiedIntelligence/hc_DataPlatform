@@ -84,7 +84,8 @@
   margin-bottom: 1px;
 }
 
-.recoveryBanner button {
+.recoveryBanner button,
+.operationError button {
   min-width: 56px;
   min-height: 30px;
   padding: 4px 10px;
@@ -453,6 +454,23 @@
   border-color: var(--hc-color-success);
   color: var(--hc-color-surface);
   background: var(--hc-color-success);
+}
+
+/* Solid actions keep their contrast and geometry under the pointer. */
+.actionTooltipTarget > .createAction:hover:not(:disabled) {
+  color: var(--hc-color-surface);
+  background: var(--hc-color-primary-active);
+}
+.actionTooltipTarget > .submitAction:hover:not(:disabled) {
+  color: var(--hc-color-surface);
+  background: color-mix(in srgb, var(--hc-color-warning) 88%, black);
+}
+.actionTooltipTarget > .approveAction:hover:not(:disabled) {
+  color: var(--hc-color-surface);
+  background: color-mix(in srgb, var(--hc-color-success) 88%, black);
+}
+.actionTooltip {
+  pointer-events: none;
 }
 
 .restoreSelect select {
@@ -2319,4 +2337,16 @@
     input {
     font-size: 12px;
   }
+}
+
+.episodeOutcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.episodeOutcome :global(.ant-select) {
+  min-width: 132px;
 }

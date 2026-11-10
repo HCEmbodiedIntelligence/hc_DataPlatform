@@ -42,11 +42,29 @@ LeRobot cache uses separate pinned entries per source/episode, so concurrent
 episodes cannot delete each other's local chunks. Cache capacity and eviction
 still apply; immutable Raw objects are never evicted.
 
-The original local 8088 deployment runs four worker processes, each with one main
-activity slot and one media slot. This allows Python parsing to use multiple CPU
-cores. Media encoding has a shared four-slot limit and two FFmpeg threads per
-encoder. Publishing prepared media does not consume an encoder slot. Other
-deployments can choose worker replicas and these limits independently.
+The current local 8088 deployment runs four worker processes, each with one main
+activity slot, one media slot and two control slots. Continuous-recording state
+updates, annotation-task creation and staging cleanup use a separate
+`<main-task-queue>-control` queue, so package generation cannot occupy their
+activity capacity. The workflow change is patched for history replay; main
+workers retain the control activity registrations to drain previously scheduled
+work. `HC_WORKER_CONTROL_MAX_CONCURRENT_ACTIVITIES` bounds control concurrency
+independently in each process. The local worker runs directly instead of under
+the development file watcher, whose five-second kill deadline interrupted long
+commits. Apply worker code updates with `deploy/local/compose.sh current up -d
+--no-deps worker` after verification.
+
+Media encoding has a shared four-slot limit and two FFmpeg threads per encoder.
+Publishing prepared media does not consume an encoder slot. Other deployments
+can choose worker replicas and these limits independently. The local workers
+allow five minutes for in-flight activities to drain during an update.
+
+New continuous Episode plans use `continuous-episode-package/5` and freeze
+`rgb_statistics=uint8-histogram/1` into their immutable metadata. RGB statistics
+still inspect every decoded pixel, using integer channel histograms instead of
+several full-frame float64 reductions. Existing plans retain the original
+statistics algorithm and package identity on retries. Depth values, videos,
+integrity checks and the existing verified-package validation cache are unchanged.
 
 ## Recording boundaries and interior gaps
 

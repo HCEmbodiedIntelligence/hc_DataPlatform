@@ -72,7 +72,11 @@ def validate_target(
     connection_factory: Callable[[], Any] | None = None,
 ) -> None:
     factory = connection_factory or connections()
-    if manifest.processing_mode == "STORE_ONLY":
+    if (
+        manifest.processing_mode == "STORE_ONLY"
+        and not manifest.collection_task_id
+        and not manifest.robot_id
+    ):
         with factory() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """SELECT 1 FROM dataset_registry.datasets

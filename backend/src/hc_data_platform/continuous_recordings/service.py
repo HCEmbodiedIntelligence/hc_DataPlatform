@@ -69,6 +69,7 @@ from .models import (
     SliceRevisionStatus,
     absolute_recording_time,
     recording_duration_ns,
+    resolve_task_labels,
 )
 from .previews import is_depth, read_preview
 from .raw_sensor import (
@@ -449,6 +450,8 @@ class ContinuousRecordingService:
         now = utc_now()
         recording = ContinuousRecording(
             schema_version="continuous-recording/v2",
+            status=RecordingStatus.PENDING_QC,
+            ingest_mode="WHOLE_RECORDING",
             scope=scope,
             recording_id=command.recording_id,
             recording_upload_id=upload_id,
@@ -484,6 +487,14 @@ class ContinuousRecordingService:
             upload.model_copy(update={"status": RecordingUploadStatus.COMMITTED, "updated_at": now})
         )
         return self._envelope(persisted)
+
+    def retry_quality(self, *, auth, organization_id, project_id, region_code,
+                      recording_id, request_id):
+        scope = self._authorize(
+            auth, organization_id=organization_id, project_id=project_id,
+            region_code=region_code, capabilities=("upload.manage",),
+        )
+        return self._envelope(self._repository.retry_quality(scope, recording_id, request_id))
 
     def register(
         self,
@@ -624,6 +635,7 @@ class ContinuousRecordingService:
                 title="Recording slices are finalized",
                 detail="Finalized episode slices are immutable.",
             )
+        self._require_quality(recording)
         self._require_etag(recording, if_match)
         revision_number = recording.current_revision + 1
         revision = self._build_revision(
@@ -679,6 +691,7 @@ class ContinuousRecordingService:
                 title="Recording slices are finalized",
                 detail="A model cannot replace finalized Episode windows.",
             )
+        self._require_quality(recording)
         self._require_etag(recording, if_match)
         revision_number = recording.current_revision + 1
         revision = self._build_revision(
@@ -738,7 +751,18 @@ class ContinuousRecordingService:
             return SliceRevisionEnvelope(
                 recording=self._repository.present((recording,))[0], revision=finalized
             )
+        self._require_quality(recording)
         self._require_etag(recording, if_match)
+        if expected_draft_revision == 0:
+            reused = self._repository.reuse_slices(
+                scope, recording_id, self._storage, if_match, actor_id=actor_id, request_id=request_id,
+            )
+            if reused is None:
+                raise problem(status=409, code="RECORDING_CONFIRMED_SLICES_UNAVAILABLE",
+                              title="没有可沿用的已确认切片",
+                              detail="当前录制已有草稿，或没有同一原件和时间轴的已确认切片。")
+            updated, revision = reused
+            return SliceRevisionEnvelope(recording=self._repository.present((updated,))[0], revision=revision)
         if expected_draft_revision != recording.current_revision:
             raise problem(
                 status=409,
@@ -762,16 +786,26 @@ class ContinuousRecordingService:
                 detail="At least one episode interval is required before finalization.",
             )
         revision_number = recording.current_revision + 1
-        finalized_slices = tuple(
-            item.model_copy(update={"revision": revision_number}) for item in draft.slices
-        )
+        defaults = self._repository.present((recording,))[0].default_task_labels
+        finalized_slices = []
+        for item in draft.slices:
+            # Old drafts can predate description tags. Freeze their defaults at
+            # finalization, preserving edits and intentional clears from slicing.
+            labels = resolve_task_labels(item.task_labels, item.task_label, defaults)
+            finalized_slices.append(
+                item.model_copy(update={
+                    "revision": revision_number,
+                    "task_labels": labels,
+                    "task_label": next(iter(labels), None),
+                })
+            )
         now = utc_now()
         revision = RecordingSliceRevision(
             scope=scope,
             recording_id=recording_id,
             revision=revision_number,
             status=SliceRevisionStatus.FINALIZED,
-            slices=finalized_slices,
+            slices=tuple(finalized_slices),
             authoring_mode=draft.authoring_mode,
             model=draft.model,
             created_by=actor_id,
@@ -954,17 +988,26 @@ class ContinuousRecordingService:
         depth = is_depth(camera)
         selected_preview = any(a.manifest.path == "source/frames.jsonl" for a in assets)
         preview = read_preview(self._storage, upload, asset, assets) if depth or selected_preview else None
+        if (depth or selected_preview) and preview is None:
+            from .preview_cache import restore_preview
+            restore_preview(self._storage, upload, asset, assets,
+                getattr(self._assets, "_connection_factory", None))
+            preview = read_preview(self._storage, upload, asset, assets)
         selected_preview = selected_preview and preview is not None
         if depth and preview is None:
             # Historical recording views stay available until a versioned
             # selected preview is published. They retain their original label.
             preview = read_preview(self._storage, upload, asset, assets, selected=False)
+        playback = preview
+        if playback is None and not depth:
+            from .preview_cache import cache_original_video
+            playback = cache_original_video(self._storage, upload, asset, assets)
         return {
             "modality": "depth" if depth else "rgb",
             "preview_status": "UNAVAILABLE" if depth and not preview else "READY",
             "media_type": "video/mp4" if preview else asset.manifest.media_type,
             "source_url": self._storage.presign_read(
-                preview or asset.object_key, self._preview_ttl
+                playback or asset.object_key, self._preview_ttl
             ),
             "codec": "h264" if preview else camera.codec,
             "materialization": (("PROCESSED_PREVIEW_TIME_WINDOW" if episode else "PROCESSED_PREVIEW")
@@ -1224,10 +1267,7 @@ class ContinuousRecordingService:
             )
         defaults = self._repository.present((recording,))[0].default_task_labels
         labels_by_episode = {
-            item.episode_id: tuple(dict.fromkeys(
-                item.task_labels if item.task_labels is not None
-                else (item.task_label,) if item.task_label else defaults
-            ))
+            item.episode_id: resolve_task_labels(item.task_labels, item.task_label, defaults)
             for item in ordered
         }
         slices = tuple(
@@ -1272,9 +1312,13 @@ class ContinuousRecordingService:
                 recording.scope, recording.recording_id, recording.current_revision
             )
         )
+        from .slice_reuse import eligible
+
         return ContinuousRecordingEnvelope(
             data=self._repository.present((recording,))[0],
             current_slice_revision=revision,
+            reusable_slices=self._repository.reusable_slices(recording, self._storage)
+            if eligible(recording) else None,
         )
 
     def _require_recording(self, scope: RecordingScope, recording_id: str) -> ContinuousRecording:
@@ -1338,6 +1382,22 @@ class ContinuousRecordingService:
             )
             for number in part_numbers
         )
+
+    @staticmethod
+    def _require_quality(recording: ContinuousRecording) -> None:
+        if recording.ingest_mode == "WHOLE_RECORDING":
+            raise problem(
+                status=409, code="RECORDING_INGEST_FIRST",
+                title="整段录制自动入库",
+                detail="请等待整段入库完成，再进入切片与标注工作台划分区间。",
+            )
+        if recording.status is not RecordingStatus.READY_FOR_SLICING:
+            raise problem(
+                status=409,
+                code="RECORDING_QUALITY_NOT_PASSED",
+                title="录制尚未通过质检",
+                detail="上传完成后会自动检查整段录制，通过后才能创建和提交切片。",
+            )
 
     @staticmethod
     def _require_etag(recording: ContinuousRecording, if_match: str) -> None:

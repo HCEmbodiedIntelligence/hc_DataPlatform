@@ -22,7 +22,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 function mount(
-  options: { empty?: boolean; approved?: boolean; error?: boolean } = {},
+  options: { outcome?: "success" | "fail"; empty?: boolean; approved?: boolean; error?: boolean } = {},
 ) {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
@@ -47,6 +47,7 @@ function mount(
     },
   });
   const current = f.annotation.revision;
+  current.episode_outcome = options.outcome ?? "success";
   f.annotation.history.task.current_revision = current.revision;
   f.annotation.history.revisions.unshift({
     ...current,
@@ -58,7 +59,8 @@ function mount(
     ...f.annotation.history,
     task: {
       ...f.annotation.history.task,
-      approved_revision: options.approved
+      status: options.approved === false ? "SUBMITTED" : "APPROVED",
+      approved_revision: options.approved !== false
         ? current.revision
         : current.revision - 1,
     },
@@ -81,13 +83,13 @@ function mount(
   );
   return { f, onChange, client };
 }
-it("automatically uses current unreviewed annotations without requiring segments or confirmation", async () => {
+it("automatically uses current approved annotations without requiring segments or confirmation", async () => {
   const { f, onChange } = mount();
   await waitFor(() =>
     expect(onChange).toHaveBeenLastCalledWith({
       task_id: f.annotation.task.task_id,
       revision: f.annotation.revision.revision,
-      allow_unreviewed: true,
+      allow_unreviewed: false,
       track: {
         format: "hc-subtask-track/1",
         track_id: "task-segments",
@@ -105,11 +107,12 @@ it("automatically uses current unreviewed annotations without requiring segments
   expect(
     screen.queryByRole("checkbox", { name: "包含尚未审核的当前标注" }),
   ).not.toBeInTheDocument();
-  expect(screen.getByText("未审核 · 将按当前内容导出")).toBeVisible();
+  expect(screen.getByText("已审核")).toBeVisible();
   expect(
     screen.getByText("任务分段（可选）").closest("details"),
   ).not.toHaveAttribute("open");
   await userEvent.setup().click(screen.getByText("任务分段（可选）"));
+  expect(screen.getByText(/每条标签生成独立 Episode/)).toBeVisible();
   expect(screen.queryByText(/旧标注不应出现/)).not.toBeInTheDocument();
 });
 it("updates optional segments immediately and blocks overlapping ranges until cleared", async () => {
@@ -120,7 +123,7 @@ it("updates optional segments immediately and blocks overlapping ranges until cl
   await waitFor(() =>
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        allow_unreviewed: true,
+        allow_unreviewed: false,
         track: expect.objectContaining({ annotation_ids: ["first"] }),
       }),
     ),
@@ -156,7 +159,8 @@ it("blocks export on a read error and can retry", async () => {
   expect(await screen.findByText("标注读取失败")).toBeVisible();
   expect(onChange).toHaveBeenLastCalledWith(null);
   vi.mocked(loadCollectionAnnotationHistory).mockResolvedValue(
-    f.annotation.history,
+    { ...f.annotation.history, task: { ...f.annotation.history.task,
+      status: "APPROVED", approved_revision: f.annotation.revision.revision } },
   );
   await userEvent
     .setup()
@@ -177,7 +181,7 @@ it("drops old segment selections when the current saved revision changes", async
   const next = f.annotation.revision.revision + 1;
   vi.mocked(loadCollectionAnnotationHistory).mockResolvedValue({
     ...f.annotation.history,
-    task: { ...f.annotation.history.task, current_revision: next },
+    task: { ...f.annotation.history.task, status: "APPROVED", current_revision: next, approved_revision: next },
     revisions: [{ ...f.annotation.revision, revision: next, tags: [] }],
   });
   await client.invalidateQueries({ queryKey: ["batch-annotation-history"] });
@@ -189,4 +193,31 @@ it("drops old segment selections when the current saved revision changes", async
       }),
     ),
   );
+});
+it("blocks a submitted or reopened revision even when saved tags exist", async () => {
+  const { onChange } = mount({ approved: false });
+  expect(await screen.findByText("此数据尚未完成标注审核，请完成审核后重新选择。")).toBeVisible();
+  expect(onChange).toHaveBeenLastCalledWith(null);
+  expect(onChange.mock.calls.every(([selection]) => selection === null)).toBe(true);
+});
+
+it("invalidates the export selection when approval is removed after selection", async () => {
+  const { f, onChange, client } = mount();
+  await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ allow_unreviewed: false })));
+  vi.mocked(loadCollectionAnnotationHistory).mockResolvedValue({
+    ...f.annotation.history,
+    task: { ...f.annotation.history.task, status: "DRAFT", approved_revision: null },
+  });
+  await client.invalidateQueries({ queryKey: ["batch-annotation-history"] });
+  await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(null));
+});
+
+it.each(["success", "fail"] as const)("exports the episode result %s without requiring Tags", async outcome => {
+  const { onChange, f } = mount({ empty: true, outcome });
+  const label = outcome === "success" ? "成功（success）" : "失败（fail）";
+  expect(await screen.findByText(`Episode 结果：${label}`)).toBeVisible();
+  await waitFor(() => expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
+    revision: f.annotation.revision.revision,
+    track: expect.objectContaining({ annotation_ids: [] }),
+  })));
 });

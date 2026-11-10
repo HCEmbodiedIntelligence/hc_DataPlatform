@@ -25,7 +25,11 @@ SCOPE = dict(organization_id="org-a", project_id="project-a", region_code="cn-hz
 
 
 def store_source(
-    bodies: dict[str, bytes], *, raw_sources: RawSourceRepositoryPort | None = None, **fields: Any
+    bodies: dict[str, bytes],
+    *,
+    raw_sources: RawSourceRepositoryPort | None = None,
+    capture_plans=None,
+    **fields: Any,
 ) -> tuple[Any, Any, Any]:
     auth = AuthContext(
         subject_id="uploader",
@@ -36,7 +40,7 @@ def store_source(
         organization_scope_triples=frozenset({("org-a", "project-a", "cn-hz")}),
     )
     storage = InMemoryObjectStorage()
-    service = LeRobotWebUploadService(storage, raw_sources=raw_sources)
+    service = LeRobotWebUploadService(storage, raw_sources=raw_sources, capture_plans=capture_plans)
     manifest = CreateLeRobotImportV1(
         dataset_id="dataset-a",
         **fields,
@@ -76,6 +80,16 @@ def store_source(
         import_id=grant.import_id,
         command=CommitLeRobotImportV1(manifest=manifest),
     )
+    if manifest.processing_mode == "PROCESS" and manifest.source_format == "MCAP":
+        assert (
+            service.commit(
+                auth=auth,
+                **SCOPE,
+                import_id=grant.import_id,
+                command=CommitLeRobotImportV1(manifest=manifest),
+            )
+            == accepted
+        )
     assert accepted.status == "RAW_COMMITTED"
     assert accepted.episode_task_count == 0
     assert not any(path.startswith("derived/") for path in storage.objects)
@@ -85,7 +99,9 @@ def store_source(
         assert file.sha256 == hashlib.sha256(bodies[file.path]).hexdigest()
         assert storage.objects[f"{raw.storage_prefix}/{file.path}"] == bodies[file.path]
     job = service.raw_sources.get_job(**SCOPE, raw_source_id=grant.import_id)
-    assert job is not None and job.workflow_id is None and job.status.value == "SUCCEEDED"
+    assert job is not None
+    if manifest.processing_mode == "STORE_ONLY":
+        assert job.workflow_id is None and job.status.value == "SUCCEEDED"
     return storage, browser, raw
 
 

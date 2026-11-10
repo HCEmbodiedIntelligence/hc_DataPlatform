@@ -23,6 +23,7 @@ def test_p14_runtime_openapi_has_real_asset_transfers_and_no_product_501() -> No
     robot_model_paths = {path for path in paths if "/robot-model" in path and path.startswith(root)}
     assert robot_model_paths == {
         f"{root}/robot-models",
+        f"{root}/robot-models/{{model_id}}",
         f"{root}/robot-model-versions/{{version_id}}",
         f"{root}/robot-model-versions/{{version_id}}:discard-import",
         f"{root}/robot-model-versions/{{version_id}}:create-draft",

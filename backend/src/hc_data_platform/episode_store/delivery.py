@@ -22,6 +22,7 @@ from .collection_delivery_models import CollectionDeliveryPlan, EpisodeDeliveryC
 from .delivery_inventory import inventory_document
 from .delivery_models import EpisodeDeliveryDownload, EpisodeDeliveryMember, EpisodeDeliveryPlan
 from .delivery_repository import EpisodeDeliveryBusy, failure, public_job, scope_key
+from .download_names import episode_download_name
 from .errors import PackageConflict
 from .models import canonical, digest
 
@@ -149,7 +150,9 @@ class EpisodeDeliveryService:
             sum(m.byte_count for m in plan.members) + len(inventory_document(plan)),
         )
         if row["status"] == "READY":
-            self._verify_artifact(row)
+            from .delivery_cache import cache_for
+            if cache_for(self) is None or self.storage.head(row["artifact_key"]) is not None:
+                self._verify_artifact(row)
         return public_job(row)
 
     def request_collection(self, body, key, auth):
@@ -162,11 +165,27 @@ class EpisodeDeliveryService:
         )
         self._authorize_plan(public_job(row).plan, auth)
         if row["status"] == "READY":
-            self._verify_artifact(row)
+            from .delivery_cache import cache_for
+            if cache_for(self) is None or self.storage.head(row["artifact_key"]) is not None:
+                self._verify_artifact(row)
         return public_job(row)
 
-    def candidates(self, dataset_id, auth, *, collection_version_id=None, offset=0, limit=25):
+    def candidates(
+        self,
+        dataset_id,
+        auth,
+        *,
+        collection_version_id=None,
+        offset=0,
+        limit=25,
+        data_stage="dataset",
+    ):
         self.authorize(auth)
+        if data_stage not in {"dataset", "annotated"}:
+            raise ValueError("invalid candidate data stage")
+        if data_stage == "annotated":
+            organization, project, _ = scope_key()
+            auth.require_capability("annotation_task.read", project, organization)
         if offset < 0 or not 1 <= limit <= 100:
             raise ValueError("invalid candidate page")
         snapshot = (
@@ -184,14 +203,22 @@ class EpisodeDeliveryService:
                 legacy_episode_count=0,
                 next_offset=None,
             )
-        entries = [e for e in snapshot.episodes if e.storage_format == "lerobot_v3"]
+        episodes = snapshot.episodes
+        if data_stage == "annotated":
+            approved = {
+                data.data_version_id: data
+                for data in self.repository.approved_data_versions(dataset_id)
+            }
+            # Bind approval to the exact data version, before counting or paginating.
+            episodes = tuple(e for e in episodes if approved.get(e.data_version_id) == e)
+        entries = [e for e in episodes if e.storage_format == "lerobot_v3"]
         return EpisodeDeliveryCandidates(
             dataset_id=dataset_id,
             collection_version_id=snapshot.collection_version_id,
             version=snapshot.version,
             items=tuple(entries[offset : offset + limit]),
             total=len(entries),
-            legacy_episode_count=len(snapshot.episodes) - len(entries),
+            legacy_episode_count=len(episodes) - len(entries),
             next_offset=offset + limit if offset + limit < len(entries) else None,
         )
 
@@ -239,17 +266,30 @@ class EpisodeDeliveryService:
         self._authorize_plan(public_job(row).plan, auth)
         if row["status"] != "READY":
             raise failure("NOT_READY", "Wait for packaging or retry a failed delivery.")
+        from .delivery_cache import ensure_cached
+
+        ensure_cached(self, row)
         self._verify_artifact(row)
         plan = public_job(row).plan
-        name = (
-            f"lerobot-collection-{plan.modalities}"
-            if isinstance(plan, CollectionDeliveryPlan)
-            else "episode"
-            if len(plan.members) == 1
-            else "independent-episodes"
+        if isinstance(plan, CollectionDeliveryPlan):
+            from .export_formats import from_archive
+
+            format_name = from_archive(plan.archive_format).name
+            label = {
+                "lerobot": "LeRobot", "holobrain": "HoloBrain",
+                "mcap": "MCAP", "original": "Original",
+            }.get(format_name, format_name)
+            variant = f"{label}_{plan.modalities.upper()}"
+        else:
+            variant = "LeRobot" if len(plan.members) == 1 else "LeRobot_batch"
+        name = episode_download_name(
+            self.repository,
+            (member.data for member in plan.members),
+            exported_at=row["updated_at"],  # Completion time stays fixed on cached downloads.
+            variant=variant,
         )
         url = self.storage.presign_read(
-            row["artifact_key"], 300, download_name=f"{name}-{job_id}.zip"
+            row["artifact_key"], 300, download_name=name
         )
         self.repository.audit_download(row, auth.subject_id)
         return EpisodeDeliveryDownload(

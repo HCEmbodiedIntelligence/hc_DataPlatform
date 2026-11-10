@@ -102,6 +102,7 @@ def files(target):
                 ),
             ),
             tags=tags,
+            episode_outcome="fail",
             expected_revision=0,
             if_match=claimed.etag,
             client_mutation_id="save",

@@ -35,6 +35,8 @@ def build_oss_bucket(
     secret_key: str,
     connect_timeout: float | None = None,
     is_cname: bool | None = None,
+    key_prefix: str = "",
+    key_layout=None,
 ) -> Any:
     """Build an ``oss2.Bucket`` without importing the optional SDK at module load."""
 
@@ -45,7 +47,10 @@ def build_oss_bucket(
         options["connect_timeout"] = connect_timeout
     hostname = (urlparse(endpoint).hostname or "").rstrip(".").lower()
     options["is_cname"] = not hostname.endswith(".aliyuncs.com") if is_cname is None else is_cname
-    return oss2.Bucket(auth, endpoint, bucket, **options)
+    result = oss2.Bucket(auth, endpoint, bucket, **options)
+    from .oss_prefix import PrefixedOssBucket
+
+    return PrefixedOssBucket(result, key_prefix, key_layout=key_layout)
 
 
 class OssBotoCompatClient:
@@ -69,7 +74,7 @@ class OssBotoCompatClient:
     def head_object(self, **kwargs: Any) -> dict[str, object]:
         key = self._arguments(kwargs)
         try:
-            result = self._bucket.get_object_meta(key)
+            result = self._bucket.head_object(key)
         except Exception as exc:
             _raise_compatible(exc)
         headers = getattr(result, "headers", {})

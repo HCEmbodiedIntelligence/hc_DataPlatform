@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,6 +7,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { request } from "../../../../shared/api/http-client";
 import { LeRobotProcessingRecords } from "./LeRobotProcessingRecords";
+
+expect.extend(matchers);
 
 vi.mock("../../../../shared/api/http-client", () => ({ request: vi.fn() }));
 vi.mock("../../../../shared/auth/use-capabilities", () => ({
@@ -20,6 +22,7 @@ vi.mock("./ProcessingLabels", () => ({
   ProcessingLabels: () => null,
 }));
 let linked = true;
+let fileCount = 1;
 const scope = {
   organizationId: "org",
   projectId: "project",
@@ -27,6 +30,7 @@ const scope = {
 };
 beforeEach(() => {
   linked = true;
+  fileCount = 1;
   vi.mocked(request).mockReset();
   vi.mocked(request).mockImplementation(async (options) => {
     if (options.path.endsWith("/mcap-processing"))
@@ -34,17 +38,16 @@ beforeEach(() => {
         same_recording: linked
           ? { episode_id: "preserved", evidence: {} }
           : null,
-        files: [
-          {
-            processing_id: "old",
-            path: "simulation.mcap",
-            status: "FAILED",
-            error: "MCAP_REQUIRED_RGB_MISSING",
-            robot_id: "robot",
-            configuration: { state_topic: "/state" },
-            config_reference: null,
-          },
-        ],
+        files: Array.from({ length: fileCount }, (_, index) => ({
+          processing_id: "old-" + index,
+          path: `run/simulation-${index}.mcap`,
+          recording_id: "record-" + index,
+          status: "FAILED",
+          error: "MCAP_REQUIRED_RGB_MISSING",
+          robot_id: "robot",
+          configuration: { state_topic: "/state" },
+          config_reference: null,
+        })),
         history: [],
       };
     return [
@@ -97,24 +100,57 @@ it("presents the confirmed same-source receipt and keeps historical failure deta
   expect(
     screen.queryByText("MCAP_REQUIRED_RGB_MISSING"),
   ).not.toBeInTheDocument();
-  expect(screen.queryByText("缺少 observation.images.head（头部相机视频）")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("缺少 observation.images.head（头部相机视频）"),
+  ).not.toBeInTheDocument();
   expect(
     screen.getByRole("link", { name: "管理实例采集方案" }),
   ).toHaveAttribute("href", expect.stringContaining("robot=robot"));
   await user.click(screen.getByText("查看此前错误与当时配置"));
+  await user.click(
+    await screen.findByRole("button", { name: "run/simulation-0.mcap 详情" }),
+  );
   expect(await screen.findByText("MCAP_REQUIRED_RGB_MISSING")).toBeVisible();
-  expect(screen.getByRole("button", { name: "重试处理" })).toBeDisabled();
+  expect(
+    screen.queryByRole("button", { name: "重试处理" }),
+  ).not.toBeInTheDocument();
   expect(request).not.toHaveBeenCalledWith(
     expect.objectContaining({ method: "POST" }),
   );
 });
 it("retains retry controls for an unresolved ordinary failure", async () => {
   linked = false;
+  await userEvent.click(await screen.findByText("批次详情"));
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: "重试未完成处理" }),
     ).toBeEnabled(),
   );
   expect(screen.getByRole("button", { name: "准备录制 / 重试" })).toBeEnabled();
-  expect(screen.getByText("缺少 observation.images.head（头部相机视频）")).toBeVisible();
+  expect(
+    screen.getByText("缺少 observation.images.head（头部相机视频）"),
+  ).toBeVisible();
+});
+
+it("keeps the file list scannable and reveals technical details on demand", async () => {
+  linked = false;
+  fileCount = 6;
+  const user = userEvent.setup();
+  expect(await screen.findByText("simulation-0.mcap")).toBeVisible();
+  expect(
+    screen.getAllByRole("link", { name: "预览与切片" })[0],
+  ).toHaveAttribute("href", "/recordings/record-0/slice");
+  expect(
+    screen.queryByRole("button", { name: "查看原始通道" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("simulation-5.mcap")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "查看全部 6 个文件" }));
+  expect(screen.getByText("simulation-5.mcap")).toBeVisible();
+  await user.click(
+    screen.getByRole("button", { name: "run/simulation-0.mcap 详情" }),
+  );
+  expect(screen.getByText("run/simulation-0.mcap")).toBeVisible();
+  expect(screen.getByRole("button", { name: "查看原始通道" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "收起文件" }));
+  expect(screen.queryByText("simulation-5.mcap")).not.toBeInTheDocument();
 });

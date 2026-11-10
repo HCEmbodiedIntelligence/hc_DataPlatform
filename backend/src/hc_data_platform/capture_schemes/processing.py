@@ -112,9 +112,14 @@ def resolve_raw_snapshot(db: Any, scope: Scope, raw_source_id: str) -> Document:
     if saved and robot and robot[0] and saved[0] != robot[0]:
         return unresolved("CAPTURE_VERSION_MISMATCH", "同一 Raw 存在不同冻结快照")
     result = validate_snapshot(dict(snapshot), scope, raw)
-    if (
-        result.get("source") == "TASK_PLAN_UNRESOLVED"
-        and result.get("error") == "CAPTURE_FORMAT_UNSUPPORTED"
+    if result.get("source") == "TASK_PLAN_UNRESOLVED" and (
+        result.get("error") == "CAPTURE_FORMAT_UNSUPPORTED"
+        or (
+            result.get("error") == "CAPTURE_PLAN_REQUIRED"
+            and saved
+            and raw["collection_task_id"]
+            and raw["robot_id"]
+        )
     ):
         from .recovery import resolved_recovery
 

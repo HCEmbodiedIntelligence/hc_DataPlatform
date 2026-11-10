@@ -14,6 +14,7 @@ from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.security.audit import canonical_hash
 
 from .models import (
+    EpisodeOutcome,
     AnnotationRevision,
     AnnotationStatus,
     AnnotationTag,
@@ -48,6 +49,7 @@ class AutomaticAnnotationRequest:
     frame_selection: AutoAnnotationSamplingReference | None = None
     data_ref: DataVersionRef | None = None
     task_labels: tuple[str, ...] = ()
+    takeover_steps: tuple[tuple[int, int], ...] = ()
 
     def __post_init__(self) -> None:
         string_values = (
@@ -167,12 +169,29 @@ class AutomaticAnnotationTaskService:
                 label.strip() for label in request.task_labels if label.strip()
             ))
         )
+        if request.takeover_steps:
+            parent = tags[0] if tags else None
+            tags += tuple(
+                AnnotationTag(
+                    annotation_id=str(
+                        uuid5(NAMESPACE_URL, f"{request.task_id}:dagger:{start}:{end}")
+                    ),
+                    tag_id="dagger",
+                    label="dagger",
+                    parent_annotation_id=parent.annotation_id if parent else None,
+                    path=(*parent.path, "dagger") if parent else ("dagger",),
+                    start_step=start,
+                    end_step=end,
+                )
+                for start, end in request.takeover_steps
+            )
         content_hash = revision_content_hash(
             base_lance_version=request.lance_version,
             data_ref=request.data_ref,
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
             tags=tags,
+            episode_outcome=EpisodeOutcome.SUCCESS,
             operations=(),
         )
         revision = AnnotationRevision(
@@ -186,6 +205,7 @@ class AutomaticAnnotationTaskService:
             tag_schema_id=schema.schema_id,
             tag_schema_version=schema.version,
             tags=tags,
+            episode_outcome=EpisodeOutcome.SUCCESS,
             operations=(),
             content_hash=content_hash,
             created_at=now,

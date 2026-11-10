@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
-import "@testing-library/jest-dom/vitest";
+import * as matchers from "@testing-library/jest-dom/matchers";
 import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { RecordingProcessingDetails } from "./RecordingProcessingDetails";
 
+expect.extend(matchers);
+
 const { requestMock, taskMock } = vi.hoisted(() => ({
   requestMock: vi.fn(),
   taskMock: vi.fn(),
 }));
+vi.mock("../../shared/auth/use-capabilities", () => ({ useCapabilities: () => ({ has: () => true }) }));
 vi.mock("../../shared/api/http-client", () => ({ request: requestMock }));
 vi.mock("../collection-tasks/api", () => ({
   collectionTaskGateway: { detail: taskMock },
@@ -19,7 +22,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-function show(sourceFails = false, discarded = false) {
+function show(sourceFails = false, discarded = false, commitFailed = false) {
   requestMock.mockImplementation(async ({ path }: { path: string }) => {
     if (path.endsWith("/episodes"))
       return {
@@ -28,8 +31,9 @@ function show(sourceFails = false, discarded = false) {
             episode_id: "episode_0001",
             start_offset_ns: "700000000",
             end_offset_ns: "1700000000",
-            status: discarded ? "DISCARDED" : "QC_FAILED",
-            failure_code: discarded ? "ALIGNMENT_FAILED" : "QC_REJECTED",
+            status: discarded ? "DISCARDED" : commitFailed ? "FAILED" : "QC_FAILED",
+            failure_stage: commitFailed ? "episode_commit" : "qc",
+            failure_code: discarded ? "ALIGNMENT_FAILED" : commitFailed ? "EPISODE_PACKAGE_COMMIT_FAILED" : "QC_REJECTED",
             dispatch_error_code: discarded
               ? "INGEST_WORKFLOW_PLAN_BLOCKED"
               : null,
@@ -107,4 +111,11 @@ it("keeps deletion history without showing earlier processing and QC failures", 
   expect(screen.queryByText("ALIGNMENT_FAILED")).not.toBeInTheDocument();
   expect(screen.queryByText("处理尚未启动")).not.toBeInTheDocument();
   expect(screen.queryByText("等待处理配置")).not.toBeInTheDocument();
+});
+
+
+it("offers a commit retry for a finalized Episode with a registration failure", async () => {
+  show(false, false, true);
+  expect(await screen.findByRole("button", { name: "重试入库" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "重新质检并继续处理" })).not.toBeInTheDocument();
 });

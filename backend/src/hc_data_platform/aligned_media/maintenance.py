@@ -37,6 +37,7 @@ class MediaStagingSweeper:
         roots: tuple[Path, ...],
         *,
         ttl: timedelta,
+        retention=None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._roots = tuple(root.resolve() for root in roots)
@@ -45,27 +46,43 @@ class MediaStagingSweeper:
         if any(root == Path("/") or len(root.parts) < 3 for root in self._roots):
             raise ValueError("media staging roots must be explicit non-root directories")
         self._ttl = ttl
+        self._retention = retention
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def run_once(self) -> int:
-        cutoff = self._clock().timestamp() - self._ttl.total_seconds()
+        ttl = self._retention() if self._retention is not None else self._ttl
+        if ttl is None:
+            return 0
+        cutoff = self._clock().timestamp() - ttl.total_seconds()
         deleted = 0
         for root in self._roots:
             if not root.exists():
                 continue
             for candidate in root.iterdir():
                 try:
-                    if candidate.stat(follow_symlinks=False).st_mtime > cutoff:
+                    if candidate.name == '.locks':
                         continue
-                    if candidate.is_symlink() or candidate.is_file():
-                        candidate.unlink()
-                    elif candidate.is_dir():
-                        shutil.rmtree(candidate)
-                    else:
-                        continue
-                    deleted += 1
+                    from hc_data_platform.storage.staging_lease import staging_lease
+                    with staging_lease(candidate, blocking=False) as acquired:
+                        if not acquired:
+                            continue
+                        if self._retention is not None:
+                            current = self._retention()
+                            if current is None or candidate.stat(follow_symlinks=False).st_mtime > self._clock().timestamp() - current.total_seconds():
+                                continue
+                        if candidate.stat(follow_symlinks=False).st_mtime > cutoff:
+                            continue
+                        if candidate.is_symlink() or candidate.is_file():
+                            candidate.unlink()
+                        elif candidate.is_dir():
+                            shutil.rmtree(candidate)
+                        else:
+                            continue
+                        deleted += 1
                 except FileNotFoundError:
                     continue
+        if self._retention is not None:
+            self._retention.audit(deleted)
         return deleted
 
 

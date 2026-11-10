@@ -14,6 +14,7 @@ from .models import (
     AnnotationOperation,
     AnnotationReviewCheck,
     AnnotationTag,
+    EpisodeOutcome,
     ReviewCheckKind,
     TagAttributeDefinition,
     TagAttributeType,
@@ -50,6 +51,7 @@ def revision_content_hash(
     tag_schema_version: int,
     tags: Sequence[AnnotationTag],
     operations: Sequence[AnnotationOperation],
+    episode_outcome: EpisodeOutcome = EpisodeOutcome.UNMARKED,
 ) -> str:
     if (base_lance_version is None) == (data_ref is None):
         raise ValueError("revision hash requires exactly one data binding")
@@ -62,6 +64,8 @@ def revision_content_hash(
     return stable_hash(
         {
             **binding,
+            **({"episode_outcome": episode_outcome.value}
+               if episode_outcome != EpisodeOutcome.UNMARKED else {}),
             "tag_schema_id": tag_schema_id,
             "tag_schema_version": tag_schema_version,
             "tags": [tag.model_dump(mode="json") for tag in tags],

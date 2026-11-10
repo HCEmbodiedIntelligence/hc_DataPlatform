@@ -426,6 +426,7 @@ class ActivityDependencies:
     storage_lifecycle: LifecycleBatchExecutor | None = None
     workflow_jobs: WorkflowJobPersistencePort | None = None
     continuous_episode_processing: ContinuousEpisodeProcessingPort | None = None
+    recording_quality: Any | None = None
     robot_worker: RobotWorkerComponents | None = None
     lerobot_pipeline: Any | None = None
     episode_packages: Any | None = None
@@ -649,6 +650,22 @@ async def update_continuous_episode_state(
                 "continuous_recordings.ContinuousEpisodeProcessingService",
             ).update_state(request),
         )
+
+
+@activity.defn(name="continuous-recording.quality")
+async def qc_continuous_recording(request: dict) -> dict:
+    with _worker_scope(request["project_id"], request["region_code"], request["recording_id"],
+                       organization_id=request["organization_id"]):
+        return await _invoke("recording_quality", lambda: _require(
+            _dependencies.recording_quality, "RecordingQualityService").run(request))
+
+
+@activity.defn(name="continuous-recording.quality.failed")
+async def fail_recording_quality(request: dict) -> None:
+    with _worker_scope(request["project_id"], request["region_code"], request["recording_id"],
+                       organization_id=request["organization_id"]):
+        await _invoke("recording_quality_failure", lambda: _require(
+            _dependencies.recording_quality, "RecordingQualityService").failed(request))
 
 
 @activity.defn(name=QC_CONTINUOUS_EPISODE_ACTIVITY)
@@ -1735,6 +1752,17 @@ async def create_annotation_task(
         )
 
     def create() -> AutomaticAnnotationActivityOutput:
+        takeover_steps = ()
+        if request.has_recorded_takeovers:
+            from hc_data_platform.continuous_recordings.takeovers import committed_takeover_steps
+
+            if request.data_ref is None:
+                raise ValueError("MCAP takeover annotation requires a committed Episode")
+            packages = _require(_dependencies.episode_packages, "episode_store.service")
+            package = packages.files.open(
+                request.data_ref.identity, request.data_ref.data_version_id
+            )
+            takeover_steps = committed_takeover_steps(package)
         task = _require(
             _dependencies.annotation_tasks,
             "annotation.AutomaticAnnotationTaskService",
@@ -1753,6 +1781,7 @@ async def create_annotation_task(
                 task_kind=request.task_kind,
                 frame_selection=request.frame_selection,
                 task_labels=request.task_labels,
+                takeover_steps=takeover_steps,
             )
         )
         return AutomaticAnnotationActivityOutput(task_id=task.task_id)
@@ -2175,6 +2204,8 @@ ALL_ACTIVITIES = (
     commit_prepared_bundle,
     update_continuous_episode_state,
     qc_continuous_episode,
+    qc_continuous_recording,
+    fail_recording_quality,
     align_continuous_episode,
     commit_continuous_episode_bundle,
     parse_manifest,

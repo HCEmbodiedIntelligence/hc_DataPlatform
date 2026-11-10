@@ -280,3 +280,16 @@ def test_rollback_does_not_leave_recovery_receipt(environment):  # noqa: F811
             ).fetchone()[0]
             == 0
         )
+
+
+def test_archived_mcap_explicit_binding_keeps_original_receipt(environment):  # noqa: F811
+    dsn, scope, _, raw_id, original, _ = seed(environment, error="CAPTURE_PLAN_REQUIRED")
+    with psycopg.connect(dsn) as db:
+        db.execute("""UPDATE ingest.raw_ingest_jobs SET job_type='RAW_STORAGE',status='SUCCEEDED'
+                      WHERE raw_source_id=%s""", (raw_id,))
+        recovered = recover_for_retry(db, scope, raw_id, "operator", bind_archived_mcap=True)
+        assert recovered["robot_id"] == "robot-1"
+        assert resolve_raw_snapshot(db, scope, raw_id) == recovered
+        assert db.execute(
+            "SELECT document FROM ingest.raw_capture_snapshots WHERE raw_source_id=%s", (raw_id,)
+        ).fetchone()[0] == original

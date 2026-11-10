@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
@@ -8,12 +8,14 @@ import {
   logoutSession,
 } from "../../features/account/session/api";
 import { authErrorMessage } from "../../features/account/session/error-messages";
+import { useSessionActivity } from "../../features/account/session/use-session-activity";
 import {
   installSessionBootstrap,
   loadRuntimeAuthorization,
 } from "../../features/account/session/runtime-scope";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
+import { dataAnnotationRoutes } from "../../shared/routing/navigation-routes";
 import { useToast } from "../../shared/ui/ToastProvider";
 import type { PageAvailability } from "./navigation-manifest";
 import { PlatformShell, type ScopeOption } from "./PlatformShell";
@@ -42,22 +44,25 @@ export function RuntimePlatformShell({
     (state) => state.clearSensitiveState,
   );
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { showToast } = useToast();
   const logoutInFlight = useRef(false);
   const [logoutPending, setLogoutPending] = useState(false);
+  useSessionActivity(bootstrapLoaded && !logoutPending);
   const client = useQueryClient();
   const scope = useShellStore(state => state.scope);
   const revision = useScopeQueryRevision();
   const capabilities = useCapabilities();
-  const warmModel = bootstrapLoaded && !capabilities.loading && !capabilities.failed &&
+  const warmModel = pathname === dataAnnotationRoutes.annotate &&
+    bootstrapLoaded && !capabilities.loading && !capabilities.failed &&
     ["annotation_task.read", "episode.read", "dataset_version.read", "robot_model.read"].every(capabilities.has);
 
   useEffect(() => {
     if (!warmModel || !scope?.projectId || !scope.regionCode) return;
     const controller = new AbortController();
     const selected = { organizationId: scope.organizationId, projectId: scope.projectId, regionCode: scope.regionCode };
-    // This effect belongs to the shell, not a route. Moving between pages keeps
-    // downloads alive; authorization changes still cancel the private lease.
+    // Warm a model only while choosing an annotation task. Other pages have no
+    // reason to load annotation documents or dozens of private mesh files.
     void import("../../features/annotation/runtime/task-preload")
       .then(module => module.preloadHomeModel(client, selected, revision, controller.signal))
       .catch(() => undefined); // Foreground viewer has an explicit retry action.

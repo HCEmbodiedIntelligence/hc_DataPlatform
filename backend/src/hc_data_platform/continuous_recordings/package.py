@@ -20,6 +20,7 @@ from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.data_formats.holobrain_depth import ENCODER_PROFILE
 from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
+from hc_data_platform.data_formats.video import RGB_STATISTICS_HISTOGRAM
 from hc_data_platform.episode_store.bundle_models import FrozenObject
 from hc_data_platform.episode_store.depth_window import VERSION as WINDOW_VERSION
 from hc_data_platform.episode_store.depth_window import prepare_depth_window
@@ -151,29 +152,57 @@ def recording_files(request, connections, storage):
     with TemporaryDirectory(prefix="recording-package-") as temporary:
         root = Path(temporary)
         paths = {}
+        from .derived_cache import DerivedCache
+
+        derived = DerivedCache(storage, connections, scope, root)
         for file in frozen:
             # Originals stay immutable in Raw. The selected provenance file is
             # copied below; robot archives and whole MCAP are not new primaries.
             if (
                 request.recording_config.recorder_version
-                in {"openarm-session/v2", "native-mcap-recording/1", "native-mcap-recording/2", "native-mcap-recording/3", "native-mcap-recording/4"}
+                in {
+                    "openarm-session/v2",
+                    "native-mcap-recording/1",
+                    "native-mcap-recording/2",
+                    "native-mcap-recording/3",
+                    "native-mcap-recording/4",
+                }
                 and roles[file.relative_path] is RecordingAssetRole.AUXILIARY
                 and file.relative_path.startswith("source/original/")
             ):
                 continue
-            path = root / file.relative_path
-            path.parent.mkdir(parents=True, exist_ok=True)
-            size, sha = 0, hashlib.sha256()
-            with path.open("xb") as output:
-                for block in storage.read_chunks(file.object.key):
-                    size += len(block)
-                    if size > file.object.size:
-                        raise ValueError("recording object exceeds committed receipt")
-                    sha.update(block)
-                    output.write(block)
-            if (size, sha.hexdigest()) != (file.object.size, file.object.sha256):
-                raise ValueError("recording object differs from committed hash/size")
-            paths[file.relative_path] = path
+            if (
+                request.recording_config.recorder_version.startswith("native-mcap-recording/")
+                and file.relative_path == "source/selected.mcap"
+            ):
+                # Only export consumes this rebuildable intermediate. Slice preparation
+                # reads the videos, sensors and frame map, including for legacy receipts.
+                continue
+            paths[file.relative_path] = derived.localize(
+                file.object.key,
+                file.relative_path,
+                file.object.size,
+                file.object.sha256,
+                root / file.relative_path,
+            )
+        if "mcap-provenance.json" in paths:
+            provenance = read_json(paths["mcap-provenance.json"])
+            if provenance.get("selected_mcap"):
+                from hc_data_platform.episode_store.selected_cache import selected_reference
+
+                selected = next(
+                    (f for f in frozen if f.relative_path == "source/selected.mcap"), None
+                )
+                if selected is None:
+                    selected = selected_reference(provenance)
+                selected_path = root / "source/selected.mcap"
+                paths["source/selected.mcap"] = derived.localize(
+                    selected.object.key,
+                    selected.relative_path,
+                    selected.object.size,
+                    selected.object.sha256,
+                    selected_path,
+                )
         yield upload, paths
 
 
@@ -417,13 +446,17 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         first = preserved[0][0] if preserved else round(Fraction(offset, 1_000_000_000) * fps)
         windows[target] = DepthWindow(
             first,
-            preserved[-1][0] + 1 if preserved else min(count, round(Fraction(stop, 1_000_000_000) * fps)),
+            preserved[-1][0] + 1
+            if preserved
+            else min(count, round(Fraction(stop, 1_000_000_000) * fps)),
             manifest.row_count,
             request.alignment_profile.frequency_hz,
             alignment.data.start_ns,
             source_start_offset_ns=offset,
             source_frames=tuple(i for i, _ in preserved) if preserved else None,
-            target_timestamps_ns=tuple(origin + stamp for _, stamp in preserved) if preserved else None,
+            target_timestamps_ns=tuple(origin + stamp for _, stamp in preserved)
+            if preserved
+            else None,
         )
     ident = EpisodeIdentity(
         organization_id=source.organization_id,
@@ -459,7 +492,8 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         "capture": request.capture_snapshot,
         "capture_validation": request.capture_validation,
         "task": (request.task_labels[0] if request.task_labels else None)
-        or (request.capture_snapshot or {}).get("task_instruction") or source.collection_task_id,
+        or (request.capture_snapshot or {}).get("task_instruction")
+        or source.collection_task_id,
         **({"task_labels": list(request.task_labels)} if request.task_labels is not None else {}),
         "source": {
             "recording_id": source.recording_id,
@@ -474,6 +508,10 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         **({"quality_rules": quality["rule_evidence"]} if quality.get("rule_evidence") else {}),
         "calibration": {"status": "UNKNOWN", "reason": "no validated calibration declared"},
     }
+    if request.alignment_profile.converter_version == "continuous-episode-package/5":
+        # The algorithm belongs to the immutable plan; old in-flight packages
+        # retain their original floating-point statistics on retries.
+        metadata["rgb_statistics"] = RGB_STATISTICS_HISTOGRAM
     if "mcap-provenance.json" in paths:
         metadata["source"]["mcap"] = read_json(paths["mcap-provenance.json"])
     recording_evidence = []
@@ -518,7 +556,14 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         request_sha256=recording_request_hash(request),
         inventory=tuple(files.values()),
         windows=windows,
-        encoding=encoding_configuration(),
+        encoding={
+            **encoding_configuration(),
+            **(
+                {"native_capture": "episode-native-reference/1"}
+                if "source/selected.mcap" in paths
+                else {}
+            ),
+        },
     )
     plan.validate_recording_bundle(request, alignment, manifest, staging)
     return plan
@@ -587,7 +632,8 @@ def prepared_recording_assets(request, plan, paths, attempt_id):
     if (
         plan.request_sha256 != recording_request_hash(request)
         or plan.inventory != inventory(request)
-        or plan.encoding != encoding_configuration()
+        or {k: v for k, v in plan.encoding.items() if k != "native_capture"}
+        != encoding_configuration()
     ):
         raise ValueError("recording asset preparation differs from frozen source/encoding version")
     with TemporaryDirectory(prefix="recording-window-") as temporary:
@@ -672,6 +718,34 @@ def prepared_recording_assets(request, plan, paths, attempt_id):
                     size=output.stat().st_size,
                     sha256=file_hash(output),
                     media_type="application/octet-stream",
+                )
+            )
+        if plan.encoding.get("native_capture") == "episode-native-reference/1":
+            from hc_data_platform.episode_store.native_reference import build_reference
+
+            provenance = read_json(paths["mcap-provenance.json"])
+            origin = provenance["source_origin_ns"]
+            extra.append(
+                build_reference(
+                    root,
+                    provenance,
+                    origin + request.start_offset_ns,
+                    origin + request.end_offset_ns,
+                )
+            )
+        if plan.encoding.get("native_capture") == "episode-native-capture/1":
+            from hc_data_platform.episode_store.native_capture import build_native
+
+            provenance = read_json(paths["mcap-provenance.json"])
+            origin = provenance["source_origin_ns"]
+            extra.extend(
+                build_native(
+                    root,
+                    paths["source/selected.mcap"],
+                    provenance,
+                    origin + request.start_offset_ns,
+                    origin + request.end_offset_ns,
+                    audit=paths.get("source/normalization.json"),
                 )
             )
         yield PreparedAssets(plan.input.identity, attempt_id, videos, root, tuple(extra))

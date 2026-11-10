@@ -11,6 +11,7 @@ from hc_data_platform.annotation.models import (
     AnnotationRevision,
     AnnotationSubmission,
     AnnotationTag,
+    EpisodeOutcome,
     ReviewCheckKind,
     TagNodeDefinition,
     TagSchemaDocument,
@@ -27,7 +28,8 @@ from hc_data_platform.workflow.temporal_workflows import AnnotationReviewPrepara
 
 
 @pytest.mark.asyncio
-async def test_annotation_review_preparation_executes_and_replays() -> None:
+@pytest.mark.parametrize("outcome", list(EpisodeOutcome))
+async def test_annotation_review_preparation_executes_and_replays(outcome) -> None:
     timestamp = datetime(2026, 8, 17, tzinfo=timezone.utc)
     document = TagSchemaDocument(
         nodes=(TagNodeDefinition(tag_id="event", code="event", display_name="Event"),)
@@ -57,6 +59,7 @@ async def test_annotation_review_preparation_executes_and_replays() -> None:
         tag_schema_id=schema.schema_id,
         tag_schema_version=schema.version,
         tags=(annotation,),
+        episode_outcome=outcome,
         operations=(),
     )
     revision = AnnotationRevision(
@@ -69,6 +72,7 @@ async def test_annotation_review_preparation_executes_and_replays() -> None:
         tag_schema_id=schema.schema_id,
         tag_schema_version=schema.version,
         tags=(annotation,),
+        episode_outcome=outcome,
         operations=(),
         content_hash=content_hash,
         created_at=timestamp,

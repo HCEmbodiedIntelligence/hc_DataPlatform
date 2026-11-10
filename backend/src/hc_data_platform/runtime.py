@@ -188,6 +188,7 @@ from hc_data_platform.lance_catalog.router import (
 from hc_data_platform.lance_catalog.service import LanceCatalogService, compute_fragment_hash
 from hc_data_platform.lerobot_imports.configuration import validate_target
 from hc_data_platform.lerobot_imports.discovery import NativeManifestDiscovery
+from hc_data_platform.lerobot_imports.mcap_processing import dispatch_bound_source
 from hc_data_platform.lerobot_imports.service import LeRobotWebUploadService
 from hc_data_platform.logical_data.service import LogicalDataService
 from hc_data_platform.manual_cleaning.models import (
@@ -280,7 +281,12 @@ from hc_data_platform.storage.inventory import (
     S3StorageInventoryProvider,
     StorageInventorySnapshotProducer,
 )
-from hc_data_platform.storage.inventory_worker import StorageInventoryRuntime
+from hc_data_platform.storage.inventory_worker import (
+    StorageInventoryRuntime,
+    local_inventory_scopes,
+)
+from hc_data_platform.storage.local_cache import remote_inventory_client
+from hc_data_platform.storage.location_usage import saved_oss_location
 from hc_data_platform.storage.object_store import S3StorageObjectOperator
 from hc_data_platform.storage.oss_client import OssBotoCompatClient, build_oss_bucket
 from hc_data_platform.storage.postgres import (
@@ -290,6 +296,7 @@ from hc_data_platform.storage.postgres import (
 )
 from hc_data_platform.storage.router import configure_storage_governance
 from hc_data_platform.storage.service import StorageGovernanceService
+from hc_data_platform.storage.task_usage import TaskStorageUsageReader
 from hc_data_platform.verification.engine import McapVerifier
 from hc_data_platform.verification.ports import (
     ChunkedObjectStorageReader,
@@ -647,6 +654,16 @@ def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
         endpoint_url=public_endpoint,
         **client_options,
     )
+    if settings.object_store_cache_root:
+        from .storage.local_cache import LocalCacheBucket
+        from .storage.s3_cache_access import S3CacheAccessClient
+        cache = LocalCacheBucket(settings.object_store_cache_root, settings.data_source_credential_key.get_secret_value())
+        operation_client = S3CacheAccessClient(operation_client, cache, settings.object_store_bucket)
+        # Presigning uses the public endpoint, while metadata reads use the internal one.
+        class SignedCacheAccessClient(S3CacheAccessClient):
+            def record(self, key):
+                operation_client.record(key)
+        presign_client = SignedCacheAccessClient(presign_client, cache, settings.object_store_bucket)
     return (
         operation_client,
         presign_client,
@@ -660,12 +677,20 @@ def _s3(settings: Settings) -> tuple[Any, Any, S3ObjectStorage]:
 
 def _oss(settings: Settings) -> tuple[Any, Any, OssObjectStorage]:
     public_endpoint = settings.object_store_public_endpoint
+    key_layout = None
+    if settings.object_store_compact_paths:
+        from hc_data_platform.storage.oss_layout import PostgresOssPrefixAliases
+        key_layout = PostgresOssPrefixAliases(
+            settings.postgres_dsn, settings.object_store_bucket, settings.object_store_prefix
+        )
     operation_bucket = build_oss_bucket(
         endpoint=settings.object_store_endpoint,
         bucket=settings.object_store_bucket,
         access_key=settings.object_store_access_key,
         secret_key=settings.object_store_secret_key,
         connect_timeout=settings.readiness_timeout_seconds,
+        key_prefix=settings.object_store_prefix,
+        key_layout=key_layout,
     )
     presign_bucket = build_oss_bucket(
         endpoint=public_endpoint,
@@ -673,11 +698,32 @@ def _oss(settings: Settings) -> tuple[Any, Any, OssObjectStorage]:
         access_key=settings.object_store_access_key,
         secret_key=settings.object_store_secret_key,
         connect_timeout=settings.readiness_timeout_seconds,
+        key_prefix=settings.object_store_prefix,
+        key_layout=key_layout,
     )
+    if settings.object_store_cache_root:
+        from hc_data_platform.storage.local_cache import CacheRoutingBucket, LocalCacheBucket
+        cache = LocalCacheBucket(
+            settings.object_store_cache_root,
+            settings.data_source_credential_key.get_secret_value(),
+            ttl_days=None,
+        )
+        operation_bucket = CacheRoutingBucket(operation_bucket, cache, local_processing=settings.object_store_local_processing_cache)
+        presign_bucket = CacheRoutingBucket(presign_bucket, cache, local_processing=settings.object_store_local_processing_cache)
+    from hc_data_platform.storage.oss_zip import OssZipSources
+
+    def source_bucket(bucket_name):
+        return build_oss_bucket(
+            endpoint=settings.object_store_endpoint, bucket=bucket_name,
+            access_key=settings.object_store_access_key, secret_key=settings.object_store_secret_key,
+            connect_timeout=max(30, settings.readiness_timeout_seconds),
+        )._delegate
+
+    zip_sources = OssZipSources(settings.oss_import_archives, source_bucket) if settings.oss_import_archives else None
     return (
         OssBotoCompatClient(operation_bucket),
         OssBotoCompatClient(presign_bucket),
-        OssObjectStorage(operation_bucket, presign_bucket=presign_bucket),
+        OssObjectStorage(operation_bucket, presign_bucket=presign_bucket, zip_sources=zip_sources),
     )
 
 
@@ -691,7 +737,10 @@ def _lance_root(settings: Settings) -> str:
     if settings.lance_root_uri is not None:
         return settings.lance_root_uri
     scheme = "oss" if settings.object_store_provider == "oss" else "s3"
-    return f"{scheme}://{settings.object_store_bucket}/lance"
+    from hc_data_platform.storage.oss_prefix import normalize_prefix
+
+    prefix = normalize_prefix(settings.object_store_prefix) if scheme == "oss" else ""
+    return f"{scheme}://{settings.object_store_bucket}/{prefix}lance"
 
 
 def _lance_storage_options(settings: Settings) -> dict[str, str]:
@@ -733,7 +782,14 @@ def _decoder(settings: Settings) -> DecoderProbe:
 def build_runtime(
     settings: Settings | None = None, *, include_media: bool = False
 ) -> RuntimeComponents:
-    resolved = settings or get_settings()
+    if settings is None:
+        from hc_data_platform.platform_ops.object_store_config import (
+            load_persisted_object_store_settings,
+        )
+
+        resolved, _ = load_persisted_object_store_settings(get_settings())
+    else:
+        resolved = settings
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
     hmac_secret = resolved.auth_abuse_hmac_secret
     if resolved.auth_abuse_enabled and hmac_secret is None:
@@ -817,7 +873,9 @@ def build_runtime(
         object_storage,
         persistence=PostgresIngestPersistence(connection_factory),
         raw_sources=PostgresRawSourceRepository(
-            connection_factory, capture_snapshot_writer=bind_raw_snapshot
+            connection_factory,
+            capture_snapshot_writer=bind_raw_snapshot,
+            mcap_dispatcher=dispatch_bound_source,
         ),
         authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
         cursor_secret=resolved.cursor_secret,
@@ -864,6 +922,29 @@ def build_runtime(
             storage_connection_factory,
         ),
         object_operator=storage_object_operator,
+        task_usage_reader=TaskStorageUsageReader(
+            connection_factory,
+            PostgresStorageInventoryCatalog(
+                connection_factory,
+                object_store_bucket=resolved.object_store_bucket,
+                object_store_scheme=resolved.object_store_provider,
+                artifact_prefix=resolved.artifact_prefix,
+            ),
+            S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
+            disk_path=resolved.storage_disk_usage_path,
+            object_store_provider=resolved.object_store_provider,
+            object_scope=f"oss://{resolved.object_store_bucket}/{resolved.object_store_prefix.strip('/')}/",
+            local_usage_roots=resolved.storage_local_usage_roots,
+            extra_location_provider=(
+                lambda: saved_oss_location(resolved, _object_store_clients)
+            ) if resolved.environment == "local" and resolved.object_store_provider == "s3"
+                 and resolved.storage_oss_usage_prefix else None,
+            bucket_usage_provider=(
+                lambda: S3StorageInventoryProvider(
+                    remote_inventory_client(s3_client), resolved.object_store_bucket,
+                ).list_prefix("")
+            ) if resolved.environment == "local" else None,
+        ),
     )
     registry = RegistryService(
         PostgresRegistryRepository(connection_factory, binding_usage=model_has_binding_history),
@@ -1095,6 +1176,7 @@ def build_runtime(
     from hc_data_platform.workflow.result_queries import PostgresTerminalWorkflowResults
 
     native_raw_sources = PostgresRawSourceRepository(connection_factory)
+    from .storage.cache_policy import SharedCachePolicy
     lerobot_pipeline = LeRobotPipeline(
         object_storage,
         catalog,
@@ -1114,6 +1196,7 @@ def build_runtime(
         metadata_builder=build_alignment_metadata,
         cache_max_bytes=resolved.lerobot_cache_max_bytes,
         cache_ttl_hours=resolved.lerobot_cache_ttl_hours,
+        cache_retention=SharedCachePolicy(resolved, "CLEAN_PROCESSING_STAGING"),
         native_schemas=episode_packages.schemas,
         native_catalog=episode_packages.catalog,
     )
@@ -1133,6 +1216,16 @@ def build_runtime(
         dataset_projection=dataset_ingest_projection,
         episode_packages=episode_packages,
         robot_scenes=robot_scenes,
+    )
+    from hc_data_platform.continuous_recordings.quality import RecordingQualityService
+
+    recording_quality = RecordingQualityService(
+        connection_factory,
+        PostgresContinuousEpisodeWorkflowInputResolver(
+            connection_factory, catalog, package_schemas=episode_packages.schemas,
+        ),
+        continuous_episode_processing,
+        storage=object_storage,
     )
     activities = ActivityDependencies(
         manifest_parser=ObjectStorageManifestParser(object_storage),
@@ -1184,6 +1277,7 @@ def build_runtime(
         ),
         workflow_jobs=PostgresWorkflowJobRepository(connection_factory),
         continuous_episode_processing=continuous_episode_processing,
+        recording_quality=recording_quality,
         lerobot_pipeline=lerobot_pipeline,
         robot_worker=RobotWorkerComponents(
             processing=robot_processing,
@@ -1383,6 +1477,7 @@ def build_aligned_media_orphan_reconciler(
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
     repository = PostgresAlignedMediaRepository(connection_factory)
     client, _, _ = _object_store_clients(resolved)
+    from .storage.cache_policy import SharedCachePolicy
     return S3AlignedMediaOrphanReconciler(
         client,
         resolved.object_store_bucket,
@@ -1390,6 +1485,7 @@ def build_aligned_media_orphan_reconciler(
             scope, artifact_key, token, now=now
         ),
         orphan_ttl=timedelta(minutes=resolved.aligned_media_publication_orphan_ttl_minutes),
+        retention=SharedCachePolicy(resolved, "CLEAN_MEDIA_STAGING"),
     )
 
 
@@ -1421,10 +1517,12 @@ def build_projection_staging_sweeper(
 ) -> S3ProjectionStagingSweeper:
     resolved = settings or get_settings()
     s3_client, _, _ = _object_store_clients(resolved)
+    from .storage.cache_policy import SharedCachePolicy
     return S3ProjectionStagingSweeper(
         s3_client,
         resolved.object_store_bucket,
         ttl=timedelta(hours=resolved.aligned_media_staging_ttl_hours),
+        retention=SharedCachePolicy(resolved, "CLEAN_PROCESSING_STAGING"),
     )
 
 
@@ -1455,15 +1553,21 @@ def build_storage_inventory(
 
     resolved = settings or get_settings()
     configured_scopes = resolved.storage_inventory_scopes if scopes is None else scopes
-    if not configured_scopes:
+    if not configured_scopes and not resolved.local_scope_discovery:
         raise ValueError("at least one exact storage inventory scope is required")
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
-    s3_client, _, _ = _object_store_clients(resolved)
+    s3_client, _, object_storage = _object_store_clients(resolved)
+    from .storage.cache_lifecycle import CacheLifecycle
+    from .storage.inventory_retention import InventoryRetention
     service = StorageGovernanceService(
         PostgresStorageRepository(connection_factory),
         cursor_secret=resolved.cursor_secret,
     )
     return StorageInventoryRuntime(
+        inventory_retention=InventoryRetention(connection_factory),
+        cache_retention=CacheLifecycle(
+            connection_factory, object_storage, PostgresStorageRepository(connection_factory)
+        ),
         producer=StorageInventorySnapshotProducer(
             PostgresStorageInventoryCatalog(
                 connection_factory,
@@ -1478,6 +1582,9 @@ def build_storage_inventory(
         ),
         scopes=configured_scopes,
         interval_seconds=resolved.storage_inventory_interval_seconds,
+        scope_provider=(lambda: local_inventory_scopes(resolved.postgres_dsn))
+        if resolved.local_scope_discovery
+        else None,
     )
 
 
@@ -1545,6 +1652,9 @@ def build_worker_outbox(
         launcher,
         continuous_episode_resolver,
     )
+    from hc_data_platform.continuous_recordings.quality import RecordingQualityOutboxHandler
+
+    recording_quality_handler = RecordingQualityOutboxHandler(launcher)
     storage_repository = PostgresStorageRepository(connection_factory)
     storage_handler = StorageLifecycleOutboxHandler(
         launcher,
@@ -1640,6 +1750,7 @@ def build_worker_outbox(
             ),
             handler.EVENT_TYPE: handler,
             continuous_episode_handler.EVENT_TYPE: continuous_episode_handler,
+            recording_quality_handler.EVENT_TYPE: recording_quality_handler,
             storage_handler.EVENT_TYPE: storage_handler,
             schedule_handler.EVENT_TYPE: schedule_handler,
             AuditExportOutboxHandler.EVENT_TYPE: AuditExportOutboxHandler(audit_governance),

@@ -175,7 +175,7 @@ export function RobotSchemeAssociations({
       onReadyChange?.(
         Boolean(
           latest.data?.some(
-            (l) => l.active && !l.archived && l.status === "READY",
+            (l) => l.active && !l.archived,
           ),
         ),
       );
@@ -285,7 +285,7 @@ export function RobotSchemeAssociations({
         )}
       </Space>
       <p>
-        可关联多个共享方案。默认项用于新任务预选；已有任务固定自己的版本和映射。共享编辑集中在方案库。
+        关联后即可用于采集。可按需点“验证映射”，用样本检查设备通道。默认项用于新任务预选。
       </p>
       {!links.isPending &&
         !links.error &&
@@ -293,7 +293,7 @@ export function RobotSchemeAssociations({
           <Alert
             type="info"
             title="采集方案待配置"
-            description="可先完成接入，关联并验证设备映射后再参与采集任务。"
+            description="关联已发布的采集方案后，机器人即可参与采集任务。"
           />
         )}
       {[
@@ -351,15 +351,20 @@ export function RobotSchemeAssociations({
               <>
                 <Tag
                   color={
-                    l.status === "READY" && !l.archived ? "green" : "orange"
+                    l.active && !l.archived ? "green" : "default"
                   }
                 >
                   {l.archived
                     ? "方案已归档"
-                    : l.status === "READY"
-                      ? "可用于采集"
-                      : "已关联 · 映射待验证"}
+                    : l.active
+                        ? "可用于采集"
+                        : "已移除"}
                 </Tag>
+                {l.validations[0] && (
+                  <Tag color={l.validations[0].status === "PASSED" ? "green" : "orange"}>
+                    最近样本验证{l.validations[0].status === "PASSED" ? "通过" : "未通过"}
+                  </Tag>
+                )}
                 {l.is_default && <Tag>默认</Tag>}
               </>
             ),
@@ -516,7 +521,7 @@ export function RobotSchemeAssociations({
             设为新任务默认项
           </Checkbox>
           <p>
-            留空来源沿用共享适配器。更改映射或升级将产生新映射版本，需要重新验证；新版已删除字段的设备来源随之移除，历史映射保持不变。
+            留空的来源沿用共享方案配置。更改映射或升级会生成新映射版本，保存后即可使用，也可用样本验证。
           </p>
           <Space>
             <Button

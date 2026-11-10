@@ -282,6 +282,35 @@ def test_robot_model_router_rejects_missing_auth_and_missing_capability() -> Non
     assert denied.json()["code"] == "CAPABILITY_REQUIRED"
 
 
+def test_delete_model_requires_manage_and_removes_all_versions() -> None:
+    service, repository = _service()
+    configure_registry(service)
+    current = {"value": _auth(can_manage=True)}
+    client = TestClient(_app(current))
+    root = "/api/v1/organizations/organization-a"
+    headers = {"Authorization": "Bearer test"}
+    draft = client.post(
+        f"{root}/robot-model-versions/version-a:create-draft",
+        headers={**headers, "Idempotency-Key": "delete-multi-version-test"},
+        json={"version_label": "2.0", "update_scope": "ASSETS"},
+    )
+    assert draft.status_code == 201
+    path = f"{root}/robot-models/model-a"
+    current["value"] = _auth()
+    assert client.delete(path, headers=headers).status_code == 403
+    current["value"] = replace(_auth(can_manage=True), organization_scoped_capabilities=frozenset())
+    assert client.delete(path, headers=headers).status_code == 403
+    current["value"] = _auth(can_manage=True)
+    assert client.delete(path, headers=headers).status_code == 204
+    assert repository.audit_events[-1].resource_id == "model-a"
+    assert repository.audit_events[-1].resource_type == "ROBOT_MODEL"
+    assert client.get(f"{root}/robot-models", headers=headers).json()["items"] == []
+    for version_id in ("version-a", draft.json()["data"]["id"]):
+        version = client.get(f"{root}/robot-model-versions/{version_id}", headers=headers)
+        assert version.status_code == 404
+    assert client.delete(path, headers=headers).status_code == 204
+
+
 def test_robot_model_update_creates_idempotent_draft_without_mutating_published_source() -> None:
     service, repository = _service()
     configure_registry(service)

@@ -14,7 +14,8 @@ from hc_data_platform.security.audit import canonical_hash
 
 from .asset_models import RecordingAsset, RecordingUpload
 from .asset_repository import _asset_values
-from .models import ContinuousRecording, RecordingScope, recording_duration_ns
+from .models import ContinuousRecording, RecordingScope, RecordingStatus, recording_duration_ns
+from .quality import enqueue_quality, quality_request
 from .repository import _recording_values
 
 
@@ -183,6 +184,8 @@ class PostgresRecordingRegistration:
             )
         recording = ContinuousRecording(
             schema_version="continuous-recording/v2",
+            status=RecordingStatus.PENDING_QC,
+            ingest_mode="WHOLE_RECORDING",
             scope=target,
             recording_id=command.recording_id,
             recording_upload_id=uid,
@@ -204,6 +207,7 @@ class PostgresRecordingRegistration:
             created_at=now,
             updated_at=now,
         )
+        recording, quality_event = quality_request(recording)
         cursor.execute(
             (
                 """INSERT INTO ingest.continuous_recordings
@@ -218,4 +222,13 @@ class PostgresRecordingRegistration:
             ),
             _recording_values(recording),
         )
+        if cursor.rowcount:
+            enqueue_quality(cursor, quality_event)
+        else:
+            cursor.execute(
+                """SELECT recording_document FROM ingest.continuous_recordings WHERE
+                organization_id=%s AND project_id=%s AND region_code=%s AND recording_id=%s""",
+                (*scope, command.recording_id),
+            )
+            recording = ContinuousRecording.model_validate(cursor.fetchone()[0])
         return recording

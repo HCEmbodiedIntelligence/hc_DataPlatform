@@ -1145,6 +1145,70 @@ components:
       - robot_id
       title: StartStoredProcessing
       type: object
+    InspectOssImport:
+      additionalProperties: false
+      properties:
+        source_uri:
+          maxLength: 2048
+          minLength: 1
+          title: Source Uri
+          type: string
+      required:
+      - source_uri
+      title: InspectOssImport
+      type: object
+    CommitOssImport:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Collection Task Id
+        dataset_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Dataset Id
+          type: string
+        inventory_sha256:
+          pattern: ^[0-9a-f]{64}$
+          title: Inventory Sha256
+          type: string
+        processing_capability_revision:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Processing Capability Revision
+        processing_mode:
+          default: STORE_ONLY
+          enum:
+          - STORE_ONLY
+          - PROCESS
+          title: Processing Mode
+          type: string
+        robot_id:
+          anyOf:
+          - maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          - type: 'null'
+          title: Robot Id
+        source_uri:
+          maxLength: 2048
+          minLength: 1
+          title: Source Uri
+          type: string
+      required:
+      - source_uri
+      - inventory_sha256
+      - dataset_id
+      title: CommitOssImport
+      type: object
 info:
   title: Native uploads
   version: '2026-10-21'
@@ -1223,8 +1287,8 @@ paths:
               schema:
                 items:
                   $ref: '#/components/schemas/NativeImportProgress'
-                title: Response List Native Imports Api V1 Projects  Project Id  Regions  Region Code  Lerobot
-                  Imports Get
+                title: Response List Native Imports Api V1 Projects  Project Id  Regions  Region
+                  Code  Lerobot Imports Get
                 type: array
           description: Successful Response
         '422':
@@ -2591,5 +2655,100 @@ paths:
       security:
       - bearerAuth: []
       summary: Get Import Capabilities
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:commit:
+    post:
+      operationId: commitOssImport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitOssImport'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeRobotImportAcceptedV1'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Commit Oss Import
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:inspect:
+    post:
+      operationId: inspectOssImport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectOssImport'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Inspect Oss Import
       tags:
       - lerobot-imports

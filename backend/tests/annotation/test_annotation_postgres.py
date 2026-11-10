@@ -134,6 +134,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
         expected_revision=0,
         if_match=claimed.etag,
         client_mutation_id="mutation-postgres",
+        episode_outcome="success",
     )
     assert (
         service.save_draft(
@@ -143,6 +144,7 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
             expected_revision=0,
             if_match=claimed.etag,
             client_mutation_id="mutation-postgres",
+        episode_outcome="success",
         )
         == revision
     )
@@ -161,6 +163,9 @@ def test_postgres_repository_full_revision_and_approval_round_trip(
     )
     assert approval is not None
     assert approval.annotation_revision == 1
+    assert approval.episode_outcome == "success"
+    assert service.get_draft(first_task_id, annotator).episode_outcome == "success"
+    assert service.get_revision(first_task_id, 1).episode_outcome == "success"
     assert [(item.start_step, item.end_step) for item in approval.excluded_ranges] == [(300, 450)]
     assert len(service.list_revisions(first_task_id)) == 2
     assert len(service.list_reviews(first_task_id)) == 1

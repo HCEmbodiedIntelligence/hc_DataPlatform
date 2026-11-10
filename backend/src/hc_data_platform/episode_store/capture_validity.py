@@ -14,7 +14,8 @@ def feature_mask(
     width = 1 if declaration["role"] in {"rgb", "depth"} else declaration["shape"][0]
     mask = (default,) * width
     value = values.get(name)
-    if isinstance(value, dict) and value.get("validity") is not None:
+    explicit_mask = isinstance(value, dict) and value.get("validity") is not None
+    if explicit_mask:
         mask = tuple(value["validity"])
     explicit = declaration.get("validity_feature")
     for key, feature in contract["features"].items():
@@ -24,6 +25,7 @@ def feature_mask(
         grouped = isinstance(names, list) and name in names
         if key != explicit and not grouped:
             continue
+        explicit_mask = True
         raw = values.get(key)
         if isinstance(raw, dict):
             raw = raw.get("values", raw.get("positions"))
@@ -39,6 +41,13 @@ def feature_mask(
         if len(mask) != width or any(type(v) is not bool for v in mask):
             raise ValueError(f"CAPTURE_VALIDITY_INVALID: {name}")
         mask = tuple(a and bool(b) for a, b in zip(mask, raw, strict=True))
+    # A matched message can contain null axes (e.g. a stale MCAP hand command).
+    # Only infer presence when the source did not supply its own validity evidence.
+    if not explicit_mask and declaration["role"] in {"numeric", "state", "action", "timestamp"}:
+        raw = value.get("values", value.get("positions", value)) if isinstance(value, dict) else value
+        axes = raw if isinstance(raw, (list, tuple)) else (raw,)
+        if len(axes) == width:
+            mask = tuple(default and axis is not None for axis in axes)
     if len(mask) != width or any(type(v) is not bool for v in mask):
         raise ValueError(f"CAPTURE_VALIDITY_INVALID: {name}")
     return mask

@@ -18,16 +18,21 @@ recording
 2. 服务为每个对象创建独立 OSS multipart upload；视频正文不经过 API 进程。
 3. 客户端直传 OSS。完成每个资产时服务流式校验 size、CRC64、SHA-256；所有对象合格后才能
    `POST .../uploads/{upload_id}:commit`。
-4. 模型可用 `POST .../{recording_id}/slice-proposals` 保存带模型版本和置信度的候选切片；
+4. 上传提交后自动排入整段质检，机器人上传和网页 MCAP 准备完成后也走同一队列。
+   状态依次为 `PENDING_QC`、`QC_RUNNING`；通过后进入 `READY_FOR_SLICING`。
+   不通过为 `QC_FAILED`，技术错误为 `QC_ERROR`，可用 `POST .../{recording_id}/quality:retry`
+   重新执行。质检与结果通过 Outbox/Temporal 持久化，重启和重复投递不会生成 Episode。
+5. 质检通过后，模型可用 `POST .../{recording_id}/slice-proposals` 保存带模型版本和置信度的候选切片；
    人工用 `PUT .../{recording_id}/slice-draft` 复核、修改或直接创建切片。
-5. `POST .../{recording_id}/slice-draft:finalize` 冻结 Episode。每个窗口使用相对录制起点的
+6. `POST .../{recording_id}/slice-draft:finalize` 冻结 Episode。每个窗口使用相对录制起点的
    半开纳秒区间 `[start_offset_ns, end_offset_ns)`，允许间隙但不允许重叠。
-6. 最终 Episode 写入全新的 `recording_episode_processing` 和
-   `recording_episode_asset_windows`，初始状态为 `PENDING_QC`，后续进入质检与对齐。
-7. `GET .../video-sources` 为人工切片工作台签发整段原始视频 URL；切片前即可直接读取 OSS。
-8. `GET .../sensor-window` 使用 MCAP 索引与对象存储 Range GET，按录制相对时间窗读取原始
+7. 最终 Episode 写入全新的 `recording_episode_processing` 和
+   `recording_episode_asset_windows`，保留片段区间校验，再进入对齐与入库。
+   整段录制的原始质检已在切片前完成，片段校验用于检查新边界与对应数据版本。
+8. `GET .../video-sources` 为人工切片工作台签发整段原始视频 URL；切片前即可直接读取 OSS。
+9. `GET .../sensor-window` 使用 MCAP 索引与对象存储 Range GET，按录制相对时间窗读取原始
    `SENSOR_DATA` Topic；它不依赖 Episode、质检、对齐或 Lance，可直接驱动切片工作台的 URDF。
-9. `GET .../episodes/{episode_id}/video-sources` 签发原始视频 URL 和 Episode 时间窗；预览不再生成一份
+10. `GET .../episodes/{episode_id}/video-sources` 签发原始视频 URL 和 Episode 时间窗；预览不再生成一份
    派生视频。
 
 Episode 的“切割”是不可变 EDL/软时间窗，不覆盖 Raw，也不立即复制大型视频。训练发布确实

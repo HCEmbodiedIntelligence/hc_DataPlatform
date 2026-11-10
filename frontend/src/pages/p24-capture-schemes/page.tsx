@@ -553,7 +553,7 @@ function Library({ org }: { org: string }) {
                                   : current.archived
                                     ? "方案已归档"
                                     : r.version < (current.latest_version ?? 0)
-                                      ? `可升级至 v${current.latest_version}（需验证映射）`
+                                      ? `可升级至 v${current.latest_version}`
                                       : "当前版本",
                             },
                           ]}
@@ -606,7 +606,7 @@ function Library({ org }: { org: string }) {
           archiveAction.mutate(archive, { onSuccess: () => setArchive(null) })
         }
       >
-        <p>归档后不能用于新关联或新任务。发布版本与历史任务快照保留。</p>
+        <p>归档会解除所有机器人实例与此方案的绑定，并清除对应的默认项。新任务将无法选择此方案，历史任务保留原配置。</p>
       </Modal>
     </div>
   );

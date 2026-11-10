@@ -20,6 +20,7 @@ import {
   listRuntimeAnnotationRevisionThreads,
   loadRuntimeAutoAnnotationCapability,
   loadRuntimeAnnotationBundle,
+  refreshRuntimeAnnotationBundle,
   restoreRuntimeAnnotationRevision,
   reopenRuntimeAnnotationTask,
   resolveReviewSubmission,
@@ -435,11 +436,67 @@ describe("P08 formal runtime annotation adapter", () => {
     );
   });
 
+  it("refreshes saved annotation facts without replacing playback data or fetching it again", async () => {
+    installRuntime();
+    const fixture = installBundleResponses();
+    const bundle = await loadRuntimeAnnotationBundle(visualAnnotationScope, fixture.task.task_id, "annotation");
+    const task = { ...bundle.task, current_revision: bundle.task.current_revision + 1, etag: '"saved-etag"' };
+    const draft = { ...bundle.draft!, revision: task.current_revision, etag: task.etag };
+    const history = { ...bundle.history, task };
+    requestMock.mockClear();
+    requestMock.mockImplementation(async ({ path }) => {
+      if (path.endsWith("/history")) return history as never;
+      if (path.endsWith("/draft")) return draft as never;
+      throw new Error(`Unexpected playback reload: ${path}`);
+    });
+
+    const saved = await refreshRuntimeAnnotationBundle(visualAnnotationScope, bundle);
+
+    expect(requestMock).toHaveBeenCalledTimes(2);
+    expect(saved.task).toBe(task);
+    expect(saved.draft).toBe(draft);
+    expect(saved.history).toBe(history);
+    expect(saved.tasks.find((candidate) => candidate.task_id === task.task_id)).toBe(task);
+    expect(saved.logical).toBe(bundle.logical);
+    expect(saved.manifest).toBe(bundle.manifest);
+    expect(saved.datasetVersion).toBe(bundle.datasetVersion);
+    expect(saved.schema).toBe(bundle.schema);
+  });
+
+  it.each(["revision", "etag", "task_id", "tag_schema_id"] as const)(
+    "rejects inconsistent saved draft %s without replacing the current data", async (field) => {
+      const bundle = createVisualAnnotationBundle({ mode: "annotation" });
+      const draft = { ...bundle.draft!, [field]: field === "revision" ? 99 : "different" };
+      requestMock.mockImplementation(async ({ path }) =>
+        (path.endsWith("/history") ? bundle.history : draft) as never);
+      await expect(refreshRuntimeAnnotationBundle(visualAnnotationScope, bundle))
+        .rejects.toMatchObject({ code: "CONTRACT_MISMATCH" });
+    },
+  );
+
+  it("refreshes reviewed state without requesting an annotator draft or reloading playback", async () => {
+    const bundle = createVisualAnnotationBundle({ mode: "tag-review" });
+    const task = { ...bundle.task, status: "APPROVED" as const, state_version: bundle.task.state_version + 1, etag: '"reviewed"' };
+    const history = { ...bundle.history, task };
+    requestMock.mockImplementation(async ({ path }) => {
+      if (path.endsWith("/history")) return history as never;
+      throw new Error(`Unexpected reviewer request: ${path}`);
+    });
+    const refreshed = await refreshRuntimeAnnotationBundle(visualAnnotationScope, bundle, "tag-review");
+    expect(requestMock).toHaveBeenCalledOnce();
+    expect(refreshed.task).toBe(task);
+    expect(refreshed.history).toBe(history);
+    expect(refreshed.draft).toBeNull();
+    expect(refreshed.manifest).toBe(bundle.manifest);
+    expect(refreshed.logical).toBe(bundle.logical);
+    expect(refreshed.tasks.find(candidate => candidate.task_id === task.task_id)).toBe(task);
+  });
+
   it("reopens the exact approved snapshot without replaying its data operations", async () => {
     const fixture = createVisualAnnotationBundle({ mode: "annotation" });
     const task = { ...fixture.task, status: "APPROVED" as const,
       approved_revision: fixture.task.current_revision };
-    const source = { ...fixture.history.revisions.at(-1)!, operations: [
+    const source = { ...fixture.history.revisions.at(-1)!, episode_outcome: "fail" as const, operations: [
       { operation_id: "already-applied", kind: "EXCLUDE" as const, start_step: 10, end_step: 20 },
     ] };
     const next = { ...source, revision: source.revision + 1, parent_revision: source.revision, operations: [] };
@@ -451,7 +508,7 @@ describe("P08 formal runtime annotation adapter", () => {
     }));
     expect(requestMock).toHaveBeenNthCalledWith(2, expect.objectContaining({
       method: "POST", path: `/annotation-tasks/${task.task_id}/revisions`, ifMatch: task.etag,
-      body: { expected_revision: task.current_revision, operations: [], tags: source.tags,
+      body: { expected_revision: task.current_revision, operations: [], tags: source.tags, episode_outcome: "fail",
         client_mutation_id: expect.stringMatching(/^reopen-/) },
     }));
   });

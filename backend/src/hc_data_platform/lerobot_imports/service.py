@@ -499,10 +499,14 @@ class LeRobotWebUploadService:
                 )
             )
         root = self._root(organization_id, command.manifest.dataset_id, import_id)
+        reference = session.get("oss_reference")
+        references = {item["path"]: item for item in reference["files"]} if reference else {}
+        source_prefix = reference["source_prefix"] if reference else f"{root}/source"
         raw_files: list[dict[str, object]] = []
         total_size = 0
         for source in command.manifest.files:
-            source_key = f"{root}/source/{source.path}"
+            descriptor = references.get(source.path)
+            source_key = descriptor["object_key"] if descriptor else f"{root}/source/{source.path}"
             metadata = self._storage.head(source_key)
             if metadata is None or metadata.size != source.size:
                 raise problem(
@@ -515,15 +519,48 @@ class LeRobotWebUploadService:
                     ),
                 )
             digest = hashlib.sha256()
+            received = 0
+            if descriptor and metadata.etag != descriptor["etag"]:
+                raise problem(
+                    status=409,
+                    code="OSS_IMPORT_SOURCE_CHANGED",
+                    title="OSS 文件已变化",
+                    detail="请重新检查 OSS 来源。",
+                )
             for chunk in self._storage.read_chunks(source_key):
+                received += len(chunk)
+                if received > source.size:
+                    raise problem(
+                        status=409,
+                        code="OSS_IMPORT_SOURCE_CHANGED",
+                        title="原始文件已变化",
+                        detail="文件大小与检查结果不一致。",
+                    )
                 digest.update(chunk)
+            if received != source.size or (
+                descriptor and self._storage.head(source_key) != metadata
+            ):
+                raise problem(
+                    status=409,
+                    code="OSS_IMPORT_SOURCE_CHANGED",
+                    title="原始文件已变化",
+                    detail="文件在登记期间发生变化，请重新检查。",
+                )
             raw_files.append(
                 {"path": source.path, "size": source.size, "sha256": digest.hexdigest()}
             )
+            if descriptor:
+                raw_files[-1].update(object_key=source_key, source_etag=descriptor["etag"])
             total_size += source.size
 
         info_body = (
-            read_bounded(self._storage, f"{root}/source/meta/info.json", 1024 * 1024)
+            read_bounded(
+                self._storage,
+                references["meta/info.json"]["object_key"]
+                if reference
+                else f"{root}/source/meta/info.json",
+                1024 * 1024,
+            )
             if command.manifest.source_format == "LEROBOT_V3"
             else b"{}"
         )
@@ -568,8 +605,8 @@ class LeRobotWebUploadService:
             "source_format_version": source_version,
             "processing_mode": command.manifest.processing_mode,
             "content_hash": dataset_digest,
-            "storage_mode": "native_objects",
-            "source_prefix": f"{root}/source",
+            "storage_mode": "oss_reference" if reference else "native_objects",
+            "source_prefix": source_prefix,
             "total_size": total_size,
             "file_count": len(raw_files),
             "files": sorted(raw_files, key=lambda item: str(item["path"])),
@@ -577,9 +614,14 @@ class LeRobotWebUploadService:
             "resolved_revision": dataset_digest[:40],
             "episode_count": command.manifest.episode_count,
         }
+        if session.get("oss_archive"):
+            raw_manifest["oss_archive"] = session["oss_archive"]
         if capture_snapshot is not None:
             raw_manifest["processing_config_snapshot"] = capture_snapshot
-        if command.manifest.processing_mode == "PROCESS":
+        if (
+            command.manifest.source_format == "LEROBOT_V3"
+            and command.manifest.processing_mode == "PROCESS"
+        ):
             from .capabilities import NATIVE_PROCESSING_REVISION
 
             raw_manifest["processing_capability_revision"] = (
@@ -587,11 +629,33 @@ class LeRobotWebUploadService:
             )
         # Raw source objects are immutable and byte-identical to the browser files.
         # Platform metadata is stored beside, never inside, the original source tree.
-        self._storage.put_json(f"{root}/manifest.json", raw_manifest, if_none_match=False)
-        if command.manifest.processing_mode == "STORE_ONLY":
+        if reference:
+            raw_manifest["source_uri"] = reference["source_uri"]
+            manifest_key = f"{root}/manifest.json"
+            try:
+                self._storage.put_json(manifest_key, raw_manifest, if_none_match=True)
+            except Exception:
+                if (
+                    json.loads(read_bounded(self._storage, manifest_key, 8 * 1024**2))
+                    != raw_manifest
+                ):
+                    raise problem(
+                        status=409,
+                        code="OSS_IMPORT_SOURCE_CHANGED",
+                        title="OSS 原始数据已变化",
+                        detail="已登记的原始文件不能被替换，请重新检查来源。",
+                    ) from None
+        else:
+            self._storage.put_json(f"{root}/manifest.json", raw_manifest, if_none_match=False)
+        process_mcap = (
+            command.manifest.source_format == "MCAP"
+            and command.manifest.processing_mode == "PROCESS"
+        )
+        if command.manifest.processing_mode == "STORE_ONLY" or process_mcap:
             self.raw_sources.register_committed(
                 CommittedRawSourceGraph(
                     capture_snapshot=capture_snapshot,
+                    mcap_files=raw_files if process_mcap else None,
                     source=RawSource(
                         raw_source_id=import_id,
                         organization_id=organization_id,
@@ -604,11 +668,15 @@ class LeRobotWebUploadService:
                         source_format=RawSourceFormat(command.manifest.source_format),
                         source_format_version=source_version,
                         manifest_key=f"{root}/manifest.json",
-                        storage_prefix=f"{root}/source",
+                        storage_prefix=source_prefix,
                         content_hash=dataset_digest,
                         file_count=len(raw_files),
                         total_bytes=total_size,
-                        processing_status=RawSourceProcessingStatus.NOT_REQUESTED,
+                        processing_status=(
+                            RawSourceProcessingStatus.PENDING
+                            if process_mcap
+                            else RawSourceProcessingStatus.NOT_REQUESTED
+                        ),
                     ),
                     job=RawIngestJob(
                         organization_id=organization_id,
@@ -616,9 +684,15 @@ class LeRobotWebUploadService:
                         region_code=region_code,
                         raw_source_id=import_id,
                         job_id=f"raw-storage-{import_id}",
-                        job_type=RawIngestJobType.RAW_STORAGE,
-                        adapter_name="raw_storage",
-                        status=RawIngestJobStatus.SUCCEEDED,
+                        job_type=(
+                            RawIngestJobType.CONTINUOUS_RECORDING_DISCOVERY
+                            if process_mcap
+                            else RawIngestJobType.RAW_STORAGE
+                        ),
+                        adapter_name="mcap" if process_mcap else "raw_storage",
+                        status=RawIngestJobStatus.PENDING
+                        if process_mcap
+                        else RawIngestJobStatus.SUCCEEDED,
                     ),
                 )
             )
@@ -671,7 +745,7 @@ class LeRobotWebUploadService:
                     source_format=RawSourceFormat.LEROBOT_V3,
                     source_format_version="v3.0",
                     manifest_key=f"{root}/manifest.json",
-                    storage_prefix=f"{root}/source",
+                    storage_prefix=source_prefix,
                     content_hash=dataset_digest,
                     file_count=len(raw_files),
                     total_bytes=total_size,
@@ -882,7 +956,7 @@ def _stable_import_id(
         "region_code": region_code,
         "dataset_id": manifest.dataset_id,
     }
-    if manifest.processing_mode == "STORE_ONLY":
+    if manifest.processing_mode == "STORE_ONLY" or manifest.source_format == "MCAP":
         # Multiple sources may belong to one dataset. Identical selections still
         # resume the same upload; unrelated files never collide with its session.
         identity["manifest"] = _canonical_manifest(manifest)

@@ -1,6 +1,7 @@
 """Durable standalone MCAP preparation; shares recording registration with robots."""
 
 import hashlib
+import io
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -27,10 +28,12 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.ingest.models import utc_now
 from hc_data_platform.object_storage.checksums import crc64_ecma
+from hc_data_platform.quality.processing_errors import recording_preparation_error
 from hc_data_platform.robot_ingest.raw_recording import publish, verify
 from hc_data_platform.security.audit import canonical_hash
 
 from .configuration import connections, validate_target
+from .mcap_original import ORIGINAL_PATH, original_key, replay_asset
 from .robot_eligibility import import_robots
 
 
@@ -122,6 +125,8 @@ def progress(scope, raw_id, manifest=None):
         )
         for row in rows
     ]
+    for entry in history:
+        entry["error"] = recording_preparation_error(entry["error"])
     files = list(
         {f["path"]: next(x for x in history if x["path"] == f["path"]) for f in history}.values()
     )
@@ -187,7 +192,7 @@ def record_rejection(db, scope, raw, manifest, command, snapshot):
     sync_source(db, scope, raw.raw_source_id)
 
 
-def start(scope, raw, manifest, command):
+def start(scope, raw, manifest, command, *, actor=None):
     validate_target(
         *scope,
         SimpleNamespace(
@@ -228,19 +233,71 @@ def start(scope, raw, manifest, command):
             (command.robot_id, command.collection_task_id, *scope, raw.raw_source_id),
         )
         frozen = resolve_raw_snapshot(db, scope, raw.raw_source_id)
-        if frozen.get("error"):
-            record_rejection(db, scope, raw, manifest, command, frozen)
-        else:
-            cfg = McapProcessingConfig.model_validate(frozen["effective_adapter"]["configuration"])
-            enqueue_files(db, scope, raw, manifest, command, cfg, reference=frozen)
+        if (
+            actor
+            and frozen.get("error") == "CAPTURE_PLAN_REQUIRED"
+            and manifest.get("processing_mode") == "STORE_ONLY"
+            and not manifest.get("collection_task_id")
+            and not manifest.get("robot_id")
+        ):
+            from hc_data_platform.capture_schemes.ports import unresolved_receipt
+            from hc_data_platform.capture_schemes.recovery import recover_for_retry
+            from hc_data_platform.core.errors import ProblemException
+
+            try:
+                with db.transaction():
+                    frozen = recover_for_retry(
+                        db, scope, raw.raw_source_id, actor, bind_archived_mcap=True
+                    )
+            except ProblemException as exc:
+                frozen = unresolved_receipt(exc.problem.code, exc.problem.detail)
+
+        dispatch_snapshot(db, scope, raw, manifest, command, frozen)
         db.commit()
     return progress(scope, raw.raw_source_id)
 
 
+def dispatch_bound_source(db, raw, files):
+    from hc_data_platform.capture_schemes.processing import resolve_raw_snapshot
+
+    scope = (raw.organization_id, raw.project_id, raw.region_code)
+    frozen = resolve_raw_snapshot(db, scope, raw.raw_source_id)
+    dispatch_snapshot(db, scope, raw, {"files": files}, raw, frozen)
+
+
+def dispatch_snapshot(db, scope, raw, manifest, command, frozen):
+    if frozen.get("error"):
+        db.execute(
+            """UPDATE ingest.raw_ingest_jobs SET job_type='CONTINUOUS_RECORDING_DISCOVERY',
+            adapter_name='mcap' WHERE organization_id=%s AND project_id=%s AND region_code=%s
+            AND raw_source_id=%s AND job_type='RAW_STORAGE'""",
+            (*scope, raw.raw_source_id),
+        )
+        record_rejection(db, scope, raw, manifest, command, frozen)
+    else:
+        cfg = McapProcessingConfig.model_validate(frozen["effective_adapter"]["configuration"])
+        enqueue_files(db, scope, raw, manifest, command, cfg, reference=frozen)
+
+
+def source_receipt(file, raw):
+    return {
+        "path": file["path"],
+        "size": file["size"],
+        "sha256": file["sha256"],
+        "object_key": file.get("object_key") or raw.storage_prefix + "/" + file["path"],
+    }
+
+
+def mcap_document(file, members, raw):
+    document = {**source_receipt(file, raw), "processor_version": VERSION}
+    companion = members.get(str(Path(file["path"]).with_suffix(".takeovers.json")))
+    if companion is not None:
+        document["takeover_file"] = source_receipt(companion, raw)
+    return document
+
+
 def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
     """Queue preparation in the caller's Raw commit transaction for every ingress."""
-    from hc_data_platform.robot_ingest.recording_bridge import EVENT_TYPE
-
     files = [f for f in manifest["files"] if f["path"].lower().endswith(".mcap")]
     if not files:
         raise ValueError("MCAP source has no MCAP members")
@@ -269,14 +326,9 @@ def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
         AND raw_source_id=%s""",
         (*scope, raw.raw_source_id),
     )
+    members = {entry["path"]: entry for entry in manifest["files"]}
     for file in files:
-        document = {
-            "path": file["path"],
-            "size": file["size"],
-            "sha256": file["sha256"],
-            "object_key": file.get("object_key") or raw.storage_prefix + "/" + file["path"],
-            "processor_version": VERSION,
-        }
+        document = mcap_document(file, members, raw)
         identity = {
             "scope": scope,
             "raw": raw.raw_source_id,
@@ -330,51 +382,58 @@ def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
                 json.dumps(reference) if reference else None,
             ),
         )
-        state = db.execute(
-            """SELECT status,attempts FROM ingest.mcap_processing_files
-
-            WHERE organization_id=%s AND project_id=%s
-            AND region_code=%s
-            AND processing_id=%s FOR UPDATE""",
-            (*scope, ident),
-        ).fetchone()
-        if state[0] in {"READY", "RUNNING"}:
-            continue
-        attempt = state[1] + (state[0] == "FAILED")
-        db.execute(
-            """UPDATE ingest.mcap_processing_files
-            SET status='PENDING',error=NULL,attempts=%s,updated_at=now()
-
-            WHERE organization_id=%s AND project_id=%s
-            AND region_code=%s
-            AND processing_id=%s""",
-            (attempt, *scope, ident),
-        )
-        event = DomainEventEnvelope(
-            event_id=str(uuid5(NAMESPACE_URL, f"mcap:{ident}:{attempt}")),
-            event_type=EVENT_TYPE,
-            aggregate_type="raw_source",
-            aggregate_id=raw.raw_source_id,
-            organization_id=scope[0],
-            project_id=scope[1],
-            region_code=scope[2],
-            payload={"mcap_processing_id": ident, "attempt": attempt},
-        )
-        db.execute(
-            (
-                """INSERT INTO core.outbox_events
-                (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)
-                VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,now()) ON CONFLICT DO NOTHING"""
-            ),
-            (
-                event.event_id,
-                *scope,
-                event.event_type,
-                event.model_dump_json(),
-                event.occurred_at,
-            ),
-        )
+        enqueue_attempt(db, scope, raw.raw_source_id, ident)
     sync_source(db, scope, raw.raw_source_id)
+
+
+def enqueue_attempt(db, scope, raw_id, ident):
+    """Retry the existing immutable inputs and issue one event per attempt."""
+    from hc_data_platform.robot_ingest.recording_bridge import EVENT_TYPE
+
+    state = db.execute(
+        """SELECT status,attempts FROM ingest.mcap_processing_files
+
+        WHERE organization_id=%s AND project_id=%s
+        AND region_code=%s
+        AND processing_id=%s FOR UPDATE""",
+        (*scope, ident),
+    ).fetchone()
+    if state[0] in {"READY", "RUNNING"}:
+        return
+    attempt = state[1] + (state[0] == "FAILED")
+    db.execute(
+        """UPDATE ingest.mcap_processing_files
+        SET status='PENDING',error=NULL,attempts=%s,updated_at=now()
+
+        WHERE organization_id=%s AND project_id=%s
+        AND region_code=%s
+        AND processing_id=%s""",
+        (attempt, *scope, ident),
+    )
+    event = DomainEventEnvelope(
+        event_id=str(uuid5(NAMESPACE_URL, f"mcap:{ident}:{attempt}")),
+        event_type=EVENT_TYPE,
+        aggregate_type="raw_source",
+        aggregate_id=raw_id,
+        organization_id=scope[0],
+        project_id=scope[1],
+        region_code=scope[2],
+        payload={"mcap_processing_id": ident, "attempt": attempt},
+    )
+    db.execute(
+        (
+            """INSERT INTO core.outbox_events
+            (event_id,organization_id,project_id,region_code,event_type,envelope,occurred_at,available_at)
+            VALUES(%s,%s,%s,%s,%s,%s::jsonb,%s,now()) ON CONFLICT DO NOTHING"""
+        ),
+        (
+            event.event_id,
+            *scope,
+            event.event_type,
+            event.model_dump_json(),
+            event.occurred_at,
+        ),
+    )
 
 
 def process_file(handler, event, checkpoint):
@@ -435,7 +494,8 @@ def process_file(handler, event, checkpoint):
             parser = VERSION if cfg.get("normalization") else "native-mcap-recording/3"
             if row[8] and row[8].get("effective_adapter", {}).get("parser_version") != parser:
                 raise ValueError("CAPTURE_PARSER_UPGRADE_REQUIRED: select a plan using " + parser)
-            if row[8] and row[8].get("reprocessing"):
+            reprocessing = bool(row[8] and row[8].get("reprocessing"))
+            if reprocessing:
                 from hc_data_platform.capture_schemes.reprocess import execution_snapshot
                 with handler.connections() as db:
                     execution_snapshot(db, scope, event.aggregate_id, row[8])
@@ -456,24 +516,28 @@ def process_file(handler, event, checkpoint):
                     or recorded.upload_id != uid
                 ):
                     raise ValueError("MCAP derivation receipt scope mismatch")
-                for asset in assets:
-                    expected = (
-                        original["object_key"]
-                        if asset.manifest.path == "source/original/source.mcap"
-                        else prefix + "/" + asset.manifest.sha256 + "/" + asset.manifest.path
-                    )
-                    if asset.object_key != expected:
-                        raise ValueError("MCAP derivation locator mismatch")
-                    verify(
-                        handler.storage,
-                        asset.object_key,
-                        asset.manifest.size,
-                        asset.manifest.sha256,
-                        checkpoint,
-                    )
+                assets = tuple(
+                    replay_asset(handler.storage, asset, original, prefix, reprocessing, checkpoint)
+                    for asset in assets
+                )
             else:
                 with TemporaryDirectory(prefix="native-mcap-") as temporary:
                     root = Path(temporary)
+                    takeover_times = None
+                    companion = original.get("takeover_file")
+                    if companion:
+                        from hc_data_platform.continuous_recordings.takeovers import parse_takeovers
+
+                        if companion["size"] > 1024**2:
+                            raise ValueError("MCAP_TAKEOVERS_INVALID: companion exceeds 1 MiB")
+                        buffer = io.BytesIO()
+                        verify(
+                            handler.storage, companion["object_key"], companion["size"],
+                            companion["sha256"], checkpoint, buffer,
+                        )
+                        takeover_times = parse_takeovers(
+                            buffer.getvalue(), Path(original["path"]).name
+                        )
                     source = root / "source.mcap"
                     with source.open("wb") as output:
                         verify(
@@ -519,6 +583,12 @@ def process_file(handler, event, checkpoint):
                         )
                         provenance["capture_snapshot"] = row[8]
                         provenance["capture_validation"] = evidence
+                    if takeover_times is not None:
+                        if provenance["clock"] not in {"ros_header_stamp", "mcap_log_time"}:
+                            raise ValueError(
+                                "MCAP_TAKEOVERS_INVALID: recording has no ROS timeline"
+                            )
+                        provenance["takeover_intervals_ns"] = takeover_times
                     # These locators are platform-owned immutable receipts, not user input.
                     provenance.update(
                         source_object=original,
@@ -527,6 +597,8 @@ def process_file(handler, event, checkpoint):
                         robot_id=robot,
                         dataset_id=dataset,
                     )
+                    from hc_data_platform.episode_store.selected_cache import freeze_selection
+                    freeze_selection(provenance, prefix)
                     (output / "mcap-provenance.json").write_text(json.dumps(provenance))
                     declarations, locations = [], {}
                     camera_files = {
@@ -573,17 +645,18 @@ def process_file(handler, event, checkpoint):
                         locations[relative] = (key, head.etag)
                     declarations.append(
                         dict(
-                            path="source/original/source.mcap",
+                            path=ORIGINAL_PATH,
                             role="AUXILIARY",
                             media_type="application/mcap",
                             size=original["size"],
                             sha256=original["sha256"],
                         )
                     )
-                    locations["source/original/source.mcap"] = (
-                        original["object_key"],
-                        handler.storage.head(original["object_key"]).etag,
-                    )
+                    source_key = original_key(original, prefix, reprocessing)
+                    source_head = handler.storage.head(source_key)
+                    if source_head is None:
+                        raise ValueError("MCAP original source is missing")
+                    locations[ORIGINAL_PATH] = (source_key, source_head.etag)
                     started = datetime.fromtimestamp(
                         provenance["source_origin_ns"] // 10**9, timezone.utc
                     ) + timedelta(microseconds=(provenance["source_origin_ns"] % 10**9) // 1000)
@@ -666,7 +739,7 @@ def process_file(handler, event, checkpoint):
                     WHERE organization_id=%s AND project_id=%s
                     AND region_code=%s
                     AND processing_id=%s AND status<>'READY'""",
-                    (str(exc)[:2000], *scope, ident),
+                    (recording_preparation_error(str(exc))[:2000], *scope, ident),
                 )
                 sync_source(db, scope, event.aggregate_id)
                 db.commit()
@@ -713,7 +786,7 @@ def retry_source(scope, raw_id, factory):
         rows = db.execute(
             (
                 """SELECT DISTINCT ON (source_path) source_document,collection_task_id,
-                robot_id,dataset_id,status,configuration,config_reference FROM
+                robot_id,dataset_id,status,config_reference,processing_id FROM
                 ingest.mcap_processing_files WHERE organization_id=%s AND project_id=%s AND
                 region_code=%s AND raw_source_id=%s ORDER BY source_path,created_at
                 DESC,processing_id"""
@@ -722,27 +795,35 @@ def retry_source(scope, raw_id, factory):
         ).fetchall()
         if not rows:
             return False
-        for document, task, robot, dataset, status, previous_config, reference in rows:
+        if not any(row[4] == "FAILED" for row in rows):
+            return True
+        for document, task, robot, dataset, status, reference, ident in rows:
             if status != "FAILED":
                 continue
-            if reference and reference.get("error"):
-                from hc_data_platform.capture_schemes.recovery import recover_for_retry
-                from hc_data_platform.core.context import current_request_context
+            if not (reference and reference.get("error")):
+                # The file row pins the exact plan, original and any takeover companion.
+                enqueue_attempt(db, scope, raw_id, ident)
+                continue
+            from hc_data_platform.capture_schemes.recovery import recover_for_retry
+            from hc_data_platform.core.context import current_request_context
 
-                reference = recover_for_retry(
-                    db, scope, raw_id, current_request_context().subject_id or "processing-retry"
-                )
-                previous_config = reference["effective_adapter"]["configuration"]
-            cfg = previous_config
+            reference = recover_for_retry(
+                db, scope, raw_id, current_request_context().subject_id or "processing-retry"
+            )
+            cfg = McapProcessingConfig.model_validate(reference["effective_adapter"]["configuration"])
+            members = [document]
+            if document.get("takeover_file"):
+                members.append(document["takeover_file"])
             enqueue_files(
                 db,
                 scope,
                 SimpleNamespace(raw_source_id=raw_id, dataset_id=dataset),
-                {"files": [document]},
+                {"files": members},
                 SimpleNamespace(collection_task_id=task, robot_id=robot),
-                McapProcessingConfig.model_validate(cfg),
+                cfg,
                 reference=reference,
             )
+        sync_source(db, scope, raw_id)
         db.commit()
     return True
 

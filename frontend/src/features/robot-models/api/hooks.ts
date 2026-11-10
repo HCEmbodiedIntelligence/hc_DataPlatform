@@ -30,6 +30,20 @@ export function useScopedRobotModels(
   );
 }
 
+export function useScopedDeleteRobotModel(organizationId: string | null) {
+  const client = useQueryClient();
+  return useScopedMutation(
+    organizationScope(organizationId),
+    (scope, modelId: string) =>
+      api.deleteRobotModel(scope.organizationId, modelId),
+    {
+      onSuccess: (_data, _modelId, binding) => {
+        void invalidateScopedDomain(client, binding, "robot-models");
+      },
+    },
+  );
+}
+
 export function useScopedRobotModelVersion(
   organizationId: string | null,
   versionId: string | null,

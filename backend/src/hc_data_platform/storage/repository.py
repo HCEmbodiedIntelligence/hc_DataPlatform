@@ -93,6 +93,13 @@ class InMemoryStorageRepository:
             ):
                 self._latest_snapshot[project_id] = snapshot_id
 
+    def capacity_summary(self, *, project_id: str, snapshot_id: str) -> CapacitySnapshot | None:
+        with self._lock:
+            return self._snapshots.get((project_id, snapshot_id))
+
+    def inventory_details_expired(self, *, project_id: str, snapshot_id: str) -> bool:
+        return False
+
     def latest_snapshot_id(self, *, project_id: str) -> str | None:
         with self._lock:
             return self._latest_snapshot.get(project_id)

@@ -91,6 +91,7 @@ def annotation_source(batch_source):  # noqa: F811 -- imported pytest fixture
             editor,
             operations,
             tags=tags,
+            episode_outcome="success",
             expected_revision=0,
             if_match=claimed.etag,
             client_mutation_id="source-save",
@@ -159,6 +160,7 @@ def test_complete_mapping_copies_tags_exclusions_but_keeps_review_independent(an
         old = annotations.get_history(task_id, actor(plan.legacy.identity))
         new = annotations.get_history(task.task_id, actor(plan.legacy.identity))
         assert new.revisions[1].tags == old.revisions[1].tags
+        assert new.revisions[1].episode_outcome == old.revisions[1].episode_outcome == "success"
         assert normalize_operations(new.revisions, 1) == normalize_operations(old.revisions, 1)
         assert new.revisions[1].content_hash != old.revisions[1].content_hash
         assert not new.reviews and not new.submissions

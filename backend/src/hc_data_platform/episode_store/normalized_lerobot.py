@@ -30,7 +30,8 @@ from .normalized_export import frame_selection
 from .prepared_assets import PreparedVideo
 from .statistics import refresh_numeric_statistics
 
-PROCESSOR = "hc-lerobot-collection/4"
+PROCESSOR = "hc-lerobot-collection/5"
+PREVIOUS_PROCESSOR = "hc-lerobot-collection/4"
 LEGACY_PROCESSOR = "hc-lerobot-collection/3"
 
 
@@ -66,10 +67,12 @@ class SelectedView:
             return json.loads(path.read_bytes())
 
 
-def views(selection, parent_directory, checkpoint, modalities, *, compact_invalid=True):
+def views(selection, parent_directory, checkpoint, modalities, *, compact_invalid=True,
+          split_annotations=True):
     parent = selection.package
     parent_entries = {entry.path: entry for entry in parent.manifest.files}
-    selected = frame_selection(selection, compact_invalid=compact_invalid)
+    selected = frame_selection(selection, compact_invalid=compact_invalid,
+                               split_annotations=split_annotations)
     with parent.file(DATA_PATH) as path:
         original = pq.read_table(path)
     for _, items in groupby(selected.items(), key=lambda item: item[1]["segment"]):
@@ -97,7 +100,9 @@ def views(selection, parent_directory, checkpoint, modalities, *, compact_invali
             segments = []
             if selection.annotation_file is not None:
                 segments = [{"subtask_index": 0, "label": task, "start_step": 0, "end_step": count,
-                             "parent_start_step": indexes[0], "parent_end_step": indexes[-1] + 1}]
+                             "parent_start_step": indexes[0], "parent_end_step": indexes[-1] + 1,
+                             **({"annotation_id": frames[0][1]["annotation_id"]}
+                                if "annotation_id" in frames[0][1] else {})}]
                 replacements.update(subtask_index=[0] * count, **{"hc.annotation.excluded": [False] * count})
                 if compact_invalid:
                     info["features"].update({
@@ -115,6 +120,10 @@ def views(selection, parent_directory, checkpoint, modalities, *, compact_invali
             (root / "meta").mkdir(exist_ok=True)
             pq.write_table(make_task_table([task]), root / "meta/tasks.parquet")
             (root / "hc").mkdir()
+            if split_annotations and selection.annotation_file is not None:
+                (root / "hc/annotation.json").write_bytes(selection.annotation_file.content)
+                if selection.review_document is not None:
+                    (root / "hc/annotation-review.json").write_bytes(canonical(selection.review_document))
             (root / "hc/selected_frames.json").write_bytes(canonical(frames))
             if "hc/source_frames.parquet" in parent_entries:
                 if compact_invalid:
@@ -197,4 +206,21 @@ def views(selection, parent_directory, checkpoint, modalities, *, compact_invali
             (root / "meta/stats.json").write_bytes(canonical(stats))
             if compact_invalid:
                 refresh_numeric_statistics(root)
-            yield SelectedView(root, parent, frames, segments, selection, operations)
+            view = SelectedView(root, parent, frames, segments, selection, operations)
+            if split_annotations and selection.annotation_file is not None:
+                from hc_data_platform.annotation.subtasks import SubtaskProjection
+                from .annotated_delivery import ReviewReference
+
+                annotation = selection.annotation_file
+                view.annotation = SimpleNamespace(
+                    subtasks=SubtaskProjection.freeze(
+                        json.loads(annotation.content), parent.receipt.data,
+                        annotation.file.content_sha256, selection.track,
+                    ).binding,
+                    review=ReviewReference(
+                        status="APPROVED" if annotation.approved else "UNREVIEWED",
+                        review_id=annotation.review_id,
+                        submission_id=annotation.submission_id,
+                    ),
+                )
+            yield view

@@ -125,7 +125,7 @@ def inspect(path, progress=lambda: None, *, selected_topics=None):
     return result
 
 
-def resolve(config, inventory):
+def resolve(config, inventory, *, fill_action_gaps=False):
     config = McapProcessingConfig.model_validate(config)
     joints = [
         k for k, v in inventory.items() if v["kind"] == "joints" and v.get("message_count", 1) > 0
@@ -142,7 +142,9 @@ def resolve(config, inventory):
         )
     state, action = config.state_topic, config.action_topic
     for role, topic in (("state", state), ("action", action)):
-        if topic and topic not in joints:
+        can_fill_empty = (fill_action_gaps and role == "action" and
+                          (topic not in inventory or not inventory[topic].get("message_count", 1)))
+        if topic and topic not in joints and not can_fill_empty:
             raise ValueError(
                 f"MCAP_MAPPING_INVALID: {role} topic {topic!r} absent, empty or incompatible; "
                 f"candidates={joints}"
@@ -190,7 +192,7 @@ def resolve(config, inventory):
                 f"actual {found['schema']}/{found['kind']}"
             )
     state_names = inventory[state]["joint_names"]
-    action_names = inventory[action]["joint_names"] if action else state_names
+    action_names = inventory[action]["joint_names"] if action in joints else state_names
     if (
         not state_names
         or not action_names
@@ -241,7 +243,7 @@ def depth_contract(encoding, scale):
     }
 
 
-def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False):
+def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False, fill_action_gaps=False):
     config = McapProcessingConfig.model_validate(config)
     if config.semantic_output is not None:
         from .mcap_semantic import prepare_semantic
@@ -255,7 +257,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             return prepare_transport(path, destination, progress)
     inventory = inspect(path, progress, selected_topics=selected_topics(config)
                         if config.cameras or config.collection_mode == "JOINT_ONLY" else None)
-    cfg = resolve(config, inventory)
+    cfg = resolve(config, inventory, fill_action_gaps=fill_action_gaps)
     version = VERSION if cfg.normalization else "native-mcap-recording/3"
     clock = cfg.primary_camera if cfg.time_source == "RGB_LOG_TIME" else cfg.state_topic
     if inventory[clock].get("backwards_timestamps"):
@@ -339,7 +341,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             times[topic] = sorted(set(times[topic]))
         for topic in numeric:
             numeric[topic].sort(key=lambda x: x[0])
-            if not numeric[topic]:
+            if not numeric[topic] and not (fill_action_gaps and topic == cfg.action_topic):
                 raise ValueError("MCAP_EMPTY_REQUIRED_TOPIC")
         primary = (
             times[clock]
@@ -381,6 +383,8 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                 # Shared outputs use causal hold; source age/validity retain gaps.
                 index = bisect.bisect_right(stamps, target) - 1
                 return index if index >= 0 else None
+            if not stamps:
+                return None
             i = bisect.bisect_left(stamps, target)
             candidates = [j for j in (i - 1, i) if 0 <= j < len(stamps)]
             j = min(candidates, key=lambda j: (abs(stamps[j] - target), stamps[j]))
@@ -404,6 +408,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                 **({"evidence_path": evidence} if c["kind"] == "depth" else {}),
             }
         numeric_times = {k: [x[0] for x in v] for k, v in numeric.items()}
+        filled = {"next_frame_state": 0, "terminal_state": 0}
         invalid = 0
         previous_primary = None
         with (
@@ -453,8 +458,6 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                                 else -1
                             )
                         pos = nearest(numeric_times[topic], reference)
-                        if pos is None:
-                            reasons.append(key + ":missing")
                         sample = numeric[topic][pos][1] if pos is not None else {}
                         # Diagnostic evidence is not an accepted alignment. Retain
                         # the closest timestamp even when it exceeds tolerance.
@@ -462,17 +465,38 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                         insertion = bisect.bisect_left(times_for_topic, reference)
                         candidates = [j for j in (insertion - 1, insertion) if 0 <= j < len(times_for_topic)]
                         closest = min(candidates, key=lambda j: (abs(times_for_topic[j] - reference), times_for_topic[j])) if candidates else None
+                        origin = {}
+                        source_time = numeric[topic][pos][0] if pos is not None else None
+                        source_topic = topic
+                        if fill_action_gaps and key == TOPICS[1] and pos is None:
+                            # Use the very same state selection as observation.state on the
+                            # next preserved training frame, including its acceptance window.
+                            next_index = min(index + 1, count - 1)
+                            state_target = primary[next_index]
+                            state_pos = nearest(numeric_times[cfg.state_topic], state_target)
+                            origin = {"action_origin": "unfilled_state", "source_frame": next_index,
+                                      "state_reference_timestamp_ns": state_target}
+                            source_topic = cfg.state_topic
+                            if state_pos is not None:
+                                state_time, state = numeric[cfg.state_topic][state_pos]
+                                if set(cfg.required_axes("action")).issubset(state):
+                                    source_time, sample, source_topic = state_time, state, cfg.state_topic
+                                    kind = "terminal_state" if next_index == index else "next_frame_state"
+                                    origin = {"action_origin": kind, "source_frame": next_index,
+                                              "state_reference_timestamp_ns": state_target}
+                                    filled[kind] += 1
+                        if source_time is None:
+                            reasons.append(key + ":missing")
                         values[key] = {
                             "values": [sample.get(name, 0.0) for name in names]
-                            if pos is not None
+                            if source_time is not None
                             else [0.0 if cfg.action_required_axes is not None or cfg.state_required_axes is not None else None] * len(names),
                             "validity": [name in sample for name in names],
-                            "source_timestamp_ns": numeric[topic][pos][0]
-                            if pos is not None
-                            else None,
+                            "source_timestamp_ns": source_time,
+                            **origin,
                             "nearest_source_timestamp_ns": times_for_topic[closest] if closest is not None and reference >= 0 else None,
                             "alignment_reference_timestamp_ns": reference if reference >= 0 else None,
-                            "source_topic": topic,
+                            "source_topic": source_topic,
                             "names": list(names),
                             "units": list(units) if units else ["unknown"] * len(names),
                         }
@@ -588,6 +612,9 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             "collection_mode": cfg.collection_mode,
             "config": cfg.model_dump(mode="json"),
             "inventory": inventory,
+            **({"action_gap_fill": {"policy": "next_frame_state_terminal_current",
+                                    "filled_frames": sum(filled.values()), **filled}}
+               if fill_action_gaps else {}),
             "invalid_frames": invalid,
             "frames": count,
             "source_frequency_hz": (

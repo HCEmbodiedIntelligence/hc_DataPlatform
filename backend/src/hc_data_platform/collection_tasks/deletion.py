@@ -98,7 +98,7 @@ class PostgresTaskDeletion:
     def __init__(self, connections, objects):
         self.connections, self.objects = connections, objects
 
-    def delete(self, scope, task_id, if_match, idempotency_key):
+    def delete(self, scope, task_id, if_match, idempotency_key, *, robot_id=None):
         org, project, region = scope
         connection = self.connections()
         try:
@@ -125,9 +125,10 @@ class PostgresTaskDeletion:
                     # Plan and detach under short-lived table write locks. This
                     # closes the race between dependency discovery and new uploads.
                     cursor.execute("SET LOCAL lock_timeout='5s'")
+                    tables = (*TABLES, "robotics.robot_reference_links") if robot_id else TABLES
                     cursor.execute(
                         sql.SQL("LOCK TABLE {} IN SHARE ROW EXCLUSIVE MODE").format(
-                            sql.SQL(",").join(sql.Identifier(*t.split(".")) for t in sorted(TABLES))
+                            sql.SQL(",").join(sql.Identifier(*t.split(".")) for t in sorted(tables))
                         )
                     )
                     cursor.execute(
@@ -144,6 +145,8 @@ class PostgresTaskDeletion:
                         raise task_not_found()
                     ResourceVersion(task["version"]).require(if_match)
                     plan = build_plan(cursor, task, scope, self.objects.bucket, self.objects)
+                    if robot_id:
+                        verify_robot_files(cursor, plan, scope, robot_id)
                     result = TaskDeletionResult(
                         collection_task_id=task_id,
                         task_code=task["task_code"],
@@ -263,6 +266,66 @@ class PostgresTaskDeletion:
                 json.dumps(result),
             ),
         )
+
+
+def verify_robot_files(cursor, plan, scope, robot_id):
+    """Recheck ownership under the writer locks before detaching the task graph."""
+    references = (
+        ("ingest.raw_sources", "raw", "raw_source_id", "robot_id"),
+        ("ingest.robot_ingest_uploads", "upload", "upload_id", "authenticated_robot_id"),
+        ("ingest.collection_jobs", "collection_job", "collection_job_id", "robot_id"),
+        (
+            "ingest.recording_uploads",
+            "recording_upload",
+            "upload_id",
+            "upload_document #>> '{command,robot_id}'",
+        ),
+    )
+    file_rollouts = {r["rollout_id"] for r in plan.rows.get("ingest.upload_sessions", ())}
+    job_origins = {
+        r["collection_job_id"]: r["robot_id"] for r in plan.rows.get("ingest.collection_jobs", ())
+    }
+    file_jobs = set()
+    for row in plan.rows.get("ingest.rollouts", ()):
+        if row["rollout_id"] in file_rollouts:
+            if job_origins.get(row["collection_job_id"]) != row["robot_id"]:
+                raise conflict("ROBOT_FILES_SHARED", "采集作业与采集记录的机器人归属不一致。")
+            file_jobs.add(row["collection_job_id"])
+    verified = False
+    for table, kind, key, origin in references:
+        ids = [r[key] for r in plan.rows.get(table, ())]
+        if kind == "collection_job":
+            ids = [value for value in ids if value in file_jobs]
+        if not ids:
+            continue
+        cursor.execute(
+            f"SELECT count(*) FROM {table} WHERE organization_id=%s AND project_id=%s "
+            f"AND region_code=%s AND {key}::text=ANY(%s) AND robotics.robot_reference_owner("
+            f"organization_id,%s,project_id,region_code,{key}::text,{origin})=%s",
+            (*scope, ids, kind, robot_id),
+        )
+        if cursor.fetchone()[0] != len(ids):
+            raise conflict(
+                "ROBOT_FILES_SHARED", "该任务包含其他机器人或归属未确认的数据，无法随机器人删除。"
+            )
+        verified = True
+    if not verified:
+        raise conflict("ROBOT_FILES_CHANGED", "任务的采集文件归属已变化，请刷新后重试。")
+    if (
+        any(
+            row["state"] not in {"COMMITTED", "FAILED", "CANCELLED"}
+            for row in plan.rows.get("ingest.robot_ingest_uploads", ())
+        )
+        or any(
+            row["status"] not in {"COMMITTED", "FAILED"}
+            for row in plan.rows.get("ingest.recording_uploads", ())
+        )
+        or any(
+            row["status"] not in {"RAW_COMMITTED", "FAILED", "CANCELLED"}
+            for row in plan.rows.get("ingest.upload_sessions", ())
+        )
+    ):
+        raise conflict("ROBOT_FILES_BUSY", "仍有文件正在上传，请结束上传后重试。")
 
 
 def deletion_order(cursor):

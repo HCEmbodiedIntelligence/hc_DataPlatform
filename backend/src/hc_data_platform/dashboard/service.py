@@ -14,6 +14,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.core.pagination import CursorCodec, PageInfo
 from hc_data_platform.ingest.problem_lifecycle import is_discarded
 from hc_data_platform.ingest.processing_status import processing_interruption
+from hc_data_platform.quality.processing_errors import MCAP_ASSET_CONFLICT
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import (
     CAPABILITY_ANNOTATION_REVIEW,
@@ -905,14 +906,14 @@ def _package_main_state(fact: TaskStatusPackageFact) -> TaskPackageMainState:
         return TaskPackageMainState.ALIGNING
     if fact.alignment_status == "READY":
         return TaskPackageMainState.LANCE_WRITING
+    if fact.workflow_stage == "awaiting_slice":
+        return TaskPackageMainState.AWAITING_SLICE
     if fact.qc_status == "PASS":
         return TaskPackageMainState.STANDARDIZATION_WAITING
     if fact.workflow_stage == "dispatch" and fact.workflow_error_code:
         return TaskPackageMainState.VALIDATION_FAILED
     if fact.verification_status == "REJECTED":
         return TaskPackageMainState.VALIDATION_FAILED
-    if fact.workflow_stage == "awaiting_slice":
-        return TaskPackageMainState.AWAITING_SLICE
     if (
         fact.raw_committed
         and fact.qc_status is None
@@ -1083,7 +1084,9 @@ def _stage_counts(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskStag
 
         if fact.duplicate_of_rollout_id is not None:
             validation_bucket = "isolated"
-        elif not fact.raw_committed or main is TaskPackageMainState.AWAITING_SLICE:
+        elif not fact.raw_committed or (
+            main is TaskPackageMainState.AWAITING_SLICE and fact.qc_status is None
+        ):
             validation_bucket = "not_started"
         elif (
             fact.verification_status == "REJECTED" or main is TaskPackageMainState.VALIDATION_FAILED
@@ -1209,7 +1212,9 @@ def _blockers(
         from hc_data_platform.quality.processing_errors import PROCESSING_ERRORS
 
         code = fact.workflow_error_code or fact.verification_reason_code
-        if code in PROCESSING_ERRORS:
+        if code == MCAP_ASSET_CONFLICT:
+            value = (code, "录制登记失败", "TECHNICAL", True)
+        elif code in PROCESSING_ERRORS:
             value = (code, PROCESSING_ERRORS[code], "RAW_VALIDATION", False)
         elif main is TaskPackageMainState.UPLOAD_FAILED:
             value = (fact.upload_failure_code or "UPLOAD_FAILED", "上传失败", "UPLOAD", True)
@@ -1319,6 +1324,9 @@ def _data_issues(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskDataI
                 "TECHNICAL": TaskProcessingStage.STANDARDIZATION,
             }[blocker.category]
             description = f"此数据包在{label}处停止，请核对原始数据及错误码。"
+            if code == MCAP_ASSET_CONFLICT:
+                stage = TaskProcessingStage.AUTOMATIC_VALIDATION
+                description = "新录制登记文件时与已有录制的存储路径冲突，质检尚未开始。请重试处理，无需重新上传。"
         issues.append(
             TaskDataIssue(
                 task_id=fact.task_id,
@@ -1534,7 +1542,7 @@ def _selected_task_status(
     next_step = (
         blockers[0].label
         if blockers
-        else "请在录制切片中确认区间并提交成片，提交后开始自动质检。"
+        else "录制已通过质检，请确认切片区间并提交成片，提交后自动对齐入库。"
         if active_stage is TaskProcessingStage.AUTOMATIC_VALIDATION and qc.awaiting_slice
         else (
             "任务已达标，生命周期仍为ACTIVE，请确认后关闭任务。"

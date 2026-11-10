@@ -25,12 +25,12 @@ def rules(**updates):
         "postprocessing_rules": {"version":2, "rules":updates.get("rules", ops)}})
 
 
-def record(path, actions):
+def record(path, actions, *, state_times=(100, 140)):
     encode = serialize_dynamic("sensor_msgs/msg/JointState", JOINT)["sensor_msgs/msg/JointState"]
     with path.open("wb") as stream:
         w = Writer(stream); w.start(profile="ros2")
         schema = w.register_schema("sensor_msgs/msg/JointState", "ros2msg", JOINT.encode())
-        for topic, times in (("/observation/joint_states", [100, 140]), ("/action/joint_states", actions)):
+        for topic, times in (("/observation/joint_states", state_times), ("/action/joint_states", actions)):
             c = w.register_channel(topic, "cdr", schema)
             for i,t in enumerate(times):
                 stamp = 10**12 + t * 10**6
@@ -160,3 +160,71 @@ def test_new_scheme_with_independent_layout_runs_full_decoder(tmp_path, algorith
             if c.topic=="/rig/action":
                 assert positions["mast"]==m.sequence+1
                 assert positions["lift"]==m.sequence+101
+
+
+def test_initial_fill_stops_at_first_command_even_if_delivery_is_late(tmp_path):
+    raw, out = tmp_path / "raw.mcap", tmp_path / "selected.mcap"
+    record(raw, [120, 140], state_times=[100, 110, 120, 130, 140])
+    operations = [op.model_dump() for op in rules().postprocessing_rules.rules if op.kind != "generate_action"]
+    cfg = rules(rules=[*operations, {"kind": "fill_initial_action", "enabled": True}])
+    summary = select_mcap(raw, out, cfg)["normalization"]
+    assert summary["initial_action_messages"] == summary["generated_action_messages"] == 2
+    assert summary["replaced_action_messages"] == 2
+    assert summary["first_recorded_action_time_ns"] == 10**12 + 120 * 10**6
+    with out.open("rb") as stream:
+        actions = [decoded(s, c, m, McapRos2DecoderProbe())
+                   for s, c, m in make_reader(stream).iter_messages(topics=[cfg.action_topic])]
+    assert [a.header.stamp.nanosec // 10**6 for a in actions] == [100, 110, 120, 140]
+    assert [a.position[list(a.name).index(JOINTS[0])] for a in actions] == [100, 110, 2120, 2140]
+    record(raw, [])
+    with pytest.raises(ValueError, match="MCAP_SELECTED_SOURCE_MISSING"):
+        select_mcap(raw, out, cfg)
+
+
+@pytest.mark.parametrize("commands", [[140], [], [260]])
+def test_missing_actions_use_next_aligned_state_and_terminal_current(tmp_path, commands):
+    from hc_data_platform.continuous_recordings.mcap_native import prepare
+    raw, dest = tmp_path / "recording.mcap", tmp_path / "derived"
+    stamps = [100, 140, 180, 220, 260]
+    record(raw, commands, state_times=stamps)
+    ops = [op.model_dump() for op in rules().postprocessing_rules.rules if op.kind != "generate_action"]
+    cfg = rules(rules=[*ops, {"kind": "fill_action_from_next_frame", "enabled": True}])
+    _, evidence = prepare(raw, dest, cfg)
+    with (dest / "sensors/robot.mcap").open("rb") as stream:
+        rows = {}
+        for _, ch, m in make_reader(stream).iter_messages():
+            rows.setdefault(m.sequence, {})[ch.topic] = json.loads(m.data)
+    assert len(rows) == len(stamps)
+    for i, stamp in enumerate(stamps):
+        action = rows[i]["/action"]
+        if stamp in commands:
+            assert "action_origin" not in action
+            assert action["values"][0] == 2000 + stamp
+        else:
+            j = min(i + 1, len(stamps) - 1)
+            state = rows[j]["/observation/state"]
+            assert action["values"] == state["values"]
+            assert action["source_timestamp_ns"] == state["source_timestamp_ns"]
+            assert action["action_origin"] == ("terminal_state" if i == j else "next_frame_state")
+            assert rows[i]["/metadata/source"]["action_fill"]["source_frame"] == j
+    assert evidence["action_gap_fill"]["filled_frames"] == len(stamps) - len(commands)
+
+
+def test_cut_terminal_never_uses_state_outside_slice(tmp_path):
+    from hc_data_platform.continuous_recordings.action_labels import window_messages
+    from hc_data_platform.continuous_recordings.mcap_native import prepare
+    raw, dest = tmp_path / "raw.mcap", tmp_path / "derived"
+    record(raw, [140], state_times=[100, 140, 180, 220, 260])
+    ops = [op.model_dump() for op in rules().postprocessing_rules.rules if op.kind != "generate_action"]
+    cfg = rules(rules=[*ops, {"kind": "fill_action_from_next_frame", "enabled": True}])
+    prepare(raw, dest, cfg)
+    with (dest / "sensors/robot.mcap").open("rb") as stream:
+        rows = {}
+        for _, ch, m in window_messages(make_reader(stream).iter_messages(), 40_000_000, 81_000_000,
+                                        cfg.model_dump(mode="json")):
+            rows.setdefault(m.sequence, {})[ch.topic] = json.loads(m.data)
+    assert set(rows) == {1, 2}
+    assert "action_origin" not in rows[1]["/action"]
+    assert rows[2]["/humanoid/action"]["values"] == rows[2]["/observation/state"]["values"]
+    assert rows[2]["/metadata/source"]["action_fill"]["source_frame"] == 2
+    assert rows[2]["/action"]["action_origin"] == "terminal_state"

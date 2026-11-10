@@ -5,9 +5,11 @@ import type {
 import type { RecordingVideoSource } from "./api";
 import type { EditableSlice } from "./model";
 
+import { localObjectStorageUrl as recordingPlaybackUrl } from "../../shared/lib/object-storage-url";
+
 function authorizedMedia(source: RecordingVideoSource) {
   return {
-    url: source.source_url,
+    url: recordingPlaybackUrl(source.source_url),
     expiresAt: source.expires_at,
     kind: source.modality === "depth" ? "depth-preview" : "rgb-video",
   };

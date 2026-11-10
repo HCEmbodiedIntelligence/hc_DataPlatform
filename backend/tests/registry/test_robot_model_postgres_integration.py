@@ -827,3 +827,67 @@ def test_postgres_discard_rolls_back_an_unbound_import_publication(
             (ORGANIZATION_ID, DRAFT_VERSION_ID),
         )
         assert cursor.fetchone() == (0,)
+
+def test_delete_model_is_atomic_when_a_later_version_is_bound(postgres_dsn: str) -> None:
+    model_id = "p14-delete-model"
+    robot_id = "p14-delete-test-robot"
+    versions = ["p14-delete-1", "p14-delete-2", "p14-delete-3"]
+    with psycopg.connect(postgres_dsn) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO registry.robot_models
+               (organization_id, model_id, manufacturer, model_code, display_name)
+               VALUES (%s, %s, 'HC', 'p14-delete-test', 'Test model')""",
+            (ORGANIZATION_ID, model_id),
+        )
+        for version_id in versions:
+            cursor.execute(
+                """INSERT INTO registry.robot_model_versions
+                   (organization_id, version_id, robot_model_id, version_label, lifecycle,
+                    asset_availability, publish_readiness, etag)
+                   VALUES (%s, %s, %s, %s, 'PUBLISHED', 'AVAILABLE', 'READY', 'test')""",
+                (ORGANIZATION_ID, version_id, model_id, version_id),
+            )
+        cursor.execute(
+            """UPDATE registry.robot_models SET current_published_version_id=%s
+               WHERE organization_id=%s AND model_id=%s""",
+            (versions[0], ORGANIZATION_ID, model_id),
+        )
+        cursor.execute(
+            """INSERT INTO robotics.robot_assets
+               (organization_id, robot_id, display_name, serial_no, lifecycle_status,
+                connectivity_state, etag, topology_revision, binding_id,
+                robot_model_version_id, binding_valid_from, binding_etag)
+               VALUES (%s, %s, 'Test robot', %s, 'ACTIVE', 'OFFLINE', 'test', 'test',
+                       gen_random_uuid(), %s, now(), 'test')""",
+            (ORGANIZATION_ID, robot_id, robot_id, versions[-1]),
+        )
+    service = _service(postgres_dsn)
+    with _within_project_request():
+        with pytest.raises(ProblemException) as blocked:
+            service.delete_robot_model(
+                auth=_auth(can_manage=True), organization_id=ORGANIZATION_ID,
+                project_id=PROJECT_ID, model_id=model_id, request_id="p14-delete-blocked",
+            )
+        assert blocked.value.problem.code == "ROBOT_MODEL_IN_USE"
+    with psycopg.connect(postgres_dsn) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """SELECT version_id FROM registry.robot_model_versions
+               WHERE organization_id=%s AND robot_model_id=%s ORDER BY version_id""",
+            (ORGANIZATION_ID, model_id),
+        )
+        assert [row[0] for row in cursor.fetchall()] == versions
+        cursor.execute(
+            "DELETE FROM robotics.robot_assets WHERE organization_id=%s AND robot_id=%s",
+            (ORGANIZATION_ID, robot_id),
+        )
+    with _within_project_request():
+        service.delete_robot_model(
+            auth=_auth(can_manage=True), organization_id=ORGANIZATION_ID,
+            project_id=PROJECT_ID, model_id=model_id, request_id="p14-delete-allowed",
+        )
+    with psycopg.connect(postgres_dsn) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT model_id FROM registry.robot_models WHERE organization_id=%s AND model_id=%s",
+            (ORGANIZATION_ID, model_id),
+        )
+        assert cursor.fetchone() is None

@@ -1,14 +1,30 @@
 // @vitest-environment jsdom
 
-import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import * as matchers from "@testing-library/jest-dom/matchers";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
 import { useShellStore } from "../../shared/scope/shell-store";
 import { Component } from "./page";
 
+vi.mock("../../features/robot-models/importing/use-robot-model-import", () => ({
+  useRobotModelImport: () => ({ beginImport: vi.fn() }),
+}));
+vi.mock("../../features/robot-models/importing/RobotModelImportDialog", () => ({
+  RobotModelImportDialog: () => null,
+}));
+
+expect.extend(matchers);
+
 const apiFixtures = vi.hoisted(() => ({
+  deleteModel: vi.fn(),
   jointMappings: [] as Array<{
     source_joint_name: string;
     target_joint_name: string;
@@ -46,6 +62,11 @@ vi.mock("../../features/robot-models/api/hooks", () => {
     variables: undefined,
   });
   return {
+    useScopedDeleteRobotModel: () => ({
+      ...mutation(),
+      reset: vi.fn(),
+      mutate: apiFixtures.deleteModel,
+    }),
     useScopedRobotModels: () => ({
       data: {
         items: apiFixtures.models,
@@ -132,6 +153,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  useShellStore.setState({ platformCapabilities: [], bootstrapLoaded: false });
   vi.clearAllMocks();
   vi.restoreAllMocks();
 });
@@ -145,8 +167,39 @@ describe("P14 robot model asset navigation", () => {
     );
 
     expect(
-      screen.getByRole("link", { name: "导入 URDF / 配置文件" }),
-    ).toHaveAttribute("href", "/settings/robots");
+      screen.getByRole("button", { name: "导入模型" }),
+    ).toBeInTheDocument();
+  });
+
+  it("confirms the chosen row before deleting a model", async () => {
+    useShellStore.setState({
+      bootstrapLoaded: true,
+      platformCapabilities: ["robot_model.manage"],
+    });
+    apiFixtures.models = ["A", "B"].map((id) => ({
+      id,
+      displayName: `模型 ${id}`,
+      modelCode: id,
+      manufacturer: "HC",
+      currentPublishedVersionId: `version-${id}`,
+    }));
+    render(
+      <MemoryRouter>
+        <Component />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^模型 B/ }));
+    fireEvent.click(screen.getByRole("button", { name: "删除模型 模型 B" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "删除机器人模型",
+    });
+    expect(dialog.textContent).toContain("模型 B");
+    expect(apiFixtures.deleteModel).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
+    expect(apiFixtures.deleteModel).toHaveBeenCalledWith(
+      "B",
+      expect.any(Object),
+    );
   });
 
   it("shows published joint mappings as read-only version facts", async () => {

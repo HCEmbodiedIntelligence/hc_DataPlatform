@@ -21,6 +21,14 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class EpisodeOutcome(str, Enum):
+    UNMARKED = "UNMARKED"
+    LEGACY_SUCCESS = "SUCCESS"
+    LEGACY_FAILURE = "FAILURE"
+    SUCCESS = "success"
+    FAILURE = "fail"
+
+
 class AnnotationStatus(str, Enum):
     DRAFT = "DRAFT"
     SUBMITTED = "SUBMITTED"
@@ -447,6 +455,7 @@ class AnnotationRevision(AnnotationDataBinding):
     tag_schema_id: str = Field(default="default-flat", min_length=1)
     tag_schema_version: int = Field(default=1, ge=1)
     tags: tuple[AnnotationTag, ...] = ()
+    episode_outcome: EpisodeOutcome = EpisodeOutcome.UNMARKED
     operations: tuple[AnnotationOperation, ...]
     origin: RevisionOrigin = RevisionOrigin.ANNOTATION
     content_hash: str = Field(default="0" * 64, pattern=r"^[0-9a-f]{64}$")
@@ -638,6 +647,7 @@ class AnnotationDraft(AnnotationDataBinding):
     tag_schema_id: str
     tag_schema_version: int = Field(ge=1)
     tags: tuple[AnnotationTag, ...]
+    episode_outcome: EpisodeOutcome = EpisodeOutcome.UNMARKED
     operations: tuple[AnnotationOperation, ...]
     effective_exclusions: tuple[ExclusionRange, ...]
     etag: str
@@ -683,6 +693,7 @@ class AnnotationApprovedV1(AnnotationDataBinding):
     review_id: str
     reviewer_id: str
     excluded_ranges: tuple[ExclusionRange, ...]
+    episode_outcome: EpisodeOutcome = EpisodeOutcome.UNMARKED
     approved_at: datetime
 
 

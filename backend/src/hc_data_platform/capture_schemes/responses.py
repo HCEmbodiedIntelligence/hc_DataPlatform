@@ -110,6 +110,7 @@ class CaptureSchemeLink(Strict):
     mapping: CaptureMappingVersion
     scheme: CaptureSchemeVersion
     archived: bool
+    # Coverage of optional sample checks. Association availability is independent.
     status: Literal["READY", "MAPPING_UNVERIFIED"]
     validated_formats: tuple[SourceFormat, ...]
     validations: tuple[CaptureEvidence, ...]

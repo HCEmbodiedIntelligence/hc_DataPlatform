@@ -75,7 +75,8 @@ export function RecordingEpisodeActions({
             disabled={mutation.isPending}
             onClick={() => mutation.mutate("retry")}
           >
-            {blocked ? "重新检查处理配置" : "重新质检并继续处理"}
+            {blocked ? "重新检查处理配置"
+              : episode.failure_stage === "episode_commit" ? "重试入库" : "重新质检并继续处理"}
           </Button>
         )}
         {blocked && <Link to="/collection-tasks">查看采集任务配置</Link>}

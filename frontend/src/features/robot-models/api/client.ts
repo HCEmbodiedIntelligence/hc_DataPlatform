@@ -310,6 +310,19 @@ export async function getRobotModelVersion(
   );
 }
 
+export async function deleteRobotModel(
+  organizationId: string,
+  modelId: string,
+): Promise<void> {
+  await request<void>({
+    method: "DELETE",
+    path: `/organizations/${encodeURIComponent(organizationId)}/robot-models/${encodeURIComponent(modelId)}`,
+    scopeMode: "explicit",
+    scope: { organizationId },
+    cache: "no-store",
+  });
+}
+
 export async function discardRobotModelImport(
   organizationId: string,
   versionId: string,

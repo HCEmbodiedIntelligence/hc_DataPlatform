@@ -50,6 +50,8 @@ from hc_data_platform.platform_ops.task_leases import (
     PostgresPlatformTaskLeaseRepository,
 )
 
+from .names import control_task_queue
+
 DEFAULT_TASK_QUEUE = "hc-data-pipeline"
 DEFAULT_WORKER_READINESS_FILE = Path("/tmp/hc-runtime/worker-ready")
 logger = logging.getLogger(__name__)
@@ -209,6 +211,19 @@ def discover_temporal_registrations(
     if role == "media":
         return [], [create_aligned_media, prepare_aligned_media]
 
+    if role == "control":
+        from .activities import (
+            cleanup_alignment_staging,
+            create_annotation_task,
+            update_continuous_episode_state,
+        )
+
+        return [], [
+            update_continuous_episode_state,
+            create_annotation_task,
+            cleanup_alignment_staging,
+        ]
+
     return [
         LeRobotImportWorkflow,
         *ALL_WORKFLOWS,
@@ -321,6 +336,21 @@ async def serve() -> None:
     )
     robot_executor = None
     if role != "media":
+        _, control_activities = discover_temporal_registrations("control")
+        worker = WorkerGroup(
+            worker,
+            Worker(
+                client,
+                task_queue=control_task_queue(task_queue),
+                activities=control_activities,
+                max_concurrent_activities=settings.worker_control_max_concurrent_activities,
+                graceful_shutdown_timeout=timedelta(
+                    seconds=settings.worker_graceful_shutdown_seconds
+                ),
+                build_id=build_id,
+                use_worker_versioning=build_id is not None,
+            ),
+        )
         from hc_data_platform.robot_ingest.lerobot_processor import robot_task_queue
         from hc_data_platform.robot_ingest.processing_worker import RobotProcessingActivities
         from hc_data_platform.robot_ingest.processing_workflow import RobotIngestProcessingWorkflow
@@ -403,15 +433,19 @@ async def serve() -> None:
     )
     inventory = (
         build_storage_inventory(settings)
-        if role != "media" and object_store_configured and settings.storage_inventory_scopes
+        if role != "media"
+        and object_store_configured
+        and (settings.storage_inventory_scopes or settings.local_scope_discovery)
         else None
     )
     from hc_data_platform.lerobot_imports.cache import SourceCache
 
+    from hc_data_platform.storage.cache_policy import SharedCachePolicy
     source_cache_sweeper = SourceCache(
         Path(settings.alignment_staging_root) / "lerobot-cache",
         max_bytes=settings.lerobot_cache_max_bytes,
         ttl_seconds=settings.lerobot_cache_ttl_hours * 3600,
+        retention=SharedCachePolicy(settings, "CLEAN_PROCESSING_STAGING"),
     )
     projection_staging_sweeper = (
         build_projection_staging_sweeper(settings)
@@ -433,17 +467,17 @@ async def serve() -> None:
         if role != "media" and object_store_configured and settings.outbox_scopes
         else None
     )
-    staging_roots = (
-        (Path(settings.aligned_media_staging_root),)
-        if role == "media"
-        else (
-            Path(settings.aligned_media_staging_root),
-            Path(settings.alignment_staging_root) / "projections",
-        )
-    )
+    staging_roots = (Path(settings.aligned_media_staging_root),)
+    processing_staging = MediaStagingSweeper(
+        (Path(settings.alignment_staging_root) / "projections",
+         Path(settings.alignment_staging_root) / "episode-packages" / "files"),
+        ttl=timedelta(hours=settings.lerobot_cache_ttl_hours),
+        retention=SharedCachePolicy(settings, "CLEAN_PROCESSING_STAGING"),
+    ) if role != "media" else None
     media_staging = MediaStagingSweeper(
         staging_roots,
         ttl=timedelta(hours=settings.aligned_media_staging_ttl_hours),
+        retention=SharedCachePolicy(settings, "CLEAN_MEDIA_STAGING"),
     )
     persistent_runtime_config = settings.environment in {"staging", "production"}
     persistent_instance_directory = persistent_platform_control
@@ -522,6 +556,7 @@ async def serve() -> None:
                             sweeper.run_once
                             for sweeper in (
                                 source_cache_sweeper,
+                                processing_staging,
                                 projection_staging_sweeper,
                                 aligned_media_orphan_reconciler,
                             )

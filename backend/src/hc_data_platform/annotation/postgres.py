@@ -30,6 +30,7 @@ from .models import (
     AnnotationTask,
     AnnotationTaskCreationSource,
     AnnotationTaskKind,
+    EpisodeOutcome,
     OperationKind,
     ReviewCheckKind,
     ReviewDecision,
@@ -814,7 +815,7 @@ class PostgresAnnotationRepository:
                 """
                 SELECT task_id, revision, parent_revision, author_id,
                        client_mutation_id, base_lance_version, tag_schema_id,
-                       tag_schema_version, tags, origin,
+                       tag_schema_version, tags, origin, episode_outcome,
                        content_hash, created_at, data_ref
                 FROM annotation.annotation_revisions
                 WHERE task_id = %s
@@ -916,6 +917,7 @@ class PostgresAnnotationRepository:
                 tags=tuple(AnnotationTag.model_validate(item) for item in _as_json(row["tags"])),
                 operations=tuple(operations.get(_as_int(row["revision"]), ())),
                 origin=RevisionOrigin(str(row["origin"])),
+                episode_outcome=EpisodeOutcome(str(row["episode_outcome"])),
                 content_hash=str(row["content_hash"]),
                 created_at=cast(datetime, row["created_at"]),
             )
@@ -1088,10 +1090,11 @@ class PostgresAnnotationRepository:
             INSERT INTO annotation.annotation_revisions (
                 task_id, revision, parent_revision, author_id,
                 client_mutation_id, base_lance_version, tag_schema_id,
-                tag_schema_version, tags, origin, content_hash, created_at, data_ref
+                tag_schema_version, tags, origin, content_hash, created_at, data_ref,
+                episode_outcome
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb,
-                %s, %s, %s, %s::jsonb
+                %s, %s, %s, %s::jsonb, %s
             )
             """,
             (
@@ -1108,6 +1111,7 @@ class PostgresAnnotationRepository:
                 revision.content_hash,
                 revision.created_at,
                 data_ref_json(revision.data_ref),
+                revision.episode_outcome.value,
             ),
         )
         for sequence, operation in enumerate(revision.operations):

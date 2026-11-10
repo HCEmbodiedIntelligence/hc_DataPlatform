@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 9c79839deb443bfccbb563ea23771f70aee36fa9ccfff4486cb0422ac4ac6450
+// Runtime-OpenAPI-SHA256: 493a7d4d60eb7e9b96f60a3dca1464c4c1f58b8b7cf87a6a7eddf656fb4e3e83
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -111,6 +111,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/organizations/{organization_id}/robot-model-versions/{version_id}/viewer-assets:authorize" },
   { method: "GET", path: "/organizations/{organization_id}/robot-models" },
   { method: "POST", path: "/organizations/{organization_id}/robot-models" },
+  { method: "DELETE", path: "/organizations/{organization_id}/robot-models/{model_id}" },
   { method: "GET", path: "/organizations/{organization_id}/robot-processing-templates" },
   { method: "POST", path: "/organizations/{organization_id}/robot-processing-templates" },
   { method: "GET", path: "/organizations/{organization_id}/robots" },
@@ -283,6 +284,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:discard" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:retry" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/quality:retry" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window" },
   { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft:finalize" },
@@ -361,6 +363,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/archive" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:commit" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:inspect" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/robot-options" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/robots/{robot_id}/mcap-profile" },
   { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/robots/{robot_id}/mcap-profile" },
@@ -448,6 +452,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/storage/objects/{object_id}:restore" },
   { method: "POST", path: "/projects/{project_id}/storage/objects/{object_id}:transition" },
   { method: "POST", path: "/projects/{project_id}/storage/objects/{object_id}:trash" },
+  { method: "GET", path: "/projects/{project_id}/storage/task-usage" },
+  { method: "GET", path: "/projects/{project_id}/storage/task-usage/files" },
   { method: "POST", path: "/projects/{project_id}/tag-schemas" },
   { method: "GET", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions" },
   { method: "GET", path: "/projects/{project_id}/tag-schemas/{schema_id}/versions/{version}" },

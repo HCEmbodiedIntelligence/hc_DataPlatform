@@ -62,15 +62,13 @@ beforeEach(() => {
   );
   Object.defineProperty(window, "matchMedia", {
     writable: true,
-    value: vi
-      .fn()
-      .mockImplementation(() => ({
-        matches: false,
-        addListener() {},
-        removeListener() {},
-        addEventListener() {},
-        removeEventListener() {},
-      })),
+    value: vi.fn().mockImplementation(() => ({
+      matches: false,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+    })),
   });
   state.plan = {
     organization_id: "org",
@@ -79,6 +77,7 @@ beforeEach(() => {
     can_transfer: true,
     transfer_reason: null,
     targets: [{ id: "target", name: "接收机器人", serial_no: "SN-2" }],
+    sources: [],
     tasks: [
       {
         project_id: "project",
@@ -131,14 +130,119 @@ it("creates new associations only after choosing a destination and confirming", 
   expect(state.refetch).toHaveBeenCalledOnce();
 });
 
-it("requires explicit acknowledgement of the whole task and other robots' data", async () => {
+it("can delete the only linked source without a transfer target", async () => {
+  state.plan = {
+    ...state.plan!,
+    targets: [],
+    tasks: [],
+    config_count: 0,
+    sources: [
+      {
+        project_id: "p",
+        region_code: "east",
+        source_id: "src",
+        name: "旧数据源",
+        can_delete: true,
+      },
+    ],
+  };
+  mount();
+  await userEvent.click(screen.getByRole("button", { name: "删除数据源" }));
+  expect(screen.getByRole("button", { name: "确认永久删除" })).toBeDisabled();
+  await userEvent.click(
+    screen.getByRole("checkbox", { name: /我确认删除该数据源/ }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "确认永久删除" }));
+  await waitFor(() =>
+    expect(state.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "DELETE_SOURCE",
+        revision: "reviewed-snapshot",
+        source: { project_id: "p", region_code: "east", source_id: "src" },
+      }),
+    ),
+  );
+  expect(refreshed).toHaveBeenCalledOnce();
+});
+
+it.each(["ok", "storage failure", "changed plan"])(
+  "purges reviewed files before deleting the source (%s)",
+  async (outcome) => {
+    const source = {
+      project_id: "project",
+      region_code: "region",
+      source_id: "src",
+    };
+    state.plan!.tasks[0]!.other_robot_raw_count = 0;
+    state.plan!.sources = [
+      { ...source, name: "采集站", version: 3, can_delete: true },
+    ];
+    const next = { ...state.plan!, revision: "after-purge", tasks: [] };
+    if (outcome === "changed plan")
+      next.sources = [{ ...next.sources[0]!, version: 4 }];
+    state.refetch.mockResolvedValue({ data: next });
+    if (outcome === "storage failure")
+      state.mutateAsync.mockRejectedValueOnce(new Error("存储清理失败"));
+    mount();
+    await userEvent.click(
+      screen.getByRole("button", { name: "删除数据源及采集文件" }),
+    );
+    expect(screen.getByRole("dialog")).toHaveTextContent("00000014 · 测试任务");
+    await userEvent.click(screen.getByRole("checkbox"));
+    await userEvent.click(screen.getByRole("button", { name: "确认永久删除" }));
+    await waitFor(() => expect(refreshed).toHaveBeenCalled());
+    expect(state.mutateAsync).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        action: "DELETE_TASK",
+        task_id: "task",
+        revision: "reviewed-snapshot",
+      }),
+    );
+    if (outcome === "ok") {
+      expect(state.mutateAsync).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          action: "DELETE_SOURCE",
+          revision: "after-purge",
+          source,
+        }),
+      );
+    } else {
+      expect(state.mutateAsync).toHaveBeenCalledTimes(1);
+    }
+  },
+);
+
+it("requires choosing tasks separately if multiple sources share their scope", () => {
+  const source = {
+    project_id: "project",
+    region_code: "region",
+    source_id: "src",
+    name: "站点",
+    can_delete: true,
+  };
+  state.plan!.tasks[0]!.other_robot_raw_count = 0;
+  state.plan!.sources = [source, { ...source, source_id: "src2" }];
+  mount();
+  for (const button of screen.getAllByRole("button", {
+    name: "删除数据源及采集文件",
+  }))
+    expect(button).toBeDisabled();
+});
+
+it("keeps a shared task's files out of robot deletion", () => {
+  mount();
+  expect(screen.getByRole("button", { name: "删除任务及数据" })).toBeDisabled();
+});
+
+it("requires explicit acknowledgement of task file deletion", async () => {
+  state.plan!.tasks[0]!.other_robot_raw_count = 0;
   mount();
   await userEvent.click(screen.getByRole("button", { name: "删除任务及数据" }));
   const dialog = screen.getByRole("dialog");
   await waitFor(() =>
-    expect(
-      within(dialog).getByText(/其中 1 条来自其他机器人，也将一起删除/),
-    ).toBeVisible(),
+    expect(within(dialog).getByText(/当前共 3 条原始数据/)).toBeVisible(),
   );
   expect(screen.getByRole("button", { name: "确认永久删除" })).toBeDisabled();
   expect(state.mutateAsync).not.toHaveBeenCalled();
@@ -156,6 +260,7 @@ it("requires explicit acknowledgement of the whole task and other robots' data",
 });
 
 it("reuses a durable cleanup key when resuming an interrupted deletion", async () => {
+  state.plan!.tasks[0]!.other_robot_raw_count = 0;
   state.plan!.tasks[0]!.retry_key = "durable-key";
   mount();
   await userEvent.click(screen.getByRole("button", { name: "重试数据清理" }));
@@ -189,6 +294,7 @@ it("keeps operations disabled when the actor lacks management permission", () =>
 });
 
 it("does not run a destructive operation when its confirmation is cancelled", async () => {
+  state.plan!.tasks[0]!.other_robot_raw_count = 0;
   mount();
   await userEvent.click(screen.getByRole("button", { name: "删除任务及数据" }));
   await userEvent.click(screen.getByRole("button", { name: /取\s*消/ }));

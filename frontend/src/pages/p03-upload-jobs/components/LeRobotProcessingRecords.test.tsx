@@ -14,10 +14,13 @@ import { request } from "../../../shared/api/http-client";
 import { LeRobotProcessingRecords } from "../../../features/ingest/processing/components/LeRobotProcessingRecords";
 
 vi.mock("../../../shared/api/http-client", () => ({ request: vi.fn() }));
-vi.mock("../../../features/ingest/processing/components/ProcessingLabels", () => ({
-  useProcessingConfiguration: () => ({}),
-  ProcessingLabels: () => null,
-}));
+vi.mock(
+  "../../../features/ingest/processing/components/ProcessingLabels",
+  () => ({
+    useProcessingConfiguration: () => ({}),
+    ProcessingLabels: () => null,
+  }),
+);
 
 afterEach(() => {
   cleanup();
@@ -61,6 +64,7 @@ it("explains the 22 unfinished episodes and refreshes both pages after retry", a
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  fireEvent.click(await screen.findByText("批次详情"));
   expect(
     await screen.findByText(/共 154 个 Episode · 已就绪 132 · 处理未完成 22/),
   ).toBeVisible();

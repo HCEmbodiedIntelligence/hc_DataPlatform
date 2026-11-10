@@ -233,6 +233,36 @@ describe("explicit organization replay", () => {
     });
   });
 
+  it("loads the instance-bound revision and applies its direction to an old episode", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      const payload = envelope("org-a", path);
+      if (path.endsWith("/joint-mappings")) {
+        return new Response(JSON.stringify({
+          ...payload, items: [{ source_joint_name: "source_joint", target_joint_name: "wheel", direction: "INVERTED" }],
+        }));
+      }
+      return new Response(JSON.stringify(payload));
+    });
+    const sample = { ...stream, windowSource: {
+      loadWindow: async () => ({
+        generation: 0, timestampsNs: ["0"], values: [[0.75]],
+        series: [{ id: "source_joint", displayName: "source_joint" }],
+      }),
+    } };
+    const { result } = renderHook(
+      () => useEpisodeRobotScene("same-robot", sample, scopes[0]!, undefined, "old-snapshot-version"),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.robotScene?.jointMapping).toEqual({ source_joint: "wheel" }));
+    expect(result.current.robotScene?.modelRef.modelVersion).toBe("same-version");
+    await expect(result.current.robotScene!.jointFrameSource.sampleAt("0", new AbortController().signal))
+      .resolves.toEqual({ source_joint: -0.75 });
+    const paths = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(paths.some(path => path.endsWith("/robot-model-versions/same-version/assets"))).toBe(true);
+    expect(paths.some(path => path.includes("old-snapshot-version") || path.endsWith("/robot-models"))).toBe(false);
+  });
+
   it("disables null-scoped replay instead of selecting the shell organization", async () => {
     const { result } = renderHook(
       () => useEpisodeRobotScene("same-robot", stream, null),

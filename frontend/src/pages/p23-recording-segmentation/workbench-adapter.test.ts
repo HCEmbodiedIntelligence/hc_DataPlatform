@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi } from "vitest";
 import type { RecordingVideoSource } from "./api";
 import {
@@ -48,6 +50,21 @@ describe("recording segmentation workbench adapter", () => {
       source.asset_id,
       expect.any(AbortSignal),
     );
+  });
+
+  it("keeps a loopback preview on the gateway without changing the signed query", async () => {
+    vi.stubEnv("VITE_ROBOT_PLATFORM_BASE_URL", "https://platform.example.test");
+    try {
+      const path = "/hc-data-local/recording-previews/a%20b/media.mp4?X-Amz-Signature=abcdef&tag=x%2By";
+      const [stream] = buildRecordingCameraStreams({
+        sources: [{ ...source, source_url: `https://platform.example.test${path}` }],
+        refreshSource: vi.fn(),
+      });
+      const grant = await stream!.mediaSource!.authorize(new AbortController().signal);
+      expect(grant.url).toBe(`/_recording_media/platform.example.test${path}`);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("renders Episode slices as shared timeline segments", () => {

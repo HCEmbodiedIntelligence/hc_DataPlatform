@@ -13,7 +13,7 @@ export const captureProblemLabels: Record<string, string> = {
   CAPTURE_PLAN_REQUIRED: "任务采集方案待配置",
   CAPTURE_SCHEME_REQUIRED: "采集方案待配置",
   CAPTURE_ASSOCIATION_REQUIRED: "实例采集方案待配置",
-  CAPTURE_MAPPING_UNVERIFIED: "设备映射待验证",
+  CAPTURE_MAPPING_UNVERIFIED: "此前因缺少映射验证暂停，可重新处理",
   CAPTURE_MAPPING_MISMATCH: "映射与方案版本不符",
   CAPTURE_VERSION_MISMATCH: "采集方案版本不符",
   CAPTURE_STRUCTURE_MISMATCH: "实际数据结构与方案不符",

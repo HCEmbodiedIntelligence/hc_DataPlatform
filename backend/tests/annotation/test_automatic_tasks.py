@@ -169,7 +169,7 @@ def test_slice_descriptions_are_saved_as_full_episode_tags_and_remain_editable()
     assert initial.content_hash == revision_content_hash(
         base_lance_version=request.lance_version, data_ref=None,
         tag_schema_id=task.tag_schema_id, tag_schema_version=task.tag_schema_version,
-        tags=initial.tags, operations=(),
+        tags=initial.tags, operations=(), episode_outcome=initial.episode_outcome,
     )
     actor = AnnotationActor(actor_id="editor", project_ids=frozenset({request.project_id}),
                             capabilities=frozenset({"annotation_task.claim", "annotation_task.read", "annotation.save"}))

@@ -26,6 +26,7 @@ from .models import (
     InventoryDisposition,
     ObjectRole,
 )
+from .package_inventory import package_inventory_rows
 from .service import StorageGovernanceService
 
 _UNKNOWN_PROVIDER_OBSERVED_AT = datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -119,6 +120,8 @@ class PostgresStorageInventoryCatalog:
             entries = [
                 *self._managed_entries(cursor, project_id),
                 *self._ingest_entries(cursor, project_id),
+                *self._package_entries(cursor, project_id),
+                *self._collection_entries(cursor, project_id),
                 *self._publication_entries(cursor, project_id),
                 *self._published_export_entries(cursor, project_id),
                 *self._aligned_media_entries(cursor, project_id),
@@ -128,6 +131,66 @@ class PostgresStorageInventoryCatalog:
         finally:
             cursor.close()
             connection.close()
+
+    @staticmethod
+    def _package_entries(cursor: Any, project_id: str) -> tuple[InventoryCatalogEntry, ...]:
+        """Include the current Raw/Episode pipeline alongside legacy registrations."""
+        package_inventory_rows(cursor, project_id)
+        return tuple(
+            InventoryCatalogEntry(
+                identity=str(row["identity"]),
+                object_key=str(row["object_key"]),
+                expected_bytes=(
+                    int(cast(Any, row["expected_bytes"]))
+                    if row["expected_bytes"] is not None
+                    else None
+                ),
+                business_category=BusinessCapacityCategory(str(row["business_category"])),
+                object_role=ObjectRole(str(row["object_role"])),
+                observed_at=_aware(cast(datetime, row["observed_at"])),
+                prefix=bool(row["prefix"]),
+                priority=int(cast(Any, row["priority"])),
+                required=bool(row.get("required", True)),
+            )
+            for row in _rows(cursor, cursor.fetchall())
+        )
+
+    @staticmethod
+    def _collection_entries(cursor: Any, project_id: str) -> tuple[InventoryCatalogEntry, ...]:
+        cursor.execute(
+            """
+            SELECT organization_id, project_id, region_code, dataset_id,
+                   collection_version_id, created_at
+            FROM episode_store.collections WHERE project_id = %s
+            ORDER BY dataset_id, collection_version_id
+            """,
+            (project_id,),
+        )
+        entries = []
+        for row in _rows(cursor, cursor.fetchall()):
+            parts = (
+                str(row[key])
+                for key in (
+                    "organization_id",
+                    "project_id",
+                    "region_code",
+                    "dataset_id",
+                    "collection_version_id",
+                )
+            )
+            entries.append(
+                InventoryCatalogEntry(
+                    identity=f"collection:{row['dataset_id']}:{row['collection_version_id']}",
+                    object_key="collections/"
+                    + "/".join("id-" + quote(part, safe="-_") for part in parts)
+                    + "/manifest.json",
+                    business_category=BusinessCapacityCategory.PENDING_ANNOTATION,
+                    object_role=ObjectRole.MANIFEST,
+                    observed_at=_aware(cast(datetime, row["created_at"])),
+                    priority=70,
+                )
+            )
+        return tuple(entries)
 
     @staticmethod
     def _managed_entries(cursor: Any, project_id: str) -> tuple[InventoryCatalogEntry, ...]:

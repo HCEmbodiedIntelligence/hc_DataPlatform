@@ -1,9 +1,9 @@
 import { describeEpisodeRobotPreview } from "../../features/datasets/episodes/robot-preview-provenance";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, LockKeyhole, RefreshCw } from "lucide-react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useMatch, useNavigate, useParams } from "react-router-dom";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { isDomainError } from "../../shared/api/domain-error";
 import { useShellStore } from "../../shared/scope/shell-store";
@@ -25,8 +25,10 @@ import { AnnotationDeliveryPanel } from "./AnnotationDeliveryPanel";
 import { TagEpisodePanel } from "./TagEpisodePanel";
 import {
   createRuntimeAnnotationCommands,
+  normalizeEpisodeOutcome,
   createClientMutationId,
   loadRuntimeAnnotationBundle,
+  refreshRuntimeAnnotationBundle,
   resolveReviewRevision,
   resolveReviewSubmission,
   runtimeAnnotationScopeFromShell,
@@ -36,20 +38,21 @@ import type {
   RuntimeAnnotationBundle,
   RuntimeAnnotationScope,
   RuntimeAnnotationTag,
+  RuntimeEpisodeOutcome,
   RuntimeReviewDecision,
 } from "../../features/annotation/runtime/runtime-annotation-adapter";
 import {
   clearTagDraftRecovery,
-  loadTagDraftRecovery,
+  loadAnnotationDraftRecovery,
   saveTagDraftRecovery,
 } from "./tag-draft-recovery";
-import type { TagDraftRecoveryIdentity } from "./tag-draft-recovery";
+import type { TagDraftRecoveryIdentity, StoredRecovery } from "./tag-draft-recovery";
 import { annotationRoutes } from "../../features/annotation/routing";
 import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/joint-angle-stream";
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import styles from "./workbench.module.css";
 import { defaultAnnotationNavigatorPreferences } from "./AnnotationNavigator";
-import { annotationTaskListKey, taskQueryKey, taskQueryOptions } from "../../features/annotation/runtime/task-preload";
+import { annotationTaskListKey, synchronizeAnnotationBundle, taskQueryKey, taskQueryOptions } from "../../features/annotation/runtime/task-preload";
 
 function workbenchErrorKind(
   error: unknown,
@@ -148,6 +151,15 @@ function WorkbenchState(props: {
   );
 }
 
+function outcomeForBundle(
+  bundle: RuntimeAnnotationBundle, mode: AnnotationWorkbenchMode,
+): RuntimeEpisodeOutcome {
+  const revision = mode === "annotation"
+    ? bundle.draft ?? bundle.history.revisions.at(-1)
+    : resolveReviewRevision(bundle) ?? bundle.history.revisions.at(-1);
+  return normalizeEpisodeOutcome(revision?.episode_outcome);
+}
+
 function tagsForBundle(
   bundle: RuntimeAnnotationBundle,
   mode: AnnotationWorkbenchMode,
@@ -210,16 +222,18 @@ function permissionSnapshot(input: {
       (revision) => revision.revision < task.current_revision,
     );
   const createUnavailableReason = !input.has("annotation_task.claim")
-    ? "当前账号没有创建标注草稿的权限。"
+    ? "当前账号没有领取待标注任务的权限。"
     : task.assignee_id && !assignedToCurrent
       ? "该标注任务已由其他标注人员领取。"
       : task.status !== "DRAFT"
-        ? `任务状态为 ${task.status}，不能创建新的标注草稿。`
-        : "当前任务尚不能创建标注草稿。";
+        ? `任务状态为 ${task.status}，当前不能进入标注。`
+        : "当前账号没有编辑标注的权限。";
   const annotationUnavailableReason = canReopen
     ? "点击“修改标注”后可继续编辑。"
+    : canCreate
+    ? "正在准备标注，完成后即可直接编辑。"
     : !hasAnnotationDraft
-    ? "请先创建标注草稿。"
+    ? createUnavailableReason
     : !editableStatus
       ? `任务状态为 ${task.status}，标注编辑已锁定。`
       : !canEdit
@@ -233,7 +247,7 @@ function permissionSnapshot(input: {
         : "当前没有有效的待审核提交。"
       : undefined;
   const revisionUnavailableReason = !hasAnnotationDraft
-    ? "请先创建标注草稿。"
+    ? "标注草稿就绪后可查看数据修订。"
     : !canSave
       ? "当前账号或任务状态不允许写入数据修订。"
       : !canRevise
@@ -246,11 +260,11 @@ function permissionSnapshot(input: {
     readOnlyReason = `任务状态为 ${task.status}，没有待审核提交。`;
   else if (input.mode === "tag-review" && !input.has("annotation.review"))
     readOnlyReason = "当前授权仅允许查看，不允许创建审核决定。";
-  else if (input.mode === "annotation" && !assignedToCurrent)
-    readOnlyReason = "任务未分配给当前账号，草稿以只读方式呈现。";
+  else if (input.mode === "annotation" && !assignedToCurrent && !canCreate)
+    readOnlyReason = createUnavailableReason;
   else if (input.mode === "annotation" && !editableStatus)
     readOnlyReason = `任务状态为 ${task.status}，当前修订只读。`;
-  else if (input.mode === "annotation" && !canEdit)
+  else if (input.mode === "annotation" && !canEdit && !canCreate)
     readOnlyReason = "编辑权限已撤销或当前授权不包含标注写能力。";
   return {
     hasAnnotationDraft,
@@ -312,31 +326,59 @@ function RuntimeAnnotationTaskPage({
       const oldKey = previousQuery?.queryKey;
       if (!scope || !oldKey || !canRead) return;
       const nextKey = taskQueryKey(scope, taskId!, mode, scopeRevision);
-      // Preserve the picture only inside the same authorized workspace/mode.
-      return [0, 1, 2, 3, 4, 6].every(index => oldKey[index] === nextKey[index]) ? previous : undefined;
+      // Annotation and review share one authorized workspace. Keep the current
+      // picture while the next task loads, with writes disabled below.
+      return [0, 1, 2, 3, 4].every(index => oldKey[index] === nextKey[index]) ? previous : undefined;
     },
     staleTime: 15_000,
     gcTime: 120_000,
     retry: false,
   });
   const [tags, setTags] = useState<readonly RuntimeAnnotationTag[]>([]);
+  const [episodeOutcome, setEpisodeOutcome] = useState<RuntimeEpisodeOutcome>("success");
   const [dirty, setDirty] = useState(false);
   const [navigatorPreferences, setNavigatorPreferences] = useState(
     defaultAnnotationNavigatorPreferences,
   );
-  const [recoveryTags, setRecoveryTags] = useState<
-    readonly RuntimeAnnotationTag[] | null
-  >(null);
+  const [recoveryDraft, setRecoveryDraft] = useState<StoredRecovery | null>(null);
   const initializedBaseline = useRef<string | null>(null);
   const bundle = query.data;
   const changingTask = query.isPlaceholderData || bundle?.task.task_id !== taskId;
   useEffect(() => {
-    if (!bundle || !scope || !canRead || changingTask) return;
-    const index = bundle.tasks.findIndex(task => task.task_id === taskId);
-    const neighbors = [bundle.tasks[index + 1], bundle.tasks[index - 1]].filter(task => task !== undefined);
-    for (const task of neighbors)
-      void queryClient.prefetchQuery(taskQueryOptions(scope, task.task_id, mode, scopeRevision, bundle.tasks));
-  }, [bundle, scope, canRead, changingTask, taskId, mode, scopeRevision, queryClient]);
+    if (!bundle || !scope || changingTask || query.isFetching || !canRead || capabilities.failed) return;
+    synchronizeAnnotationBundle(queryClient, scope, scopeRevision, mode, bundle);
+  }, [bundle, scope, scopeRevision, mode, changingTask, query.isFetching, canRead, capabilities.failed, queryClient]);
+  useEffect(() => {
+    if (
+      !bundle || !scope || changingTask || query.isFetching || !canRead ||
+      capabilities.loading || capabilities.failed
+    ) return;
+    if (mode === "tag-review" && (bundle.task.status === "DRAFT" || bundle.task.status === "NEEDS_REVISION"))
+      void navigate(annotationRoutes.task.build({ taskId: bundle.task.task_id }), { replace: true });
+    else if (mode === "annotation" && bundle.task.status === "SUBMITTED") {
+      // Carry the current submission across modes so a cached draft cannot
+      // redirect the review page back to annotation.
+      queryClient.setQueryData(
+        taskQueryKey(scope, bundle.task.task_id, "tag-review", scopeRevision),
+        { ...bundle, draft: null },
+      );
+      void navigate(annotationRoutes.tagReviewTask.build({ taskId: bundle.task.task_id }), { replace: true });
+    }
+  }, [mode, bundle, scope, scopeRevision, changingTask, query.isFetching, canRead, capabilities.loading, capabilities.failed, navigate, queryClient]);
+  const prepareTask = useCallback(async (selectedTaskId: string) => {
+    if (!scope || !canRead) return;
+    const tasks = queryClient.getQueryData<RuntimeAnnotationBundle["tasks"]>(annotationTaskListKey(scope, scopeRevision));
+    const selected = tasks?.find(task => task.task_id === selectedTaskId);
+    const nextMode = selected?.status === "SUBMITTED" ? "tag-review"
+      : selected?.status === "DRAFT" || selected?.status === "NEEDS_REVISION" ? "annotation" : mode;
+    let loaded = await queryClient.fetchQuery(taskQueryOptions(scope, selectedTaskId, nextMode, scopeRevision, tasks));
+    // The task may have changed since its navigator row was loaded.
+    const actualMode = loaded.task.status === "SUBMITTED" ? "tag-review"
+      : loaded.task.status === "DRAFT" || loaded.task.status === "NEEDS_REVISION" ? "annotation" : nextMode;
+    if (actualMode === "annotation" && nextMode !== actualMode)
+      loaded = await queryClient.fetchQuery(taskQueryOptions(scope, selectedTaskId, actualMode, scopeRevision, tasks));
+    synchronizeAnnotationBundle(queryClient, scope, scopeRevision, actualMode, loaded);
+  }, [scope, canRead, mode, scopeRevision, queryClient]);
   const jointAngleStream = useMemo(
     () =>
       bundle && scope ? buildRuntimeJointAngleStream({ bundle, scope }) : null,
@@ -369,25 +411,26 @@ function RuntimeAnnotationTaskPage({
     };
   }, [bundle, mode, principal, scope]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!bundle || !baseline || initializedBaseline.current === baseline)
       return;
     initializedBaseline.current = baseline;
     setTags(tagsForBundle(bundle, mode));
-    setDirty(false);
-    setRecoveryTags(
-      recoveryIdentity ? loadTagDraftRecovery(recoveryIdentity) : null,
+    setEpisodeOutcome(outcomeForBundle(bundle, mode));
+    setDirty(mode === "annotation" && !!bundle.draft && !["success", "fail"].includes(bundle.draft.episode_outcome));
+    setRecoveryDraft(
+      recoveryIdentity ? loadAnnotationDraftRecovery(recoveryIdentity) : null,
     );
   }, [baseline, bundle, mode, recoveryIdentity]);
 
   useEffect(() => {
     if (!dirty || !recoveryIdentity) return;
     const timer = window.setTimeout(
-      () => saveTagDraftRecovery(recoveryIdentity, tags),
+      () => saveTagDraftRecovery(recoveryIdentity, tags, Date.now(), episodeOutcome),
       750,
     );
     return () => window.clearTimeout(timer);
-  }, [dirty, recoveryIdentity, tags]);
+  }, [dirty, recoveryIdentity, tags, episodeOutcome]);
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -458,6 +501,7 @@ function RuntimeAnnotationTaskPage({
   const permissions = changingTask ? {
     ...availablePermissions, canCreate: false, canEdit: false, canSave: false,
     canSubmit: false, canReview: false, canRevise: false, canReopen: false,
+    readOnlyReason: "正在切换数据，加载完成后即可继续操作。",
   } : availablePermissions;
   const canReportDataIssue =
     !changingTask &&
@@ -465,32 +509,55 @@ function RuntimeAnnotationTaskPage({
     capabilities.has(
       mode === "tag-review" ? "annotation.review" : "annotation.edit",
     );
+  const updateBundle = (updated: RuntimeAnnotationBundle) => {
+    synchronizeAnnotationBundle(queryClient, scope, scopeRevision, mode, updated);
+  };
+  const cancelTaskReads = async () => {
+    // Keep neighboring tasks warm. Cache synchronization merges their navigator
+    // snapshots by state_version, so they cannot undo this task's mutation.
+    await Promise.all([
+      queryClient.cancelQueries({ queryKey: taskQueryKey(scope, bundle.task.task_id, mode, scopeRevision).slice(0, 6) }),
+      queryClient.cancelQueries({ queryKey: annotationTaskListKey(scope, scopeRevision) }),
+    ]);
+  };
+  const refreshTask = async () => {
+    await cancelTaskReads();
+    const refreshed = await refreshRuntimeAnnotationBundle(scope, bundle, mode);
+    if (dirty && recoveryIdentity && refreshed.draft) {
+      saveTagDraftRecovery({ ...recoveryIdentity, taskEtag: refreshed.task.etag, revision: refreshed.draft.revision }, tags, Date.now(), episodeOutcome);
+    }
+    updateBundle(refreshed);
+  };
   const save = async () => {
     if (!permissions.canSave) throw new Error("当前只读状态禁止保存标注修改。");
     if (!bundle.draft) throw new Error("当前没有可保存的服务端草稿。");
-    await commands.saveDraft(bundle.task, bundle.draft, tags);
+    await cancelTaskReads();
+    await commands.saveDraft(bundle.task, bundle.draft, tags, episodeOutcome);
+    const saved = await refreshRuntimeAnnotationBundle(scope, bundle);
+    updateBundle(saved);
     if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
-    setRecoveryTags(null);
+    setRecoveryDraft(null);
     setDirty(false);
-    await query.refetch();
   };
   const restoreRevision = async (targetRevision: number) => {
     if (!permissions.canRevise)
       throw new Error("当前只读状态禁止写入数据修订。");
+    await cancelTaskReads();
     await commands.restoreRevision(bundle.task, targetRevision);
+    updateBundle(await refreshRuntimeAnnotationBundle(scope, bundle));
     if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
-    setRecoveryTags(null);
+    setRecoveryDraft(null);
     setDirty(false);
-    await query.refetch();
   };
   const submit = async () => {
     if (!permissions.canSubmit)
       throw new Error("当前状态不允许提交审核，请先保存所有修改。");
     if (!bundle.draft) throw new Error("当前没有可提交的服务端草稿。");
+    await cancelTaskReads();
     await commands.submit(bundle.task, bundle.draft.revision);
+    updateBundle(await refreshRuntimeAnnotationBundle(scope, bundle, "tag-review"));
     if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
-    setRecoveryTags(null);
-    await query.refetch();
+    setRecoveryDraft(null);
     void navigate(
       annotationRoutes.tagReviewTask.build({ taskId: bundle.task.task_id }),
     );
@@ -500,8 +567,26 @@ function RuntimeAnnotationTaskPage({
       throw new Error("当前账号或任务状态不允许创建 Tag 审核决定。");
     const submission = resolveReviewSubmission(bundle);
     if (!submission) throw new Error("正式 API 未返回可审核的固定提交版本。");
-    await commands.review(bundle.task, submission, decision, comment);
-    await query.refetch();
+    await cancelTaskReads();
+    let reviewedTask;
+    try {
+      reviewedTask = await commands.review(bundle.task, submission, decision, comment);
+    } catch (error) {
+      if (isDomainError(error) && (error.problemCode === "ANNOTATION_INVALID_STATE" ||
+          error.code === "VERSION_CONFLICT" || error.code === "PRECONDITION_FAILED")) {
+        // Never replay an old review. Read the current result and preserve the
+        // original error/request ID if refreshing is temporarily unavailable.
+        try {
+          updateBundle(await refreshRuntimeAnnotationBundle(scope, bundle, "tag-review"));
+        } catch { /* The workbench offers an explicit refresh retry. */ }
+      }
+      throw error;
+    }
+    // Disable the old submission immediately, even if fetching history fails.
+    const reviewed = { ...bundle, task: reviewedTask, draft: null,
+      history: { ...bundle.history, task: reviewedTask } };
+    updateBundle(reviewed);
+    updateBundle(await refreshRuntimeAnnotationBundle(scope, reviewed, "tag-review"));
   };
   const reportDataIssue = async (input: DataIssueReportInput) => {
     if (!canReportDataIssue)
@@ -527,8 +612,9 @@ function RuntimeAnnotationTaskPage({
   const createAnnotation = async () => {
     if (!permissions.canCreate)
       throw new Error(
-        permissions.createUnavailableReason ?? "当前不能创建标注草稿。",
+        permissions.createUnavailableReason ?? "当前不能进入标注。",
       );
+    await cancelTaskReads();
     try {
       await commands.claim(bundle.task);
     } catch (error) {
@@ -540,6 +626,7 @@ function RuntimeAnnotationTaskPage({
       if (!concurrent) throw error;
       const refreshed = await query.refetch();
       if (refreshed.error) throw refreshed.error;
+      if (refreshed.data) updateBundle(refreshed.data);
       if (
         refreshed.data?.draft &&
         refreshed.data.task.assignee_id === principal?.actorId
@@ -547,20 +634,21 @@ function RuntimeAnnotationTaskPage({
         return;
       throw error;
     }
-    const refreshed = await query.refetch();
-    if (refreshed.error) throw refreshed.error;
+    const refreshed = await refreshRuntimeAnnotationBundle(scope, bundle);
     if (
-      !refreshed.data?.draft ||
-      refreshed.data.task.assignee_id !== principal?.actorId
+      !refreshed.draft ||
+      refreshed.task.assignee_id !== principal?.actorId
     )
-      throw new Error("任务已领取，但标注草稿尚未就绪，请重试刷新。");
+      throw new Error("标注草稿尚未就绪，请重试进入标注。");
+    updateBundle(refreshed);
   };
   const reopenAnnotation = async () => {
     if (!permissions.canReopen)
       throw new Error(permissions.reopenUnavailableReason);
+    await cancelTaskReads();
     await commands.reopen(bundle.task);
     if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
-    setRecoveryTags(null);
+    setRecoveryDraft(null);
     setDirty(false);
     await queryClient.invalidateQueries({
       queryKey: annotationTaskListKey(scope, scopeRevision),
@@ -572,13 +660,17 @@ function RuntimeAnnotationTaskPage({
     });
     const refreshed = await query.refetch();
     if (refreshed.error) throw refreshed.error;
+    if (refreshed.data) updateBundle(refreshed.data);
     if (refreshed.data?.task.status !== "DRAFT")
       throw new Error("标注任务状态已变化，请刷新后重试。");
   };
   const selectTask = (selectedTaskId: string) => {
-    if (selectedTaskId === bundle.task.task_id) return;
+    const selectedTask = selectedTaskId === bundle.task.task_id ? bundle.task : bundle.tasks.find((task) => task.task_id === selectedTaskId);
+    const needsAnnotation = selectedTask?.status === "DRAFT" || selectedTask?.status === "NEEDS_REVISION";
+    const needsReview = selectedTask?.status === "SUBMITTED";
+    if (selectedTaskId === bundle.task.task_id && !(needsReview && mode !== "tag-review")) return;
     const target =
-      mode === "tag-review"
+      needsReview || (mode === "tag-review" && !needsAnnotation)
         ? annotationRoutes.tagReviewTask.build({ taskId: selectedTaskId })
         : annotationRoutes.task.build(
             { taskId: selectedTaskId },
@@ -611,7 +703,7 @@ function RuntimeAnnotationTaskPage({
 
   return (
     <AnnotationWorkbenchView
-      key={bundle.task.task_id}
+      key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${scopeRevision}`}
       bundle={bundle}
       principalId={principal?.actorId}
       navigatorPreferences={navigatorPreferences}
@@ -666,39 +758,50 @@ function RuntimeAnnotationTaskPage({
         ) : undefined
       }
       dirty={dirty}
+      switchingTask={changingTask}
       {...(jointAngleStream ? { jointAngleStream } : {})}
       mode={mode}
       canReportDataIssue={canReportDataIssue}
       permissions={permissions}
       reportDataIssueUnavailableReason="当前账号没有登记问题数据的权限。"
-      recoveryAvailable={recoveryTags !== null}
+      recoveryAvailable={recoveryDraft !== null}
       {...(robotScene ? { robotScene } : {})}
       {...(robotSceneUnavailableReason ? { robotSceneUnavailableReason } : {})}
       scope={scope}
       tags={tags}
+      episodeOutcome={episodeOutcome}
+      onEpisodeOutcomeChange={(next) => {
+        if (!permissions.canEdit) return;
+        setEpisodeOutcome(next);
+        setDirty(true);
+      }}
       onDiscardRecovery={() => {
         if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
-        setRecoveryTags(null);
+        setRecoveryDraft(null);
       }}
       onCreateAnnotation={createAnnotation}
       onReopenAnnotation={reopenAnnotation}
       onDiscardChanges={() => {
         setTags(tagsForBundle(bundle, mode));
+        setEpisodeOutcome(outcomeForBundle(bundle, mode));
         setDirty(false);
         if (recoveryIdentity) clearTagDraftRecovery(recoveryIdentity);
-        setRecoveryTags(null);
+        setRecoveryDraft(null);
       }}
       onRecover={() => {
-        if (!recoveryTags) return;
-        setTags(recoveryTags);
+        if (!recoveryDraft) return;
+        setTags(recoveryDraft.tags);
+        setEpisodeOutcome(normalizeEpisodeOutcome(recoveryDraft.episodeOutcome ?? outcomeForBundle(bundle, mode)));
         setDirty(true);
-        setRecoveryTags(null);
+        setRecoveryDraft(null);
       }}
       onReportDataIssue={reportDataIssue}
       onReview={review}
+      onRefresh={refreshTask}
       onOpenRevisions={openRevisions}
       onRestoreRevision={restoreRevision}
       onSave={save}
+      onPrepareTask={prepareTask}
       onSelectTask={selectTask}
       onSubmit={submit}
       onSwitchMode={switchMode}
@@ -712,9 +815,9 @@ function RuntimeAnnotationTaskPage({
 }
 
 export function AnnotationTaskPage(): JSX.Element {
-  return <RuntimeAnnotationTaskPage mode="annotation" />;
+  const review = useMatch(annotationRoutes.tagReviewTask.pattern);
+  return <RuntimeAnnotationTaskPage mode={review ? "tag-review" : "annotation"} />;
 }
 
-export function TagReviewTaskPage(): JSX.Element {
-  return <RuntimeAnnotationTaskPage mode="tag-review" />;
-}
+// Identical component type preserves the workspace and navigator across routes.
+export { AnnotationTaskPage as TagReviewTaskPage };

@@ -58,18 +58,33 @@ class FillPosition(RuleOption):
     max_state_delta_ms: float = Field(gt=0, le=1000)
 
 
+HAND_COMMAND_FEATURES = frozenset({"action.hand.left", "action.hand.right"})
+
+
+class ForwardFillHands(RuleOption):
+    kind: Literal["forward_fill_hands"]
+
+
+class FillActionFromNextFrame(RuleOption):
+    kind: Literal["fill_action_from_next_frame"]
+
+
+class FillInitialAction(RuleOption):
+    kind: Literal["fill_initial_action"]
+
+
 class GenerateAction(RuleOption):
     kind: Literal["generate_action"]
     source: Literal["state"]
 
 
-Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction, Field(discriminator="kind")]
+Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction | FillInitialAction | FillActionFromNextFrame | ForwardFillHands, Field(discriminator="kind")]
 
 
 class JointEditRules(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     version: Literal[2]
-    rules: tuple[Operation, ...] = Field(max_length=4)
+    rules: tuple[Operation, ...] = Field(max_length=7)
 
     @cached_property
     def active(self):
@@ -98,6 +113,8 @@ class JointEditRules(BaseModel):
                 raise ValueError("duplicate joint in rule")
             if isinstance(op, (ZeroJoints, ActionFromState)) and op.enabled and not op.axes:
                 raise ValueError("select at least one joint")
+        if "fill_action_from_next_frame" in self.active and {"fill_initial_action", "generate_action"} & self.active.keys():
+            raise ValueError("select only one action generation policy")
         if set(self.zero_joints) & set(self.action_from_state):
             raise ValueError("enabled zero and replacement joints must be disjoint")
         return self
@@ -179,7 +196,14 @@ class McapDraftConfig(BaseModel):
             for names in groups:
                 if len(names) != len(set(names)) or set(names) - axes:
                     raise ValueError("action repair axes must be unique named action joints")
-            if isinstance(rules, JointEditRules) and rules.active:
+            if isinstance(rules, JointEditRules) and "forward_fill_hands" in rules.active:
+                hands = HAND_COMMAND_FEATURES.intersection(self.numeric_sources)
+                features = (self.semantic_output or {}).get("features", {})
+                if not hands or any(features.get(name, {}).get("role") != "numeric"
+                                    or tuple(features[name].get("shape", ())) != (1,)
+                                    for name in hands):
+                    raise ValueError("hand forward fill requires a mapped scalar hand command")
+            if isinstance(rules, JointEditRules) and rules.active.keys() - {"forward_fill_hands"}:
                 state, state_units = self.layout("state")
                 action, action_units = self.layout("action")
                 if not self.state_topic or not self.action_topic or self.state_topic == self.action_topic:
@@ -195,7 +219,12 @@ class McapDraftConfig(BaseModel):
                         raise ValueError("select explicit missing position axes for this scheme")
                     needed.update(fill.missing_position_axes or ())
                     needed.update(fill.nan_position_axes)
-                if rules.missing_action_topic == "copy_state":
+                if {"fill_initial_action", "fill_action_from_next_frame"} & rules.active.keys() and any(
+                    signal.topic == self.action_topic for signal in self.numeric_sources.values()
+                ):
+                    raise ValueError("action gap fill requires a dedicated joint action topic")
+                if (rules.missing_action_topic == "copy_state" or
+                        {"fill_initial_action", "fill_action_from_next_frame"} & rules.active.keys()):
                     needed.update(set(action) - set(rules.zero_joints))
                 su, au = dict(zip(state, state_units)), dict(zip(action, action_units))
                 if any(n not in su or not su[n] or su[n] != au.get(n) for n in needed):

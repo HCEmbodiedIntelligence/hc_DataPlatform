@@ -44,8 +44,24 @@
 }
 
 .recordingWorkspace > .workbenchPage {
+  position: relative;
   min-width: 0;
   padding: 0 0 var(--hc-space-6);
+}
+
+.switchingNotice {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 10;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border: 1px solid var(--hc-color-border);
+  border-radius: var(--hc-radius-md);
+  background: var(--hc-color-surface);
+  color: var(--hc-color-text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 10%);
+  pointer-events: none;
 }
 
 .recordingNavigator {

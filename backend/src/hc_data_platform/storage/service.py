@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from hc_data_platform.core.context import current_request_context, select_request_scope
@@ -74,6 +74,10 @@ from .models import (
 from .object_store import DisabledStorageObjectOperator, StorageObjectOperator
 from .ports import StorageRepository
 from .repository import InMemoryStorageRepository
+from .task_usage_models import ProjectTaskStorage, TaskStorageFilePage, UsageCategory
+
+if TYPE_CHECKING:
+    from .task_usage import TaskStorageUsageReader
 
 Clock = Callable[[], datetime]
 
@@ -124,6 +128,7 @@ class StorageGovernanceService:
         id_factory: Callable[[], str] = lambda: str(uuid4()),
         object_operator: StorageObjectOperator | None = None,
         download_ttl_seconds: int = 300,
+        task_usage_reader: TaskStorageUsageReader | None = None,
     ) -> None:
         self._repository = repository
         self._cursor = CursorCodec(cursor_secret)
@@ -134,6 +139,52 @@ class StorageGovernanceService:
         if download_ttl_seconds < 60 or download_ttl_seconds > 3600:
             raise ValueError("download TTL must be between 60 and 3600 seconds")
         self._download_ttl_seconds = download_ttl_seconds
+        self._task_usage_reader = task_usage_reader
+
+    def task_storage_overview(
+        self,
+        *,
+        project_id: str,
+        actor: AuthContext,
+        refresh: bool = False,
+    ) -> ProjectTaskStorage:
+        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITY)
+        if self._task_usage_reader is None:
+            raise problem(
+                status=503,
+                code="STORAGE_USAGE_UNAVAILABLE",
+                title="Storage usage unavailable",
+                detail="Storage is not configured.",
+            )
+        return self._task_usage_reader.overview(project_id, refresh=refresh)
+
+    def task_storage_files(
+        self,
+        *,
+        project_id: str,
+        actor: AuthContext,
+        group_id: str,
+        category: UsageCategory | None = None,
+        search: str = "",
+        offset: int = 0,
+        limit: int = 50,
+    ) -> TaskStorageFilePage:
+        self._authorize(actor, project_id, _CAPACITY_READ_CAPABILITY)
+        if self._task_usage_reader is None:
+            raise problem(
+                status=503,
+                code="STORAGE_USAGE_UNAVAILABLE",
+                title="Storage usage unavailable",
+                detail="Storage is not configured.",
+            )
+        return self._task_usage_reader.files(
+            project_id,
+            group_id=group_id,
+            category=category,
+            search=search,
+            offset=offset,
+            limit=limit,
+        )
 
     @classmethod
     def in_memory(cls) -> StorageGovernanceService:
@@ -170,6 +221,9 @@ class StorageGovernanceService:
         resolved = snapshot_id or self._repository.latest_snapshot_id(project_id=project_id)
         if resolved is None:
             raise _not_found("capacity_snapshot")
+        summary = self._repository.capacity_summary(project_id=project_id, snapshot_id=resolved)
+        if summary is not None:
+            return summary
         facts = self._repository.inventory_facts(project_id=project_id, snapshot_id=resolved)
         if not facts:
             raise _not_found("capacity_snapshot")
@@ -251,6 +305,15 @@ class StorageGovernanceService:
             before=direction == "before",
             limit=limit + 1,
         )
+        if not items and self._repository.inventory_details_expired(
+            project_id=project_id, snapshot_id=resolved
+        ):
+            raise problem(
+                status=410,
+                code="CAPACITY_INVENTORY_DETAILS_EXPIRED",
+                title="Inventory details have expired",
+                detail="Historical capacity summary is retained; refresh to view the latest inventory.",
+            )
         has_more = len(items) > limit
         visible = items[:limit]
         if direction == "before":
@@ -620,6 +683,12 @@ class StorageGovernanceService:
                     )
                 snapshot_id = self._repository.latest_snapshot_id(project_id=project_id)
                 if snapshot_id is None:
+                    continue
+                summary = self._repository.capacity_summary(
+                    project_id=project_id, snapshot_id=snapshot_id
+                )
+                if summary is not None:
+                    snapshots.append(summary)
                     continue
                 facts = self._repository.inventory_facts(
                     project_id=project_id,
@@ -1081,6 +1150,13 @@ class StorageGovernanceService:
                 code="LIFECYCLE_POLICY_NOT_ENABLED",
                 title="Lifecycle policy is not enabled",
                 detail="Enable the policy before creating an execution plan.",
+            )
+        if policy.action.automatic_cache:
+            raise problem(
+                status=409,
+                code="LIFECYCLE_AUTOMATIC_CACHE_POLICY",
+                title="Automatic processing cache policy",
+                detail="This policy runs automatically after the configured post-ingest retention period.",
             )
         if not policy.action.physical:
             raise problem(
@@ -2109,6 +2185,8 @@ class StorageGovernanceService:
                 and policy.business_category is candidate.business_category
                 and policy.object_role is candidate.object_role
                 and policy.priority == candidate.priority
+                and (policy.action if policy.action.automatic_cache else None)
+                == (candidate.action if candidate.action.automatic_cache else None)
             ),
             None,
         )

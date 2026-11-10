@@ -48,6 +48,8 @@ function formatName(job: PackageJob) {
   const { plan } = job;
   if (plan.archive_format === "original_collection_zip/1") return "原始文件";
   if (plan.archive_format.startsWith("mcap_collection_zip/")) return "MCAP 集合";
+  if (plan.archive_format.startsWith("holobrain_collection_zip/"))
+    return "HoloBrain（19维，含腰部）";
   if (plan.archive_format === "lerobot_collection_zip/1")
     return plan.modalities === "rgb"
       ? "LeRobot RGB（不含深度）"
@@ -165,13 +167,21 @@ export function PackageBatchPanel({
     return () => window.clearTimeout(timer);
   }, [downloadLink]);
   const candidates = useInfiniteQuery({
-    queryKey: ["package-batch-candidates", scope, datasetId],
+    queryKey: ["package-batch-candidates", scope, datasetId, annotated],
     initialPageParam: undefined as
       | { collectionId: string; offset: number }
       | undefined,
     queryFn: ({ signal, pageParam }) =>
-      loadPackageCandidates(scope, datasetId!, signal, pageParam),
-    enabled: canDownload && Boolean(datasetId),
+      loadPackageCandidates(
+        scope,
+        datasetId!,
+        signal,
+        pageParam,
+        annotated ? "annotated" : "dataset",
+      ),
+    enabled:
+      canDownload && Boolean(datasetId) && (!annotated || canReadAnnotations),
+    staleTime: 0,
     getNextPageParam: (page) =>
       page.next_offset !== null && page.collection_version_id
         ? { collectionId: page.collection_version_id, offset: page.next_offset }
@@ -367,7 +377,8 @@ export function PackageBatchPanel({
               />
             )}
             <span className={styles.count} aria-live="polite">
-              共 {candidates.data?.pages[0]?.total ?? 0} 条 · 已选{" "}
+              {annotated ? "标注完成" : "共"}{" "}
+              {candidates.data?.pages[0]?.total ?? 0} 条 · 已选{" "}
               {selections.length} 条
             </span>
           </div>
@@ -436,7 +447,11 @@ export function PackageBatchPanel({
               {items.length === 0 && (
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="此数据集暂无独立标准包；可查看历史格式或原始数据。"
+                  description={
+                    annotated
+                      ? "此数据集暂无标注完成的数据，请先完成标注审核。"
+                      : "此数据集暂无独立标准包；可查看历史格式或原始数据。"
+                  }
                 />
               )}
               {candidates.hasNextPage && (
@@ -533,7 +548,7 @@ export function PackageBatchPanel({
           )}
           {annotated && canReadAnnotations && selections.length > 0 && (
             <p className={styles.annotationHint}>
-              附带当前已保存标注（含未审核内容）
+              仅导出当前已通过审核的标注
             </p>
           )}
           {annotated &&

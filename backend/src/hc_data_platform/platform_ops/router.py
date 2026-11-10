@@ -1320,6 +1320,7 @@ def get_object_store_config(
     auth: VerifiedAuth,
     service: ObjectStoreConfigServiceDependency,
     audit_sink: MaintenanceAuditDependency,
+    saved: bool = False,
 ) -> ObjectStoreConfigurationStatus:
     _require_exact_with_audit(
         auth,
@@ -1329,7 +1330,7 @@ def get_object_store_config(
         action="platform.object_store_config.read",
         resource_id="current-environment",
     )
-    result = service.current()
+    result = service.saved() if saved else service.current()
     response.headers["Cache-Control"] = "private, no-store"
     _append_platform_audit(
         audit_sink,

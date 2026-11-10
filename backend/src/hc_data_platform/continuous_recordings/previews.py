@@ -1,7 +1,7 @@
 """Worker-built recording depth previews, using the annotation display encoder.
 
-Original HEVC depth and validity evidence remain immutable. GET only authorizes
-an already published, source-bound derivative; it never starts an encoder.
+Original HEVC depth and validity evidence remain immutable. Published previews
+can be rehydrated into the local expiring cache from the same committed inputs.
 """
 
 import hashlib
@@ -60,6 +60,10 @@ def read_preview(storage, upload, asset, assets, *, selected=True):
             raise ValueError("recording preview receipt exceeds limit")
     receipt = json.loads(body)
     head = storage.head(key)
+    if head is None:
+        from hc_data_platform.storage.local_cache import local_cache_for
+        if local_cache_for(storage) is not None:
+            return None
     if (
         receipt["source_sha256"] != asset.manifest.sha256
         or head is None

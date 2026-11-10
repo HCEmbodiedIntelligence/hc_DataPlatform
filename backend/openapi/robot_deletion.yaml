@@ -13,6 +13,8 @@ components:
           - component
           - calibration
           - source
+          - collection_job
+          - recording_upload
           title: Kind
           type: string
         label:
@@ -51,6 +53,8 @@ components:
           - component
           - calibration
           - source
+          - collection_job
+          - recording_upload
           title: Kind
           type: string
         name:
@@ -106,6 +110,40 @@ components:
       - id
       - name
       title: DeletionReference
+      type: object
+    ResolutionSource:
+      additionalProperties: false
+      properties:
+        can_delete:
+          title: Can Delete
+          type: boolean
+        name:
+          title: Name
+          type: string
+        project_id:
+          minLength: 1
+          title: Project Id
+          type: string
+        region_code:
+          minLength: 1
+          title: Region Code
+          type: string
+        source_id:
+          minLength: 1
+          title: Source Id
+          type: string
+        version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Version
+      required:
+      - project_id
+      - region_code
+      - source_id
+      - name
+      - can_delete
+      title: ResolutionSource
       type: object
     ResolutionTarget:
       properties:
@@ -226,6 +264,7 @@ components:
           - TRANSFER
           - DELETE_TASK
           - CLEAN_CONFIG
+          - DELETE_SOURCE
           title: Action
           type: string
         project_id:
@@ -240,6 +279,10 @@ components:
           minLength: 1
           title: Revision
           type: string
+        source:
+          anyOf:
+          - $ref: '#/components/schemas/SourceSelection'
+          - type: 'null'
         target_robot_id:
           anyOf:
           - maxLength: 128
@@ -284,6 +327,11 @@ components:
         robot_id:
           title: Robot Id
           type: string
+        sources:
+          items:
+            $ref: '#/components/schemas/ResolutionSource'
+          title: Sources
+          type: array
         targets:
           items:
             $ref: '#/components/schemas/ResolutionTarget'
@@ -329,6 +377,27 @@ components:
       - robot_id
       - message
       title: RobotResolutionResult
+      type: object
+    SourceSelection:
+      additionalProperties: false
+      properties:
+        project_id:
+          minLength: 1
+          title: Project Id
+          type: string
+        region_code:
+          minLength: 1
+          title: Region Code
+          type: string
+        source_id:
+          minLength: 1
+          title: Source Id
+          type: string
+      required:
+      - project_id
+      - region_code
+      - source_id
+      title: SourceSelection
       type: object
 info:
   title: Robot deletion actions
@@ -456,6 +525,8 @@ paths:
             - component
             - calibration
             - source
+            - collection_job
+            - recording_upload
             type: string
           - type: 'null'
           title: Kind

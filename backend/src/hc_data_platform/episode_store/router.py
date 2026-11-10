@@ -622,11 +622,14 @@ def download(
         identity,
     ):
         package = service.files.open(identity, data_version_id)
+        from .download_names import episode_download_name
+
+        filename = episode_download_name(service.repository, (package.receipt.data,))
         path, temporary = complete_archive(package, service.directory / "downloads")
         return FileResponse(
             path,
             media_type="application/zip",
-            filename=f"episode-{package.receipt.data.data_version_id}.zip",
+            filename=filename,
             headers={"Cache-Control": "no-store"},
             background=BackgroundTask(temporary.cleanup),
         )

@@ -50,7 +50,7 @@ def publish(db, org, name, *, old=False):
     return VersionReference(**{k:version[k] for k in ("scheme_id","version","content_sha256")})
 
 
-def seed(fixture, *, intake_error=None):
+def seed(fixture, *, intake_error=None, validate_new_mapping=True):
     dsn,scope,tasks=fixture
     task=tasks[0]
     raw=SimpleNamespace(raw_source_id="raw-"+uuid4().hex,dataset_id="dataset_capture_"+task,storage_prefix="raw/fixture")
@@ -76,7 +76,11 @@ def seed(fixture, *, intake_error=None):
         save_raw_snapshot(db,scope,raw.raw_source_id,original)
         record_rejection(db,scope,raw,manifest,SimpleNamespace(collection_task_id=task,robot_id="robot-1"),{**original,"error":"MCAP_JOINT_LAYOUT_MISMATCH"})
         new=publish(db,scope[0],"new")
-        associate(db,scope[0],"robot-1",new)
+        if validate_new_mapping:
+            associate(db,scope[0],"robot-1",new)
+        else:
+            from hc_data_platform.capture_schemes.models import AssociateScheme
+            associations.associate(db, scope[0], "robot-1", AssociateScheme(expected_revision=0, scheme=new), "test")
         plans.save_plan(db,scope,task,selection(new,"robot-1",revision=1),"test")
     return dsn,scope,task,raw,manifest,original
 
@@ -137,7 +141,7 @@ def test_reprocess_rollback_leaves_no_execution_or_pending_work(environment):  #
 
 
 def test_ready_source_can_create_new_revision_without_erasing_old_result(environment):
-    dsn, scope, _, raw, manifest, original = seed(environment)
+    dsn, scope, _, raw, manifest, original = seed(environment, validate_new_mapping=False)
     with psycopg.connect(dsn) as db:
         db.execute("UPDATE ingest.mcap_processing_files SET status='READY',recording_id='historic-recording' WHERE raw_source_id=%s", (raw.raw_source_id,))
         result = request(db, scope, raw, manifest, ReprocessMcap(request_id="upgrade-ready", plan_revision=2), "test")

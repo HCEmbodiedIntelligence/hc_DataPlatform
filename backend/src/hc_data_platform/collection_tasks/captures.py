@@ -28,6 +28,9 @@ class CaptureProgress(BaseModel):
         "UPLOADING",
         "RECEIVED",
         "PREPARING",
+        "PENDING_QC",
+        "QC_RUNNING",
+        "QC_FAILED",
         "AWAITING_SLICE",
         "PROCESSING",
         "READY",
@@ -73,9 +76,10 @@ def capture_counts(items):
         received_count=len({item.upload_id for item in unique if item.received}),
         awaiting_slice_count=sum(item.stage == "AWAITING_SLICE" for item in unique),
         processing_count=sum(
-            item.stage in {"RECEIVED", "PREPARING", "PROCESSING"} for item in unique
+            item.stage in {"RECEIVED", "PREPARING", "PENDING_QC", "QC_RUNNING", "PROCESSING"}
+            for item in unique
         ),
-        failed_count=sum(item.stage == "FAILED" for item in unique),
+        failed_count=sum(item.stage in {"FAILED", "QC_FAILED"} for item in unique),
         blocked_count=sum(item.stage == "BLOCKED" for item in unique),
         episode_count=sum(item.episode_count for item in unique),
         ready_episode_count=sum(item.ready_episode_count for item in unique),
@@ -137,7 +141,9 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
                COALESCE(r.rollout_id,m.processing_id,u.upload_id),
                COALESCE(r.data_package_id,m.processing_id,u.upload_id),
                u.raw_source_id,
-               COALESCE(m.source_path,u.upload_document #>> '{manifest,assets,0,path}')
+               COALESCE(m.source_path,u.upload_document #>> '{manifest,assets,0,path}'),
+               r.recording_document->'quality_summary',
+               r.recording_document->>'quality_error_code'
         FROM uploads u
         LEFT JOIN LATERAL (
           SELECT DISTINCT ON (source_path) processing_id,recording_id,status,error,source_path
@@ -261,6 +267,10 @@ def capture_from_row(row):
         if episodes and all(ep.get("quality") == "PASS" for ep in episodes)
         else None
     )
+    if not episodes and len(source) > 2 and source[2]:
+        quality = source[2]["status"]
+    if len(source) > 3 and source[3]:
+        error = source[3]
     stage = (
         "DISCARDED"
         if all_discarded
@@ -270,6 +280,10 @@ def capture_from_row(row):
         if state == "FAILED"
         else "UPLOADING"
         if not received
+        else recording_status
+        if recording_status in {"PENDING_QC", "QC_RUNNING", "QC_FAILED"}
+        else "FAILED"
+        if recording_status == "QC_ERROR"
         else "AWAITING_SLICE"
         if recording_status == "READY_FOR_SLICING"
         else "READY"

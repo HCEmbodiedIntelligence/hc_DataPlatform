@@ -86,13 +86,12 @@ class CreateLeRobotImportV1(BaseModel):
         if len(paths) != len(set(paths)):
             raise ValueError("LeRobot source file paths must be unique")
         if self.processing_mode == "PROCESS":
-            if (
-                self.source_format != "LEROBOT_V3"
-                or not self.collection_task_id
-                or not self.robot_id
-            ):
-                raise ValueError("processing requires a LeRobot source, collection task and robot")
-            validate_processing_selection(self.info, self.processing_capability_revision)
+            if self.source_format == "ROSBAG" or not self.collection_task_id or not self.robot_id:
+                raise ValueError(
+                    "processing requires MCAP or LeRobot, a collection task and a robot"
+                )
+            if self.source_format == "LEROBOT_V3":
+                validate_processing_selection(self.info, self.processing_capability_revision)
         if self.source_format != "LEROBOT_V3":
             if self.source_format == "MCAP" and not any(p.lower().endswith(".mcap") for p in paths):
                 raise ValueError("MCAP storage requires an original .mcap file")

@@ -181,11 +181,14 @@ def write_annotated_delivery(
     stats.update(statistics)
     with package.file(EPISODES_PATH) as parent:
         episodes = pq.read_table(parent).to_pylist()
+    from .episode_outcome import annotation_outcome
+    outcome = annotation_outcome(annotation_file, data)
     if len(episodes) != 1:
         raise ValueError("annotation delivery requires one independent parent Episode")
     for feature, values in statistics.items():
         for key, value in values.items():
             episodes[0][f"stats/{feature}/{key}"] = value
+    episodes[0].update(outcome)
     (root / EPISODES_PATH).parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(pa.Table.from_pylist(episodes), root / EPISODES_PATH)
     info["features"].update(

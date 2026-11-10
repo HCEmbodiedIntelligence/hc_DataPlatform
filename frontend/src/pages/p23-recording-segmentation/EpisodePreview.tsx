@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CameraViewToolbar,
-  createPlaybackClock,
   DataVisualizationWorkbench,
   selectCameraStreams,
   type StreamDescriptor,
 } from "../../features/viewer";
+import { usePlaybackClock } from "../../features/viewer/use-playback-clock";
 import { VideoPreviewModal } from "../../features/viewer/VideoPreviewModal";
 import type { EditableSlice } from "./model";
 
@@ -20,15 +20,7 @@ export function EpisodePreview({
   readonly onClose: () => void;
 }) {
   const [cameraView, setCameraView] = useState("__quad__");
-  const clock = useMemo(
-    () =>
-      createPlaybackClock({
-        startNs: String(slice.startNs),
-        endNs: String(slice.endNs),
-      }),
-    [slice.startNs, slice.endNs],
-  );
-  useEffect(() => () => clock.dispose(), [clock]);
+  const clock = usePlaybackClock(String(slice.startNs), String(slice.endNs), slice.episodeId);
   const cameraStreams = useMemo(
     () => selectCameraStreams(streams, cameraView, clock),
     [streams, cameraView, clock],

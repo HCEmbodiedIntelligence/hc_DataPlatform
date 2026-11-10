@@ -5,6 +5,117 @@ info:
 security:
   - bearerAuth: []
 paths:
+  /api/v1/projects/{project_id}/storage/task-usage:
+    get:
+      tags:
+      - storage
+      summary: Get Task Storage Usage
+      operationId: getTaskStorageUsage
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: refresh
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Refresh
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectTaskStorage'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/projects/{project_id}/storage/task-usage/files:
+    get:
+      tags:
+      - storage
+      summary: List Task Storage Files
+      operationId: listTaskStorageFiles
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: group_id
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 300
+          title: Group Id
+      - name: category
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - enum:
+            - RAW
+            - EPISODE
+            - PROCESSING
+            - ANNOTATION
+            - EXPORT
+            - OTHER
+            type: string
+          - type: 'null'
+          title: Category
+      - name: search
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 200
+          default: ''
+          title: Search
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskStorageFilePage'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
   /api/v1/projects/{project_id}/storage/capacity:
     get:
       operationId: getStorageCapacity
@@ -706,6 +817,291 @@ components:
       required: true
       schema: {type: string, enum: ['true', 'false']}
   schemas:
+    TaskStorageCategory:
+      properties:
+        category:
+          type: string
+          enum:
+          - RAW
+          - EPISODE
+          - PROCESSING
+          - ANNOTATION
+          - EXPORT
+          - OTHER
+          title: Category
+        bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Bytes
+        file_count:
+          type: integer
+          minimum: 0.0
+          title: File Count
+      additionalProperties: false
+      type: object
+      required:
+      - category
+      - bytes
+      - file_count
+      title: TaskStorageCategory
+    TaskStorageSummary:
+      properties:
+        group_id:
+          type: string
+          title: Group Id
+        task_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Task Code
+        task_name:
+          type: string
+          title: Task Name
+        total_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Total Bytes
+        file_count:
+          type: integer
+          minimum: 0.0
+          title: File Count
+        categories:
+          items:
+            $ref: '#/components/schemas/TaskStorageCategory'
+          type: array
+          title: Categories
+        raw_count:
+          type: integer
+          minimum: 0.0
+          title: Raw Count
+        episode_count:
+          type: integer
+          minimum: 0.0
+          title: Episode Count
+        annotation_complete_count:
+          type: integer
+          minimum: 0.0
+          title: Annotation Complete Count
+        export_count:
+          type: integer
+          minimum: 0.0
+          title: Export Count
+        shared_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Shared Bytes
+          default: '0'
+      additionalProperties: false
+      type: object
+      required:
+      - group_id
+      - task_name
+      - total_bytes
+      - file_count
+      - categories
+      - raw_count
+      - episode_count
+      - annotation_complete_count
+      - export_count
+      title: TaskStorageSummary
+    ProjectTaskStorage:
+      properties:
+        project_id:
+          type: string
+          title: Project Id
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+        total_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Total Bytes
+        file_count:
+          type: integer
+          minimum: 0.0
+          title: File Count
+        categories:
+          items:
+            $ref: '#/components/schemas/TaskStorageCategory'
+          type: array
+          title: Categories
+        tasks:
+          items:
+            $ref: '#/components/schemas/TaskStorageSummary'
+          type: array
+          title: Tasks
+        disk:
+          anyOf:
+          - $ref: '#/components/schemas/StorageDiskUsage'
+          - type: 'null'
+        database_bytes:
+          anyOf:
+          - type: string
+            pattern: ^(0|[1-9][0-9]*)$
+          - type: 'null'
+          title: Database Bytes
+        object_store_bytes:
+          anyOf:
+          - type: string
+            pattern: ^(0|[1-9][0-9]*)$
+          - type: 'null'
+          title: Object Store Bytes
+        object_store_file_count:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Object Store File Count
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - project_id
+      - observed_at
+      - total_bytes
+      - file_count
+      - categories
+      - tasks
+      title: ProjectTaskStorage
+    StorageDiskUsage:
+      properties:
+        total_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Total Bytes
+        used_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Used Bytes
+        available_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Available Bytes
+        reserved_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Reserved Bytes
+      additionalProperties: false
+      type: object
+      required:
+      - total_bytes
+      - used_bytes
+      - available_bytes
+      - reserved_bytes
+      title: StorageDiskUsage
+    TaskStorageFile:
+      properties:
+        file_id:
+          type: string
+          title: File Id
+        category:
+          type: string
+          enum:
+          - RAW
+          - EPISODE
+          - PROCESSING
+          - ANNOTATION
+          - EXPORT
+          - OTHER
+          title: Category
+        name:
+          type: string
+          title: Name
+        relative_path:
+          type: string
+          title: Relative Path
+        record_name:
+          type: string
+          title: Record Name
+        robot_name:
+          type: string
+          title: Robot Name
+        status:
+          type: string
+          title: Status
+        bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Bytes
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        shared:
+          type: boolean
+          title: Shared
+          default: false
+        related_task_names:
+          items:
+            type: string
+          type: array
+          title: Related Task Names
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - file_id
+      - category
+      - name
+      - relative_path
+      - record_name
+      - robot_name
+      - status
+      - bytes
+      - updated_at
+      title: TaskStorageFile
+    TaskStorageFilePage:
+      properties:
+        project_id:
+          type: string
+          title: Project Id
+        group_id:
+          type: string
+          title: Group Id
+        observed_at:
+          type: string
+          format: date-time
+          title: Observed At
+        items:
+          items:
+            $ref: '#/components/schemas/TaskStorageFile'
+          type: array
+          title: Items
+        total_count:
+          type: integer
+          minimum: 0.0
+          title: Total Count
+        total_bytes:
+          type: string
+          pattern: ^(0|[1-9][0-9]*)$
+          title: Total Bytes
+        offset:
+          type: integer
+          minimum: 0.0
+          title: Offset
+        limit:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Limit
+      additionalProperties: false
+      type: object
+      required:
+      - project_id
+      - group_id
+      - observed_at
+      - items
+      - total_count
+      - total_bytes
+      - offset
+      - limit
+      title: TaskStorageFilePage
     BusinessCapacityCategory:
       type: string
       enum: [RAW, ANNOTATION_COMPLETE, PENDING_ANNOTATION, ISSUE_DATA]
@@ -979,7 +1375,7 @@ components:
         etag: {type: string}
     LifecyclePolicyAction:
       type: string
-      enum: [RETAIN, REVIEW_EXPIRATION, ARCHIVE, TRANSITION_TO_COLD, CLEAN_REBUILDABLE_CACHE]
+      enum: [RETAIN, REVIEW_EXPIRATION, ARCHIVE, TRANSITION_TO_COLD, CLEAN_REBUILDABLE_CACHE, CLEAN_PROCESSING_CACHE, CLEAN_RECORDING_PREVIEWS, CLEAN_EPISODE_PREVIEWS, CLEAN_EXPORT_ARCHIVES, CLEAN_PROCESSING_STAGING, CLEAN_MEDIA_STAGING, CLEAN_OSS_TEST_COPIES, CLEAN_INVENTORY_DETAILS, CLEAN_INVENTORY_HISTORY]
     LifecyclePolicyState:
       type: string
       enum: [DRAFT, ENABLED, PAUSED]

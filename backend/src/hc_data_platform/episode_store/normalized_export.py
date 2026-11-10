@@ -7,6 +7,7 @@ import pyarrow.parquet as pq
 
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH
 
+from .episode_outcome import selection_outcome
 from .native_plan import NativeFile
 
 
@@ -16,6 +17,9 @@ def selected_source(package, *, holobrain=False):
     selection = provenance.get("selected_mcap", {})
     entries = source.get("inventory", [])
     found = [e for e in entries if e.get("relative_path") == selection.get("path")]
+    if not found and selection.get("retention") == "rebuild-on-demand/v1":
+        from .selected_cache import selected_reference
+        found = [selected_reference(provenance).model_dump(mode="json")]
     if len(found) != 1 or found[0]["object"]["sha256"] != selection.get("sha256"):
         from .delivery_errors import failure
         raise failure("MCAP_SELECTION_REQUIRED", "请按所选方案重处理原件后再导出。", 422)
@@ -32,12 +36,15 @@ def selected_source(package, *, holobrain=False):
     return NativeFile.model_validate(found[0]), provenance
 
 
-def frame_selection(selection, *, compact_invalid=False):
+def frame_selection(selection, *, compact_invalid=False, split_annotations=True):
     """Select source frames, optionally keeping a task across invalid samples.
 
     Parent indices and acquisition times always remain original. Training writers
-    assign dense output indices; exclusions and task changes still break segments.
-    Raw MCAP windows retain the historical contiguous-source selection by default.
+    assign dense output indices. Without selected labels, exclusions and task
+    changes break segments.
+    A nonempty annotation selection keeps only its intervals and uses annotation
+    identity for episode boundaries, including adjacent tags with identical text.
+    Empty selections and historical plans retain the full-frame task policy.
     """
     package = selection.package
     with package.file(DATA_PATH) as path:
@@ -54,7 +61,8 @@ def frame_selection(selection, *, compact_invalid=False):
     with package.file("meta/tasks.parquet") as path:
         tasks = {r["task_index"]: r["task"] for r in pq.read_table(path).to_pylist()}
     task_indexes = table["task_index"].to_pylist()
-    labels = {}
+    labels, annotation_segments = {}, {}
+    selected_only = bool(split_annotations and selection.track and selection.track.annotation_ids)
     excluded = {i for i, value in enumerate(table["hc.annotation.excluded"].to_pylist()) if value} if "hc.annotation.excluded" in table.column_names else set()
     if selection.annotation_file is not None:
         import hashlib
@@ -66,9 +74,10 @@ def frame_selection(selection, *, compact_invalid=False):
         annotation = json.loads(selection.annotation_file.content)
         projection = SubtaskProjection.freeze(annotation, package.receipt.data,
             selection.annotation_file.file.content_sha256, selection.track)
-        for segment in projection.segments:
+        for tag_index, segment in enumerate(projection.segments):
             for index in range(segment.start_step, segment.end_step):
                 labels[index] = segment.label or segment.tag_id
+                annotation_segments[index] = (tag_index, segment.annotation_id)
         for span in annotation["effective_exclusions"]:
             if not 0 <= span["start_step"] < span["end_step"] <= len(stamps):
                 raise ValueError("annotation exclusion outside parent")
@@ -77,7 +86,7 @@ def frame_selection(selection, *, compact_invalid=False):
     source = package.document("hc/source.json")
     end = int(source.get("mcap", {}).get("source_origin_ns", 0)) + int(source.get("end_offset_ns", 0))
     for index, stamp in enumerate(stamps):
-        if index in excluded:
+        if index in excluded or (selected_only and index not in labels):
             last = None
             continue
         task = labels.get(index, tasks[task_indexes[index]])
@@ -92,14 +101,18 @@ def frame_selection(selection, *, compact_invalid=False):
         if last != key:
             segment_id += 1
         next_stamp = stamps[index + 1] if index + 1 < len(stamps) else end
-        result[stamp] = {"parent_frame_index": index, "task": task, "segment": segment_id,
+        result[stamp] = {"parent_frame_index": index, "task": task,
+                         "segment": annotation_segments[index][0] if selected_only else segment_id,
                          "end_ns": next_stamp if type(next_stamp) is int and next_stamp > stamp else stamp + 1}
+        if selected_only:
+            result[stamp]["annotation_id"] = annotation_segments[index][1]
         last = (task, index)
     return result
 
 
-def windows(selection, *, compact_invalid=False):
-    rows = frame_selection(selection, compact_invalid=compact_invalid)
+def windows(selection, *, compact_invalid=False, split_annotations=True):
+    rows = frame_selection(selection, compact_invalid=compact_invalid,
+                           split_annotations=split_annotations)
     ordered = sorted(rows.items())
     spans = []
     for stamp, row in ordered:
@@ -112,7 +125,7 @@ def windows(selection, *, compact_invalid=False):
 
 
 def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
-                          compact_invalid=True):
+                          compact_invalid=True, split_annotations=True):
     from tempfile import TemporaryDirectory
 
     from mcap.reader import make_reader
@@ -132,23 +145,28 @@ def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
     members = []
     with TemporaryDirectory(dir=root.parent) as temporary:
         for selected in selections:
-            file, provenance = selected_source(selected.package)
+            outcome = selection_outcome(selected)
+            from .native_sources import export_source
+            file, provenance, native_audit = export_source(selected.package, storage, checkpoint)
             cfg = McapProcessingConfig.model_validate(provenance["config"])
             local = Path(temporary) / "selected.mcap"
             if local.exists():
                 local.unlink()
-            copy_original(storage, file, local, checkpoint)
+            from .selected_cache import materialize_selected
+            materialize_selected(storage, file, provenance, local, checkpoint)
             audit = None
             if provenance["selected_mcap"].get("normalization"):
-                entries = selected.package.document("hc/source.json")["inventory"]
-                ref = next(e for e in entries if e["relative_path"] == "source/normalization.json")
+                if native_audit is None:
+                    raise ValueError("native normalized capture has no audit")
                 audit_path = Path(temporary) / "audit.json"
                 if audit_path.exists():
                     audit_path.unlink()
-                copy_original(storage, NativeFile.model_validate(ref), audit_path, checkpoint)
+                copy_original(storage, native_audit, audit_path, checkpoint)
                 audit = json.loads(audit_path.read_bytes())
-            kept = frame_selection(selected, compact_invalid=compact_invalid)
-            for span in windows(selected, compact_invalid=compact_invalid):
+            kept = frame_selection(selected, compact_invalid=compact_invalid,
+                                   split_annotations=split_annotations)
+            for span in windows(selected, compact_invalid=compact_invalid,
+                                split_annotations=split_annotations):
                 target = root / f"episode-{len(members):06d}.mcap"
                 decoder = McapRos2DecoderProbe()
                 allowed = selected_topics(cfg)
@@ -197,7 +215,7 @@ def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
                         emit(schema, channel, message)
                         context_messages.append({"topic": channel.topic, "capture_time_ns": stamp,
                             "log_time_ns": message.log_time, "sequence": message.sequence})
-                    document = {"format": "hc-mcap-selection/2", "span": span,
+                    document = {"format": "hc-mcap-selection/2", "span": span, **outcome,
                                 "data": selected.package.receipt.data.model_dump(mode="json"),
                                 "output": cfg.semantic_output, "parser": provenance["format"],
                                 "source_sha256": provenance["selected_mcap"]["source_sha256"],

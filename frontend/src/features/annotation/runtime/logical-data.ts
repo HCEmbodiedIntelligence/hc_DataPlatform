@@ -47,6 +47,7 @@ export function requestAnnotationLogicalSnapshot(scope: RuntimeAnnotationScope, 
 export async function loadAnnotationLogicalData(
   scope: RuntimeAnnotationScope,
   task: RuntimeAnnotationTask,
+  frameTime: (index: number) => string,
   signal?: AbortSignal,
   prefetched?: Promise<unknown>,
 ): Promise<AnnotationLogicalData> {
@@ -114,39 +115,7 @@ export async function loadAnnotationLogicalData(
         robot: view.robot,
         ...(view.robot.provenance === "FROZEN" ? { robotAssets: validateLogicalRobotAssets(view.robot_assets ?? [], view.robot) } : {}),
       } : {}),
-      streams: adaptLogicalViewerStreams(selection, view).map((stream) => {
-        // Annotation ranges are zero-based steps. Preserve the source clock in
-        // requests and translate it only at this workbench boundary.
-        const origin = BigInt(stream.startNs);
-        const source = stream.windowSource;
-        return {
-          ...stream,
-          startNs: "0",
-          endNs: String(BigInt(stream.endNs) - origin),
-          ...(source
-            ? {
-                windowSource: {
-                  async loadWindow(window, signal) {
-                    const payload = await source.loadWindow(
-                      {
-                        ...window,
-                        startNs: String(BigInt(window.startNs) + origin),
-                        endNs: String(BigInt(window.endNs) + origin),
-                      },
-                      signal,
-                    );
-                    return {
-                      ...payload,
-                      timestampsNs: payload.timestampsNs.map((ns) =>
-                        String(BigInt(ns) - origin),
-                      ),
-                    };
-                  },
-                },
-              }
-            : {}),
-        };
-      }),
+      streams: adaptLogicalViewerStreams(selection, view, frameTime),
     };
   } finally {
     lease.release();

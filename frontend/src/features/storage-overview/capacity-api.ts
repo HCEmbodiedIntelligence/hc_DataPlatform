@@ -633,6 +633,7 @@ export function useCapacitySnapshot(
     queryFn: ({ signal }) => getCapacitySnapshot(scope!, signal),
     enabled: enabled && scope !== null,
     staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 
@@ -686,6 +687,7 @@ export function useCapacityPortfolio(
     queryFn: ({ signal }) => getCapacityPortfolio(scope!, projectIds, signal),
     enabled: enabled && scope !== null && projectIds.length > 0,
     staleTime: 30_000,
+    refetchInterval: 60_000,
   });
 }
 

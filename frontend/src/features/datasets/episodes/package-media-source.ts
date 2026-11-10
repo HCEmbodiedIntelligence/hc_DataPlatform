@@ -1,3 +1,4 @@
+import { previewCacheUrl } from "../../../shared/lib/delivery-cache";
 import { z } from "zod";
 import type { Scope } from "../../../shared/scope/model";
 import {
@@ -40,7 +41,7 @@ const grantSchema = z
       })
       .strict()
       .nullable(),
-    media_url: z.url(),
+    media_url: previewCacheUrl,
     expires_at: z.iso.datetime({ offset: true }),
   })
   .strict();
@@ -78,7 +79,7 @@ export function createDatasetPackageMediaSource(input: {
       signal,
     });
     const grant = parseWire(grantSchema, raw, { endpoint });
-    const url = new URL(grant.media_url);
+    const url = new URL(grant.media_url, globalThis.location?.origin ?? "http://localhost");
     if (
       JSON.stringify(grant.data) !== JSON.stringify(binding.data) ||
       grant.feature !== binding.feature_key ||

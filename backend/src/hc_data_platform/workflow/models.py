@@ -563,6 +563,7 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
     dataset_id: str = Field(min_length=1)
     schema_snapshot_id: str = Field(min_length=1)
     recording_config: RecordingConfigurationV1
+    resume_data_version_id: str | None = Field(default=None, pattern=r"^dv_[0-9a-f]{64}$")
     capture_snapshot: dict[str, Any] | None = None
     capture_validation: dict[str, Any] | None = None
     task_labels: tuple[str, ...] | None = Field(default=None, max_length=100)
@@ -570,7 +571,7 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
     @model_serializer(mode="wrap")
     def serialize_capture(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         document: dict[str, Any] = handler(self)
-        for key in ("capture_snapshot", "capture_validation", "task_labels"):
+        for key in ("capture_snapshot", "capture_validation", "task_labels", "resume_data_version_id"):
             if document.get(key) is None:
                 document.pop(key, None)
         return document
@@ -587,6 +588,8 @@ class ContinuousEpisodeWorkflowInput(BaseModel):
     @model_validator(mode="after")
     def validate_lineage(self) -> ContinuousEpisodeWorkflowInput:
         projection = self.projection
+        if self.resume_data_version_id and self.storage_format != "lerobot_v3":
+            raise ValueError("only an Episode package can resume dataset registration")
         if (self.storage_format == "lance") != (self.expected_dataset_version is not None):
             raise ValueError("only historical continuous workflows reserve a Lance version")
         if self.storage_format == "lerobot_v3" and (
@@ -754,6 +757,7 @@ class AutomaticAnnotationActivityInput(BaseModel):
     task_kind: AnnotationTaskKind = AnnotationTaskKind.TAGGING
     frame_selection: AutoAnnotationSamplingReference | None = None
     allow_unconfigured: bool = False
+    has_recorded_takeovers: bool = False
     task_labels: tuple[str, ...] = Field(default=(), max_length=100)
 
     @model_validator(mode="after")

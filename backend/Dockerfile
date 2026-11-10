@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     --extra workflow \
     --extra storage \
     --extra data
-RUN /opt/venv/bin/python -c "import lance, mcap, mcap_ros2.decoder, pyarrow"
+RUN /opt/venv/bin/python -c "import duckdb, lance, mcap, mcap_ros2.decoder, pyarrow"
 
 FROM project AS postgres-maintenance-builder
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
@@ -75,7 +75,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
     --extra workflow \
     --extra storage \
     --extra data
-RUN /opt/venv/bin/python -c "import lance, mcap, mcap_ros2.decoder, pyarrow, watchfiles"
+RUN /opt/venv/bin/python -c "import duckdb, lance, mcap, mcap_ros2.decoder, pyarrow, watchfiles"
 
 FROM ${PYTHON_IMAGE} AS runtime-base
 

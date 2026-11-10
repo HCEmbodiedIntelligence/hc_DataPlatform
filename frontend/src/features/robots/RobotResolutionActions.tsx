@@ -6,6 +6,7 @@ import {
   type ResolutionIntent,
   type ResolutionTask,
 } from "./api/resolution";
+import { createMutationIntentKey } from "../ingest/mutation-machine";
 import styles from "./RobotDeletionDialog.module.css";
 
 type Confirmation = {
@@ -13,6 +14,7 @@ type Confirmation = {
   title: string;
   description: string;
   destructive: boolean;
+  sourceCleanup?: { tasks: ResolutionTask[]; version?: number | null };
 };
 
 export function RobotResolutionActions({
@@ -38,7 +40,8 @@ export function RobotResolutionActions({
   const [message, setMessage] = useState<string>();
   const [failure, setFailure] = useState<string>();
   const data = plan.data;
-  const busy = mutation.isPending;
+  const [working, setWorking] = useState(false);
+  const busy = working || mutation.isPending;
   const locked =
     disabled || busy || !canManage || plan.isFetching || plan.isError;
   useEffect(() => {
@@ -60,14 +63,14 @@ export function RobotResolutionActions({
       intent: {
         ...value.intent,
         revision: data.revision,
-        key: value.key ?? crypto.randomUUID(),
+        key: value.key ?? createMutationIntentKey(),
       },
     });
   }
   function deleteTask(task: ResolutionTask) {
     confirm({
       title: `${task.retry_key ? "继续清理" : "删除任务及数据"} · ${task.task_code} / ${task.name}`,
-      description: `会永久删除该任务及其专属数据集内的原始文件、视频、切片、质检结果和标注。当前共 ${task.raw_count} 条原始数据${task.other_robot_raw_count > 0 ? `，其中 ${task.other_robot_raw_count} 条来自其他机器人，也将一起删除` : ""}。`,
+      description: `会永久删除该任务及其专属数据集内的原始文件、视频、切片、质检结果和标注。当前共 ${task.raw_count} 条原始数据。`,
       destructive: true,
       intent: {
         action: "DELETE_TASK",
@@ -80,8 +83,45 @@ export function RobotResolutionActions({
   async function execute() {
     if (!confirmation || busy || (confirmation.destructive && !acknowledged))
       return;
+    setWorking(true);
+    setMessage(undefined);
     try {
-      const result = await mutation.mutateAsync(confirmation.intent);
+      const { intent, sourceCleanup } = confirmation;
+      let revision = intent.revision;
+      if (sourceCleanup && intent.source) {
+        const selected = intent.source;
+        const inScope = (r: { project_id: string; region_code: string }) =>
+          r.project_id === selected.project_id &&
+          r.region_code === selected.region_code;
+        for (const [index, task] of sourceCleanup.tasks.entries()) {
+          await mutation.mutateAsync({
+            action: "DELETE_TASK",
+            revision,
+            project_id: task.project_id,
+            task_id: task.task_id,
+            key: task.retry_key ?? createMutationIntentKey(),
+          });
+          const { data: next } = await plan.refetch({ throwOnError: true });
+          const sources = next?.sources.filter(inScope);
+          const source = sources?.find(
+            (s) => s.source_id === selected.source_id,
+          );
+          if (
+            !next ||
+            sources?.length !== 1 ||
+            !source?.can_delete ||
+            source.version !== sourceCleanup.version ||
+            JSON.stringify(next.tasks.filter(inScope)) !==
+              JSON.stringify(sourceCleanup.tasks.slice(index + 1))
+          ) {
+            throw new Error(
+              "关联记录已变化。已完成的清理已保存，请重新核对剩余文件。",
+            );
+          }
+          revision = next.revision;
+        }
+      }
+      const result = await mutation.mutateAsync({ ...intent, revision });
       setMessage(result.message);
       setConfirmation(undefined);
       setFailure(undefined);
@@ -89,6 +129,7 @@ export function RobotResolutionActions({
       setFailure(error instanceof Error ? error.message : "处理失败，请重试。");
       setConfirmation(undefined);
     } finally {
+      setWorking(false);
       onResolved();
       void plan.refetch();
     }
@@ -154,6 +195,62 @@ export function RobotResolutionActions({
               </span>
             )}
           </section>
+          {data.sources.map(({ name, can_delete, version, ...source }) => {
+            const inScope = (r: { project_id: string; region_code: string }) =>
+              r.project_id === source.project_id &&
+              r.region_code === source.region_code;
+            const tasks = data.tasks.filter(inScope);
+            const ambiguous =
+              tasks.length > 0 && data.sources.filter(inScope).length > 1;
+            const blocked =
+              ambiguous ||
+              tasks.some((t) => !t.can_delete || t.other_robot_raw_count > 0);
+            const label = tasks.length ? "删除数据源及采集文件" : "删除数据源";
+            return (
+              <section
+                className={styles.actionCard}
+                key={JSON.stringify(source)}
+              >
+                <div className={styles.transferRow}>
+                  <div>
+                    <strong>
+                      {name} · {source.source_id}
+                    </strong>
+                    <p>
+                      项目 {source.project_id} / 区域 {source.region_code}
+                    </p>
+                  </div>
+                  <Button
+                    danger
+                    disabled={locked || !can_delete || blocked}
+                    onClick={() =>
+                      confirm({
+                        title: `${label} · ${name}`,
+                        description: `将永久删除项目 ${source.project_id} / 区域 ${source.region_code} 中的数据源 ${source.source_id}、其凭据和连接测试记录。${tasks.length ? `同时永久删除以下采集任务及专属文件（含原始文件和派生数据）：${tasks.map((t) => `${t.task_code} · ${t.name}`).join("、")}。` : "删除前将再次检查是否还有待清理的采集文件。"} 凭据和数据源在文件清理完成后删除。`,
+                        sourceCleanup: { tasks, version },
+                        destructive: true,
+                        intent: { action: "DELETE_SOURCE", source },
+                      })
+                    }
+                  >
+                    {label}
+                  </Button>
+                </div>
+                {blocked && (
+                  <p className={styles.note}>
+                    {ambiguous
+                      ? "多个数据源共用此机器人和项目，请先在下方按任务清理文件。"
+                      : "存在共享数据或缺少任务清理权限，请先处理下方任务。"}
+                  </p>
+                )}
+                {!can_delete && (
+                  <span className={styles.note}>
+                    需要该项目的数据源管理权限。
+                  </span>
+                )}
+              </section>
+            );
+          })}
           {data.tasks.length > 0 && (
             <section className={styles.actionCard}>
               <strong>删除不再需要的任务及数据</strong>
@@ -193,7 +290,11 @@ export function RobotResolutionActions({
                     render: (_, task) => (
                       <Button
                         danger
-                        disabled={locked || !task.can_delete}
+                        disabled={
+                          locked ||
+                          !task.can_delete ||
+                          task.other_robot_raw_count > 0
+                        }
                         onClick={() => deleteTask(task)}
                       >
                         {task.retry_key ? "重试数据清理" : "删除任务及数据"}
@@ -259,7 +360,11 @@ export function RobotResolutionActions({
             disabled={busy}
             onChange={(e) => setAcknowledged(e.target.checked)}
           >
-            我确认删除该任务及其全部数据
+            {confirmation.intent.action === "DELETE_SOURCE"
+              ? confirmation.sourceCleanup?.tasks.length
+                ? "我确认删除列出的任务、采集文件和数据源"
+                : "我确认删除该数据源及其凭据和连接测试记录"
+              : "我确认删除该任务及其全部数据"}
           </Checkbox>
         )}
       </Modal>

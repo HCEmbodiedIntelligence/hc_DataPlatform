@@ -257,6 +257,10 @@ class RegistryRepository(Protocol):
         occurred_at: datetime,
     ) -> RobotModelVersion: ...
 
+    def delete_robot_model(
+        self, *, organization_id: str, project_id: str, model_id: str
+    ) -> RobotModelImportCleanup: ...
+
     def discard_robot_model_import(
         self,
         *,
@@ -784,6 +788,26 @@ class InMemoryRegistryRepository:
             )
             return updated
 
+    def delete_robot_model(
+        self, *, organization_id: str, project_id: str, model_id: str
+    ) -> RobotModelImportCleanup:
+        with self._lock:
+            versions = [
+                version.id
+                for (org, _), version in self._versions.items()
+                if org == organization_id and version.robot_model_id == model_id
+            ]
+            files = []
+            for version_id in versions:
+                cleanup = self._remove_version(organization_id, version_id, None)
+                files.extend(cleanup.files)
+            self._models = [
+                (org, model)
+                for org, model in self._models
+                if (org, model.id) != (organization_id, model_id)
+            ]
+            return RobotModelImportCleanup(files=tuple(files))
+
     def discard_robot_model_import(
         self,
         *,
@@ -812,77 +836,81 @@ class InMemoryRegistryRepository:
             ):
                 raise ValueError("robot model fallback version is invalid")
 
-            uploads = tuple(
-                upload
-                for (
-                    candidate_organization,
-                    _candidate_project,
-                    _,
-                ), upload in self._asset_uploads.items()
-                if candidate_organization == organization_id and upload.version_id == version_id
-            )
-            cleanup = RobotModelImportCleanup(
-                files=tuple(item for upload in uploads for item in upload.files)
-            )
-            upload_keys = {
-                key
-                for key, upload in self._asset_uploads.items()
-                if key[0] == organization_id and upload.version_id == version_id
-            }
-            for key in upload_keys:
-                del self._asset_uploads[key]
-            for key, (_object_key, candidate_version_id, _asset) in tuple(self._assets.items()):
-                if key[0] == organization_id and candidate_version_id == version_id:
-                    del self._assets[key]
-                    self._asset_contents.pop(key, None)
-            for mapping_key in tuple(self._joint_mappings):
-                if mapping_key[0] == organization_id and mapping_key[2] == version_id:
-                    del self._joint_mappings[mapping_key]
-            for preflight_key, item in tuple(self._publish_preflights.items()):
-                if preflight_key[0] == organization_id and item.version_id == version_id:
-                    del self._publish_preflights[preflight_key]
-            for receipt_key, (_fingerprint, response) in tuple(self._command_receipts.items()):
-                if receipt_key[0] == organization_id and (
-                    receipt_key[2] == version_id or response.id == version_id
-                ):
-                    del self._command_receipts[receipt_key]
+            return self._remove_version(organization_id, version_id, fallback_version_id)
 
-            del self._versions[(organization_id, version_id)]
-            remaining_versions = tuple(
-                candidate
-                for (candidate_organization, _), candidate in self._versions.items()
-                if candidate_organization == organization_id
-                and candidate.robot_model_id == version.robot_model_id
-            )
-            if not remaining_versions:
-                self._models = [
-                    (candidate_organization, model)
-                    for candidate_organization, model in self._models
-                    if not (
-                        candidate_organization == organization_id
-                        and model.id == version.robot_model_id
-                    )
-                ]
-            else:
-                self._models = [
-                    (
-                        candidate_organization,
-                        model.model_copy(
-                            update={
-                                "current_published_version_id": (
-                                    fallback_version_id
-                                    if model.current_published_version_id == version_id
-                                    else model.current_published_version_id
-                                )
-                            }
-                        ),
-                    )
-                    if candidate_organization == organization_id
-                    and model.id == version.robot_model_id
-                    else (candidate_organization, model)
-                    for candidate_organization, model in self._models
-                ]
-            return cleanup
+    def _remove_version(
+        self, organization_id: str, version_id: str, fallback_version_id: str | None
+    ) -> RobotModelImportCleanup:
+        version = self._versions[(organization_id, version_id)]
+        uploads = tuple(
+            upload
+            for (
+                candidate_organization,
+                _candidate_project,
+                _,
+            ), upload in self._asset_uploads.items()
+            if candidate_organization == organization_id and upload.version_id == version_id
+        )
+        cleanup = RobotModelImportCleanup(
+            files=tuple(item for upload in uploads for item in upload.files)
+        )
+        upload_keys = {
+            key
+            for key, upload in self._asset_uploads.items()
+            if key[0] == organization_id and upload.version_id == version_id
+        }
+        for key in upload_keys:
+            del self._asset_uploads[key]
+        for key, (_object_key, candidate_version_id, _asset) in tuple(self._assets.items()):
+            if key[0] == organization_id and candidate_version_id == version_id:
+                del self._assets[key]
+                self._asset_contents.pop(key, None)
+        for mapping_key in tuple(self._joint_mappings):
+            if mapping_key[0] == organization_id and mapping_key[2] == version_id:
+                del self._joint_mappings[mapping_key]
+        for preflight_key, item in tuple(self._publish_preflights.items()):
+            if preflight_key[0] == organization_id and item.version_id == version_id:
+                del self._publish_preflights[preflight_key]
+        for receipt_key, (_fingerprint, response) in tuple(self._command_receipts.items()):
+            if receipt_key[0] == organization_id and (
+                receipt_key[2] == version_id or response.id == version_id
+            ):
+                del self._command_receipts[receipt_key]
+
+        del self._versions[(organization_id, version_id)]
+        remaining_versions = tuple(
+            candidate
+            for (candidate_organization, _), candidate in self._versions.items()
+            if candidate_organization == organization_id
+            and candidate.robot_model_id == version.robot_model_id
+        )
+        if not remaining_versions:
+            self._models = [
+                (candidate_organization, model)
+                for candidate_organization, model in self._models
+                if not (
+                    candidate_organization == organization_id and model.id == version.robot_model_id
+                )
+            ]
+        else:
+            self._models = [
+                (
+                    candidate_organization,
+                    model.model_copy(
+                        update={
+                            "current_published_version_id": (
+                                fallback_version_id
+                                if model.current_published_version_id == version_id
+                                else model.current_published_version_id
+                            )
+                        }
+                    ),
+                )
+                if candidate_organization == organization_id and model.id == version.robot_model_id
+                else (candidate_organization, model)
+                for candidate_organization, model in self._models
+            ]
+        return cleanup
 
     def finalize_asset_upload(
         self,
@@ -2212,6 +2240,48 @@ class PostgresRegistryRepository:
             cursor.close()
             connection.close()
 
+    def delete_robot_model(
+        self, *, organization_id: str, project_id: str, model_id: str
+    ) -> RobotModelImportCleanup:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """SELECT model_id FROM registry.robot_models
+                   WHERE organization_id = %s AND model_id = %s FOR UPDATE""",
+                (organization_id, model_id),
+            )
+            if cursor.fetchone() is None:
+                connection.commit()
+                return RobotModelImportCleanup(files=())
+            cursor.execute(
+                """SELECT version_id FROM registry.robot_model_versions
+                   WHERE organization_id = %s AND robot_model_id = %s
+                   ORDER BY version_id FOR UPDATE""",
+                (organization_id, model_id),
+            )
+            versions = [str(_row(cursor, row)["version_id"]) for row in cursor.fetchall()]
+            files = []
+            for version_id in versions:
+                if self._binding_usage(cursor, organization_id, version_id):
+                    raise ValueError("robot model is in use")
+                cleanup = self._delete_version(cursor, organization_id, version_id)
+                files.extend(cleanup.files)
+            cursor.execute(
+                "DELETE FROM registry.robot_models WHERE organization_id = %s AND model_id = %s",
+                (organization_id, model_id),
+            )
+            connection.commit()
+            return RobotModelImportCleanup(files=tuple(files))
+        except Exception as exc:
+            connection.rollback()
+            if getattr(exc, "sqlstate", None) == "23503":
+                raise ValueError("robot model is in use") from exc
+            raise
+        finally:
+            cursor.close()
+            connection.close()
+
     def discard_robot_model_import(
         self,
         *,
@@ -2272,25 +2342,6 @@ class PostgresRegistryRepository:
             if self._binding_usage(cursor, organization_id, version_id):
                 raise ValueError("robot model import is in use")
 
-            cursor.execute(
-                """
-                SELECT file.relative_path, file.role, file.media_type,
-                       file.expected_size, file.expected_sha256, file.object_key,
-                       file.multipart_upload_id, file.status,
-                       file.completed_etag, file.completed_at
-                  FROM registry.robot_model_asset_upload_files AS file
-                  JOIN registry.robot_model_asset_uploads AS upload
-                    ON upload.organization_id = file.organization_id
-                   AND upload.upload_id = file.upload_id
-                 WHERE upload.organization_id = %s AND upload.version_id = %s
-                 ORDER BY file.upload_id, file.relative_path
-                """,
-                (organization_id, version_id),
-            )
-            cleanup = RobotModelImportCleanup(
-                files=tuple(_asset_upload_file(_row(cursor, raw)) for raw in cursor.fetchall())
-            )
-
             if current_published_version_id == version_id:
                 cursor.execute(
                     """
@@ -2300,49 +2351,7 @@ class PostgresRegistryRepository:
                     """,
                     (fallback_version_id, organization_id, model_id),
                 )
-            cursor.execute(
-                """
-                DELETE FROM registry.robot_model_publish_preflights
-                 WHERE organization_id = %s AND version_id = %s
-                """,
-                (organization_id, version_id),
-            )
-            cursor.execute(
-                """
-                DELETE FROM registry.robot_model_command_receipts
-                 WHERE organization_id = %s
-                   AND (version_id = %s OR response ->> 'id' = %s)
-                """,
-                (organization_id, version_id, version_id),
-            )
-            cursor.execute(
-                """
-                DELETE FROM registry.robot_model_joint_mappings
-                 WHERE organization_id = %s AND version_id = %s
-                """,
-                (organization_id, version_id),
-            )
-            cursor.execute(
-                """
-                DELETE FROM registry.robot_model_assets
-                 WHERE organization_id = %s AND version_id = %s
-                """,
-                (organization_id, version_id),
-            )
-            cursor.execute(
-                """
-                DELETE FROM registry.robot_model_asset_uploads
-                 WHERE organization_id = %s AND version_id = %s
-                """,
-                (organization_id, version_id),
-            )
-            cursor.execute(
-                """
-                DELETE FROM registry.robot_model_versions
-                 WHERE organization_id = %s AND version_id = %s
-                """,
-                (organization_id, version_id),
-            )
+            cleanup = self._delete_version(cursor, organization_id, version_id)
             cursor.execute(
                 """
                 DELETE FROM registry.robot_models AS model
@@ -2364,6 +2373,76 @@ class PostgresRegistryRepository:
         finally:
             cursor.close()
             connection.close()
+
+    @staticmethod
+    def _delete_version(
+        cursor: DbApiCursor,
+        organization_id: str,
+        version_id: str,
+    ) -> RobotModelImportCleanup:
+        cursor.execute(
+            """
+            SELECT file.relative_path, file.role, file.media_type,
+                   file.expected_size, file.expected_sha256, file.object_key,
+                   file.multipart_upload_id, file.status,
+                   file.completed_etag, file.completed_at
+              FROM registry.robot_model_asset_upload_files AS file
+              JOIN registry.robot_model_asset_uploads AS upload
+                ON upload.organization_id = file.organization_id
+               AND upload.upload_id = file.upload_id
+             WHERE upload.organization_id = %s AND upload.version_id = %s
+             ORDER BY file.upload_id, file.relative_path
+            """,
+            (organization_id, version_id),
+        )
+        cleanup = RobotModelImportCleanup(
+            files=tuple(_asset_upload_file(_row(cursor, raw)) for raw in cursor.fetchall())
+        )
+
+        cursor.execute(
+            """
+            DELETE FROM registry.robot_model_publish_preflights
+             WHERE organization_id = %s AND version_id = %s
+            """,
+            (organization_id, version_id),
+        )
+        cursor.execute(
+            """
+            DELETE FROM registry.robot_model_command_receipts
+             WHERE organization_id = %s
+               AND (version_id = %s OR response ->> 'id' = %s)
+            """,
+            (organization_id, version_id, version_id),
+        )
+        cursor.execute(
+            """
+            DELETE FROM registry.robot_model_joint_mappings
+             WHERE organization_id = %s AND version_id = %s
+            """,
+            (organization_id, version_id),
+        )
+        cursor.execute(
+            """
+            DELETE FROM registry.robot_model_assets
+             WHERE organization_id = %s AND version_id = %s
+            """,
+            (organization_id, version_id),
+        )
+        cursor.execute(
+            """
+            DELETE FROM registry.robot_model_asset_uploads
+             WHERE organization_id = %s AND version_id = %s
+            """,
+            (organization_id, version_id),
+        )
+        cursor.execute(
+            """
+            DELETE FROM registry.robot_model_versions
+             WHERE organization_id = %s AND version_id = %s
+            """,
+            (organization_id, version_id),
+        )
+        return cleanup
 
     @staticmethod
     def _get_asset_upload(

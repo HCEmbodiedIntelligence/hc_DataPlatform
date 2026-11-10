@@ -10,6 +10,14 @@ import { completeDeliveryFixture } from "./testing/complete-delivery-fixture";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
 afterEach(() => vi.resetAllMocks());
+it("loads historical and current complete package exports together", async () => {
+  const f = completeDeliveryFixture();
+  const legacy = structuredClone(f.job);
+  legacy.job_id = "ed_" + "1".repeat(64);
+  legacy.plan.processor_version = "hc-episode-archive/1";
+  vi.mocked(request).mockResolvedValue([f.job, legacy]);
+  await expect(listCompleteDeliveries(f.scope, f.data)).resolves.toEqual([f.job, legacy]);
+});
 it("requests a full fixed package without dropping depth and uses the supplied retry key", async () => {
   const f = completeDeliveryFixture();
   vi.mocked(request).mockResolvedValue(f.job);

@@ -7,7 +7,16 @@ from pydantic import BaseModel, Field
 
 from hc_data_platform.security.auth import AuthContext
 
-Kind = Literal["raw", "upload", "configuration", "component", "calibration", "source"]
+Kind = Literal[
+    "raw",
+    "upload",
+    "configuration",
+    "component",
+    "calibration",
+    "source",
+    "collection_job",
+    "recording_upload",
+]
 
 
 class DeletionBlocker(BaseModel):
@@ -58,6 +67,8 @@ class Reference:
     joins: str = ""
 
 
+FILE_KINDS = {"raw", "upload", "collection_job", "recording_upload"}
+
 TASK_RESOLUTION = "使用处理操作中的按钮建立目标实例的新关联，或直接删除选定任务及全部数据。"
 
 REFERENCES = (
@@ -87,6 +98,35 @@ REFERENCES = (
         COALESCE(r.upload_document #>> '{manifest,assets,0,path}',r.upload_id) AS name,
         r.state AS status,r.project_id,r.region_code,r.collection_task_id,
         r.raw_source_id,r.dataset_id,NULL::text AS scheme_id,NULL::integer AS version""",
+        TASK_RESOLUTION,
+        "upload.read",
+    ),
+    Reference(
+        "recording_upload",
+        "连续采集文件",
+        "ingest.recording_uploads",
+        "robotics.robot_reference_owner(r.organization_id,'recording_upload',r.project_id,"
+        "r.region_code,r.upload_id::text,r.upload_document #>> '{command,robot_id}')=%s",
+        """r.upload_id::text AS id,r.recording_id AS name,r.status,r.project_id,r.region_code,
+        r.upload_document #>> '{command,collection_task_id}' AS collection_task_id,
+        NULL::text AS raw_source_id,NULL::text AS dataset_id,
+        NULL::text AS scheme_id,NULL::integer AS version""",
+        TASK_RESOLUTION,
+        "upload.read",
+    ),
+    Reference(
+        "collection_job",
+        "采集作业文件",
+        "ingest.collection_jobs",
+        "robotics.robot_reference_owner(r.organization_id,'collection_job',r.project_id,"
+        "r.region_code,r.collection_job_id,r.robot_id)=%s AND EXISTS ("
+        "SELECT 1 FROM ingest.rollouts ro JOIN ingest.upload_sessions u ON "
+        "(u.project_id,u.region_code,u.rollout_id)=(ro.project_id,ro.region_code,ro.rollout_id) "
+        "WHERE (ro.organization_id,ro.project_id,ro.region_code,ro.collection_job_id)="
+        "(r.organization_id,r.project_id,r.region_code,r.collection_job_id))",
+        """r.collection_job_id AS id,r.collection_job_id AS name,r.status,r.project_id,
+        r.region_code,r.task_id AS collection_task_id,NULL::text AS raw_source_id,
+        NULL::text AS dataset_id,NULL::text AS scheme_id,NULL::integer AS version""",
         TASK_RESOLUTION,
         "upload.read",
     ),
@@ -135,9 +175,8 @@ REFERENCES = (
         """r.source_id AS id,r.name,r.administrative_state AS status,
         r.project_id,r.region_code,NULL::text AS collection_task_id,
         NULL::text AS raw_source_id,NULL::text AS dataset_id,
-        NULL::text AS scheme_id,NULL::integer AS version""",
-        "前往数据源详情核对机器人绑定。不再使用的数据源可在该页单独删除；"
-        "如删除仍受依赖限制，按数据源提示处理。仅停用数据源不会解除绑定。",
+        NULL::text AS scheme_id,r.version AS version""",
+        "在处理操作中选择并删除不再使用的数据源，或将关联转移到其他机器人。",
         "ingest_source.read",
     ),
 )
@@ -190,6 +229,8 @@ def read_deletion_check(cursor, organization_id, robot_id, auth, kind, offset, l
         visible, values = _visible_scope(auth, organization_id, ref.capability)
         origin = {
             "raw": "r.robot_id",
+            "collection_job": "r.robot_id",
+            "recording_upload": "r.upload_document #>> '{command,robot_id}'",
             "upload": "r.authenticated_robot_id",
             "configuration": "r.robot_id",
             "component": "r.robot_id",

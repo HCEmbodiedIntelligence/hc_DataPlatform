@@ -22,8 +22,10 @@ from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PAT
 
 from .annotated_delivery import write_annotated_delivery
 from .collection_metadata import NORMALIZED_PROCESSOR, normalize_capture_metadata
+from .episode_outcome import selection_outcome
 from .models import FileEntry, canonical, digest
 from .normalized_lerobot import LEGACY_PROCESSOR as LEGACY_SELECTED_PROCESSOR
+from .normalized_lerobot import PREVIOUS_PROCESSOR as PREVIOUS_SELECTED_PROCESSOR
 from .normalized_lerobot import PROCESSOR as SELECTED_PROCESSOR
 from .scope import assert_scope
 from .writer import Moments, write_json
@@ -197,7 +199,7 @@ def preflight(selections, modalities, *, processor_version=None):
         raise PermissionError("collection must stay in one tenant/project/region")
     if len({d.identity.key for d in data}) != len(data):
         raise ValueError("select at most one version of each Episode")
-    if processor_version not in {None, PROCESSOR, NORMALIZED_PROCESSOR, SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
+    if processor_version not in {None, PROCESSOR, NORMALIZED_PROCESSOR, SELECTED_PROCESSOR, PREVIOUS_SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
         raise ValueError("unsupported collection processor")
     for selection in sources:
         assert_scope(selection.package.receipt.data.identity)
@@ -220,7 +222,7 @@ def preflight(selections, modalities, *, processor_version=None):
             processor_version = SELECTED_PROCESSOR
     normalization = None
     if processor_version == NORMALIZED_PROCESSOR or (
-        processor_version in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR} and selected_capture
+        processor_version in {SELECTED_PROCESSOR, PREVIOUS_SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR} and selected_capture
     ) or (
         processor_version is None
         and any(contract(info) != contract(infos[0]) for info in infos[1:])
@@ -328,12 +330,14 @@ def write_collection(
         info["hc.metadata_normalization"] = "hc/metadata_normalization.json"
         write_json(root, info["hc.metadata_normalization"], metadata.normalization)
     with pq.ParquetWriter(root / "hc/collection_frames.parquet", mapping_schema) as mapping:
-        if metadata.processor_version in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
+        if metadata.processor_version in {SELECTED_PROCESSOR, PREVIOUS_SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
             from .normalized_export import frame_selection
             selected_tasks = set()
             for source in sources:
                 if uses_selected_views(source, metadata.processor_version):
-                    selected_tasks.update(row["task"] for row in frame_selection(source).values())
+                    selected_tasks.update(row["task"] for row in frame_selection(
+                        source, split_annotations=metadata.processor_version == SELECTED_PROCESSOR
+                    ).values())
                 else:
                     with source.package.file("meta/tasks.parquet") as path:
                         selected_tasks.update(row["task"] for row in pq.read_table(path).to_pylist())
@@ -435,7 +439,7 @@ def write_collection(
             "is_reassembled_collection": True,
             "source_frames": "hc/collection_frames.parquet",
             "subtask_index_scope": "collection" if annotated else None,
-            "media_policy": "committed_frame_selection" if metadata.processor_version in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR} else "verified_byte_copy",
+            "media_policy": "committed_frame_selection" if metadata.processor_version in {SELECTED_PROCESSOR, PREVIOUS_SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR} else "verified_byte_copy",
             "transcoded": any(op["transcoded"] for member in members for op in member.get("media_operations", [])),
             "requantized": False,
             "model_depth_training_support": "NOT_VALIDATED",
@@ -464,10 +468,11 @@ def write_collection(
 
 
 def uses_selected_views(selection, processor):
-    if processor not in {SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
+    if processor not in {SELECTED_PROCESSOR, PREVIOUS_SELECTED_PROCESSOR, LEGACY_SELECTED_PROCESSOR}:
         return False
     return (
-        processor == LEGACY_SELECTED_PROCESSOR
+        (processor == SELECTED_PROCESSOR and bool(selection.track and selection.track.annotation_ids))
+        or processor == LEGACY_SELECTED_PROCESSOR
         or selection.annotation_file is None
         or selection.package.document("meta/info.json").get("hc.capture_contract", {}).get("algorithm") == "capture-structure/v3"
     )
@@ -478,9 +483,10 @@ def collection_views(selection, parent, checkpoint, modalities, processor):
     if uses_selected_views(selection, processor):
         from .normalized_lerobot import views
         yield views(selection, parent, checkpoint, modalities,
-                    compact_invalid=processor != LEGACY_SELECTED_PROCESSOR)
+                    compact_invalid=processor != LEGACY_SELECTED_PROCESSOR,
+                    split_annotations=processor == SELECTED_PROCESSOR)
     else:
-        with prepared(selection, parent, checkpoint, compact_invalid=processor == SELECTED_PROCESSOR) as view:
+        with prepared(selection, parent, checkpoint, compact_invalid=processor in {SELECTED_PROCESSOR, PREVIOUS_SELECTED_PROCESSOR}) as view:
             yield (view,)
 
 
@@ -620,7 +626,9 @@ def write_member(
                 seen += len(batch)
     if seen != local_info["total_frames"]:
         raise ValueError("collection source frame count differs from its receipt")
+    outcome = selection_outcome(selection)
     episode = {
+        **outcome,
         "episode_index": index,
         "tasks": [tasks[t] for t in sorted(used_tasks)],
         "length": seen,
@@ -675,6 +683,7 @@ def write_member(
             episode[f"stats/{feature}/{key}"] = value
     annotation = getattr(view, "annotation", None)
     member = {
+        **outcome,
         "episode_index": index,
         "data": data.model_dump(mode="json"),
         "source_manifest_sha256": parent.receipt.manifest_sha256,

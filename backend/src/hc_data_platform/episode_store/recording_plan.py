@@ -10,7 +10,8 @@ from .native_plan import NativeEpisodePlan, NativeFile
 
 
 def recording_request_hash(request):
-    document = request.model_dump(mode="json")
+    # The retry fence identifies an existing publication; it is not part of the captured data.
+    document = request.model_dump(mode="json", exclude={"resume_data_version_id"})
     document["quality_profile"]["required_topics"] = sorted(request.quality_profile.required_topics)
     document["alignment_profile"]["required_modalities"] = sorted(
         request.alignment_profile.required_modalities

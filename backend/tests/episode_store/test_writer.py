@@ -187,6 +187,7 @@ def build_rgbd_package(
     depth_missing_frames=(),
     depth_invalid_frames=(),
     task="synthetic RGB-D codec acceptance",
+    rgb_statistics="legacy",
 ):
     ident = ident or identity()
     rgb, depth = "observation.images.head_rgb", "observation.images.head_depth"
@@ -321,7 +322,7 @@ def build_rgbd_package(
             rows,
             assets,
             fps=30,
-            metadata={"task": task},
+            metadata={"task": task, "rgb_statistics": rgb_statistics},
         )
     finally:
         reset_request_context(token)
@@ -362,8 +363,9 @@ def test_zero_measured_depth_has_no_fabricated_statistics_and_rejects_false_clai
     stats_path.write_bytes(original_stats)
 
 
-def test_standalone_rgbd_writer_reuses_h265_and_depth_without_reencoding(tmp_path):
-    output, source, manifest, assets = build_rgbd_package(tmp_path)
+@pytest.mark.parametrize("rgb_statistics", ["legacy", "uint8-histogram/1"])
+def test_standalone_rgbd_writer_reuses_h265_and_depth_without_reencoding(tmp_path, rgb_statistics):
+    output, source, manifest, assets = build_rgbd_package(tmp_path, rgb_statistics=rgb_statistics)
     depth = "observation.images.head_depth"
     assert manifest.frame_count == 4
     for key, media in assets.videos.items():
@@ -396,3 +398,41 @@ def test_standalone_rgbd_writer_reuses_h265_and_depth_without_reencoding(tmp_pat
     pq.write_table(table, path)
     with pytest.raises(ValueError, match="different Episode time grid"):
         validate_package(output, source)
+
+
+def test_action_labels_stay_numeric_and_traceable_in_training_parquet(tmp_path):
+    from hc_data_platform.capture_schemes.models import OutputContract
+    from hc_data_platform.lance_catalog.models import StepRecord
+
+    ident = identity()
+    source = PackageInput(identity=ident, source_sha256="1"*64, processor_version="test/1",
+                          configuration_sha256="2"*64, schema_snapshot_id="schema-1",
+                          required_features=("action",))
+    contract = OutputContract(frequency_hz=15, time_source="FRAME_TIMESTAMP", features={
+        "action": {"dtype": "float32", "shape": [2], "names": ["a","b"],
+                   "units": ["rad","rad"], "role": "action"}}).model_dump(mode="json")
+    rows = []
+    for i, kind in enumerate(("next_frame_state", None, "terminal_state")):
+        t = round(i * 1e9 / 15)
+        label = {"values": [i + 0.5, 2.0], "names": ["a","b"], "units": ["rad","rad"],
+                 "validity": [True,True], "source_timestamp_ns": t,
+                 "source_topic": "/state" if kind else "/action"}
+        if kind:
+            label.update(action_origin=kind, source_frame=min(i + 1,2), state_reference_timestamp_ns=t)
+        name = "/humanoid/action"
+        rows.append(StepRecord(rollout_id=ident.rollout_id, step_index=i, timestamp_ns=t,
+                               modalities={name:label}, valid={name:True}, repeated={name:False},
+                               source_timestamps_ns={name:(t,)}, time_error_ns={name:0}, sample_valid=True))
+    root = tmp_path/"package"
+    token = bind_request_context(RequestContext(organization_id=ident.organization_id,
+                                                project_id=ident.project_id, region_code=ident.region_code))
+    try:
+        write_episode(root, source, rows, PreparedAssets(ident,"attempt",{}), fps=15,
+                      metadata={"capture":{"output":contract},
+                                "source":{"mcap":{"action_gap_fill":{"filled_frames":2}}}})
+    finally:
+        reset_request_context(token)
+    table = pq.read_table(root/DATA_PATH)
+    assert table["action"].to_pylist()==[[0.5,2.0],[1.5,2.0],[2.5,2.0]]
+    assert [json.loads(v)["origin"] for v in table["hc.action_source_origins"].to_pylist()] == [
+        "next_frame_state","recorded_command","terminal_state"]

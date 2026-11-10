@@ -1,3 +1,4 @@
+import { OssImportPanel } from "./components/OssImportPanel";
 import { SuccessfulVolume } from "../../features/robot-ingest/SuccessfulVolume";
 import { CaptureProgressPanel } from "../../features/collection-tasks/CaptureProgressPanel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -259,14 +260,20 @@ export default function UploadJobsPage() {
         phase: "folder_selected",
         folderName: folderNameFromFiles(nextFiles),
       });
-      const selection = await inspectLocalUploadSelection({
-        sourceType: "BROWSER_MULTIPART",
-        browserSelectionMode: mode,
-        files: nextFiles,
-        objectStorageUri: "",
-      });
-      if (localInspectionNonce.current !== nonce) return;
-      setFlow({ phase: "confirming", selection });
+      try {
+        const selection = await inspectLocalUploadSelection({
+          sourceType: "BROWSER_MULTIPART",
+          browserSelectionMode: mode,
+          files: nextFiles,
+          objectStorageUri: "",
+        });
+        if (localInspectionNonce.current !== nonce) return;
+        setFlow({ phase: "confirming", selection });
+      } catch (error) {
+        if (localInspectionNonce.current !== nonce) return;
+        setFlow({ phase: "idle" });
+        throw error;
+      }
     },
     [],
   );
@@ -535,10 +542,18 @@ export default function UploadJobsPage() {
                 disabled={flow.phase === "folder_selected"}
                 scopeRequired={unscopedAccount}
                 localChecking={flow.phase === "folder_selected"}
-                onFilesChange={(nextFiles, mode) =>
-                  void inspectFiles(nextFiles, mode)
-                }
+                onFilesChange={inspectFiles}
                 onScopeRequired={() => setScopeRequiredOpen(true)}
+                additionalAction={
+                  scope && (
+                    <OssImportPanel
+                      key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}
+                      scope={scope}
+                      disabled={!canManage || !online || flow.phase !== "idle"}
+                      onImported={() => navigate(dataUploadRoutes.records)}
+                    />
+                  )
+                }
               />
               <div className={styles.idleQueueHint} aria-live="polite">
                 <strong>上传队列为空</strong>

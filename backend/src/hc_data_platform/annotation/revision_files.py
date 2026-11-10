@@ -241,6 +241,7 @@ def revision_document(
         tag_schema_id=task.tag_schema_id,
         tag_schema_version=task.tag_schema_version,
         tags=saved.tags,
+        episode_outcome=saved.episode_outcome,
         operations=operations,
     )
     if schema_content_hash(schema.document) != schema.content_hash:
@@ -268,7 +269,10 @@ def revision_document(
         },
         "revision": saved.model_copy(
             update={"created_at": saved.created_at.astimezone(timezone.utc)}
-        ).model_dump(mode="json"),
+        ).model_dump(
+            mode="json",
+            exclude={"episode_outcome"} if saved.episode_outcome == "UNMARKED" else set(),
+        ),
         "tag_schema": {
             "schema_id": schema.schema_id,
             "version": schema.version,

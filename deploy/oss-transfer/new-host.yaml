@@ -1,0 +1,40 @@
+# Portable OSS-only deployment. During acceptance, use an SSH tunnel to the gateway.
+services:
+  postgres:
+    ports: !reset []
+  temporal:
+    ports: !reset []
+  api:
+    ports: !reset []
+    environment:
+      HC_STORAGE_DISK_USAGE_PATH: /tmp/hc-data/oss-runtime-cache
+      HC_STORAGE_LOCAL_USAGE_ROOTS: '{"oss_cache":"/tmp/hc-data/oss-runtime-cache","alignment":"/tmp/hc-data/alignment","media":"/var/lib/hc-capacity/media","models":"/var/cache/hc-robot-previews"}'
+    volumes: !override
+      - ./backend:/app:ro
+      - alignment-cache:/tmp/hc-data/alignment
+      - oss-runtime-cache:/tmp/hc-data/oss-runtime-cache
+      - media-staging:/var/lib/hc-capacity/media:ro
+      - ./robot-previews:/var/cache/hc-robot-previews:ro
+  worker:
+    environment:
+      HC_STORAGE_DISK_USAGE_PATH: /tmp/hc-data/oss-runtime-cache
+  frontend:
+    ports: !reset []
+    volumes: !override
+      - ./frontend:/app:ro
+      - frontend-deps:/app/node_modules
+  gateway:
+    ports: !override ["127.0.0.1:8089:8080"]
+volumes:
+  postgres-data:
+    external: true
+    name: hc-data-platform-oss_postgres-data
+  alignment-cache:
+    external: true
+    name: hc-data-platform-oss_alignment-cache
+  media-staging:
+    external: true
+    name: hc-data-platform-oss_media-staging
+  frontend-deps:
+    external: true
+    name: hc-data-platform-oss_frontend-deps

@@ -55,6 +55,7 @@ from .repository import (
     RegistryRepository,
     RobotModelAssetUploadFileRecord,
     RobotModelAssetUploadRecord,
+    RobotModelImportCleanup,
     RobotModelPublishPreflightRecord,
 )
 from .snapshot_queries import PublishedModelAssetReader
@@ -99,16 +100,7 @@ class RegistryService:
             )
         ScopeGuard.require(auth, project_id)
         auth.require_capability("robot_model.read", project_id)
-        if not self._repository.has_organization_project(
-            organization_id=organization_id, project_id=project_id
-        ):
-            raise problem(
-                status=403,
-                code="ORGANIZATION_SCOPE_DENIED",
-                title="Organization access denied",
-                detail="The current project is not a member of the requested organization.",
-            )
-        return RegistryScope(organization_id=organization_id, project_id=project_id)
+        return self._registry_scope(organization_id, project_id)
 
     def _authorize_manage(
         self, *, auth: AuthContext, organization_id: str, project_id: str
@@ -122,6 +114,9 @@ class RegistryService:
             )
         ScopeGuard.require(auth, project_id)
         auth.require_capability("robot_model.manage", project_id)
+        return self._registry_scope(organization_id, project_id)
+
+    def _registry_scope(self, organization_id: str, project_id: str) -> RegistryScope:
         if not self._repository.has_organization_project(
             organization_id=organization_id, project_id=project_id
         ):
@@ -231,13 +226,7 @@ class RegistryService:
                 detail=("Only an unbound draft or an unbound import publication can be discarded."),
             ) from exc
 
-        if cleanup is not None and cleanup.files:
-            storage = self._storage_or_problem()
-            delete_object = getattr(storage, "delete_object", None)
-            for item in cleanup.files:
-                storage.abort_multipart(item.object_key, item.multipart_upload_id)
-                if callable(delete_object):
-                    delete_object(item.object_key)
+        self._clean_upload_files(cleanup)
         self._audit(
             auth=auth,
             scope=scope,
@@ -246,6 +235,49 @@ class RegistryService:
             request_id=request_id,
             outcome="SUCCEEDED",
         )
+
+    def delete_robot_model(
+        self,
+        *,
+        auth: AuthContext,
+        organization_id: str,
+        project_id: str,
+        model_id: str,
+        request_id: str,
+    ) -> None:
+        ScopeGuard.require(auth, project_id)
+        auth.require_organization_capability(organization_id, "robot_model.manage")
+        scope = self._registry_scope(organization_id, project_id)
+        try:
+            cleanup = self._repository.delete_robot_model(
+                organization_id=organization_id, project_id=project_id, model_id=model_id
+            )
+        except ValueError as exc:
+            raise problem(
+                status=409,
+                code="ROBOT_MODEL_IN_USE",
+                title="Robot model is in use",
+                detail="该模型的版本仍被机器人、历史绑定或数据记录引用，无法删除。",
+            ) from exc
+        self._clean_upload_files(cleanup)
+        self._audit(
+            auth=auth,
+            scope=scope,
+            action="registry.robot_model.deleted",
+            resource_type="ROBOT_MODEL",
+            resource_id=model_id,
+            request_id=request_id,
+            outcome="SUCCEEDED",
+        )
+
+    def _clean_upload_files(self, cleanup: RobotModelImportCleanup | None) -> None:
+        if cleanup is not None and cleanup.files:
+            storage = self._storage_or_problem()
+            delete_object = getattr(storage, "delete_object", None)
+            for item in cleanup.files:
+                storage.abort_multipart(item.object_key, item.multipart_upload_id)
+                if callable(delete_object):
+                    delete_object(item.object_key)
 
     def create_robot_model_draft(
         self,
@@ -1730,6 +1762,7 @@ class RegistryService:
         auth: AuthContext,
         scope: RegistryScope,
         action: str,
+        resource_type: str = "ROBOT_MODEL_VERSION",
         resource_id: str,
         request_id: str,
         outcome: str,
@@ -1741,7 +1774,7 @@ class RegistryService:
                 project_id=scope.project_id,
                 actor_id=auth.subject_id,
                 action=action,
-                resource_type="ROBOT_MODEL_VERSION",
+                resource_type=resource_type,
                 resource_id=resource_id,
                 request_id=request_id,
                 outcome=outcome,

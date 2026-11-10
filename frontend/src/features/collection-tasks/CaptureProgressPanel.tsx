@@ -9,6 +9,7 @@ import { Link } from "react-router-dom";
 import type { components } from "../../shared/api/generated/platform";
 import { request } from "../../shared/api/http-client";
 import type { CollectionTaskScope } from "./api";
+import { idleProgressInterval, progressRefreshInterval } from "./progress-polling";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import {
   UploadCancellationDialog,
@@ -21,8 +22,11 @@ const labels: Record<string, string> = {
   UPLOADING: "上传中",
   RECEIVED: "已接收，等待处理",
   PREPARING: "自动校验与预处理",
-  AWAITING_SLICE: "待分片",
-  PROCESSING: "逐段质检与入库",
+  PENDING_QC: "等待整段质检",
+  QC_RUNNING: "整段质检中",
+  QC_FAILED: "整段质检未通过",
+  AWAITING_SLICE: "质检通过，待分片",
+  PROCESSING: "片段对齐与入库",
   READY: "已入库",
   FAILED: "处理未通过",
   BLOCKED: "等待处理配置",
@@ -84,7 +88,16 @@ export function CaptureProgressPanel({
         },
       }),
     retry: false,
-    refetchInterval: 5_000,
+    staleTime: idleProgressInterval,
+    refetchInterval: (current) =>
+      progressRefreshInterval(
+        (current.state.data?.counts?.processing_count ?? 0) > 0 ||
+          (current.state.data?.items?.some(
+            (item) => item.stage === "UPLOADING" && item.upload_state === "UPLOADING",
+          ) ?? false),
+        current.state.error,
+      ),
+    refetchIntervalInBackground: false,
   });
   const counts = query.data?.counts;
   const cancellable = (query.data?.items ?? []).filter(
@@ -140,7 +153,7 @@ export function CaptureProgressPanel({
             </div>
           ) : (
             <p>
-              每次采集独立记录，接收成功后自动校验；连续录制提交切片后逐段质检入库。
+              每次采集独立记录，上传完成后自动质检；通过后即可切片，提交后对齐入库。
             </p>
           )}
         </div>
@@ -357,6 +370,8 @@ export function CaptureProgressPanel({
                   >
                     {item.stage === "AWAITING_SLICE"
                       ? "查看录制 / 切片"
+                      : ["PENDING_QC", "QC_RUNNING", "QC_FAILED", "FAILED"].includes(item.stage)
+                        ? "查看录制与质检"
                       : "查看录制与成片"}
                   </Link>
                 )}
