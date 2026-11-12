@@ -192,3 +192,6 @@ storage/0007_reclaimable_cache_policies.sql
 storage/0008_cache_policy_targets.sql
 
 storage/0009_inventory_retention.sql
+storage/0010_superseded_mcap_batches.sql
+ingest/038_original_mcap_content_lookup.sql
+ingest/039_mcap_duplicate_submissions.sql

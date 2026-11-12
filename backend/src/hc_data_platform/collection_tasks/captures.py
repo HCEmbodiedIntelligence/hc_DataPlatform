@@ -146,7 +146,7 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
                r.recording_document->>'quality_error_code'
         FROM uploads u
         LEFT JOIN LATERAL (
-          SELECT DISTINCT ON (source_path) processing_id,recording_id,status,error,source_path
+          SELECT DISTINCT ON (source_path) processing_id,recording_id,status,error,source_path,duplicate_of
           FROM ingest.mcap_processing_files m
           WHERE m.organization_id=u.organization_id AND m.project_id=u.project_id
             AND m.region_code=u.region_code AND m.raw_source_id=u.raw_source_id
@@ -196,6 +196,7 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
               AND r.recording_id IS NULL
           ) combined
         ) episodes ON true
+        WHERE m.duplicate_of IS NULL
         ORDER BY u.created_at DESC,u.upload_id
         """,
         (organization_id, project_id, region_code, task_id),

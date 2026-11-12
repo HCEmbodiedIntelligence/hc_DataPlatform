@@ -303,6 +303,10 @@ class PostgresQualityRepository:
                        = (p.organization_id,p.project_id,p.region_code,p.recording_id)
                     WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
                       AND p.status NOT IN ('READY','DISCARDED') AND q.status='REJECT'
+                      AND NOT EXISTS (SELECT 1 FROM ingest.mcap_processing_files f
+                          WHERE (f.organization_id,f.project_id,f.region_code,f.recording_id)
+                              = (r.organization_id,r.project_id,r.region_code,r.recording_id)
+                            AND f.duplicate_of IS NOT NULL)
                     ORDER BY q.created_at DESC, p.episode_id LIMIT 1000
                     """,
                     (current_request_context().organization_id, project_id, region_code),

@@ -212,6 +212,27 @@ def test_mcap_batch_is_visible_before_recording_creation_and_uses_latest_attempt
         assert all(p.raw_committed for p in packages)
         with psycopg.connect(dsn) as db, db.cursor() as cursor:
             assert not read_captures(cursor,source.organization_id,project,'foreign',task.collection_task_id)
+        from hc_data_platform.lerobot_imports.mcap_admission import existing_recording
+        scope = (source.organization_id, project, "cn-test")
+        sha = "3" * 64
+        with psycopg.connect(dsn) as db:
+            set_scope(db, project)
+            db.execute(
+                """UPDATE ingest.mcap_processing_files SET status='FAILED',
+                          source_document=jsonb_build_object('sha256',%s::text)
+                   WHERE project_id=%s AND processing_id='second'""", (sha, project),
+            )
+            assert existing_recording(
+                db, scope, "another-raw", {"path": "renamed.mcap", "sha256": sha}, lambda: None
+            ) == "processing:second"
+            db.execute(
+                """UPDATE ingest.mcap_processing_files SET duplicate_of='processing:second'
+                   WHERE project_id=%s AND processing_id='first-new'""", (project,),
+            )
+            with db.cursor() as cursor:
+                visible = read_captures(cursor, *scope, task.collection_task_id)
+            assert [item.source_path for item in visible] == ["b.mcap"]
+
     finally:
         with psycopg.connect(dsn) as db:
             set_scope(db,project)

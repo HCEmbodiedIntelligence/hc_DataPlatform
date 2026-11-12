@@ -33,6 +33,7 @@ from hc_data_platform.robot_ingest.raw_recording import publish, verify
 from hc_data_platform.security.audit import canonical_hash
 
 from .configuration import connections, validate_target
+from .mcap_reference import materialize, read_receipt
 from .mcap_original import ORIGINAL_PATH, original_key, replay_asset
 from .robot_eligibility import import_robots
 
@@ -283,7 +284,9 @@ def source_receipt(file, raw):
     return {
         "path": file["path"],
         "size": file["size"],
-        "sha256": file["sha256"],
+        "sha256": None if file.get("verification_key") else file["sha256"],
+        **({"source_etag": file["source_etag"], "verification_key": file["verification_key"]}
+           if file.get("verification_key") else {}),
         "object_key": file.get("object_key") or raw.storage_prefix + "/" + file["path"],
     }
 
@@ -294,6 +297,15 @@ def mcap_document(file, members, raw):
     if companion is not None:
         document["takeover_file"] = source_receipt(companion, raw)
     return document
+
+
+def _registered_identity(entry):
+    result = dict(entry)
+    if result.get("verification_key"):
+        result["sha256"] = None
+    if result.get("takeover_file"):
+        result["takeover_file"] = _registered_identity(result["takeover_file"])
+    return result
 
 
 def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
@@ -347,7 +359,7 @@ def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
             ORDER BY created_at DESC,processing_id LIMIT 1""",
             (*scope, raw.raw_source_id, file["path"]),
         ).fetchone()
-        if previous and tuple(previous[1:]) == (
+        if previous and (_registered_identity(previous[1]), *previous[2:]) == (
             document,
             cfg.model_dump(mode="json"),
             command.collection_task_id,
@@ -458,7 +470,7 @@ def process_file(handler, event, checkpoint):
                     )
                 row = db.execute(
                     """SELECT source_document,configuration,collection_task_id,
-                    robot_id,dataset_id,status,attempts,source_path,config_reference
+                    robot_id,dataset_id,status,attempts,source_path,config_reference,duplicate_of
                     FROM ingest.mcap_processing_files
                     WHERE organization_id=%s AND project_id=%s
                     AND region_code=%s
@@ -467,7 +479,7 @@ def process_file(handler, event, checkpoint):
                 ).fetchone()
                 if row is None:
                     raise ValueError("MCAP processing event has no scoped source")
-                if row[5] == "READY":
+                if row[5] == "READY" or row[9]:
                     return
                 if event.payload.get("attempt", row[6]) != row[6]:
                     return
@@ -499,12 +511,40 @@ def process_file(handler, event, checkpoint):
                 from hc_data_platform.capture_schemes.reprocess import execution_snapshot
                 with handler.connections() as db:
                     execution_snapshot(db, scope, event.aggregate_id, row[8])
+            else:
+                from .mcap_admission import existing_recording, verified_original
+
+                original = verified_original(handler.storage, original, checkpoint)
+                duplicate = existing_recording(lock, scope, event.aggregate_id, original, checkpoint)
+                if duplicate:
+                    with handler.connections() as db:
+                        lock_source(db, scope, event.aggregate_id)
+                        db.execute(
+                            """UPDATE ingest.mcap_processing_files
+                               SET status='FAILED',error=%s,duplicate_of=%s,source_document=%s::jsonb,updated_at=now()
+                               WHERE (organization_id,project_id,region_code,processing_id)=(%s,%s,%s,%s)""",
+                            (f"MCAP_DUPLICATE_RECORDING: {duplicate}", duplicate, json.dumps(original), *scope, ident),
+                        )
+                        sync_source(db, scope, event.aggregate_id)
+                        db.commit()
+                    return
+                if original.get("sha256") != row[0].get("sha256"):
+                    with handler.connections() as db:
+                        db.execute(
+                            """UPDATE ingest.mcap_processing_files SET source_document=%s::jsonb
+                               WHERE (organization_id,project_id,region_code,processing_id)=(%s,%s,%s,%s)""",
+                            (json.dumps(original), *scope, ident),
+                        )
             prefix = "/".join(("derived-mcap", *scope, ident))
             receipt_key = prefix + "/receipt.json"
             uid = uuid5(NAMESPACE_URL, "native-mcap:" + ident)
             if handler.storage.head(receipt_key):
                 from .service import read_bounded
 
+                if original.get("verification_key"):
+                    original = {**original, "sha256": read_receipt(handler.storage, original)}
+                    if companion := original.get("takeover_file"):
+                        original["takeover_file"] = {**companion, "sha256": read_receipt(handler.storage, companion)} if companion.get("verification_key") else companion
                 receipt = json.loads(read_bounded(handler.storage, receipt_key, 16 * 1024**2))
                 recorded = RecordingUpload.model_validate(receipt["upload"])
                 assets = tuple(RecordingAsset.model_validate(a) for a in receipt["assets"])
@@ -531,23 +571,14 @@ def process_file(handler, event, checkpoint):
                         if companion["size"] > 1024**2:
                             raise ValueError("MCAP_TAKEOVERS_INVALID: companion exceeds 1 MiB")
                         buffer = io.BytesIO()
-                        verify(
-                            handler.storage, companion["object_key"], companion["size"],
-                            companion["sha256"], checkpoint, buffer,
-                        )
+                        companion = materialize(handler.storage, companion, buffer, checkpoint)
+                        original = {**original, "takeover_file": companion}
                         takeover_times = parse_takeovers(
                             buffer.getvalue(), Path(original["path"]).name
                         )
                     source = root / "source.mcap"
                     with source.open("wb") as output:
-                        verify(
-                            handler.storage,
-                            original["object_key"],
-                            original["size"],
-                            original["sha256"],
-                            checkpoint,
-                            output,
-                        )
+                        original = materialize(handler.storage, original, output, checkpoint)
                     output = root / "derived"
                     from hc_data_platform.continuous_recordings.mcap_native import inspect
 
@@ -786,7 +817,7 @@ def retry_source(scope, raw_id, factory):
         rows = db.execute(
             (
                 """SELECT DISTINCT ON (source_path) source_document,collection_task_id,
-                robot_id,dataset_id,status,config_reference,processing_id FROM
+                robot_id,dataset_id,status,config_reference,processing_id,duplicate_of FROM
                 ingest.mcap_processing_files WHERE organization_id=%s AND project_id=%s AND
                 region_code=%s AND raw_source_id=%s ORDER BY source_path,created_at
                 DESC,processing_id"""
@@ -797,8 +828,8 @@ def retry_source(scope, raw_id, factory):
             return False
         if not any(row[4] == "FAILED" for row in rows):
             return True
-        for document, task, robot, dataset, status, reference, ident in rows:
-            if status != "FAILED":
+        for document, task, robot, dataset, status, reference, ident, duplicate_of in rows:
+            if status != "FAILED" or duplicate_of:
                 continue
             if not (reference and reference.get("error")):
                 # The file row pins the exact plan, original and any takeover companion.

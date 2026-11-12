@@ -10,6 +10,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
 
+from .content_duplicates import check_original_mcap
 from .models import RecordingQualitySummary, RecordingScope, RecordingStatus
 
 EVENT_TYPE = "continuous-recording.quality.requested.v1"
@@ -176,7 +177,8 @@ class RecordingQualityService:
                     raise RuntimeError("recording quality attempt is already running")
                 recording = self._current(cursor, request)
                 if recording.quality_summary is not None:
-                    self._continue_processing(cursor, recording, request)
+                    if recording.quality_summary.status == "PASS":
+                        self._continue_processing(cursor, recording, request)
                     connection.commit()
                     return recording.quality_summary.model_dump(mode="json")
                 if recording.status not in {RecordingStatus.PENDING_QC, RecordingStatus.QC_RUNNING}:
@@ -198,23 +200,24 @@ class RecordingQualityService:
                 recording_id=request["recording_id"],
             )
             document = self.processor.inspect_quality(resolved, recording_quality=True)
-            digest = canonical_hash(document)
-            summary = RecordingQualitySummary(
-                report_id=f"recording_qc_{digest}",
-                status=document["status"],
-                finding_codes=sorted(
-                    set(document["finding_codes"])
-                    | {
-                        finding["code"]
-                        for finding in document["quality_report"]["findings"]
-                        if finding["severity"] != "info"
-                    }
-                ),
-                warning_codes=document["warning_codes"],
-                checked_at=datetime.now(timezone.utc),
-            )
             with connection.cursor() as cursor:
                 recording = self._current(cursor, request)
+                check_original_mcap(cursor, recording, document)
+                digest = canonical_hash(document)
+                summary = RecordingQualitySummary(
+                    report_id=f"recording_qc_{digest}",
+                    status=document["status"],
+                    finding_codes=sorted(
+                        set(document["finding_codes"])
+                        | {
+                            finding["code"]
+                            for finding in document["quality_report"]["findings"]
+                            if finding["severity"] != "info"
+                        }
+                    ),
+                    warning_codes=document["warning_codes"],
+                    checked_at=datetime.now(timezone.utc),
+                )
                 cursor.execute(
                     """INSERT INTO ingest.recording_quality_reports
                     (organization_id,project_id,region_code,recording_id,report_id,report_document)
