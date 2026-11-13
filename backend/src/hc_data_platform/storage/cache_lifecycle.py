@@ -2,7 +2,6 @@
 
 import json
 import logging
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -71,7 +70,7 @@ class CacheLifecycle:
                             last_use = path.stat().st_mtime
                             if meta.get("remote"):
                                 self.storage.delete_object(meta["key"])
-                            shutil.rmtree(path.parent)
+                            cache.remove_directory(path.parent)
                             self.audit(scope, current, meta["key"], meta["size"], last_use)
                     except FileNotFoundError:
                         continue

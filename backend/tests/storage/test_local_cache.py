@@ -137,3 +137,43 @@ def test_routing_never_writes_cache_to_oss_and_lists_both(tmp_path):
     assert [x.key for x in bucket.list_objects_v2(prefix="episode-deliveries/").object_list] == [
         KEY
     ]
+
+
+def test_overflow_preserves_range_expiry_and_releases_multipart_objects(tmp_path, monkeypatch):
+    remote = tmp_path / "oss"
+    monkeypatch.setenv("HC_CACHE_OSS_OVERFLOW_ROOT", str(remote))
+    monkeypatch.setenv("HC_CACHE_LOCAL_RESERVE_BYTES", str(2**60))
+    now = [1800000000.0]
+    cache = LocalCacheBucket(tmp_path / "cache", "key", ttl_days=1, clock=lambda: now[0])
+    monkeypatch.setattr(cache.overflow, "check_mount", lambda: None)
+    upload = cache.init_multipart_upload(KEY).upload_id
+    for i, part in enumerate((b"aaa", b"bbb"), start=1):
+        cache.upload_part(KEY, upload, i, io.BytesIO(part))
+    parts = cache.list_parts(KEY, upload).parts
+    cache.complete_multipart_upload(KEY, upload, parts)
+    payload = cache.directory(KEY) / "payload"
+    assert payload.is_symlink() and payload.read_bytes() == b"aaabbb"
+    assert list(remote.glob("*/*")) == [payload.resolve()]
+    body = cache.get_object(KEY, byte_range=(2, 4))
+    assert body.read() == b"abb"
+    body.close()
+    cache.overflow.reserve = 0
+    assert cache.head_object(KEY).content_length == 6
+    cache.put_object(KEY, b"local")
+    assert not payload.is_symlink() and not list(remote.glob("*/*"))
+    cache.overflow.reserve = 2**60
+    cache.put_object(KEY, b"remote")
+    now[0] += 86401
+    assert cache.sweep(force=True) == 1
+    assert not list(remote.glob("*/*"))
+
+
+def test_unmounted_overflow_refuses_write_without_losing_existing_payload(tmp_path, monkeypatch):
+    monkeypatch.setenv("HC_CACHE_OSS_OVERFLOW_ROOT", str(tmp_path / "unmounted"))
+    cache = LocalCacheBucket(tmp_path / "cache", "key")
+    cache.overflow.reserve = 0
+    cache.put_object(KEY, b"old")
+    cache.overflow.reserve = 2**60
+    with pytest.raises(OSError, match="mount is unavailable"):
+        cache.put_object(KEY, io.BytesIO(b"new"))
+    assert (cache.directory(KEY) / "payload").read_bytes() == b"old"

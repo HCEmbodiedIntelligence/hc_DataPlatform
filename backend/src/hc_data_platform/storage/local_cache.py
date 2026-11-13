@@ -18,6 +18,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import unquote, urlencode
 
+from .cache_overflow import CacheOverflow, PartStream
+
 PREVIEW_CACHE_KINDS = frozenset({"recording-previews", "episode-previews", "episode-deliveries"})
 CACHE_KINDS = PREVIEW_CACHE_KINDS | {"derived-mcap"}
 
@@ -60,6 +62,10 @@ class CacheBody:
 class LocalCacheBucket:
     def __init__(self, root, signing_key, *, ttl_days=None, clock=time.time):
         self.root = Path(root).resolve()
+        self.overflow = CacheOverflow(
+            os.environ.get("HC_CACHE_OSS_OVERFLOW_ROOT"),
+            int(os.environ.get("HC_CACHE_LOCAL_RESERVE_BYTES", 12 * 1024**3)),
+        )
         self.signing_key = signing_key.encode()
         self.ttl = None if ttl_days is None else ttl_days * 86400
         self.clock = clock
@@ -108,7 +114,10 @@ class LocalCacheBucket:
 
     def metadata(self, key):
         try:
-            data = json.loads((self.directory(key) / "meta.json").read_text())
+            directory = self.directory(key)
+            data = json.loads((directory / "meta.json").read_text())
+            if self.overflow.target(directory / "payload") is not None:
+                self.overflow.check_mount()
             if data["key"] != key or not (self.directory(key) / "payload").is_file():
                 raise CacheError(404, "NoSuchKey")
             return data
@@ -142,24 +151,20 @@ class LocalCacheBucket:
 
     def put_object(self, key, body, headers=None):
         self.sweep()
+        with self.lock(key):
+            return self._put_locked(key, body, headers)
+
+    def _put_locked(self, key, body, headers):
         headers = {k.lower(): v for k, v in (headers or {}).items()}
         directory = self.directory(key)
         directory.parent.mkdir(parents=True, exist_ok=True)
         stream = io.BytesIO(body) if isinstance(body, (bytes, bytearray)) else body
-        with (
-            self.lock(key),
-            tempfile.TemporaryDirectory(prefix=".write-", dir=directory.parent) as temp,
-        ):
+        with tempfile.TemporaryDirectory(prefix=".write-", dir=directory.parent) as temp:
             staging = Path(temp)
-            md5, sha, size = hashlib.md5(), hashlib.sha256(), 0
-            with (staging / "payload").open("wb") as output:
-                while block := stream.read(1024**2):
-                    output.write(block)
-                    md5.update(block)
-                    sha.update(block)
-                    size += len(block)
-                output.flush()
-                os.fsync(output.fileno())
+            if directory.exists() and headers.get("x-oss-forbid-overwrite") == "true":
+                raise CacheError(409, "FileAlreadyExists")
+            size_hint = len(body) if isinstance(body, (bytes, bytearray)) else int(headers.get("content-length", 0))
+            md5, sha, size = self.overflow.write(stream, staging / "payload", size_hint)
             from hc_data_platform.core.context import current_request_context
 
             try:
@@ -171,25 +176,41 @@ class LocalCacheBucket:
                 scope=scope,
                 key=key,
                 size=size,
-                etag=md5.hexdigest(),
-                sha256=sha.hexdigest(),
+                etag=md5,
+                sha256=sha,
                 modified=self.clock(),
                 headers=headers,
             )
-            if directory.exists():
-                if headers.get("x-oss-forbid-overwrite") == "true":
-                    raise CacheError(409, "FileAlreadyExists")
-                shutil.rmtree(directory)
-            (staging / "meta.json").write_text(json.dumps(meta))
-            os.utime(staging / "meta.json", (self.clock(), self.clock()))
-            staging.rename(directory)
+            old_target = self.overflow.target(directory / "payload")
+            try:
+                (staging / "meta.json").write_text(json.dumps(meta))
+                os.utime(staging / "meta.json", (self.clock(), self.clock()))
+                if directory.exists():
+                    backup = staging.parent / (".previous-" + uuid.uuid4().hex)
+                    directory.rename(backup)
+                    try:
+                        staging.rename(directory)
+                    except BaseException:
+                        backup.rename(directory)
+                        raise
+                    shutil.rmtree(backup)
+                else:
+                    staging.rename(directory)
+            except BaseException:
+                self.overflow.release(self.overflow.target(staging / "payload"))
+                raise
+            self.overflow.release(old_target)
             return SimpleNamespace(etag=meta["etag"], headers={})
+
+    def remove_directory(self, directory):
+        self.overflow.release(self.overflow.target(directory / "payload"))
+        shutil.rmtree(directory)
 
     def delete_object(self, key):
         with self.lock(key):
             directory = self.directory(key)
             if directory.exists():
-                shutil.rmtree(directory)
+                self.remove_directory(directory)
         return SimpleNamespace(request_id="local-cache")
 
     def upload_directory(self, key, upload_id):
@@ -219,24 +240,20 @@ class LocalCacheBucket:
         directory = self.upload_directory(key, upload_id)
         part = directory / str(int(part_number))
         stream = io.BytesIO(body) if isinstance(body, bytes) else body
-        digest = hashlib.md5()
-        size = 0
-        with tempfile.NamedTemporaryFile(dir=directory, delete=False) as output:
-            temp = Path(output.name)
-            try:
-                while block := stream.read(1024**2):
-                    output.write(block)
-                    digest.update(block)
-                    size += len(block)
-            except BaseException:
-                temp.unlink(missing_ok=True)
-                raise
         expected = (headers or {}).get("Content-Length")
-        if expected is not None and size != int(expected):
-            temp.unlink(missing_ok=True)
-            raise ValueError("part length differs")
-        temp.replace(part)
-        return SimpleNamespace(etag=digest.hexdigest(), headers={})
+        with self.lock(key), tempfile.TemporaryDirectory(dir=directory) as temp:
+            path = Path(temp) / "payload"
+            old_target = self.overflow.target(part)
+            digest, _, size = self.overflow.write(stream, path, int(expected or 0))
+            try:
+                if expected is not None and size != int(expected):
+                    raise ValueError("part length differs")
+                path.replace(part)
+            except BaseException:
+                self.overflow.release(self.overflow.target(path))
+                raise
+            self.overflow.release(old_target)
+        return SimpleNamespace(etag=digest, headers={})
 
     def list_parts(self, key, upload_id, **kwargs):
         directory = self.upload_directory(key, upload_id)
@@ -259,30 +276,35 @@ class LocalCacheBucket:
         return SimpleNamespace(parts=parts, is_truncated=False, next_part_number_marker="")
 
     def complete_multipart_upload(self, key, upload_id, parts, headers=None):
-        directory = self.upload_directory(key, upload_id)
-        found = self.list_parts(key, upload_id).parts
-        if [(p.part_number, p.etag.strip('"')) for p in parts] != [
-            (p.part_number, p.etag) for p in found
-        ]:
-            raise ValueError("multipart inventory differs")
-        with tempfile.TemporaryFile(dir=directory) as joined:
-            for part in found:
-                with (directory / str(part.part_number)).open("rb") as source:
-                    shutil.copyfileobj(source, joined, 1024**2)
-            joined.seek(0)
-            result = self.put_object(key, joined, headers=headers)
-        shutil.rmtree(directory)
-        return result
+        self.sweep()
+        with self.lock(key):
+            directory = self.upload_directory(key, upload_id)
+            found = self.list_parts(key, upload_id).parts
+            if [(p.part_number, p.etag.strip('"')) for p in parts] != [
+                (p.part_number, p.etag) for p in found
+            ]:
+                raise ValueError("multipart inventory differs")
+            with PartStream(directory, found) as stream:
+                result = self._put_locked(key, stream, headers)
+            self._remove_upload(directory)
+            return result
 
     def abort_multipart_upload(self, key, upload_id):
-        try:
-            directory = self.upload_directory(key, upload_id)
-        except CacheError as exc:
-            if exc.status == 404:
-                return SimpleNamespace(request_id="local-cache")
-            raise
-        shutil.rmtree(directory)
+        with self.lock(key):
+            try:
+                directory = self.upload_directory(key, upload_id)
+            except CacheError as exc:
+                if exc.status == 404:
+                    return SimpleNamespace(request_id="local-cache")
+                raise
+            self._remove_upload(directory)
         return SimpleNamespace(request_id="local-cache")
+
+    def _remove_upload(self, directory):
+        for part in directory.iterdir():
+            if part.name.isdigit():
+                self.overflow.release(self.overflow.target(part))
+        shutil.rmtree(directory)
 
     def signature(self, kind, identity, expires, name=""):
         return hmac.new(
@@ -382,7 +404,7 @@ class LocalCacheBucket:
                         raise ValueError("cache metadata owner mismatch")
                     with self.lock(meta["key"]):
                         if now - path.stat().st_mtime >= self.ttl:
-                            shutil.rmtree(directory)
+                            self.remove_directory(directory)
                             removed += 1
                 except FileNotFoundError:
                     continue
