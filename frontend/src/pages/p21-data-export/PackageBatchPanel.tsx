@@ -155,7 +155,8 @@ export function PackageBatchPanel({
   );
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const qcBundle = filter?.stage === "qc_passed";
-  const selectionLimit = qcBundle ? 1000 : 100;
+  const useEpisodeBundle = qcBundle && mode !== "holobrain";
+  const selectionLimit = mode === "holobrain" ? undefined : qcBundle ? 1000 : 100;
   const [selectingAll, setSelectingAll] = useState(false);
   const [bundleProgress, setBundleProgress] = useState("");
   const [bundleUrl, setBundleUrl] = useState<string>();
@@ -183,26 +184,36 @@ export function PackageBatchPanel({
     );
     return () => window.clearTimeout(timer);
   }, [downloadLink]);
+  const candidateDatasetIds = annotated
+    ? datasets.map((dataset) => dataset.id)
+    : datasetId ? [datasetId] : [];
+  const datasetNames = new Map(datasets.map((dataset) => [dataset.id, dataset.name]));
+  const showDatasetName = !filter && annotated && datasets.length > 1;
   const candidates = useInfiniteQuery({
-    queryKey: ["package-batch-candidates", scope, datasetId, annotated],
-    initialPageParam: undefined as
-      | { collectionId: string; offset: number }
-      | undefined,
-    queryFn: ({ signal, pageParam }) =>
-      loadPackageCandidates(
-        scope,
-        datasetId!,
-        signal,
-        pageParam,
-        annotated ? "annotated" : "dataset",
-      ),
+    queryKey: ["package-batch-candidates", scope, candidateDatasetIds, annotated],
+    initialPageParam: candidateDatasetIds.map((id) => ({
+      id,
+      cursor: undefined as { collectionId: string; offset: number } | undefined,
+    })),
+    queryFn: async ({ signal, pageParam }) => {
+      const pages = await Promise.all(pageParam.map(({ id, cursor }) =>
+        loadPackageCandidates(scope, id, signal, cursor, annotated ? "annotated" : "dataset"),
+      ));
+      return {
+        items: pages.flatMap((page) => page.items),
+        total: pages.reduce((sum, page) => sum + page.total, 0),
+        legacy_episode_count: pages.reduce((sum, page) => sum + page.legacy_episode_count, 0),
+        next: pages.flatMap((page) =>
+          page.next_offset !== null && page.collection_version_id
+            ? [{ id: page.dataset_id, cursor: { collectionId: page.collection_version_id, offset: page.next_offset } }]
+            : [],
+        ),
+      };
+    },
     enabled:
-      !filter && canDownload && Boolean(datasetId) && (!annotated || canReadAnnotations),
+      !filter && canDownload && candidateDatasetIds.length > 0 && (!annotated || canReadAnnotations),
     staleTime: 0,
-    getNextPageParam: (page) =>
-      page.next_offset !== null && page.collection_version_id
-        ? { collectionId: page.collection_version_id, offset: page.next_offset }
-        : undefined,
+    getNextPageParam: (page) => page.next.length ? page.next : undefined,
   });
   const uploadCandidates = useInfiniteQuery({
     queryKey: ["export-upload-candidates", scope, filter, datasetIds, taskIds],
@@ -267,9 +278,14 @@ export function PackageBatchPanel({
     }) => {
       const signal = lifetime.current!.signal;
       if (action.kind === "create") {
-        if (qcBundle && filter) {
+        if (useEpisodeBundle && filter) {
           setBundleUrl(undefined);
+          setBundleProgress("");
           const result = await downloadEpisodeBundle(scope, selections, mode, filter, signal, setBundleProgress);
+          if (result.kind === "cancelled") {
+            setBundleProgress("尚未选择保存位置。已保留所选数据，点击“导出”可重新选择。");
+            return;
+          }
           if (result.kind === "browser") setBundleUrl(result.url);
           setBundleProgress(`已完成 ${selections.length} 条 Episode 的打包下载`);
           return;
@@ -361,7 +377,7 @@ export function PackageBatchPanel({
       let page = uploadCandidates.data?.pages[0];
       const cursors = new Set<string>();
       while (page) {
-        if (page.total > selectionLimit) throw new Error(`本次筛选有 ${page.total} 条，每个压缩包最多 ${selectionLimit} 条，请缩小筛选范围。`);
+        if (selectionLimit !== undefined && page.total > selectionLimit) throw new Error(`本次筛选有 ${page.total} 条，每个压缩包最多 ${selectionLimit} 条，请缩小筛选范围。`);
         for (const { data } of page.items) next[data.data_version_id] = data;
         if (!page.next_after) break;
         if (cursors.has(page.next_after)) throw new Error("候选数据已变化，请刷新后重试。");
@@ -381,7 +397,7 @@ export function PackageBatchPanel({
     if (
       enabled &&
       !selected[data.data_version_id] &&
-      selections.length >= selectionLimit
+      selectionLimit !== undefined && selections.length >= selectionLimit
     ) {
       setSelectionError(`每个压缩包最多选择 ${selectionLimit} 条 Episode。`);
       return;
@@ -424,7 +440,7 @@ export function PackageBatchPanel({
         >
           <div className={styles.sectionHeading}>
             <h3 id="package-source-title">数据</h3>
-            {!filter && datasets.length > 1 && (
+            {!filter && !annotated && datasets.length > 1 && (
               <Select
                 className={styles.datasetSelect}
                 aria-label="标准包数据集"
@@ -458,7 +474,7 @@ export function PackageBatchPanel({
           {!filter && !datasets.length && (
             <div className={styles.empty}>请选择任务或数据集</div>
           )}
-          {list.isFetching && !list.data && (filter || datasetId) && (
+          {list.isFetching && !list.data && (filter || candidateDatasetIds.length > 0) && (
             <div
               className={styles.loading}
               role="status"
@@ -474,7 +490,7 @@ export function PackageBatchPanel({
                   type="info"
                   showIcon
                   title={`此集合另含 ${candidates.data.pages[0]?.legacy_episode_count} 条历史存储数据`}
-                  description="如需导出这些数据，请切换到历史格式。"
+                  description="标准包不包含这些历史存储数据。"
                 />
               )}
               {filter && items.length > 0 && (
@@ -505,6 +521,7 @@ export function PackageBatchPanel({
                         />
                       </span>
                       <span className={styles.episodeMeta}>
+                        {showDatasetName && <>{datasetNames.get(data.identity.dataset_id)} · </>}
                         {filter && <>{batchLabels.get(data.data_version_id)} · </>}数据 v{data.version} ·{" "}
                         {data.frame_count.toLocaleString("zh-CN")} 帧
                       </span>
@@ -517,8 +534,8 @@ export function PackageBatchPanel({
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
                     filter ? "所选范围暂无符合条件的数据。" : annotated
-                      ? "此数据集暂无标注完成的数据，请先完成标注审核。"
-                      : "此数据集暂无独立标准包；可查看历史格式或原始数据。"
+                      ? "所选范围暂无标注完成的数据，请先完成标注审核。"
+                      : "此数据集暂无独立标准包，可查看原始数据。"
                   }
                 />
               )}
@@ -550,6 +567,7 @@ export function PackageBatchPanel({
                         id={data.identity.episode_id}
                         datasetId={data.identity.dataset_id}
                       />{" "}
+                      {showDatasetName && <>· {datasetNames.get(data.identity.dataset_id)} </>}
                       · 数据 v{data.version}
                     </span>
                     <Button
@@ -576,7 +594,10 @@ export function PackageBatchPanel({
               aria-label="标准包交付格式"
               name="package-delivery-format"
               value={mode}
-              onChange={(e) => setMode(e.target.value)}
+              onChange={(e) => {
+                setMode(e.target.value);
+                setSelectionError(null);
+              }}
             >
               {deliveryFormats.map((format) => {
                 const disabled = annotated && format.value === "independent";
@@ -644,7 +665,7 @@ export function PackageBatchPanel({
             </span>
           )}
         </section>
-        {qcBundle && bundleProgress && !mutation.error && <Alert type="info" title={bundleProgress}
+        {useEpisodeBundle && bundleProgress && !mutation.error && <Alert type="info" title={bundleProgress}
           action={bundleUrl && <a href={bundleUrl} download="Episodes.zip">下载 ZIP</a>} />}
         {mutation.error && (
           <Alert

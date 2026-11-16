@@ -88,7 +88,6 @@ components:
         members:
           items:
             $ref: '#/components/schemas/CollectionDeliveryMember'
-          maxItems: 100
           minItems: 1
           title: Members
           type: array
@@ -1801,7 +1800,6 @@ components:
         members:
           items:
             $ref: '#/components/schemas/CollectionEpisodeSelection'
-          maxItems: 100
           minItems: 1
           title: Members
           type: array

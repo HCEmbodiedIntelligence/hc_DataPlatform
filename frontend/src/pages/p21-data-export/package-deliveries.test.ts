@@ -60,6 +60,25 @@ it("creates a queued batch of three current annotated episodes before totals are
   vi.mocked(request).mockResolvedValue(job);
   await expect(createPackageBatch(f.scope, members, "rgbd", "three-episodes")).resolves.toEqual(job);
 });
+it("submits and reads a single HoloBrain job with more than 1000 episodes", async () => {
+  const { job, scope } = packageDeliveryFixture();
+  const member = job.plan.members[0]!;
+  job.plan.archive_format = "holobrain_collection_zip/6";
+  job.plan.members = Array.from({ length: 1001 }, (_, i) => ({
+    ...member, data: { ...member.data, data_version_id: "dv_" + i.toString(16).padStart(64, "0"),
+      identity: { ...member.data.identity, episode_id: `episode-${i}` } },
+  }));
+  vi.mocked(request)
+    .mockResolvedValueOnce([{ id: "holobrain", title: "HoloBrain", archive_format: job.plan.archive_format,
+      supports_annotations: true, requires_originals: false }])
+    .mockResolvedValueOnce(job);
+  const members = job.plan.members.map(({ data }) => ({ data }));
+  await expect(createPackageBatch(scope, members, "holobrain", "large-selection")).resolves.toEqual(job);
+  expect(request).toHaveBeenLastCalledWith(expect.objectContaining({
+    path: expect.stringMatching(/\/collections$/), body: { members, output_format: "holobrain", modalities: "rgbd" },
+  }));
+});
+
 it("polls the exact export and rejects another job or a changed depth selection", async () => {
   const f = packageDeliveryFixture();
   vi.mocked(request).mockResolvedValue(f.job);

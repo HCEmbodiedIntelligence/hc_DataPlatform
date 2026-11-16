@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import AwareDatetime, Field
 
 from hc_data_platform.continuous_recordings.current_qc import CURRENT_EPISODE_QC
 
@@ -16,6 +16,8 @@ UploadExportStage = Literal["qc_passed", "annotated", "dataset", "unannotated"]
 
 class UploadExportFilter(FrozenModel):
     stage: UploadExportStage
+    uploaded_from: AwareDatetime | None = Field(default=None, exclude_if=lambda v: v is None)
+    uploaded_before: AwareDatetime | None = Field(default=None, exclude_if=lambda v: v is None)
     batch_number: int | None = Field(None, ge=1)
     batch_numbers: tuple[Annotated[int, Field(ge=1)], ...] = Field(default=(), exclude_if=lambda v: not v)
     all_batches: bool = Field(default=False, exclude_if=lambda v: not v)
@@ -55,7 +57,7 @@ class UploadCandidatePage(FrozenModel):
 
 # recording_episode_processing and raw_source_episodes bind admission to a fixed data_ref.
 # Formal single-rollout uploads can instead have their exact package receipt on the workflow.
-ADMISSIONS = f"""
+ADMITTED_UPLOADS = f"""
 WITH admitted AS (
     SELECT p.data_ref, coalesce(src.upload_id, r.upload_session_id::text,
            r.recording_upload_id::text) AS upload_id, q.status AS qc
@@ -85,7 +87,11 @@ WITH admitted AS (
     WHERE (e.organization_id,e.project_id,e.region_code)=(%(org)s,%(project)s,%(region)s)
       AND src.raw_status='COMMITTED' AND (e.status='READY' OR
           (e.status<>'DISCARDED' AND e.data_ref IS NULL AND w.result#>'{{derived,data}}'=v.receipt_document->'data'))
-), eligible AS (
+)
+"""
+
+ADMISSIONS = ADMITTED_UPLOADS + """
+, eligible AS (
     SELECT v.data_version_id, a.data_ref,
            a.upload_id
     FROM admitted a JOIN episode_store.versions v
@@ -118,6 +124,8 @@ WITH admitted AS (
       ON (m.organization_id,m.project_id,m.region_code,m.upload_id)
          =(%(org)s,%(project)s,%(region)s,e.upload_id)
     LEFT JOIN ingest.upload_batches b USING (organization_id,project_id,region_code,batch_key)
+    WHERE (%(uploaded_from)s::timestamptz IS NULL OR b.created_at >= %(uploaded_from)s)
+      AND (%(uploaded_before)s::timestamptz IS NULL OR b.created_at < %(uploaded_before)s)
     GROUP BY e.data_version_id,e.data_ref
     HAVING (%(batch_list)s::bigint[] IS NULL OR bool_or(b.batch_number=ANY(%(batch_list)s)))
        AND (NOT %(all_batches)s OR count(b.batch_number)>0)
@@ -133,6 +141,8 @@ def candidates(
         project=scope[1],
         region=scope[2],
         stage=selection.stage,
+        uploaded_from=selection.uploaded_from,
+        uploaded_before=selection.uploaded_before,
         batch_list=list(selection.batch_numbers) or ([selection.batch_number] if selection.batch_number else None),
         all_batches=selection.all_batches,
         datasets=list(datasets) or None,

@@ -18,13 +18,15 @@ export type RawDownloadResult =
   | { kind: "saved"; filename: string; bytes: number }
   | { kind: "browser"; filename: string; bytes: number; url: string };
 
+type ArchiveDownloadOutcome = RawDownloadResult | { kind: "cancelled" };
+
 /** One archive request; supported browsers write large downloads directly to disk. */
 export async function downloadRawSources(
   scope: IngestScope,
   importIds: readonly string[],
   signal: AbortSignal,
   onProgress: (bytes: number) => void,
-): Promise<RawDownloadResult> {
+): Promise<ArchiveDownloadOutcome> {
   return downloadArchive(scope, signal, onProgress, "原始数据", async () => ({
     path: `${nativeRoot(scope)}/archive`, body: { import_ids: importIds },
   }));
@@ -33,7 +35,7 @@ export async function downloadRawSources(
 export async function downloadArchive(
   scope: IngestScope, signal: AbortSignal, onProgress: (bytes: number) => void,
   label: string, prepare: (signal: AbortSignal) => Promise<{path: string; body: Record<string, unknown>}>,
-): Promise<RawDownloadResult> {
+): Promise<ArchiveDownloadOutcome> {
   const lease = createSessionScopeLease(scope, signal);
   const name = `${label}-${new Date().toISOString().slice(0, 10)}.zip`;
   const picker = (window as Window & { showSaveFilePicker?: SavePicker })
@@ -45,15 +47,18 @@ export async function downloadArchive(
     lease.signal.throwIfAborted();
     // Invoke the picker before awaiting network work so the user gesture is retained.
     if (picker) {
-      const handle = await picker.call(window, {
-        suggestedName: name,
-        types: [
-          {
-            description: "ZIP 压缩包",
-            accept: { "application/zip": [".zip"] },
-          },
-        ],
-      });
+      let handle: Awaited<ReturnType<SavePicker>>;
+      try {
+        handle = await picker.call(window, {
+          suggestedName: name,
+          types: [{ description: "ZIP 压缩包", accept: { "application/zip": [".zip"] } }],
+        });
+      } catch (error) {
+        lease.signal.throwIfAborted();
+        if (error instanceof DOMException && error.name === "AbortError")
+          return { kind: "cancelled" };
+        throw error;
+      }
       lease.signal.throwIfAborted();
       filename = handle.name;
       file = await handle.createWritable();

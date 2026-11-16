@@ -27,6 +27,8 @@ type Props = {
   taskIds: readonly string[];
   batchNumbers?: readonly number[];
   allBatches?: boolean;
+  uploadedFrom?: string;
+  uploadedBefore?: string;
   hasFilter: boolean;
   canRead: boolean;
   canDownload: boolean;
@@ -39,7 +41,7 @@ export default function RawDataExportPanel(props: Props) {
     props.scope,
     [...props.datasetIds].sort(),
     [...props.taskIds].sort(),
-    props.batchNumbers, props.allBatches,
+    props.batchNumbers, props.allBatches, props.uploadedFrom, props.uploadedBefore,
     props.hasFilter,
     props.canRead,
     props.canDownload,
@@ -52,7 +54,7 @@ function RawDataSelection({
   datasetIds,
   taskIds,
   hasFilter,
-  batchNumbers = [], allBatches = false,
+  batchNumbers = [], allBatches = false, uploadedFrom, uploadedBefore,
   canRead,
   canDownload,
 }: Props) {
@@ -80,7 +82,7 @@ function RawDataSelection({
           regionCode: scope.regionCode,
         }
       : null;
-  const datasetsToRead = (allBatches || batchNumbers.length > 0) && !datasetIds.length ? [undefined] : datasetIds;
+  const datasetsToRead = (uploadedFrom || uploadedBefore || allBatches || batchNumbers.length > 0) && !datasetIds.length ? [undefined] : datasetIds;
   const queries = useQueries({
     queries: datasetsToRead.map((datasetId) => ({
       queryKey: [
@@ -89,7 +91,7 @@ function RawDataSelection({
         scope.projectId,
         scope.regionCode,
         datasetId,
-        batchNumbers, allBatches,
+        batchNumbers, allBatches, uploadedFrom, uploadedBefore,
       ],
       queryFn: async ({ signal }: { signal: AbortSignal }) => {
         const items: NativeProgress[] = [];
@@ -100,6 +102,7 @@ function RawDataSelection({
             path: nativeRoot(ingestScope!),
             query: {
               dataset_id: datasetId,
+              uploaded_from: uploadedFrom, uploaded_before: uploadedBefore,
               batch_number: batchNumbers, all_batches: allBatches || undefined,
               limit: 100,
               offset,
@@ -118,7 +121,7 @@ function RawDataSelection({
   if (!canRead)
     return <PageState state="forbidden" description="需要原始数据读取权限。" />;
   if (!hasFilter || !ingestScope)
-    return <PageState state="empty" description="请先选择上传批次、任务或数据集" />;
+    return <PageState state="empty" description="请先选择上传时间、上传批次、任务或数据集" />;
   if (queries.some((query) => query.isPending))
     return <PageState state="loading" label="原始数据" />;
   if (queries.some((query) => query.isError))
@@ -161,6 +164,7 @@ function RawDataSelection({
         current.signal,
         setDownloadedBytes,
       );
+      if (result.kind === "cancelled") return;
       if (!current.signal.aborted) setDownloadResult(result);
       else if (result.kind === "browser") URL.revokeObjectURL(result.url);
     } catch (error) {

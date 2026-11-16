@@ -30,6 +30,7 @@
     "@tanstack/react-table": "8.21.3",
     "@zip.js/zip.js": "2.24.0",
     "antd": "6.6.0",
+    "dayjs": "1.11.21",
     "echarts": "6.0.0",
     "lucide-react": "0.542.0",
     "react": "19.1.1",

@@ -12,6 +12,8 @@ export type PackageData = z.infer<typeof dataWire>;
 export type BatchMode = string;
 export type PackageExportFilter = {
   stage: "annotated" | "dataset" | "qc_passed";
+  uploaded_from?: string;
+  uploaded_before?: string;
   batch_numbers?: number[];
   all_batches?: boolean;
 };
@@ -48,8 +50,7 @@ const collectionPlan = z
           })
           .strict(),
       )
-      .min(1)
-      .max(100),
+      .min(1),
     modalities: z.enum(["rgb", "rgbd"]),
     archive_format: z
       .string()
@@ -126,6 +127,8 @@ export function checkedPackageJob(raw: unknown, scope: Scope) {
   )
     throw new Error("任务的固定选择或归档状态不一致。");
   if (plan.format === "hc-collection-delivery-plan/1") {
+    if (plan.members.length > 100 && !plan.archive_format.startsWith("holobrain_collection_zip/"))
+      throw new Error("集合的 Episode 数量超出格式限制。");
     for (const member of plan.members) {
       const a = member.annotation;
       if (
@@ -228,7 +231,8 @@ export async function loadUploadCandidates(scope: Scope, filter: PackageExportFi
     total: count, next_after: z.string().nullable(),
   }).parse(await request({
     method: "GET", path: base(scope) + "/upload-candidates", scope, signal, cache: "no-store",
-    query: { stage: filter.stage, batch_number: filter.batch_numbers, all_batches: filter.all_batches, dataset_id: datasetIds, task_id: taskIds, after, limit: 100 },
+    query: { stage: filter.stage, uploaded_from: filter.uploaded_from, uploaded_before: filter.uploaded_before,
+      batch_number: filter.batch_numbers, all_batches: filter.all_batches, dataset_id: datasetIds, task_id: taskIds, after, limit: 100 },
   }));
   page.items.forEach(({data, batch_numbers}) => {
     scopeData(data, scope);
@@ -321,7 +325,8 @@ export async function createPackageBatch(
   signal?: AbortSignal,
   filter?: PackageExportFilter,
 ) {
-  if (!members.length || members.length > 100)
+  if (!members.length) throw new Error("请至少选择一条 Episode。");
+  if (mode !== "holobrain" && members.length > 100)
     throw new Error("请选择 1–100 条 Episode。");
   members.forEach((m) => scopeData(dataWire.parse(m.data), scope));
   if (mode === "independent" && members.some((m) => m.annotation))
@@ -358,9 +363,13 @@ export async function createPackageBatch(
     }),
     scope,
   );
+  const byVersion = new Map(members.map((member) => [member.data.data_version_id, member]));
   if (
     job.plan.members.length !== members.length ||
-    job.plan.members.some((m) => !members.some((s) => sameData(s.data, m.data)))
+    job.plan.members.some(({ data }) => {
+      const selected = byVersion.get(data.data_version_id);
+      return !selected || !sameData(selected.data, data);
+    })
   )
     throw new Error("交付任务与所选数据版本不一致。");
   if (mode === "independent") {
@@ -375,7 +384,7 @@ export async function createPackageBatch(
     )
       throw new Error("集合模态与所选格式不一致。");
     for (const m of job.plan.members) {
-      const wanted = members.find((s) => sameData(s.data, m.data))!.annotation;
+      const wanted = byVersion.get(m.data.data_version_id)!.annotation;
       const actual = m.annotation;
       if (
         Boolean(wanted) !== Boolean(actual) ||

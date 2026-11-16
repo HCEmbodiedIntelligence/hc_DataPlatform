@@ -7,7 +7,7 @@ from typing import Annotated, BinaryIO, cast
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 from starlette.background import BackgroundTask
 
 from hc_data_platform.capture_schemes.reprocess import ReprocessMcap
@@ -453,6 +453,8 @@ def list_native_imports(
     include_all_sources: bool = False,
     batch_number: list[Annotated[int, Query(ge=1)]] = Query(default=[]),
     all_batches: bool = False,
+    uploaded_from: AwareDatetime | None = None,
+    uploaded_before: AwareDatetime | None = None,
     recording_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> list[NativeImportProgress]:
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
@@ -466,6 +468,8 @@ def list_native_imports(
         include_all_sources=include_all_sources,
         batch_numbers=batch_number,
         all_batches=all_batches,
+        uploaded_from=uploaded_from,
+        uploaded_before=uploaded_before,
         recording_id=recording_id,
     )
     return (

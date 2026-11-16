@@ -80,7 +80,7 @@ it("does not request an archive when the save dialog is cancelled", async () => 
   picker.mockRejectedValueOnce(new DOMException("Cancelled", "AbortError"));
   await expect(
     downloadRawSources(scope, ["raw-a"], new AbortController().signal, vi.fn()),
-  ).rejects.toMatchObject({ name: "AbortError" });
+  ).resolves.toEqual({ kind: "cancelled" });
   expect(request).not.toHaveBeenCalled();
   expect(createWritable).not.toHaveBeenCalled();
 });

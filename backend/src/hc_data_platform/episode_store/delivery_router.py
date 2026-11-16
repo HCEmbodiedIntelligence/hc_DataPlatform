@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, Query, Response
 from fastapi.responses import StreamingResponse
+from pydantic import AwareDatetime
 from starlette.background import BackgroundTask
 
 from hc_data_platform.core.context import current_request_context
@@ -189,13 +190,15 @@ def list_upload_candidates(
     stage: UploadExportStage,
     batch_number: list[Annotated[int, Query(ge=1)]] = Query(default=[]),
     all_batches: bool = False,
+    uploaded_from: AwareDatetime | None = None, uploaded_before: AwareDatetime | None = None,
     dataset_id: list[str] = Query(default=[]), task_id: list[str] = Query(default=[]),
     after: str | None = Query(None, max_length=256), limit: int = Query(25, ge=1, le=100),
 ):
     response.headers["Cache-Control"] = "no-store"
     with delivery_service(packages, auth, project_id, region_code) as service:
-        return service.filtered_candidates(UploadExportFilter(stage=stage, batch_numbers=tuple(batch_number), all_batches=all_batches),
-                                           auth, datasets=dataset_id, tasks=task_id, after=after, limit=limit)
+        selection = UploadExportFilter(stage=stage, batch_numbers=tuple(batch_number), all_batches=all_batches,
+                                       uploaded_from=uploaded_from, uploaded_before=uploaded_before)
+        return service.filtered_candidates(selection, auth, datasets=dataset_id, tasks=task_id, after=after, limit=limit)
 
 
 @router.post(BASE + "/bundle-parts", response_model=PreparedEpisodePart)

@@ -7,6 +7,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { PackageBatchPanel } from "./PackageBatchPanel";
 import {
   createPackageBatch,
+  downloadEpisodeBundle,
+  loadUploadCandidates,
+  type PackageExportFilter,
   downloadPackageJob,
   listPackageJobs,
   loadExportFormats,
@@ -26,6 +29,8 @@ vi.mock("../../features/exports/package-deliveries", () => ({
   loadPackageCandidates: vi.fn(),
   loadPackageJob: vi.fn(),
   commandPackageJob: vi.fn(),
+  downloadEpisodeBundle: vi.fn(),
+  loadUploadCandidates: vi.fn(),
   downloadPackageJob: vi.fn(),
   loadCollectionAnnotationHistory: vi.fn(),
 }));
@@ -37,7 +42,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetAllMocks();
 });
-function mount(annotated = false, canDownload = true) {
+function mount(annotated = false, canDownload = true, filter?: PackageExportFilter) {
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn().mockReturnValue({
@@ -50,6 +55,11 @@ function mount(annotated = false, canDownload = true) {
   });
   const f = packageDeliveryFixture(annotated);
   vi.mocked(loadPackageCandidates).mockResolvedValue(f.candidates);
+  vi.mocked(loadUploadCandidates).mockResolvedValue({
+    total: 1,
+    items: [{ data: f.data, batch_numbers: [882] }],
+    next_after: null,
+  });
   vi.mocked(listPackageJobs).mockResolvedValue([]);
   vi.mocked(loadExportFormats).mockResolvedValue([]);
   vi.mocked(loadPackageJob).mockResolvedValue(f.job);
@@ -85,6 +95,7 @@ function mount(annotated = false, canDownload = true) {
       <PackageBatchPanel
         scope={f.scope}
         datasets={[{ id: f.data.identity.dataset_id, name: "演示数据" }]}
+        filter={filter}
         annotated={annotated}
         canReadAnnotations={true}
         canCreate={true}
@@ -94,6 +105,56 @@ function mount(annotated = false, canDownload = true) {
   );
   return { ...f, client, click, unmount: rendered.unmount };
 }
+it("exports the entire QC selection as one HoloBrain collection", async () => {
+  const { data, scope } = packageDeliveryFixture();
+  const second = { ...data, data_version_id: "dv_" + "2".repeat(64),
+    identity: { ...data.identity, episode_id: "episode-second" } };
+  const filter = { stage: "qc_passed" as const, batch_numbers: [882] };
+  vi.mocked(loadExportFormats).mockResolvedValueOnce([{
+    id: "holobrain", title: "HoloBrain", archive_format: "holobrain_collection_zip/6",
+    supports_annotations: true, requires_originals: false,
+  }]);
+  vi.mocked(loadUploadCandidates)
+    .mockResolvedValueOnce({ total: 2, items: [{ data, batch_numbers: [882] }], next_after: "next" })
+    .mockResolvedValueOnce({ total: 2, items: [{ data: second, batch_numbers: [882] }], next_after: null });
+  mount(false, true, filter);
+  const user = userEvent.setup();
+  await user.click((await screen.findByRole("radio", { name: "HoloBrain" })).closest("label")!);
+  await user.click(await screen.findByRole("checkbox", { name: "全选筛选结果" }));
+  await user.click(screen.getByRole("button", { name: "导出" }));
+  await waitFor(() => expect(createPackageBatch).toHaveBeenCalledTimes(1));
+  const [selectedScope, members, mode, , , selectedFilter] = vi.mocked(createPackageBatch).mock.calls[0]!;
+  expect([selectedScope, mode, selectedFilter]).toEqual([scope, "holobrain", filter]);
+  expect(members.map((member) => member.data)).toEqual(expect.arrayContaining([data, second]));
+  expect(members).toHaveLength(2);
+  expect(downloadEpisodeBundle).not.toHaveBeenCalled();
+});
+
+it("preserves the QC selection when the save picker closes and reports transfer failures on retry", async () => {
+  const f = mount(false, true, { stage: "qc_passed", batch_numbers: [882] });
+  const user = userEvent.setup();
+  const episode = await screen.findByRole("checkbox", { name: new RegExp(f.data.identity.episode_id) });
+  await user.click(episode);
+  await user.click(screen.getByRole("radio", { name: /MCAP/ }).closest("label")!);
+  const button = screen.getByRole("button", { name: "导出" });
+  vi.mocked(downloadEpisodeBundle)
+    .mockResolvedValueOnce({ kind: "cancelled" })
+    .mockRejectedValueOnce(new Error("连接中断"))
+    .mockResolvedValueOnce({ kind: "saved", bytes: 1024, filename: "Episodes.zip" });
+  await user.click(button);
+  expect(await screen.findByText(/尚未选择保存位置/)).toBeVisible();
+  expect(screen.queryByText("导出操作失败")).toBeNull();
+  expect(episode).toBeChecked();
+  await user.click(button);
+  expect(await screen.findByText("连接中断")).toBeVisible();
+  await user.click(button);
+  expect(await screen.findByText("已完成 1 条 Episode 的打包下载")).toBeVisible();
+  for (const [, members, mode] of vi.mocked(downloadEpisodeBundle).mock.calls) {
+    expect(members).toEqual([f.data]);
+    expect(mode).toBe("mcap");
+  }
+});
+
 it("shows RGB depth exclusion and retains the key after an interrupted request", async () => {
   const f = mount();
   vi.mocked(createPackageBatch)

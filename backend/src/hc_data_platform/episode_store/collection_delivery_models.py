@@ -26,7 +26,7 @@ class CollectionEpisodeSelection(FrozenModel):
 
 class RequestCollectionDelivery(FrozenModel):
     export_filter: UploadExportFilter | None = None
-    members: tuple[CollectionEpisodeSelection, ...] = Field(min_length=1, max_length=100)
+    members: tuple[CollectionEpisodeSelection, ...] = Field(min_length=1)
     modalities: Literal["rgb", "rgbd"]
     output_format: str = Field(default="lerobot", min_length=1, max_length=64)
 
@@ -35,6 +35,8 @@ class RequestCollectionDelivery(FrozenModel):
         from .export_formats import get_format
 
         adapter = get_format(self.output_format)
+        if len(self.members) > 100 and adapter.name != "holobrain":
+            raise ValueError("this collection format supports at most 100 Episodes")
         if not adapter.homogeneous and self.modalities != "rgbd":
             raise ValueError("this export format retains all collected modalities")
         data = [m.data for m in self.members]
@@ -78,7 +80,7 @@ class CollectionDeliveryMember(FrozenModel):
 
 class CollectionDeliveryPlan(FrozenModel):
     format: Literal["hc-collection-delivery-plan/1"] = "hc-collection-delivery-plan/1"
-    members: tuple[CollectionDeliveryMember, ...] = Field(min_length=1, max_length=100)
+    members: tuple[CollectionDeliveryMember, ...] = Field(min_length=1)
     modalities: Literal["rgb", "rgbd"]
     archive_format: str = "lerobot_collection_zip/1"
     annotation_selection: Literal["per_episode_fixed_selection"] = "per_episode_fixed_selection"
