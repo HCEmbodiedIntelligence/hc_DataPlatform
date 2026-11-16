@@ -350,7 +350,7 @@ def test_uploaded_recording_slice_qc_package_ready_recovery(
                 aligned = processor.align(request)
             plan = aligned.package_plan
             assert plan is not None and plan.frame_count == 6
-            assert plan.input.processor_version == "continuous-episode-package/5"
+            assert plan.input.processor_version == "continuous-episode-package/6"
             assert plan.metadata["rgb_statistics"] == "uint8-histogram/1"
             assert len(plan.videos) == 6 and len(plan.input.required_depth_features) == 3
             clock = plan.metadata["source"]["clock"]

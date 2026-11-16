@@ -121,6 +121,10 @@ class DatasetPageRepository(Protocol):
         self, *, scope: DatasetPageScope, dataset_id: str
     ) -> DatasetPageRecord | None: ...
 
+    def get_version(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
+    ) -> DatasetPageVersion | None: ...
+
     def list_versions(
         self,
         *,
@@ -371,6 +375,12 @@ class InMemoryDatasetPageRepository:
     def get_record(self, *, scope: DatasetPageScope, dataset_id: str) -> DatasetPageRecord | None:
         with self._lock:
             return self._records.get(_key(scope, dataset_id))
+
+    def get_version(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
+    ) -> DatasetPageVersion | None:
+        with self._lock:
+            return self._versions.get(_version_key(scope, dataset_id, version_id))
 
     def list_versions(
         self,
@@ -1554,6 +1564,24 @@ class PostgresDatasetPageRepository:
             )
             row = cursor.fetchone()
             return None if row is None else row[0]
+        finally:
+            cursor.close()
+            connection.close()
+
+    def get_version(
+        self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
+    ) -> DatasetPageVersion | None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                """SELECT version_document FROM dataset_registry.dataset_versions
+                   WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                     AND dataset_id=%s AND version_id=%s""",
+                _version_key(scope, dataset_id, version_id),
+            )
+            raw = cursor.fetchone()
+            return None if raw is None else _version(_row(cursor, raw)["version_document"])
         finally:
             cursor.close()
             connection.close()

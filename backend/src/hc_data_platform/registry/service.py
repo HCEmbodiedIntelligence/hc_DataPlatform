@@ -22,6 +22,7 @@ from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.idempotency import idempotency_conflict, request_fingerprint
 from hc_data_platform.security.scope import ScopeGuard
 
+from .asset_manifest import asset_manifest
 from .models import (
     AuthorizeRobotModelAssetPartsRequest,
     BlockedReason,
@@ -648,7 +649,7 @@ class RegistryService:
                 organization_id=organization_id,
                 project_id=project_id,
                 upload_id=upload_id,
-                asset_manifest_hash=self._asset_manifest_hash(assets),
+                asset_manifest_hash=asset_manifest(assets)[1],
                 updated_at=now,
             )
         self._audit(
@@ -1266,7 +1267,9 @@ class RegistryService:
         assets = self._repository.list_robot_model_assets(
             organization_id=organization_id, project_id=project_id, version_id=version_id
         )
-        manifest_hash = self._asset_manifest_hash(assets) if assets else None
+        manifest_hash = (
+            asset_manifest(assets, recorded_hash=version.asset_manifest_hash)[1] if assets else None
+        )
         mappings = self._repository.list_robot_model_joint_mappings(
             organization_id=organization_id, project_id=project_id, version_id=version_id
         )
@@ -1727,12 +1730,6 @@ class RegistryService:
                 quote(relative_path, safe=""),
             )
         )
-
-    @staticmethod
-    def _asset_manifest_hash(assets: tuple[RobotModelAsset, ...]) -> str:
-        payload = [item.model_dump(mode="json") for item in assets]
-        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-        return hashlib.sha256(encoded).hexdigest()
 
     @staticmethod
     def _joint_mapping_hash(mappings: tuple[RobotModelJointMapping, ...]) -> str:

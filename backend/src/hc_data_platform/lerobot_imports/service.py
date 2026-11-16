@@ -41,6 +41,7 @@ from .models import (
     LeRobotPartGrantV1,
     lerobot_part_size,
 )
+from .mcap_source_cache import registration_digest
 from .orchestration import build_import_plan
 
 if TYPE_CHECKING:
@@ -79,6 +80,7 @@ class LeRobotWebUploadService:
         project_id: str,
         region_code: str,
         manifest: CreateLeRobotImportV1,
+        upload_batch_id: str | None = None,
     ) -> LeRobotImportGrantV1:
         self._authorize(
             auth,
@@ -92,6 +94,7 @@ class LeRobotWebUploadService:
             project_id=project_id,
             region_code=region_code,
             manifest=manifest,
+            upload_batch_id=upload_batch_id,
         )
         root = self._root(organization_id, manifest.dataset_id, import_id)
         resumed = self._existing_grant(
@@ -462,6 +465,7 @@ class LeRobotWebUploadService:
         region_code: str,
         import_id: str,
         command: CommitLeRobotImportV1,
+        inspected_files=None,
     ) -> LeRobotImportAcceptedV1:
         self._authorize(
             auth,
@@ -502,12 +506,21 @@ class LeRobotWebUploadService:
         reference = session.get("oss_reference")
         references = {item["path"]: item for item in reference["files"]} if reference else {}
         source_prefix = reference["source_prefix"] if reference else f"{root}/source"
+        deferred = bool(reference and command.manifest.source_format == "MCAP")
+        frozen_files = {}
+        if deferred and self._storage.head(f"{root}/manifest.json"):
+            frozen = json.loads(read_bounded(self._storage, f"{root}/manifest.json", 8 * 1024**2))
+            frozen_files = {item["path"]: item for item in frozen["files"]}
         raw_files: list[dict[str, object]] = []
         total_size = 0
         for source in command.manifest.files:
             descriptor = references.get(source.path)
             source_key = descriptor["object_key"] if descriptor else f"{root}/source/{source.path}"
-            metadata = self._storage.head(source_key)
+            if deferred and descriptor and inspected_files and inspected_files.get(source.path) == descriptor:
+                from types import SimpleNamespace
+                metadata = SimpleNamespace(size=descriptor["size"], etag=descriptor["etag"])
+            else:
+                metadata = self._storage.head(source_key)
             if metadata is None or metadata.size != source.size:
                 raise problem(
                     status=409,
@@ -518,8 +531,6 @@ class LeRobotWebUploadService:
                         "before commit."
                     ),
                 )
-            digest = hashlib.sha256()
-            received = 0
             if descriptor and metadata.etag != descriptor["etag"]:
                 raise problem(
                     status=409,
@@ -527,16 +538,27 @@ class LeRobotWebUploadService:
                     title="OSS 文件已变化",
                     detail="请重新检查 OSS 来源。",
                 )
-            for chunk in self._storage.read_chunks(source_key):
-                received += len(chunk)
-                if received > source.size:
-                    raise problem(
-                        status=409,
-                        code="OSS_IMPORT_SOURCE_CHANGED",
-                        title="原始文件已变化",
-                        detail="文件大小与检查结果不一致。",
-                    )
-                digest.update(chunk)
+            if deferred and descriptor and metadata.etag:
+                from .mcap_reference import receipt_key
+
+                frozen_file = frozen_files.get(source.path)
+                if frozen_file is not None:
+                    if (frozen_file.get("source_etag"), frozen_file.get("object_key"), frozen_file["size"]) != (
+                        metadata.etag, source_key, source.size
+                    ):
+                        raise problem(status=409, code="OSS_IMPORT_SOURCE_CHANGED", title="OSS 原始文件版本已变化",
+                                      detail="请重新检查并登记当前版本。")
+                    raw_files.append(frozen_file)
+                else:
+                    raw_files.append(dict(path=source.path, size=source.size, sha256=None,
+                                          object_key=source_key, source_etag=metadata.etag,
+                                          verification_key=receipt_key(root, source.path)))
+                total_size += source.size
+                continue
+            digest, received = registration_digest(
+                self._storage, (organization_id, project_id, region_code), source_key, metadata,
+                cacheable=command.manifest.source_format == "MCAP" and source.path.lower().endswith(".mcap"),
+            )
             if received != source.size or (
                 descriptor and self._storage.head(source_key) != metadata
             ):
@@ -547,7 +569,7 @@ class LeRobotWebUploadService:
                     detail="文件在登记期间发生变化，请重新检查。",
                 )
             raw_files.append(
-                {"path": source.path, "size": source.size, "sha256": digest.hexdigest()}
+                {"path": source.path, "size": source.size, "sha256": digest}
             )
             if descriptor:
                 raw_files[-1].update(object_key=source_key, source_etag=descriptor["etag"])
@@ -614,6 +636,9 @@ class LeRobotWebUploadService:
             "resolved_revision": dataset_digest[:40],
             "episode_count": command.manifest.episode_count,
         }
+        if any(f.get("verification_key") for f in raw_files):
+            raw_manifest["schema_version"] = "raw-oss-reference-manifest/v1"
+            raw_manifest["identity_basis"] = "versioned_file_inventory"
         if session.get("oss_archive"):
             raw_manifest["oss_archive"] = session["oss_archive"]
         if capture_snapshot is not None:
@@ -946,6 +971,7 @@ def _stable_import_id(
     project_id: str,
     region_code: str,
     manifest: CreateLeRobotImportV1,
+    upload_batch_id: str | None = None,
 ) -> str:
     """Bind one immutable browser import to one scoped Dataset on the server."""
 
@@ -956,9 +982,10 @@ def _stable_import_id(
         "region_code": region_code,
         "dataset_id": manifest.dataset_id,
     }
-    if manifest.processing_mode == "STORE_ONLY" or manifest.source_format == "MCAP":
-        # Multiple sources may belong to one dataset. Identical selections still
-        # resume the same upload; unrelated files never collide with its session.
+    if upload_batch_id is not None:
+        # Different submissions can carry different bytes with identical file metadata.
+        identity["upload_batch_id"] = upload_batch_id
+    if upload_batch_id is not None or manifest.processing_mode == "STORE_ONLY" or manifest.source_format == "MCAP":
         identity["manifest"] = _canonical_manifest(manifest)
     body = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(body).hexdigest()[:32]

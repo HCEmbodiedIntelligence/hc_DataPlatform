@@ -21,6 +21,7 @@ from .models import (
     DashboardResourceType,
     TaskIssueFinding,
 )
+from .raw_problems import verification_problem
 from .repository import (
     CollectionObservationFact,
     CommittedObjectFact,
@@ -289,7 +290,7 @@ SELECT rollout.task_id, rollout.rollout_id, rollout.data_package_id,
        (object.rollout_id IS NOT NULL OR native.source_import_id IS NOT NULL) AS raw_committed,
        native.source_import_id, native.source_episode_index,
        native.source_episode_status, native.source_processing_status,
-       verification.status AS verification_status,
+       verification.status AS verification_status, verification.findings AS raw_findings,
        COALESCE(verification.reason_code, native.source_processing_error)
            AS verification_reason_code,
        qc.status AS qc_status, qc_report.report_json->'findings' AS quality_findings,
@@ -353,6 +354,7 @@ LEFT JOIN LATERAL (
 ) resolution ON true
 LEFT JOIN LATERAL (
     SELECT report.status,
+           CASE WHEN report.status='REJECTED' THEN report.report_json->'findings' END AS findings,
            COALESCE(
                (SELECT finding->>'code'
                   FROM jsonb_array_elements(report.report_json->'findings') finding
@@ -974,6 +976,7 @@ class PostgresDashboardRepository:
                     TaskIssueFinding.model_validate(finding)
                     for finding in cast(list[object], row.get("quality_findings") or [])
                 ),
+                raw_problem=verification_problem(row.get("raw_findings")),
                 verification_status=(
                     None if row["verification_status"] is None else str(row["verification_status"])
                 ),
@@ -1018,6 +1021,7 @@ class PostgresDashboardRepository:
 
         from .recording_projection import (
             merge_recording_facts,
+            read_preparation_problems,
             read_recording_findings,
             read_recording_workflows,
         )
@@ -1028,6 +1032,9 @@ class PostgresDashboardRepository:
             try:
                 organization = current_request_context().organization_id
                 captures = read_captures(cursor, organization, scope.project_id, scope.region_code)
+                problems = read_preparation_problems(
+                    cursor, organization, scope.project_id, scope.region_code, captures, selected_id
+                )
                 findings = read_recording_findings(
                     cursor, organization, scope.project_id, scope.region_code
                 )
@@ -1039,7 +1046,7 @@ class PostgresDashboardRepository:
         finally:
             connection.close()
         tasks, packages = merge_recording_facts(
-            tasks, packages, captures, findings, selected_id, workflows=workflows
+            tasks, packages, captures, findings, selected_id, workflows=workflows, problems=problems
         )
         unavailable = (
             ("workflow_execution_state",)

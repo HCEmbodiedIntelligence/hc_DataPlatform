@@ -1,3 +1,4 @@
+import { recordingPreviewPath } from "../../shared/routing/navigation-routes";
 import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { RecordingProcessingDetails } from "../quality/RecordingProcessingDetails";
 import ResumeProcessingAction from "../ingest/processing/ResumeProcessingAction";
@@ -355,6 +356,9 @@ export function CaptureProgressPanel({
                   <Link to={`/datasets/${encodeURIComponent(item.dataset_id)}`}>
                     查看已有成片
                   </Link>
+                )}
+                {item.recording_id && (
+                  <Link to={recordingPreviewPath(item.recording_id)}>预览原始数据</Link>
                 )}
                 {item.recording_id && (
                   <Button

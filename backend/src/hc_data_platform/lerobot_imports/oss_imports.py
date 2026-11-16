@@ -14,7 +14,7 @@ from hc_data_platform.capture_schemes.ports import unresolved_receipt
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.ingest.models import Identifier
 
-from .models import CommitLeRobotImportV1, CreateLeRobotImportV1, lerobot_part_plan
+from .models import CommitLeRobotImportV1, CreateLeRobotImportV1, LeRobotImportAcceptedV1, lerobot_part_plan
 from .oss_archive import publish_archive, stage_archive
 from .service import _canonical_manifest, read_bounded
 
@@ -43,13 +43,19 @@ def inspect_source(storage, source_uri: str) -> dict[str, Any]:
         return _inspect_source(storage, source_uri, Path(directory))
 
 
-def _inspect_source(storage, source_uri: str, directory: Path) -> dict[str, Any]:
+def _inspect_source(storage, source_uri: str, directory: Path, *, mcap_references_only=False):
     inspect = getattr(storage, "inspect_reference", None)
     if inspect is None:
         raise failure("OSS_IMPORT_UNAVAILABLE", "请先在平台运维中配置 OSS 存储连接。", 503)
     try:
         inventory = inspect(source_uri.strip())
         files = inventory["files"]
+        if mcap_references_only:
+            names = [f["path"].lower() for f in files]
+            if not any(n.endswith(".mcap") for n in names) or any(
+                n.endswith((".bag", "metadata.yaml", "meta/info.json")) for n in names
+            ):
+                return None
         if not inventory.get("archive_members") and len(files) == 1 and files[0]["path"].lower().endswith(".zip"):
             inventory = stage_archive(storage, inventory, directory)
             files = inventory["files"]
@@ -92,6 +98,10 @@ def _inspect_source(storage, source_uri: str, directory: Path) -> dict[str, Any]
     except (ValueError, UnicodeError) as exc:
         raise failure("OSS_IMPORT_SOURCE_INVALID", str(exc)) from exc
     except Exception as exc:
+        if getattr(exc, "status", None) == 403:
+            raise failure("OSS_IMPORT_READ_DENIED", "OSS 拒绝读取，请检查当前凭据对源对象的读取权限和 Bucket 所在地域。", 403) from exc
+        if getattr(exc, "status", None) == 404:
+            raise failure("OSS_IMPORT_SOURCE_NOT_FOUND", "OSS 找不到该 Bucket 或对象，请核对完整地址。", 404) from exc
         raise failure(
             "OSS_IMPORT_READ_FAILED",
             "无法读取 OSS，请检查连接、Bucket、目录以及 List/Get 权限后重试。",
@@ -108,13 +118,13 @@ def commit_source(
         return _commit_source(service, auth, scope, command, Path(directory))
 
 
-def _commit_source(service, auth, scope, command, directory):
+def _commit_source(service, auth, scope, command, directory, *, inspected=None):
     organization_id, project_id, region_code = (
         scope["organization_id"],
         scope["project_id"],
         scope["region_code"],
     )
-    inventory = _inspect_source(service.storage, command.source_uri, directory)
+    inventory = dict(inspected) if inspected is not None else _inspect_source(service.storage, command.source_uri, directory)
     if inventory["inventory_sha256"] != command.inventory_sha256:
         raise failure(
             "OSS_IMPORT_SOURCE_CHANGED", "OSS 文件在检查后发生变化，请重新检查并确认。", 409
@@ -156,6 +166,13 @@ def _commit_source(service, auth, scope, command, directory):
             separators=(",", ":"),
         ).encode()
     ).hexdigest()[:32]
+    existing = service.raw_sources.get_source(
+        organization_id=organization_id, project_id=project_id, region_code=region_code,
+        raw_source_id=import_id,
+    )
+    if existing is not None:
+        return LeRobotImportAcceptedV1(import_id=import_id, episode_count=manifest.episode_count,
+                                      source_file_count=len(manifest.files))
     root = service._root(organization_id, manifest.dataset_id, import_id)
     session_key = f"{root}/upload-session.json"
     if "archive" in inventory and not inventory.get("archive_members"):
@@ -195,5 +212,6 @@ def _commit_source(service, auth, scope, command, directory):
             if service.storage.head(session_key) is None:
                 raise
     return service.commit(
-        auth=auth, **scope, import_id=import_id, command=CommitLeRobotImportV1(manifest=manifest)
+        auth=auth, **scope, import_id=import_id, command=CommitLeRobotImportV1(manifest=manifest),
+        inspected_files={item["path"]: item for item in inventory["files"]},
     )

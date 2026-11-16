@@ -1613,6 +1613,8 @@ export function SharedSignalTimeline({
     !disabled &&
     tracks.some((track) => track.segments.some((segment) => segment.editing));
 
+  const drawWithinSelection = hasEditableSegments && Boolean(onRangeCreate);
+
   const deleteSegment = (segment: ViewerTimelineSegment) => {
     if (disabled || !segment.editing) return;
     segment.editing.onDelete();
@@ -2115,8 +2117,11 @@ export function SharedSignalTimeline({
                   type="button"
                   className="viewer-timeline__selection-body"
                   disabled={!rangeEditing}
-                  aria-label="拖动整个标注区间"
-                  onPointerDown={(event) => beginDrag("move", event)}
+                  data-draw-range={drawWithinSelection || undefined}
+                  aria-label={drawWithinSelection ? "拖选新 Tag 区间" : "拖动整个标注区间"}
+                  onPointerDown={(event) =>
+                    beginDrag(drawWithinSelection ? "create" : "move", event)
+                  }
                 >
                   {preview.label || "当前标注"}
                 </button>
@@ -2338,7 +2343,7 @@ export function SharedSignalTimeline({
       </div>
       <footer className="viewer-timeline__hint">
         {hasEditableSegments
-          ? "点击 Tag 从起点同步播放 · 拖动 Tag 或两端调整区间，视频同步跟随 · 右击 / Delete 删除"
+          ? "点击 Tag 从起点同步播放 · 拖动 Tag 色条或两端调整区间 · 右击 / Delete 删除"
           : variant === "signals"
             ? `${hasPlaybackSegments ? "点击 Tag 从起点同步播放 · " : ""}方向键微调 0.10s · Home / End 跳转边界 · 只有一条视频播放时间轴`
             : "拖拽空白处新建区间 · 拖动两侧手柄调整入点/出点 · 拖动选区中部整体移动"}

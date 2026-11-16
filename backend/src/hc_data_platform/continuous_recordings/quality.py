@@ -96,7 +96,22 @@ def save_quality_state(cursor, recording):
     )
 
 
+def discard_failed_recording(recording, report_sha256, actor):
+    if (recording.status != RecordingStatus.QC_FAILED or not recording.quality_summary
+            or recording.quality_summary.report_id != "recording_qc_" + report_sha256):
+        raise problem(status=409, code="RECORDING_QC_CHANGED", title="质检结果已更新",
+                      detail="请刷新后再处理当前质检记录。")
+    if recording.quality_discarded_at:
+        return recording
+    now = datetime.now(timezone.utc)
+    return recording.model_copy(update={"quality_discarded_at": now, "quality_discarded_by": actor,
+                                        "updated_at": now})
+
+
 def prepare_quality_retry(recording, request_id):
+    if recording.quality_discarded_at:
+        raise problem(status=409, code="RECORDING_DISCARDED", title="录制已丢弃",
+                      detail="原始文件和质检证据已保留，后续处理已停止。")
     updated, event = quality_request(recording, request_id)
     if recording.quality_workflow_id == updated.quality_workflow_id:
         return recording, None

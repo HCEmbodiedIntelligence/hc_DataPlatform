@@ -23,6 +23,8 @@ import {
 import { StrictMode, useState, type ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { JSX } from "react";
+import * as logicalApi from "../../features/datasets/api/logical-data";
+import { bundleLogicalFixture } from "./testing/annotation-logical-fixture";
 import { createDomainError } from "../../shared/api/domain-error";
 import type { ViewerPanelRenderContext } from "../../features/viewer";
 import { AnnotationWorkbenchView } from "./AnnotationWorkbenchView";
@@ -168,6 +170,7 @@ function renderWorkbench(input: {
   ) => Promise<void>;
   readonly onDiscardChanges?: () => void;
   readonly onReportDataIssue?: (input: DataIssueReportInput) => Promise<void>;
+  readonly useLogicalData?: boolean;
   readonly noDraft?: boolean;
   readonly permissions?: Partial<AnnotationWorkbenchPermissions>;
 }) {
@@ -178,8 +181,20 @@ function renderWorkbench(input: {
   });
   // These layout tests expect a joint panel. Declare its source topic explicitly;
   // the shared no-joint fixture continues testing real missing-data behavior.
+  const view = bundleLogicalFixture(baseFixture, visualAnnotationScope);
+  const fixed = view.snapshot.selection;
   const fixture = {
     ...baseFixture,
+    ...(input.useLogicalData && {
+      logical: {
+        selection: {
+          scope: visualAnnotationScope, datasetId: fixed.dataset_id, versionId: fixed.version_id,
+          revisionId: fixed.revision_id, episodeId: view.snapshot.episode_id,
+          contentSha256: view.snapshot.content_sha256, snapshotToken: view.snapshot_token,
+        },
+        view, streams: [],
+      },
+    }),
     manifest: {
       ...baseFixture.manifest!,
       topics: [
@@ -746,7 +761,7 @@ describe("P08 page-level workspace navigation", () => {
     );
   });
 
-  it("uses one review submit action and approves when no issue is marked", async () => {
+  it("approves the submitted revision through the explicit approval action", async () => {
     const user = userEvent.setup();
     const { onReview } = renderWorkbench({
       cameraCount: 1,
@@ -755,21 +770,21 @@ describe("P08 page-level workspace navigation", () => {
     const workspace = screen.getByLabelText("页面工作模式与操作");
     const dock = screen.getByLabelText("共享视频时间轴区域");
     const submit = within(workspace).getByRole("button", {
-      name: "提交审核",
+      name: "审核通过",
     });
     expect(submit).toBeEnabled();
     expect(
-      within(workspace).getAllByRole("button", { name: "提交审核" }),
+      within(workspace).getAllByRole("button", { name: "审核通过" }),
     ).toHaveLength(1);
     expect(
-      within(dock).queryByRole("button", { name: "提交审核" }),
+      within(dock).queryByRole("button", { name: "审核通过" }),
     ).not.toBeInTheDocument();
 
     await user.click(submit);
-    const dialog = screen.getByRole("dialog", { name: "提交审核" });
+    const dialog = screen.getByRole("dialog", { name: "审核通过" });
     expect(dialog).toHaveTextContent("未标记问题");
     await user.click(
-      within(dialog).getByRole("button", { name: "确认提交审核" }),
+      within(dialog).getByRole("button", { name: "确认审核通过" }),
     );
     expect(onReview).toHaveBeenCalledWith("APPROVE", "");
   });
@@ -783,7 +798,7 @@ describe("P08 page-level workspace navigation", () => {
     expect(within(toolbar).queryByText("审核中", { exact: true })).not.toBeInTheDocument();
     expect(within(toolbar).getByText("标注已提交，等待审核。点击“Tag 审核”可检查标注并提交审核结果。")).toBeVisible();
     await user.click(workspaceTab("Tag 审核"));
-    expect(within(toolbar).getByRole("button", { name: "提交审核" })).toBeEnabled();
+    expect(within(toolbar).getByRole("button", { name: "审核通过" })).toBeEnabled();
   });
 
   it("restores review mode when a submitted task becomes reviewable without overriding a later choice to view", async () => {
@@ -804,7 +819,7 @@ describe("P08 page-level workspace navigation", () => {
     const ready = { ...permissions, canReview: true };
     view.rerender(<AnnotationWorkbenchView {...baseProps} permissions={ready} />);
     expect(workspaceTab("Tag 审核")).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("button", { name: "提交审核" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "审核通过" })).toBeEnabled();
     await user.click(workspaceTab("查看"));
     view.rerender(<AnnotationWorkbenchView {...baseProps} permissions={{ ...ready }} />);
     expect(workspaceTab("查看")).toHaveAttribute("aria-selected", "true");
@@ -846,11 +861,11 @@ describe("P08 page-level workspace navigation", () => {
       "边界需要重新确认",
     );
     await user.click(expand);
-    await user.click(screen.getByRole("button", { name: "提交审核" }));
-    const dialog = screen.getByRole("dialog", { name: "提交审核" });
+    await user.click(screen.getByRole("button", { name: "退回修改" }));
+    const dialog = screen.getByRole("dialog", { name: "退回修改" });
     expect(dialog).toHaveTextContent("进入“待修改”");
     await user.click(
-      within(dialog).getByRole("button", { name: "确认提交审核" }),
+      within(dialog).getByRole("button", { name: "确认退回修改" }),
     );
     expect(onReview).toHaveBeenCalledWith(
       "NEEDS_REVISION",
@@ -934,12 +949,17 @@ describe("P08 viewer-slot composition", () => {
     },
   );
 
-  it("reports a selected annotation range into the unified problem center", async () => {
+  it("reports the selected interval using fixed stream timestamps through the final sample", async () => {
     const user = userEvent.setup();
     const onReportDataIssue = vi
       .fn<(input: DataIssueReportInput) => Promise<void>>()
       .mockResolvedValue();
+    const samples = vi.spyOn(logicalApi, "fetchLogicalSamples").mockResolvedValue([{
+      sample_id: "frame", sample_index: 0, timestamp_ns: "3211234567", value: {},
+      valid: true, repeated: false, source_timestamps_ns: [], time_error_ns: null,
+    }]);
     renderWorkbench({
+      useLogicalData: true,
       cameraCount: 1,
       onReportDataIssue,
     });
@@ -962,8 +982,8 @@ describe("P08 viewer-slot composition", () => {
     });
 
     fireEvent.pointerDown(timeline, { pointerId: 9, button: 0, clientX: 20 });
-    fireEvent.pointerMove(timeline, { pointerId: 9, clientX: 60 });
-    fireEvent.pointerUp(timeline, { pointerId: 9, clientX: 60 });
+    fireEvent.pointerMove(timeline, { pointerId: 9, clientX: 100 });
+    fireEvent.pointerUp(timeline, { pointerId: 9, clientX: 100 });
 
     const reportButton = screen.getByRole("button", {
       name: "报告数据问题",
@@ -983,8 +1003,15 @@ describe("P08 viewer-slot composition", () => {
     );
 
     await waitFor(() => expect(onReportDataIssue).toHaveBeenCalledTimes(1));
+    expect(samples).toHaveBeenCalledTimes(1);
+    const [, , stream, startStep, endStep] = samples.mock.calls[0]!;
+    expect(startStep).toBeGreaterThan(0);
+    expect(endStep).toEqual(startStep + 1);
     expect(onReportDataIssue).toHaveBeenCalledWith(
       expect.objectContaining({
+        streamRef: stream.stream_id,
+        relativeStartNs: "3211234567",
+        relativeEndNs: stream.end_ns,
         issueType: "OTHER",
         severity: "MEDIUM",
         note: "自动质检漏掉了这一段连续缺帧。",
@@ -1382,6 +1409,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
       });
       const original = {
         ...bundle.draft!.tags[0]!,
+        ...(startStep === 330 ? { start_step: 0, end_step: bundle.task.base_step_count! } : {}),
         label: "tag1",
         path: [bundle.draft!.tags[0]!.tag_id],
       };
@@ -1430,13 +1458,14 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
         y: 0,
         toJSON: () => ({}),
       });
-      fireEvent.pointerDown(slider, {
-        button: 0,
-        clientX: startStep + 0.5,
-        pointerId: 7,
-      });
-      fireEvent.pointerMove(slider, { clientX: endStep + 0.5, pointerId: 7 });
-      fireEvent.pointerUp(slider, { clientX: endStep + 0.5, pointerId: 7 });
+      const dragRange = (target: HTMLElement, start: number, end: number) => {
+        fireEvent.pointerDown(target, { button: 0, clientX: start + 0.5, pointerId: 7 });
+        fireEvent.pointerMove(target, { clientX: end + 0.5, pointerId: 7 });
+        fireEvent.pointerUp(target, { clientX: end + 0.5, pointerId: 7 });
+      };
+      const selectionBody = () =>
+        within(slider).getByRole("button", { name: "拖选新 Tag 区间" });
+      dragRange(startStep === 330 ? selectionBody() : slider, startStep, endStep);
       expect(latestTags).toEqual([original]);
       expect(screen.getByLabelText("编辑已有 Tag")).toHaveValue("");
       expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("");
@@ -1465,6 +1494,19 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
         expect(latestTags[1]!.parent_annotation_id).toBe(
           original.annotation_id,
         );
+        const child = latestTags[1]!;
+        await user.selectOptions(screen.getByLabelText("编辑已有 Tag"), child.annotation_id);
+        dragRange(selectionBody(), 350, 380);
+        await user.type(screen.getByLabelText("Tag 名称 *"), "tag3{Enter}");
+        expect(latestTags).toHaveLength(3);
+        expect(latestTags.slice(0, 2)).toEqual([original, child]);
+        expect(latestTags[2]).toMatchObject({
+          label: "tag3",
+          start_step: 350,
+          end_step: 380,
+          parent_annotation_id: child.annotation_id,
+          path: [...child.path, latestTags[2]!.tag_id],
+        });
       } else {
         expect(latestTags.every((tag) => !tag.parent_annotation_id)).toBe(true);
       }
@@ -1718,17 +1760,27 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     ).toBeDisabled();
   });
 
-  it("derives the review result from issue selection without requiring a comment", async () => {
+  it("can return a task with only a correction request", async () => {
+    const user = userEvent.setup();
+    const { onReview } = renderWorkbench({ cameraCount: 1, mode: "tag-review" });
+    await user.click(screen.getByRole("button", { name: "退回修改" }));
+    const dialog = within(screen.getByRole("dialog", { name: "退回修改" }));
+    const confirm = dialog.getByRole("button", { name: "确认退回修改" });
+    expect(confirm).toBeDisabled();
+    await user.type(dialog.getByRole("textbox", { name: "修改要求" }), "缺少放置 Tag");
+    await user.click(confirm);
+    expect(onReview).toHaveBeenCalledWith("NEEDS_REVISION", "缺少放置 Tag");
+  });
+
+  it("blocks approval while issues are marked and permits returning the task", async () => {
     const user = userEvent.setup();
     renderWorkbench({ cameraCount: 4, mode: "tag-review" });
-    const submit = screen.getByRole("button", { name: "提交审核" });
-    expect(submit).toBeEnabled();
-    expect(screen.getByText(/尚未标记问题/u)).toBeVisible();
-
+    const approve = screen.getByRole("button", { name: "审核通过" });
+    expect(approve).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "问题与意见" }));
     await user.click(screen.getByRole("checkbox", { name: /^标记问题：/u }));
-    expect(submit).toBeEnabled();
-    expect(screen.getByText(/已标记 1 处问题/u)).toBeVisible();
+    expect(approve).toBeDisabled();
+    expect(screen.getByRole("button", { name: "退回修改" })).toBeEnabled();
   });
 
   it("explains invalid state separately from version conflicts and refreshes without losing review notes", async () => {
@@ -1741,16 +1793,16 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     renderWorkbench({ cameraCount: 1, mode: "tag-review", onReview, onRefresh });
     await user.click(screen.getByRole("button", { name: "问题与意见" }));
     await user.type(screen.getByLabelText(/补充审核意见/), "请检查夹爪标签");
-    await user.click(screen.getByRole("button", { name: "提交审核" }));
-    await user.click(screen.getByRole("button", { name: "确认提交审核" }));
+    await user.click(screen.getByRole("button", { name: "退回修改" }));
+    await user.click(screen.getByRole("button", { name: "确认退回修改" }));
     expect(await screen.findByText("任务状态已变化")).toBeVisible();
     expect(screen.queryByText("并发版本冲突，写操作已暂停")).not.toBeInTheDocument();
     expect(screen.getByText(/review-state-request/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "提交审核" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "退回修改" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "刷新任务状态" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "刷新任务状态" })).toBeEnabled());
     expect(screen.getByText("任务状态已变化")).toBeVisible();
-    expect(screen.getByRole("button", { name: "提交审核" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "退回修改" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "刷新任务状态" }));
     await waitFor(() => expect(screen.queryByText("任务状态已变化")).not.toBeInTheDocument());
     expect(onRefresh).toHaveBeenCalledTimes(2);

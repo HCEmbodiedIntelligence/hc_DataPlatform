@@ -123,8 +123,10 @@ def _filters(
     severity: list[ManualIssueSeverity] | None,
     discovery_source: list[ManualIssueDiscoverySource] | None,
     assignee_id: str | None,
+    collection_task_id: str | None = None,
 ) -> ManualIssueFilters:
     return ManualIssueFilters(
+        collection_task_id=collection_task_id,
         query=q,
         dataset_id=dataset_id,
         version_id=version_id,
@@ -205,6 +207,7 @@ def list_manual_issues(
     severity: RepeatedSeverity = None,
     discovery_source: RepeatedDiscoverySource = None,
     assignee_id: OptionalQueryText = None,
+    collection_task_id: Annotated[str | None, Query(max_length=256)] = None,
     sort: ManualIssueSort = "updated_at:desc,id:desc",
     after: OptionalCursor = None,
     before: OptionalCursor = None,
@@ -226,6 +229,7 @@ def list_manual_issues(
             severity=severity,
             discovery_source=discovery_source,
             assignee_id=assignee_id,
+            collection_task_id=collection_task_id,
         ),
         sort=sort,
         after=after,

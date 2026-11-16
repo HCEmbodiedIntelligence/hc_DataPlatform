@@ -151,7 +151,7 @@ it("retries the failed MCAP execution with its pinned plan instead of starting i
             robot_id: "robot-a",
             collection_task_id: "task-a",
             configuration: { state_topic: "/joint_states" },
-            config_reference: { plan_revision: 3, scheme: { scheme_id: "x1", version: 4 } },
+            config_reference: { plan_revision: 4, scheme: { scheme_id: "x1", version: 5 } },
             channel_inventory: null,
             error: retried ? null : "MCAP_DEPTH_UNITS_REQUIRED: 请设置深度单位",
           },
@@ -168,12 +168,13 @@ it("retries the failed MCAP execution with its pinned plan instead of starting i
   });
   setup();
   await screen.findByRole("button", { name: "重试处理" });
-  const toggle = screen.queryByRole("button", { name: "source.mcap 详情" });
-  if (toggle) fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "source.mcap 详情" }));
+  expect(screen.getByText(/本次采集方案 v5 · x1/)).toBeVisible();
   await waitFor(() => expect(screen.getByText(/MCAP_DEPTH_UNITS_REQUIRED/)).toBeVisible());
   const button = await screen.findByRole("button", { name: "重试处理" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
+  await waitFor(() => expect(screen.getByText(/沿用上次实际配置（采集方案 v5）/)).toBeVisible());
   fireEvent.click(await screen.findByRole("button", { name: "确认重试处理" }));
   expect(await screen.findByText(/准备录制/)).toBeVisible();
   expect(request).toHaveBeenCalledWith(
@@ -210,7 +211,7 @@ it("defaults to the current task plan when the intake configuration is unusable"
   setup();
   fireEvent.click(await screen.findByRole("button", { name: "重试处理" }));
   const dialog = await screen.findByRole("dialog");
-  await waitFor(() => expect(dialog).toHaveTextContent("任务方案 v7 · 采集方案 v3"));
+  await waitFor(() => expect(dialog).toHaveTextContent("采集方案 v3 · x1"));
   fireEvent.click(await screen.findByRole("button", { name: "确认重试处理" }));
   await waitFor(() => expect(request).toHaveBeenCalledWith(expect.objectContaining({
     method: "POST",
@@ -239,7 +240,7 @@ it.each([false, true])("offers a newer task plan for an already prepared MCAP (n
   fireEvent.click(await screen.findByRole("button", { name: "按新方案重处理" }));
   const confirm = await screen.findByRole("button", { name: "确认按新方案重处理" });
   if (!hasNew) {
-    await waitFor(() => expect(screen.getByText("暂无比本次录制使用的任务方案 v2 更新的版本")).toBeVisible());
+    await waitFor(() => expect(screen.getByText("此任务暂无更新的配置可用于重处理")).toBeVisible());
     expect(screen.getByRole("link", { name: "编辑采集方案" })).toHaveAttribute("href", "/settings/capture-schemes/x1?edit=1");
     expect(screen.getByRole("link", { name: "打开采集任务" })).toHaveAttribute("href", "/collection-tasks?taskId=task-a");
     expect(confirm).toBeDisabled();

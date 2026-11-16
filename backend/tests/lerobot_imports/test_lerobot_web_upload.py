@@ -279,6 +279,19 @@ def test_begin_resumes_the_server_session_and_reports_uploaded_parts() -> None:
     )
 
 
+def test_browser_submissions_keep_separate_uploads_for_identical_file_metadata() -> None:
+    manifest = CreateLeRobotImportV1(
+        dataset_id="dataset-a", collection_task_id="task-a", robot_id="robot-a",
+        info=_info(), files=_source_files(),
+    )
+    service = LeRobotWebUploadService(InMemoryObjectStorage())
+    args = dict(auth=_auth(), organization_id="org-a", project_id="project-a", region_code="cn-hz",
+                manifest=manifest)
+    first = service.begin(**args, upload_batch_id="first")
+    assert service.begin(**args, upload_batch_id="first").import_id == first.import_id
+    assert service.begin(**args, upload_batch_id="second").import_id != first.import_id
+
+
 def test_browser_upload_preserves_original_lerobot_bytes_and_paths() -> None:
     info_bytes = json.dumps(_info(), ensure_ascii=False, indent=2).encode()
     bodies = {

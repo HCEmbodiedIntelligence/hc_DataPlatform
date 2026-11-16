@@ -248,6 +248,7 @@ class LifecyclePolicyAction(str, Enum):
     CLEAN_OSS_TEST_COPIES = "CLEAN_OSS_TEST_COPIES"
     CLEAN_INVENTORY_DETAILS = "CLEAN_INVENTORY_DETAILS"
     CLEAN_INVENTORY_HISTORY = "CLEAN_INVENTORY_HISTORY"
+    CLEAN_SUPERSEDED_MCAP_BATCHES = "CLEAN_SUPERSEDED_MCAP_BATCHES"
 
     @property
     def automatic_cache(self) -> bool:
@@ -293,7 +294,7 @@ class LifecyclePolicy(BaseModel):
     def protect_immutable_roles(self) -> LifecyclePolicy:
         if (
             self.action.automatic_cache
-            and self.action is not LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS
+            and self.action not in {LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS, LifecyclePolicyAction.CLEAN_SUPERSEDED_MCAP_BATCHES}
             and self.minimum_age_days < 1
         ):
             raise ValueError("automatic cache retention must be at least one day")
@@ -354,7 +355,7 @@ class CreateLifecyclePolicy(BaseModel):
     def validate_cleanup_target(self) -> CreateLifecyclePolicy:
         if (
             self.action.automatic_cache
-            and self.action is not LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS
+            and self.action not in {LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS, LifecyclePolicyAction.CLEAN_SUPERSEDED_MCAP_BATCHES}
             and self.minimum_age_days < 1
         ):
             raise ValueError("automatic cache retention must be at least one day")
@@ -382,7 +383,7 @@ class UpdateLifecyclePolicy(BaseModel):
     def validate_cleanup_target(self) -> UpdateLifecyclePolicy:
         if (
             self.action.automatic_cache
-            and self.action is not LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS
+            and self.action not in {LifecyclePolicyAction.CLEAN_INVENTORY_DETAILS, LifecyclePolicyAction.CLEAN_SUPERSEDED_MCAP_BATCHES}
             and self.minimum_age_days < 1
         ):
             raise ValueError("automatic cache retention must be at least one day")

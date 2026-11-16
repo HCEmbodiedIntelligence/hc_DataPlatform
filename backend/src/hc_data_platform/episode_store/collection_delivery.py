@@ -39,6 +39,8 @@ class CollectionDelivery:
     def freeze(self, body, auth):
         from .export_formats import get_format
 
+        if body.export_filter is not None:
+            self.owner.verify_export_filter(body.export_filter, [m.data for m in body.members], auth)
         adapter = get_format(body.output_format)
         members, sources = [], []
         for selected in sorted(body.members, key=lambda m: m.data.data_version_id):

@@ -52,6 +52,10 @@ paths:
         - *authorization_parameter
         - *project_parameter
         - *region_parameter
+        - name: upload_batch_id
+          in: query
+          required: false
+          schema: {type: [string, 'null'], minLength: 1, maxLength: 128}
         - name: Idempotency-Key
           in: header
           required: true
@@ -643,6 +647,7 @@ components:
       type: object
       required: [session, parts, idempotency_outcome]
       properties:
+        batch_number: {type: [integer, 'null'], minimum: 1}
         session: {$ref: "#/components/schemas/UploadSession"}
         parts:
           type: array

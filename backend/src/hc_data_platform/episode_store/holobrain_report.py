@@ -36,11 +36,14 @@ class ReferenceConversionReport:
         self.samples = []
         self.outputs = {}
         self.starts = {}
+        self.action_origins = {}
 
-    def observe(self, stamp, matches):
+    def observe(self, stamp, matches, *, state_label=False):
         errors, reason = {}, None
         # Match the reference's stream order and first-failure accounting.
         for name, topic, _ in STREAMS:
+            if name == "joint_command" and state_label:
+                continue
             matched = matches[topic]
             if matched is None:
                 reason = name + "_outside_tolerance"
@@ -48,7 +51,9 @@ class ReferenceConversionReport:
             errors[name] = abs(matched - stamp) / 1_000_000
         self.samples.append((stamp, errors, reason))
 
-    def select(self, stamp, episode_index):
+    def select(self, stamp, episode_index, *, action_origin=None):
+        if action_origin:
+            self.action_origins.setdefault(episode_index, Counter())[action_origin] += 1
         self.outputs[stamp] = episode_index
         self.starts.setdefault(episode_index, stamp)
 
@@ -81,7 +86,7 @@ class ReferenceConversionReport:
             index = episode_indexes[max(0, bisect_right(starts, sample[0]) - 1)]
             buckets[index].append(sample)
         reports = []
-        for samples in buckets.values():
+        for episode_index, samples in buckets.items():
             errors = {name: [] for name, _, _ in STREAMS}
             drops, output = Counter(), 0
             for stamp, measured, reason in samples:
@@ -107,6 +112,8 @@ class ReferenceConversionReport:
                 "frames": {"candidate_rgb_frames": len(samples), "output_frames": output,
                            "dropped_frames": len(samples) - output,
                            "dropped_by_reason": dict(drops),
-                           "nearest_neighbor_error_ms": statistics},
+                           "nearest_neighbor_error_ms": statistics,
+                           **({"state_derived_actions": dict(self.action_origins[episode_index])}
+                              if episode_index in self.action_origins else {})},
             })
         return reports

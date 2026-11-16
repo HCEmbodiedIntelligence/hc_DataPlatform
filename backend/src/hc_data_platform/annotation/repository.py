@@ -9,6 +9,7 @@ from .models import (
     AnnotationRevisionThread,
     AnnotationRevisionThreadRevision,
     AnnotationStatus,
+    AnnotationTask,
     AnnotationTaskKind,
     RevisionOrigin,
     TagSchemaStatus,
@@ -145,6 +146,14 @@ class InMemoryAnnotationRepository:
                 and aggregate.task.rollout_id == rollout_id
             ]
             return None if not matches else sorted(matches, key=lambda item: item.task.task_id)[0]
+
+    def list_task_rows(
+        self, project_id: str, status: AnnotationStatus | None = None
+    ) -> tuple[AnnotationTask, ...]:
+        return tuple(
+            aggregate.task for aggregate in self.list_for_project(project_id)
+            if status is None or aggregate.task.status is status
+        )
 
     def list_for_project(self, project_id: str) -> tuple[AnnotationAggregate, ...]:
         with self._lock:

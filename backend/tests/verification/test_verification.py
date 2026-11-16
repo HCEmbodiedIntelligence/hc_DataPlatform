@@ -647,3 +647,17 @@ def test_migration_enforces_canonical_immutable_reports() -> None:
     ).read_text()
     assert "PRIMARY KEY (project_id, region_code, report_sha256)" in tenant_identity
     assert "UNIQUE (project_id, region_code, rollout_id, source_sha256)" in tenant_identity
+
+
+def test_production_reader_small_reads_across_chunk_boundaries_are_exact() -> None:
+    payload = bytes(range(256)) * 50
+    reader = ChunkedObjectStorageReader(_ChunkStore(payload), read_chunk_size=97).open_reader(
+        "raw/test.mcap"
+    )
+    pieces = []
+    for size in (1, 8, 3, 200, 1, 96, 97, 98, 5000):
+        pieces.append(reader.read(size))
+        assert len(pieces[-1]) == min(size, len(payload) - sum(map(len, pieces[:-1])))
+    pieces.append(reader.read())
+    assert b"".join(pieces) == payload
+    assert reader.read(1) == b""

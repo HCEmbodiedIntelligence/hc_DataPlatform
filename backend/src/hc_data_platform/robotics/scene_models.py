@@ -17,6 +17,24 @@ def scene_hash(value: object) -> str:
     ).hexdigest()
 
 
+class FrozenRobotBinding(BaseModel):
+    """The processing-time binding. Published model contents are resolved by the viewer."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    format: Literal["hc-robot-binding/1"] = "hc-robot-binding/1"
+    robot_id: str
+    binding_id: str | None
+    model_version_id: str | None
+    calibration_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def complete_binding(self):
+        if (self.binding_id is None) != (self.model_version_id is None):
+            raise ValueError("incomplete robot model binding")
+        return self
+
+
 class FrozenRobotScene(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

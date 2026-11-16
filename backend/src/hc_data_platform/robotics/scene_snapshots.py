@@ -7,8 +7,9 @@ from hc_data_platform.core.context import current_request_context
 from hc_data_platform.episode_store.mcap_plan import McapEpisodePlan
 from hc_data_platform.episode_store.models import EpisodeIdentity
 from hc_data_platform.episode_store.native_plan import NativeEpisodePlan
+from hc_data_platform.registry.asset_manifest import asset_manifest
 from hc_data_platform.registry.models import RobotModelAsset, RobotModelJointMapping
-from hc_data_platform.robotics.scene_models import FrozenRobotScene, scene_hash
+from hc_data_platform.robotics.scene_models import FrozenRobotBinding, FrozenRobotScene, scene_hash
 
 Plan = TypeVar("Plan", McapEpisodePlan, NativeEpisodePlan)
 ModelInputs = tuple[str, str, tuple[RobotModelAsset, ...], str, tuple[RobotModelJointMapping, ...]]
@@ -50,32 +51,21 @@ class RobotSceneSnapshots:
             )
             row = cursor.fetchone()
             if row is not None:
-                scene = FrozenRobotScene.model_validate(row[0])
-                if scene.content_sha256 != row[1] or scene.calibration != calibration:
+                document, checksum = row
+                if (
+                    scene_hash(document) != checksum
+                    or document["calibration_sha256"] != scene_hash(calibration)
+                ):
                     raise ValueError("immutable source scene or calibration differs")
             else:
                 binding = self.binding_query(cursor, identity.organization_id, source.robot_id)
-                model: dict[str, Any] = {}
-                if binding is not None:
-                    model_id, assets_hash, assets, mapping_hash, mappings = self.model_query(
-                        cursor, identity.organization_id, binding[1]
-                    )
-                    model = dict(
-                        binding_id=binding[0],
-                        model_id=model_id,
-                        model_version_id=binding[1],
-                        asset_manifest_sha256=assets_hash,
-                        assets=assets,
-                        joint_mapping_sha256=mapping_hash,
-                        joint_mappings=mappings,
-                    )
-                scene = FrozenRobotScene(
+                reference = FrozenRobotBinding(
                     robot_id=source.robot_id,
-                    status="FROZEN" if binding else "NO_MODEL_BINDING",
-                    **model,
-                    calibration=calibration,
+                    binding_id=binding[0] if binding else None,
+                    model_version_id=binding[1] if binding else None,
                     calibration_sha256=scene_hash(calibration),
                 )
+                document = reference.model_dump(mode="json")
                 cursor.execute(
                     """INSERT INTO robotics.data_scene_snapshots
                     (organization_id,project_id,region_code,source_key,model_version_id,document,content_sha256)
@@ -83,17 +73,42 @@ class RobotSceneSnapshots:
                     (
                         *identity.scope,
                         key,
-                        scene.model_version_id,
-                        scene.model_dump_json(),
-                        scene.content_sha256,
+                        reference.model_version_id,
+                        reference.model_dump_json(),
+                        scene_hash(document),
                     ),
                 )
-        # The plan's existing configuration hash binds the complete scene; no new
-        # default field changes historical PackageInput IDs or Temporal payloads.
-        updated = plan.model_copy(
-            update={"metadata": {**plan.metadata, "robot_scene": scene.model_dump(mode="json")}}
-        )
+        # Reuse historical embedded scenes verbatim so retries keep their original package IDs.
+        name = "robot_binding" if document["format"] == "hc-robot-binding/1" else "robot_scene"
+        updated = plan.model_copy(update={"metadata": {**plan.metadata, name: document}})
         frozen_input = source.model_copy(
             update={"configuration_sha256": updated.configuration_sha256}
         )
         return type(plan).model_validate({**updated.model_dump(mode="json"), "input": frozen_input})
+
+    def resolve_binding(
+        self, organization_id: str, reference: FrozenRobotBinding, calibration
+    ) -> FrozenRobotScene:
+        model = {}
+        if reference.model_version_id is not None:
+            with self.connections() as connection, connection.cursor() as cursor:
+                model_id, asset_hash, assets, joint_hash, mappings = self.model_query(
+                    cursor, organization_id, reference.model_version_id
+                )
+            assets, _ = asset_manifest(assets, recorded_hash=asset_hash)
+            model = dict(
+                model_id=model_id,
+                asset_manifest_sha256=asset_hash,
+                assets=assets,
+                joint_mapping_sha256=joint_hash,
+                joint_mappings=mappings,
+            )
+        return FrozenRobotScene(
+            status="FROZEN" if reference.model_version_id else "NO_MODEL_BINDING",
+            robot_id=reference.robot_id,
+            binding_id=reference.binding_id,
+            model_version_id=reference.model_version_id,
+            calibration=calibration,
+            calibration_sha256=reference.calibration_sha256,
+            **model,
+        )

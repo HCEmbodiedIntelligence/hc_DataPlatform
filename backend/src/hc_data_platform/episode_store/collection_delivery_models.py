@@ -9,6 +9,7 @@ from hc_data_platform.annotation.delivery_models import (
     RequestAnnotationDelivery,
 )
 
+from .upload_candidates import UploadExportFilter
 from .camera_calibration import ExportCameraCalibration
 from .models import DataVersionRef, Digest, FrozenModel, digest
 
@@ -24,6 +25,7 @@ class CollectionEpisodeSelection(FrozenModel):
 
 
 class RequestCollectionDelivery(FrozenModel):
+    export_filter: UploadExportFilter | None = None
     members: tuple[CollectionEpisodeSelection, ...] = Field(min_length=1, max_length=100)
     modalities: Literal["rgb", "rgbd"]
     output_format: str = Field(default="lerobot", min_length=1, max_length=64)
@@ -44,7 +46,7 @@ class RequestCollectionDelivery(FrozenModel):
 
     @property
     def request_sha256(self):
-        value = self.model_dump(mode="json")
+        value = self.model_dump(mode="json", exclude={"export_filter"} if self.export_filter is None else set())
         value["members"].sort(key=lambda m: m["data"]["data_version_id"])
         return digest(value)
 

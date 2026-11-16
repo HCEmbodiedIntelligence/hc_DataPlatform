@@ -9,6 +9,9 @@ const autoQualityProblemSchema = z
     schema_version: z.literal("auto-quality-problem/v1"),
     id: z.string().regex(/^qc_[0-9a-f]{32}$/u),
     source: z.literal("AUTO_QC"),
+    collection_task_id: z.string().nullish(),
+    source_file_name: z.string().nullish(),
+    discarded: z.boolean().optional(),
     session_id: z.string().min(1).nullable(),
     source_import_id: z.string().min(1).nullish(),
     source_episode_index: z.number().int().nonnegative().nullish(),
@@ -40,6 +43,9 @@ const autoQualityProblemListSchema = z
 export interface AutoQualityProblem {
   readonly id: string;
   readonly source: "AUTO_QC";
+  readonly collectionTaskId?: string | null;
+  readonly sourceFileName?: string | null;
+  readonly discarded?: boolean;
   readonly sessionId: string | null;
   readonly sourceImportId: string | null;
   readonly sourceEpisodeIndex: number | null;
@@ -69,13 +75,19 @@ export function useAutoQualityProblems(allowed = true) {
       scope?.regionCode,
     ],
     enabled: allowed && Boolean(scope?.projectId && scope.regionCode),
-    staleTime: 5_000,
-    refetchInterval: 5_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
     queryFn: async ({ signal }) => {
       const path = `/projects/${encodeURIComponent(scope!.projectId!)}/regions/${encodeURIComponent(scope!.regionCode!)}/quality-problems`;
       const wire = parseWire(
         autoQualityProblemListSchema,
-        await request<unknown>({ method: "GET", path, scope: scope!, signal }),
+        await request<unknown>({
+          method: "GET",
+          path,
+          scope: scope!,
+          signal,
+          query: { includeDiscarded: true },
+        }),
         {
           endpoint: "listAutoQualityProblems",
           schemaVersion: "auto-quality-problem-list/v1",
@@ -86,6 +98,9 @@ export function useAutoQualityProblems(allowed = true) {
           (item): AutoQualityProblem => ({
             id: item.id,
             source: item.source,
+            collectionTaskId: item.collection_task_id ?? null,
+            sourceFileName: item.source_file_name ?? null,
+            discarded: item.discarded ?? false,
             sessionId: item.session_id,
             sourceImportId: item.source_import_id ?? null,
             sourceEpisodeIndex: item.source_episode_index ?? null,

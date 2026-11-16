@@ -10,6 +10,10 @@ export const MANUAL_ISSUE_SORTS = [
 export type ManualIssueSort = (typeof MANUAL_ISSUE_SORTS)[number];
 
 export type ManualIssuesRouteParams = {
+  readonly taskGroup?: string;
+  readonly problemType?: string;
+  readonly groupPage?: number;
+  readonly discarded?: boolean;
   readonly q?: string;
   readonly datasetId?: string;
   readonly versionId?: string;
@@ -234,6 +238,12 @@ function buildManualIssueSearch(
   if (versionId) params.set("versionId", versionId);
   if (episodeId) params.set("episodeId", episodeId);
   if (issueId) params.set("issueId", issueId);
+  if (input.taskGroup !== undefined) params.set("taskGroup", input.taskGroup);
+  if (input.taskGroup !== undefined && input.problemType)
+    params.set("problemType", input.problemType);
+  if (input.groupPage && input.groupPage > 1)
+    params.set("page", String(input.groupPage));
+  if (input.discarded) params.set("discarded", "1");
   appendAll(
     params,
     "status",
@@ -260,7 +270,7 @@ function buildManualIssueSearch(
     params.set("assigneeId", input.assigneeId);
   if (input.sort && input.sort !== "updatedAtDesc")
     params.set("sort", input.sort);
-  if (input.limit && input.limit !== 50)
+  if (input.limit && input.limit !== 20)
     params.set("limit", String(input.limit));
   if (input.after && !input.before) params.set("after", input.after);
   if (input.before && !input.after) params.set("before", input.before);
@@ -313,6 +323,15 @@ export const manualIssuesQueryCodec = {
       versionId,
       episodeId,
       issueId: cleanId(params.get("issueId")),
+      taskGroup: params.get("taskGroup") ?? undefined,
+      problemType: params.has("taskGroup")
+        ? cleanText(params.get("problemType"), 256)
+        : undefined,
+      groupPage: Math.max(
+        1,
+        Math.min(1000000, Math.floor(Number(params.get("page"))) || 1),
+      ),
+      discarded: params.get("discarded") === "1",
       status: enumList(params, "status", [
         "OPEN",
         "IN_PROGRESS",
@@ -336,7 +355,7 @@ export const manualIssuesQueryCodec = {
         enumValue(params.get("sort"), MANUAL_ISSUE_SORTS) ?? "updatedAtDesc",
       after,
       before,
-      limit: limit ? (Number.parseInt(limit, 10) as 20 | 50 | 100) : 50,
+      limit: limit ? (Number.parseInt(limit, 10) as 20 | 50 | 100) : 20,
       returnTo: safeReturnTo(params.get("returnTo"), {
         datasetId,
         versionId,
@@ -355,6 +374,9 @@ export const manualIssuesQueryCodec = {
     changes: Partial<ManualIssuesRouteParams>,
   ): ManualIssuesSearch {
     const paginationDimensions = [
+      "taskGroup",
+      "problemType",
+      "discarded",
       "q",
       "datasetId",
       "versionId",
@@ -376,7 +398,9 @@ export const manualIssuesQueryCodec = {
       buildManualIssueSearch({
         ...current,
         ...changes,
-        ...(cursorMustClear ? { after: undefined, before: undefined } : {}),
+        ...(cursorMustClear
+          ? { after: undefined, before: undefined, groupPage: 1 }
+          : {}),
       }),
     );
   },

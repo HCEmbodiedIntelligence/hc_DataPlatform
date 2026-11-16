@@ -346,6 +346,24 @@ def test_ready_requires_package_collection_qc_task_viewer_and_all_previews(
             assert saved.status is EpisodeProcessingStatus.READY and saved.lance_version is None
             assert saved.data_ref == ready.data
             assert processor.update_state(state).episode == saved  # Lost-response recovery.
+            from hc_data_platform.episode_store.upload_candidates import UploadExportFilter
+            from hc_data_platform.ingest.upload_batches import register
+            from tests.episode_store.test_detail_services import auth_for
+
+            with repository.connections() as db:
+                number = register(db, ident.scope, "web", "web:continuous-test", projection.recording_upload_id)
+            selection = UploadExportFilter(stage="qc_passed", batch_number=number)
+            auth = auth_for(ready.data, annotations=False)
+            candidates = packages.deliveries.filtered_candidates(selection, auth)
+            assert [row.data for row in candidates.items] == [ready.data]
+            with repository.transaction() as cursor:
+                cursor.execute("""INSERT INTO ingest.recording_episode_qc_reports
+                    (organization_id,project_id,region_code,recording_id,episode_id,report_id,
+                     report_sha256,status,report_document,created_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,'REJECT',%s::jsonb,now())""",
+                    (*ident.scope, current.recording_id, current.episode_id, "recheck-"+uuid4().hex,
+                     "5"*64, json.dumps({"rechecked_report_id": current.qc_report_id})))
+            assert packages.deliveries.filtered_candidates(selection, auth).total == 0
             if delayed_annotation:
                 with pytest.raises(psycopg.errors.CheckViolation, match="exact package"):
                     records.save_episode_processing(

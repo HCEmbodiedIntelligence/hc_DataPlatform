@@ -70,3 +70,21 @@ def test_legacy_helpers_are_the_same_codec_implementations() -> None:
     assert LegacyDepthVideo is DepthVideo
     assert legacy_json is canonical_json_bytes
     assert ModuleRouter is DiscoveredRouter
+
+
+def test_uint16_mm_histogram_matches_every_reference_field_and_quantile():
+    import numpy as np
+    from hc_data_platform.data_formats.holobrain_depth import DEFAULT_PROFILE, quantize
+    from hc_data_platform.data_formats.uint16_depth import millimetre_evidence
+
+    rng = np.random.default_rng(6)
+    for raw in (np.arange(65536, dtype=np.uint16).reshape(256,256),
+                rng.integers(0, 65536, (513,509), dtype=np.uint16),
+                rng.integers(7, 1800, (257,511), dtype=np.uint16),
+                np.full((256,256), 65535, np.uint16), np.zeros((255,257), np.uint16),
+                np.array([[0,1,10,350,777,10000,10001]], np.uint16)):
+        ref = quantize(raw, 0.001, invalid_values=(0,))
+        fast = millimetre_evidence(raw)
+        np.testing.assert_array_equal(fast.codes, ref.codes)
+        np.testing.assert_array_equal(fast.flags, ref.flags)
+        assert fast.error_report() == ref.error_report(DEFAULT_PROFILE)

@@ -136,6 +136,15 @@ export const manualIssueDetailEnvelopeWireSchema = scopeEnvelopeWireSchema(
 export const manualIssuesPageEnvelopeWireSchema = scopeEnvelopeWireSchema(
   z
     .object({
+      task_groups: z
+        .array(
+          z.object({
+            collection_task_id: z.string().nullable(),
+            issue_type: manualIssueTypeWireSchema,
+            count: z.number().int().positive(),
+          }),
+        )
+        .optional(),
       counts: z
         .object({
           total: int64WireSchema,

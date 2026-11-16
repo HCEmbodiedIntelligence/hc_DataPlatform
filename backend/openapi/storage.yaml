@@ -935,6 +935,11 @@ components:
           anyOf:
           - $ref: '#/components/schemas/StorageDiskUsage'
           - type: 'null'
+        disks:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/StorageDiskUsage'
+          title: Disks
         database_bytes:
           anyOf:
           - type: string
@@ -1375,7 +1380,7 @@ components:
         etag: {type: string}
     LifecyclePolicyAction:
       type: string
-      enum: [RETAIN, REVIEW_EXPIRATION, ARCHIVE, TRANSITION_TO_COLD, CLEAN_REBUILDABLE_CACHE, CLEAN_PROCESSING_CACHE, CLEAN_RECORDING_PREVIEWS, CLEAN_EPISODE_PREVIEWS, CLEAN_EXPORT_ARCHIVES, CLEAN_PROCESSING_STAGING, CLEAN_MEDIA_STAGING, CLEAN_OSS_TEST_COPIES, CLEAN_INVENTORY_DETAILS, CLEAN_INVENTORY_HISTORY]
+      enum: [RETAIN, REVIEW_EXPIRATION, ARCHIVE, TRANSITION_TO_COLD, CLEAN_REBUILDABLE_CACHE, CLEAN_PROCESSING_CACHE, CLEAN_RECORDING_PREVIEWS, CLEAN_EPISODE_PREVIEWS, CLEAN_EXPORT_ARCHIVES, CLEAN_PROCESSING_STAGING, CLEAN_MEDIA_STAGING, CLEAN_OSS_TEST_COPIES, CLEAN_INVENTORY_DETAILS, CLEAN_INVENTORY_HISTORY, CLEAN_SUPERSEDED_MCAP_BATCHES]
     LifecyclePolicyState:
       type: string
       enum: [DRAFT, ENABLED, PAUSED]

@@ -79,7 +79,7 @@ function setup(disabled = false) {
 it("registers OSS references with the normal processing target without uploading files", async () => {
   requestMock
     .mockResolvedValueOnce(preview)
-    .mockResolvedValueOnce({ import_id: "id" });
+    .mockResolvedValueOnce({ batch_id: "batch", total: 1 });
   const onImported = setup();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "从 OSS 导入" }));
@@ -89,13 +89,15 @@ it("registers OSS references with the normal processing target without uploading
   );
   await user.click(screen.getByRole("button", { name: "检查 OSS 数据" }));
   await screen.findByText(/已识别 MCAP/);
-  expect(screen.getByRole("button", { name: "确认导入" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: /^确认导入并处理/ }),
+  ).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "选择处理目标" }));
-  await user.click(screen.getByRole("button", { name: "确认导入" }));
+  await user.click(screen.getByRole("button", { name: /^确认导入并处理/ }));
   await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
   expect(requestMock).toHaveBeenCalledTimes(2);
   expect(requestMock.mock.calls[1]?.[0]).toMatchObject({
-    path: expect.stringContaining("/oss:commit"),
+    path: expect.stringContaining("/oss:batches"),
     body: {
       source_uri: preview.source_uri,
       inventory_sha256: preview.inventory_sha256,
@@ -119,7 +121,9 @@ it("clears the checked inventory when the source address changes", async () => {
   await screen.findByText(/已识别 MCAP/);
   await user.type(screen.getByLabelText("OSS 文件或目录地址"), "other/");
   expect(screen.queryByText(/已识别 MCAP/)).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "确认导入" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: /^确认导入并处理/ }),
+  ).toBeDisabled();
 });
 it("disables OSS import without upload permission or connectivity", () => {
   setup(true);
@@ -127,10 +131,10 @@ it("disables OSS import without upload permission or connectivity", () => {
   expect(requestMock).not.toHaveBeenCalled();
 });
 
-it("shows task selection immediately and preserves it for archive-only imports", async () => {
+it("uses the selected task to import and process a ZIP", async () => {
   requestMock
     .mockResolvedValueOnce({ ...preview, archive: { path: "capture.zip" } })
-    .mockResolvedValueOnce({ import_id: "id" });
+    .mockResolvedValueOnce({ batch_id: "batch", total: 1 });
   const onImported = setup();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "从 OSS 导入" }));
@@ -141,22 +145,22 @@ it("shows task selection immediately and preserves it for archive-only imports",
   );
   await user.click(screen.getByRole("button", { name: "检查 OSS 数据" }));
   await screen.findByText(/已识别 MCAP/);
-  await user.click(screen.getByRole("radio", { name: "仅登记原始数据" }));
+  expect(screen.queryByRole("radio")).not.toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: "选择处理目标" }),
   ).toBeInTheDocument();
   expect(screen.getByText("ZIP 将自动解压导入")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "确认导入" }));
+  await user.click(screen.getByRole("button", { name: /^确认导入并处理/ }));
   await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
   expect(requestMock.mock.calls[1]?.[0].body).toMatchObject({
     dataset_id: "dataset",
     collection_task_id: "task",
     robot_id: "robot",
-    processing_mode: "STORE_ONLY",
+    processing_mode: "PROCESS",
   });
 });
 
-it("requires task association for ROS bag imports without processing support", async () => {
+it("blocks unsupported ROS bags even when a task is selected", async () => {
   requestMock.mockResolvedValueOnce({ ...preview, source_format: "ROSBAG" });
   setup();
   const user = userEvent.setup();
@@ -167,7 +171,90 @@ it("requires task association for ROS bag imports without processing support", a
   );
   await user.click(screen.getByRole("button", { name: "检查 OSS 数据" }));
   await screen.findByText(/已识别 ROSBAG/);
-  expect(screen.getByRole("button", { name: "确认导入" })).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: /^确认导入并处理/ }),
+  ).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "选择处理目标" }));
-  expect(screen.getByRole("button", { name: "确认导入" })).toBeEnabled();
+  expect(
+    screen.getByRole("button", { name: /^确认导入并处理/ }),
+  ).toBeDisabled();
+  expect(requestMock).toHaveBeenCalledTimes(1);
+});
+
+const recordingFiles = Array.from({ length: 75 }, (_, index) => ({
+  path: `mcap/capture_${String(index + 1).padStart(2, "0")}.mcap`,
+  size: 32,
+}));
+
+async function openArchive(files = recordingFiles) {
+  requestMock.mockResolvedValueOnce({
+    ...preview,
+    archive_members: true,
+    archive: { path: "capture.zip" },
+    files: [...files, { path: "mcap/capture_01.takeovers.json", size: 3 }],
+  });
+  const onImported = setup();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "从 OSS 导入" }));
+  await user.click(screen.getByRole("button", { name: "选择处理目标" }));
+  await user.type(
+    screen.getByLabelText("OSS 文件或目录地址"),
+    preview.source_uri,
+  );
+  await user.click(screen.getByRole("button", { name: "检查 OSS 数据" }));
+  await screen.findByRole("checkbox", { name: "全选" });
+  return { user, onImported };
+}
+
+it("preserves manual selections across searches and can submit all 75 recordings", async () => {
+  const { user, onImported } = await openArchive();
+  const submit = () => screen.getByRole("button", { name: /^确认导入并处理/ });
+  const row = (index: number) =>
+    screen.getByRole("checkbox", { name: recordingFiles[index]!.path });
+  expect(submit()).toBeDisabled();
+  expect(
+    screen.queryByRole("checkbox", { name: /takeovers/ }),
+  ).not.toBeInTheDocument();
+  await user.click(row(0));
+  await user.click(row(1));
+  const search = screen.getByRole("textbox", { name: "搜索录制" });
+  await user.type(search, "capture_7");
+  await user.click(screen.getByRole("checkbox", { name: "全选匹配项（6）" }));
+  expect(submit()).toHaveTextContent("8 条");
+  await user.clear(search);
+  expect(row(0)).toBeChecked();
+  expect(row(74)).toBeChecked();
+  await user.click(screen.getByRole("button", { name: "清空选择" }));
+  expect(submit()).toBeDisabled();
+  await user.click(screen.getByRole("checkbox", { name: "全选" }));
+  expect(submit()).toHaveTextContent("75 条");
+  requestMock.mockResolvedValue({ batch_id: "batch", total: 75 });
+  await user.click(submit());
+  await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
+  expect(requestMock).toHaveBeenCalledTimes(2);
+  expect(requestMock.mock.calls[1]?.[0]).toMatchObject({
+    path: expect.stringContaining("/oss:batches"),
+    body: {
+      recording_paths: recordingFiles.map((file) => file.path),
+      processing_mode: "PROCESS",
+      request_id: expect.any(String),
+    },
+  });
+}, 15000);
+
+it("retries a lost receipt with the same batch ID and selection", async () => {
+  const { user, onImported } = await openArchive(recordingFiles.slice(0, 3));
+  await user.click(screen.getByRole("checkbox", { name: "全选" }));
+  requestMock
+    .mockRejectedValueOnce(new Error("lost response"))
+    .mockResolvedValueOnce({ batch_id: "batch", total: 3 });
+  const submit = () => screen.getByRole("button", { name: /^确认导入并处理/ });
+  await user.click(submit());
+  await screen.findByText("lost response");
+  expect(onImported).not.toHaveBeenCalled();
+  await user.click(submit());
+  await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
+  expect(requestMock.mock.calls[2]?.[0].body).toEqual(
+    requestMock.mock.calls[1]?.[0].body,
+  );
 });

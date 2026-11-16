@@ -160,7 +160,11 @@ def test_import_references_originals_and_export_reads_them(bodies, format):
     assert manifest["storage_mode"] == "oss_reference"
     for item in manifest["files"]:
         assert item["object_key"] == reference_uri("bucket", "root/input/" + item["path"])
-        assert item["sha256"] == hashlib.sha256(bodies[item["path"]]).hexdigest()
+        if format == "MCAP":
+            assert item["sha256"] is None and item["source_etag"]
+            assert "root/input/" + item["path"] not in bucket.reads
+        else:
+            assert item["sha256"] == hashlib.sha256(bodies[item["path"]]).hexdigest()
     import zipfile
 
     files = archive_files(
@@ -252,9 +256,15 @@ def test_mutation_during_read_is_rejected():
         return body
 
     bucket.get_object = mutate
-    with pytest.raises(ProblemException):
-        commit(service, preview)
-    assert not any(k.endswith("/manifest.json") for k in bucket.writes)
+    from hc_data_platform.lerobot_imports.mcap_reference import materialize
+    accepted = commit(service, preview)
+    browser = OriginalSourceBrowser(storage, service.raw_sources)
+    raw = browser.source(**SCOPE, import_id=accepted.import_id)
+    entry = browser.manifest(raw)["files"][0]
+    assert not any(key == "root/input/one.mcap" for key in bucket.reads)
+    with pytest.raises(ValueError, match="OSS_IMPORT_SOURCE_CHANGED"):
+        materialize(storage, entry, BytesIO(), lambda: None)
+    assert browser.manifest(raw)["files"][0]["sha256"] is None
 
 
 def test_mcap_processing_uses_normal_job_and_snapshot():
@@ -317,7 +327,10 @@ def test_rebuild_and_export_selected_mcap_from_oss_reference(tmp_path):
     )
     raw = service.raw_sources.get_source(**SCOPE, raw_source_id=accepted.import_id)
     manifest = OriginalSourceBrowser(storage, service.raw_sources).manifest(raw)
-    src["provenance"]["source_object"] = manifest["files"][0]
+    from hc_data_platform.lerobot_imports.mcap_reference import materialize
+    assert manifest["files"][0]["sha256"] is None
+    materialize(storage, manifest["files"][0], BytesIO(), lambda: None)
+    src["provenance"]["source_object"] = OriginalSourceBrowser(storage, service.raw_sources).manifest(raw)["files"][0]
     target = tmp_path / "oss-rebuilt.mcap"
     before = dict(bucket.objects)
     materialize_selected(storage, selected_reference(src["provenance"]), src["provenance"], target)
@@ -534,3 +547,50 @@ def test_store_only_validates_task_dataset_and_robot(monkeypatch):
     assert exc.value.problem.code == "LEROBOT_ROBOT_UNAVAILABLE"
     robots.return_value = [object()]
     validate_target(**SCOPE, manifest=manifest, connection_factory=factory)
+
+
+def test_batch_registers_raw_without_temporal_or_reading_the_mcap(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hc_data_platform.lerobot_imports import oss_registration
+    from hc_data_platform.lerobot_imports.router import router
+    from hc_data_platform.security.http import require_auth_context
+    from hc_data_platform.workflow import router as job_routes
+
+    bucket, storage, service = setup({"one.mcap": b"source"})
+    selection = inspect_source(storage, "oss://bucket/root/input/")
+    app = FastAPI()
+    app.state.lerobot_uploads = service
+    app.include_router(router)
+    app.dependency_overrides[require_auth_context] = lambda: AUTH
+    monkeypatch.setattr(job_routes, "get_launcher", lambda: pytest.fail("registration waited on Temporal"))
+    import os
+    if dsn := os.getenv("HC_OSS_REGISTRATION_TEST_DSN"):
+        import psycopg
+        monkeypatch.setattr(oss_registration, "connections", lambda: lambda: psycopg.connect(dsn))
+    else:
+        from hc_data_platform.lerobot_imports.oss_batch import BatchAccepted
+        def run(batch, identity, paths, register):
+            for path in paths:
+                assert register(path) is None
+            return BatchAccepted(batch_id=identity, total=len(paths))
+        monkeypatch.setattr(oss_registration, "_register_items", run)
+    client = TestClient(app)
+    command = dict(request_id="e048bed8-766a-4fd3-b6b7-746ed3efdc55",
+                   source_uri=selection["source_uri"], inventory_sha256=selection["inventory_sha256"],
+                   dataset_id="dataset", collection_task_id="task", robot_id="robot")
+    options = dict(json=command, headers={"X-Organization-Id": "org"})
+    url = "/api/v1/projects/project/regions/cn/lerobot-imports/oss:batches"
+    first = client.post(url, **options)
+    assert first.status_code == 202, first.text
+    assert client.post(url, **options).json() == first.json()
+    assert "root/input/one.mcap" not in bucket.reads
+    raw_manifest = json.loads(next(body for k, body in bucket.objects.items() if k.endswith("/manifest.json")))
+    raw = service.raw_sources.get_source(**SCOPE, raw_source_id=raw_manifest["upload_id"])
+    assert raw is not None and raw.processing_status.value == "PENDING"
+    assert raw_manifest["files"][0]["sha256"] is None
+    if dsn:
+        with psycopg.connect(dsn) as db:
+            row = db.execute("select status,result from workflow.jobs where workflow_id=%s",
+                             (first.json()["batch_id"],)).fetchone()
+            assert row[0] == "SUCCEEDED" and row[1]["submitted"] == 1

@@ -1,6 +1,7 @@
 import { Alert, Button, Descriptions, Space, Spin, Table } from "antd";
 import { lazy, Suspense, useState } from "react";
 import { captureProblemLabels } from "../../../features/capture-schemes/presentation";
+import { findingLabel, findingMeasurement } from "../../../features/quality/RecordingQualityReview";
 import { RecordingProcessingDetails } from "../../../features/quality/RecordingProcessingDetails";
 import type {
   DashboardDataIssue,
@@ -16,31 +17,15 @@ const OriginalSourceBrowser = lazy(
 const DuplicateIssueActions = lazy(() => import("./DuplicateIssueActions"));
 const ResumeProcessingAction = lazy(() => import("./ResumeProcessingAction"));
 
-const findingLabels: Readonly<Record<string, string>> = {
-  QC_IMAGE_BLACK: "黑帧比例超标",
-  QC_IMAGE_REPEATED: "重复帧比例超标",
-};
-
 function issueSummary(issue: DashboardDataIssue): string {
   const findings = issue.findings ?? [];
   return findings.length
     ? [
         ...new Set(
-          findings.map((item) => findingLabels[item.code] ?? item.message),
+          findings.map((item) => findingLabel(item.code, item.message)),
         ),
       ].join("、")
     : issue.label;
-}
-
-function findingValue(
-  code: string,
-  value: number | string | null | undefined,
-): string {
-  if (value == null) return "—";
-  if (typeof value === "number" && code in findingLabels) {
-    return `${(value * 100).toFixed(2)}%`;
-  }
-  return String(value);
 }
 
 export default function TaskIssueDrawer({
@@ -79,6 +64,7 @@ export default function TaskIssueDrawer({
           scope={scope}
           importId={selected.source_import_id}
           displayedReasonCode={selected.reason_code}
+          displayedPackageId={selected.data_package_id}
         />
       </Suspense>
     ) : null;
@@ -102,8 +88,15 @@ export default function TaskIssueDrawer({
           <Alert
             type="warning"
             title={selected.label}
-            description={selected.description}
+            description={
+              <div style={{ whiteSpace: "pre-line", overflowWrap: "anywhere", lineHeight: 1.7 }}>
+                {selected.description}
+              </div>
+            }
           />
+          {selected.category === "QUALITY" && selected.recording_id && scope && (
+            <RecordingProcessingDetails key={selected.recording_id} scope={scope} recordingId={selected.recording_id} />
+          )}
           <Descriptions
             bordered
             size="small"
@@ -138,9 +131,9 @@ export default function TaskIssueDrawer({
               {
                 key: "code",
                 label: "原因代码",
-                children: selected.reason_code && captureProblemLabels[selected.reason_code]
-                  ? `${captureProblemLabels[selected.reason_code]}（${selected.reason_code}）`
-                  : selected.reason_code,
+                children: selected.reason_code
+                  ? `${captureProblemLabels[selected.reason_code] ?? selected.label}（${selected.reason_code}）`
+                  : "—",
               },
               ...(selected.duplicate_of_rollout_id
                 ? [
@@ -175,7 +168,7 @@ export default function TaskIssueDrawer({
                 {
                   title: "检测问题",
                   key: "finding",
-                  render: (_, item) => findingLabels[item.code] ?? item.message,
+                  render: (_, item) => findingLabel(item.code, item.message),
                 },
                 {
                   title: "相机 / 通道",
@@ -185,15 +178,15 @@ export default function TaskIssueDrawer({
                 {
                   title: "检测值",
                   key: "observed",
-                  render: (_, item) => findingValue(item.code, item.observed),
+                  render: (_, item) => findingMeasurement(item.code, item.observed),
                 },
                 {
                   title: "阈值",
                   key: "threshold",
-                  render: (_, item) => findingValue(item.code, item.threshold),
+                  render: (_, item) => findingMeasurement(item.code, item.threshold),
                 },
                 {
-                  title: "检测区间（秒）",
+                  title: "报告检测区间（秒）",
                   key: "window",
                   render: (_, item) =>
                     item.start_ns != null && item.end_ns != null
@@ -222,7 +215,7 @@ export default function TaskIssueDrawer({
             </Suspense>
           ) : null}
           {!commitIssue && rawProcessing}
-          {selected.recording_id && scope ? (
+          {selected.recording_id && scope && selected.category === "QUALITY" ? null : selected.recording_id && scope ? (
             <RecordingProcessingDetails
               scope={scope}
               recordingId={selected.recording_id}

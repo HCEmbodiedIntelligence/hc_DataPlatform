@@ -6,6 +6,7 @@ can be rehydrated into the local expiring cache from the same committed inputs.
 
 import hashlib
 import json
+import os
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 
@@ -73,7 +74,16 @@ def read_preview(storage, upload, asset, assets, *, selected=True):
     return key
 
 
-def _download(storage, asset, path, progress):
+def _download(storage, asset, path, progress, verified_paths=None):
+    if verified_paths and asset.object_key in verified_paths:
+        source = verified_paths[asset.object_key]
+        try:
+            os.link(source, path)
+        except OSError:
+            pass
+        else:
+            progress()
+            return
     digest, size = hashlib.sha256(), 0
     with path.open("wb") as output:
         for block in storage.read_chunks(asset.object_key):
@@ -87,6 +97,48 @@ def _download(storage, asset, path, progress):
         raise ValueError("recording preview source checksum mismatch")
 
 
+def _remux_complete_preview(source, destination, frames, fps, progress):
+    """Retimestamp every H.264 frame without encoding it a second time."""
+    from fractions import Fraction
+
+    import av
+
+    clock = Fraction(1, 1_000_000_000)
+    with av.open(str(source)) as incoming:
+        stream = incoming.streams.video[0]
+        codec = stream.codec_context
+        if (codec.name != "h264" or codec.has_b_frames or codec.format is None
+                or codec.format.name != "yuv420p" or stream.frames != len(frames)):
+            return False
+        count = 0
+        previous = None
+        with av.open(str(destination), "w", options={
+            "movie_timescale": "1000000000", "video_track_timescale": "1000000000",
+        }) as output:
+            target = output.add_stream_from_template(stream)
+            target.time_base = clock
+            for packet in incoming.demux(stream):
+                if not packet.size:
+                    continue
+                progress()
+                if (packet.pts is None or packet.pts != packet.dts or count >= len(frames)
+                        or previous is not None and packet.pts <= previous):
+                    return False
+                previous = packet.pts
+                stamp = frames[count]["offset_ns"]
+                duration = (frames[count + 1]["offset_ns"] - stamp if count + 1 < len(frames)
+                            else round(1_000_000_000 / fps))
+                if duration <= 0:
+                    return False
+                packet.stream = target
+                packet.pts = packet.dts = stamp
+                packet.duration = duration
+                packet.time_base = clock
+                output.mux(packet)
+                count += 1
+        return count == len(frames)
+
+
 def select_preview(source, destination, frames, fps, progress=lambda: None):
     """Dense decoded frame order on the original clock, for raw slice coordinates."""
     from fractions import Fraction
@@ -96,6 +148,11 @@ def select_preview(source, destination, frames, fps, progress=lambda: None):
     retained = [(r["source_frame"], r["offset_ns"]) for r in frames if r["valid"]]
     if not retained:
         raise ValueError("recording preview has no usable frames")
+    if (len(retained) == len(frames)
+            and all(index == position for position, (index, _) in enumerate(retained))
+            and _remux_complete_preview(source, destination, frames, fps, progress)):
+        _verify_preview_timeline(destination, retained)
+        return len(retained)
     count = 0
     with av.open(str(source)) as incoming, av.open(
         str(destination), "w",
@@ -107,7 +164,8 @@ def select_preview(source, destination, frames, fps, progress=lambda: None):
         encoder = output.add_stream("libx264", rate=Fraction(str(fps)))
         encoder.width, encoder.height = stream.width, stream.height
         encoder.pix_fmt = "yuv420p"
-        encoder.options = {"crf": "0", "preset": "fast", "threads": "1", "bf": "0"}
+        # Browser display only; same settings as the depth preview encoder.
+        encoder.options = {"crf": "20", "preset": "veryfast", "threads": "2", "bf": "0", "g": "30"}
         encoder.time_base = Fraction(1, 1_000_000_000)
         encoder.codec_context.time_base = encoder.time_base
         for i, frame in enumerate(incoming.decode(stream)):
@@ -125,16 +183,24 @@ def select_preview(source, destination, frames, fps, progress=lambda: None):
             output.mux(packet)
     if count != len(retained):
         raise ValueError("recording preview selection exceeds video frames")
-    with av.open(str(destination)) as verify:
-        observed = [round(f.pts * f.time_base * 1_000_000_000) for f in verify.decode(video=0)]
-    if len(observed) != count or any(
-        abs(a - b) > 1_000 for a, (_, b) in zip(observed, retained, strict=True)
-    ):
-        raise ValueError("recording preview changed source timeline")
+    _verify_preview_timeline(destination, retained)
     return count
 
 
-def prepare_recording_previews(storage, upload, assets, progress=lambda: None):
+def _verify_preview_timeline(destination, retained):
+    import av
+
+    # Both paths emit H.264 in presentation order without B frames.
+    with av.open(str(destination)) as verify:
+        observed = [round(p.pts * p.time_base * 1_000_000_000)
+                    for p in verify.demux(video=0) if p.size and p.pts is not None]
+    if len(observed) != len(retained) or any(
+        abs(a - b) > 1_000 for a, (_, b) in zip(observed, retained, strict=True)
+    ):
+        raise ValueError("recording preview changed source timeline")
+
+
+def prepare_recording_previews(storage, upload, assets, progress=lambda: None, *, verified_paths=None, preview_frames=None):
     """Invoked by the registration Worker, and explicitly for historical recordings."""
     from hc_data_platform.data_formats.depth_evidence import file_hash
 
@@ -161,16 +227,9 @@ def prepare_recording_previews(storage, upload, assets, progress=lambda: None):
             continue
         with TemporaryDirectory(prefix="recording-preview-") as directory:
             root = Path(directory)
-            if not is_depth(camera):
-                _download(storage, asset, root / "source.mp4", progress)
-            else:
-                _prepare_depth_preview(
-                    storage, asset, profile_asset, masks_asset, root, camera, progress
-                )
-            output = root / ("preview.mp4" if is_depth(camera) else "source.mp4")
-            frame_count = None
+            frames, offsets, frame_count = None, None, None
             if trace_asset is not None:
-                _download(storage, trace_asset, root / "frames.jsonl", progress)
+                _download(storage, trace_asset, root / "frames.jsonl", progress, verified_paths)
                 frames = [
                     json.loads(line)
                     for line in (root / "frames.jsonl").read_text().splitlines()
@@ -180,10 +239,25 @@ def prepare_recording_previews(storage, upload, assets, progress=lambda: None):
                     raise ValueError("recording preview source frame map is not dense")
                 if not any(r["valid"] for r in frames):
                     continue
-                frame_count = select_preview(
-                    output, root / "selected.mp4", frames, camera.fps, progress
+                offsets = [r["offset_ns"] if r["valid"] else None for r in frames]
+                frame_count = sum(r["valid"] for r in frames)
+            if not is_depth(camera):
+                _download(storage, asset, root / "source.mp4", progress, verified_paths)
+                output = root / "source.mp4"
+                if frames is not None:
+                    frame_count = select_preview(
+                        output, root / "selected.mp4", frames, camera.fps, progress
+                    )
+                    output = root / "selected.mp4"
+            else:
+                # Colorize only the retained rows, directly on the source clock.
+                _prepare_depth_preview(
+                    storage, asset, profile_asset, masks_asset, root, camera, progress, verified_paths,
+                    preview_frames.frames.pop((verified_paths or {}).get(asset.object_key), None)
+                    if preview_frames is not None else None,
+                    offsets=offsets,
                 )
-                output = root / "selected.mp4"
+                output = root / "preview.mp4"
             progress()
             key = preview_key(upload, asset, assets)
             size, sha = output.stat().st_size, file_hash(output)
@@ -204,7 +278,7 @@ def prepare_recording_previews(storage, upload, assets, progress=lambda: None):
             )
 
 
-def _prepare_depth_preview(storage, asset, profile_asset, masks_asset, root, camera, progress):
+def _prepare_depth_preview(storage, asset, profile_asset, masks_asset, root, camera, progress, verified_paths=None, verified_codes=None, offsets=None):
     import av
     import pyarrow.parquet as pq
 
@@ -217,7 +291,7 @@ def _prepare_depth_preview(storage, asset, profile_asset, masks_asset, root, cam
         (profile_asset, "profile.json"),
         (masks_asset, "flags.parquet"),
     ):
-        _download(storage, source, root / name, progress)
+        _download(storage, source, root / name, progress, verified_paths)
     declaration = json.loads((root / "profile.json").read_text())
     profile = DepthProfile(
         **{
@@ -245,5 +319,5 @@ def _prepare_depth_preview(storage, asset, profile_asset, masks_asset, root, cam
             stream.height + stream.height % 2,
             masks=masks,
             profile=profile,
-            checkpoint=progress,
+            checkpoint=progress, verified_codes=verified_codes, offsets=offsets,
         )

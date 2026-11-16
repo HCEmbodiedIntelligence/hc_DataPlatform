@@ -70,6 +70,7 @@ _SAFE_RECORD_KEYS = frozenset(
         "route",
         "http_method",
         "status_code",
+        "episode_id",
         "otelTraceID",
         "otelSpanID",
         "otelTraceSampled",
@@ -196,6 +197,8 @@ class SafeStructuredLogFilter(logging.Filter):
             else None
         )
         event_code = _event_code(getattr(record, "event_code", None), record.name)
+        if hasattr(record, "episode_id"):
+            record.episode_id = _safe_identifier(record.episode_id)
         record.msg = event_code
         record.args = ()
         record.exc_info = None
@@ -271,6 +274,8 @@ class HcJsonFormatter(logging.Formatter):
                 getattr(record, "status_code", None), minimum=100, maximum=599
             ),
         }
+        if payload["event_code"].startswith("INGEST.TIMING."):
+            payload["episode_id"] = _safe_identifier(getattr(record, "episode_id", None))
         return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
 
 

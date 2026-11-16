@@ -1,8 +1,10 @@
 """Production composition shared by HTTP and processing consumers."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from hc_data_platform.core.ingest_timing import episode_stage, span
 from hc_data_platform.object_storage.immutable import MultipartImmutableWriter
 
 from .bundle_assets import BundleAssetsLoader
@@ -21,6 +23,7 @@ from .reader import ParquetStepReader, PhysicalDepthReader
 from .reviews import EpisodeDataReviews
 from .schemas import EpisodeSchemas
 from .scope import assert_scope
+from .validation import package_file
 from .writer import write_episode
 
 
@@ -38,6 +41,7 @@ class EpisodePackageService:
         preview_signer=None,
     ):
         self.repository = PostgresEpisodeStore(connections)
+        self.storage = storage
         self.data_reviews = EpisodeDataReviews(self.repository)
         self.quality_evidence = EpisodeQualityEvidence(self.repository)
         self.directory = directory
@@ -96,6 +100,7 @@ class EpisodePackageService:
         with self.bundle_assets.load(source, **bundle) as assets:
             return self.write_and_publish(source, steps, assets, schema=schema, metadata=metadata)
 
+    @episode_stage("WRITE_PUBLISH", lambda self, source, *args, **kwargs: source.identity.episode_id)
     def write_and_publish(self, source, steps, assets, *, schema, metadata):
         """Processing hand-off; returns a real package and collection data reference.
 
@@ -116,10 +121,15 @@ class EpisodePackageService:
             root = Path(temporary) / "episode"
             # Capture rates belong to each recording, not the shared logical schema.
             fps = metadata.get("frequency_hz", schema.frequency_hz)
-            write_episode(root, source, steps, assets, fps=fps, metadata=metadata)
-            receipt = self.committer.commit(root, source)
+            manifest = write_episode(root, source, steps, assets, fps=fps, metadata=metadata)
+            receipt = self.committer.commit(root, source, manifest=manifest)
+            # Previews read the package next; keep the local bytes instead of
+            # downloading what was just uploaded.
+            for entry in manifest.files:
+                self.cache.adopt(package_file(root, entry.path), entry)
         return self._publish_committed(receipt, source, schema)
 
+    @episode_stage("RECOVER_BUNDLE", lambda self, plan: plan.input.identity.episode_id)
     def recover_bundle(self, plan):
         """Resume a frozen workflow plan without retaining temporary Arrow/media.
 
@@ -138,18 +148,23 @@ class EpisodePackageService:
         package = self.files.open(source.identity, source.data_version_id)
         if package.manifest.input != source:
             raise PackageConflict("committed Episode differs from the frozen processing plan")
-        # Complete integrity is required before recovering collection visibility,
-        # not just the files that happen to be read by a preview or first row.
-        for entry in package.manifest.files:
-            with package.file(entry.path):
-                pass
+        # The commit verified every object before the database row existed;
+        # recovery only confirms the objects are still present at their size.
+        def present(entry):
+            metadata = self.storage.head(f"{source.package_prefix}/{entry.path}")
+            if metadata is None or metadata.size != entry.size:
+                raise PackageConflict("committed Episode object is missing or truncated")
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            list(pool.map(present, package.manifest.files))
         self.schemas.register_schema(plan.schema_snapshot)
         return self._publish_committed(package.receipt, source, plan.schema_snapshot)
 
     def _publish_committed(self, receipt, source, schema):
         # Browser derivatives are separate objects. Primary RGB-D bytes and the
         # complete package manifest remain unchanged, including on preview retry.
-        self.previews.prepare_all(receipt.data)
+        with span("PREVIEW_PREPARE"):
+            self.previews.prepare_all(receipt.data)
         collection = self.collections.publish(receipt.data, schema)
         ready = EpisodeDerivedReady(
             data=receipt.data,

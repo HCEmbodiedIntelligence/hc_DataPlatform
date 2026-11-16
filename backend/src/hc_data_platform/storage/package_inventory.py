@@ -45,6 +45,14 @@ def package_inventory_rows(cursor: Any, project_id: str) -> None:
                        = (a.organization_id,a.project_id,a.region_code,a.object_key))
         FROM ingest.recording_upload_assets a JOIN selected_project USING (project_id)
         WHERE a.status = 'COMMITTED' AND NOT starts_with(a.object_key, 'oss://')
+          AND NOT EXISTS (
+              SELECT 1 FROM ingest.mcap_batch_retirements b
+              WHERE (b.organization_id,b.project_id,b.region_code)=
+                    (a.organization_id,a.project_id,a.region_code)
+                AND starts_with(a.object_key, concat_ws('/', 'derived-mcap', b.organization_id,
+                    b.project_id,b.region_code,b.processing_id) || '/')
+                AND b.completed_at IS NOT NULL
+          )
         UNION ALL
         SELECT 'episode:' || data_version_id,
                rtrim(receipt_document->'data'->>'package_prefix', '/') || '/',

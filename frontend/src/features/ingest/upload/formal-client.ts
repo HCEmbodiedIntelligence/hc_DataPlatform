@@ -111,12 +111,14 @@ export function createFormalUploadSession(
   body: CreateUploadBody,
   idempotencyKey: string,
   signal?: AbortSignal,
+  batchId?: string,
 ): Promise<UploadSessionGrant> {
   return request<UploadSessionGrant>({
     method: "POST",
     path: `${resourceRoot(scope)}/upload-sessions`,
     scope,
     body,
+    query: batchId ? { upload_batch_id: batchId } : undefined,
     idempotencyKey,
     cache: "no-store",
     signal,

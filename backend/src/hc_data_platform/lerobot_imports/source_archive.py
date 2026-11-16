@@ -30,7 +30,8 @@ class ArchiveFile:
     path: str
     key: str
     size: int
-    sha256: str
+    sha256: str | None
+    source_etag: str | None = None
 
 
 def archive_files(
@@ -55,7 +56,8 @@ def archive_files(
                     or "\x00" in path
                     or not isinstance(size, int)
                     or size < 0
-                    or not re.fullmatch(r"[0-9a-f]{64}", checksum)
+                    or (checksum is None and not (entry.get("verification_key") and entry.get("source_etag")))
+                    or (checksum is not None and not re.fullmatch(r"[0-9a-f]{64}", checksum))
                 ):
                     raise ValueError("invalid original inventory")
                 paths.add(path)
@@ -65,6 +67,7 @@ def archive_files(
                         entry.get("object_key") or f"{raw.storage_prefix}/{entry['path']}",
                         size,
                         checksum,
+                        entry.get("source_etag") if entry.get("verification_key") else None,
                     )
                 )
                 if len(files) > 100_000:
@@ -114,29 +117,39 @@ class _ZipBuffer(io.RawIOBase):
 def stream_archive(
     browser: OriginalSourceBrowser, files: tuple[ArchiveFile, ...]
 ) -> Iterator[bytes]:
+    yield from stream_storage_archive(browser.storage, files)
+
+
+def stream_storage_archive(storage, files: tuple[ArchiveFile, ...]) -> Iterator[bytes]:
     buffer = _ZipBuffer()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
         for file in files:
             entry = zipfile.ZipInfo(file.path)
             entry.external_attr = 0o100644 << 16
             entry.file_size = file.size
-            checksum, size = hashlib.sha256(), 0
+            from .mcap_reference import require_version
+            if file.source_etag:
+                require_version(storage, file.key, file.size, file.source_etag)
+            checksum, size = hashlib.sha256() if file.sha256 else None, 0
             with archive.open(entry, "w", force_zip64=True) as output:
                 yield buffer.drain()
-                chunks = iter(browser.storage.read_chunks(file.key, chunk_size=1024**2))
+                chunks = iter(storage.read_chunks(file.key, chunk_size=1024**2))
                 try:
                     for chunk in chunks:
                         size += len(chunk)
                         if size > file.size:
                             raise ValueError("original file exceeds committed size")
-                        checksum.update(chunk)
+                        if checksum is not None:
+                            checksum.update(chunk)
                         output.write(chunk)
                         yield buffer.drain()
                 finally:
                     close = getattr(chunks, "close", None)
                     if close is not None:
                         close()
-                if size != file.size or checksum.hexdigest() != file.sha256:
+                if file.source_etag:
+                    require_version(storage, file.key, file.size, file.source_etag)
+                if size != file.size or (checksum is not None and checksum.hexdigest() != file.sha256):
                     raise ValueError("original file differs from committed content")
             yield buffer.drain()
     yield buffer.drain()

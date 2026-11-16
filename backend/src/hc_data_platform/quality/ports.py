@@ -26,6 +26,15 @@ class QualityPersistenceError(RuntimeError):
 
 @runtime_checkable
 class QualityEvaluationPort(Protocol):
+    def reuse_evaluation(
+        self,
+        evaluation: QcEvaluation,
+        *,
+        rollout_id: str,
+        source_sha256: str,
+        profile: QualityProfileV1,
+    ) -> QcEvaluation | None: ...
+
     def evaluate_with_evidence(
         self,
         data: QualityInputV1,

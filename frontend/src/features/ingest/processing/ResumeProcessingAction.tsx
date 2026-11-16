@@ -15,11 +15,13 @@ export default function ResumeProcessingAction({
   scope,
   importId,
   displayedReasonCode,
+  displayedPackageId,
 }: Readonly<{
   scope: IngestScope;
   importId: string;
   robotId?: string;
   displayedReasonCode?: string | null;
+  displayedPackageId?: string;
 }>) {
   const client = useQueryClient();
   const capabilities = useCapabilities();
@@ -106,7 +108,7 @@ export default function ResumeProcessingAction({
           已就绪 {result.ready} · 处理未完成 {result.failed}
         </span>
       ) : null}
-      {isMcap && <McapPreparationProgress scope={scope} importId={importId} />}
+      {isMcap && <McapPreparationProgress scope={scope} importId={importId} processingId={displayedPackageId} />}
       {result?.last_error_code &&
         result.last_error_code !== displayedReasonCode &&
         captureProblemLabels[result.last_error_code] && (

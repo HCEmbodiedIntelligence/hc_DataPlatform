@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
+
+from hc_data_platform.core.ingest_timing import span
 
 from .errors import PackageConflict
 from .models import CommitReceipt, EpisodeIdentity, FileEntry, PackageManifest
@@ -46,6 +49,28 @@ class VerifiedFileCache:
             self._temporary.cleanup()
             self._staging_lease.__exit__(None, None, None)
 
+    def adopt(self, path: Path, entry: FileEntry):
+        """Hard-link a file this process just committed, so readers skip the download."""
+        if entry.size > self.capacity:
+            return
+        with self.lock:
+            if entry.sha256 in self.entries:
+                return
+            target = self.root / entry.sha256
+            try:
+                os.link(path, target)
+            except OSError:
+                return
+            if target.stat().st_size != entry.size:
+                target.unlink()
+                return
+            while self.total + entry.size > self.capacity:
+                _, (old, size) = self.entries.popitem(last=False)
+                old.unlink()
+                self.total -= size
+            self.entries[entry.sha256] = (target, entry.size)
+            self.total += entry.size
+
     @contextmanager
     def file(self, storage, key: str, entry: FileEntry):
         if entry.size > self.max_object:
@@ -62,7 +87,7 @@ class VerifiedFileCache:
             path = self.root / entry.sha256
             digest, total = hashlib.sha256(), 0
             try:
-                with path.open("xb") as output:
+                with span("CACHE_READBACK"), path.open("xb") as output:
                     for chunk in storage.read_chunks(key):
                         total += len(chunk)
                         if total > entry.size:

@@ -39,7 +39,7 @@
 
 .workViews {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--hc-space-2, 8px);
 }
 
@@ -159,23 +159,6 @@
   background: color-mix(in srgb, var(--hc-color-primary, #4f46e5) 3%, white);
 }
 
-.issueButton {
-  display: grid;
-  width: 100%;
-  height: auto;
-  min-height: 44px;
-  justify-items: start;
-  gap: 2px;
-  padding: 4px 0;
-  text-align: left;
-}
-
-.issueButton strong {
-  color: var(--hc-color-text, #1f2a28);
-  font-size: 0.9375rem;
-}
-
-.issueButton small,
 .locationCell small,
 .rangeCell small {
   color: var(--hc-color-text-muted, #64736f);
@@ -390,3 +373,23 @@
     transition: none;
   }
 }
+
+
+.groupPath, .groupList button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+}
+.groupPath { flex-wrap: wrap; font-size: .85rem; background: var(--hc-color-surface-subtle, #f6f8fb); }
+.groupPath button, .textButton {
+  border: 0; padding: 3px; background: transparent; color: var(--hc-color-primary); cursor: pointer;
+}
+.groupPath button:disabled { color: inherit; cursor: default; }
+.groupList button {
+  width: 100%; min-height: 44px; justify-content: space-between; text-align: left;
+  background: transparent; color: inherit; border: 0; border-top: 1px solid var(--hc-color-border); cursor: pointer;
+}
+.groupList button:hover, .groupList button:focus-visible { background: var(--hc-color-primary-soft, #eef2ff); }
+.groupList span { color: var(--hc-color-text-muted); }
+.filename { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

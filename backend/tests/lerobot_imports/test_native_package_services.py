@@ -668,7 +668,7 @@ async def test_native_rgbd_package_roundtrip(isolated_dsn, tmp_path, monkeypatch
             child = runtime.episode_packages.files.open(
                 child_ref.identity, child_ref.data_version_id
             )
-            assert child.document("hc/robot_scene.json") == package.document("hc/robot_scene.json")
+            assert child.document("hc/robot_binding.json") == package.document("hc/robot_binding.json")
             assert child.document("hc/calibration.json") == package.document("hc/calibration.json")
             assert child_ref.identity != package.receipt.data.identity
         evidence = {

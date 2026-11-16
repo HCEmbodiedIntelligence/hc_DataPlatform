@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass, replace
 
+from hc_data_platform.continuous_recordings.current_qc import CURRENT_EPISODE_QC
 from hc_data_platform.collection_tasks.captures import CaptureProgress
 from hc_data_platform.quality.processing_errors import recording_preparation_error
 
 from .models import TaskIssueFinding
+from hc_data_platform.quality.recording_diagnostics import preparation_problem
 from .repository import TaskStatusPackageFact
 
 
@@ -34,7 +36,7 @@ def read_recording_workflows(cursor, organization_id, project_id, region_code):
                    AND publication.rollout_id=a.rollout_id
                ) AS published,
                COALESCE(p.status, 'PENDING_QC'),
-               CASE WHEN p.status='QC_FAILED' THEN 'REJECT'
+               CASE WHEN p.status='QC_FAILED' OR latest_qc.status='REJECT' THEN 'REJECT'
                     WHEN p.qc_report_id IS NOT NULL
                       AND p.status IN ('PENDING_ALIGNMENT','ALIGNING','READY','FAILED')
                     THEN 'PASS' END,
@@ -48,6 +50,7 @@ def read_recording_workflows(cursor, organization_id, project_id, region_code):
           ON p.organization_id=s.organization_id AND p.project_id=s.project_id
          AND p.region_code=s.region_code AND p.recording_id=s.recording_id
          AND p.episode_id=s.episode_id AND p.finalized_revision=s.revision
+        LEFT JOIN """ + CURRENT_EPISODE_QC + """ latest_qc ON TRUE
         LEFT JOIN core.outbox_events dispatch
           ON dispatch.organization_id=p.organization_id AND dispatch.project_id=p.project_id
          AND dispatch.region_code=p.region_code AND dispatch.event_id=p.event_id
@@ -89,17 +92,33 @@ def _annotation_priority(episode: RecordingEpisodeWorkflow) -> int:
     }.get(episode.annotation_status, 0)
 
 
+def read_preparation_problems(cursor, organization_id, project_id, region_code, captures, selected_id):
+    ids = [c.data_package_id for c in captures if c.stage in {"FAILED", "BLOCKED"}
+           and not c.recording_id and (selected_id is None or c.collection_task_id == selected_id)]
+    if not ids:
+        return {}
+    cursor.execute(
+        """
+        SELECT processing_id, error, source_path, configuration->>'state_topic',
+               configuration->>'action_topic', channel_inventory,
+               configuration->'postprocessing_rules'->'rules'
+        FROM ingest.mcap_processing_files
+        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+          AND processing_id=ANY(%s) AND status='FAILED'
+        """,
+        (organization_id, project_id, region_code, ids),
+    )
+    return {key: preparation_problem(*row) for key, *row in cursor.fetchall()}
+
+
 def read_recording_findings(cursor, organization_id, project_id, region_code):
     cursor.execute(
         """
         SELECT p.recording_id, q.report_document
         FROM ingest.recording_episode_processing p
-        JOIN ingest.recording_episode_qc_reports q
-          ON (q.organization_id,q.project_id,q.region_code,q.recording_id,q.episode_id,q.report_id)
-           = (p.organization_id,p.project_id,p.region_code,
-                           p.recording_id,p.episode_id,p.qc_report_id)
+        JOIN """ + CURRENT_EPISODE_QC + """ q ON TRUE
         WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
-          AND p.status='QC_FAILED'
+          AND (p.status='QC_FAILED' OR (p.status='READY' AND q.status='REJECT'))
         UNION ALL
         SELECT r.recording_id, q.report_document
         FROM ingest.continuous_recordings r JOIN ingest.recording_quality_reports q
@@ -125,6 +144,8 @@ def read_recording_findings(cursor, organization_id, project_id, region_code):
                         code=code,
                         severity="ERROR",
                         message={
+                            "MCAP_DUPLICATE_RECORDING": "原始 MCAP 内容重复，已拦截入库",
+                            "MCAP_INTERIOR_ACTION_MISSING": "两个实录动作之间存在缺失帧",
                             "OPENARM_CAPTURE_FRAME_INVALID": "采集包含无效帧",
                             "OPENARM_CAPTURE_VECTOR_INVALID": "关节或动作向量包含缺失值 / 无效值",
                             "OPENARM_CAPTURE_VECTOR_LAYOUT_MISMATCH": (
@@ -239,7 +260,7 @@ def _episode_fact(
     )
 
 
-def merge_recording_facts(tasks, packages, captures, findings, selected_id, *, workflows=None):
+def merge_recording_facts(tasks, packages, captures, findings, selected_id, *, workflows=None, problems=None):
     """One package per upload; replace matching legacy facts instead of double counting."""
     visible_tasks = {task.task_id for task in tasks}
     continuous = [
@@ -255,11 +276,22 @@ def merge_recording_facts(tasks, packages, captures, findings, selected_id, *, w
         key = (capture.collection_task_id, capture.data_package_id)
         if key not in by_key:
             additions.append(capture)
-        by_key[key] = recording_package(
+        fact = recording_package(
             capture,
             findings.get(capture.recording_id, ()),
             episodes=(workflows or {}).get(capture.recording_id, ()),
         )
+        problem = (problems or {}).get(capture.data_package_id)
+        if not problem and capture.received and not capture.recording_id and capture.stage in {"FAILED", "BLOCKED"}:
+            previous = by_key.get(key)
+            problem = previous.raw_problem if previous else None
+            if not problem:
+                problem = preparation_problem(
+                    capture.error_code, capture.source_path or capture.data_package_id, None, None, None
+                )
+        if problem and problem.code == fact.verification_reason_code:
+            fact = replace(fact, raw_problem=problem)
+        by_key[key] = fact
     # Task totals must cover all tasks, even when the package list is filtered.
     # Existing registered facts may include manual recordings; only direct uploads
     # absent from the selected package projection add counts to that task.

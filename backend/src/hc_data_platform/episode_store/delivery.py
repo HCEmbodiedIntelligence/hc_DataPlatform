@@ -139,16 +139,36 @@ class EpisodeDeliveryService:
             )
         return EpisodeDeliveryPlan(members=tuple(members), archive_format=request.archive_format)
 
+    def filtered_candidates(self, selection, auth, **page):
+        from .upload_candidates import candidates
+
+        self.authorize(auth)
+        if selection.stage == "annotated":
+            org, project, _ = scope_key()
+            auth.require_capability("annotation_task.read", project, org)
+        return candidates(self.repository, scope_key(), selection, **page)
+
+    def verify_export_filter(self, selection, refs, auth):
+        ids = [ref.data_version_id for ref in refs]
+        page = self.filtered_candidates(selection, auth, ids=ids, limit=len(ids))
+        allowed = {item.data.data_version_id: item.data for item in page.items}
+        if any(allowed.get(ref.data_version_id) != ref for ref in refs):
+            raise failure("SELECTION_CHANGED", "所选数据的质检、标注状态或上传批次已变化，请刷新后重新选择。")
+
     def request(self, body, key, auth):
         self.authorize(auth, command=True)
-        plan = self._freeze(body)
-        row = self.repository.request_delivery(
-            plan,
-            key,
-            auth.subject_id,
-            sum(m.file_count for m in plan.members) + 1,
-            sum(m.byte_count for m in plan.members) + len(inventory_document(plan)),
-        )
+        def freeze():
+            if body.export_filter is not None:
+                self.verify_export_filter(body.export_filter, body.data, auth)
+            plan = self._freeze(body)
+            return (plan, sum(m.file_count for m in plan.members) + 1,
+                    sum(m.byte_count for m in plan.members) + len(inventory_document(plan)))
+
+        if body.export_filter is None:
+            plan, count, size = freeze()
+            row = self.repository.request_delivery(plan, key, auth.subject_id, count, size)
+        else:
+            row = self.repository.request_frozen(key, auth.subject_id, digest(body.model_dump(mode="json")), freeze)
         if row["status"] == "READY":
             from .delivery_cache import cache_for
             if cache_for(self) is None or self.storage.head(row["artifact_key"]) is not None:
@@ -260,12 +280,16 @@ class EpisodeDeliveryService:
         except ObjectIntegrityError as exc:
             raise PackageConflict(str(exc)) from exc
 
-    def download(self, job_id, auth):
+    def download(self, job_id, auth, export_filter=None):
         self.authorize(auth)
         row = self.repository.get_job(job_id)
         self._authorize_plan(public_job(row).plan, auth)
         if row["status"] != "READY":
             raise failure("NOT_READY", "Wait for packaging or retry a failed delivery.")
+        if export_filter is not None:
+            self.verify_export_filter(export_filter, [m.data for m in public_job(row).plan.members], auth)
+        if self.repository.has_retired_members(public_job(row).plan.members):
+            raise failure("QC_RETIRED", "导出包含复检失败且已移除的训练数据。", 410)
         from .delivery_cache import ensure_cached
 
         ensure_cached(self, row)

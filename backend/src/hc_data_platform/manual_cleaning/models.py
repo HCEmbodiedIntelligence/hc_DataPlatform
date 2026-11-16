@@ -106,6 +106,8 @@ class ManualIssueResolutionVersion(_ManualCleaningModel):
 class ManualIssueRecord(_ManualCleaningModel):
     """Stored source-bound issue and the P09 detail representation."""
 
+    collection_task_id: str | None = Field(default=None, exclude=True)
+
     id: ManualIssueId
     etag: str = Field(min_length=3, max_length=256)
     scope: ManualIssueScope
@@ -207,7 +209,14 @@ class ManualIssueFacets(_ManualCleaningModel):
     assignees: tuple[ManualIssuePrincipal, ...] = ()
 
 
+class ManualIssueTypeGroup(_ManualCleaningModel):
+    collection_task_id: str | None
+    issue_type: ManualIssueType
+    count: int = Field(gt=0)
+
+
 class ManualIssuePageData(_ManualCleaningModel):
+    task_groups: tuple[ManualIssueTypeGroup, ...] = ()
     counts: ManualIssueCounts
     facets: ManualIssueFacets
     allowed_actions: tuple[ManualIssueAction, ...] = ()

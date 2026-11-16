@@ -6,6 +6,8 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
+from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -62,6 +64,68 @@ from .pipeline_ports import (
 )
 from .reader import read_episode, required_episode_files
 from .schema_diagnostics import schema_conflict_detail
+
+# Neighbouring episodes usually share a v3 chunk file and are cached together.
+_SIBLING_EPISODE_SPAN = 32
+# Files this process already hashed, keyed by path and file identity. Cached files
+# are only ever published through ``os.replace`` and never modified in place, so
+# an unchanged (size, mtime, inode) means unchanged bytes.
+_VERIFIED: OrderedDict[tuple[str, str, int, int, int], None] = OrderedDict()
+_VERIFIED_LOCK = threading.Lock()
+_VERIFIED_LIMIT = 65_536
+
+
+def _marker(target: Path) -> Path:
+    return target.with_name(target.name + ".verified-sha256")
+
+
+def _identity(target: Path, sha256: str) -> tuple[str, str, int, int, int]:
+    stat = target.stat()
+    return (str(target), sha256, stat.st_size, stat.st_mtime_ns, stat.st_ino)
+
+
+def _remember(target: Path, sha256: str) -> None:
+    identity = _identity(target, sha256)
+    with _VERIFIED_LOCK:
+        _VERIFIED[identity] = None
+        _VERIFIED.move_to_end(identity)
+        while len(_VERIFIED) > _VERIFIED_LIMIT:
+            _VERIFIED.popitem(last=False)
+
+
+def _write_marker(target: Path, sha256: str) -> None:
+    _marker(target).write_text(sha256)
+    _remember(target, sha256)
+
+
+def _verified(target: Path, descriptor: dict[str, Any]) -> bool:
+    """Return whether a cached file holds exactly the committed bytes.
+
+    The first check in a process hashes the whole file, as before. Later checks
+    of the same unchanged file reuse that result instead of re-hashing it.
+    """
+    sha256 = descriptor["sha256"]
+    try:
+        if target.stat().st_size != descriptor["size"] or _marker(target).read_text() != sha256:
+            return False
+        identity = _identity(target, sha256)
+    except OSError:
+        return False
+    with _VERIFIED_LOCK:
+        if identity in _VERIFIED:
+            _VERIFIED.move_to_end(identity)
+            return True
+    digest = hashlib.sha256()
+    try:
+        with target.open("rb") as cached:
+            for chunk in iter(lambda: cached.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return False
+    if digest.hexdigest() != sha256:
+        return False
+    _remember(target, sha256)
+    return True
 
 
 class NativeImportBlocked(RuntimeError):
@@ -165,6 +229,14 @@ class LeRobotPipeline:
     def _episode_cache_key(raw: RawSource, episode_index: int) -> str:
         return hashlib.sha256(f"{raw.content_hash}:episode:{episode_index}".encode()).hexdigest()
 
+    def _sibling_roots(self, raw: RawSource, episode_index: int) -> Iterator[Path]:
+        for distance in range(1, _SIBLING_EPISODE_SPAN + 1):
+            for index in (episode_index - distance, episode_index + distance):
+                if index >= 0:
+                    root = self.cache_root / self._episode_cache_key(raw, index)
+                    if root.is_dir():
+                        yield root
+
     def _localize(self, raw: RawSource, manifest: dict[str, Any], episode_index: int) -> Path:
         # Each episode owns a reconstructible cache entry. Concurrent episodes
         # must not evict each other's chunks or wait on one source-wide file lock.
@@ -184,38 +256,53 @@ class LeRobotPipeline:
             if descriptor is None:
                 raise ValueError("native source path is not in the committed manifest")
             target = root / relative
-            marker = target.with_name(target.name + ".verified-sha256")
-            if (
-                target.is_file()
-                and target.stat().st_size == descriptor["size"]
-                and marker.is_file()
-                and marker.read_text() == descriptor["sha256"]
-            ):
-                cached_digest = hashlib.sha256()
-                with target.open("rb") as cached:
-                    for chunk in iter(lambda: cached.read(1024 * 1024), b""):
-                        cached_digest.update(chunk)
-                if cached_digest.hexdigest() == descriptor["sha256"]:
+            sha256 = descriptor["sha256"]
+            if _verified(target, descriptor):
+                return target
+            # One object may back many episodes (shared v3 chunk files and metadata).
+            # Download it once, then hard-link the verified bytes into each entry.
+            # Linked copies still pass admission, so quota accounting is unchanged.
+            with self.cache.object_lock(sha256):
+                if _verified(target, descriptor):
                     return target
-            with self.cache.reserve(int(descriptor["size"]) + 64):
                 target.parent.mkdir(parents=True, exist_ok=True)
-                digest = hashlib.sha256()
-                size = 0
-                fd, name = tempfile.mkstemp(dir=target.parent, suffix=".part")
-                try:
-                    with os.fdopen(fd, "wb") as output:
-                        for chunk in self.storage.read_chunks(
-                            descriptor.get("object_key") or f"{raw.storage_prefix}/{relative}"
-                        ):
-                            digest.update(chunk)
-                            size += len(chunk)
-                            output.write(chunk)
-                    if size != descriptor["size"] or digest.hexdigest() != descriptor["sha256"]:
-                        raise ValueError("native Raw source size or SHA-256 mismatch")
-                    os.replace(name, target)
-                    marker.write_text(descriptor["sha256"])
-                finally:
-                    Path(name).unlink(missing_ok=True)
+                with self.cache.reserve(int(descriptor["size"]) + 64) as settle:
+                    source = None
+                    for sibling in self._sibling_roots(raw, episode_index):
+                        if _verified(sibling / relative, descriptor):
+                            source = sibling / relative
+                            break
+                    fd, name = tempfile.mkstemp(dir=target.parent, suffix=".part")
+                    os.close(fd)
+                    part = Path(name)
+                    try:
+                        linked = False
+                        if source is not None:
+                            part.unlink()
+                            try:
+                                os.link(source, part)
+                                linked = True
+                            except OSError:
+                                # The sibling was evicted meanwhile; download instead.
+                                pass
+                        if not linked:
+                            digest = hashlib.sha256()
+                            size = 0
+                            with part.open("wb") as output:
+                                for chunk in self.storage.read_chunks(
+                                    descriptor.get("object_key")
+                                    or f"{raw.storage_prefix}/{relative}"
+                                ):
+                                    digest.update(chunk)
+                                    size += len(chunk)
+                                    output.write(chunk)
+                            if size != descriptor["size"] or digest.hexdigest() != sha256:
+                                raise ValueError("native Raw source size or SHA-256 mismatch")
+                        with settle():
+                            os.replace(part, target)
+                            _write_marker(target, sha256)
+                    finally:
+                        part.unlink(missing_ok=True)
             return target
 
         info = json.loads(copy("meta/info.json").read_text())

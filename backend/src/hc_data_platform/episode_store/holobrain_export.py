@@ -1,4 +1,4 @@
-"""Platform HoloBrain 19-axis writer over frozen, normalized selected MCAPs."""
+"""Platform HoloBrain writer over frozen, normalized selected MCAPs."""
 
 import hashlib
 import io
@@ -14,14 +14,14 @@ from mcap.reader import make_reader
 from PIL import Image
 
 from hc_data_platform.continuous_recordings.joint_normalization import (
-    HANDS, HOLOBRAIN_JOINTS, JOINTS, capture_time, nearest_index, reference,
+    HANDS, capture_time, nearest_index, reference,
 )
 from hc_data_platform.continuous_recordings.mcap_native import decoded
 from hc_data_platform.episode_store.mcap_images import get_field
 from hc_data_platform.verification.ports import McapRos2DecoderProbe
 
 from .holobrain_report import ReferenceConversionReport
-from .holobrain_schema import FEATURES, PROFILE, create_database, schema, tensor
+from .holobrain_schema import FEATURES, JOINT_LAYOUTS, create_database, profile_name, schema, tensor
 from .models import canonical, digest
 from .normalized_export import frame_selection, selected_source
 from .original_export import copy_original, inventory
@@ -81,17 +81,18 @@ def _joint_indices(value, required, error):
     return {name: names.index(name) for name in required}
 
 
-def joints(sample, hands, missing):
+def joints(sample, hands, missing, joint_names=JOINT_LAYOUTS["16dof"]):
     value, ref = sample
+    body_joints = tuple(name for name in joint_names if name not in HANDS.values())
     indices = _joint_indices(
-        value, JOINTS,
-        "HOLOBRAIN_NORMALIZATION_REQUIRED: requires each of the 17 axes exactly once",
+        value, body_joints,
+        "HOLOBRAIN_NORMALIZATION_REQUIRED: requires each selected body joint exactly once",
     )
     hand_indices = {
         joint: _joint_indices(hands[joint][0], (joint,), "HOLOBRAIN_HAND_SOURCE_INVALID")[joint]
         for joint in HANDS.values() if joint in hands
     }
-    result = {"names": list(HOLOBRAIN_JOINTS), "timestamps": [ref["capture_time_ns"]]}
+    result = {"names": list(joint_names), "timestamps": [ref["capture_time_ns"]]}
     for field in ("position", "velocity", "effort"):
         values = list(get_field(value, field, []))
         if (field == "position" or values) and any(i >= len(values) for i in indices.values()):
@@ -107,15 +108,53 @@ def joints(sample, hands, missing):
                     raise ValueError("HOLOBRAIN_HAND_COMMAND_REQUIRED" if field == "position"
                                      else f"HOLOBRAIN_TENSOR_INVALID: incomplete hand {field}")
                 mapping[joint] = hand_values[index]
-        if field == "position" and set(mapping) != set(HOLOBRAIN_JOINTS):
+        if field == "position" and set(mapping) != set(joint_names):
             raise ValueError("HOLOBRAIN_HAND_COMMAND_REQUIRED")
-        missing.update(field + "." + name for name in HOLOBRAIN_JOINTS if name not in mapping)
-        result[field] = tensor([mapping.get(name, 0.0) for name in HOLOBRAIN_JOINTS], [1, 19])
+        missing.update(field + "." + name for name in joint_names if name not in mapping)
+        result[field] = tensor([mapping.get(name, 0.0) for name in joint_names], [1, len(joint_names)])
     return result
 
 
-def synchronized(path, temporary, report, checkpoint, reference_report=None):
+def committed_action_labels(package, frames):
+    """Recover only selected, state-derived action labels from this immutable Episode."""
+    import pyarrow.parquet as pq
+    from hc_data_platform.data_formats.lerobot_layout import DATA_PATH
+
+    with package.file(DATA_PATH) as path:
+        parquet = pq.ParquetFile(path)
+        origin_column = "hc.action_source_origins"
+        if origin_column not in parquet.schema_arrow.names:
+            return {}
+        origins = parquet.read(columns=[origin_column])[origin_column].to_pylist()
+        fills = {}
+        for stamp, frame in frames.items():
+            index = frame["parent_frame_index"]
+            origin = json.loads(origins[index]) if origins[index] else {}
+            if origin.get("origin") in {"next_frame_state", "terminal_state"}:
+                fills[stamp] = (index, origin)
+        if not fills:
+            return {}
+        table = parquet.read(columns=["action", "hc.valid.action", "hc.axis_validity.action"])
+
+    names = package.document("meta/info.json")["features"]["action"]["names"]
+    labels = {}
+    for stamp, (index, origin) in fills.items():
+        if (not table["hc.valid.action"][index].as_py()
+                or origin.get("source_topic") != STATE
+                or type(origin.get("source_timestamp_ns")) is not int):
+            raise ValueError("HOLOBRAIN_INVALID_COMMITTED_ACTION")
+        mask = json.loads(table["hc.axis_validity.action"][index].as_py())
+        positions = table["action"][index].as_py()
+        valid = [(name, value) for name, value, ok in zip(names, positions, mask, strict=True) if ok]
+        sample = {"name": [name for name, _ in valid], "position": [value for _, value in valid]}
+        labels[stamp] = (sample, {**origin, "capture_time_ns": origin["source_timestamp_ns"]})
+    return labels
+
+
+def synchronized(path, temporary, report, checkpoint, reference_report=None, *, joint_names=JOINT_LAYOUTS["16dof"],
+                 action_labels=None):
     """Order images by acquisition time on disk; keep numeric streams in memory."""
+    action_labels = action_labels or {}
     decoder = McapRos2DecoderProbe()
     numeric = {topic: [] for topic in (STATE, ACTION, *HANDS)}
     parameters = {topic: [] for topic in PARAMETERS}
@@ -152,8 +191,12 @@ def synchronized(path, temporary, report, checkpoint, reference_report=None):
         for topic, values in parameters.items():
             if not values or any(v != values[0] for v in values):
                 raise ValueError(f"HOLOBRAIN_CALIBRATION_CHANGED_OR_MISSING: {topic}")
-        if any(not values for values in numeric.values()) or not depth_times:
-            raise ValueError("HOLOBRAIN_EMPTY_REQUIRED_MODALITY")
+        empty = [topic for topic, values in numeric.items()
+                 if not values and not (topic == ACTION and action_labels)]
+        if not depth_times:
+            empty.append(DEPTH)
+        if empty:
+            raise ValueError(f"HOLOBRAIN_EMPTY_REQUIRED_MODALITY: {', '.join(empty)}")
         depth_order = sorted(range(len(depth_times)), key=lambda i: (depth_times[i], i))
         ordered_depth = [depth_times[i] for i in depth_order]
         for values in numeric.values():
@@ -171,24 +214,29 @@ def synchronized(path, temporary, report, checkpoint, reference_report=None):
             report["candidate_frames"] += 1
             chosen = {topic: nearest_index(t, stamp, 150_000_000 if topic in HANDS else 20_000_000) for topic, t in times.items()}
             depth = nearest_index(ordered_depth, stamp, 50_000_000)
+            label = action_labels.get(stamp)
+            if label is not None:
+                del chosen[ACTION]
             if reference_report is not None:
                 reference_report.observe(stamp, {
                     **{topic: times[topic][index] if index is not None else None
                        for topic, index in chosen.items()},
                     DEPTH: ordered_depth[depth] if depth is not None else None,
-                })
+                }, state_label=label is not None)
             missing = [topic for topic, index in chosen.items() if index is None] + ([DEPTH] if depth is None else [])
             if missing:
                 report["sync_drops"].append({"rgb_time_ns": stamp, "missing": missing})
                 continue
             samples = {topic: numeric[topic][index] for topic, index in chosen.items()}
+            if label is not None:
+                samples[ACTION] = label
             hand_samples = {joint: samples[topic] for topic, joint in HANDS.items()}
             di = depth_order[depth]
             depth_body = db.execute("SELECT data FROM depth WHERE id=?", (di,)).fetchone()[0]
             calibration, extrinsics = (parameters[t][0] for t in PARAMETERS)
             missing_zero = Counter()
-            row = {"joints": joints(samples[STATE], hand_samples, missing_zero),
-                   "actions": joints(samples[ACTION], hand_samples, missing_zero),
+            row = {"joints": joints(samples[STATE], hand_samples, missing_zero, joint_names),
+                   "actions": joints(samples[ACTION], hand_samples, missing_zero, joint_names),
                    "head": camera(value, stamp, RGB, calibration, extrinsics),
                    "head_depth": camera({"data": depth_body}, ordered_depth[depth], DEPTH, calibration, extrinsics),
                    "timestamp_min": min(stamp, ordered_depth[depth]), "timestamp_max": max(stamp, ordered_depth[depth])}
@@ -204,7 +252,7 @@ def synchronized(path, temporary, report, checkpoint, reference_report=None):
 
 
 def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=True,
-                  reference_report=False):
+                  reference_report=False, config_name="16dof"):
     """Write validated IPC streams/official DuckDB metadata before publication.
 
     Sources contain normalized path, immutable provenance, task text and optional
@@ -213,6 +261,8 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
     """
     from .episode_outcome import outcome_fields
 
+    joint_names = JOINT_LAYOUTS[config_name]
+    profile = profile_name(config_name)
     root = Path(root)
     root.mkdir(parents=True, exist_ok=False)
     reports, episodes, tasks, shards = [], [], [], []
@@ -251,7 +301,10 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
             current_segment, episode, writer, sink, batch = None, None, None, None, []
             try:
                 with TemporaryDirectory(dir=root.parent) as temporary:
-                    for row, trace in synchronized(source["path"], temporary, report, checkpoint, reference):
+                    for row, trace in synchronized(
+                        source["path"], temporary, report, checkpoint, reference, joint_names=joint_names,
+                        action_labels=source.get("action_labels"),
+                    ):
                         stamp = trace["rgb_time_ns"]
                         selected = source.get("frames")
                         frame = selected.get(stamp) if selected is not None else {"task": source["task"], "segment": 0, "parent_frame_index": report["candidate_frames"] - 1}
@@ -260,7 +313,10 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
                             continue
                         report["missing_zero"].update(trace["missing_zero"])
                         ref = trace["sources"][ACTION]
-                        trace["action_normalization"] = action_audit[(ref["log_time_ns"], ref["sequence"])]
+                        if "origin" in ref:
+                            trace["action_normalization"] = ref
+                        else:
+                            trace["action_normalization"] = action_audit[(ref["log_time_ns"], ref["sequence"])]
                         segment = frame["segment"]
                         if segment != current_segment:
                             if writer:
@@ -278,7 +334,7 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
                                 tasks.append(task)
                             episode = {**outcome, "index": len(episodes), "task_index": tasks.index(task), "begin": total,
                                        "frames": 0, "truncated": selected is not None,
-                                       "info": {**outcome, "target_profile": PROFILE, "source_sha256": report["source_sha256"],
+                                       "info": {**outcome, "target_profile": profile, "source_sha256": report["source_sha256"],
                                                 "source_selection": source.get("identity"), "camera_mode": "legacy_reference",
                                                 "hand_state": "command_proxy", "velocity_effort": "missing_zero",
                                                 "frame_policy": frame_policy,
@@ -299,7 +355,7 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
                                                     "parent_frame_index": frame["parent_frame_index"]}) + b"\n")
                         episode["frames"] += 1
                         if reference is not None:
-                            reference.select(stamp, episode["index"])
+                            reference.select(stamp, episode["index"], action_origin=ref.get("origin"))
                         report["selected_frames"] += 1
                         total += 1
                         if len(batch) >= 32:
@@ -324,14 +380,14 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
         name = f"data-{index:05d}-of-{len(shards):05d}.arrow"
         path.rename(root / name)
         files.append({"filename": name})
-    create_database(root / "meta_db.duckdb", "hc_tj_19dof", tasks, episodes)
-    info = {"features": FEATURES, "builder_name": "hc_tj", "config_name": "19dof", "version": {"version_str": "0.1.0", "major": 0, "minor": 1, "patch": 0},
+    create_database(root / "meta_db.duckdb", f"hc_tj_{config_name}", tasks, episodes)
+    info = {"features": FEATURES, "builder_name": "hc_tj", "config_name": config_name, "version": {"version_str": "0.1.0", "major": 0, "minor": 1, "patch": 0},
             "dataset_size": logical_bytes, "size_in_bytes": logical_bytes, "download_size": 0,
             "splits": {"train": {"name": "train", "num_bytes": logical_bytes, "num_examples": total,
                                   "shard_lengths": [e["frames"] for e in episodes], "dataset_name": "hc_tj"}}}
     if reference_report:
         info.update(description="", citation="", homepage="", license="", dataset_name="hc_tj")
-    conversion = {"target_profile": PROFILE, "dataset_format_version": "0.1.0", "sources": reports,
+    conversion = {"target_profile": profile, "dataset_format_version": "0.1.0", "sources": reports,
                   "frame_policy": frame_policy,
                   "tasks": tasks, "episode_frame_counts": [e["frames"] for e in episodes],
                   "frames": total, "episodes": len(episodes), "hand_proxy_values": total * 2,
@@ -353,7 +409,8 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
 
 
 def write_collection(root, selections, *, storage, modalities, checkpoint=lambda: None,
-                     compact_invalid=True, reference_report=False, split_annotations=True):
+                     compact_invalid=True, reference_report=False, split_annotations=True, config_name="16dof",
+                     use_committed_actions=False):
     if modalities != "rgbd":
         raise ValueError("HOLOBRAIN_REQUIRES_RGBD")
     with TemporaryDirectory(dir=Path(root).parent) as temporary:
@@ -377,9 +434,10 @@ def write_collection(root, selections, *, storage, modalities, checkpoint=lambda
                 identity = {**identity, "annotation_revision": selected.annotation_file.file.revision,
                     "annotation_file_sha256": selected.annotation_file.file.content_sha256,
                     "subtask_track": selected.track.model_dump(mode="json")}
+            frames = frame_selection(selected, compact_invalid=compact_invalid, split_annotations=split_annotations)
+            labels = committed_action_labels(selected.package, frames) if use_committed_actions else {}
             sources.append({**outcome, "path": path, "audit_path": audit_path, "provenance": provenance,
-                            "frames": frame_selection(selected, compact_invalid=compact_invalid,
-                                                      split_annotations=split_annotations),
+                            "frames": frames, "action_labels": labels,
                             "identity": identity})
         return write_dataset(root, sources, checkpoint=checkpoint, compact_invalid=compact_invalid,
-                             reference_report=reference_report)
+                             reference_report=reference_report, config_name=config_name)

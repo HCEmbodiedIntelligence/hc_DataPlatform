@@ -246,6 +246,16 @@ it.each(["MCAP", "CAPTURE_BUNDLE"] as const)(
   },
 );
 
+it("round-trips dagger cleanup independently of joint mappings", () => {
+  const cfg = { ...mcapConfiguration(fixtureDocument()), joint_names: [], action_joint_names: [], state_joint_names: [] };
+  const rows = initialRows(cfg);
+  expect(rows.find((row) => row.kind === "clean_dagger_intervals")?.enabled).toBe(false);
+  const rules = rows.map((row) => parseRow({ ...row, enabled: row.kind === "clean_dagger_intervals" }, cfg));
+  const saved = postprocessingRulesSchema.parse({ version: 2, rules });
+  expect(initialRows({ ...cfg, postprocessing_rules: saved }).filter((row) => row.enabled).map((row) => row.kind))
+    .toEqual(["clean_dagger_intervals"]);
+});
+
 it("round-trips the optional hand rule without enabling it in old plans", () => {
   const cfg = mcapConfiguration(fixtureDocument());
   const mapped = {

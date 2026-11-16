@@ -712,14 +712,17 @@ def _oss(settings: Settings) -> tuple[Any, Any, OssObjectStorage]:
         presign_bucket = CacheRoutingBucket(presign_bucket, cache, local_processing=settings.object_store_local_processing_cache)
     from hc_data_platform.storage.oss_zip import OssZipSources
 
-    def source_bucket(bucket_name):
+    def source_bucket(bucket_name, *, endpoint=None):
         return build_oss_bucket(
-            endpoint=settings.object_store_endpoint, bucket=bucket_name,
+            endpoint=endpoint or settings.object_store_endpoint, bucket=bucket_name,
             access_key=settings.object_store_access_key, secret_key=settings.object_store_secret_key,
             connect_timeout=max(30, settings.readiness_timeout_seconds),
         )._delegate
 
-    zip_sources = OssZipSources(settings.oss_import_archives, source_bucket) if settings.oss_import_archives else None
+    zip_sources = (
+        OssZipSources(settings.oss_import_archives, source_bucket, relocations=settings.oss_import_relocations)
+        if settings.oss_import_archives else None
+    )
     return (
         OssBotoCompatClient(operation_bucket),
         OssBotoCompatClient(presign_bucket),
@@ -1227,7 +1230,21 @@ def build_runtime(
         continuous_episode_processing,
         storage=object_storage,
     )
+    lerobot_uploads = LeRobotWebUploadService(
+        object_storage,
+        raw_sources=ingest.raw_sources,
+        authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
+        target_validator=partial(validate_target, connection_factory=connection_factory),
+        capture_plans=PostgresWebUploadPlans(connection_factory),
+        delivery=NativeDeliveryProjection(
+            ingest.raw_sources,
+            PostgresTerminalWorkflowResults(connection_factory),
+            PostgresAnnotationDeliveries(connection_factory),
+            errors=robot_processing,
+        ),
+    )
     activities = ActivityDependencies(
+        oss_uploads=lerobot_uploads,
         manifest_parser=ObjectStorageManifestParser(object_storage),
         verifier=McapVerifier(
             ChunkedObjectStorageReader(object_storage),
@@ -1320,7 +1337,7 @@ def build_runtime(
                 ),
             )
         ),
-        scenes=LogicalSceneReader(episode_packages.files, registry),
+        scenes=LogicalSceneReader(episode_packages.files, registry, robot_scenes),
     )
     return RuntimeComponents(
         access=access,
@@ -1350,19 +1367,7 @@ def build_runtime(
             samples=StoredSampleValidator(object_storage, ingest.raw_sources),
             organization_exists=robot_asset_repository.organization_exists,
         ),
-        lerobot_uploads=LeRobotWebUploadService(
-            object_storage,
-            raw_sources=ingest.raw_sources,
-            authorization_ttl_seconds=resolved.ingest_part_authorization_ttl_seconds,
-            target_validator=partial(validate_target, connection_factory=connection_factory),
-            capture_plans=PostgresWebUploadPlans(connection_factory),
-            delivery=NativeDeliveryProjection(
-                ingest.raw_sources,
-                PostgresTerminalWorkflowResults(connection_factory),
-                PostgresAnnotationDeliveries(connection_factory),
-                errors=robot_processing,
-            ),
-        ),
+        lerobot_uploads=lerobot_uploads,
         calibrations=calibrations,
         data_schemas=data_schemas,
         data_sources=data_sources,

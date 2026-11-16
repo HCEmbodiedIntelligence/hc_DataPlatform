@@ -10,6 +10,8 @@ import { isDomainError } from "../../../../shared/api/domain-error";
 import { useCapabilities } from "../../../../shared/auth/use-capabilities";
 import { RobotProcessingLink } from "../../../capture-schemes/RobotProcessingLink";
 import { nativeRoot } from "../lerobot-processing";
+import { McapFailureChannels } from "./McapFailureChannels";
+
 export function McapRobotProfile({
   robotId,
 }: {
@@ -40,6 +42,7 @@ type File = {
   path: string;
   status: string;
   error: string | null;
+  diagnosis?: { label: string; description: string };
   recording_id: string | null;
   robot_id: string;
   collection_task_id: string;
@@ -105,6 +108,8 @@ function McapFile({
   );
   const showPlanHelp = prepared && versions.isSuccess && available.length === 0;
   const schemeId = file.config_reference?.scheme?.scheme_id ?? file.config_reference?.scheme_id;
+  const schemeVersion = file.config_reference?.scheme?.version;
+  const schemeLabel = schemeVersion == null ? "采集方案版本未记录" : `采集方案 v${schemeVersion}`;
   const latestPlan = available[0];
   const selection = picked ?? (canReuseOriginal ? "original" : latestPlan && String(latestPlan.revision));
   const chosen = available.find(
@@ -192,16 +197,16 @@ function McapFile({
           </Button>
         </div>
       </div>
+      {file.status === "FAILED" && (
+        <McapFailureChannels inventory={file.channel_inventory} error={file.error} configuration={file.configuration} />
+      )}
       <div id={detailsId} hidden={!detailsOpen} className={styles.fileDetails}>
         {detailsOpen && (
           <>
             <div className={styles.path}>{file.path}</div>
             <p>
-              本次方案：
-              {file.config_reference?.scheme?.scheme_id ??
-                file.config_reference?.name ??
-                "历史快照"}
-              {` · 任务方案 v${file.config_reference?.plan_revision ?? "未记录"}`}
+              本次{schemeLabel}
+              {` · ${schemeId ?? file.config_reference?.name ?? "历史快照"}`}
               {` · ${file.config_reference?.effective_adapter?.parser_version ?? "历史解析器"}`}
               {file.config_reference?.reprocessing?.format_version && (
                 <>
@@ -210,7 +215,10 @@ function McapFile({
                 </>
               )}
             </p>
-            {file.error && <Alert type="error" title={file.error === "MCAP_RECORDING_ASSET_CONFLICT"
+            {file.diagnosis ? (
+              <Alert type="error" title={file.diagnosis.label}
+                description={<div style={{ whiteSpace: "pre-line" }}>{file.diagnosis.description}</div>} />
+            ) : file.error && <Alert type="error" title={file.error === "MCAP_RECORDING_ASSET_CONFLICT"
               ? "录制登记时遇到文件路径冲突，质检尚未开始。可沿用上次配置重试处理。"
               : file.error} />}
             <Space wrap>
@@ -259,7 +267,7 @@ function McapFile({
         )}
       </div>
       <Modal
-        title="选择任务方案版本重处理"
+        title="选择采集方案版本重处理"
         open={opened}
         onCancel={() => setOpened(false)}
         onOk={() => retry.mutate()}
@@ -272,9 +280,9 @@ function McapFile({
         <p>
           {chosen || prepared
             ? "确认后，系统会用已上传的原始 MCAP 自动核对所选方案的设备映射，通过后生成新录制。"
-            : canReuseOriginal && file.config_reference?.plan_revision
-              ? `沿用上次实际配置会继续使用任务方案 v${file.config_reference.plan_revision}，保留已完成的文件处理结果。`
-              : "选择这次处理使用的任务方案。"}
+            : canReuseOriginal
+              ? `沿用上次实际配置（${schemeLabel}），保留已完成的文件处理结果。`
+              : "选择这次处理使用的采集方案。"}
         </p>
         <Select
           aria-label="重试配置版本"
@@ -290,18 +298,24 @@ function McapFile({
           }}
           options={[
             ...(prepared ? [] : [{ value: "original", label: "沿用上次实际配置", disabled: !canReuseOriginal }]),
-            ...available.map((v) => ({
-              value: String(v.revision),
-              label: `任务方案 v${v.revision} · 采集方案 v${v.scheme.version}`,
-            })),
+            ...available.map((plan) => {
+              const sameScheme = available.some((other) =>
+                other.revision !== plan.revision &&
+                other.scheme.scheme_id === plan.scheme.scheme_id &&
+                other.scheme.version === plan.scheme.version,
+              );
+              const label = `采集方案 v${plan.scheme.version} · ${plan.scheme.scheme_id}`;
+              return {
+                value: String(plan.revision),
+                label: sameScheme ? `${label}（任务配置修订号 ${plan.revision}）` : label,
+              };
+            }),
           ]}
         />
         {showPlanHelp && (
           <Alert
             type="info"
-            title={file.config_reference?.plan_revision
-              ? `暂无比本次录制使用的任务方案 v${file.config_reference.plan_revision} 更新的版本`
-              : "此任务尚无可用于重处理的方案版本"}
+            title="此任务暂无更新的配置可用于重处理"
             description={
               <>
                 <p>先在采集方案中启用所需规则、验证并发布新版本，再为机器人关联该版本，在采集任务中选择它并保存。回到这里即可选择新版本。</p>
@@ -345,13 +359,17 @@ export function mcapPreparationQuery(scope: IngestScope, importId: string) {
 export function McapPreparationProgress({
   scope,
   importId,
+  processingId,
 }: {
   scope: IngestScope;
   importId: string;
+  processingId?: string;
 }) {
   const query = useQuery(mcapPreparationQuery(scope, importId));
   const [showAll, setShowAll] = useState(false);
-  const allFiles = query.data?.files ?? [];
+  const batchFiles = query.data?.files ?? [];
+  const selectedFile = processingId && batchFiles.find(file => file.processing_id === processingId);
+  const allFiles = selectedFile ? [selectedFile] : batchFiles;
   const files = (
     <div className={styles.files}>
       {(showAll ? allFiles : allFiles.slice(0, 5)).map((file) => (

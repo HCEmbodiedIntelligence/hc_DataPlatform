@@ -8,7 +8,9 @@ import subprocess
 from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import MagicMock
 
 import pytest
 from mcap.writer import Writer as McapWriter
@@ -150,11 +152,7 @@ def _sensor_mcap(path: Path) -> bytes:
     return path.read_bytes()
 
 
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="FFmpeg runtime is unavailable",
-)
-def test_real_qc_rejects_video_time_base_mismatch(tmp_path: Path) -> None:
+def video_qc_inputs(tmp_path, time_base_denominator):
     video_path = tmp_path / "front.mp4"
     subprocess.run(
         [
@@ -198,7 +196,7 @@ def test_real_qc_rejects_video_time_base_mismatch(tmp_path: Path) -> None:
                 codec="h264",
                 clock_domain="robot-clock",
                 time_base_numerator=1,
-                time_base_denominator=30,
+                time_base_denominator=time_base_denominator,
             ),
         ),
         sensors=(
@@ -301,6 +299,15 @@ def test_real_qc_rejects_video_time_base_mismatch(tmp_path: Path) -> None:
         dataset_projection=cast(Any, None),
     )
 
+    return processor, request
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="FFmpeg runtime is unavailable",
+)
+def test_real_qc_rejects_video_time_base_mismatch(tmp_path: Path) -> None:
+    processor, request = video_qc_inputs(tmp_path, 30)
     result = processor.qc(request)
 
     assert result.status == "REJECT"
@@ -315,6 +322,70 @@ def test_real_qc_rejects_video_time_base_mismatch(tmp_path: Path) -> None:
     assert recording_report["status"] == "REJECT"
     assert recording_report["finding_codes"] == ["VIDEO_TIME_BASE_MISMATCH"]
     assert processor.report is None  # Whole-recording QC never writes an Episode report.
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+    reason="FFmpeg runtime is unavailable",
+)
+def test_full_episode_reuses_identical_video_and_sensor_evidence(tmp_path, monkeypatch):
+    from hc_data_platform.continuous_recordings.quality_reuse import matching_recording_report
+    from hc_data_platform.security.audit import canonical_hash
+
+    processor, request = video_qc_inputs(tmp_path, 90_000)
+    request = request.model_copy(
+        update={
+            "storage_format": "lerobot_v3",
+            "expected_dataset_version": None,
+            "assets": tuple(
+                a.model_copy(update={"relative_path": a.object_key}) for a in request.assets
+            ),
+        }
+    )
+    source = request.projection.model_copy(
+        update={
+            "episode_id": "recording-quality",
+            "rollout_id": "recording-qc:recording-quality",
+            "source_sha256": "c" * 64,
+        }
+    )
+    whole = processor.inspect_quality(
+        request.model_copy(update={"projection": source}), recording_quality=True
+    )
+    assert whole["status"] == "PASS", whole["finding_codes"]
+    recorded = []
+    processor._episode_packages = SimpleNamespace(
+        quality_evidence=SimpleNamespace(put=recorded.append)
+    )
+    scanned = processor.inspect_quality(request)
+    connection = MagicMock()
+    cursor = connection.cursor.return_value.__enter__.return_value
+    cursor.fetchone.return_value = ("recording_qc_" + canonical_hash(whole), whole)
+    processor._connection_factory = lambda: connection
+    monkeypatch.setattr(processor, "inspect_quality", lambda *_: pytest.fail("rescanned assets"))
+    assert processor.qc(request).status == "PASS"
+    assert processor.report == scanned
+    assert recorded[0] == recorded[1]
+
+    for changed in (
+        {"start_offset_ns": 10},
+        {"end_offset_ns": request.end_offset_ns - 10},
+        {"capture_snapshot": {"changed": True}},
+        {"quality_profile": request.quality_profile.model_copy(update={"profile_version": 2})},
+        {
+            "assets": (
+                request.assets[0].model_copy(update={"content_sha256": "f" * 64}),
+                *request.assets[1:],
+            )
+        },
+    ):
+        assert (
+            matching_recording_report(request.model_copy(update=changed), lambda: connection)
+            is None
+        )
+    legacy = {k: v for k, v in whole.items() if k != "scan_fingerprint"}
+    cursor.fetchone.return_value = ("recording_qc_" + canonical_hash(legacy), legacy)
+    assert matching_recording_report(request, lambda: connection) is None
 
 
 def test_upload_contract_rejects_a_missing_configured_camera() -> None:

@@ -18,6 +18,8 @@ from .models import (
     TaskIssueFinding,
 )
 
+from hc_data_platform.quality.recording_diagnostics import RawProblem
+
 DASHBOARD_CAPABILITY = CAPABILITY_DASHBOARD_READ
 
 
@@ -170,6 +172,7 @@ class TaskStatusPackageFact:
     quality_findings: tuple[TaskIssueFinding, ...] = ()
     recording_id: str | None = None
     episode_facts: tuple[TaskStatusPackageFact, ...] = ()
+    raw_problem: RawProblem | None = None
 
 
 @dataclass(frozen=True, slots=True)

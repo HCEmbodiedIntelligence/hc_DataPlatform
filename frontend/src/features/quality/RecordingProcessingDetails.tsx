@@ -1,3 +1,4 @@
+import { recordingPreviewPath } from "../../shared/routing/navigation-routes";
 import { captureProblemLabels } from "../capture-schemes/presentation";
 import { Alert, Card, Space, Spin, Tag, Typography } from "antd";
 import { useQuery } from "@tanstack/react-query";
@@ -7,6 +8,7 @@ import type { components } from "../../shared/api/generated/platform";
 import type { CollectionTaskScope } from "../collection-tasks/api";
 import { QualityEvidenceDetails } from "./QualityEvidenceDetails";
 import { collectionTaskGateway } from "../collection-tasks/api";
+import { RecordingQualityReview } from "./RecordingQualityReview";
 import { RecordingEpisodeActions } from "./RecordingEpisodeActions";
 
 function seconds(value: string) {
@@ -37,12 +39,25 @@ export function RecordingProcessingDetails({
   recordingId,
   episodeId,
   showActions = true,
+  diagnosticCode,
+  reportSha256,
 }: {
   readonly scope: CollectionTaskScope;
   readonly recordingId: string;
   readonly episodeId?: string;
   readonly showActions?: boolean;
+  readonly diagnosticCode?: string;
+  readonly reportSha256?: string;
 }) {
+  const diagnosticUrl = (episode?: string) => {
+    const url = new URLSearchParams({ view: "preview" });
+    if (episode) url.set("episode", episode);
+    if (reportSha256 && diagnosticCode) {
+      url.set("report", reportSha256);
+      url.set("finding", diagnosticCode);
+    }
+    return `/recordings/${encodeURIComponent(recordingId)}/slice?${url}`;
+  };
   const query = useQuery({
     queryKey: [
       "continuous-recording-processing",
@@ -78,20 +93,14 @@ export function RecordingProcessingDetails({
     enabled: Boolean(taskId),
     retry: false,
   });
-  if (query.isPending) return <Spin description="正在读取 Episode 处理详情" />;
-  if (query.isError)
-    return (
-      <Alert
-        type="error"
-        title="处理详情读取失败"
-        description={query.error.message}
-      />
-    );
-  const episodes = query.data.items.filter(
+  const episodes = query.data?.items.filter(
     (item) => !episodeId || item.episode_id === episodeId,
-  );
+  ) ?? [];
   return (
     <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+      {source.data && !episodeId && <RecordingQualityReview key={recordingId + recording?.quality_summary?.report_id} scope={scope} detail={source.data} actions={showActions} />}
+      {query.isPending && <Spin />}
+      {query.isError && <Alert type="error" title={query.error.message} />}
       <Card size="small" title="数据来源">
         <Typography.Paragraph>
           <strong>采集任务：</strong>
@@ -100,6 +109,12 @@ export function RecordingProcessingDetails({
             : (taskId ?? (source.isPending ? "正在读取…" : "来源读取失败"))}
           {task.isError && "（任务名称读取失败，已保留任务 ID）"}
         </Typography.Paragraph>
+        {recording?.source_file_name && (
+          <p>
+            <strong>原始文件：</strong>
+            {recording.source_file_name}
+          </p>
+        )}
         {recording && (
           <Typography.Paragraph>
             <strong>录制：</strong>
@@ -119,23 +134,34 @@ export function RecordingProcessingDetails({
             录制来源读取失败，仍可通过录制 ID 追溯。
           </Typography.Paragraph>
         )}
-        <Link to={`/recordings/${encodeURIComponent(recordingId)}/slice`}>
-          查看原始录制与文件
+        <Link
+          to={
+            reportSha256
+              ? diagnosticUrl(episodeId)
+              : recordingPreviewPath(recordingId)
+          }
+        >
+          {reportSha256 ? "可视化定位问题" : "查看原始录制与文件"}
         </Link>
       </Card>
-      {episodes.length === 0 && (
+      {query.isSuccess && episodes.length === 0 && recording?.status !== "QC_FAILED" && (
         <Alert
           type="info"
-          title="尚未生成 Episode"
-          description={recording?.ingest_mode === "WHOLE_RECORDING"
-            ? "上传完成后自动检查并整段入库，完成后即可切片与标注。"
-            : "上传完成后自动检查整段录制，通过质检后即可切片，提交后自动对齐入库。"}
+          title={
+            "尚未生成 Episode"
+          }
+          description={
+            recording?.ingest_mode === "WHOLE_RECORDING"
+                ? "上传完成后自动检查并整段入库，完成后即可切片与标注。"
+                : "上传完成后自动检查整段录制，通过质检后即可切片，提交后自动对齐入库。"
+          }
         />
       )}
       {episodes.map((episode) => {
-        const qc = query.data.qc_reports.find(
+        const qc = query.data?.qc_reports.find(
           (item) => item.episode_id === episode.episode_id,
         );
+        const status = episode.status === "READY" && qc?.status === "REJECT" ? "QC_FAILED" : episode.status;
         const slice = source.data?.current_slice_revision?.slices.find(
           (item) => item.episode_id === episode.episode_id,
         );
@@ -147,48 +173,56 @@ export function RecordingProcessingDetails({
             extra={
               <Tag
                 color={
-                  episode.status === "READY"
+                  status === "READY"
                     ? "success"
-                    : episode.status === "DISCARDED"
+                    : status === "DISCARDED"
                       ? "default"
-                      : ["FAILED", "QC_FAILED"].includes(episode.status)
+                      : ["FAILED", "QC_FAILED"].includes(status)
                         ? "error"
                         : "processing"
                 }
               >
-                {episode.status !== "DISCARDED" && episode.dispatch_error_code
+                {status !== "DISCARDED" &&
+                status !== "QC_FAILED" &&
+                episode.dispatch_error_code
                   ? "等待处理配置"
-                  : labels[episode.status]}
+                  : labels[status]}
               </Tag>
             }
           >
             <Typography.Paragraph style={{ overflowWrap: "anywhere" }}>
-              <strong>{recording?.ingest_mode === "WHOLE_RECORDING" ? "完整录制：" : "切片："}</strong>
+              <strong>
+                {recording?.ingest_mode === "WHOLE_RECORDING"
+                  ? "完整录制："
+                  : "切片："}
+              </strong>
               {episode.episode_id}
               {" · "}
               {seconds(episode.start_offset_ns)}～
               {seconds(episode.end_offset_ns)} 秒
             </Typography.Paragraph>
-            {episode.status !== "DISCARDED" && episode.dispatch_error_code && (
-              <Alert
-                type="error"
-                title="处理尚未启动"
-                description={
-                  dispatchErrors[episode.dispatch_error_code] ??
-                  episode.dispatch_error_code
-                }
-              />
-            )}
-            {episode.status !== "DISCARDED" &&
+            {status !== "DISCARDED" &&
+              status !== "QC_FAILED" &&
+              episode.dispatch_error_code && (
+                <Alert
+                  type="error"
+                  title="处理尚未启动"
+                  description={
+                    dispatchErrors[episode.dispatch_error_code] ??
+                    episode.dispatch_error_code
+                  }
+                />
+              )}
+            {status !== "DISCARDED" &&
               episode.failure_code &&
               !(episode.failure_code === "QC_REJECTED" && qc) && (
                 <Alert
                   type="warning"
-                  title={labels[episode.status]}
+                  title={labels[status]}
                   description={episode.failure_code}
                 />
               )}
-            {qc && episode.status !== "DISCARDED" && (
+            {qc && status !== "DISCARDED" && (
               <QualityEvidenceDetails
                 rules={qc.rules}
                 findingCodes={qc.finding_codes}
@@ -198,13 +232,17 @@ export function RecordingProcessingDetails({
             )}
             <Space wrap>
               <Link
-                to={`/recordings/${encodeURIComponent(recordingId)}/slice?episode=${encodeURIComponent(episode.episode_id)}`}
+                to={
+                  reportSha256
+                    ? diagnosticUrl(episode.episode_id)
+                    : `/recordings/${encodeURIComponent(recordingId)}/slice?episode=${encodeURIComponent(episode.episode_id)}`
+                }
               >
                 {recording?.video_asset_count === 0
                   ? "查看关节片段"
                   : "查看片段视频"}
               </Link>
-              {episode.status === "READY" && episode.dataset_id && (
+              {status === "READY" && episode.dataset_id && (
                 <Link
                   to={`/datasets/${encodeURIComponent(episode.dataset_id)}`}
                 >
@@ -212,9 +250,10 @@ export function RecordingProcessingDetails({
                 </Link>
               )}
             </Space>
-            {showActions && (
-              <RecordingEpisodeActions scope={scope} episode={episode} />
-            )}
+            {showActions &&
+              (status !== "QC_FAILED" || episode.status === "QC_FAILED") && (
+                <RecordingEpisodeActions scope={scope} episode={episode} />
+              )}
           </Card>
         );
       })}

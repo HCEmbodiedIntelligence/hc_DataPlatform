@@ -353,6 +353,12 @@ export async function createThreeRobotSceneRuntime(
     if (!parsedLease) {
       prepared = await assets.prepare?.(signal);
       const resolveAsset = createRobotAssetUrlResolver(assets.urdfPath, prepared?.assetUrls ?? assets.assetUrls);
+      // A blob URL has no package directory. Resolve ../meshes and sibling
+      // textures against the authorized URDF path before applying aliases.
+      if (prepared && assets.urdfPath) {
+        const urdfUrl = new URL(normalizedAssetPath(assets.urdfPath), 'https://robot-assets.invalid/');
+        loader.workingPath = new URL('.', urdfUrl).href;
+      }
       manager.setURLModifier(resolveAsset);
       const glbUrls = new Set(prepared?.glbUrls ?? []);
       const defaultMeshLoader = loader.loadMeshCb;

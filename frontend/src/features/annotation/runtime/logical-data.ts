@@ -17,21 +17,15 @@ import type {
   RuntimeAnnotationTask,
 } from "./runtime-annotation-adapter";
 
-import { sceneViewWire, assetGrantWire, validateLogicalRobotAssets } from "../../datasets/api/logical-robot-scene";
-
 const annotationSnapshotWire = logicalSnapshotWire.extend({
   task_id: z.string().min(1),
   snapshot_token: z.string().min(1),
-  robot: sceneViewWire.nullish(),
-  robot_assets: z.array(assetGrantWire).default([]),
-}) satisfies z.ZodType<components["schemas"]["AnnotationLogicalSnapshot"]>;
+}) satisfies z.ZodType<Omit<components["schemas"]["AnnotationLogicalSnapshot"], "robot" | "robot_assets">>;
 
 export interface AnnotationLogicalData {
   readonly selection: LogicalSelection;
   readonly view: LogicalSnapshot;
   readonly streams: readonly StreamDescriptor[];
-  readonly robot?: import("../../datasets/api/logical-robot-scene").LogicalRobotScene;
-  readonly robotAssets?: ReturnType<typeof validateLogicalRobotAssets>;
 }
 
 export function requestAnnotationLogicalSnapshot(scope: RuntimeAnnotationScope, taskId: string, signal?: AbortSignal) {
@@ -39,7 +33,7 @@ export function requestAnnotationLogicalSnapshot(scope: RuntimeAnnotationScope, 
   return request<unknown>({
     method: "GET",
     path: `/projects/${part(scope.projectId)}/regions/${part(scope.regionCode)}/annotation-tasks/${part(taskId)}/logical`,
-    scope, scopeMode: "explicit", signal, cache: "no-store", query: { include_model: true },
+    scope, scopeMode: "explicit", signal, cache: "no-store", query: { include_model: false },
   });
 }
 
@@ -57,22 +51,13 @@ export async function loadAnnotationLogicalData(
   const lease = createSessionScopeLease(scope, signal);
   try {
     lease.signal.throwIfAborted();
-    const raw = await (prefetched ?? request<unknown>({
-      method: "GET",
-      path,
-      scope,
-      scopeMode: "explicit",
-      signal: lease.signal,
-      cache: "no-store",
-      query: { include_model: true },
-    }));
+    const raw = await (prefetched ?? requestAnnotationLogicalSnapshot(scope, task.task_id, lease.signal));
     lease.signal.throwIfAborted();
     if (getShellState().capabilityRevision !== capabilityRevision)
       throw new DOMException("Annotation authorization changed", "AbortError");
     const view = parseWire(annotationSnapshotWire, raw, { endpoint: path });
     const fixed = view.snapshot.selection;
     if (
-      (view.robot != null && view.robot.snapshot_id !== view.snapshot_id) ||
       view.task_id !== task.task_id ||
       fixed.organization_id !== scope.organizationId ||
       fixed.project_id !== scope.projectId ||
@@ -111,10 +96,6 @@ export async function loadAnnotationLogicalData(
     return {
       selection,
       view,
-      ...(view.robot ? {
-        robot: view.robot,
-        ...(view.robot.provenance === "FROZEN" ? { robotAssets: validateLogicalRobotAssets(view.robot_assets ?? [], view.robot) } : {}),
-      } : {}),
       streams: adaptLogicalViewerStreams(selection, view, frameTime),
     };
   } finally {

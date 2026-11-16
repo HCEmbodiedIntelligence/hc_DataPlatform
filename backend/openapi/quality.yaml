@@ -36,6 +36,31 @@ components:
         minLength: 1
         type: string
   schemas:
+    ActionGapSegment:
+      properties:
+        first_frame:
+          title: First Frame
+          type: integer
+        first_offset_ns:
+          title: First Offset Ns
+          type: integer
+        last_frame:
+          title: Last Frame
+          type: integer
+        last_offset_ns:
+          title: Last Offset Ns
+          type: integer
+        origin:
+          title: Origin
+          type: string
+      required:
+      - first_frame
+      - last_frame
+      - first_offset_ns
+      - last_offset_ns
+      - origin
+      title: ActionGapSegment
+      type: object
     ActionQualityProfileV1:
       additionalProperties: false
       properties:
@@ -95,6 +120,11 @@ components:
       additionalProperties: false
       description: Latest failed automatic-QC result projected for the unified issue center.
       properties:
+        collection_task_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Id
         data_package_id:
           anyOf:
           - maxLength: 256
@@ -102,6 +132,10 @@ components:
             type: string
           - type: 'null'
           title: Data Package Id
+        discarded:
+          default: false
+          title: Discarded
+          type: boolean
         end_ns:
           pattern: ^[1-9][0-9]*$
           title: End Ns
@@ -173,6 +207,11 @@ components:
             type: integer
           - type: 'null'
           title: Source Episode Index
+        source_file_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source File Name
         source_import_id:
           anyOf:
           - maxLength: 256
@@ -352,6 +391,33 @@ components:
       - maximum_empty_ratio_reject
       - maximum_abnormal_count_ratio_risk
       - maximum_abnormal_count_ratio_reject
+      type: object
+    ProblemLocation:
+      properties:
+        end_ns:
+          title: End Ns
+          type: string
+        first_frame:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: First Frame
+        last_frame:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Last Frame
+        start_ns:
+          title: Start Ns
+          type: string
+        topic:
+          title: Topic
+          type: string
+      required:
+      - topic
+      - start_ns
+      - end_ns
+      title: ProblemLocation
       type: object
     QcFinding:
       additionalProperties: false
@@ -804,6 +870,55 @@ paths:
           description: Quality profile version not found
       tags:
       - quality
+  ? /api/v1/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/quality-reports/{report_sha256}/action-gaps
+  : get:
+      operationId: getRecordingActionGapSegments
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: recording_id
+        required: true
+        schema:
+          title: Recording Id
+          type: string
+      - in: path
+        name: report_sha256
+        required: true
+        schema:
+          title: Report Sha256
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ActionGapSegment'
+                title: Response Getrecordingactiongapsegments
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Action Gaps
+      tags:
+      - quality
   /api/v1/projects/{project_id}/regions/{region_code}/quality-problems:
     get:
       description: Expose latest RISK/REJECT reports as read-only unified issue-center rows.
@@ -811,6 +926,13 @@ paths:
       parameters:
       - $ref: '#/components/parameters/QualityProjectId'
       - $ref: '#/components/parameters/QualityRegionCode'
+      - in: query
+        name: include_discarded
+        required: false
+        schema:
+          default: false
+          title: Include Discarded
+          type: boolean
       responses:
         '200':
           content:
@@ -818,6 +940,71 @@ paths:
               schema:
                 $ref: '#/components/schemas/AutoQualityProblemListV1'
           description: Latest automatic quality problems for the scoped project and Region
+      tags:
+      - quality
+  /api/v1/projects/{project_id}/regions/{region_code}/quality-problems/{digest}/locations:
+    get:
+      operationId: getQualityProblemLocations
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: digest
+        required: true
+        schema:
+          title: Digest
+          type: string
+      - in: query
+        name: code
+        required: true
+        schema:
+          title: Code
+          type: string
+      - in: query
+        name: recording_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recording Id
+      - in: query
+        name: rollout_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Rollout Id
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ProblemLocation'
+                title: Response Getqualityproblemlocations
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Problem Locations
       tags:
       - quality
   /api/v1/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/quality:

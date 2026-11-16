@@ -59,6 +59,7 @@ const policyAction = z.enum([
   "CLEAN_OSS_TEST_COPIES",
   "CLEAN_INVENTORY_DETAILS",
   "CLEAN_INVENTORY_HISTORY",
+  "CLEAN_SUPERSEDED_MCAP_BATCHES",
 ]);
 const policyState = z.enum(["DRAFT", "ENABLED", "PAUSED"]);
 const executionStatus = z.enum([

@@ -23,9 +23,12 @@ import {
   commandPackageJob,
   createPackageBatch,
   downloadPackageJob,
+  downloadEpisodeBundle,
   listPackageJobs,
   loadExportFormats,
   loadPackageCandidates,
+  loadUploadCandidates,
+  type PackageExportFilter,
   loadPackageJob,
   type AnnotationSelection,
   type BatchMode,
@@ -48,6 +51,8 @@ function formatName(job: PackageJob) {
   const { plan } = job;
   if (plan.archive_format === "original_collection_zip/1") return "原始文件";
   if (plan.archive_format.startsWith("mcap_collection_zip/")) return "MCAP 集合";
+  if (["holobrain_collection_zip/5", "holobrain_collection_zip/6"].includes(plan.archive_format))
+    return "HoloBrain（16维，双臂和夹爪）";
   if (plan.archive_format.startsWith("holobrain_collection_zip/"))
     return "HoloBrain（19维，含腰部）";
   if (plan.archive_format === "lerobot_collection_zip/1")
@@ -104,6 +109,9 @@ export function PackageBatchPanel({
   scope,
   datasets,
   annotated,
+  filter,
+  datasetIds = [],
+  taskIds = [],
   canReadAnnotations,
   canCreate,
   canDownload,
@@ -111,6 +119,9 @@ export function PackageBatchPanel({
   scope: Scope;
   datasets: { id: string; name: string }[];
   annotated: boolean;
+  filter?: PackageExportFilter;
+  datasetIds?: readonly string[];
+  taskIds?: readonly string[];
   canReadAnnotations: boolean;
   canCreate: boolean;
   canDownload: boolean;
@@ -143,6 +154,12 @@ export function PackageBatchPanel({
     annotated ? "rgbd" : "independent",
   );
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const qcBundle = filter?.stage === "qc_passed";
+  const selectionLimit = qcBundle ? 1000 : 100;
+  const [selectingAll, setSelectingAll] = useState(false);
+  const [bundleProgress, setBundleProgress] = useState("");
+  const [bundleUrl, setBundleUrl] = useState<string>();
+  useEffect(() => () => { if (bundleUrl) URL.revokeObjectURL(bundleUrl); }, [bundleUrl]);
   const [autoJob, setAutoJob] = useState<PackageJob | null>(null);
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [downloadLink, setDownloadLink] = useState<{
@@ -180,13 +197,24 @@ export function PackageBatchPanel({
         annotated ? "annotated" : "dataset",
       ),
     enabled:
-      canDownload && Boolean(datasetId) && (!annotated || canReadAnnotations),
+      !filter && canDownload && Boolean(datasetId) && (!annotated || canReadAnnotations),
     staleTime: 0,
     getNextPageParam: (page) =>
       page.next_offset !== null && page.collection_version_id
         ? { collectionId: page.collection_version_id, offset: page.next_offset }
         : undefined,
   });
+  const uploadCandidates = useInfiniteQuery({
+    queryKey: ["export-upload-candidates", scope, filter, datasetIds, taskIds],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ signal, pageParam }) => loadUploadCandidates(scope, filter!, datasetIds, taskIds, signal, pageParam),
+    enabled: Boolean(filter) && canDownload && (!annotated || canReadAnnotations),
+    getNextPageParam: (page) => page.next_after ?? undefined,
+  });
+  const list = filter ? uploadCandidates : candidates;
+  const uploaded = uploadCandidates.data?.pages.flatMap(p => p.items) ?? [];
+  const batchLabels = new Map(uploaded.map(row => [row.data.data_version_id,
+    row.batch_numbers.length ? row.batch_numbers.map(n => `第 ${n} 次上传`).join("、") : "历史数据 · 无批次编号"]));
   const jobs = useInfiniteQuery({
     queryKey: ["package-batch-jobs", scope, canReadAnnotations],
     initialPageParam: undefined as string | undefined,
@@ -225,7 +253,7 @@ export function PackageBatchPanel({
           ...history.filter((job) => job.job_id !== autoJob.job_id),
         ]
       : history;
-  const items = candidates.data?.pages.flatMap((p) => p.items) ?? [];
+  const items = filter ? uploaded.map(row => row.data) : candidates.data?.pages.flatMap((p) => p.items) ?? [];
   const selections = Object.values(selected).toSorted((a, b) =>
     a.data_version_id.localeCompare(b.data_version_id),
   );
@@ -239,11 +267,18 @@ export function PackageBatchPanel({
     }) => {
       const signal = lifetime.current!.signal;
       if (action.kind === "create") {
+        if (qcBundle && filter) {
+          setBundleUrl(undefined);
+          const result = await downloadEpisodeBundle(scope, selections, mode, filter, signal, setBundleProgress);
+          if (result.kind === "browser") setBundleUrl(result.url);
+          setBundleProgress(`已完成 ${selections.length} 条 Episode 的打包下载`);
+          return;
+        }
         const members = selections.map((data) => ({
           data,
           annotation: annotated ? annotations[data.data_version_id] : null,
         }));
-        const signature = JSON.stringify({ mode, members });
+        const signature = JSON.stringify({ mode, members, filter });
         if (pending.current?.signature !== signature)
           pending.current = { signature, key: crypto.randomUUID() };
         return createPackageBatch(
@@ -252,11 +287,12 @@ export function PackageBatchPanel({
           mode,
           pending.current.key,
           signal,
+          filter,
         );
       }
       if (action.kind !== "download")
         return commandPackageJob(scope, action.job!, action.kind, signal);
-      const grant = await downloadPackageJob(scope, action.job!, signal);
+      const grant = await downloadPackageJob(scope, action.job!, signal, qcBundle ? filter : undefined);
       signal.throwIfAborted();
       setDownloadLink({
         url: grant.url,
@@ -316,14 +352,38 @@ export function PackageBatchPanel({
     automaticDownloads.current.add(key);
     runAction({ kind: "download", job, automatic: true });
   }, [canDownload, autoJob, activeJob.data, runAction, jobs.refetch]);
+  async function selectFiltered() {
+    if (!filter) return;
+    setSelectionError(null);
+    setSelectingAll(true);
+    try {
+      const next: Record<string, PackageData> = {};
+      let page = uploadCandidates.data?.pages[0];
+      const cursors = new Set<string>();
+      while (page) {
+        if (page.total > selectionLimit) throw new Error(`本次筛选有 ${page.total} 条，每个压缩包最多 ${selectionLimit} 条，请缩小筛选范围。`);
+        for (const { data } of page.items) next[data.data_version_id] = data;
+        if (!page.next_after) break;
+        if (cursors.has(page.next_after)) throw new Error("候选数据已变化，请刷新后重试。");
+        cursors.add(page.next_after);
+        page = await loadUploadCandidates(scope, filter, datasetIds, taskIds, lifetime.current!.signal, page.next_after);
+      }
+      lifetime.current!.signal.throwIfAborted();
+      setSelected(next);
+    } catch (error) {
+      setSelectionError(error instanceof Error ? error.message : "全选失败，请重试。");
+    } finally {
+      setSelectingAll(false);
+    }
+  }
   function select(data: PackageData, enabled: boolean) {
     setSelectionError(null);
     if (
       enabled &&
       !selected[data.data_version_id] &&
-      selections.length >= 100
+      selections.length >= selectionLimit
     ) {
-      setSelectionError("一次最多选择 100 条 Episode。");
+      setSelectionError(`每个压缩包最多选择 ${selectionLimit} 条 Episode。`);
       return;
     }
     if (
@@ -364,7 +424,7 @@ export function PackageBatchPanel({
         >
           <div className={styles.sectionHeading}>
             <h3 id="package-source-title">数据</h3>
-            {datasets.length > 1 && (
+            {!filter && datasets.length > 1 && (
               <Select
                 className={styles.datasetSelect}
                 aria-label="标准包数据集"
@@ -378,27 +438,27 @@ export function PackageBatchPanel({
             )}
             <span className={styles.count} aria-live="polite">
               {annotated ? "标注完成" : "共"}{" "}
-              {candidates.data?.pages[0]?.total ?? 0} 条 · 已选{" "}
+              {list.data?.pages[0]?.total ?? 0} 条 · 已选{" "}
               {selections.length} 条
             </span>
           </div>
-          {candidates.error && (
+          {list.error && (
             <Alert
               showIcon
               type="error"
               title="标准包候选读取失败"
-              description={candidates.error.message}
+              description={list.error.message}
               action={
-                <Button onClick={() => void candidates.refetch()}>
+                <Button onClick={() => void list.refetch()}>
                   重试读取
                 </Button>
               }
             />
           )}
-          {!datasets.length && (
+          {!filter && !datasets.length && (
             <div className={styles.empty}>请选择任务或数据集</div>
           )}
-          {candidates.isFetching && !candidates.data && datasetId && (
+          {list.isFetching && !list.data && (filter || datasetId) && (
             <div
               className={styles.loading}
               role="status"
@@ -407,15 +467,23 @@ export function PackageBatchPanel({
               <Skeleton active title={false} paragraph={{ rows: 2 }} />
             </div>
           )}
-          {candidates.data && !candidates.error && (
+          {list.data && !list.error && (
             <div className={styles.candidates}>
-              {(candidates.data.pages[0]?.legacy_episode_count ?? 0) > 0 && (
+              {!filter && candidates.data && (candidates.data.pages[0]?.legacy_episode_count ?? 0) > 0 && (
                 <Alert
                   type="info"
                   showIcon
                   title={`此集合另含 ${candidates.data.pages[0]?.legacy_episode_count} 条历史存储数据`}
                   description="如需导出这些数据，请切换到历史格式。"
                 />
+              )}
+              {filter && items.length > 0 && (
+                <Checkbox checked={selections.length === uploadCandidates.data?.pages[0]?.total}
+                  indeterminate={selections.length > 0 && selections.length !== uploadCandidates.data?.pages[0]?.total}
+                  disabled={selectingAll || mutation.isPending}
+                  onChange={event => event.target.checked ? void selectFiltered() : setSelected({})}>
+                  {selectingAll ? "正在读取全部 Episode…" : "全选筛选结果"}
+                </Checkbox>
               )}
               <div className={styles.candidateList}>
                 {items.map((data) => (
@@ -437,7 +505,7 @@ export function PackageBatchPanel({
                         />
                       </span>
                       <span className={styles.episodeMeta}>
-                        数据 v{data.version} ·{" "}
+                        {filter && <>{batchLabels.get(data.data_version_id)} · </>}数据 v{data.version} ·{" "}
                         {data.frame_count.toLocaleString("zh-CN")} 帧
                       </span>
                     </span>
@@ -448,16 +516,16 @@ export function PackageBatchPanel({
                 <Empty
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
-                    annotated
+                    filter ? "所选范围暂无符合条件的数据。" : annotated
                       ? "此数据集暂无标注完成的数据，请先完成标注审核。"
                       : "此数据集暂无独立标准包；可查看历史格式或原始数据。"
                   }
                 />
               )}
-              {candidates.hasNextPage && (
+              {list.hasNextPage && (
                 <Button
-                  loading={candidates.isFetchingNextPage}
-                  onClick={() => void candidates.fetchNextPage()}
+                  loading={list.isFetchingNextPage}
+                  onClick={() => void list.fetchNextPage()}
                 >
                   加载更多数据
                 </Button>
@@ -532,7 +600,7 @@ export function PackageBatchPanel({
               title="导出完成后自动下载"
               loading={mutation.isPending || Boolean(autoJob)}
               disabled={
-                !canCreate ||
+                !canCreate || selectingAll ||
                 Boolean(autoJob) ||
                 !selections.length ||
                 missingAnnotations ||
@@ -576,6 +644,8 @@ export function PackageBatchPanel({
             </span>
           )}
         </section>
+        {qcBundle && bundleProgress && !mutation.error && <Alert type="info" title={bundleProgress}
+          action={bundleUrl && <a href={bundleUrl} download="Episodes.zip">下载 ZIP</a>} />}
         {mutation.error && (
           <Alert
             showIcon

@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from hc_data_platform.continuous_recordings.current_qc import CURRENT_EPISODE_QC
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
-from hc_data_platform.ingest.problem_lifecycle import active_problem_sql
+from hc_data_platform.continuous_recordings.presentation import decoded_filename
 
 from .models import AutoQualityProblemV1, QcReportV1, QualityProfileV1, QualitySummaryV1
 
@@ -207,8 +208,67 @@ class PostgresQualityRepository:
         )
         return None if row is None else self._report(row[0])
 
+    def problem_locations(self, project_id, region_code, digest, code, recording_id, rollout_id):
+        from .models import ProblemLocation, action_gap_segments
+
+        scope = (current_request_context().organization_id, project_id, region_code)
+        if recording_id:
+            key = (*scope, recording_id)
+            row = self._fetchone(
+                """WITH reports AS (
+                     SELECT report_document FROM ingest.recording_episode_qc_reports
+                     WHERE (organization_id,project_id,region_code,recording_id,report_sha256)=(%s,%s,%s,%s,%s)
+                     UNION ALL
+                     SELECT report_document FROM ingest.recording_quality_reports
+                     WHERE (organization_id,project_id,region_code,recording_id,report_id)=(%s,%s,%s,%s,%s)
+                   )
+                   SELECT report_document, (extract(epoch from capture_started_at)*1000000000)::bigint
+                   FROM reports, ingest.continuous_recordings
+                   WHERE (organization_id,project_id,region_code,recording_id)=(%s,%s,%s,%s)""",
+                (*key, digest, *key, "recording_qc_" + digest, *key),
+            )
+            if not row:
+                return None
+            document, origin = row
+            report = document["quality_report"]
+            if code == "MCAP_INTERIOR_ACTION_MISSING":
+                return [ProblemLocation(topic="/action", start_ns=str(g.first_offset_ns),
+                                        end_ns=str(g.last_offset_ns), first_frame=g.first_frame,
+                                        last_frame=g.last_frame) for g in action_gap_segments(
+                    document.get("capture_quality", {}).get("interior_action_gaps", []))]
+        else:
+            row = self._fetchone(
+                """SELECT report_json FROM qc_reports WHERE
+                (organization_id,project_id,region_code,rollout_id,report_sha256)=(%s,%s,%s,%s,%s)""",
+                (*scope, rollout_id, digest),
+            )
+            if not row:
+                return None
+            report = row[0]
+            origin = int(report["start_ns"])
+        return [ProblemLocation(topic=f["topic"], start_ns=str(int(f["start_ns"])-origin),
+                                end_ns=str(int(f["end_ns"])-origin))
+                for f in report["findings"] if f["code"] == code and f["severity"] != "info"
+                and int(f["start_ns"]) >= origin]
+
+    def action_gaps(self, project_id, region_code, recording_id, report_sha256):
+        from .models import action_gap_segments
+
+        scope = (current_request_context().organization_id, project_id, region_code, recording_id)
+        row = self._fetchone(
+            """SELECT report_document #> '{capture_quality,interior_action_gaps}'
+            FROM ingest.recording_episode_qc_reports
+            WHERE (organization_id,project_id,region_code,recording_id,report_sha256)=(%s,%s,%s,%s,%s)
+            UNION ALL
+            SELECT report_document #> '{capture_quality,interior_action_gaps}'
+            FROM ingest.recording_quality_reports
+            WHERE (organization_id,project_id,region_code,recording_id,report_id)=(%s,%s,%s,%s,%s)""",
+            (*scope, report_sha256, *scope, "recording_qc_" + report_sha256),
+        )
+        return action_gap_segments(row[0]) if row and row[0] else None
+
     def list_problem_reports(
-        self, *, project_id: str, region_code: str
+        self, *, project_id: str, region_code: str, include_discarded: bool = False
     ) -> tuple[AutoQualityProblemV1, ...]:
         connection = self._connection_factory()
         try:
@@ -220,13 +280,20 @@ class PostgresQualityRepository:
                            COALESCE(session.data_package_id, native.episode_id),
                            summary.updated_at,
                            native.source_import_id,
-                           native.source_episode_index
+                           native.source_episode_index, COALESCE(native.collection_task_id, job.task_id),
+                           COALESCE(native.status = 'DISCARDED', false)
                       FROM quality_rollout_summaries AS summary
                       JOIN qc_reports AS report
                         ON report.organization_id = summary.organization_id
                        AND report.project_id = summary.project_id
                        AND report.region_code = summary.region_code
                        AND report.report_sha256 = summary.report_sha256
+                      LEFT JOIN ingest.rollouts AS rollout
+                        ON (rollout.organization_id, rollout.project_id, rollout.region_code, rollout.rollout_id)
+                         = (summary.organization_id, summary.project_id, summary.region_code, summary.rollout_id)
+                      LEFT JOIN ingest.collection_jobs AS job
+                        ON (job.organization_id, job.project_id, job.region_code, job.collection_job_id)
+                         = (rollout.organization_id, rollout.project_id, rollout.region_code, rollout.collection_job_id)
                       LEFT JOIN LATERAL (
                            SELECT upload.session_id, upload.data_package_id
                              FROM ingest.upload_sessions AS upload
@@ -239,7 +306,7 @@ class PostgresQualityRepository:
                       ) AS session ON TRUE
                       LEFT JOIN LATERAL (
                            SELECT source.raw_source_id AS source_import_id,
-                                  episode.source_episode_index, episode.episode_id
+                                  episode.source_episode_index, episode.episode_id, source.collection_task_id, episode.status
                              FROM ingest.raw_source_episodes AS episode
                              JOIN ingest.raw_sources AS source
                                ON source.organization_id = episode.organization_id
@@ -258,9 +325,19 @@ class PostgresQualityRepository:
                      WHERE summary.project_id = %s
                        AND summary.region_code = %s
                        AND summary.status IN ('RISK', 'REJECT')
-                       AND {active_problem_sql("summary")}
+                       AND rollout.duplicate_of_rollout_id IS NULL
+                       AND NOT EXISTS (
+                           SELECT 1 FROM ingest.recording_episode_processing p
+                           WHERE (p.organization_id,p.project_id,p.region_code)
+                             = (summary.organization_id,summary.project_id,summary.region_code)
+                             AND p.recording_id || ':' || p.episode_id = summary.rollout_id
+                             AND (p.status='DISCARDED' OR EXISTS (
+                                 SELECT 1 FROM ingest.mcap_processing_files d
+                                 WHERE (d.organization_id,d.project_id,d.region_code,d.recording_id)
+                                     = (p.organization_id,p.project_id,p.region_code,p.recording_id)
+                                   AND d.duplicate_of IS NOT NULL))
+                       )
                      ORDER BY summary.updated_at DESC, summary.rollout_id DESC
-                     LIMIT 1000
                     """,
                     (project_id, region_code),
                 )
@@ -272,6 +349,7 @@ class PostgresQualityRepository:
                     updated_at,
                     source_import_id,
                     source_episode_index,
+                    task_id, discarded,
                 ) in cursor.fetchall():
                     report = self._report(report_json)
                     if not report.findings:
@@ -286,30 +364,59 @@ class PostgresQualityRepository:
                             updated_at=updated_at,
                             source_import_id=source_import_id,
                             source_episode_index=source_episode_index,
-                        )
+                            collection_task_id=task_id,
+                        ).model_copy(update={"discarded":discarded})
                     )
                 cursor.execute(
                     """
-                    SELECT q.report_document, q.report_sha256, r.recording_id,
-                           r.data_package_id, q.created_at
+                    WITH problems AS (
+                    SELECT q.report_document, q.report_sha256 AS digest, r.recording_id,
+                           r.data_package_id, q.created_at AS checked_at, r.collection_task_id,
+                           (p.status='DISCARDED' OR EXISTS (
+                               SELECT 1 FROM episode_store.qc_retired_versions v
+                               WHERE (v.organization_id,v.project_id,v.region_code,v.recording_id,v.report_id)
+                                   =(p.organization_id,p.project_id,p.region_code,p.recording_id,q.report_id)
+                           )) AS discarded, r.recording_upload_id
                     FROM ingest.recording_episode_processing p
-                    JOIN ingest.recording_episode_qc_reports q
-                      ON (q.organization_id,q.project_id,q.region_code,
-                          q.recording_id,q.episode_id,q.report_id)
-                       = (p.organization_id,p.project_id,p.region_code,
-                           p.recording_id,p.episode_id,p.qc_report_id)
+                    JOIN """ + CURRENT_EPISODE_QC + """ q ON TRUE
                     JOIN ingest.continuous_recordings r
                       ON (r.organization_id,r.project_id,r.region_code,r.recording_id)
                        = (p.organization_id,p.project_id,p.region_code,p.recording_id)
                     WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
-                      AND p.status NOT IN ('READY','DISCARDED') AND q.status='REJECT'
-                      AND NOT EXISTS (SELECT 1 FROM ingest.mcap_processing_files f
-                          WHERE (f.organization_id,f.project_id,f.region_code,f.recording_id)
-                              = (r.organization_id,r.project_id,r.region_code,r.recording_id)
-                            AND f.duplicate_of IS NOT NULL)
-                    ORDER BY q.created_at DESC, p.episode_id LIMIT 1000
+                      AND q.status='REJECT'
+                      AND (p.status <> 'READY' OR q.report_document->'finding_codes' ? 'MCAP_INTERIOR_ACTION_MISSING')
+                      AND r.superseded_by_processing_id IS NULL
+                    UNION ALL
+                    SELECT q.report_document, substr(q.report_id,14), r.recording_id,
+                           r.data_package_id, r.updated_at, r.collection_task_id,
+                           r.recording_document->>'quality_discarded_at' IS NOT NULL, r.recording_upload_id
+                    FROM ingest.continuous_recordings r
+                    JOIN ingest.recording_quality_reports q USING
+                        (organization_id,project_id,region_code,recording_id)
+                    WHERE r.organization_id=%s AND r.project_id=%s AND r.region_code=%s
+                      AND r.status='QC_FAILED' AND r.superseded_by_processing_id IS NULL
+                      AND q.report_id=r.recording_document->'quality_summary'->>'report_id'
+                    )
+                    SELECT p.report_document, p.digest, p.recording_id, p.data_package_id,
+                           p.checked_at, p.collection_task_id, p.discarded,
+                           COALESCE(m.source_path, source.asset_path)
+                    FROM problems p
+                    LEFT JOIN LATERAL (
+                        SELECT source_path,duplicate_of FROM ingest.mcap_processing_files
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND recording_id=p.recording_id
+                        ORDER BY created_at DESC, processing_id DESC LIMIT 1
+                    ) m ON TRUE
+                    LEFT JOIN LATERAL (
+                        SELECT asset_path FROM ingest.recording_upload_assets
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND upload_id=p.recording_upload_id AND lower(asset_path) LIKE '%%.mcap'
+                        ORDER BY (asset_path LIKE 'source/original/%%') DESC, asset_path LIMIT 1
+                    ) source ON TRUE
+                    WHERE m.duplicate_of IS NULL
+                    ORDER BY p.checked_at DESC, p.recording_id
                     """,
-                    (current_request_context().organization_id, project_id, region_code),
+                    (current_request_context().organization_id, project_id, region_code) * 4,
                 )
                 continuous = [
                     AutoQualityProblemV1.from_recording_report(
@@ -318,14 +425,16 @@ class PostgresQualityRepository:
                         recording_id=recording_id,
                         data_package_id=package,
                         updated_at=created,
-                    )
-                    for document, digest, recording_id, package, created in cursor.fetchall()
+                        collection_task_id=task_id,
+                    ).model_copy(update={"discarded": discarded, "source_file_name": decoded_filename(source)})
+                    for document, digest, recording_id, package, created, task_id, discarded, source in cursor.fetchall()
                 ]
                 # The outer recording gate is authoritative when a generic report also exists.
                 covered = {item.rollout_id for item in continuous}
                 result = [item for item in result if item.rollout_id not in covered] + continuous
                 return tuple(
-                    sorted(result, key=lambda item: (item.updated_at, item.id), reverse=True)[:1000]
+                    sorted((item for item in result if include_discarded or not item.discarded),
+                           key=lambda item: (item.updated_at, item.id), reverse=True)
                 )
         finally:
             connection.close()

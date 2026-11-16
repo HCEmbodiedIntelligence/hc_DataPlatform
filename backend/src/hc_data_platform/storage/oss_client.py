@@ -42,7 +42,7 @@ def build_oss_bucket(
 
     oss2 = importlib.import_module("oss2")
     auth = oss2.Auth(access_key, secret_key)
-    options: dict[str, object] = {}
+    options: dict[str, object] = {"enable_crc": False}
     if connect_timeout is not None:
         options["connect_timeout"] = connect_timeout
     hostname = (urlparse(endpoint).hostname or "").rstrip(".").lower()

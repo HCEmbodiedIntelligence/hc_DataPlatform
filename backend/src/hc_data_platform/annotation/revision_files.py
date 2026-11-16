@@ -78,6 +78,10 @@ class PostgresRevisionFiles:
 
     @staticmethod
     def _get(cursor, task_id, revision, *, lock=False):
+        cursor.execute(f"SELECT 1 FROM episode_store.qc_retired_versions WHERE annotation_task_id=%s AND {_SCOPE}",
+                       (task_id,))
+        if cursor.fetchone() is not None:
+            raise _failure("EPISODE_QC_RETIRED", "复检失败，训练数据和派生标注文件已移除。", 410)
         cursor.execute(
             f"SELECT * FROM annotation.revision_files WHERE {_IDENTITY}"
             + (" FOR UPDATE" if lock else ""),

@@ -39,6 +39,12 @@ class InMemoryObjectStorage:
             self._uploads[upload_id] = _Multipart(key=key)
             return upload_id
 
+    def put_bytes(self, key: str, body: bytes, *, if_none_match: bool) -> None:
+        with self._lock:
+            if if_none_match and key in self.objects:
+                raise _object_exists()
+            self.objects[key] = bytes(body)
+
     def presign_part(
         self,
         key: str,

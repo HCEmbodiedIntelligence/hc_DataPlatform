@@ -4,22 +4,24 @@ Only committed recording assets enter this worker-local path. Publication uses
 the Episode store; public READY authorization is never used to read input assets.
 """
 
-import hashlib
 import json
 import math
+from collections.abc import Mapping
 from contextlib import contextmanager
 from datetime import datetime
 from fractions import Fraction
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import av
 
 from hc_data_platform import recording_fields
+from hc_data_platform.core.ingest_timing import dataset_episode_id, timed
 from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.data_formats.holobrain_depth import ENCODER_PROFILE
-from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
+from hc_data_platform.data_formats.rgb_video import RGB_PROFILES, WINDOW_RGB_PROFILE, RgbVideoWriter
 from hc_data_platform.data_formats.video import RGB_STATISTICS_HISTOGRAM
 from hc_data_platform.episode_store.bundle_models import FrozenObject
 from hc_data_platform.episode_store.depth_window import VERSION as WINDOW_VERSION
@@ -45,11 +47,11 @@ def timestamp_ns(value: datetime):
     return int(value.timestamp()) * 1_000_000_000 + value.microsecond * 1000
 
 
-def encoding_configuration():
+def encoding_configuration(rgb_window=WINDOW_RGB_PROFILE):
     return {
         "depth_window": WINDOW_VERSION,
         "depth_encoder_profile": ENCODER_PROFILE,
-        "rgb_window": "openarm-training-h264-crf18-veryfast/1",
+        "rgb_window": rgb_window,
         "pyav": av.__version__,
         "ffmpeg": {key: list(value) for key, value in av.library_versions.items()},
         "depth_requantized": False,
@@ -149,9 +151,19 @@ def recording_files(request, connections, storage):
         raise PermissionError("recording assets differ from complete committed upload")
     frozen = inventory(request)  # Validates every path, including unread originals.
     roles = {item.relative_path: item.role for item in request.assets}
-    with TemporaryDirectory(prefix="recording-package-") as temporary:
+    from hc_data_platform.storage.local_cache import local_cache_for
+
+    cache = local_cache_for(storage)
+    # Under the cache's own filesystem, cached inputs are hard links, not copies.
+    work = None
+    if getattr(cache, "root", None) is not None:
+        work = cache.root / ".work"
+        work.mkdir(exist_ok=True)
+    with TemporaryDirectory(prefix="recording-package-", dir=work) as temporary:
         root = Path(temporary)
-        paths = {}
+        # Each file is localized on first read; a stage that does not read the
+        # selected MCAP or a camera never copies it to the temporary directory.
+        paths = LocalizedFiles()
         from .derived_cache import DerivedCache
 
         derived = DerivedCache(storage, connections, scope, root)
@@ -178,12 +190,16 @@ def recording_files(request, connections, storage):
                 # Only export consumes this rebuildable intermediate. Slice preparation
                 # reads the videos, sensors and frame map, including for legacy receipts.
                 continue
-            paths[file.relative_path] = derived.localize(
-                file.object.key,
+            paths.add(
                 file.relative_path,
-                file.object.size,
-                file.object.sha256,
-                root / file.relative_path,
+                partial(
+                    derived.localize,
+                    file.object.key,
+                    file.relative_path,
+                    file.object.size,
+                    file.object.sha256,
+                    root / file.relative_path,
+                ),
             )
         if "mcap-provenance.json" in paths:
             provenance = read_json(paths["mcap-provenance.json"])
@@ -195,15 +211,44 @@ def recording_files(request, connections, storage):
                 )
                 if selected is None:
                     selected = selected_reference(provenance)
-                selected_path = root / "source/selected.mcap"
-                paths["source/selected.mcap"] = derived.localize(
-                    selected.object.key,
-                    selected.relative_path,
-                    selected.object.size,
-                    selected.object.sha256,
-                    selected_path,
+                # Only episode-native-capture/1 plans read these bytes; newer
+                # plans freeze a reference to them, so they are never copied.
+                paths.add(
+                    "source/selected.mcap",
+                    partial(
+                        derived.localize,
+                        selected.object.key,
+                        selected.relative_path,
+                        selected.object.size,
+                        selected.object.sha256,
+                        root / "source/selected.mcap",
+                    ),
                 )
         yield upload, paths
+
+
+class LocalizedFiles(Mapping):
+    """Relative path -> local file, localized when first read."""
+
+    def __init__(self):
+        self._loaders, self._paths = {}, {}
+
+    def add(self, relative, loader):
+        self._loaders[relative] = loader
+
+    def __contains__(self, relative):
+        return relative in self._loaders
+
+    def __getitem__(self, relative):
+        if relative not in self._paths:
+            self._paths[relative] = self._loaders[relative]()
+        return self._paths[relative]
+
+    def __iter__(self):
+        return iter(self._loaders)
+
+    def __len__(self):
+        return len(self._loaders)
 
 
 def read_json(path):
@@ -463,7 +508,7 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         project_id=source.project_id,
         region_code=source.region_code,
         dataset_id=request.dataset_id,
-        episode_id="episode_" + hashlib.sha256(source.rollout_id.encode()).hexdigest()[:32],
+        episode_id=dataset_episode_id(source.rollout_id),
         rollout_id=source.rollout_id,
     )
     schema = DatasetSchemaSnapshot.create(
@@ -508,10 +553,16 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
         **({"quality_rules": quality["rule_evidence"]} if quality.get("rule_evidence") else {}),
         "calibration": {"status": "UNKNOWN", "reason": "no validated calibration declared"},
     }
-    if request.alignment_profile.converter_version == "continuous-episode-package/5":
+    if request.alignment_profile.converter_version in {
+        "continuous-episode-package/5",
+        "continuous-episode-package/6",
+    }:
         # The algorithm belongs to the immutable plan; old in-flight packages
         # retain their original floating-point statistics on retries.
         metadata["rgb_statistics"] = RGB_STATISTICS_HISTOGRAM
+    if request.alignment_profile.converter_version == "continuous-episode-package/6":
+        # /6 also uses histogram statistics after selected-row compaction.
+        metadata["capture_rgb_statistics"] = RGB_STATISTICS_HISTOGRAM
     if "mcap-provenance.json" in paths:
         metadata["source"]["mcap"] = read_json(paths["mcap-provenance.json"])
     recording_evidence = []
@@ -569,7 +620,8 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
     return plan
 
 
-def prepare_rgb_window(media, window, destination):
+@timed("RGB_WINDOW")
+def prepare_rgb_window(media, window, destination, profile=WINDOW_RGB_PROFILE):
     """Copy an identical whole stream or use the existing RGB clip encoder."""
     fps = Fraction(str(media.feature["info"]["video.fps"]))
     if window.source_frame(0, fps) != window.first_source_frame:
@@ -592,7 +644,9 @@ def prepare_rgb_window(media, window, destination):
         writer = (
             None
             if whole
-            else RgbVideoWriter(destination, window.frequency_hz, media.feature["shape"])
+            else RgbVideoWriter(
+                destination, window.frequency_hz, media.feature["shape"], **RGB_PROFILES[profile]
+            )
         )
         index = 0
         try:
@@ -629,11 +683,13 @@ def prepare_rgb_window(media, window, destination):
 @contextmanager
 def prepared_recording_assets(request, plan, paths, attempt_id):
     type(plan).model_validate(plan.model_dump(mode="json"))
+    profile = plan.encoding.get("rgb_window")
     if (
-        plan.request_sha256 != recording_request_hash(request)
+        profile not in RGB_PROFILES
+        or plan.request_sha256 != recording_request_hash(request)
         or plan.inventory != inventory(request)
         or {k: v for k, v in plan.encoding.items() if k != "native_capture"}
-        != encoding_configuration()
+        != encoding_configuration(profile)
     ):
         raise ValueError("recording asset preparation differs from frozen source/encoding version")
     with TemporaryDirectory(prefix="recording-window-") as temporary:
@@ -675,7 +731,7 @@ def prepared_recording_assets(request, plan, paths, attempt_id):
                     ),
                 )
                 if entries
-                else prepare_rgb_window(media, window, destination / "rgb.mp4")
+                else prepare_rgb_window(media, window, destination / "rgb.mp4", profile)
             )
         extra = []
         for relative in plan.metadata["source"]["recording_evidence"]:

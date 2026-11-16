@@ -4,7 +4,10 @@ import { safeReturnTo } from "../../shared/routing/route-registry";
 
 describe("application page catalog", () => {
   it("discovers ingestion and account pages alongside all enabled business pages", () => {
-    expect(pageCatalog.routes).toHaveLength(35);
+    expect(pageCatalog.routes).toHaveLength(38);
+    expect(pageCatalog.routes.map((route) => route.path)).toEqual(
+      expect.arrayContaining(["/teleoperation", "/model-training", "/settings/quality-rules"]),
+    );
     expect(pageCatalog.availability).toMatchObject({
       P02: true,
       P03: true,

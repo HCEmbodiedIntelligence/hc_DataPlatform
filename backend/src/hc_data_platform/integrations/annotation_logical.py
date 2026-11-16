@@ -86,10 +86,13 @@ class AnnotationLogicalService:
         selection = SnapshotSelection(**scope, revision_id=revision.revision_id)
         robot, assets = None, ()
         prepare = getattr(self.logical, "prepare_revision", None)
+        describe = getattr(self.logical, "describe_revision", None)
         if include_model and callable(prepare):
             # rollout_revision above already authorized this exact frozen target.
             # Resolve its scene/grants here instead of 2 more browser round trips.
             view, robot, assets = prepare(selection, revision, auth)
+        elif callable(describe):
+            view = describe(selection, revision)
         else:
             view = self.logical.snapshot(selection, auth=auth, snapshot_token=bootstrap.snapshot_token)
         return AnnotationLogicalSnapshot(

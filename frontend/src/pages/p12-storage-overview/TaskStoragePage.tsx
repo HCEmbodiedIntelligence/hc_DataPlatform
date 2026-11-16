@@ -282,7 +282,8 @@ export function LocationOverview({ data }: { data: TaskUsage }) {
 }
 
 function DiskOverview({ data }: { data: TaskUsage }) {
-  const disk = data.disk;
+  const disks = Object.entries(data.disks ?? {});
+  if (!disks.length && data.disk) disks.push(["平台工作盘", data.disk]);
   return (
     <div className={styles.topGrid}>
       <section className={styles.diskCard} aria-label="实际磁盘用量">
@@ -291,8 +292,9 @@ function DiskOverview({ data }: { data: TaskUsage }) {
           <h2>本地服务器磁盘</h2>
           <span>文件系统实测</span>
         </div>
-        {disk ? (
-          <>
+        {disks.length ? disks.map(([label, disk]) => (
+          <div key={label} className={styles.volume} aria-label={label}>
+            <h3>{label}</h3>
             <div className={styles.diskNumbers}>
               <strong>{storageBytes(disk.available_bytes)}</strong>
               <span>可用 / 共 {storageBytes(disk.total_bytes)}</span>
@@ -324,12 +326,12 @@ function DiskOverview({ data }: { data: TaskUsage }) {
                 可用 <b>{storageBytes(disk.available_bytes)}</b>
               </span>
             </div>
-          </>
-        ) : (
+          </div>
+        )) : (
           <p>当前部署暂未提供磁盘总量与剩余空间。</p>
         )}
         <p className={styles.note}>
-          整块磁盘还包含系统、容器、缓存及其他文件，不能用项目文件合计替代。
+          每个文件系统单独计量，多个目录使用同一块盘时只显示一次。
         </p>
       </section>
       <section className={styles.projectCard} aria-label="当前项目文件总量">

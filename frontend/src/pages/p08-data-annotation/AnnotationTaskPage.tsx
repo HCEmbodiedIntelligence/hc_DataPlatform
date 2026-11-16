@@ -27,7 +27,6 @@ import {
   createRuntimeAnnotationCommands,
   normalizeEpisodeOutcome,
   createClientMutationId,
-  loadRuntimeAnnotationBundle,
   refreshRuntimeAnnotationBundle,
   resolveReviewRevision,
   resolveReviewSubmission,
@@ -314,8 +313,7 @@ function RuntimeAnnotationTaskPage({
         ? taskQueryKey(scope, taskId, mode, scopeRevision)
         : ["p08-runtime-annotation", "disabled"],
     queryFn: ({ signal }) =>
-      loadRuntimeAnnotationBundle(scope!, taskId!, mode, signal,
-        queryClient.getQueryData(annotationTaskListKey(scope!, scopeRevision))),
+      taskQueryOptions(queryClient, scope!, taskId!, mode, scopeRevision).queryFn({ signal }),
     enabled:
       !!scope &&
       !!taskId &&
@@ -371,12 +369,12 @@ function RuntimeAnnotationTaskPage({
     const selected = tasks?.find(task => task.task_id === selectedTaskId);
     const nextMode = selected?.status === "SUBMITTED" ? "tag-review"
       : selected?.status === "DRAFT" || selected?.status === "NEEDS_REVISION" ? "annotation" : mode;
-    let loaded = await queryClient.fetchQuery(taskQueryOptions(scope, selectedTaskId, nextMode, scopeRevision, tasks));
+    let loaded = await queryClient.fetchQuery(taskQueryOptions(queryClient, scope, selectedTaskId, nextMode, scopeRevision, tasks));
     // The task may have changed since its navigator row was loaded.
     const actualMode = loaded.task.status === "SUBMITTED" ? "tag-review"
       : loaded.task.status === "DRAFT" || loaded.task.status === "NEEDS_REVISION" ? "annotation" : nextMode;
     if (actualMode === "annotation" && nextMode !== actualMode)
-      loaded = await queryClient.fetchQuery(taskQueryOptions(scope, selectedTaskId, actualMode, scopeRevision, tasks));
+      loaded = await queryClient.fetchQuery(taskQueryOptions(queryClient, scope, selectedTaskId, actualMode, scopeRevision, tasks));
     synchronizeAnnotationBundle(queryClient, scope, scopeRevision, actualMode, loaded);
   }, [scope, canRead, mode, scopeRevision, queryClient]);
   const jointAngleStream = useMemo(

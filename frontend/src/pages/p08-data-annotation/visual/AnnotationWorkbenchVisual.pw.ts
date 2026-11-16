@@ -482,7 +482,7 @@ test("E07 keeps Tag editing visible while watching either camera row", async ({
     await page.mouse.up();
   }
   await expect(
-    page.getByRole("button", { name: "拖动整个标注区间" }),
+    page.getByRole("button", { name: "拖选新 Tag 区间" }),
   ).toBeVisible();
   await expect(page.getByText(/自动 L1/u)).toBeVisible();
   await expect(page.getByRole("button", { name: "创建 Tag" })).toBeVisible();
@@ -517,7 +517,7 @@ test("E07 keeps Tag editing visible while watching either camera row", async ({
   await expect(createdTag).toHaveAttribute("aria-pressed", "true");
   const cameraClocks = page.locator(".viewer-media-grid time");
   const rangeBeforeDrag = await page
-    .getByRole("button", { name: "拖动整个标注区间" })
+    .getByRole("button", { name: "拖选新 Tag 区间" })
     .textContent();
   const tagBox = (await createdTag.boundingBox())!;
   await page.mouse.move(
@@ -536,7 +536,7 @@ test("E07 keeps Tag editing visible while watching either camera row", async ({
   expect(new Set(liveTimes).size).toBe(1);
   await page.mouse.up();
   await expect(
-    page.getByRole("button", { name: "拖动整个标注区间" }),
+    page.getByRole("button", { name: "拖选新 Tag 区间" }),
   ).not.toHaveText(rangeBeforeDrag!);
   await expect(
     page.getByRole("button", { name: "应用 Tag 修改" }),
@@ -774,7 +774,8 @@ test("E08 keeps the fixed submission visible after a concurrent 409", async ({
   await mountFixture(page, { mode: "tag-review", scenario: "conflict" });
   await expect(page.getByText("并发版本冲突，写操作已暂停")).toBeVisible();
   await expect(page.getByText("必填属性完整", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "提交审核" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "审核通过" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "退回修改" })).toBeDisabled();
   await page.screenshot({
     path: resolve(directory, "1280x800-conflict.png"),
     fullPage: false,

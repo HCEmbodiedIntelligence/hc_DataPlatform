@@ -57,3 +57,14 @@ def test_colour_pixels_match_official_dynamic_defaults_and_invalid_mask():
     Image.fromarray(actual).save(output, format="PNG")
     with Image.open(io.BytesIO(output.getvalue())) as image:
         np.testing.assert_array_equal(np.asarray(image), expected)
+
+
+def test_12bit_code_lookup_matches_physical_conversion_for_every_code():
+    from hc_data_platform.data_formats.holobrain_depth import DepthProfile, dequantize
+
+    codes = np.arange(4096, dtype=np.uint16).reshape(64, 64)
+    flags = (codes % 8).astype(np.uint8)
+    for profile in (DepthProfile(), DepthProfile(use_log=False, depth_max=4.2)):
+        with RealSenseColorizer(codes.shape, depth_max=profile.depth_max) as colorizer:
+            expected = colorizer.colorize(dequantize(codes, profile), flags)
+            np.testing.assert_array_equal(colorizer.colorize_codes(codes, flags, profile), expected)

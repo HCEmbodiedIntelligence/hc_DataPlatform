@@ -457,6 +457,9 @@ describe("P03 resumable upload queue", () => {
 
     expect(formal.preflight).toHaveBeenCalledTimes(2);
     expect(formal.create).toHaveBeenCalledTimes(2);
+    const batchIds = formal.create.mock.calls.map((call) => call[4]);
+    expect(batchIds[0]).toEqual(expect.any(String));
+    expect(batchIds[1]).toBe(batchIds[0]);
     expect(formal.create.mock.calls.map((call) => call[2])).toEqual([
       expect.stringContaining("folder-import:folder-a:"),
       expect.stringContaining("folder-import:folder-b:"),

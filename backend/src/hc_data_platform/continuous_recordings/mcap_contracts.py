@@ -61,6 +61,10 @@ class FillPosition(RuleOption):
 HAND_COMMAND_FEATURES = frozenset({"action.hand.left", "action.hand.right"})
 
 
+class CleanDaggerIntervals(RuleOption):
+    kind: Literal["clean_dagger_intervals"]
+
+
 class ForwardFillHands(RuleOption):
     kind: Literal["forward_fill_hands"]
 
@@ -78,17 +82,21 @@ class GenerateAction(RuleOption):
     source: Literal["state"]
 
 
-Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction | FillInitialAction | FillActionFromNextFrame | ForwardFillHands, Field(discriminator="kind")]
+Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction | FillInitialAction | FillActionFromNextFrame | ForwardFillHands | CleanDaggerIntervals, Field(discriminator="kind")]
 
 
 class JointEditRules(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     version: Literal[2]
-    rules: tuple[Operation, ...] = Field(max_length=7)
+    rules: tuple[Operation, ...] = Field(max_length=8)
 
     @cached_property
     def active(self):
         return {op.kind: op for op in self.rules if op.enabled}
+
+    @property
+    def has_joint_edits(self) -> bool:
+        return bool(self.active.keys() - {"forward_fill_hands", "clean_dagger_intervals"})
 
     @property
     def zero_joints(self):
@@ -203,7 +211,7 @@ class McapDraftConfig(BaseModel):
                                     or tuple(features[name].get("shape", ())) != (1,)
                                     for name in hands):
                     raise ValueError("hand forward fill requires a mapped scalar hand command")
-            if isinstance(rules, JointEditRules) and rules.active.keys() - {"forward_fill_hands"}:
+            if isinstance(rules, JointEditRules) and rules.has_joint_edits:
                 state, state_units = self.layout("state")
                 action, action_units = self.layout("action")
                 if not self.state_topic or not self.action_topic or self.state_topic == self.action_topic:

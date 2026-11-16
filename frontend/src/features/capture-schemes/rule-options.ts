@@ -14,8 +14,9 @@ export const labels: Record<Kind, string> = {
   fill_position: "缺失位置补值",
   generate_action: "缺少动作话题时生成动作",
   fill_initial_action: "首条动作前用关节状态补齐",
-  fill_action_from_next_frame: "缺动作时取下一训练帧的关节状态",
+  fill_action_from_next_frame: "首尾缺动作时用关节状态补齐",
   forward_fill_hands: "手部空值沿用上一条指令",
+  clean_dagger_intervals: "连接 dagger 并清理短标签",
 };
 const examples = {
   zero_joints: zeroExample,
@@ -29,6 +30,7 @@ const examples = {
   fill_initial_action: {},
   fill_action_from_next_frame: {},
   forward_fill_hands: {},
+  clean_dagger_intervals: {},
 };
 export const kinds = Object.keys(labels) as Kind[];
 function pretty(v: object) {
@@ -139,6 +141,7 @@ export function parseRow(row: RuleRow, cfg: McapConfig): ProcessingOperation {
     );
   }
   const op = result.data;
+  if (op.kind === "clean_dagger_intervals") return op;
   const groups =
     "axes" in op
       ? [op.axes]

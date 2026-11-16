@@ -212,3 +212,28 @@ def test_quality_dispatch_transaction_and_recovery(verdict, monkeypatch):
             assert cursor.fetchone()[0] == (1 if verdict == "PASS" else 0)
     finally:
         reset_request_context(token)
+
+
+def test_discard_before_slicing_retains_rejected_source_and_blocks_retry():
+    from hc_data_platform.continuous_recordings.repository import InMemoryContinuousRecordingRepository
+
+    source = ready_recording()
+    digest = "a" * 64
+    source = source.model_copy(update={
+        "status": RecordingStatus.QC_FAILED,
+        "quality_summary": RecordingQualitySummary(report_id="recording_qc_" + digest, status="REJECT",
+                                                  checked_at=source.updated_at),
+    })
+    repo = InMemoryContinuousRecordingRepository()
+    repo.create(source, actor_id="test", request_id="register")
+    with pytest.raises(ProblemException):
+        repo.discard_quality(source.scope, source.recording_id, "b" * 64, "operator")
+    discarded = repo.discard_quality(source.scope, source.recording_id, digest, "operator")
+    assert discarded.quality_discarded_by == "operator"
+    assert discarded.source_sha256 == source.source_sha256
+    assert discarded.quality_summary == source.quality_summary
+    assert repo.discard_quality(source.scope, source.recording_id, digest, "operator") == discarded
+    with pytest.raises(ProblemException) as error:
+        repo.retry_quality(source.scope, source.recording_id, str(uuid4()))
+    assert error.value.problem.code == "RECORDING_DISCARDED"
+    assert not repo.list_episode_processing(source.scope, source.recording_id)

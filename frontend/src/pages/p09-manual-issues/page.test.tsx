@@ -86,6 +86,7 @@ const wireProblem = {
 };
 const returnTo = "/manual/issues?source=AUTO_QC&severity=CRITICAL";
 let client: QueryClient;
+let fixtureRows: Record<string, unknown>[] | undefined;
 let progress = processingFixture();
 let qualityPassed = false;
 let problemsCleared = false;
@@ -114,6 +115,7 @@ beforeEach(() => {
   progress = processingFixture();
   qualityPassed = false;
   problemsCleared = false;
+  fixtureRows = undefined;
   recordingStatus = "QC_FAILED";
   resolutionStatus = "FAILED";
   useShellStore.setState({
@@ -162,13 +164,18 @@ function CurrentLocation() {
     </output>
   );
 }
-function renderProblem(overrides: Record<string, unknown> = {}) {
+function renderProblem(overrides: Record<string, unknown> = {}, root = false) {
+  const code =
+    (overrides.finding_codes as string[] | undefined)?.[0] ?? "QC_IMAGE_BLACK";
+  const entry = root ? returnTo : returnTo + "&taskGroup=&problemType=" + code;
   requestMock.mockImplementation(
     async ({ path, method }: { path: string; method: string }) => {
       if (path.endsWith("/quality-problems"))
         return {
           schema_version: "auto-quality-problem-list/v1",
-          items: problemsCleared ? [] : [{ ...wireProblem, ...overrides }],
+          items: problemsCleared
+            ? []
+            : (fixtureRows ?? [{ ...wireProblem, ...overrides }]),
           total: problemsCleared ? 0 : 1,
         };
       if (path.endsWith("/continuous-recordings/recording-a/episodes"))
@@ -250,7 +257,7 @@ function renderProblem(overrides: Record<string, unknown> = {}) {
   );
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[returnTo]}>
+      <MemoryRouter initialEntries={[entry]}>
         <ManualIssuesPage />
         <CurrentLocation />
       </MemoryRouter>
@@ -311,16 +318,19 @@ describe("问题数据 Raw 入口", () => {
             }
           : {},
       );
-      fireEvent.click(await screen.findByRole("button", { name: /删\s*除/ }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "查看与处理" }),
+      );
+      fireEvent.click(await screen.findByRole("button", { name: /^丢\s*弃$/ }));
       const dialog = await screen.findByRole("dialog", {
-        name: "删除这条问题数据？",
+        name: "丢弃这条问题数据？",
       });
       await client.invalidateQueries({ queryKey: ["quality-problems"] });
       await waitFor(() => expect(dialog).toBeVisible());
       expect(
         requestMock.mock.calls.filter(([arg]) => arg.method === "POST"),
       ).toHaveLength(0);
-      fireEvent.click(within(dialog).getByRole("button", { name: "确认删除" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "确认丢弃" }));
       await waitFor(() => expect(problemsCleared).toBe(true));
       await waitFor(() =>
         expect(
@@ -349,9 +359,10 @@ describe("问题数据 Raw 入口", () => {
 
   it("cancels deletion without changing data", async () => {
     renderProblem();
-    fireEvent.click(await screen.findByRole("button", { name: /删\s*除/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^丢\s*弃$/ }));
     const dialog = await screen.findByRole("dialog", {
-      name: "删除这条问题数据？",
+      name: "丢弃这条问题数据？",
     });
     fireEvent.click(within(dialog).getByRole("button", { name: /取\s*消/ }));
     expect(problemsCleared).toBe(false);
@@ -404,7 +415,7 @@ describe("问题数据 Raw 入口", () => {
       within(dialog).getByRole("link", { name: "查看片段视频" }),
     ).toHaveAttribute(
       "href",
-      "/recordings/recording-a/slice?episode=episode_0002",
+      `/recordings/recording-a/slice?view=preview&episode=episode_0002&report=${wireProblem.report_sha256}&finding=QC_ACTION_MISSING`,
     );
     expect(requestMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -457,17 +468,34 @@ describe("问题数据 Raw 入口", () => {
     },
   );
 
-  it("opens the same native preview from the problem summary", async () => {
-    renderProblem();
+  it("groups before paginating, and lists a multi-finding record in each type", async () => {
+    fixtureRows = Array.from({ length: 23 }, (_, i) => ({
+      ...wireProblem,
+      id: "qc_" + i.toString(16).padStart(32, "0"),
+      source_episode_index: i,
+      source_file_name: `capture-${i}.mcap`,
+      finding_codes: ["QC_IMAGE_BLACK", "QC_ACTION_MISSING"],
+    }));
+    renderProblem({}, true);
+    expect(screen.queryByText("capture-0.mcap")).toBeNull();
     fireEvent.click(
       await screen.findByRole("button", {
-        name: /黑帧比例超标 视频中黑屏或曝光不足/,
+        name: /未关联采集任务.*2 类问题.*23 条记录/,
       }),
     );
-    await waitFor(() =>
-      expect(
-        screen.getByText("原始预览 native-import-a / Episode 7"),
-      ).toBeVisible(),
+    expect(screen.queryByText("capture-0.mcap")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /动作信号缺失.*23 条/ }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: /黑帧比例超标.*23 条/ }),
+    );
+    expect(screen.getAllByRole("button", { name: "查看与处理" })).toHaveLength(
+      20,
+    );
+    fireEvent.click(screen.getByTitle("2"));
+    expect(screen.getAllByRole("button", { name: "查看与处理" })).toHaveLength(
+      3,
     );
   });
 
@@ -532,9 +560,7 @@ describe("问题数据 Raw 入口", () => {
       updated_at: "2026-09-21T01:02:00Z",
     };
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新状态" }));
-    expect(
-      await within(dialog).findByText("处理完成，可前往数据集查看和标注"),
-    ).toBeVisible();
+    expect(await within(dialog).findByText("处理完成")).toBeVisible();
     expect(
       within(dialog).getByRole("link", { name: "进入数据集查看已入库数据" }),
     ).toHaveAttribute("href", "/datasets/dataset-a");
@@ -558,7 +584,7 @@ describe("问题数据 Raw 入口", () => {
     fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
     const dialog = await screen.findByRole("dialog");
     expect(
-      screen.queryByRole("button", { name: /删\s*除/ }),
+      screen.queryByRole("button", { name: /^丢\s*弃$/ }),
     ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(

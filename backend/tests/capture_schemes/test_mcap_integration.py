@@ -367,6 +367,13 @@ async def test_mcap_temporal_without_annotation(
             finalized_revision=revision_number,
         )
         assert request.alignment_profile.frequency_hz == 15
+        if ingest_first:
+            def unexpected_scan(*args, **kwargs):
+                pytest.fail("whole-recording evidence should be reused for this Episode")
+
+            monkeypatch.setattr(
+                runtime.activities.continuous_episode_processing, "inspect_quality", unexpected_scan
+            )
         if with_labels:
             assert request.task_labels == (description, "保持物体直立")
         configure_activity_dependencies(runtime.activities)

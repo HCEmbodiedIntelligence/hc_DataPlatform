@@ -47,3 +47,18 @@ def test_expired_cache_sweep_never_removes_raw_or_unrecognized_directories(tmp_p
     assert cache.run_once() == 1
     assert not expired.exists()
     assert (raw / "original").read_bytes() == b"original"
+
+
+def test_reservation_is_counted_until_settled_and_released(tmp_path: Path) -> None:
+    cache = SourceCache(tmp_path, max_bytes=100, ttl_seconds=60)
+    entry = tmp_path / ("a" * 64)
+    with cache.pin("a" * 64), cache.reserve(60) as settle:
+        with pytest.raises(RuntimeError, match="SOURCE_CACHE_LIMIT_EXCEEDED"), cache.reserve(60):
+            pytest.fail("an in-flight reservation must count against the quota")
+        entry.mkdir(exist_ok=True)
+        (entry / "file.part").write_bytes(b"p" * 60)
+        with settle():
+            (entry / "file.part").rename(entry / "file")
+    assert not list((tmp_path / ".reservations").glob("*.reservation"))
+    with cache.pin("a" * 64), cache.reserve(40):
+        pass

@@ -669,6 +669,12 @@ components:
           format: date-time
           title: Snapshot At
           type: string
+        task_groups:
+          default: []
+          items:
+            $ref: '#/components/schemas/ManualIssueTypeGroup'
+          title: Task Groups
+          type: array
       required:
       - counts
       - facets
@@ -986,6 +992,35 @@ components:
       - region_code
       title: ManualIssueScope
       type: object
+    ManualIssueTypeGroup:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Id
+        count:
+          exclusiveMinimum: 0.0
+          title: Count
+          type: integer
+        issue_type:
+          enum:
+          - POSE_JITTER
+          - TIMESTAMP_DRIFT
+          - MISSING_FRAME
+          - STREAM_GAP
+          - CALIBRATION_MISMATCH
+          - INVALID_MASK
+          - OTHER
+          title: Issue Type
+          type: string
+      required:
+      - collection_task_id
+      - issue_type
+      - count
+      title: ManualIssueTypeGroup
+      type: object
     ResolveManualIssueCommand:
       additionalProperties: false
       properties:
@@ -1170,6 +1205,15 @@ paths:
             type: string
           - type: 'null'
           title: Assignee Id
+      - in: query
+        name: collection_task_id
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            type: string
+          - type: 'null'
+          title: Collection Task Id
       - in: query
         name: sort
         required: false

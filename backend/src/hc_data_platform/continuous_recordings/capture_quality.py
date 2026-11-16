@@ -44,7 +44,31 @@ def alignment_offsets(paths, start_ns, end_ns, *, label_config=None):
     return dict(offsets)
 
 
-def summarize(paths, start_ns, end_ns, profile, *, output=None, label_config=None):
+def interior_action_gaps(paths, start_ns, end_ns):
+    """Use recorded command matches as boundaries, including outside a cut."""
+    actions = []
+    for path in paths:
+        with path.open("rb") as stream:
+            reader = make_reader(stream, validate_crcs=True)
+            for _, _, message in reader.iter_messages(topics=["/action"]):
+                row = json.loads(message.data)
+                origin = row.get("action_origin")
+                if origin is None and row.get("source_timestamp_ns") is None:
+                    origin = "missing"
+                actions.append((message.log_time, message.sequence, origin))
+    recorded = [stamp for stamp, _, origin in actions if origin is None]
+    if not recorded:
+        return []
+    first, last = min(recorded), max(recorded)
+    return [
+        {"frame": frame, "offset_ns": stamp, "origin": origin}
+        for stamp, frame, origin in sorted(actions, key=lambda item: item[0])
+        if origin and first < stamp < last and start_ns <= stamp < end_ns
+    ]
+
+
+def summarize(paths, start_ns, end_ns, profile, *, output=None, label_config=None,
+              check_action_gaps=False):
     frames = {}
     vectors = {"/action": {}, "/observation/state": {}}
     versioned = (output or {}).get("algorithm") in {"capture-structure/v2", "capture-structure/v3"}
@@ -95,6 +119,11 @@ def summarize(paths, start_ns, end_ns, profile, *, output=None, label_config=Non
             axes[name] = {"required_axes": sorted(required), "missing_rows_by_axis": dict(missing),
                           "optional_axes": [n for n in names if n not in required]}
     result = aggregate(frames, start_ns, end_ns, profile, preserve_source=versioned)
+    if check_action_gaps:
+        gaps = interior_action_gaps(paths, start_ns, end_ns)
+        if gaps:
+            result["interior_action_gaps"] = gaps
+            result["reject_codes"].append("MCAP_INTERIOR_ACTION_MISSING")
     if versioned:
         result["axis_validity"] = axes
         result["policy"] = "capture-availability/v2"

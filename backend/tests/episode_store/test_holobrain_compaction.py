@@ -137,3 +137,67 @@ def test_validator_rejects_shifted_or_backwards_frame_mapping(tmp_path, field, v
     path.write_bytes(b"".join(canonical(row) + b"\n" for row in traces))
     with pytest.raises(ValueError, match=error):
         validate(tmp_path / "out")
+
+@pytest.mark.parametrize("remove_command_stream", [False, True])
+def test_committed_state_labels_follow_selected_rows_and_preserve_command_audit(tmp_path, remove_command_stream):
+    from mcap.reader import make_reader
+    from mcap.writer import Writer
+    from hc_data_platform.continuous_recordings.joint_normalization import JOINTS
+    from hc_data_platform.episode_store.holobrain_export import ACTION, STATE, committed_action_labels
+
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    src = source(raw, missing_actions=(0, 4))
+    selected = committed_selection(tmp_path / "parent", [True, True, False, True, True])
+    names = list(reversed(JOINTS))
+    selected.package.document = lambda key: {"features": {"action": {"names": names}}} if key == "meta/info.json" else {}
+    stamps = [10**12 + i * 33_000_000 for i in range(5)]
+    kinds = ["next_frame_state", "next_frame_state", "unfilled_state", "recorded_command", "terminal_state"]
+    origins = [json.dumps({"origin": k, "source_topic": STATE, "source_timestamp_ns": t + 7,
+                           "source_frame": i + int(k == "next_frame_state")})
+               for i, (k, t) in enumerate(zip(kinds, stamps, strict=True))]
+    with selected.package.file(DATA_PATH) as path:
+        table = pq.read_table(path)
+        for key, values in {
+            "action": [[100 * i + JOINTS.index(n) for n in names] for i in range(5)],
+            "hc.valid.action": [True, True, False, True, True],
+            "hc.axis_validity.action": [json.dumps([True] * len(names))] * 5,
+            "hc.action_source_origins": origins,
+        }.items():
+            table = table.append_column(key, pa.array(values))
+        pq.write_table(table, path)
+    frames = frame_selection(selected, compact_invalid=True)
+    src.update(frames=frames, action_labels=committed_action_labels(selected.package, frames))
+    if remove_command_stream:
+        filtered = tmp_path / "without-action.mcap"
+        with src["path"].open("rb") as incoming, filtered.open("wb") as outgoing:
+            writer = Writer(outgoing)
+            writer.start()
+            channels = {}
+            for schema, channel, message in make_reader(incoming).iter_messages():
+                if channel.topic == ACTION:
+                    continue
+                if channel.id not in channels:
+                    sid = writer.register_schema(schema.name, schema.encoding, schema.data)
+                    channels[channel.id] = writer.register_channel(channel.topic, channel.message_encoding, sid)
+                writer.add_message(channels[channel.id], message.log_time, message.data,
+                                   message.publish_time, message.sequence)
+            writer.finish()
+        src["path"] = filtered
+
+    out = tmp_path / "dataset"
+    write_dataset(out, [src], reference_report=True)
+    traces = [json.loads(line) for line in (out / "alignment_provenance.jsonl").read_text().splitlines()]
+    assert [tr["parent_frame_index"] for tr in traces] == ([0, 1, 4] if remove_command_stream else [0, 1, 3, 4])
+    for row, tr in zip(rows(out), traces, strict=True):
+        i = tr["parent_frame_index"]
+        if i == 3:
+            assert "axes" in tr["action_normalization"]
+            continue
+        assert tr["action_normalization"]["origin"] == kinds[i]
+        assert row["actions"]["timestamps"] == [stamps[i] + 7]
+        assert row["actions"]["position"]["data"] == [
+            i % 2 if n in ("L_ban", "R_ban") else 100 * i + JOINTS.index(n) for n in row["actions"]["names"]
+        ]
+    report = json.loads((out / "conversion_report.json").read_bytes())
+    assert report["episodes"][0]["frames"]["state_derived_actions"] == {"next_frame_state": 2, "terminal_state": 1}

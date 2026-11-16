@@ -536,6 +536,7 @@ class PartAuthorization(BaseModel):
 
 
 class UploadSessionGrant(BaseModel):
+    batch_number: int | None = Field(default=None, ge=1)
     session: UploadSession
     parts: list[PartAuthorization]
     idempotency_outcome: IdempotencyOutcome

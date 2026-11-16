@@ -27,6 +27,8 @@ const allPages: PageAvailability = Object.freeze({
   P21: true,
   P22: true,
   P23: true,
+  P25: true,
+  P26: true,
 });
 
 describe("navigation manifest", () => {
@@ -74,6 +76,7 @@ describe("navigation manifest", () => {
     expect(items.map((item) => item.label)).toEqual([
       "工作台",
       "采集任务",
+      "远程遥操作",
       "数据源",
       "数据上传",
       "录制切片",
@@ -81,6 +84,7 @@ describe("navigation manifest", () => {
       "数据标注",
       "数据导出",
       "问题数据",
+      "模型训练",
     ]);
     expect(items.every((item) => !item.administratorOnly)).toBe(true);
     expect(items.every((item) => !("role" in item))).toBe(true);

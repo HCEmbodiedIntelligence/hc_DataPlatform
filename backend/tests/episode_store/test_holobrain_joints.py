@@ -4,7 +4,7 @@ from collections import Counter
 
 import pytest
 
-from hc_data_platform.continuous_recordings.joint_normalization import HANDS, HOLOBRAIN_JOINTS, JOINTS
+from hc_data_platform.continuous_recordings.joint_normalization import HANDS, JOINTS
 from hc_data_platform.episode_store.holobrain_export import joints
 
 
@@ -25,11 +25,11 @@ def test_extra_axes_and_hand_fields_are_ignored_and_required_axes_reordered():
         hand["name"] = ["unused", *hand["name"], "unused"]
         hand["position"] = [float("nan"), *hand["position"], "invalid extra"]
     actual = joints((value, {"capture_time_ns": 123}), hands, Counter())
-    assert actual["names"] == list(HOLOBRAIN_JOINTS)
-    assert actual["position"]["data"] == [*range(7), 20, *range(7, 14), 21, *range(14, 17)]
-    assert actual["velocity"]["data"] == [*range(7), 0, *range(7, 14), 0, *range(14, 17)]
+    assert actual["names"] == [*JOINTS[:7], "R_ban", *JOINTS[7:14], "L_ban"]
+    assert actual["position"]["data"] == [*range(7), 20, *range(7, 14), 21]
+    assert actual["velocity"]["data"] == [*range(7), 0, *range(7, 14), 0]
     assert actual["effort"] == actual["velocity"]
-    assert actual["position"]["shape"] == [1, 19]
+    assert actual["position"]["shape"] == [1, 16]
 
 
 def test_unused_axes_do_not_need_values():
@@ -39,20 +39,20 @@ def test_unused_axes_do_not_need_values():
         hand["name"] += ["unused"]
     missing = Counter()
     actual = joints((value, {"capture_time_ns": 123}), hands, missing)
-    assert len(actual["position"]["data"]) == 19
-    assert actual["velocity"]["data"] == [0] * 19
-    assert sum(missing.values()) == 38
+    assert len(actual["position"]["data"]) == 16
+    assert actual["velocity"]["data"] == [0] * 16
+    assert sum(missing.values()) == 32
 
 
 @pytest.mark.parametrize("defect", ["missing", "duplicate", "missing_position", "nonfinite_position", "partial_velocity"])
 def test_required_axis_defects_still_fail(defect):
     value, hands = inputs()
     if defect == "missing":
-        value["name"].pop()
+        value["name"].remove(JOINTS[0])
     elif defect == "duplicate":
         value["name"].append(JOINTS[0])
     elif defect == "missing_position":
-        value["position"].pop()
+        value["position"] = value["position"][:13]
     elif defect == "nonfinite_position":
         value["position"][0] = float("nan")
     else:

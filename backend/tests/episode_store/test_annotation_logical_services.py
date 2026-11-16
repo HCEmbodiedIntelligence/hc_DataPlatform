@@ -30,7 +30,10 @@ def test_task_logical_selection_reads_fixed_samples_media_and_reauthorizes(relea
             client,
             packages.repository,
             ident,
-            capabilities=["annotation_task.read", "dataset_version.read", "episode.read"],
+            capabilities=[
+                "annotation_task.read", "dataset_version.read", "episode.read",
+                "annotation.review", "manual_issue.create",
+            ],
         )
         path = (
             f"/api/v1/projects/{ident.project_id}/regions/{ident.region_code}"
@@ -79,6 +82,22 @@ def test_task_logical_selection_reads_fixed_samples_media_and_reauthorizes(relea
                     assert hashlib.sha256(content.content).hexdigest() == data["media_sha256"]
                 media += 1
         assert numeric == 1 and media == 2
+        stream = view["snapshot"]["streams"][0]
+        issues = f"/api/v1/projects/{ident.project_id}/regions/{ident.region_code}/manual-issues"
+        report = client.post(
+            issues, headers={**headers, "Idempotency-Key": uuid4().hex},
+            json={
+                "source_kind": "ANNOTATION_TASK", "annotation_task_id": task_id,
+                "discovery_source": "REVIEWER", "stream_ref": stream["stream_id"],
+                "relative_start_ns": "0", "relative_end_ns": "1",
+                "issue_type": "OTHER", "severity": "MEDIUM", "note": "Check first sample",
+            },
+        )
+        assert report.status_code == 201, report.text
+        issue = report.json()["data"]
+        assert issue["origin_dataset_version_id"] == selection["version_id"]
+        assert issue["episode_revision_id"] == selection["revision_id"]
+        assert issue["episode_stream_id"] == stream["stream_id"]
         task = annotations.get_task(task_id)
         editor = actor(ident, task.assignee_id or "release-editor")
         history = annotations.get_history(task_id, editor)

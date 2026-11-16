@@ -356,3 +356,15 @@
 .singleStorageCell p { margin: 0; font-size: 12px; line-height: 1.7; color: #59677d; }
 .singleStorageTitle { display: flex; gap: 12px; align-items: center; }
 .pairedRows .storagePair:last-of-type .pairedCell { border-bottom: 1px solid #e2e8f0; }
+
+.volume + .volume {
+  border-top: 1px solid #e2e6ef;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.volume h3 {
+  margin: 12px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}

@@ -25,6 +25,8 @@ type Props = {
   scope: Scope;
   datasetIds: readonly string[];
   taskIds: readonly string[];
+  batchNumbers?: readonly number[];
+  allBatches?: boolean;
   hasFilter: boolean;
   canRead: boolean;
   canDownload: boolean;
@@ -37,6 +39,7 @@ export default function RawDataExportPanel(props: Props) {
     props.scope,
     [...props.datasetIds].sort(),
     [...props.taskIds].sort(),
+    props.batchNumbers, props.allBatches,
     props.hasFilter,
     props.canRead,
     props.canDownload,
@@ -49,6 +52,7 @@ function RawDataSelection({
   datasetIds,
   taskIds,
   hasFilter,
+  batchNumbers = [], allBatches = false,
   canRead,
   canDownload,
 }: Props) {
@@ -76,14 +80,16 @@ function RawDataSelection({
           regionCode: scope.regionCode,
         }
       : null;
+  const datasetsToRead = (allBatches || batchNumbers.length > 0) && !datasetIds.length ? [undefined] : datasetIds;
   const queries = useQueries({
-    queries: datasetIds.map((datasetId) => ({
+    queries: datasetsToRead.map((datasetId) => ({
       queryKey: [
         "raw-export-sources",
         scope.organizationId,
         scope.projectId,
         scope.regionCode,
         datasetId,
+        batchNumbers, allBatches,
       ],
       queryFn: async ({ signal }: { signal: AbortSignal }) => {
         const items: NativeProgress[] = [];
@@ -94,6 +100,7 @@ function RawDataSelection({
             path: nativeRoot(ingestScope!),
             query: {
               dataset_id: datasetId,
+              batch_number: batchNumbers, all_batches: allBatches || undefined,
               limit: 100,
               offset,
               include_all_sources: true,
@@ -111,7 +118,7 @@ function RawDataSelection({
   if (!canRead)
     return <PageState state="forbidden" description="需要原始数据读取权限。" />;
   if (!hasFilter || !ingestScope)
-    return <PageState state="empty" description="请先选择任务或数据集" />;
+    return <PageState state="empty" description="请先选择上传批次、任务或数据集" />;
   if (queries.some((query) => query.isPending))
     return <PageState state="loading" label="原始数据" />;
   if (queries.some((query) => query.isError))

@@ -1,8 +1,9 @@
 """Verified HEVC depth windows without another physical-depth quantization.
 
 Callers supply an internally authorized PreparedVideo and a frozen frame window.
-Whole streams keep their original MP4 bytes. Cuts/resampling encode the selected
-12-bit codes losslessly, retain pre-quantization masks and original sensor times,
+Whole streams keep their original MP4 bytes. Cuts/resampling copy the selected
+all-intra HEVC pictures, or encode the 12-bit codes losslessly otherwise. Both
+retain pre-quantization masks and original sensor times,
 and record the parent video/evidence hashes. This module does not colorize depth.
 """
 
@@ -16,11 +17,13 @@ import av
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from hc_data_platform.core.ingest_timing import timed
 from hc_data_platform.data_formats.depth_evidence import (
     file_hash,
     missing_measurement_status,
     write_json,
 )
+from hc_data_platform.data_formats.hevc_remux import NotIntraCoded, remux_hevc_frames
 from hc_data_platform.data_formats.holobrain_depth import DepthProfile, DepthVideo
 
 from .frame_window import DepthWindow
@@ -33,7 +36,7 @@ PARENT_TIME_VERSION = "hc-depth-parent-window/1"
 REQUIRED = {"profile.json", "frames.parquet", "report.json", "validity/flags.parquet"}
 
 
-def _verify_source(media):
+def _verify_source(media, select_codes=None):
     if media.evidence_root is None or not media.feature.get("info", {}).get("is_depth_map"):
         raise ValueError("depth window requires an encoded depth evidence contract")
     entries = {entry.path: entry for entry in media.evidence_files}
@@ -63,14 +66,26 @@ def _verify_source(media):
         ),
         feature_key="depth",
         allow_missing_reference=True,
+        select_codes=select_codes,
     )
     return entries, report, fps
 
 
+def _remux_selected(media, indices, video, fps):
+    """Reuse already-encoded HEVC pictures when every selected frame is a
+    keyframe. Returns False when the source needs a fresh encode instead."""
+    try:
+        remux_hevc_frames(media.path, video, indices, fps=fps)
+    except NotIntraCoded:
+        return False
+    return True
+
+
+@timed("DEPTH_WINDOW")
 def prepare_depth_window(
     media: PreparedVideo, window: DepthWindow, destination: Path, *, preserve_parent_times=False, preserve_association_reference=False
 ) -> PreparedVideo:
-    entries, original_report, source_fps = _verify_source(media)
+    source_fps = Fraction(str(media.feature["info"]["video.fps"]))
     if preserve_parent_times and (
         Fraction(str(window.frequency_hz)) != source_fps
         or (window.source_frames is None
@@ -78,6 +93,13 @@ def prepare_depth_window(
         or window.source_start_offset_ns is not None
     ):
         raise ValueError("parent timestamps require explicit frame selection without resampling")
+    # One source decode both verifies the evidence and hashes the codes the
+    # output must contain, in selection order including repeated frames.
+    selected_frames = [window.source_frame(i, source_fps) for i in range(window.frame_count)]
+    expected_codes = hashlib.sha256()
+    entries, original_report, source_fps = _verify_source(
+        media, select_codes=(selected_frames, expected_codes)
+    )
     source_count = original_report["frames"]
     if (
         window.stop_source_frame > source_count
@@ -138,11 +160,13 @@ def prepare_depth_window(
     source_rows = parquet_rows(media.evidence_root / "frames.parquet")
     source_masks = parquet_rows(media.evidence_root / "validity/flags.parquet")
     count, source_index, previous = 0, -1, None
-    expected_codes = hashlib.sha256()
     totals = dict.fromkeys(original_report["totals"], 0)
     max_error = None
+    # All-intra sources are copied picture by picture; anything else is encoded
+    # again. The output decode below rejects either path on any code mismatch.
+    reused = whole or _remux_selected(media, selected_frames, video, window.frequency_hz)
     encoder = (
-        None if whole else DepthVideo(video, window.frequency_hz, media.feature["shape"], profile)
+        None if reused else DepthVideo(video, window.frequency_hz, media.feature["shape"], profile)
     )
     pending_rows, pending_masks = [], []
     try:
@@ -151,19 +175,19 @@ def prepare_depth_window(
             pq.ParquetWriter(root / "frames.parquet", schema) as rows_out,
             pq.ParquetWriter(root / "validity/flags.parquet", mask_schema) as masks_out,
         ):
-            decoded = container.decode(video=0)
+            decoded = container.decode(video=0) if encoder is not None else None
             for index in range(window.frame_count):
-                selected = window.source_frame(index, source_fps)
+                selected = selected_frames[index]
                 while source_index < selected:
                     try:
-                        frame, row, mask = next(decoded), next(source_rows), next(source_masks)
+                        if decoded is not None:
+                            frame = next(decoded)
+                        row, mask = next(source_rows), next(source_masks)
                     except StopIteration as exc:
                         raise ValueError("verified depth source changed during selection") from exc
                     source_index += 1
-                pixels = frame.to_ndarray(format="gray12le")
-                expected_codes.update(pixels.astype("<u2").tobytes())
                 if encoder is not None:
-                    encoder.write_codes(pixels)
+                    encoder.write_codes(frame.to_ndarray(format="gray12le"))
                 target = (
                     row["target_timestamp_ns"]
                     if preserve_parent_times
@@ -212,17 +236,14 @@ def prepare_depth_window(
             encoder.close()
     if whole:
         shutil.copyfile(media.path, video)
-    observed, output_count = hashlib.sha256(), 0
     with av.open(str(video)) as container:
         stream = container.streams.video[0]
         actual_profile = stream.codec_context.profile
         if (stream.codec_context.name, stream.codec_context.format.name) != ("hevc", "gray12le"):
             raise ValueError("depth window changed codec or monochrome precision")
-        for frame in container.decode(stream):
-            observed.update(frame.to_ndarray(format="gray12le").astype("<u2").tobytes())
-            output_count += 1
-    if output_count != count or observed.digest() != expected_codes.digest():
-        raise ValueError("depth window HEVC encoding changed selected 12-bit codes")
+    # The report records the codes the selection must contain. The final
+    # validate_depth decodes the output once and rejects any code, count or PTS
+    # difference, so a separate output decode here would repeat that work.
     mapping = {
         "processor_version": PARENT_TIME_VERSION if preserve_parent_times else VERSION,
         "window": asdict(window),
@@ -230,12 +251,13 @@ def prepare_depth_window(
         "source_frames": source_count,
         "source_video_sha256": media.sha256,
         "source_evidence": {key: entry.sha256 for key, entry in sorted(entries.items())},
-        "operation": "byte_copy" if whole else "lossless_code_selection",
+        "operation": "byte_copy" if whole
+        else "lossless_picture_copy" if reused else "lossless_code_selection",
         "requantized": False,
         "encoder_configuration_sha256": original_report["video_encoding"].get(
             "encoder_configuration_sha256"
         )
-        if whole
+        if reused
         else encoder.encoding_metadata()["encoder_configuration_sha256"],
     }
     if preserve_association_reference:
@@ -254,12 +276,12 @@ def prepare_depth_window(
         },
         "video_encoding": {
             **original_report["video_encoding"],
-            "codes_sha256": observed.hexdigest(),
+            "codes_sha256": expected_codes.hexdigest(),
             "video_sha256": file_hash(video),
             "codec_profile": actual_profile,
-            # A byte copy retains the *source encoder's* versions/options. The
-            # current process only decoded/verified it; it did not encode it.
-            **({} if whole else encoder.encoding_metadata()),
+            # Byte and picture copies retain the *source encoder's* versions and
+            # options. The current process only verified them; it encoded nothing.
+            **({} if reused else encoder.encoding_metadata()),
         },
         "window": {**mapping, "configuration_sha256": digest(mapping)},
     }

@@ -4,6 +4,8 @@ from contextlib import contextmanager
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, Query, Response
+from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
@@ -12,6 +14,9 @@ from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 from .collection_delivery_models import EpisodeDeliveryCandidates, RequestCollectionDelivery
 from .collection_export import CollectionIncompatible
 from .delivery_models import (
+    DownloadEpisodeBundle,
+    PrepareEpisodePart,
+    PreparedEpisodePart,
     EpisodeDeliveryDownload,
     EpisodeDeliveryGeneration,
     EpisodeDeliveryJob,
@@ -19,6 +24,8 @@ from .delivery_models import (
 )
 from .dependencies import PackageServices
 from .errors import PackageConflict
+from .delivery_repository import scope_key
+from .upload_candidates import ExportUploadBatch, UploadCandidatePage, UploadExportFilter, UploadExportStage, upload_batches
 
 router = APIRouter(tags=["episode_data"])
 BASE = "/projects/{project_id}/regions/{region_code}/episode-deliveries"
@@ -165,6 +172,57 @@ def episode_delivery_candidates(
         )
 
 
+@router.get(BASE + "/upload-batches", response_model=list[ExportUploadBatch])
+def list_export_upload_batches(project_id: str, region_code: str, auth: VerifiedAuth,
+                              packages: PackageServices, response: Response, before: int | None = Query(None, ge=1),
+                              limit: int = Query(100, ge=1, le=100)):
+    response.headers["Cache-Control"] = "no-store"
+    with delivery_service(packages, auth, project_id, region_code) as service:
+        service.authorize(auth)
+        return upload_batches(service.repository, scope_key(), before, limit)
+
+
+@router.get(BASE + "/upload-candidates", response_model=UploadCandidatePage)
+def list_upload_candidates(
+    project_id: str, region_code: str, auth: VerifiedAuth, packages: PackageServices,
+    response: Response,
+    stage: UploadExportStage,
+    batch_number: list[Annotated[int, Query(ge=1)]] = Query(default=[]),
+    all_batches: bool = False,
+    dataset_id: list[str] = Query(default=[]), task_id: list[str] = Query(default=[]),
+    after: str | None = Query(None, max_length=256), limit: int = Query(25, ge=1, le=100),
+):
+    response.headers["Cache-Control"] = "no-store"
+    with delivery_service(packages, auth, project_id, region_code) as service:
+        return service.filtered_candidates(UploadExportFilter(stage=stage, batch_numbers=tuple(batch_number), all_batches=all_batches),
+                                           auth, datasets=dataset_id, tasks=task_id, after=after, limit=limit)
+
+
+@router.post(BASE + "/bundle-parts", response_model=PreparedEpisodePart)
+def prepare_episode_part(project_id: str, region_code: str, body: PrepareEpisodePart,
+                         auth: VerifiedAuth, packages: PackageServices):
+    from .episode_bundle import prepare_part
+
+    with delivery_service(packages, auth, project_id, region_code) as service:
+        return prepare_part(service, body, auth)
+
+
+@router.post(BASE + "/bundle", response_class=StreamingResponse,
+             responses={200: {"content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}}})
+def download_episode_bundle(project_id: str, region_code: str, body: DownloadEpisodeBundle,
+                            auth: VerifiedAuth, packages: PackageServices):
+    from hc_data_platform.lerobot_imports.source_archive import stream_storage_archive
+
+    with delivery_service(packages, auth, project_id, region_code) as service:
+        from .episode_bundle import bundle_files
+        parts = bundle_files(service, body, auth)
+        stream = stream_storage_archive(service.storage, parts)
+        return StreamingResponse(stream, media_type="application/zip",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
+                     "Content-Disposition": 'attachment; filename="episodes.zip"'},
+            background=BackgroundTask(stream.close))
+
+
 @router.get(BASE + "/{job_id}", response_model=EpisodeDeliveryJob)
 def get_episode_delivery(
     project_id: str,
@@ -217,7 +275,8 @@ def download_episode_delivery(
     auth: VerifiedAuth,
     packages: PackageServices,
     response: Response,
+    export_filter: UploadExportFilter | None = None,
 ):
     response.headers["Cache-Control"] = "no-store"
     with delivery_service(packages, auth, project_id, region_code) as service:
-        return service.download(job_id, auth)
+        return service.download(job_id, auth, export_filter)

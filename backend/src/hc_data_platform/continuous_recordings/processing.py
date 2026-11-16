@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import heapq
 import json
+import logging
 import math
 import subprocess
 import tempfile
@@ -18,6 +19,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from pydantic import TypeAdapter, ValidationError
 
+from hc_data_platform.core.ingest_timing import dataset_episode_id, episode_stage, span, timed
 from hc_data_platform.aligned_media.models import (
     AlignedMediaArtifactStatus,
     AlignedMediaArtifactV1,
@@ -34,6 +36,7 @@ from hc_data_platform.alignment.models import (
 )
 from hc_data_platform.alignment.ports import AlignmentPort
 from hc_data_platform.core.errors import ProblemException
+from hc_data_platform.core.structured_logging import log_event
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.dataset_registry.models import DatasetId, DatasetIngestViewerTarget
 from hc_data_platform.ingest.models import (
@@ -48,6 +51,7 @@ from hc_data_platform.lance_catalog.models import (
 from hc_data_platform.lance_catalog.ports import LanceCatalogPort
 from hc_data_platform.object_storage.artifacts import ArtifactWorkspace
 from hc_data_platform.object_storage.ports import ObjectStoragePort
+from hc_data_platform.quality.evidence import QcEvaluation
 from hc_data_platform.quality.models import (
     QualityInputV1,
     QualityStatus,
@@ -78,6 +82,7 @@ from .asset_models import (
     SensorTimestampMode,
 )
 from .models import ContinuousRecording, RecordingScope
+from .quality_reuse import matching_recording_report, scan_fingerprint
 from .repository import ContinuousRecordingRepository
 
 _DATASET_ID = TypeAdapter(DatasetId)
@@ -622,7 +627,7 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             quality_profile=quality_profile,
             alignment_profile=AlignmentProfileV1(
                 profile_id=f"continuous:{snapshot.schema_snapshot_id}",
-                converter_version="continuous-episode-package/5"
+                converter_version="continuous-episode-package/6"
                 if self._package_schemas is not None
                 else "continuous-mp4-sensor/1",
                 frequency_hz=frequency_hz,
@@ -885,6 +890,7 @@ class ContinuousEpisodeProcessingService:
         self._settle_version_reservation(persisted)
         return ContinuousEpisodeStateActivityOutput(episode=persisted)
 
+    @episode_stage("QUALITY_SCAN", lambda self, request, **_: dataset_episode_id(request.projection.rollout_id))
     def inspect_quality(self, request: ContinuousEpisodeWorkflowInput, *, recording_quality=False):
         findings: set[str] = set()
         sensor_count = 0
@@ -933,6 +939,7 @@ class ContinuousEpisodeProcessingService:
                     request.end_offset_ns,
                     request.quality_profile,
                     output=(request.capture_snapshot or {}).get("output"),
+                    check_action_gaps=request.recording_config.recorder_version.startswith("native-mcap-recording/"),
                     label_config=window_config(request.capture_snapshot),
                 )
                 findings.update(capture_quality["reject_codes"])
@@ -1028,10 +1035,46 @@ class ContinuousEpisodeProcessingService:
             "quality_report": report.model_dump(mode="json"),
             **({"rule_evidence": rule_evidence.model_dump(mode="json")} if rule_evidence else {}),
         }
+        if recording_quality and rule_evidence is not None and status == "PASS":
+            report_document["scan_fingerprint"] = scan_fingerprint(request)
         return report_document
 
+    def _reuse_recording_quality(self, request):
+        if self._episode_packages is None:
+            return None
+        document = matching_recording_report(request, self._connection_factory)
+        if document is None:
+            return None
+        source = request.projection
+        previous = QcEvaluation.model_validate(
+            {
+                "report": document["quality_report"],
+                "evidence": document["rule_evidence"],
+            }
+        )
+        evaluation = self._quality.reuse_evaluation(
+            previous,
+            rollout_id=source.rollout_id,
+            source_sha256=source.source_sha256,
+            profile=request.quality_profile,
+        )
+        if evaluation is None:
+            return None
+        self._episode_packages.quality_evidence.put(evaluation)
+        log_event(logging.getLogger(__name__), logging.INFO, "QUALITY.RECORDING_REPORT_REUSED")
+        return {
+            **{key: value for key, value in document.items() if key != "scan_fingerprint"},
+            "schema_version": "continuous-episode-qc/v1",
+            "episode_id": source.episode_id,
+            "rollout_id": source.rollout_id,
+            "source_sha256": source.source_sha256,
+            "quality_report": evaluation.report.model_dump(mode="json"),
+            "rule_evidence": evaluation.evidence.model_dump(mode="json"),
+        }
+
+    @episode_stage("EPISODE_QC", lambda self, request, **_: dataset_episode_id(request.projection.rollout_id))
     def qc(self, request: ContinuousEpisodeWorkflowInput) -> ContinuousEpisodeQcActivityOutput:
-        report_document = self.inspect_quality(request)
+        report_document = self._reuse_recording_quality(request) or self.inspect_quality(request)
         status = report_document["status"]
         report_sha = canonical_hash(report_document)
         report_id = f"crqc_{report_sha[:32]}"
@@ -1046,6 +1089,7 @@ class ContinuousEpisodeProcessingService:
             inspected_sensor_message_count=report_document["sensor_message_count"],
         )
 
+    @episode_stage("ALIGN", lambda self, request, **_: dataset_episode_id(request.projection.rollout_id))
     def align(
         self, request: ContinuousEpisodeWorkflowInput
     ) -> ContinuousEpisodeAlignmentActivityOutput:
@@ -1219,6 +1263,7 @@ class ContinuousEpisodeProcessingService:
             expected_dataset_version=expected,
         )
 
+    @episode_stage("COMMIT_BUNDLE", lambda self, *, workflow_input, **_: dataset_episode_id(workflow_input.projection.rollout_id))
     def commit_bundle(
         self,
         *,
@@ -1595,6 +1640,10 @@ class ContinuousEpisodeProcessingService:
         configured = {s.topic: s for s in request.recording_config.sensors}
         joints, actions = [], []
         layouts = {}
+        # The report keeps the sorted list; membership per message needs a set.
+        invalid_offsets = (
+            frozenset(capture_quality["invalid_offsets_ns"]) if capture_quality else frozenset()
+        )
         lower, upper = (
             _datetime_ns(request.projection.started_at),
             _datetime_ns(request.projection.ended_at),
@@ -1622,7 +1671,7 @@ class ContinuousEpisodeProcessingService:
                     names, units, values = body["names"], body["units"], body["values"]
                     masked_missing = bool(
                         capture_quality
-                        and int(message.log_time) in capture_quality["invalid_offsets_ns"]
+                        and int(message.log_time) in invalid_offsets
                         and isinstance(values, list)
                         and any(v is None for v in values)
                         and all(
@@ -1766,24 +1815,25 @@ class ContinuousEpisodeProcessingService:
     ) -> Iterator[QualityStreamObservationV1]:
         frame_inventory = path.with_name(f"{path.name}.frames.csv")
         try:
-            probe = subprocess.run(
-                [
-                    self._ffprobe,
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    "v:0",
-                    "-show_entries",
-                    "stream=codec_name,width,height,avg_frame_rate,time_base,start_time,duration",
-                    "-of",
-                    "json",
-                    str(path),
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=min(self._timeout, 600),
-            )
+            with span("QC_HEADER_PROBE"):
+                probe = subprocess.run(
+                    [
+                        self._ffprobe,
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=codec_name,width,height,avg_frame_rate,time_base,start_time,duration",
+                        "-of",
+                        "json",
+                        str(path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=min(self._timeout, 600),
+                )
             payload = json.loads(probe.stdout)
             streams = payload.get("streams")
             if not isinstance(streams, list) or len(streams) != 1:
@@ -1807,7 +1857,7 @@ class ContinuousEpisodeProcessingService:
             if clip_start_ns < 0 or clip_end_ns > duration_ns:
                 findings.add("VIDEO_EPISODE_WINDOW_MISSING")
             self._decode_video_window(path, clip_start_ns, clip_end_ns)
-            with frame_inventory.open("w", encoding="utf-8") as inventory:
+            with span("QC_FRAME_PROBE"), frame_inventory.open("w", encoding="utf-8") as inventory:
                 subprocess.run(
                     [
                         self._ffprobe,
@@ -1896,6 +1946,7 @@ class ContinuousEpisodeProcessingService:
             with suppress(OSError):
                 frame_inventory.unlink()
 
+    @timed("QC_VIDEO_DECODE")
     def _decode_video_window(self, path: Path, start_ns: int, end_ns: int) -> None:
         if start_ns < 0 or end_ns <= start_ns:
             raise ValueError("video Episode window is invalid")

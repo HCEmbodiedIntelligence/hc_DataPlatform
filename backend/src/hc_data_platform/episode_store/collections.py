@@ -1,6 +1,9 @@
 """Serialized dataset snapshots over immutable Episode references, with recovery."""
 
 from contextlib import contextmanager
+from types import SimpleNamespace
+
+from hc_data_platform.core.ingest_timing import timed
 
 from .catalog_models import CollectionVersion
 from .commit import EpisodePackageCommitter
@@ -38,6 +41,30 @@ class EpisodeCollections:
             raise PackageConflict("collection document hash mismatch")
         return CollectionVersion(
             **snapshot.model_dump(mode="python"), manifest_sha256=row[1], created_at=row[2]
+        )
+
+    def _head(self, scope):
+        """The writer's view of the head: one query, no whole-document validation."""
+        with self.packages.transaction() as cursor:
+            cursor.execute(
+                """SELECT c.collection_version_id,c.version,c.document->>'schema_fingerprint',
+                    (c.document->>'frequency_hz')::float8,c.document->'episodes'
+                FROM episode_store.collections c
+                JOIN episode_store.collection_heads h USING
+                    (organization_id,project_id,region_code,dataset_id,collection_version_id)
+                WHERE h.organization_id=%s AND h.project_id=%s AND h.region_code=%s
+                  AND h.dataset_id=%s""",
+                scope,
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        return SimpleNamespace(
+            collection_version_id=row[0],
+            version=row[1],
+            schema_fingerprint=row[2],
+            frequency_hz=row[3],
+            episodes=[DataVersionRef.model_validate(item) for item in row[4]],
         )
 
     def current(self, dataset_id, *, project_id=None):
@@ -99,6 +126,7 @@ class EpisodeCollections:
             row = cursor.fetchone()
             return self._view(row) if row else None
 
+    @timed("SNAPSHOT_PUBLISH")
     def publish(self, data: DataVersionRef, schema):
         """Append or replace one Episode; identical retries return the original snapshot."""
         from .schemas import EpisodeSchemas
@@ -121,7 +149,7 @@ class EpisodeCollections:
             previous_publication = self.publication(data)
             if previous_publication is not None:
                 return previous_publication
-            current = self.current(identity.dataset_id)
+            current = self._head(scope)
             legacy = (
                 self.legacy.current_version(identity.dataset_id, project_id=identity.project_id)
                 if self.legacy

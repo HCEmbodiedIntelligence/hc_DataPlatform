@@ -30,7 +30,7 @@ def selected_sources(tmp_path):
     return [a, b]
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6])
 @pytest.mark.parametrize("outcome", ["success", "fail"])
 def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
     tmp_path, monkeypatch, version, outcome
@@ -41,6 +41,7 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
 
     def write_collection(root, selections, *, storage, modalities, checkpoint, **kwargs):
         kwargs.pop("split_annotations", None)
+        assert kwargs.pop("use_committed_actions", False) == (version == 6)
         return holobrain_export.write_dataset(root, selections, checkpoint=checkpoint, **kwargs)
 
     monkeypatch.setattr(holobrain_export, "write_collection", write_collection)
@@ -61,7 +62,16 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
     assert size == archive_path.stat().st_size
     expected = rows(tmp_path / "collection")
     assert len(expected) == 6
-    assert all(row["joints"]["position"]["shape"] == [1, 19] for row in expected)
+    names = [f"Joint{i}_{side}" for side in ("R", "L") for i in range(1, 8)]
+    names = [*names[:7], "R_ban", *names[7:], "L_ban"]
+    if version < 5:
+        names.extend(["leg_1", "leg_2", "zhi"])
+    for row in expected:
+        for key in ("joints", "actions"):
+            assert row[key]["names"] == names
+            for field in ("position", "velocity", "effort"):
+                assert row[key][field]["shape"] == [1, len(names)]
+                assert len(row[key][field]["data"]) == len(names)
     prefix = "" if version >= 3 else "collection/"
     with zipfile.ZipFile(archive_path) as archive:
         state = json.loads(archive.read(prefix + "state.json"))
@@ -91,7 +101,7 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
         report = json.loads((downloaded / "conversion_report.json").read_bytes())
         assert all(row["episode_outcome"] == outcome and "success" not in row
                    for row in report["episodes"])
-    assert get_format("holobrain").archive == "holobrain_collection_zip/4"
+    assert get_format("holobrain").archive == "holobrain_collection_zip/6"
     assert from_archive(archive_format).standalone_dataset == (version >= 3)
 
 

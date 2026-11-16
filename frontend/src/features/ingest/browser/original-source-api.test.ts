@@ -109,3 +109,12 @@ it("discards a grant arriving after logout", async () => {
     authorizeOriginalFile(scope, "raw", "source.mp4", true),
   ).rejects.toBeDefined();
 });
+
+it("lists an OSS MCAP while its first QC digest is pending", async () => {
+  const page = {
+    import_id: "raw", source_format: "MCAP", episode_count: 0,
+    total: 1, offset: 0, files: [{ path: "clip.mcap", size: 20, sha256: null }],
+  };
+  mocked.mockResolvedValueOnce(page as never);
+  await expect(getOriginalFiles(scope, "raw", 0, new AbortController().signal)).resolves.toEqual(page);
+});

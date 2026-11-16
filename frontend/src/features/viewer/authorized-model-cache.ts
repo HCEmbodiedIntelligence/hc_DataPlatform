@@ -123,7 +123,7 @@ async function download(file: AuthorizedModelFile, scope: Scope, key: string, ep
       if (response.headers.get('Content-Range') !== expected) throw new ModelAssetLoadError('模型续传范围不匹配，请重试。');
     } else { offset = 0; parts = []; }
     progress(offset);
-    let lastSaved = offset;
+    let nextCheckpoint = Math.max(4 * 1024 * 1024, offset * 2);
     const reader = response.body?.getReader();
     if (!reader) throw new ModelAssetLoadError('模型下载响应为空，请重试。');
     try {
@@ -134,8 +134,9 @@ async function download(file: AuthorizedModelFile, scope: Scope, key: string, ep
         parts.push(new Uint8Array(value).buffer); offset += value.byteLength;
         if (offset > file.sizeBytes) throw new ModelAssetLoadError('模型文件大小不匹配，请重试。');
         progress(offset);
-        if (offset-lastSaved >= 256*1024) {
-          await save({key,blob:new Blob(parts),size:offset,used:Date.now()},epoch,'partials'); lastSaved=offset;
+        if (offset >= nextCheckpoint && offset < file.sizeBytes) {
+          await save({key,blob:new Blob(parts),size:offset,used:Date.now()},epoch,'partials');
+          nextCheckpoint = offset * 2;
         }
       }
     } catch (error) {
@@ -143,6 +144,8 @@ async function download(file: AuthorizedModelFile, scope: Scope, key: string, ep
         await save({key,blob:new Blob(parts),size:offset,used:Date.now()},epoch,'partials');
       throw error;
     } finally { reader.releaseLock(); }
+    clearTimeout(timer);
+    free(); free = undefined;
     const blob = new Blob(parts,{type:file.grant.media_type});
     check();
     if (blob.size !== file.sizeBytes || await digest(await blob.arrayBuffer()) !== file.grant.sha256) {

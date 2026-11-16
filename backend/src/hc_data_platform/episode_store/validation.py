@@ -6,6 +6,8 @@ import hashlib
 import io
 import json
 import math
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import av
@@ -14,9 +16,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
+from hc_data_platform.core.ingest_timing import timed
 from hc_data_platform.data_formats.depth_evidence import file_hash, missing_measurement_status
 from hc_data_platform.data_formats.depth_source import ENCODINGS, profile_hash
-from hc_data_platform.data_formats.holobrain_depth import DepthProfile
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile, parallel_decode
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
 
 from .models import CommitReceipt, FileEntry, PackageInput, PackageManifest
@@ -56,6 +59,7 @@ def parquet_rows(path: Path):
         yield from batch.to_pylist()
 
 
+@timed("DEPTH_VALIDATION")
 def validate_depth(
     root: Path,
     evidence_path: str,
@@ -67,7 +71,12 @@ def validate_depth(
     target_rows,
     feature_key: str,
     allow_missing_reference: bool = False,
+    select_codes=None,
 ) -> dict[str, int]:
+    """Verify depth evidence. ``select_codes=(indices, hasher)`` also feeds the
+    decoded codes of the given nondecreasing source frames, repeats included,
+    into ``hasher`` during the same decode pass."""
+    selected = Counter(select_codes[0]) if select_codes is not None else None
     declaration = document(root, f"{evidence_path}/profile.json")
     profile = DepthProfile(
         **{
@@ -140,6 +149,7 @@ def validate_depth(
     maximum_error = None
     with av.open(str(video)) as container:
         stream = container.streams.video[0]
+        parallel_decode(stream)
         if (stream.codec_context.name, stream.codec_context.format.name) != ("hevc", "gray12le"):
             raise ValueError("depth requires HEVC gray12le")
         if report["video_encoding"]["codec_profile"] != stream.codec_context.profile:
@@ -317,7 +327,11 @@ def validate_depth(
                         raise ValueError("depth frame units/dtype differ from source profile")
             if frame.pts is None or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6:
                 raise ValueError("depth PTS mismatch")
-            observed.update(pixels.astype("<u2").tobytes())
+            codes = pixels.astype("<u2").tobytes()
+            observed.update(codes)
+            if selected is not None:
+                for _ in range(selected.get(count, 0)):
+                    select_codes[1].update(codes)
             count += 1
     if (
         count != frame_count
@@ -343,6 +357,7 @@ def validate_depth(
 
 
 @reuse_verified_package
+@timed("PACKAGE_VALIDATION")
 def validate_package(root: Path, source: PackageInput) -> PackageManifest:
     root = Path(root)
     info = document(root, "meta/info.json")
@@ -481,9 +496,7 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
         from .capture_selection_validation import validate_capture_selection
 
         validate_capture_selection(root, info)
-    for key, feature in features.items():
-        if feature["dtype"] != "video":
-            continue
+    def check_video(key, feature):
         if "/" in key or "\\" in key:
             raise ValueError("unsafe video feature key")
         relative = VIDEO_PATH.format(video_key=key, chunk_index=0, file_index=0)
@@ -499,24 +512,26 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
         ):
             raise ValueError("video offset mismatch")
         if key in depths:
-            if "hc.timestamp_ns" not in parquet.schema_arrow.names:
+            # Each camera thread reads the Parquet evidence through its own handle.
+            data = pq.ParquetFile(package_file(root, DATA_PATH))
+            if "hc.timestamp_ns" not in data.schema_arrow.names:
                 raise ValueError("depth reuse requires exact Episode timestamp evidence")
             target_columns = ["hc.timestamp_ns"] + [
                 f"hc.{kind}.{key}"
                 for kind in ("source_timestamps_ns", "time_error_ns", "repeated", "valid")
-                if f"hc.{kind}.{key}" in parquet.schema_arrow.names
+                if f"hc.{kind}.{key}" in data.schema_arrow.names
             ]
             evidence_parquet = (
                 pq.ParquetFile(package_file(root, "hc/recording/aligned_rows.parquet"))
                 if sparse
-                else parquet
+                else data
             )
             if compacted:
                 # Media is dense; depth association evidence retains the original grid time.
                 evidence_columns = list(dict.fromkeys([*target_columns, "hc.alignment_timestamp_ns"]))
                 target_rows = (
                     {**row, "hc.timestamp_ns": row["hc.alignment_timestamp_ns"]}
-                    for batch in parquet.iter_batches(
+                    for batch in data.iter_batches(
                         batch_size=128, columns=evidence_columns
                     )
                     for row in batch.to_pylist()
@@ -553,18 +568,34 @@ def validate_package(root: Path, source: PackageInput) -> PackageManifest:
             ):
                 raise ValueError("depth statistics claim measurements for absent valid pixels")
         else:
+            # RGB pixels are not compared with any evidence here; the writer's
+            # inspect_video decoded every frame. Packet timestamps and the
+            # stream geometry give the same count/time-grid/shape checks.
             count = 0
             with av.open(str(video)) as container:
-                for frame in container.decode(video=0):
-                    if (
-                        [frame.height, frame.width, 3] != feature["shape"]
-                        or frame.pts is None
-                        or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6
-                    ):
+                stream = container.streams.video[0]
+                if [stream.codec_context.height, stream.codec_context.width, 3] != feature["shape"]:
+                    raise ValueError("RGB dimensions/time grid mismatch")
+                stamps = []
+                for packet in container.demux(stream):
+                    if not packet.size:
+                        continue
+                    if packet.pts is None:
                         raise ValueError("RGB dimensions/time grid mismatch")
-                    count += 1
+                    stamps.append(packet.pts)
+                # Presentation order; without B-frames it equals decode order.
+                stamps.sort()
+                for count, pts in enumerate(stamps):
+                    if abs(float(pts * stream.time_base) - count / fps) > 1e-6:
+                        raise ValueError("RGB dimensions/time grid mismatch")
+                count = len(stamps)
             if count != media_frames:
                 raise ValueError("RGB frame count mismatch")
+
+    videos = [(key, feature) for key, feature in features.items() if feature["dtype"] == "video"]
+    with ThreadPoolExecutor(max_workers=max(1, min(4, len(videos)))) as pool:
+        for future in [pool.submit(check_video, key, feature) for key, feature in videos]:
+            future.result()
     files = []
     for path in sorted(root.rglob("*")):
         if not path.is_file():

@@ -13,6 +13,7 @@ from hc_data_platform.episode_store.models import DataVersionRef
 from hc_data_platform.episode_store.service import EpisodePackageService
 
 from .cache_policy import select_policy
+from .superseded_batches import SupersededBatches
 from .local_cache import local_cache_for
 from .models import LifecycleAuditEvent, LifecyclePolicyAction
 
@@ -34,14 +35,16 @@ class CacheLifecycle:
             repository,
             clock,
         )
+        self.superseded = SupersededBatches(connections, storage, repository, clock=clock)
         self.processing = ProcessingCacheLifecycle(connections, storage, repository, clock=clock)
 
     def __call__(self, raw_scope):
-        self.processing(raw_scope)
         scope = tuple(raw_scope.split("/"))
         context = current_request_context()
         if scope != (context.organization_id, context.project_id, context.region_code):
             raise PermissionError("cache retention requires the exact scope")
+        self.superseded.sweep(scope)
+        self.processing(raw_scope)
         cache = local_cache_for(self.storage)
         if cache is not None:
             for kind, action in ACTIONS.items():

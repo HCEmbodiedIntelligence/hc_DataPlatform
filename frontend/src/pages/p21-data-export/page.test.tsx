@@ -108,6 +108,7 @@ beforeEach(() => {
   window.sessionStorage.clear();
   postedExports.length = 0;
   server.use(
+    http.get("*/episode-deliveries/upload-batches", () => HttpResponse.json([])),
     http.get(
       "*/datasets/:datasetId/versions/:versionId/export-eligibility",
       ({ params, request }) =>
@@ -446,6 +447,83 @@ describe("P21 data export page", () => {
       screen.getByRole("button", { name: "创建 0 个导出任务" }),
     ).toBeDisabled();
     expect(postedExports).toHaveLength(0);
+  });
+
+  it("can look up original files by upload batch alone", async () => {
+    const queries: URLSearchParams[] = [];
+    server.use(http.get("*/lerobot-imports", ({ request }) => {
+      queries.push(new URL(request.url).searchParams);
+      return HttpResponse.json([]);
+    }));
+    render(<ProviderHarness><MemoryRouter initialEntries={["/exports?dataStage=raw&uploadBatch=7"]}>
+      <DataExportPage />
+    </MemoryRouter></ProviderHarness>);
+    await screen.findByText(/共 0 个原始批次/);
+    expect(queries.some(q => q.get("batch_number") === "7" && !q.has("dataset_id"))).toBe(true);
+  });
+
+  it("unions batch tags, selects every matching page, and downloads one shared Episode bundle", async () => {
+    const first = packageDeliveryFixture().data;
+    const second = packageDeliveryFixture();
+    Object.assign(second.data.identity, {
+      organization_id: "org_fx_01", project_id: "prj_fx_01", region_code: "cn-shanghai",
+      dataset_id: datasetIds.dataset, episode_id: "batch-two-episode",
+    });
+    Object.assign(first.identity, { ...second.data.identity, episode_id: "batch-one-episode" });
+    first.data_version_id = "first-version";
+    const queued = vi.fn();
+    const archived = vi.fn();
+    rawDownloadSession();
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = vi.fn(() => "blob:episodes");
+      static revokeObjectURL = vi.fn();
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    server.use(
+      http.get("*/episode-deliveries/upload-batches", () => HttpResponse.json([
+        { batch_number: 2, channel: "oss", created_at: "2026-09-02T12:00:00Z" },
+        { batch_number: 1, channel: "web", created_at: "2026-09-01T12:00:00Z" },
+      ])),
+      http.get("*/episode-deliveries/upload-candidates", ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        if (query.get("stage") !== "qc_passed" || query.has("dataset_id"))
+          return HttpResponse.json({ items: [], total: 0, next_after: null });
+        const both = query.get("all_batches") === "true" || query.getAll("batch_number").length === 2;
+        const next = Boolean(query.get("after"));
+        return HttpResponse.json({ total: both ? 2 : 1, next_after: both && !next ? "page2" : null,
+          items: [{ data: next ? second.data : first, batch_numbers: [next ? 2 : 1] }] });
+      }),
+      http.get("*/episode-deliveries", () => HttpResponse.json([])),
+      http.post("*/episode-deliveries/bundle-parts", async ({ request }) => {
+        const body = await request.json() as { data: typeof first };
+        queued(body);
+        return HttpResponse.json({status: "ready", reused: true, part_id: (body.data.data_version_id === "first-version" ? "a" : "b").repeat(64)});
+      }),
+      http.post("*/episode-deliveries/bundle", async ({ request }) => {
+        archived(await request.json());
+        return new HttpResponse(new Uint8Array([80,75,3,4]), { headers: { "Content-Type": "application/zip" } });
+      }),
+    );
+    const user = userEvent.setup();
+    render(<ProviderHarness><MemoryRouter initialEntries={["/exports?dataStage=unannotated&uploadBatch=1"]}>
+      <DataExportPage />
+    </MemoryRouter></ProviderHarness>);
+    expect(await screen.findByRole("radio", { name: "质检通过且已入库的数据" })).toBeChecked();
+    await user.click(await screen.findByRole("checkbox", { name: /batch-one-episode/ }));
+    await user.click(screen.getByRole("combobox", { name: "上传批次" }));
+    await user.click(await screen.findByText(/第 2 次上传 · OSS/));
+    expect(await screen.findByRole("checkbox", {name: "全选上传批次"})).toBeChecked();
+    await user.keyboard("{Escape}");
+    await user.click(await screen.findByRole("checkbox", {name: "全选筛选结果"}));
+    await waitFor(() => expect(screen.getByText(/查看已选数据（2）/)).toBeVisible());
+    await user.click(screen.getByRole("radio", { name: "LeRobot RGB-D 集合" }).closest("label")!);
+    await user.click(screen.getByRole("button", { name: "导出" }));
+    await waitFor(() => expect(queued).toHaveBeenCalledTimes(2));
+    expect(queued).toHaveBeenCalledWith({data: second.data, mode:"rgbd", export_filter:{stage:"qc_passed", all_batches:true}});
+    await waitFor(() => expect(archived).toHaveBeenCalledWith({
+      part_ids: expect.arrayContaining(["a".repeat(64), "b".repeat(64)]),
+      export_filter: { stage: "qc_passed", all_batches: true },
+    }));
   });
 
   it("defaults to standard packages and submits an explicit RGB subset without a Lance reference", async () => {

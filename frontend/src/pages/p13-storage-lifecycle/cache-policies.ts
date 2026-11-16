@@ -1,4 +1,5 @@
 export const cachePolicies = {
+  CLEAN_SUPERSEDED_MCAP_BATCHES: { label: '旧解析批次', days: 0, clock: '新版验证成功后', detail: '0 天表示仅保留最新可用批次。后台按同一原始上传中的录制分别回收旧解析文件，保护正在处理、已有训练版本或标注引用的批次。' },
   CLEAN_INVENTORY_DETAILS: { label: '容量盘点历史明细', days: 0, clock: '盘点生成后', detail: '0 天表示只保留最新一轮完整明细；填写天数可保留近期明细。旧明细先校验并保存容量汇总，再回收数据库记录，不删除实际文件。' },
   CLEAN_INVENTORY_HISTORY: { label: '容量历史汇总', days: 365, clock: '盘点生成后', detail: '保留容量变化趋势与分类统计；到期仅回收已精简明细的旧汇总，最新一轮始终保留。不会删除业务数据、文件或审计记录。' },
   CLEAN_PROCESSING_CACHE: { label: '解析中间缓存', days: 7, clock: '入库完成后', detail: '所有成片入库完成后开始计时；核验原始文件和重建结果后回收选段 MCAP、解析视频。必要标记、传感器和处理凭据继续保留。失败任务从最后失败时间计时。' },

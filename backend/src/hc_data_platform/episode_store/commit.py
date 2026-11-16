@@ -2,7 +2,9 @@
 
 import hashlib
 import io
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
+from contextvars import copy_context
 from pathlib import Path
 from uuid import uuid4
 
@@ -11,9 +13,11 @@ from hc_data_platform.object_storage.models import ObjectIntegrityError
 from hc_data_platform.object_storage.ports import ImmutableObjectWriter
 
 from .errors import PackageConflict
-from .models import CommitReceipt, DataVersionRef, PackageInput, canonical
+from .models import CommitReceipt, DataVersionRef, PackageInput, PackageManifest, canonical
 from .scope import assert_scope
 from .validation import package_file, validate_package
+
+UPLOAD_CONCURRENCY = 8
 
 
 class EpisodePackageCommitter:
@@ -51,7 +55,14 @@ class EpisodePackageCommitter:
         except ObjectIntegrityError as exc:
             raise PackageConflict(str(exc)) from exc
 
-    def commit(self, root: Path, source: PackageInput, *, activate: bool = True) -> CommitReceipt:
+    def commit(
+        self,
+        root: Path,
+        source: PackageInput,
+        *,
+        activate: bool = True,
+        manifest: PackageManifest | None = None,
+    ) -> CommitReceipt:
         """Commit verified bytes; migration batches may defer the current pointer.
 
         Deferred packages remain immutable, explicitly addressable committed
@@ -63,7 +74,10 @@ class EpisodePackageCommitter:
         assert_scope(source.identity)
         # Validate before reserving visibility; the source may still be PROCESSING.
         # Assets here are local, frozen attempt files, never the READY export resolver.
-        manifest = validate_package(Path(root), source)
+        # Callers that just ran validate_package on these exact local files pass
+        # its manifest so the whole package is not decoded and hashed again.
+        if manifest is None or manifest.input != source:
+            manifest = validate_package(Path(root), source)
         with self.repository.writer_lock(source.identity):
             version, previous = self.repository.reserve(manifest)
             receipt = CommitReceipt(
@@ -86,9 +100,27 @@ class EpisodePackageCommitter:
             self.repository.start_attempt(source, attempt)
             try:
                 self.checkpoint("reserved")
-                for entry in manifest.files:
-                    self._put_file(Path(root), source.package_prefix, entry)
-                    self.checkpoint("file_verified")
+                # Package files are independent immutable keys; uploading them
+                # concurrently overlaps the per-object round trips.
+                with ThreadPoolExecutor(max_workers=UPLOAD_CONCURRENCY) as pool:
+                    pending = [
+                        pool.submit(
+                            copy_context().run,
+                            self._put_file,
+                            Path(root),
+                            source.package_prefix,
+                            entry,
+                        )
+                        for entry in manifest.files
+                    ]
+                    try:
+                        for future in pending:
+                            future.result()
+                            self.checkpoint("file_verified")
+                    except BaseException:
+                        for future in pending:
+                            future.cancel()
+                        raise
                 self._put_json(
                     f"{source.package_prefix}/hc/manifest.json", manifest.model_dump(mode="json")
                 )

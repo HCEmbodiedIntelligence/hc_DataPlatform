@@ -3,6 +3,7 @@ import type { ContinuousRecording } from "./api";
 export function recordingQualityLabel(
   recording: ContinuousRecording,
 ): string | null {
+  if (recording.quality_discarded_at) return "已丢弃";
   switch (recording.status) {
     case "PENDING_QC":
       return "等待整段质检";

@@ -94,6 +94,10 @@ export function qualityFindingText(code: string): {
   readonly title: string;
   readonly description: string;
 } {
+  if (code === "MCAP_DUPLICATE_RECORDING")
+    return { title: "重复录制", description: "原始 MCAP 内容与已有录制完全相同，已拦截重复入库。" };
+  if (code === "MCAP_INTERIOR_ACTION_MISSING")
+    return { title: "中间帧缺动作", description: "两个实录动作之间存在缺失帧，校验失败。" };
   return Object.hasOwn(qualityFindings, code)
     ? qualityFindings[code as keyof typeof qualityFindings]
     : {

@@ -85,6 +85,7 @@ def previous_confirmed(cursor, recording, storage=None):
              AND target.status='READY' AND prev.status='READY'
              AND prev.created_at < target.created_at
              AND prev.source_document->>'sha256'=target.source_document->>'sha256'
+             AND r.superseded_by_processing_id IS NULL
              AND r.status='SLICED' AND v.status='FINALIZED'
            ORDER BY prev.created_at DESC, prev.processing_id LIMIT 1""",
         (*scope, recording.recording_id),

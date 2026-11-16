@@ -4,6 +4,7 @@ Primary package files remain immutable. Preview READY follows verified object
 publication, and every grant requires a fresh scoped committed-package lookup.
 """
 
+import errno
 import io
 import time
 from contextlib import ExitStack, suppress
@@ -22,11 +23,14 @@ from pydantic import Field
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.data_formats.depth_evidence import file_hash
-from hc_data_platform.data_formats.holobrain_depth import DepthProfile, dequantize
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile
 from hc_data_platform.data_formats.lerobot_layout import VIDEO_PATH
+
+from hc_data_platform.storage.local_cache import CacheError, local_cache_for
 
 from .errors import PackageConflict
 from .models import DataVersionRef, Digest, FileEntry, FrozenModel, canonical, digest
+from .playback_cache import record_verified, verified_frames
 from .realsense_colorizer import RealSenseColorizer, display_profile
 from .scope import assert_scope
 from .validation import parquet_rows
@@ -117,7 +121,7 @@ class EpisodePreviews:
             )
             return cursor.fetchone()
 
-    def _verified(self, package, feature, row, source_hash, *, verify_bytes=True):
+    def _verified(self, package, feature, row, source_hash, *, verify_bytes=True, source_details=None):
         receipt = PreviewReceipt.model_validate(row[2])
         expected_key = (
             f"{receipt.data.package_prefix}/{receipt.file.path}"
@@ -132,7 +136,7 @@ class EpisodePreviews:
             or receipt.object_key != expected_key
         ):
             raise PackageConflict("preview differs from its committed Episode inputs")
-        info, camera, source, _ = self._source(package, feature)
+        info, camera, source, _ = source_details or self._source(package, feature)
         is_depth = camera.get("info", {}).get("is_depth_map", False)
         if (
             receipt.kind != ("depth-preview" if is_depth else "rgb-video")
@@ -154,7 +158,6 @@ class EpisodePreviews:
             raise PackageConflict("preview source file differs from the committed camera")
         head = self.storage.head(receipt.object_key)
         if head is None and not receipt.source_reused:
-            from hc_data_platform.storage.local_cache import local_cache_for
             cache = local_cache_for(self.storage)
             if cache is not None:
                 with cache.rebuild_lock(receipt.object_key):
@@ -185,10 +188,12 @@ class EpisodePreviews:
             package = self.files.open(data.identity, data.data_version_id)
             if package.receipt.data != data:
                 raise PackageConflict("preview input reference is not the committed version")
-            info, camera, entry, source_hash = self._source(package, feature)
+            source_details = self._source(package, feature)
+            info, camera, entry, source_hash = source_details
             row = self._row(data, feature)
             if row and row[0] == "READY":
-                return self._verified(package, feature, row, source_hash)
+                receipt = self._verified(package, feature, row, source_hash, source_details=source_details)
+                return self._prime(package, receipt, info)
             with self.repository.transaction() as cursor:
                 cursor.execute(
                     """INSERT INTO episode_store.media_previews
@@ -206,6 +211,7 @@ class EpisodePreviews:
                     raise PackageConflict("preview inputs changed for the same version/profile")
             try:
                 receipt = self._materialize(package, feature, info, camera, entry, source_hash)
+                self._prime(package, receipt, info)
                 self.checkpoint("objects_verified")
                 with self.repository.transaction() as cursor:
                     cursor.execute(
@@ -321,11 +327,19 @@ class EpisodePreviews:
         )
 
     @staticmethod
-    def _encode(source, stream, output, frame_count, fps, width, height, *, masks, profile, checkpoint=lambda: None):
+    def _encode(source, stream, output, frame_count, fps, width, height, *, masks, profile, checkpoint=lambda: None, verified_codes=None, offsets=None):
+        """offsets[i] is the output time in ns of source frame i, or None to drop it."""
         rate, began, count = Fraction(str(fps)), time.monotonic(), 0
+        clock = Fraction(1, 1_000_000_000)
+        if offsets is not None and len(offsets) != frame_count:
+            raise ValueError("preview frame selection does not cover the source")
         with (
             ExitStack() as resources,
-            av.open(str(output), "w", options={"movflags": "+faststart"}) as container,
+            av.open(str(output), "w", options={"movflags": "+faststart"} if offsets is None else {
+                "movflags": "+faststart",
+                "movie_timescale": "1000000000",
+                "video_track_timescale": "1000000000",
+            }) as container,
         ):
             colorizer = (
                 resources.enter_context(
@@ -336,26 +350,35 @@ class EpisodePreviews:
             )
             encoder = container.add_stream("libx264", rate=rate)
             encoder.width, encoder.height, encoder.pix_fmt = width, height, "yuv420p"
-            encoder.options = {"crf": "20", "preset": "fast", "threads": "2", "bf": "0", "g": "30"}
-            for frame in source.decode(stream):
+            encoder.options = {"crf": "20", "preset": "veryfast", "threads": "2", "bf": "0", "g": "30"}
+            if offsets is not None:
+                encoder.time_base = clock
+                encoder.codec_context.time_base = clock
+            frames = source.decode(stream) if verified_codes is None else verified_codes
+            for frame in frames:
                 checkpoint()
                 if (
                     count >= frame_count
                     or time.monotonic() - began > 3600
-                    or frame.pts is None
-                    or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6
+                    or (verified_codes is None and (
+                        frame.pts is None or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6
+                    ))
                 ):
                     raise ValueError("preview source frame count/time contract failed")
                 if profile:
                     mask = next(masks, None)
                     if mask is None or mask["frame_index"] != count:
                         raise ValueError("preview depth mask/source frame mismatch")
+                if offsets is not None and offsets[count] is None:
+                    count += 1
+                    continue
+                if profile:
                     with Image.open(io.BytesIO(mask["flags_png"])) as image:
-                        flags = np.asarray(image).copy()
-                    codes = frame.to_ndarray(format="gray12le")
+                        flags = np.asarray(image)
+                    codes = frame.to_ndarray(format="gray12le") if verified_codes is None else frame
                     if flags.shape != codes.shape:
                         raise ValueError("preview depth mask shape mismatch")
-                    pixels = colorizer.colorize(dequantize(codes, profile, output_unit="m"), flags)
+                    pixels = colorizer.colorize_codes(codes, flags, profile)
                     frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
                 if frame.width != width or frame.height != height:
                     # Pad odd sensor dimensions without changing the original package.
@@ -364,7 +387,10 @@ class EpisodePreviews:
                         pixels, ((0, height - frame.height), (0, width - frame.width), (0, 0))
                     )
                     frame = av.VideoFrame.from_ndarray(pixels, format="rgb24")
-                frame.pts, frame.time_base = count, 1 / rate
+                if offsets is None:
+                    frame.pts, frame.time_base = count, 1 / rate
+                else:
+                    frame.pts, frame.time_base = offsets[count], clock
                 for packet in encoder.encode(frame):
                     container.mux(packet)
                 count += 1
@@ -376,18 +402,74 @@ class EpisodePreviews:
             video = verified.streams.video[0]
             if video.codec_context.name != "h264" or video.codec_context.format.name != "yuv420p":
                 raise ValueError("preview codec verification failed")
+            expected = (
+                [Fraction(i, 1) / rate for i in range(frame_count)]
+                if offsets is None
+                else [offset * clock for offset in offsets if offset is not None]
+            )
             count = 0
             for frame in verified.decode(video):
-                if abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6:
+                if count >= len(expected) or abs(float(frame.pts * frame.time_base - expected[count])) > 1e-6:
                     raise ValueError("preview output timeline verification failed")
                 count += 1
-            if count != frame_count:
+            if count != len(expected):
                 raise ValueError("preview output decode count differs from Episode")
 
-    def authorize(self, identity, data_version_id, feature, *, actor_id):
+    @classmethod
+    def _playback_key(cls, receipt):
+        return f"{cls._prefix(receipt.data, receipt.feature)}/{receipt.file.sha256}.mp4"
+
+    def _cache_playback(self, cache, package, receipt, frames):
+        key = self._playback_key(receipt)
+        if not receipt.source_reused and receipt.object_key != key:
+            raise PackageConflict("preview playback key differs from its receipt")
+        with cache.rebuild_lock(key):
+            if verified_frames(cache, key, package.receipt, receipt) == frames:
+                return key
+            if receipt.source_reused and self.storage.head(key) is None:
+                with self.files.cache.file(self.storage, receipt.object_key, receipt.file) as path:
+                    try:
+                        with path.open("rb") as stream:
+                            cache.put_object(key, stream, headers={
+                                "x-oss-forbid-overwrite": "true", "Content-Type": "video/mp4",
+                            })
+                    except CacheError as exc:
+                        if exc.status != 409:
+                            raise
+            record_verified(cache, key, package.receipt, receipt, frames)
+        return key
+
+    def _prime(self, package, receipt, info):
+        cache = local_cache_for(self.storage)
+        if cache is not None:
+            frames = info.get("hc.media_frame_count", receipt.data.frame_count)
+            try:
+                self._cache_playback(cache, package, receipt, frames)
+            except OSError as exc:
+                if exc.errno not in (errno.ENOSPC, errno.EDQUOT):
+                    raise
+        return receipt
+
+    def playback(self, identity, data_version_id, feature):
+        """Resolve verified media. Each caller must still obtain its own grant."""
+        cache = local_cache_for(self.storage)
+        if cache is not None:
+            commit = self.repository.get(identity, data_version_id)
+            row = self._row(commit.data, feature)
+            if row and row[0] == "READY":
+                receipt = PreviewReceipt.model_validate(row[2])
+                if (receipt.data != commit.data or receipt.feature != feature
+                        or receipt.source_hash != row[1]):
+                    raise PackageConflict("preview differs from its committed Episode inputs")
+                key = self._playback_key(receipt)
+                frames = verified_frames(cache, key, commit, receipt)
+                if frames is not None:
+                    return receipt, frames, key
+
         package = self.files.open(identity, data_version_id)
         data = package.receipt.data
-        source_hash = self._source(package, feature)[3]
+        source_details = self._source(package, feature)
+        info, _, _, source_hash = source_details
         row = self._row(data, feature)
         if row is None or row[0] != "READY":
             failed = row is not None and row[0] == "FAILED"
@@ -397,23 +479,20 @@ class EpisodePreviews:
                 title="Episode preview unavailable",
                 detail="Processing has not published this preview.",
             )
-        receipt = self._verified(package, feature, row, source_hash)
+        receipt = self._verified(
+            package, feature, row, source_hash, verify_bytes=cache is None,
+            source_details=source_details,
+        )
+        frames = info.get("hc.media_frame_count", data.frame_count)
+        key = self._cache_playback(cache, package, receipt, frames) if cache else receipt.object_key
+        return receipt, frames, key
+
+    def authorize(self, identity, data_version_id, feature, *, actor_id):
+        receipt, frames, preview_key = self.playback(identity, data_version_id, feature)
         if self.signer is None:
             raise RuntimeError("Episode preview URL signer is not configured")
         ttl = timedelta(minutes=5)
         now = datetime.now(timezone.utc)
-        preview_key = receipt.object_key
-        from hc_data_platform.storage.local_cache import local_cache_for
-        cache = local_cache_for(self.storage)
-        if cache is not None and receipt.source_reused:
-            # Keep the formal package in OSS; browser playback uses a local cache copy.
-            preview_key = f"{self._prefix(data, feature)}/{receipt.file.sha256}.mp4"
-            with cache.rebuild_lock(preview_key):
-                if self.storage.head(preview_key) is None:
-                    from hc_data_platform.object_storage.immutable import MultipartImmutableWriter
-                    with package.file(receipt.file.path) as path, path.open("rb") as stream:
-                        MultipartImmutableWriter(self.storage).write_immutable(
-                            preview_key, stream, size=receipt.file.size, sha256=receipt.file.sha256)
         url = self.signer(preview_key, expires_in=ttl)
         # Audit contains immutable identities and expiry, never signed credentials.
         with self.repository.transaction() as cursor:
@@ -440,14 +519,14 @@ class EpisodePreviews:
                 ),
             )
         return EpisodePreviewGrant(
-            data=data,
+            data=receipt.data,
             feature=feature,
             profile_id=PROFILE,
             kind=receipt.kind,
             source_reused=receipt.source_reused,
             source_video_sha256=receipt.source_video_sha256,
             media_sha256=receipt.file.sha256,
-            frame_count=package.document("meta/info.json").get("hc.media_frame_count", data.frame_count),
+            frame_count=frames,
             fps=receipt.fps,
             width=receipt.width,
             height=receipt.height,

@@ -898,8 +898,7 @@ class RobotIngestService:
                     for part in command.parts
                 ),
             )
-        actual_sha256, computed_crc64 = self._object_checksums(asset.object_key)
-        actual_crc64 = metadata.crc64 if metadata.crc64 is not None else computed_crc64
+        actual_sha256, actual_crc64 = self._object_checksums(asset.object_key, metadata.crc64)
         failure_code = None
         if metadata.size != asset.expected_size_bytes:
             failure_code = "ASSET_SIZE_MISMATCH"
@@ -1765,13 +1764,14 @@ class RobotIngestService:
                 detail="The Raw asset batch exceeds this identity's upload policy.",
             )
 
-    def _object_checksums(self, object_key: str) -> tuple[str, int]:
+    def _object_checksums(self, object_key: str, storage_crc64: int | None) -> tuple[str, int]:
         sha256 = hashlib.sha256()
         crc64 = 0
         for chunk in self.storage.read_chunks(object_key):
             sha256.update(chunk)
-            crc64 = crc64_ecma(chunk, crc64)
-        return sha256.hexdigest(), crc64
+            if storage_crc64 is None:
+                crc64 = crc64_ecma(chunk, crc64)
+        return sha256.hexdigest(), storage_crc64 if storage_crc64 is not None else crc64
 
     def _record_rejection(
         self,

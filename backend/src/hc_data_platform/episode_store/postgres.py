@@ -43,9 +43,12 @@ class PostgresEpisodeStore:
             raise ValueError("version page limit must be 1..100")
         with self.transaction() as cursor:
             cursor.execute(
-                """SELECT receipt_document FROM episode_store.versions
+                """SELECT receipt_document FROM episode_store.versions v
                 WHERE organization_id=%s AND project_id=%s AND region_code=%s
                   AND dataset_id=%s AND episode_id=%s AND status='COMMITTED'
+                  AND NOT EXISTS (SELECT 1 FROM episode_store.qc_retired_versions retired
+                      WHERE (retired.organization_id,retired.project_id,retired.region_code,retired.data_version_id)
+                          = (v.organization_id,v.project_id,v.region_code,v.data_version_id))
                   AND (%s::bigint IS NULL OR version < %s)
                 ORDER BY version DESC LIMIT %s""",
                 (*identity.key, before, before, limit),
@@ -99,13 +102,19 @@ class PostgresEpisodeStore:
             if binding is None or binding[0] != identity.rollout_id:
                 raise PackageConflict("Episode/rollout binding differs from frozen identity")
             cursor.execute(
-                """SELECT version, content_hash, input_document, receipt_document
-                FROM episode_store.versions WHERE organization_id=%s AND project_id=%s
-                AND region_code=%s AND data_version_id=%s""",
+                """SELECT v.version, v.content_hash, v.input_document, v.receipt_document,
+                       retired.data_version_id IS NOT NULL AS qc_retired
+                FROM episode_store.versions v
+                LEFT JOIN episode_store.qc_retired_versions retired
+                    USING (organization_id, project_id, region_code, data_version_id)
+                WHERE v.organization_id=%s AND v.project_id=%s
+                  AND v.region_code=%s AND v.data_version_id=%s""",
                 (*identity.scope, source.data_version_id),
             )
             old = cursor.fetchone()
             if old is not None:
+                if old[4]:
+                    raise PackageConflict("QC rejected this Episode data version")
                 if old[1] != manifest.content_hash or old[2] != source.model_dump(mode="json"):
                     raise PackageConflict("same processing identity produced different content")
                 return old[0], CommitReceipt.model_validate(old[3]) if old[3] else None
@@ -224,7 +233,10 @@ class PostgresEpisodeStore:
                   AND v.data_version_id=b.current_data_version_id
                 WHERE b.organization_id=%s AND b.project_id=%s AND b.region_code=%s
                   AND b.dataset_id=%s AND b.episode_id=%s AND b.rollout_id=%s
-                  AND v.status='COMMITTED'""",
+                  AND v.status='COMMITTED'
+                  AND NOT EXISTS (SELECT 1 FROM episode_store.qc_retired_versions retired
+                      WHERE (retired.organization_id,retired.project_id,retired.region_code,retired.data_version_id)
+                          = (v.organization_id,v.project_id,v.region_code,v.data_version_id))""",
                 (*identity.key, identity.rollout_id),
             )
             row = cursor.fetchone()
@@ -241,7 +253,10 @@ class PostgresEpisodeStore:
                   AND b.dataset_id=v.dataset_id AND b.episode_id=v.episode_id
                 WHERE v.organization_id=%s AND v.project_id=%s AND v.region_code=%s
                   AND v.dataset_id=%s AND v.episode_id=%s AND b.rollout_id=%s
-                  AND v.data_version_id=%s AND v.status='COMMITTED'""",
+                  AND v.data_version_id=%s AND v.status='COMMITTED'
+                  AND NOT EXISTS (SELECT 1 FROM episode_store.qc_retired_versions retired
+                      WHERE (retired.organization_id,retired.project_id,retired.region_code,retired.data_version_id)
+                          = (v.organization_id,v.project_id,v.region_code,v.data_version_id))""",
                 (*identity.key, identity.rollout_id, data_version_id),
             )
             row = cursor.fetchone()

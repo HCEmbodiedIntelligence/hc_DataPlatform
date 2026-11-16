@@ -37,6 +37,10 @@ import type {
 import { draftKey, saveDraft } from "./navigation";
 import { versionSchema } from "./contracts";
 import { normalizeAdapters } from "./editor-model";
+import { Component as QualityRulePage } from "../../pages/p27-quality-rules/page";
+import { ApplyQualityRule } from "./ApplyQualityRule";
+import type { ThresholdRule } from "./api";
+import { qualityDefaults } from "./quality-contract";
 import { QualityFields } from "./QualityFields";
 expect.extend(matchers);
 
@@ -190,6 +194,8 @@ beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
   vi.mocked(request).mockReset();
   vi.mocked(request).mockImplementation(async (options) => {
+    if (options.path.endsWith("/quality-rules"))
+      return {engine_rules: [], custom_rules: [], recording_checks: {}, verification_checks: {}};
     if (options.path.includes("/capture-plan")) {
       if (options.method === "PUT") {
         const command = options.body as { scheme: TaskPlan["scheme"] };
@@ -1104,4 +1110,50 @@ it("preserves local input after a revision conflict and loads the reviewed serve
   } finally {
     save.mockRestore();
   }
+});
+
+it("creates a reusable QC threshold, reloads it and applies only that check to a draft", async () => {
+  const defaults = {minimum_frequency_ratio_risk: 0.9, minimum_frequency_ratio_reject: 0.75};
+  const custom: ThresholdRule[] = [];
+  vi.mocked(request).mockImplementation(async options => {
+    expect(options.path).toBe("/organizations/org/quality-rules");
+    if (options.method === "POST") {
+      custom.push(options.body as ThresholdRule);
+      return custom[0];
+    }
+    return {engine_rules: [{code: "QC_FREQUENCY_LOW", group: "timing", defaults}],
+      recording_checks: {VIDEO_FPS_MISMATCH: "视频帧率与配置不一致"},
+      verification_checks: {MCAP_FOOTER_MISSING: "缺少 MCAP 文件尾"}, custom_rules: [...custom]};
+  });
+  const user = userEvent.setup();
+  const first = mount(<QualityRulePage />);
+  await screen.findByText("缺少 MCAP 文件尾");
+  await user.click(screen.getByRole("button", {name: "新增质检规则"}));
+  await user.type(screen.getByRole("textbox", {name: "规则名称"}), "严格频率");
+  fireEvent.mouseDown(screen.getByRole("combobox", {name: "检查项"}));
+  await user.click(document.querySelector(".ant-select-item-option-content")!);
+  const threshold = screen.getByRole("spinbutton", {name: "最小频率比例 · 提示"});
+  fireEvent.change(threshold, {target: {value: "0.98"}});
+  fireEvent.blur(threshold);
+  await user.click(screen.getByRole("button", {name: "保存规则"}));
+  await screen.findByText("已保存规则「严格频率」");
+  expect(custom[0]?.parameters).toEqual({...defaults, minimum_frequency_ratio_risk: 0.98});
+  first.unmount();
+  const second = mount(<QualityRulePage />);
+  expect(await screen.findByText("严格频率")).toBeVisible();
+  second.unmount();
+  function Editor() {
+    const initial = fixtureDocument();
+    const [doc, change] = useState<SchemeDocument>({...initial, quality_policy: {
+      ...initial.quality_policy, timing: {...qualityDefaults.timing, maximum_gap_ns_risk: 777},
+    }});
+    return <><ApplyQualityRule org="org" document={doc} onChange={change} />
+      <output>{JSON.stringify(doc.quality_policy.timing)}</output></>;
+  }
+  mount(<Editor />);
+  fireEvent.mouseDown(screen.getByRole("combobox", {name: "选择质检规则"}));
+  await user.click(await screen.findByText("严格频率 · 采样频率偏低"));
+  await user.click(screen.getByRole("button", {name: "应用到草稿"}));
+  expect(document.querySelector("output")?.textContent).toContain('"minimum_frequency_ratio_risk":0.98');
+  expect(document.querySelector("output")?.textContent).toContain('"maximum_gap_ns_risk":777');
 });

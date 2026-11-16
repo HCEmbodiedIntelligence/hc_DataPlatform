@@ -248,6 +248,17 @@ class S3ObjectStorage:
             raise RuntimeError("written S3 object is not visible")
         return metadata
 
+    def put_bytes(self, key: str, body: bytes, *, if_none_match: bool) -> None:
+        arguments: dict[str, Any] = {"Bucket": self._bucket, "Key": key, "Body": body}
+        if if_none_match:
+            arguments["IfNoneMatch"] = "*"
+        try:
+            self._client.put_object(**arguments)
+        except Exception as exc:
+            if _precondition_failed(exc):
+                raise _immutable_object_exists() from exc
+            raise
+
 
 class OssObjectStorage:
     """Production adapter for Alibaba Cloud OSS Python SDK V1 buckets."""
@@ -273,10 +284,14 @@ class OssObjectStorage:
         from hc_data_platform.storage.oss_prefix import normalize_prefix
         from hc_data_platform.storage.oss_reference import reference_key, reference_uri
 
-        if self.zip_sources and self.zip_sources.allows(uri):
-            return self.zip_sources.inventory(uri)
         bucket = self._bucket.bucket_name
         prefix = normalize_prefix(getattr(self._bucket, "key_prefix", ""))
+        if self.zip_sources and self.zip_sources.allows(uri):
+            parsed = urlparse(uri)
+            managed = parsed.netloc == bucket and reference_key(uri, bucket).startswith(prefix)
+            inventory = self.zip_sources.inventory(uri, managed=managed)
+            if inventory is not None:
+                return inventory
         key = reference_key(uri, bucket, prefix)
         logical = key[len(prefix) :]
         exact = None if key.endswith("/") else self.head(logical)
@@ -474,6 +489,11 @@ class OssObjectStorage:
             etag=normalize_etag(str(etag)),
         )
 
+    def read_registered_zip_member(self, key, size, etag):
+        if self.zip_sources is None:
+            raise ValueError("ZIP source access is unavailable")
+        return self.zip_sources.chunks(key, 8 * 1024**2, expected_version=(etag, size))
+
     def read_chunks(self, key: str, chunk_size: int = 8 * 1024 * 1024) -> Iterable[bytes]:
         if self.zip_sources and is_member(key):
             yield from self.zip_sources.chunks(key, chunk_size)
@@ -543,6 +563,15 @@ class OssObjectStorage:
         if metadata is None:
             raise RuntimeError("written OSS object is not visible")
         return metadata
+
+    def put_bytes(self, key: str, body: bytes, *, if_none_match: bool) -> None:
+        headers = {"x-oss-forbid-overwrite": "true"} if if_none_match else None
+        try:
+            self._bucket.put_object(key, body, headers=headers)
+        except Exception as exc:
+            if _precondition_failed(exc):
+                raise _immutable_object_exists() from exc
+            raise
 
 
 def _oss_part_info(part_number: int, etag: str, size: int) -> Any:

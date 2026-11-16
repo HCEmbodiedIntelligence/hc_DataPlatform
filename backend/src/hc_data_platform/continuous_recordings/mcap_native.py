@@ -10,6 +10,7 @@ import hashlib
 import json
 import sqlite3
 import statistics
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -30,11 +31,11 @@ VERSION = "native-mcap-recording/4"
 TOPICS = ("/observation/state", "/action", "/openarm/capture_validity", "source.timestamp_ns")
 
 
-def capture_stamp(schema, channel, message, decoder, cfg):
+def capture_stamp(schema, channel, message, decoder, cfg, value=None):
     if cfg.normalization:
         from .joint_normalization import capture_time
 
-        return capture_time(decoded(schema, channel, message, decoder), message)
+        return capture_time(value if value is not None else decoded(schema, channel, message, decoder), message)
     return message.log_time
 
 
@@ -243,12 +244,72 @@ def depth_contract(encoding, scale):
     }
 
 
-def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False, fill_action_gaps=False):
+class AlignedCameraFrames:
+    """Keep small recordings in RAM and put excess pixels in an indexed scratch file."""
+
+    def __init__(self, path, max_bytes=768 * 1024**2):
+        self.path = path
+        self.remaining = max_bytes
+        self.memory = {}
+        self.db = None
+
+    def add(self, topic, stamp, sequence, pixels):
+        key = (topic, stamp)
+        if key in self.memory:
+            return
+        cost = pixels.nbytes + len(topic.encode()) + 256
+        if self.db is None and cost <= self.remaining:
+            owned = pixels.copy(order="C")
+            owned.setflags(write=False)
+            self.memory[key] = (sequence, owned)
+            self.remaining -= cost
+            return
+        if self.db is None:
+            self.db = sqlite3.connect(self.path)
+            self.db.execute("CREATE TABLE frames(topic TEXT, stamp INTEGER, seq INTEGER, data BLOB, shape TEXT, dtype TEXT)")
+        self.db.execute("INSERT INTO frames VALUES(?,?,?,?,?,?)", (
+            topic, stamp, sequence, pixels.tobytes(), json.dumps(pixels.shape), pixels.dtype.str,
+        ))
+
+    def finish_writes(self):
+        if self.db is not None:
+            self.db.execute("CREATE INDEX frame_time ON frames(topic,stamp)")
+            self.db.commit()
+
+    def get(self, topic, stamp):
+        cached = self.memory.get((topic, stamp))
+        if cached is not None or self.db is None:
+            return cached
+        row = self.db.execute("SELECT seq,data,shape,dtype FROM frames WHERE topic=? AND stamp=? ORDER BY rowid LIMIT 1",
+                              (topic, stamp)).fetchone()
+        if row is None:
+            return None
+        seq, body, shape, dtype = row
+        return seq, np.frombuffer(body, dtype=dtype).reshape(json.loads(shape))
+
+    def release_memory(self):
+        self.memory.clear()
+
+    def close(self):
+        self.release_memory()
+        if self.db is not None:
+            self.db.close()
+
+
+# A keyframe every second keeps LeRobot random frame access to ~15 decoded
+# frames instead of ~125 with x264's default 250-frame GOP (+12% bytes).
+RGB_KEYFRAME_INTERVAL = 30
+# x265 WPP threads for the lossless depth encoder: ~15 s -> ~6 s per 837 frames
+# with 4 free cores. Decoded codes are identical; the bitstream bytes are not.
+DEPTH_ENCODER_POOLS = 4
+
+
+def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False, fill_action_gaps=False, source_inventory=None, source_sha256=None, preview_frames=None, rgb_keyframe_interval=RGB_KEYFRAME_INTERVAL, depth_encoder_pools=DEPTH_ENCODER_POOLS):
     config = McapProcessingConfig.model_validate(config)
     if config.semantic_output is not None:
         from .mcap_semantic import prepare_semantic
 
-        return prepare_semantic(path, destination, config, progress)
+        return prepare_semantic(path, destination, config, progress, source_inventory=source_inventory, source_sha256=source_sha256, preview_frames=preview_frames, rgb_keyframe_interval=rgb_keyframe_interval, depth_encoder_pools=depth_encoder_pools)
     path, destination = Path(path), Path(destination)
     with path.open("rb") as stream:
         if make_reader(stream).get_header().profile == "hc-episode-mcap/1":
@@ -270,12 +331,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
     (destination / "videos").mkdir()
     (destination / "source").mkdir()
     decoder = McapRos2DecoderProbe()
-    # Disk-backed pixels keep memory bounded to one frame per selected camera.
-    db = sqlite3.connect(destination.parent / (destination.name + "-frames.sqlite3"))
-    db.execute(
-        "CREATE TABLE frames(topic TEXT, stamp INTEGER, seq INTEGER, "
-        "data BLOB, shape TEXT, dtype TEXT)"
-    )
+    frames = AlignedCameraFrames(destination.parent / (destination.name + "-frames.sqlite3"))
     numeric = {cfg.state_topic: [], **({cfg.action_topic: []} if cfg.action_topic else {})}
     cameras, times = {}, {}
     declared_cameras = {c.topic: c for c in cfg.cameras}
@@ -315,18 +371,9 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                     )
                     if camera["shape"] != frame.pixels.shape:
                         raise ValueError("MCAP_CAMERA_LAYOUT_CHANGED")
-                    db.execute(
-                        "INSERT INTO frames VALUES(?,?,?,?,?,?)",
-                        (
-                            channel.topic,
-                            capture_stamp(schema, channel, message, decoder, cfg),
-                            message.sequence,
-                            frame.pixels.tobytes(),
-                            json.dumps(frame.pixels.shape),
-                            frame.pixels.dtype.str,
-                        ),
-                    )
-                    times.setdefault(channel.topic, []).append(capture_stamp(schema, channel, message, decoder, cfg))
+                    stamp = capture_stamp(schema, channel, message, decoder, cfg)
+                    frames.add(channel.topic, stamp, message.sequence, frame.pixels)
+                    times.setdefault(channel.topic, []).append(stamp)
                 elif channel.topic in numeric:
                     value = decoded(schema, channel, message, decoder)
                     roles = [role for role in ("state", "action")
@@ -334,9 +381,8 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                     names = {name for role in roles for name in cfg.layout(role)[0]}
                     required = {name for role in roles for name in cfg.required_axes(role)}
                     selected = joint_values(value, names, required, topic=channel.topic, stamp=message.log_time)
-                    numeric[channel.topic].append((capture_stamp(schema, channel, message, decoder, cfg), selected))
-        db.execute("CREATE INDEX frame_time ON frames(topic,stamp)")
-        db.commit()
+                    numeric[channel.topic].append((capture_stamp(schema, channel, message, decoder, cfg, value), selected))
+        frames.finish_writes()
         for topic in times:
             times[topic] = sorted(set(times[topic]))
         for topic in numeric:
@@ -397,10 +443,11 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             evidence = "hc/depth/" + c["id"].removesuffix("_depth")
             writers[topic] = (
                 DepthEvidenceVideo(
-                    target, destination / evidence, cfg.fps, c["shape"], require_source_profile=True
+                    target, destination / evidence, cfg.fps, c["shape"], require_source_profile=True, preview_frames=preview_frames,
+                    encoder_pools=depth_encoder_pools,
                 )
                 if c["kind"] == "depth"
-                else RgbVideoWriter(target, cfg.fps, c["shape"])
+                else RgbVideoWriter(target, cfg.fps, c["shape"], keyframe_interval=rgb_keyframe_interval)
             )
             media[c["id"]] = {
                 "kind": c["kind"],
@@ -408,6 +455,17 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                 **({"evidence_path": evidence} if c["kind"] == "depth" else {}),
             }
         numeric_times = {k: [x[0] for x in v] for k, v in numeric.items()}
+        # This rule uses the preserved training clock. Only the leading and
+        # trailing runs outside accepted command frames may use state labels.
+        first_command = count
+        last_command = -1
+        if fill_action_gaps:
+            action_times = numeric_times[cfg.action_topic]
+            first_command = next((i for i, t in enumerate(primary)
+                                  if nearest(action_times, t) is not None), count)
+            if first_command < count:
+                last_command = next(i for i in range(count - 1, first_command - 1, -1)
+                                    if nearest(action_times, primary[i]) is not None)
         filled = {"next_frame_state": 0, "terminal_state": 0}
         invalid = 0
         previous_primary = None
@@ -419,6 +477,8 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             writer.start(profile=version)
             schema = writer.register_schema("hc-recording-value/1", "jsonschema", b"{}")
             channels = {t: writer.register_channel(t, "json", schema) for t in TOPICS}
+            depth_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mcap-depth")
+            pending_depth = None
             try:
                 for index in range(count):
                     progress()
@@ -468,7 +528,8 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                         origin = {}
                         source_time = numeric[topic][pos][0] if pos is not None else None
                         source_topic = topic
-                        if fill_action_gaps and key == TOPICS[1] and pos is None:
+                        if (fill_action_gaps and key == TOPICS[1] and pos is None
+                                and not first_command < index < last_command):
                             # Use the very same state selection as observation.state on the
                             # next preserved training frame, including its acceptance window.
                             next_index = min(index + 1, count - 1)
@@ -502,27 +563,18 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                         }
                     for topic, c in cameras.items():
                         j = nearest(times[topic], stamp, 50_000_000 if c["kind"] == "depth" else 20_000_000)
-                        row = (
-                            db.execute(
-                                "SELECT seq,data,shape,dtype FROM frames "
-                                "WHERE topic=? AND stamp=? LIMIT 1",
-                                (topic, times[topic][j]),
-                            ).fetchone()
-                            if j is not None
-                            else None
-                        )
+                        row = frames.get(topic, times[topic][j]) if j is not None else None
                         if row is None:
                             reasons.append(topic + ":missing")
-                        pixels = (
-                            np.frombuffer(row[1], dtype=row[3]).reshape(json.loads(row[2]))
-                            if row
-                            else np.zeros(
-                                c["shape"], dtype=np.uint16 if c["kind"] == "depth" else np.uint8
-                            )
+                        pixels = row[1] if row is not None else np.zeros(
+                            c["shape"], dtype=np.uint16 if c["kind"] == "depth" else np.uint8
                         )
                         if c["kind"] == "depth":
-                            writers[topic].write(
-                                pixels,
+                            # Each queued write retains its read-only input frame.
+                            if pending_depth is not None:
+                                pending_depth.result()
+                            pending_depth = depth_executor.submit(
+                                writers[topic].write, pixels,
                                 cfg.depth_scale_m_per_unit if row else None,
                                 source_id=topic,
                                 source_seq=row[0] if row else None,
@@ -561,8 +613,12 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                         )
                         + b"\n"
                     )
+                if pending_depth is not None:
+                    pending_depth.result()
                 writer.finish()
             finally:
+                depth_executor.shutdown(wait=True)
+                frames.release_memory()
                 for video in writers.values():
                     video.close()
         import av
@@ -612,7 +668,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             "collection_mode": cfg.collection_mode,
             "config": cfg.model_dump(mode="json"),
             "inventory": inventory,
-            **({"action_gap_fill": {"policy": "next_frame_state_terminal_current",
+            **({"action_gap_fill": {"policy": "edge_runs_next_frame_state_terminal_current",
                                     "filled_frames": sum(filled.values()), **filled}}
                if fill_action_gaps else {}),
             "invalid_frames": invalid,
@@ -669,4 +725,4 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             (destination / name).write_bytes(canonical(body))
         return recording_config, provenance
     finally:
-        db.close()
+        frames.close()

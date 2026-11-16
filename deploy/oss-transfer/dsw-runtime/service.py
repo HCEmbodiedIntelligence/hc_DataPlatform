@@ -15,7 +15,11 @@ commands={"api":[python,"-m","uvicorn","hc_data_platform.core.app:create_app","-
           "verify":[python,str(runtime/"ctl/verify-oss.py")]}
 env={"PATH":str(runtime/"venv/bin")+":/usr/local/bin:/usr/bin:/bin","HOME":str(base/"cache/service-home"),"LANG":"C.UTF-8","PYTHONUNBUFFERED":"1","PYTHONDONTWRITEBYTECODE":"1",
      "PYTHONPATH":str(base/"app/backend/src")+":"+str(runtime/"python")}
-if role in ("api","worker","verify"):
+if role == "script":
+    if len(sys.argv) < 3 or not Path(sys.argv[2]).is_absolute():
+        raise SystemExit("Usage: service.py script /absolute/path/to/check.py [args...]")
+    commands[role] = [python, *sys.argv[2:]]
+if role in ("api","worker","verify","script"):
     env.update(json.loads((run/("worker.json" if role=="worker" else "api.json")).read_text()))
 if role == "worker":
     env["HC_WORKER_READINESS_FILE"] = str(base/"cache/service-home/worker-ready")

@@ -31,7 +31,7 @@ def archive_current(root, source, destination):
     (root / source).replace(target)
 
 
-def compact_capture_rows(root: Path):
+def compact_capture_rows(root: Path, *, rgb_statistics="legacy"):
     """Only used in unpublished attempts; original files and clocks stay intact."""
     root = Path(root)
     info = json.loads((root / "meta/info.json").read_bytes())
@@ -169,5 +169,5 @@ def compact_capture_rows(root: Path):
     (root / "hc/training_selection.json").write_bytes(canonical(selection))
     from .capture_media import compact_capture_media
 
-    compact_capture_media(root)
+    compact_capture_media(root, rgb_statistics=rgb_statistics)
     refresh_numeric_statistics(root)

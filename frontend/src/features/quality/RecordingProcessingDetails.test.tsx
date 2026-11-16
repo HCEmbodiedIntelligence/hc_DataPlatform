@@ -4,6 +4,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
+import { fireEvent, waitFor } from "@testing-library/react";
+import { RecordingQualityReview } from "./RecordingQualityReview";
+import type { components } from "../../shared/api/generated/platform";
 import { RecordingProcessingDetails } from "./RecordingProcessingDetails";
 
 expect.extend(matchers);
@@ -20,6 +23,27 @@ vi.mock("../collection-tasks/api", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+});
+
+it("shows matching evidence on the recording and discards only the confirmed report", async () => {
+  const digest = "a".repeat(64);
+  const recording = { recording_id: "recording-copy", status: "QC_FAILED", source_file_name: "copy.mcap",
+    quality_summary: {report_id: "recording_qc_" + digest, finding_codes: ["MCAP_DUPLICATE_RECORDING"]} };
+  const detail = {data: recording, quality_evidence: {duplicate_of_recording_id: "recording-original",
+    original_mcap_sha256: "b".repeat(64), findings: []}} as unknown as components["schemas"]["ContinuousRecordingEnvelope"];
+  const scope = {organizationId:"01", projectId:"01", regionCode:"global"};
+  requestMock.mockResolvedValue({data:{...recording,quality_discarded_at:"2026-11-12T08:00:00Z"}});
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>
+    <RecordingQualityReview scope={scope} detail={detail} />
+  </MemoryRouter></QueryClientProvider>);
+  expect(screen.getByRole("link", {name:/核对已有录制/})).toHaveAttribute("href", "/recordings/recording-original/slice?view=preview");
+  expect(screen.getByText("b".repeat(64))).toBeVisible();
+  fireEvent.click(screen.getByRole("button", {name:"丢弃当前重复录制"}));
+  expect(requestMock).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole("button", {name:"确认丢弃"}));
+  await waitFor(() => expect(screen.getByText("已丢弃 · 原始录制已保留")).toBeVisible());
+  expect(requestMock).toHaveBeenCalledWith({method:"POST",scope,
+    path:"/projects/01/regions/global/continuous-recordings/recording-copy/quality:discard",body:{report_sha256:digest}});
 });
 
 function show(sourceFails = false, discarded = false, commitFailed = false) {
@@ -88,7 +112,7 @@ it("identifies the task, original recording and slice next to the rejection reas
   expect(screen.getByText("recording-original")).toBeVisible();
   expect(
     screen.getByRole("link", { name: "查看原始录制与文件" }),
-  ).toHaveAttribute("href", "/recordings/recording-original/slice");
+  ).toHaveAttribute("href", "/recordings/recording-original/slice?view=preview");
   expect(screen.getByText(/关节或动作数据包含缺失值/)).toBeVisible();
   expect(screen.queryByText("QC_REJECTED")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("逐规则结果统计")).not.toBeInTheDocument();

@@ -599,6 +599,9 @@ class AutoQualityProblemV1(BaseModel):
     session_id: str | None = Field(default=None, min_length=1, max_length=256)
     source_import_id: str | None = Field(default=None, min_length=1, max_length=256)
     source_episode_index: int | None = Field(default=None, ge=0)
+    collection_task_id: str | None = None
+    source_file_name: str | None = None
+    discarded: bool = False
     recording_id: str | None = None
     recording_episode_id: str | None = None
     rollout_id: str = Field(min_length=1, max_length=256)
@@ -628,6 +631,7 @@ class AutoQualityProblemV1(BaseModel):
         session_id: str | None,
         data_package_id: str | None,
         updated_at: datetime,
+        collection_task_id: str | None = None,
         source_import_id: str | None = None,
         source_episode_index: int | None = None,
     ) -> AutoQualityProblemV1:
@@ -656,6 +660,7 @@ class AutoQualityProblemV1(BaseModel):
             topics=tuple(sorted({item.topic for item in findings})),
             report_sha256=report.content_sha256,
             updated_at=updated_at,
+            collection_task_id=collection_task_id,
         )
 
     @classmethod
@@ -667,6 +672,7 @@ class AutoQualityProblemV1(BaseModel):
         recording_id: str,
         data_package_id: str,
         updated_at: datetime,
+        collection_task_id: str | None = None,
     ) -> AutoQualityProblemV1:
         if document["status"] != "REJECT":
             raise ValueError("only rejected recording reports are problem data")
@@ -675,10 +681,24 @@ class AutoQualityProblemV1(BaseModel):
         codes = tuple(
             sorted(set(document.get("finding_codes", ())) | {f.code.value for f in findings})
         )
+        gaps = document.get("capture_quality", {}).get("interior_action_gaps", [])
+        gap_message = ""
+        if gaps:
+            sample = "、".join(str(gap["frame"]) for gap in gaps[:20])
+            suffix = " 等" if len(gaps) > 20 else ""
+            filled = sum(gap["origin"] in {"next_frame_state", "terminal_state"} for gap in gaps)
+            gap_message = (
+                f"中间缺动作 {len(gaps)} 帧，其中旧规则用关节状态补写 {filled} 帧，"
+                f"未补写 {len(gaps) - filled} 帧。训练帧号（从 0 起）：{sample}{suffix}。"
+            )
+        duplicate = document.get("duplicate_of_recording_id")
+        message = gap_message or (findings[0].message if findings else "录制数据未通过有效性检查：" + "、".join(codes))
+        if duplicate:
+            message = f"原始 MCAP 内容与录制 {duplicate} 完全相同，已拦截重复入库。" + gap_message
         return cls(
             id=f"qc_{report_sha256[:32]}",
             recording_id=recording_id,
-            recording_episode_id=document["episode_id"],
+            recording_episode_id=(document["episode_id"] if document.get("schema_version") != "continuous-recording-qc/v1" else None),
             rollout_id=report.rollout_id,
             data_package_id=data_package_id,
             status="REJECT",
@@ -687,15 +707,43 @@ class AutoQualityProblemV1(BaseModel):
             end_ns=str(
                 max((max(f.end_ns, f.start_ns + 1) for f in findings), default=report.end_ns)
             ),
-            message=(
-                findings[0].message if findings else "录制数据未通过有效性检查：" + "、".join(codes)
-            )[:1000],
+            message=message[:1000],
             finding_count=max(len(findings), len(codes), 1),
             finding_codes=codes or ("RECORDING_QC_REJECT",),
-            topics=tuple(sorted({f.topic for f in findings})) or ("/recording",),
+            topics=tuple(sorted({f.topic for f in findings} | ({"/action"} if gaps else set()))) or ("/recording",),
             report_sha256=report_sha256,
             updated_at=updated_at,
+            collection_task_id=collection_task_id,
         )
+
+
+class ProblemLocation(BaseModel):
+    topic: str
+    start_ns: str
+    end_ns: str
+    first_frame: int | None = None
+    last_frame: int | None = None
+
+
+class ActionGapSegment(BaseModel):
+    first_frame: int
+    last_frame: int
+    first_offset_ns: int
+    last_offset_ns: int
+    origin: str
+
+
+def action_gap_segments(gaps):
+    segments = []
+    for gap in gaps:
+        frame, offset, origin = gap["frame"], gap["offset_ns"], gap["origin"]
+        if segments and frame == segments[-1].last_frame + 1 and origin == segments[-1].origin:
+            segments[-1].last_frame = frame
+            segments[-1].last_offset_ns = offset
+        else:
+            segments.append(ActionGapSegment(first_frame=frame, last_frame=frame,
+                first_offset_ns=offset, last_offset_ns=offset, origin=origin))
+    return segments
 
 
 class AutoQualityProblemListV1(BaseModel):

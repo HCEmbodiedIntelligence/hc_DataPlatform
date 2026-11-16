@@ -17,6 +17,20 @@ from av.video.stream import VideoStream
 from numpy.typing import NDArray
 
 
+# Encoder profiles frozen into Episode plans. Legacy names keep the original
+# options so plans frozen before an upgrade still reproduce their bytes.
+LEGACY_RGB_PROFILE = "openarm-training-h264-crf18-veryfast/1"
+# First generation from camera frames: one keyframe per second at 30 fps.
+SOURCE_RGB_PROFILE = "openarm-training-h264-crf18-veryfast-g30/2"
+# Re-encode of an already lossy stream: crf 12 limits generation loss.
+WINDOW_RGB_PROFILE = "openarm-training-h264-crf12-veryfast-g30/2"
+RGB_PROFILES = {
+    LEGACY_RGB_PROFILE: {},
+    SOURCE_RGB_PROFILE: {"keyframe_interval": 30},
+    WINDOW_RGB_PROFILE: {"crf": 12, "keyframe_interval": 30, "zerolatency": False},
+}
+
+
 class RgbVideoWriter:
     def __init__(
         self,
@@ -25,6 +39,9 @@ class RgbVideoWriter:
         shape: Sequence[int],
         *,
         lossless_rgb: bool = False,
+        crf: int | None = None,
+        keyframe_interval: int | None = None,
+        zerolatency: bool = True,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.container = av.open(str(path), "w")
@@ -37,12 +54,18 @@ class RgbVideoWriter:
         self.stream.height, self.stream.width = shape[:2]
         self.stream.pix_fmt = "rgb24" if lossless_rgb else "yuv420p"
         self.stream.codec_context.thread_count = 1
-        self.stream.options = {
-            "crf": "0" if lossless_rgb else "18",
+        # Defaults keep the original options byte for byte; frozen plans and
+        # rebuilt media depend on them.
+        options = {
+            "crf": "0" if lossless_rgb else str(18 if crf is None else crf),
             "preset": "veryfast",
             "bf": "0",
-            "tune": "zerolatency",
         }
+        if zerolatency:
+            options["tune"] = "zerolatency"
+        if keyframe_interval is not None:
+            options["g"] = str(keyframe_interval)
+        self.stream.options = options
         self.stream.time_base = 1 / Fraction(str(fps))
         self.fps, self.frames = fps, 0
 

@@ -6,6 +6,7 @@ from threading import RLock
 from typing import Any, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from hc_data_platform.continuous_recordings.current_qc import CURRENT_EPISODE_QC
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
 from hc_data_platform.security.audit import canonical_hash
@@ -20,11 +21,18 @@ from .models import (
     RecordingSliceRevision,
     SliceRevisionStatus,
 )
-from .quality import enqueue_quality, prepare_quality_retry, quality_request, save_quality_state
+from .quality import discard_failed_recording, enqueue_quality, prepare_quality_retry, quality_request, save_quality_state
 from .retry import prepare_retry, retry_event_id, retry_postgres
 
 
+from .models import RecordingQualityEvidence
+
+
 class ContinuousRecordingRepository(Protocol):
+    def quality_evidence(self, recording: ContinuousRecording) -> RecordingQualityEvidence | None: ...
+
+    def discard_quality(self, scope, recording_id, report_sha256, actor) -> ContinuousRecording: ...
+
     def retry_quality(self, scope: RecordingScope, recording_id: str, request_id: str
                       ) -> ContinuousRecording: ...
 
@@ -93,6 +101,18 @@ class ContinuousRecordingRepository(Protocol):
 
 
 class InMemoryContinuousRecordingRepository:
+    def quality_evidence(self, recording):
+        return None
+
+    def discard_quality(self, scope, recording_id, report_sha256, actor):
+        with self._lock:
+            key = _recording_key(scope, recording_id)
+            if key not in self._recordings:
+                raise _not_found()
+            result = discard_failed_recording(self._recordings[key], report_sha256, actor)
+            self._recordings[key] = result
+            return result
+
     def retry_quality(self, scope, recording_id, request_id):
         with self._lock:
             key = _recording_key(scope, recording_id)
@@ -296,6 +316,38 @@ class InMemoryContinuousRecordingRepository:
 
 
 class PostgresContinuousRecordingRepository:
+    def quality_evidence(self, recording):
+        with self._connection_factory() as db, db.cursor() as cursor:
+            cursor.execute(
+                """SELECT report_document FROM ingest.recording_quality_reports
+                   WHERE (organization_id, project_id, region_code, recording_id, report_id)
+                       = (%s, %s, %s, %s, %s)""",
+                (*_scope_values(recording.scope), recording.recording_id, recording.quality_summary.report_id),
+            )
+            row = cursor.fetchone()
+        if row is None:
+            return None
+        document = row[0]
+        return RecordingQualityEvidence(
+            duplicate_of_recording_id=document.get("duplicate_of_recording_id"),
+            original_mcap_sha256=document.get("original_mcap_sha256"),
+            findings=[f for f in document["quality_report"]["findings"] if f["severity"] != "info"],
+        )
+
+    def discard_quality(self, scope, recording_id, report_sha256, actor):
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                current = self._get_locked(cursor, scope, recording_id)
+                if not current:
+                    raise _not_found()
+                updated = discard_failed_recording(current, report_sha256, actor)
+                save_quality_state(cursor, updated)
+            connection.commit()
+            return updated
+        finally:
+            connection.close()
+
     def retry_quality(self, scope, recording_id, request_id):
         connection = self._connection_factory()
         try:
@@ -437,7 +489,7 @@ class PostgresContinuousRecordingRepository:
                     """
                     SELECT recording_document FROM ingest.continuous_recordings
                     WHERE organization_id = %s AND project_id = %s AND region_code = %s
-                      AND upload_session_id = %s
+                      AND upload_session_id = %s AND superseded_by_processing_id IS NULL
                     """,
                     (*_scope_values(scope), upload_session_id),
                 )
@@ -454,6 +506,7 @@ class PostgresContinuousRecordingRepository:
                     """
                     SELECT recording_document FROM ingest.continuous_recordings
                     WHERE organization_id = %s AND project_id = %s AND region_code = %s
+                      AND superseded_by_processing_id IS NULL
                     ORDER BY created_at DESC, recording_id DESC
                     """,
                     _scope_values(scope),
@@ -601,10 +654,7 @@ class PostgresContinuousRecordingRepository:
             cursor.execute(
                 """SELECT q.report_id, q.report_document
                 FROM ingest.recording_episode_processing p
-                JOIN ingest.recording_episode_qc_reports q
-                  ON q.organization_id=p.organization_id AND q.project_id=p.project_id
-                 AND q.region_code=p.region_code AND q.recording_id=p.recording_id
-                 AND q.episode_id=p.episode_id AND q.report_id=p.qc_report_id
+                JOIN """ + CURRENT_EPISODE_QC + """ q ON TRUE
                 WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
                   AND p.recording_id=%s ORDER BY p.start_offset_ns,p.episode_id""",
                 (*_scope_values(scope), recording_id),
@@ -864,7 +914,7 @@ class PostgresContinuousRecordingRepository:
             """
             SELECT recording_document FROM ingest.continuous_recordings
             WHERE organization_id = %s AND project_id = %s AND region_code = %s
-              AND recording_id = %s
+              AND recording_id = %s AND superseded_by_processing_id IS NULL
             """
             + (" FOR UPDATE" if for_update else ""),
             (*_scope_values(scope), recording_id),

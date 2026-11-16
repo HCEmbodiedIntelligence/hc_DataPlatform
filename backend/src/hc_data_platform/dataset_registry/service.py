@@ -52,6 +52,7 @@ from .models import (
     DatasetPageEpisodeListEnvelope,
     DatasetPageEpisodeListItem,
     DatasetPageEpisodeRecord,
+    DatasetPageEpisodeRevision,
     DatasetPageEpisodeRevisionEnvelope,
     DatasetPageEpisodeRevisionHistoryEnvelope,
     DatasetPageFacets,
@@ -1060,17 +1061,7 @@ class DatasetPageService:
                 title="Logical source binding unavailable",
                 detail="The revision mixes source identities.",
             )
-        return self.episode_revision(
-            auth=auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            dataset_id=dataset_id,
-            version_id=version_id,
-            revision_id=revision.revision_id,
-            snapshot_token=snapshot_token,
-            request_id=request_id,
-        )
+        return self._episode_revision_response(auth, scope, revision, request_id)
 
     def episode_revision(
         self,
@@ -1116,12 +1107,18 @@ class DatasetPageService:
                 title="Episode revision not found",
                 detail="The selected revision is not part of this immutable version snapshot.",
             )
+        return self._episode_revision_response(auth, scope, revision, request_id)
+
+    def _episode_revision_response(
+        self, auth: AuthContext, scope: DatasetPageScope, revision: DatasetPageEpisodeRevision,
+        request_id: str,
+    ) -> DatasetPageEpisodeRevisionEnvelope:
         now = self._clock()
         self._audit(
             auth=auth,
             scope=scope,
             action="dataset.episode_revision_viewed",
-            resource_id=revision_id,
+            resource_id=revision.revision_id,
             request_id=request_id,
             outcome="SUCCEEDED",
         )
@@ -2558,13 +2555,9 @@ class DatasetPageService:
         self, *, scope: DatasetPageScope, dataset_id: str, version_id: str
     ) -> DatasetPageVersion:
         self._required_dataset(scope=scope, dataset_id=dataset_id)
-        for version in self._repository.list_versions(
-            scope=scope,
-            dataset_id=dataset_id,
-            filters=DatasetPageVersionFilters(include_internal=True),
-        ):
-            if version.version_id == version_id:
-                return version
+        version = self._repository.get_version(scope=scope, dataset_id=dataset_id, version_id=version_id)
+        if version is not None:
+            return version
         raise problem(
             status=404,
             code="DATASET_VERSION_NOT_FOUND",

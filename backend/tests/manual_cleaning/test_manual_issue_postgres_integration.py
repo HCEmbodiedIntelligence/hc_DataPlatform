@@ -267,9 +267,12 @@ def _prepare_app_role(dsn: str) -> None:
         cursor.execute(
             "GRANT USAGE ON SCHEMA core, registry, dataset_registry, manual_cleaning TO " + APP_ROLE
         )
+        cursor.execute("GRANT USAGE ON SCHEMA collection_tasks TO " + APP_ROLE)
+        cursor.execute("GRANT SELECT ON collection_tasks.collection_tasks TO " + APP_ROLE)
         cursor.execute("GRANT SELECT ON registry.organization_projects TO " + APP_ROLE)
         cursor.execute(
-            "GRANT SELECT ON dataset_registry.dataset_versions, "
+            "GRANT SELECT ON dataset_registry.datasets, dataset_registry.dataset_version_episodes, "
+            "dataset_registry.dataset_versions, "
             "dataset_registry.dataset_version_episode_revisions, "
             "dataset_registry.dataset_version_schema_details TO " + APP_ROLE
         )
@@ -475,7 +478,7 @@ def _seed(dsn: str) -> None:
         cursor.execute(
             (
                 "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s)"
+                "(organization_id, project_id, display_name) VALUES (%s, %s, 'P09 integration')"
             ),
             (ORGANIZATION_ID, PROJECT_ID),
         )

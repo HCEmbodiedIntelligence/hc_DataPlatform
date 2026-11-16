@@ -84,7 +84,7 @@ def _definition(feature):
     }
 
 
-def prepare_semantic(path, destination, cfg, progress=lambda: None):
+def prepare_semantic(path, destination, cfg, progress=lambda: None, *, source_inventory=None, source_sha256=None, preview_frames=None, rgb_keyframe_interval=None, depth_encoder_pools=None):
     from hc_data_platform.capture_schemes.models import OutputContract
     from hc_data_platform.capture_schemes.schema import native_topic
 
@@ -98,12 +98,13 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     if output.time_source == "FRAME_TIMESTAMP" and cfg.time_source != "STATE_LOG_TIME":
         raise ValueError("MCAP_FRAME_CLOCK_REQUIRES_STATE")
     versioned = output.algorithm in {"capture-structure/v2", "capture-structure/v3"}
-    edits = cfg.postprocessing_rules.active if isinstance(cfg.postprocessing_rules, JointEditRules) else {}
+    rules = cfg.postprocessing_rules
+    edits = rules.active if isinstance(rules, JointEditRules) else {}
     held_hands = HAND_COMMAND_FEATURES.intersection(cfg.numeric_sources) if "forward_fill_hands" in edits else set()
     selection = None
-    if versioned or (edits.keys() - {"forward_fill_hands"}):
+    if versioned or (isinstance(rules, JointEditRules) and rules.has_joint_edits):
         selected = destination.parent / (destination.name + "-selected.mcap")
-        selection = select_mcap(path, selected, cfg, progress)
+        selection = select_mcap(path, selected, cfg, progress, source_inventory=source_inventory, source_sha256=source_sha256)
         path = selected
     base = cfg.model_copy(update={
         "semantic_output": None, "postprocessing_rules": None, "numeric_sources": {}, "alignment_policy": "PRESERVE",
@@ -111,7 +112,9 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
     })
     fill_gaps = "fill_action_from_next_frame" in edits
     recording, evidence = prepare(path, destination, base, progress, preserve_source=True,
-                                  fill_action_gaps=fill_gaps)
+                                  fill_action_gaps=fill_gaps, preview_frames=preview_frames,
+                                  rgb_keyframe_interval=rgb_keyframe_interval,
+                                  depth_encoder_pools=depth_encoder_pools)
     if selection:
         target = destination / selection["path"]
         if selection.get("normalization"):
@@ -160,20 +163,23 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None):
         for schema, channel, message in make_reader(stream, validate_crcs=True).iter_messages():
             progress()
             origin = message.log_time if origin is None else min(origin, message.log_time)
-            for name in by_topic.get(channel.topic, []):
-                if cfg.normalization:
-                    from .joint_normalization import capture_time
+            names = by_topic.get(channel.topic, ())
+            stamp = message.log_time
+            value = None
+            if names and cfg.normalization:
+                from .joint_normalization import capture_time
 
-                    value = decoded(schema, channel, message, decoder)
-                    source_times[name].append(capture_time(value, message))
-                else:
-                    source_times[name].append(message.log_time)
+                value = decoded(schema, channel, message, decoder)
+                stamp = capture_time(value, message)
+            for name in names:
+                source_times[name].append(stamp)
                 mapping = cfg.numeric_sources.get(name)
                 if mapping is None:
                     continue
                 if schema is None or ros_type(schema.name) != ros_type(mapping.message_type):
                     raise ValueError(f"MCAP_NUMERIC_TYPE_MISMATCH: {name}")
-                value = decoded(schema, channel, message, decoder)
+                if value is None:
+                    value = decoded(schema, channel, message, decoder)
                 header = get_field(value, "header", None)
                 frame = get_field(header, "frame_id", "") if header is not None else ""
                 if reference_frames.setdefault(name, frame) != frame:

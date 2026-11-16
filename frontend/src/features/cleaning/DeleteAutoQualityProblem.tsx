@@ -50,13 +50,13 @@ export function DeleteAutoQualityProblem({
             setRequestId(crypto.randomUUID());
           }}
         >
-          删除
+          丢弃
         </Button>
       )}
       <Modal
-        title="删除这条问题数据？"
+        title="丢弃这条问题数据？"
         open={Boolean(requestId)}
-        okText="确认删除"
+        okText="确认丢弃"
         cancelText="取消"
         confirmLoading={mutation.isPending}
         okButtonProps={{ danger: true }}
@@ -74,19 +74,21 @@ export function DeleteAutoQualityProblem({
       >
         <Space orientation="vertical">
           <strong>
-            {problem.recordingEpisodeId ??
-              `Episode ${problem.sourceEpisodeIndex}`}
+            {problem.sourceFileName ??
+              problem.recordingEpisodeId ??
+              (problem.sourceEpisodeIndex != null
+                ? `Episode ${problem.sourceEpisodeIndex}`
+                : "整段录制")}
           </strong>
           <code>{problem.recordingId ?? problem.sourceImportId}</code>
           <p>
-            删除后，这条 Episode
-            将退出问题待处理列表，不再参与处理和入库。原始文件和操作记录会保留，同一录制或上传批次中的其他
-            Episode 不受影响。
+            丢弃后，这条数据
+            将停止后续处理和入库。原始文件会保留，可在问题数据的“已丢弃”中追溯。
           </p>
           {mutation.isError && (
             <Alert
               type="error"
-              title="删除未完成"
+              title="丢弃未完成"
               description={mutation.error.message}
             />
           )}

@@ -84,7 +84,7 @@ def joint_values(value, selected, required, *, topic, stamp, nan_as_missing=(), 
     return {n: float(positions[indices[n]]) for n in selected if positions and n in indices and n not in ignored}
 
 
-def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=None):
+def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=None, source_inventory=None, source_sha256=None):
     """Validate the full container, decode only selected fields, preserve all three clocks."""
     from .mcap_contracts import HAND_COMMAND_FEATURES
     if metadata_output is None:
@@ -93,7 +93,8 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
           or json.loads(metadata_output) != cfg.semantic_output):
         raise ValueError("MCAP_REBUILD_METADATA_MISMATCH")
     from .mcap_native import decoded, inspect
-    inventory = inspect(path, progress, selected_topics=set())
+    inventory = (source_inventory if source_inventory is not None
+                 else inspect(path, progress, selected_topics=set()))
     sources = {}
     for topic in selected_topics(cfg):
         aliases = cfg.topic_aliases.get(topic, ALIASES.get(topic, ()))
@@ -110,12 +111,13 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
     states, state_times, audit, dropped = [], [], [], []
     edits = cfg.postprocessing_rules if cfg.postprocessing_rules and cfg.postprocessing_rules.version == 2 else None
     hold_hands = edits is not None and "forward_fill_hands" in edits.active
-    if edits and not (edits.active.keys() - {"forward_fill_hands"}) and not cfg.normalization:
+    if edits and not edits.has_joint_edits and not cfg.normalization:
         edits = None
     fill_initial = bool(edits and "fill_initial_action" in edits.active)
     first_action_time = None
     first_action_log = None
     generated = 0
+    action_messages_seen = 0
     synthesize_action = False
     if cfg.normalization or edits:
         from .joint_normalization import JOINTS, capture_time, normalize, reference
@@ -214,15 +216,29 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
                     joint_values(value, mapped, mapped, topic=topic, stamp=message.log_time)
                 if edits and roles:
                     from .joint_edits import edit_joints
+                    if "action" in roles:
+                        action_messages_seen += 1
                     try:
                         projected, evidence = edit_joints(
                             value, names, rules=edits, action="action" in roles, states=states, state_times=state_times,
                             topic=topic, message=message, ordinal=ordinal, profile=bool(cfg.normalization), required=required,
                         )
                     except ValueError as exc:
-                        if not str(exc).startswith("MCAP_WAIST_STATE_UNAVAILABLE:"):
+                        reason = str(exc)
+                        drop = {"topic": topic, "message_index": ordinal, "log_time_ns": message.log_time, "reason": reason}
+                        if reason.startswith("MCAP_FOLLOWING_STATE_UNAVAILABLE:"):
+                            # Only trim a trailing source command after retaining a real command.
+                            if (topic != cfg.action_topic or counts[topic] <= generated
+                                    or action_messages_seen != inventory[channel.topic]["message_count"]):
+                                raise
+                            drop.update(
+                                action_number=action_messages_seen,
+                                capture_time_ns=capture_time(value, message, verify_domain=bool(cfg.normalization)),
+                                last_state_capture_time_ns=state_times[-1],
+                            )
+                        elif not reason.startswith("MCAP_WAIST_STATE_UNAVAILABLE:"):
                             raise
-                        dropped.append({"topic": topic, "message_index": ordinal, "log_time_ns": message.log_time, "reason": str(exc)})
+                        dropped.append(drop)
                         continue
                     if "action" in roles:
                         audit.append(evidence)
@@ -345,7 +361,7 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
     return {
         "format": "hc-selected-mcap/2" if cfg.normalization else "hc-selected-mcap/1", "path": "source/selected.mcap",
         "sha256": sha(target), "size_bytes": Path(target).stat().st_size,
-        "source_sha256": sha(path), "source_size_bytes": Path(path).stat().st_size,
+        "source_sha256": source_sha256 or sha(path), "source_size_bytes": Path(path).stat().st_size,
         "format_metadata_output": metadata_output,
         "source_retained": True, "requires_original_for_unselected_fields": True,
         "source_topics": sources, "message_counts": dict(counts), "joint_evidence": layouts,

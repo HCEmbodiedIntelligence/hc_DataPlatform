@@ -909,11 +909,12 @@ def test_crc64_matches_oss_crc64_xz_known_vector_and_incremental_semantics() -> 
 
 
 def test_native_crc64_matches_portable_fallback_on_binary_chunks(monkeypatch) -> None:
-    from hc_data_platform.ingest import ports
+    from hc_data_platform.object_storage import checksums
 
     content = bytes(range(256)) * 1024 + b"\x00last\xff"
     expected = crc64_ecma(content)
     assert crc64_ecma(content[34567:], crc64_ecma(content[:34567])) == expected
-    monkeypatch.setattr(ports, "_native_crc64", lambda: None)
+    assert crc64_ecma(bytearray(content)) == expected
+    monkeypatch.setattr(checksums, "_native_crc64", lambda: None)
     assert crc64_ecma(content) == expected
     assert crc64_ecma(b"", expected) == expected

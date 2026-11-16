@@ -87,6 +87,7 @@ function QueueItemCard(props: {
           <strong title={item.fileName}>
             {isLeRobot ? `原始数据 · ${item.fileName}` : item.fileName}
           </strong>
+          {item.batchNumber && <span>第 {item.batchNumber} 次上传</span>}
           <span title={item.dataPackageId}>
             {isLeRobot ? `Dataset ${item.dataPackageId}` : item.dataPackageId}
           </span>

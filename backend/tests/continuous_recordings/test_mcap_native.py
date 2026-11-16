@@ -109,3 +109,29 @@ def test_explicit_robot_mapping_can_select_nonstandard_topic_names():
         {"state_topic": "/feedback", "action_topic": "/goal", "primary_camera": "/cam"}, inventory
     )
     assert config.state_topic == "/feedback" and config.action_topic == "/goal"
+
+
+def test_frame_alignment_uses_memory_then_spills_and_keeps_first_duplicate(tmp_path):
+    import numpy as np
+    from hc_data_platform.continuous_recordings.mcap_native import AlignedCameraFrames
+
+    pixels = np.full((32, 32), 37, dtype=np.uint16)
+    path = tmp_path / "frames.sqlite"
+    cache = AlignedCameraFrames(path, max_bytes=pixels.nbytes + 258)
+    try:
+        cache.add("/d", 10, 1, pixels)
+        pixels[:] = 24
+        cache.add("/d", 10, 2, pixels)
+        assert not path.exists()
+        cache.add("/d", 20, 3, pixels)
+        pixels[:] = 18
+        cache.add("/d", 20, 4, pixels)
+        cache.finish_writes()
+        assert path.is_file()
+        for stamp, seq, expected in ((10, 1, 37), (20, 3, 24)):
+            observed, values = cache.get("/d", stamp)
+            assert observed == seq and np.all(values == expected)
+            assert not values.flags.writeable
+        assert cache.get("/d", 30) is None
+    finally:
+        cache.close()

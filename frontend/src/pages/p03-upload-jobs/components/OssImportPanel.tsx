@@ -1,5 +1,7 @@
-import { useRef, useState } from "react";
-import { Alert, Button, Input, Modal, Radio } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Input, Modal } from "antd";
+import { batchKey, type OssBatch } from "./OssBatchRecords";
+import { ArchiveRecordingPicker } from "./ArchiveRecordingPicker";
 import { CloudDownload } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -29,16 +31,23 @@ export function OssImportPanel(props: {
 }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [recording, setRecording] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const requestId = useRef<string | null>(null);
   const [uri, setUri] = useState("");
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [busy, setBusy] = useState<"inspect" | "commit" | null>(null);
   const busyRef = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [error, setError] = useState("");
   const [datasetId, setDatasetId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [robotId, setRobotId] = useState("");
-  const [mode, setMode] = useState<"PROCESS" | "STORE_ONLY">("PROCESS");
   const capabilities = useLeRobotCapabilities(
     props.scope,
     inventory?.source_format === "LEROBOT_V3" ? inventory.info : null,
@@ -46,14 +55,15 @@ export function OssImportPanel(props: {
   );
   const processSupported =
     inventory?.source_format === "MCAP" ||
-    capabilities.data?.processing_supported === true;
-  const processing = processSupported && mode === "PROCESS";
+    (inventory?.source_format === "LEROBOT_V3" &&
+      capabilities.data?.processing_supported === true);
   const target = datasetId;
   const blocked =
     props.disabled ||
     busy !== null ||
     !inventory ||
-    (inventory?.archive_members === true && !recording) ||
+    !processSupported ||
+    (inventory.archive_members && selected.size === 0) ||
     !target ||
     !taskId ||
     !robotId ||
@@ -69,7 +79,7 @@ export function OssImportPanel(props: {
     setError("");
     try {
       if (action === "inspect") {
-        setRecording("");
+        setSelected(new Set());
         setInventory(null);
         setInventory(
           inventoryWire.parse(
@@ -84,32 +94,54 @@ export function OssImportPanel(props: {
           ),
         );
       } else if (inventory) {
-        await request({
-          method: "POST",
-          path: `${root}/oss:commit`,
-          scope: props.scope,
-          scopeMode: "explicit",
-          body: {
-            source_uri: inventory.source_uri,
-            ...(inventory.archive_members ? { recording_path: recording } : {}),
-            inventory_sha256: inventory.inventory_sha256,
-            dataset_id: target,
-            collection_task_id: taskId,
-            robot_id: robotId,
-            processing_mode: processing ? "PROCESS" : "STORE_ONLY",
-            processing_capability_revision:
-              capabilities.data?.capability_revision,
-          },
-        });
-        await queryClient.invalidateQueries();
+        requestId.current ??= crypto.randomUUID();
+        const receipt = z
+          .object({ batch_id: z.string(), batch_number: z.number().int().positive().nullish(), total: z.number().positive() })
+          .parse(
+            await request({
+              method: "POST",
+              path: `${root}/oss:batches`,
+              scope: props.scope,
+              scopeMode: "explicit",
+              body: {
+                request_id: requestId.current,
+                source_uri: inventory.source_uri,
+                inventory_sha256: inventory.inventory_sha256,
+                dataset_id: target,
+                collection_task_id: taskId,
+                robot_id: robotId,
+                processing_mode: "PROCESS",
+                processing_capability_revision:
+                  capabilities.data?.capability_revision,
+                recording_paths: inventory.archive_members
+                  ? [...selected].sort()
+                  : null,
+              },
+            }),
+          );
+        requestId.current = null;
+        const batch: OssBatch = {
+          ...receipt,
+          status: "PENDING",
+          submitted: 0,
+          failed: 0,
+          source_name:
+            inventory.source_uri.replace(/\/+$/, "").split("/").pop() ||
+            inventory.source_uri,
+        };
+        queryClient.setQueryData<OssBatch[]>(batchKey(props.scope), (old) => [
+          batch,
+          ...(old ?? []).filter((row) => row.batch_id !== batch.batch_id),
+        ]);
+        void queryClient.invalidateQueries({ queryKey: batchKey(props.scope) });
         setOpen(false);
         setInventory(null);
-        props.onImported();
+        if (mounted.current) props.onImported();
       }
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "OSS 导入失败，请重试。",
-      );
+      const message =
+        cause instanceof Error ? cause.message : "OSS 导入失败，请重试。";
+      setError(message);
     } finally {
       busyRef.current = false;
       setBusy(null);
@@ -127,7 +159,11 @@ export function OssImportPanel(props: {
       <Modal
         open={open}
         title="从 OSS 导入"
-        width={720}
+        width={760}
+        centered
+        styles={{
+          body: { maxHeight: "calc(100dvh - 150px)", overflowY: "auto" },
+        }}
         mask={{ closable: !busy }}
         closable={!busy}
         onCancel={() => {
@@ -144,7 +180,10 @@ export function OssImportPanel(props: {
               loading={busy === "commit"}
               onClick={() => void run("commit")}
             >
-              确认导入
+              确认导入并处理
+              {inventory?.archive_members && selected.size
+                ? `（${selected.size} 条）`
+                : ""}
             </Button>
           </>
         }
@@ -156,7 +195,6 @@ export function OssImportPanel(props: {
           </p>
           <fieldset disabled={!!busy} style={{ border: 0, padding: 0 }}>
             <legend>关联采集任务</legend>
-            <p>导入并处理或仅登记原始数据，都会保留任务和机器人关联。</p>
             <dl className={styles.confirmFacts}>
               <ProcessingTargetFields
                 scope={props.scope}
@@ -166,7 +204,11 @@ export function OssImportPanel(props: {
                 onDatasetIdChange={setDatasetId}
                 onCollectionTaskIdChange={setTaskId}
                 onRobotIdChange={setRobotId}
-                sourceKind={inventory?.archive && !inventory.archive_members ? "oss-archive" : "oss"}
+                sourceKind={
+                  inventory?.archive && !inventory.archive_members
+                    ? "oss-archive"
+                    : "oss"
+                }
                 disabled={!!busy}
               />
             </dl>
@@ -184,7 +226,8 @@ export function OssImportPanel(props: {
             }}
           />
           <small>
-            已配置的只读源 ZIP 支持按录制导入，配套接管标记随录制一起读取。其他 ZIP 解压限 2 GiB。
+            录制 ZIP 可多选 MCAP，配套接管标记会随录制读取。其他 ZIP 解压限 2
+            GiB。
           </small>
           <Button
             disabled={props.disabled || !!busy || !uri.trim()}
@@ -207,26 +250,28 @@ export function OssImportPanel(props: {
                 已识别 {inventory.source_format} · {inventory.files.length}{" "}
                 个文件 · {formatBytes(inventory.total_bytes)}
               </p>
-              {inventory.archive_members && (
-                <label>选择录制
-                  <select value={recording} disabled={!!busy} onChange={e => setRecording(e.target.value)}>
-                    <option value="">请选择一条录制</option>
-                    {inventory.files.filter(f => f.path.toLowerCase().endsWith(".mcap")).map(f =>
-                      <option key={f.path} value={f.path}>{f.path}</option>)}
-                  </select>
-                </label>
-              )}
-              <ul>
-                {inventory.files.slice(0, 8).map((file) => (
-                  <li key={file.path}>
-                    {file.path} · {formatBytes(file.size)}
-                  </li>
-                ))}
-              </ul>
-              {inventory.files.length > 8 && (
-                <small>
-                  另外还有 {inventory.files.length - 8} 个文件。
-                </small>
+              {inventory.archive_members ? (
+                <ArchiveRecordingPicker
+                  files={inventory.files}
+                  selected={selected}
+                  onChange={setSelected}
+                  disabled={!!busy}
+                />
+              ) : (
+                <>
+                  <ul>
+                    {inventory.files.slice(0, 8).map((file) => (
+                      <li key={file.path}>
+                        {file.path} · {formatBytes(file.size)}
+                      </li>
+                    ))}
+                  </ul>
+                  {inventory.files.length > 8 && (
+                    <small>
+                      另外还有 {inventory.files.length - 8} 个文件。
+                    </small>
+                  )}
+                </>
               )}
               {capabilities.isError && (
                 <Alert
@@ -239,22 +284,15 @@ export function OssImportPanel(props: {
                   }
                 />
               )}
-              {processSupported ? (
-                <Radio.Group
-                  aria-label="OSS 导入处理方式"
-                  value={mode}
-                  disabled={!!busy}
-                  onChange={(event) => setMode(event.target.value)}
-                  options={[
-                    { label: "导入并处理", value: "PROCESS" },
-                    { label: "仅登记原始数据", value: "STORE_ONLY" },
-                  ]}
-                />
-              ) : (
-                <p>
-                  该数据按现有格式能力登记原始来源，处理能力与本地上传一致。
-                </p>
-              )}
+              {!processSupported &&
+                !capabilities.isFetching &&
+                !capabilities.isError && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    title="当前数据格式不支持在这里导入并处理。"
+                  />
+                )}
               <Alert
                 type="info"
                 showIcon
@@ -271,12 +309,7 @@ export function OssImportPanel(props: {
               />
             </>
           )}
-          {busy === "commit" && (
-            <p role="status">
-              正在校验并登记原始数据，耗时取决于文件大小和 OSS
-              读取速度。请等待完成。
-            </p>
-          )}
+          {busy === "commit" && <p role="status">正在提交后台任务…</p>}
         </div>
       </Modal>
     </>

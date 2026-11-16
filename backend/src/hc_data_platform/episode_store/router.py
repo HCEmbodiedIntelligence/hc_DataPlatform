@@ -226,18 +226,25 @@ def detail(
     data_version_id: str,
     auth: VerifiedAuth,
     packages: PackageServices,
+    view: Literal["full", "annotation"] = "full",
 ):
     with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
         service,
         identity,
     ):
         package = service.files.open(identity, data_version_id)
-        return {
+        metadata = {
             "data": package.receipt.data,
             "info": package.document("meta/info.json"),
+            "modalities": package.document("hc/modalities.json"),
+        }
+        if view == "annotation":
+            return metadata
+        return {
+            **metadata,
             **{
                 name: package.document(f"hc/{name}.json")
-                for name in ("source", "modalities", "calibration", "quality", "conversion_report")
+                for name in ("source", "calibration", "quality", "conversion_report")
             },
             "download": {
                 "kind": "complete_episode",

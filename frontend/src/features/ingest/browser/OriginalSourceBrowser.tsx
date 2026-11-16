@@ -1,6 +1,10 @@
+import {
+  useProblemLocations,
+  type ReportTarget,
+} from "../../quality/ProblemLocations";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, InputNumber, Space, Spin } from "antd";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { IngestScope } from "../../../entities/data-source";
 import { useScopeQueryRevision } from "../../../shared/api/use-scoped-query";
 import {
@@ -10,36 +14,52 @@ import {
   originalPreviewReason,
   type OriginalEpisode,
 } from "./original-source-api";
-import { createPlaybackClock } from "../../viewer/PlaybackClock";
+import type { PlaybackClock } from "../../viewer/PlaybackClock";
+import { usePlaybackClock } from "../../viewer/use-playback-clock";
 import { DataVisualizationWorkbench } from "../../viewer/DataVisualizationWorkbench";
 import type { StreamDescriptor } from "../../viewer/types";
 import OriginalFileExplorer from "./OriginalFileExplorer";
 import styles from "./OriginalSourceBrowser.module.css";
 
-export function OriginalEpisodePlayer({
-  scope,
-  importId,
-  episode,
-}: {
+type PlayerProps = {
   scope: IngestScope;
   importId: string;
   episode: OriginalEpisode;
-}) {
-  const clock = useMemo(
-    () => createPlaybackClock({ startNs: "0", endNs: episode.duration_ns }),
-    [episode],
+  target?: ReportTarget;
+};
+
+export function OriginalEpisodePlayer(props: PlayerProps) {
+  const clock = usePlaybackClock(
+    "0",
+    props.episode.duration_ns,
+    `${props.importId}/${props.episode.episode_index}`,
   );
-  const mountedClock = useRef<typeof clock | null>(null);
-  useEffect(() => {
-    mountedClock.current = clock;
-    return () => {
-      mountedClock.current = null;
-      // StrictMode remounts effects with the same clock before this runs.
-      queueMicrotask(() => {
-        if (mountedClock.current !== clock) clock.dispose();
-      });
-    };
-  }, [clock]);
+  return props.target ? (
+    <DiagnosticPlayer {...props} clock={clock} />
+  ) : (
+    <OriginalMedia {...props} clock={clock} />
+  );
+}
+
+function DiagnosticPlayer(props: PlayerProps & { clock: PlaybackClock }) {
+  const diagnostic = useProblemLocations(
+    props.scope,
+    props.target,
+    props.clock,
+  );
+  return <OriginalMedia {...props} diagnostic={diagnostic} />;
+}
+
+function OriginalMedia({
+  scope,
+  importId,
+  episode,
+  clock,
+  diagnostic,
+}: PlayerProps & {
+  clock: PlaybackClock;
+  diagnostic?: ReturnType<typeof useProblemLocations>;
+}) {
   const streams = useMemo<StreamDescriptor[]>(
     () =>
       episode.videos
@@ -82,6 +102,13 @@ export function OriginalEpisodePlayer({
   );
   return (
     <>
+      {diagnostic?.panel}
+      {diagnostic &&
+        episode.videos.map((v) => (
+          <div key={v.path + v.camera_id}>
+            {v.camera_id} · {v.path}
+          </div>
+        ))}
       {episode.videos
         .filter((video) => video.preview_kind === "DOWNLOAD_ONLY")
         .map((video) => (
@@ -108,7 +135,7 @@ export function OriginalEpisodePlayer({
             findings: [],
             actions: [],
             timelineLabel: "原始视频时间轴",
-            timelineTracks: [],
+            timelineTracks: diagnostic?.tracks ?? [],
           }}
         />
       ) : null}
@@ -120,12 +147,14 @@ export default function OriginalSourceBrowser({
   scope,
   importId,
   initialEpisodeIndex = 0,
+  target,
   filesOnly = false,
   canDownload = true,
 }: {
   scope: IngestScope;
   importId: string;
   initialEpisodeIndex?: number;
+  target?: ReportTarget;
   filesOnly?: boolean;
   canDownload?: boolean;
 }) {
@@ -167,6 +196,7 @@ export default function OriginalSourceBrowser({
         />
       ) : null}
       {!filesOnly &&
+      !target &&
       (files.data?.episode_count ?? 0) > 0 &&
       files.data?.source_format === "LEROBOT_V3" ? (
         <div className={styles.episodeToolbar}>
@@ -235,6 +265,7 @@ export default function OriginalSourceBrowser({
           key={`${importId}:${episodeIndex}`}
           scope={scope}
           importId={importId}
+          target={episodeIndex === initialEpisodeIndex ? target : undefined}
           episode={episode.data}
         />
       ) : null}

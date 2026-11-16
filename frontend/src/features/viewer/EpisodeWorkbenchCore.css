@@ -960,6 +960,10 @@
   white-space: nowrap;
 }
 
+.viewer-timeline .viewer-timeline__selection-body[data-draw-range] {
+  cursor: crosshair;
+}
+
 .viewer-timeline[data-dragging="move"] .viewer-timeline__selection-body {
   cursor: grabbing;
 }

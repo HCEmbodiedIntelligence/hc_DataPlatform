@@ -39,6 +39,7 @@ from .models import (
     ManualIssueListItem,
     ManualIssueMutationRecord,
     ManualIssuePageData,
+    ManualIssueTypeGroup,
     ManualIssuePageEnvelope,
     ManualIssuePageInfo,
     ManualIssuePrincipal,
@@ -210,6 +211,12 @@ class ManualIssueService:
         )
         return ManualIssuePageEnvelope(
             data=ManualIssuePageData(
+                task_groups=tuple(
+                    ManualIssueTypeGroup(collection_task_id=task, issue_type=kind, count=count)
+                    for (task, kind), count in Counter(
+                        (record.collection_task_id, record.issue_type) for record in records
+                    ).items()
+                ),
                 counts=ManualIssueCounts(
                     total=str(len(records)),
                     open=str(counts["OPEN"]),
@@ -1125,6 +1132,7 @@ def _validated_filters(filters: ManualIssueFilters) -> ManualIssueFilters:
         return normalized
 
     return ManualIssueFilters(
+        collection_task_id=filters.collection_task_id,
         query=text(filters.query),
         dataset_id=text(filters.dataset_id),
         version_id=text(filters.version_id),
@@ -1139,6 +1147,7 @@ def _validated_filters(filters: ManualIssueFilters) -> ManualIssueFilters:
 
 def _filter_document(filters: ManualIssueFilters) -> dict[str, object]:
     return {
+        **({"collection_task_id": filters.collection_task_id} if filters.collection_task_id is not None else {}),
         "q": filters.query,
         "dataset_id": filters.dataset_id,
         "version_id": filters.version_id,

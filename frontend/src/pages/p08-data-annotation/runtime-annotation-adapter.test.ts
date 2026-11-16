@@ -718,9 +718,15 @@ describe("P08 formal runtime annotation adapter", () => {
     );
   });
 
-  it("authorizes canonical media once through the stateless operation", async () => {
+  it("authorizes canonical media when model services are unavailable", async () => {
     installRuntime();
     const fixture = installBundleResponses();
+    const respond = requestMock.getMockImplementation()!;
+    requestMock.mockImplementation(async options => {
+      if (options.query?.include_model || options.path.includes("/robot-scene"))
+        throw new Error("model service unavailable");
+      return respond(options);
+    });
     const bundle = await loadRuntimeAnnotationBundle(
       visualAnnotationScope,
       fixture.task.task_id,

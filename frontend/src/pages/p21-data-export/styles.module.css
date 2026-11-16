@@ -191,6 +191,10 @@
   gap: 12px;
 }
 
+.batchFilterGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+}
+
 .filterField,
 .taskToolbar > div {
   display: grid;

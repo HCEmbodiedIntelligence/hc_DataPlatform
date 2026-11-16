@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createSessionScopeLease } from "../../../shared/api/session-scope-lease";
+import { authorizeLogicalRobotAssets, loadLogicalRobotScene } from "../../datasets/api/logical-robot-scene";
 import { preloadAuthorizedModel } from "../../viewer/authorized-model-cache";
 import {
   listRuntimeAnnotationTasks, loadRuntimeAnnotationBundle,
@@ -71,10 +72,18 @@ export function synchronizeAnnotationBundle(
     void client.invalidateQueries({ queryKey: key, exact: true, refetchType: "none" });
 }
 
-export function taskQueryOptions(scope: RuntimeAnnotationScope, taskId: string, mode: AnnotationWorkbenchMode, revision: string, tasks?: readonly RuntimeAnnotationTask[]) {
+export function taskQueryOptions(client: QueryClient, scope: RuntimeAnnotationScope, taskId: string, mode: AnnotationWorkbenchMode, revision: string, tasks?: readonly RuntimeAnnotationTask[]) {
+  const listKey = annotationTaskListKey(scope, revision);
   return {
     queryKey: taskQueryKey(scope, taskId, mode, revision),
-    queryFn: ({ signal }: { signal: AbortSignal }) => loadRuntimeAnnotationBundle(scope, taskId, mode, signal, tasks),
+    queryFn: ({ signal }: { signal: AbortSignal }) => {
+      const known = tasks ?? client.getQueryData<readonly RuntimeAnnotationTask[]>(listKey);
+      const listRequest = known ? undefined : client.fetchQuery({
+        queryKey: listKey, queryFn: ({ signal }) => listRuntimeAnnotationTasks(scope, signal),
+        staleTime: 15_000, retry: false,
+      });
+      return loadRuntimeAnnotationBundle(scope, taskId, mode, signal, known, listRequest);
+    },
     staleTime: 15_000, gcTime: 120_000, retry: false as const,
   };
 }
@@ -92,9 +101,13 @@ export async function preloadHomeModel(client: QueryClient, scope: RuntimeAnnota
     lease.signal.throwIfAborted();
     const first = tasks[0];
     if (!first) return;
-    const bundle = await client.fetchQuery(taskQueryOptions(scope, first.task_id, "annotation", revision, tasks));
+    const bundle = await client.fetchQuery(taskQueryOptions(client, scope, first.task_id, "annotation", revision, tasks));
     lease.signal.throwIfAborted();
-    if (bundle.logical?.robotAssets?.length)
-      await preloadAuthorizedModel(bundle.logical.robotAssets, scope, lease.signal);
+    if (!bundle.logical) return;
+    const { selection, view } = bundle.logical;
+    const model = await loadLogicalRobotScene(selection, view, lease.signal);
+    if (model.scene?.status !== "FROZEN") return;
+    const grants = await authorizeLogicalRobotAssets(selection, model, lease.signal);
+    await preloadAuthorizedModel(grants, scope, lease.signal);
   } finally { lease.release(); }
 }

@@ -134,7 +134,8 @@ class QuantizedDepth:
     def error_report(self, profile: DepthProfile = DEFAULT_PROFILE) -> dict[str, Any]:
         interior = self.valid & ~self.saturated_low & ~self.saturated_high
         decoded = dequantize(self.codes, profile).astype(np.float64)
-        errors = np.abs(decoded[interior] - self.physical_m[interior])
+        interior_depth = decoded[interior]
+        errors = np.abs(interior_depth - self.physical_m[interior])
         # Maximum distance from a code centre to either half-code boundary.
         # Add only the documented float32 calculation tolerance, not clipping error.
         if profile.use_log:
@@ -142,7 +143,7 @@ class QuantizedDepth:
                 math.log((profile.depth_max + profile.shift) / (profile.depth_min + profile.shift))
                 / 4095
             )
-            bound = (decoded[interior] + profile.shift) * math.expm1(delta / 2)
+            bound = (interior_depth + profile.shift) * math.expm1(delta / 2)
         else:
             bound = np.full(errors.shape, (profile.depth_max - profile.depth_min) / 8190)
         tolerance_m = 2e-5
@@ -150,17 +151,20 @@ class QuantizedDepth:
             raise ValueError("depth quantization exceeds half-cell error bound")
         clipped = self.saturated_low | self.saturated_high
         clipped_errors = np.abs(decoded[clipped] - self.physical_m[clipped])
+        valid_count = int(np.count_nonzero(self.valid))
+        max_error = float(errors.max()) if errors.size else None
+        quantiles = np.quantile(errors, [0.5, 0.95, 0.99], overwrite_input=True) if errors.size else ()
         return {
             "pixels": self.valid.size,
-            "valid_pixels": int(self.valid.sum()),
-            "invalid_pixels": int((~self.valid).sum()),
+            "valid_pixels": valid_count,
+            "invalid_pixels": self.valid.size - valid_count,
             "saturated_low_pixels": int(self.saturated_low.sum()),
             "saturated_high_pixels": int(self.saturated_high.sum()),
-            "unclipped_pixels": int(interior.sum()),
-            "unclipped_max_error_m": float(errors.max()) if errors.size else None,
-            "unclipped_p50_error_m": float(np.quantile(errors, 0.5)) if errors.size else None,
-            "unclipped_p95_error_m": float(np.quantile(errors, 0.95)) if errors.size else None,
-            "unclipped_p99_error_m": float(np.quantile(errors, 0.99)) if errors.size else None,
+            "unclipped_pixels": errors.size,
+            "unclipped_max_error_m": max_error,
+            "unclipped_p50_error_m": float(quantiles[0]) if errors.size else None,
+            "unclipped_p95_error_m": float(quantiles[1]) if errors.size else None,
+            "unclipped_p99_error_m": float(quantiles[2]) if errors.size else None,
             "clipped_max_error_m": float(clipped_errors.max()) if clipped_errors.size else None,
             "half_cell_bound_passed": True,
             "float32_tolerance_m": tolerance_m,
@@ -216,6 +220,12 @@ def codes(
     return quantize(array, scale, profile).codes
 
 
+def parallel_decode(stream, threads: int = 4) -> None:
+    """Frame-threaded decoding; decoded pixels are identical to a single thread."""
+    stream.codec_context.thread_type = "AUTO"
+    stream.codec_context.thread_count = threads
+
+
 class DepthVideo:
     def __init__(
         self,
@@ -223,6 +233,8 @@ class DepthVideo:
         fps: float | Fraction,
         shape: Sequence[int],
         profile: DepthProfile = DEFAULT_PROFILE,
+        *,
+        pools: int | None = None,
     ) -> None:
         if min(shape[:2]) < 16:
             raise ValueError("HEVC depth video requires width and height of at least 16 pixels")
@@ -248,7 +260,9 @@ class DepthVideo:
                 # reliably fixed it. Use independent pictures, retain gray12le,
                 # and still verify every decoded code before accepting output.
                 "lossless=1:keyint=1:bframes=0:open-gop=0:repeat-headers=1:"
-                "pools=none:frame-threads=1:log-level=error"
+                # pools=None keeps the original single-thread bitstream byte for
+                # byte. A WPP thread pool changes the bytes, not the decoded codes.
+                f"pools={'none' if pools is None else pools}:frame-threads=1:log-level=error"
             ),
         }
         self.stream.options = dict(self.encoder_options)

@@ -230,7 +230,11 @@ def list_progress(
     dataset_id: str | None = None,
     include_all_sources: bool = False,
     recording_id: str | None = None,
+    batch_number: int | None = None,
+    batch_numbers: list[int] | None = None,
+    all_batches: bool = False,
 ) -> list[NativeImportProgress]:
+    selected_batches = batch_numbers or ([batch_number] if batch_number else None)
     with connections()() as connection, connection.cursor() as cursor:
         cursor.execute(
             """SELECT s.raw_source_id, s.dataset_id,
@@ -248,6 +252,12 @@ def list_progress(
               AND s.raw_status='COMMITTED'
               AND (%s::text IS NULL OR s.raw_source_id=%s)
               AND (%s::text IS NULL OR s.dataset_id=%s)
+              AND (%s OR EXISTS (
+                SELECT FROM ingest.upload_batch_members m JOIN ingest.upload_batches b
+                  USING (organization_id,project_id,region_code,batch_key)
+                WHERE (m.organization_id,m.project_id,m.region_code,m.upload_id)
+                    =(s.organization_id,s.project_id,s.region_code,s.upload_id)
+                  AND (%s::bigint[] IS NULL OR b.batch_number=ANY(%s))))
               AND (%s::text IS NULL OR EXISTS (
                 SELECT 1 FROM ingest.robot_ingest_uploads u
                 WHERE u.organization_id=s.organization_id AND u.project_id=s.project_id
@@ -268,6 +278,9 @@ def list_progress(
                 import_id,
                 dataset_id,
                 dataset_id,
+                not (batch_numbers or batch_number or all_batches),
+                selected_batches,
+                selected_batches,
                 recording_id,
                 recording_id,
                 limit,

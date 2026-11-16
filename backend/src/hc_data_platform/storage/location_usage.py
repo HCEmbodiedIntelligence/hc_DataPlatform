@@ -109,14 +109,14 @@ def row(key, size, *, local=False):
 
 
 def scan_local(root, *, minio=False, cache=False, seen=None):
-    """Allocated bytes including directories; ignore symlink targets, dedup links.
+    """Allocated bytes including directories; follow the configured root, skip nested symlink targets.
 
     MinIO layout is bucket/object/physical-files. Include storage overhead in its
     purpose. An inaccessible subtree makes this root unknown, never silently zero.
     """
     seen = set() if seen is None else seen
     totals = defaultdict(int)
-    base = Path(root)
+    base = Path(os.path.realpath(root, strict=True))
     pending = [base]
     while pending:
         path = pending.pop()

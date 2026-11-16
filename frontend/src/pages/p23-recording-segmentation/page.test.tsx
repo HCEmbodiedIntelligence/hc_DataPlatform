@@ -1020,6 +1020,24 @@ describe("ingest before interval authoring", () => {
     return gateway;
   }
 
+  it.each(["QC_FAILED", "QC_ERROR", "PENDING_QC", "SLICED"] as const)(
+    "opens original media from the progress panel with recording status %s and no published episode",
+    async status => {
+      const gateway = wholeGateway("FAILED");
+      const record = { ...recording, status, ingest_mode: "WHOLE_RECORDING" as const };
+      vi.mocked(gateway.list).mockResolvedValue({ items: [record], total: 1 });
+      vi.mocked(gateway.detail).mockResolvedValue({ data: record, current_slice_revision: null });
+      renderPage(gateway, `/recordings?progress=${recording.recording_id}`);
+      const panel = await screen.findByRole("dialog");
+      await userEvent.click(await within(panel).findByRole("link", { name: "预览原始数据" }));
+      expect(await screen.findByLabelText("front 媒体")).toBeVisible();
+      expect(screen.getByRole("slider", { name: "共享播放位置" })).toBeVisible();
+      expect(screen.queryByRole("button", { name: "提交成片" })).not.toBeInTheDocument();
+      expect(gateway.saveDraft).not.toHaveBeenCalled();
+      expect(gateway.finalize).not.toHaveBeenCalled();
+    },
+  );
+
   it("waits for the data receipt and never offers pre-ingest slicing", async () => {
     const gateway = wholeGateway("ALIGNING");
     renderPage(gateway, `/recordings/${recording.recording_id}/slice`);

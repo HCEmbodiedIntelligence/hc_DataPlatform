@@ -325,7 +325,11 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
           </div>
           <details className={styles.digest}>
             <summary>文件校验值 · SHA-256</summary>
-            <Typography.Text copyable>{selected.sha256}</Typography.Text>
+            {selected.sha256 ? (
+              <Typography.Text copyable>{selected.sha256}</Typography.Text>
+            ) : (
+              <span>等待首次质检读取</span>
+            )}
           </details>
           {selected.text_preview ? (
             <>

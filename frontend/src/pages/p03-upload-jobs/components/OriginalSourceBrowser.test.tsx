@@ -120,7 +120,14 @@ it("plays four original shard segments at their offsets through StrictMode witho
       videos.every((video) => video.src.includes("original.invalid")),
     ).toBe(true),
   );
-  videos.forEach((video) => fireEvent.loadedMetadata(video));
+  videos.forEach((video) => {
+    // Playback waits until every original shard has buffered the selected range.
+    Object.defineProperty(video, "buffered", {
+      configurable: true,
+      value: {length: 1, start: () => 31.933, end: () => 33.933},
+    });
+    fireEvent.loadedMetadata(video);
+  });
   expect(videos.map((video) => video.currentTime)).toEqual([
     31.933, 31.933, 31.933, 31.933,
   ]);

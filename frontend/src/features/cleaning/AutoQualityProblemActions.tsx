@@ -20,11 +20,11 @@ const runningStatuses = new Set(["PENDING", "RUNNING"]);
 const statusLabels: Record<string, string> = {
   PENDING: "已排队，等待重新处理",
   RUNNING: "正在质检并继续处理",
-  SUCCEEDED: "处理完成，可前往数据集查看和标注",
+  SUCCEEDED: "处理完成",
   PARTIALLY_FAILED: "部分条目未完成，请查看诊断结果后继续处理",
   FAILED: "处理未完成，请查看诊断结果后继续处理",
   CANCELLED: "处理已取消，可以重新处理",
-  DISCARDED: "这条问题数据已删除，不再参与处理和入库",
+  DISCARDED: "这条问题数据已丢弃，不再参与处理和入库",
 };
 
 export function AutoQualityProblemActions({
@@ -59,8 +59,8 @@ export function AutoQualityProblemActions({
   });
   const progress = processing.data;
   useEffect(() => {
-    if (progress?.status === "DISCARDED") onDeleted?.();
-  }, [onDeleted, progress?.status]);
+    if (!problem.discarded && progress?.status === "DISCARDED") onDeleted?.();
+  }, [onDeleted, progress?.status, problem.discarded]);
   const running = runningStatuses.has(progress?.status ?? "");
   const quality = useQuery({
     queryKey: qualityKey,
@@ -148,7 +148,7 @@ export function AutoQualityProblemActions({
       <Alert
         showIcon
         type="success"
-        title="这条问题数据已删除"
+        title="这条问题数据已丢弃"
         description="该 Episode 已退出处理和入库，原始文件和操作记录已保留。"
       />
     );
@@ -166,7 +166,9 @@ export function AutoQualityProblemActions({
         description={
           passed
             ? "当前条目已无质检风险。若上传批次仍未完成，请继续处理；处理完成后可进入数据集。"
-            : qualityProblemDescription(codes)
+            : codes.includes("MCAP_DUPLICATE_RECORDING")
+              ? problem.message
+              : qualityProblemDescription(codes)
         }
       />
       {!passed && topics.length > 0 ? (
@@ -185,7 +187,7 @@ export function AutoQualityProblemActions({
       <Typography.Text type="secondary">
         重新处理按当前质检规则检查原始数据。缺失的数据需要修正采集后重新上传；重新处理不会直接将问题标记为通过。
         {problem.recordingId
-          ? "本次操作只处理当前 Episode。"
+          ? (problem.recordingEpisodeId ? "本次操作只处理当前 Episode。" : "本次操作检查整段录制。")
           : "本次操作检查当前上传批次中未完成的条目，已完成的条目会跳过。"}
       </Typography.Text>
       {progress ? (
@@ -254,7 +256,7 @@ export function AutoQualityProblemActions({
         {canManage ? (
           <Link to={dataUploadRoutes.newUpload}>上传修正数据</Link>
         ) : null}
-        {canManage && progress?.status !== "DISCARDED" ? (
+        {canManage && progress?.retryable ? (
           <DeleteAutoQualityProblem
             scope={scope}
             problem={problem}

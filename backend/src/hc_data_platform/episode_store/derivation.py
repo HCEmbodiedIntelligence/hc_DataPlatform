@@ -24,6 +24,7 @@ from hc_data_platform.continuous_recordings.package import (
 from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.lerobot_format import make_task_table
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH, EPISODES_PATH, VIDEO_PATH
+from hc_data_platform.data_formats.rgb_video import RGB_PROFILES, WINDOW_RGB_PROFILE
 from hc_data_platform.data_formats.video import inspect_depth_video, inspect_video
 
 from .depth_window import PARENT_TIME_VERSION, prepare_depth_window
@@ -41,8 +42,8 @@ from .validation import parquet_rows, validate_package
 from .writer import Moments, write_json
 
 
-def derivation_encoding(quality=None):
-    encoding = {**encoding_configuration(), "depth_window": PARENT_TIME_VERSION}
+def derivation_encoding(quality=None, rgb_window=WINDOW_RGB_PROFILE):
+    encoding = {**encoding_configuration(rgb_window), "depth_window": PARENT_TIME_VERSION}
     if quality is not None:
         encoding["quality"] = quality
     return encoding
@@ -130,7 +131,9 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
         or package.manifest.input != plan.parent_input
         or (tag.start_step, tag.end_step, tag.annotation_id)
         != (plan.start_step, plan.end_step, plan.annotation_id)
-        or derivation_encoding(plan.encoding.get("quality")) != plan.encoding
+        or plan.encoding.get("rgb_window") not in RGB_PROFILES
+        or derivation_encoding(plan.encoding.get("quality"), plan.encoding.get("rgb_window"))
+        != plan.encoding
     ):
         raise PackageConflict("Tag derivation input or encoder differs from the frozen plan")
     if (
@@ -284,7 +287,9 @@ def write_tag_episode(root, package, snapshot, plan, *, checkpoint=lambda: None)
                         media, window, work / "selected", preserve_parent_times=True
                     )
                     if depth
-                    else prepare_rgb_window(media, window, work / "rgb.mp4")
+                    else prepare_rgb_window(
+                        media, window, work / "rgb.mp4", plan.encoding["rgb_window"]
+                    )
                 )
                 destination = root / original
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -387,6 +392,7 @@ def write_provenance(package, root, snapshot, plan, receipts, checkpoint):
         if path.startswith("hc/recording/") or path in {
             "hc/calibration.json",
             "hc/robot_scene.json",
+            "hc/robot_binding.json",
         }:
             copy_member(package, path, root / path, checkpoint)
         elif (

@@ -75,8 +75,9 @@ def test_arrow_schema_merge_and_annotation_common_values(tmp_path):
     original = rows(tmp_path / "full")
     assert len(original) == 10
     assert [r["episode_index"] for r in original] == [0] * 5 + [1] * 5
-    assert original[0]["actions"]["position"]["data"][16:] == [14.0, 15.0, 16.0]
-    assert original[5]["actions"]["position"]["data"][16:] == [14.0, 15.0, 16.0]
+    for row in (original[0], original[5]):
+        for key in ("joints", "actions"):
+            assert row[key]["position"]["data"] == [*range(7), 0, *range(7, 14), 0]
     new["frames"] = {10**12 + i * 33_000_000: {"task": label, "segment": segment, "parent_frame_index": i}
                      for i, label, segment in ((1, "抓取", 0), (2, "抓取", 0), (4, "放下", 1))}
     write_dataset(tmp_path / "annotated", [new])
@@ -101,7 +102,7 @@ def test_corrupt_target_tensor_is_rejected(tmp_path):
     arrow = tmp_path / "out/data-00000-of-00001.arrow"
     table = pa.ipc.open_stream(str(arrow)).read_all()
     values = table.to_pylist()
-    values[0]["actions"]["position"]["shape"] = [1, 16]
+    values[0]["actions"]["position"]["shape"] = [1, 19]
     with arrow.open("wb") as stream, pa.ipc.new_stream(stream, table.schema) as writer:
         writer.write_table(pa.Table.from_pylist(values, schema=table.schema))
     with pytest.raises(ValueError, match="TENSOR"):

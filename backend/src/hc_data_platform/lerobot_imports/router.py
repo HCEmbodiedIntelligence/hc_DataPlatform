@@ -29,6 +29,7 @@ from .models import (
     LeRobotSourceFileV1,
     lerobot_part_plan,
 )
+from .oss_batch import BATCH_WORKFLOW, BatchAccepted, BatchInput, OssBatchSummary, SubmitOssBatch, record_accepted
 from .oss_imports import CommitOssImport, InspectOssImport, commit_source, inspect_source
 from .processing import (
     NativeImportProgress,
@@ -114,6 +115,87 @@ def commit_oss_import(
             title="导入选项无效",
             detail="请重新检查数据格式、处理能力和目标采集任务。",
         ) from exc
+
+
+@router.post(
+    "/oss:batches", response_model=BatchAccepted, status_code=202, operation_id="submitOssBatch"
+)
+async def submit_oss_batch(
+    project_id: str,
+    region_code: str,
+    command: SubmitOssBatch,
+    request: Request,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+) -> BatchAccepted:
+    from hashlib import sha256
+
+    from hc_data_platform.workflow.models import workflow_id
+    from hc_data_platform.workflow.router import get_launcher
+    from hc_data_platform.workflow.service import TemporalWorkflowLauncher
+
+    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    batch = BatchInput(
+        organization_id=organization_id,
+        project_id=project_id,
+        region_code=region_code,
+        actor_id=auth.subject_id,
+        command=command,
+    )
+    digest = sha256(batch.model_dump_json().encode()).hexdigest()
+    identity = workflow_id("oss-import-batch", project_id, digest)
+    from hc_data_platform.ingest.upload_batches import register_batch
+
+    number = await asyncio.to_thread(register_batch, (organization_id, project_id, region_code), "oss", identity)
+    service = getattr(request.app.state, "lerobot_uploads", None)
+    if service is not None:
+        from .oss_registration import register_if_mcap
+        registered = await asyncio.to_thread(register_if_mcap, service, auth, batch, identity)
+        if registered is not None:
+            return registered.model_copy(update={"batch_number": number})
+    launcher = get_launcher()
+    if not isinstance(launcher, TemporalWorkflowLauncher):
+        raise problem(
+            status=503,
+            code="OSS_BATCH_QUEUE_UNAVAILABLE",
+            title="后台导入队列未配置",
+            detail="请先连接 Temporal 工作队列。",
+        )
+    job = await launcher.start(
+        workflow_name=BATCH_WORKFLOW,
+        workflow_input=batch,
+        workflow_id=identity,
+        job_type=BATCH_WORKFLOW,
+        project_id=project_id,
+        resource_id=str(command.request_id),
+    )
+    await asyncio.to_thread(record_accepted, batch, job)
+    return BatchAccepted(batch_id=identity, batch_number=number, total=len(command.recording_paths or [None]))
+
+
+@router.get("/oss:batches", operation_id="listOssBatches")
+def list_oss_batches(
+    project_id: str,
+    region_code: str,
+    auth: VerifiedAuth,
+    organization_id: OrganizationHeader,
+) -> list[OssBatchSummary]:
+    from .configuration import connections
+
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    with connections()() as db, db.cursor() as cursor:
+        cursor.execute(
+            """SELECT j.workflow_id,j.status,j.result,b.batch_number FROM workflow.jobs j
+               LEFT JOIN ingest.upload_batches b ON (b.organization_id,b.project_id,b.region_code,b.batch_key)
+                 =(j.organization_id,j.project_id,j.result->>'region_code','oss:'||j.workflow_id)
+               WHERE j.organization_id=%s AND j.project_id=%s AND j.job_type=%s
+                 AND j.result->>'region_code'=%s ORDER BY j.created_at DESC LIMIT 30""",
+            (organization_id, project_id, BATCH_WORKFLOW, region_code),
+        )
+        return [
+            OssBatchSummary(batch_id=batch_id, batch_number=number, status=status, **summary)
+            for batch_id, status, summary, number in cursor.fetchall()
+        ]
 
 
 class NativeLabelsRequest(BaseModel):
@@ -369,6 +451,8 @@ def list_native_imports(
     offset: Annotated[int, Query(ge=0)] = 0,
     dataset_id: Annotated[str | None, Query(max_length=128)] = None,
     include_all_sources: bool = False,
+    batch_number: list[Annotated[int, Query(ge=1)]] = Query(default=[]),
+    all_batches: bool = False,
     recording_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> list[NativeImportProgress]:
     authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
@@ -380,6 +464,8 @@ def list_native_imports(
         offset=offset,
         dataset_id=dataset_id,
         include_all_sources=include_all_sources,
+        batch_numbers=batch_number,
+        all_batches=all_batches,
         recording_id=recording_id,
     )
     return (
@@ -596,14 +682,22 @@ def begin_lerobot_import(
     auth: VerifiedAuth,
     organization_id: OrganizationHeader,
     service: Service,
+    upload_batch_id: str | None = Query(None, min_length=1, max_length=128),
 ) -> LeRobotImportGrantV1:
-    return service.begin(
+    grant = service.begin(
         auth=auth,
         organization_id=organization_id,
         project_id=project_id,
         region_code=region_code,
         manifest=manifest,
+        upload_batch_id=upload_batch_id,
     )
+    if upload_batch_id:
+        from hc_data_platform.ingest.upload_batches import register_batch
+
+        number = register_batch((organization_id, project_id, region_code), "web", upload_batch_id, grant.import_id)
+        return grant.model_copy(update={"batch_number": number})
+    return grant
 
 
 @router.post(

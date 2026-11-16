@@ -6,13 +6,15 @@ from hc_data_platform.dataset_registry.models import DatasetPageEpisodeRevision
 from hc_data_platform.episode_store.files import PackageFiles
 from hc_data_platform.logical_data.models import LogicalRobotAssetGrant, LogicalRobotPreviewGrant, LogicalRobotScene
 from hc_data_platform.registry.service import RegistryService
-from hc_data_platform.robotics.scene_models import FrozenRobotScene
+from hc_data_platform.robotics.scene_models import FrozenRobotBinding, FrozenRobotScene
+from hc_data_platform.robotics.scene_snapshots import RobotSceneSnapshots
 from hc_data_platform.security.auth import AuthContext
 
 
 class LogicalSceneReader:
-    def __init__(self, files: PackageFiles, registry: RegistryService) -> None:
+    def __init__(self, files: PackageFiles, registry: RegistryService, snapshots: RobotSceneSnapshots) -> None:
         self.files, self.registry = files, registry
+        self.snapshots = snapshots
 
     def scene(self, revision: DatasetPageEpisodeRevision, snapshot_id: str) -> LogicalRobotScene:
         try:
@@ -36,11 +38,17 @@ class LogicalSceneReader:
         package = self.files.open(data.identity, data.data_version_id)
         if package.receipt.data != data:
             raise ValueError("robot scene package differs from fixed revision")
-        if "hc/robot_scene.json" not in package.entries:
+        if "hc/robot_scene.json" in package.entries:
+            scene = FrozenRobotScene.model_validate(package.document("hc/robot_scene.json"))
+            if scene.calibration != package.document("hc/calibration.json"):
+                raise ValueError("robot scene calibration differs from fixed package")
+        elif "hc/robot_binding.json" in package.entries:
+            reference = FrozenRobotBinding.model_validate(package.document("hc/robot_binding.json"))
+            scene = self.snapshots.resolve_binding(
+                data.identity.organization_id, reference, package.document("hc/calibration.json")
+            )
+        else:
             return LogicalRobotScene(snapshot_id=snapshot_id, provenance="MISSING_HISTORICAL")
-        scene = FrozenRobotScene.model_validate(package.document("hc/robot_scene.json"))
-        if scene.calibration != package.document("hc/calibration.json"):
-            raise ValueError("robot scene calibration differs from fixed package")
         return LogicalRobotScene(
             snapshot_id=snapshot_id,
             provenance="FROZEN",

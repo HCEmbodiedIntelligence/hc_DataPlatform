@@ -1,3 +1,4 @@
+import { OssBatchRecords } from "./components/OssBatchRecords";
 import { OssImportPanel } from "./components/OssImportPanel";
 import { SuccessfulVolume } from "../../features/robot-ingest/SuccessfulVolume";
 import { CaptureProgressPanel } from "../../features/collection-tasks/CaptureProgressPanel";
@@ -104,6 +105,7 @@ export default function UploadJobsPage() {
   const newUploadTabRef = useRef<HTMLAnchorElement>(null);
   const recordsTabRef = useRef<HTMLAnchorElement>(null);
   const localInspectionNonce = useRef(0);
+  const submissionId = useRef<string | null>(null);
   const activeTab =
     location.pathname === dataUploadRoutes.records ? "records" : "new";
   const robotIdFilter = useMemo(
@@ -252,6 +254,7 @@ export default function UploadJobsPage() {
   const inspectFiles = useCallback(
     async (nextFiles: readonly File[], mode: BrowserSelectionMode) => {
       const nonce = ++localInspectionNonce.current;
+      submissionId.current = null;
       if (nextFiles.length === 0) {
         setFlow({ phase: "idle" });
         return;
@@ -310,6 +313,7 @@ export default function UploadJobsPage() {
         }
         setFlow({ phase: "queue_ready" });
         void startLeRobotUpload({
+          batchId: (submissionId.current ??= crypto.randomUUID()),
           scope,
           selection: confirmedSelection.lerobot,
           binding: lerobotBinding,
@@ -358,6 +362,7 @@ export default function UploadJobsPage() {
           });
         }
 
+        const batchId = (submissionId.current ??= crypto.randomUUID());
         for (const [unitIndex, unit] of checked.entries()) {
           setFlow({
             phase: "prechecking",
@@ -368,6 +373,7 @@ export default function UploadJobsPage() {
           const itemId = await prepareUpload({
             scope,
             preflight: unit.preflight,
+            batchId,
             sourceType: confirmedSelection.sourceType,
             files: unit.local.rawFile
               ? [unit.local.manifestFile, unit.local.rawFile]
@@ -687,6 +693,7 @@ export default function UploadJobsPage() {
               />
             </div>
           ) : null}
+          {scope && canRead && !capturesFocused && !robotIdFilter && <OssBatchRecords scope={scope} />}
           {capturesFocused ? null : robotIdFilter ? (
             canReadRobotIngest ? (
               <RobotUploadRecordsPanel

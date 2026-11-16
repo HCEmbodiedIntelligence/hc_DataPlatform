@@ -145,6 +145,11 @@ def scene_setup(runtime, auth, org, project, connections):
     plans = []
     freeze = runtime.activities.robot_scenes.freeze_package
 
+    from unittest.mock import Mock
+
+    scenes = runtime.activities.robot_scenes
+    scenes.model_query = Mock(wraps=scenes.model_query)
+
     def record(plan):
         plans.append(plan)
         return freeze(plan)
@@ -163,7 +168,13 @@ def assert_frozen_scene(runtime, package, fixture, auth, connections):
     robot_id, first, second, bind, plans = fixture
     data = package.receipt.data
     ident = data.identity
-    frozen = package.document("hc/robot_scene.json")
+    from hc_data_platform.robotics.scene_models import FrozenRobotBinding
+
+    runtime.activities.robot_scenes.model_query.assert_not_called()
+    reference = FrozenRobotBinding.model_validate(package.document("hc/robot_binding.json"))
+    frozen = runtime.activities.robot_scenes.resolve_binding(
+        ident.organization_id, reference, package.document("hc/calibration.json")
+    ).model_dump(mode="json")
     assert frozen["status"] == "FROZEN" and frozen["model_version_id"] == first[0]
     with connections() as db:
         expected_model_id = db.execute(
@@ -218,10 +229,10 @@ def assert_frozen_scene(runtime, package, fixture, auth, connections):
         bind(second[0])
         after = client.get(root + "/robot-scene", headers=headers, params=params)
         assert after.status_code == 200 and after.json() == before.json()
-        assert package.document("hc/robot_scene.json") == frozen
+        assert package.document("hc/robot_binding.json") == reference.model_dump(mode="json")
         retry = runtime.activities.robot_scenes.freeze_package(plans[0])
         assert retry.input == package.manifest.input
-        assert retry.metadata["robot_scene"] == frozen
+        assert retry.metadata["robot_binding"] == reference.model_dump(mode="json")
         from concurrent.futures import ThreadPoolExecutor
 
         from tests.episode_store.test_commit_services import scoped

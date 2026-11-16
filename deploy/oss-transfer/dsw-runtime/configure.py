@@ -39,10 +39,22 @@ for role in ("api","worker"):
     assert env["HC_OBJECT_STORE_PROVIDER"] == "oss" and env["HC_PLATFORM_ENVIRONMENT_ID"] == "hc-oss"
     env.update(HC_POSTGRES_DSN=f"postgresql+asyncpg://hc:{password}@{host}:{port}/hc_data",
                HC_TEMPORAL_TARGET="127.0.0.1:7233", HC_MIGRATIONS_DIR=str(repo/"backend/migrations"),
+               HC_CACHE_SERVICE_UID=str(account.pw_uid),
                HC_OBJECT_STORE_CACHE_ROOT=roots["oss_cache"], HC_ALIGNMENT_STAGING_ROOT=roots["alignment"],
                HC_ALIGNED_MEDIA_STAGING_ROOT=roots["media"], HC_ROBOT_MODEL_ASSET_ROOT=str(cache/"robot-assets"),
                HC_ROBOT_MODEL_PREVIEW_ROOT=str(assets), HC_STORAGE_LOCAL_USAGE_ROOTS=json.dumps(roots),
                HC_STORAGE_DISK_USAGE_PATH=str(base))
+    if role == "worker":
+        # Compose runs 4 single-slot worker replicas; DSW runs one process, so
+        # it needs the combined slot count or every activity queues serially.
+        cpus = os.cpu_count() or 4
+        slots = str(max(4, min(8, cpus // 2)))
+        env.update(HC_WORKER_MAX_CONCURRENT_ACTIVITIES=slots,
+                   HC_WORKER_ROBOT_MAX_CONCURRENT_ACTIVITIES=slots,
+                   HC_WORKER_CONTROL_MAX_CONCURRENT_ACTIVITIES="8",
+                   HC_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS="16",
+                   HC_MEDIA_MAX_CONCURRENT_GENERATIONS="4",
+                   HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS="4")
     if mode == "live" and env.get("HC_JWT_ALGORITHMS") == '["HS256"]':
         keyfile = base/"config/site-jwt.key"
         if not keyfile.exists():

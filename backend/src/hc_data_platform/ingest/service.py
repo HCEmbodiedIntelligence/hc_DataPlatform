@@ -751,12 +751,13 @@ class UploadSessionService:
             )
 
         digest = hashlib.sha256()
-        streamed_crc64 = 0
+        streamed_crc64 = 0 if metadata.crc64 is None else None
         streamed_size = 0
         for chunk in self.storage.read_chunks(session.object_key):
             streamed_size += len(chunk)
             digest.update(chunk)
-            streamed_crc64 = crc64_ecma(chunk, streamed_crc64)
+            if streamed_crc64 is not None:
+                streamed_crc64 = crc64_ecma(chunk, streamed_crc64)
         if streamed_size != manifest.file_size:
             self._fail(session, "OBJECT_SIZE_MISMATCH")
             raise _integrity_problem(
@@ -764,7 +765,7 @@ class UploadSessionService:
                 "Object size mismatch",
                 "The streamed object size differs from the manifest.",
             )
-        if streamed_crc64 != manifest.crc64:
+        if streamed_crc64 is not None and streamed_crc64 != manifest.crc64:
             self._fail(session, "CRC64_MISMATCH")
             raise _integrity_problem(
                 "CRC64_MISMATCH",

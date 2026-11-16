@@ -103,6 +103,7 @@ export async function loadAnnotationPackage(
   const raw = await request<unknown>({
     method: "GET",
     path: endpoint,
+    query: { view: "annotation" },
     scope,
     cache: "no-store",
     ...(signal ? { signal } : {}),

@@ -54,9 +54,16 @@ def from_archive(archive):
         return ExportFormat("mcap", archive, "MCAP", False,
                             partial(mcap, split_annotations=False),
                             reader_version="hc-selected-mcap/2")
+    if archive == "holobrain_collection_zip/5":
+        return ExportFormat("holobrain", archive, "HoloBrain（16维，双臂和夹爪）", False, holobrain,
+                            reader_version="hc_tj_16dof_robo_orchard_0.1.0/v1", standalone_dataset=True)
+    if archive == "holobrain_collection_zip/4":
+        return ExportFormat("holobrain", archive, "HoloBrain（19维，含腰部）", False,
+                            partial(holobrain, config_name="19dof"),
+                            reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1", standalone_dataset=True)
     if archive == "holobrain_collection_zip/3":
         return ExportFormat("holobrain", archive, "HoloBrain", False,
-                            partial(holobrain, split_annotations=False),
+                            partial(holobrain, split_annotations=False, config_name="19dof"),
                             reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1",
                             standalone_dataset=True)
     if archive == "holobrain_collection_zip/1":
@@ -64,7 +71,7 @@ def from_archive(archive):
                             reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1")
     if archive == "holobrain_collection_zip/2":
         return ExportFormat("holobrain", archive, "HoloBrain（历史附加报告）", False,
-                            partial(holobrain, reference_layout=False, split_annotations=False),
+                            partial(holobrain, reference_layout=False, split_annotations=False, config_name="19dof"),
                             reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1")
     for adapter in _FORMATS.values():
         if adapter.archive == archive:
@@ -116,11 +123,12 @@ def legacy_selected_mcap(root, selections, *, storage, modalities, checkpoint):
 
 
 def holobrain(root, selections, *, storage, modalities, checkpoint, reference_layout=True,
-              split_annotations=True):
+              split_annotations=True, config_name="16dof", use_committed_actions=False):
     from .holobrain_export import write_collection
     manifest, _ = write_collection(
         root, selections, storage=storage, modalities=modalities, checkpoint=checkpoint,
-        reference_report=reference_layout, split_annotations=split_annotations,
+        reference_report=reference_layout, split_annotations=split_annotations, config_name=config_name,
+        use_committed_actions=use_committed_actions,
     )
     if reference_layout:
         state = json.loads((root / "state.json").read_bytes())
@@ -135,7 +143,7 @@ def holobrain(root, selections, *, storage, modalities, checkpoint, reference_la
 def legacy_holobrain(root, selections, *, storage, modalities, checkpoint):
     from .holobrain_export import write_collection
     return write_collection(root, selections, storage=storage, modalities=modalities,
-                            checkpoint=checkpoint, compact_invalid=False, split_annotations=False)
+                            checkpoint=checkpoint, compact_invalid=False, split_annotations=False, config_name="19dof")
 
 
 def original(root, selections, *, storage, modalities, checkpoint):
@@ -165,5 +173,6 @@ register(
     )
 )
 register(ExportFormat("original", "original_collection_zip/1", "原始文件", False, original, True))
-register(ExportFormat("holobrain", "holobrain_collection_zip/4", "HoloBrain（19维，含腰部）", False, holobrain,
-                      reader_version="hc_tj_19dof_robo_orchard_0.1.0/v1", standalone_dataset=True))
+register(ExportFormat("holobrain", "holobrain_collection_zip/6", "HoloBrain（16维，双臂和夹爪）", False,
+                      partial(holobrain, use_committed_actions=True),
+                      reader_version="hc_tj_16dof_robo_orchard_0.1.0/v1", standalone_dataset=True))

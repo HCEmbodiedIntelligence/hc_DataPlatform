@@ -74,6 +74,7 @@ const actionLabels: Record<LifecyclePolicyAction, string> = {
   TRANSITION_TO_COLD: "迁移到冷存储",
   CLEAN_REBUILDABLE_CACHE: "清理可重建缓存",
   CLEAN_PROCESSING_CACHE: "自动回收 · 解析中间缓存",
+  CLEAN_SUPERSEDED_MCAP_BATCHES: "自动回收 · 旧解析批次",
   CLEAN_RECORDING_PREVIEWS: "自动回收 · 原始录制预览",
   CLEAN_EPISODE_PREVIEWS: "自动回收 · 成片播放预览",
   CLEAN_EXPORT_ARCHIVES: "自动回收 · 数据导出包",
@@ -960,7 +961,7 @@ export function LifecyclePane() {
               rules={[{ required: true }]}
             >
               <InputNumber
-                min={isCacheAction(selectedAction) && selectedAction !== "CLEAN_INVENTORY_DETAILS" ? 1 : 0}
+                min={isCacheAction(selectedAction) && selectedAction !== "CLEAN_INVENTORY_DETAILS" && selectedAction !== "CLEAN_SUPERSEDED_MCAP_BATCHES" ? 1 : 0}
                 max={36_500}
                 precision={0}
                 className={styles.fullWidth}

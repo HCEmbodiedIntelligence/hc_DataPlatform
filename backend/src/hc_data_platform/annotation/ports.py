@@ -68,6 +68,10 @@ class AnnotationRepositoryPort(Protocol):
         self, *, project_id: str, rollout_id: str
     ) -> AnnotationAggregate | None: ...
 
+    def list_task_rows(
+        self, project_id: str, status: AnnotationStatus | None = None
+    ) -> tuple[AnnotationTask, ...]: ...
+
     def list_for_project(self, project_id: str) -> tuple[AnnotationAggregate, ...]: ...
 
     def list_revision_threads(

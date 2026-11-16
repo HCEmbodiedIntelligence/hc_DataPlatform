@@ -40,8 +40,17 @@ it("uses the server task mapping with explicit scope and no latest lookup", asyn
       scopeMode: "explicit",
       scope,
       cache: "no-store",
+      query: { include_model: false },
     }),
   );
+});
+it("exposes playback streams independently of optional model data", async () => {
+  const fixture = bundle();
+  const wire = bundleLogicalFixture(fixture, scope);
+  mocked.mockResolvedValueOnce({ ...wire, robot: { invalid: true }, robot_assets: null } as never);
+  const logical = await loadAnnotationLogicalData(scope, fixture.task, frameTime);
+  expect(logical.streams).toHaveLength(3);
+  expect(mocked).toHaveBeenCalledTimes(1);
 });
 it.each([
   "task",

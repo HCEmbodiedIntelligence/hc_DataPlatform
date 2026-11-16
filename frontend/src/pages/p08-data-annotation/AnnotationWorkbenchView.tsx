@@ -62,6 +62,7 @@ import type {
   ManualIssueSeverity,
   ManualIssueType,
 } from "../../entities/manual-issue";
+import { fetchLogicalSamples } from "../../features/datasets/api/logical-data";
 import { DangerousActionDialog } from "../../features/annotation";
 import { EntityDrawer } from "../../shared/ui/layout/EntityDrawer";
 import {
@@ -224,7 +225,7 @@ const idlePreSubmitCheck = { status: "idle" } as const;
 
 const reviewDecisionLabels: Readonly<Record<RuntimeReviewDecision, string>> = {
   APPROVE: "审核通过",
-  NEEDS_REVISION: "要求修改",
+  NEEDS_REVISION: "退回修改",
   REJECT: "拒绝",
 };
 
@@ -614,7 +615,7 @@ function TagEditorInspector(props: {
           </strong>
           <small>
             {editingTag
-              ? (selectionProblem ?? "拖动选区或边界调整区间")
+              ? (selectionProblem ?? "在橙色选区内拖选可新建子 Tag，拖动下方 Tag 色条可调整原区间")
               : props.selection
                 ? parentRow
                   ? `自动 L${parentRow.depth + 2} · 父级 ${intervalTagLabel(parentRow.tag, index)} · ${stepRange(props.selection.startStep, props.selection.endStep, frequencyHz)}`
@@ -797,7 +798,7 @@ function ReviewInspector(props: {
               <span>{props.selectedIssueIds.size} 处</span>
             </h3>
             <p className={styles.reviewIssueHint}>
-              勾选需修改的标注；未勾选则通过审核。
+              可勾选需要修改的 Tag，退回时会附上它们的位置。
             </p>
             {intervalRows.length ? (
               <ul className={styles.reviewIssueList} aria-label="标注问题位置">
@@ -1340,8 +1341,8 @@ function WorkspaceToolbar(props: {
               tone: "review",
               text:
                 props.reviewIssueCount > 0
-                  ? `已标记 ${props.reviewIssueCount} 处问题，提交审核后任务进入待修改。`
-                  : "尚未标记问题，提交审核后任务将标注完成。",
+                  ? `已标记 ${props.reviewIssueCount} 处问题，请退回给标注员修改。`
+                  : "检查 Tag 后请选择审核通过或退回修改。",
             }
           : props.mode === "revisions"
             ? {
@@ -1483,47 +1484,32 @@ function WorkspaceToolbar(props: {
               </TooltipAction>
             ) : null}
             {props.mode === "tag-review" ? (
-              <TooltipAction
-                busy={
-                  props.pending === "APPROVE" ||
-                  props.pending === "NEEDS_REVISION"
-                }
-                className={
-                  props.reviewIssueCount > 0
-                    ? styles.requestChangesAction
-                    : styles.approveAction
-                }
-                disabled={
-                  !props.permissions.canReview ||
-                  (props.reviewBlocked && props.reviewIssueCount === 0) ||
-                  busy
-                }
-                label="提交审核"
-                tooltip={
-                  props.reviewBlocked && props.reviewIssueCount === 0
-                    ? "自动检查未通过，请先标记对应的问题位置。"
-                    : props.reviewIssueCount > 0
-                      ? `提交后进入待修改（${props.reviewIssueCount} 处问题）。`
-                      : "未标记问题，提交后标注完成。"
-                }
-                onClick={() =>
-                  props.onOpenReview(
-                    props.reviewIssueCount > 0 ? "NEEDS_REVISION" : "APPROVE",
-                  )
-                }
-              >
-                {props.pending === "APPROVE" ||
-                props.pending === "NEEDS_REVISION" ? (
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className={styles.loadingIcon}
-                    size={15}
-                  />
-                ) : (
-                  <Send aria-hidden="true" size={15} />
-                )}
-                提交审核
-              </TooltipAction>
+              <>
+                <TooltipAction
+                  className={styles.requestChangesAction}
+                  busy={props.pending === "NEEDS_REVISION"}
+                  disabled={!props.permissions.canReview || busy}
+                  label="退回修改"
+                  tooltip="将当前任务退回给标注员，修改后可再次提交审核。"
+                  onClick={() => props.onOpenReview("NEEDS_REVISION")}
+                >
+                  <RotateCcw aria-hidden="true" size={15} />
+                  退回修改
+                </TooltipAction>
+                <TooltipAction
+                  className={styles.approveAction}
+                  busy={props.pending === "APPROVE"}
+                  disabled={!props.permissions.canReview || props.reviewBlocked || props.reviewIssueCount > 0 || busy}
+                  label="审核通过"
+                  tooltip={props.reviewBlocked || props.reviewIssueCount > 0
+                    ? "当前有待解决的问题，请退回修改。"
+                    : "确认当前提交的 Tag 并完成标注。"}
+                  onClick={() => props.onOpenReview("APPROVE")}
+                >
+                  <Check aria-hidden="true" size={15} />
+                  审核通过
+                </TooltipAction>
+              </>
             ) : props.mode === "annotation" ? (
               <>
                 <TooltipAction
@@ -2509,7 +2495,10 @@ export function AnnotationWorkbenchView(
       endStep: Math.max(...selectedTags.map((tag) => tag.end_step)),
     };
   })();
-  const reportStreamOptions = [
+  const logical = props.bundle.logical;
+  const reportStreamOptions = logical ? logical.view.snapshot.streams
+    .filter((stream) => stream.temporal)
+    .map((stream) => ({ value: stream.stream_id, label: stream.name })) : [
     ...cameras.map((camera) => ({
       value: camera.topic,
       label: `${camera.displayName} · ${camera.topic}`,
@@ -2544,13 +2533,28 @@ export function AnnotationWorkbenchView(
     setReportPending(true);
     setReportError(null);
     try {
+      const { startStep, endStep } = reportSelection;
+      let relativeStartNs = stepToTimelineNs(startStep, frequencyHz);
+      let relativeEndNs = stepToTimelineNs(endStep, frequencyHz);
+      if (logical) {
+        const stream = logical.view.snapshot.streams.find((item) => item.stream_id === reportStreamRef);
+        if (!stream?.start_ns || !stream.end_ns) throw new Error("当前固定版本缺少所选数据流的时间范围。");
+        const signal = new AbortController().signal;
+        const boundary = async (step: number) => {
+          if (step === stream.sample_count) return stream.end_ns!;
+          const [sample] = await fetchLogicalSamples(logical.selection, logical.view, stream, step, step + 1, signal);
+          if (sample?.timestamp_ns == null) throw new Error("当前数据流缺少所选步骤的时间戳。");
+          return sample.timestamp_ns;
+        };
+        const [start, end] = await Promise.all([boundary(startStep), boundary(endStep)]);
+        relativeStartNs = (BigInt(start) - BigInt(stream.start_ns)).toString();
+        relativeEndNs = (BigInt(end) - BigInt(stream.start_ns)).toString();
+      }
+      if (epoch !== taskEpoch.current) return;
       await props.onReportDataIssue({
         streamRef: reportStreamRef,
-        relativeStartNs: stepToTimelineNs(
-          reportSelection.startStep,
-          frequencyHz,
-        ),
-        relativeEndNs: stepToTimelineNs(reportSelection.endStep, frequencyHz),
+        relativeStartNs,
+        relativeEndNs,
         issueType: reportIssueType,
         severity: reportSeverity,
         note: reportNote.trim(),
@@ -3004,12 +3008,11 @@ export function AnnotationWorkbenchView(
                 ? `异常片段：${reportSelection.startStep}–${reportSelection.endStep} 步（${stepRange(reportSelection.startStep, reportSelection.endStep, frequencyHz)}）`
                 : "尚未选择异常片段"
             }
-            description="这会创建独立的数据质量问题；不会自动改变当前标注任务的审核状态。"
+            description="数据流异常会登记到问题数据。Tag 标错或漏标时，请在审核栏选择“退回修改”。"
           />
           <Form.Item
             label="问题数据流"
             required
-            help="后端会从当前标注任务解析固定 Dataset、Episode、Revision 与 Stream 身份。"
           >
             <Select
               aria-label="问题数据流"
@@ -3148,7 +3151,7 @@ export function AnnotationWorkbenchView(
             : dialogDecision === "RESTORE"
               ? `确认回退为 r${restoreTargetRevision ?? "?"}`
               : dialogDecision
-                ? "确认提交审核"
+                ? `确认${reviewDecisionLabels[dialogDecision]}`
                 : "确认"
         }
         impact={
@@ -3171,6 +3174,9 @@ export function AnnotationWorkbenchView(
         }
         open={dialogDecision !== null}
         pending={pending !== null}
+        blockedReasons={dialogDecision === "NEEDS_REVISION" && !reviewIssueRows.length && !reviewComment.trim()
+          ? ["请填写修改要求，以便标注员处理。"]
+          : undefined}
         stableResourceId={props.bundle.task.task_id}
         title={
           dialogDecision === "SUBMIT"
@@ -3178,7 +3184,7 @@ export function AnnotationWorkbenchView(
             : dialogDecision === "RESTORE"
               ? "回退标注数据修订"
               : dialogDecision
-                ? "提交审核"
+                ? reviewDecisionLabels[dialogDecision]
                 : "确认操作"
         }
         onCancel={() => {
@@ -3215,10 +3221,18 @@ export function AnnotationWorkbenchView(
             未标记问题。提交后任务将进入“标注完成”。
           </p>
         ) : dialogDecision === "NEEDS_REVISION" ? (
-          <p className={styles.reviewOutcomeSummary} data-outcome="revision">
-            已标记 {reviewIssueRows.length}{" "}
-            处问题。提交后任务将进入“待修改”，修改并重新提交后可再次审核。
-          </p>
+          <>
+            <p className={styles.reviewOutcomeSummary} data-outcome="revision">
+              {reviewIssueRows.length > 0 && `已标记 ${reviewIssueRows.length} 处问题。`}
+              退回后任务将进入“待修改”，标注员可修改 Tag 并重新提交审核。
+            </p>
+            <label className={styles.commentField}>
+              修改要求
+              <textarea value={reviewComment} maxLength={500}
+                placeholder="例如：请将抓取阶段的 Tag 改为放置。"
+                onChange={(event) => setReviewComment(event.target.value)} />
+            </label>
+          </>
         ) : null}
       </DangerousActionDialog>
     </div>

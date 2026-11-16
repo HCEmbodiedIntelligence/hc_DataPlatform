@@ -10,7 +10,7 @@ from hc_data_platform.core.context import select_organization_scope
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
-from . import associations, plans, schemes
+from . import associations, plans, quality_library, schemes
 from .common import digest, reject
 from .components import CaptureServices
 from .dependencies import Services, require_services
@@ -56,6 +56,33 @@ def authorize(
     if auth.is_platform_admin and not services.organization_exists(org):
         reject("ORGANIZATION_NOT_FOUND", "组织不存在。", 404)
     return services
+
+
+RULES = "/organizations/{organization_id}/quality-rules"
+
+
+@router.get(RULES, operation_id="listQualityRules", response_model=quality_library.RuleLibrary)
+def list_quality_rules(organization_id: Identifier, auth: VerifiedAuth, services: Services):
+    services = authorize(services, auth, organization_id)
+    with services.connections() as db:
+        return quality_library.library(db, organization_id)
+
+
+@router.post(
+    RULES,
+    operation_id="addQualityRule",
+    response_model=quality_library.ThresholdRule,
+    status_code=201,
+)
+def add_quality_rule(
+    organization_id: Identifier,
+    command: quality_library.ThresholdRule,
+    auth: VerifiedAuth,
+    services: Services,
+):
+    services = authorize(services, auth, organization_id, manage=True)
+    with services.connections() as db:
+        return quality_library.add_rule(db, organization_id, command, auth.subject_id)
 
 
 @router.get(

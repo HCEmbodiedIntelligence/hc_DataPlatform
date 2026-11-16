@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hc_data_platform.continuous_recordings.current_qc import CURRENT_EPISODE_QC
+
 
 class CaptureProgress(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -70,7 +72,10 @@ class CaptureProgressPage(BaseModel):
 
 
 def capture_counts(items):
-    unique = [item for item in items if not item.canonical_episode_id]
+    unique = [
+        item for item in items
+        if not item.canonical_episode_id and item.error_code != "MCAP_DUPLICATE_RECORDING"
+    ]
     return CaptureCounts(
         upload_count=len({item.upload_id for item in items}),
         received_count=len({item.upload_id for item in unique if item.received}),
@@ -143,7 +148,8 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
                u.raw_source_id,
                COALESCE(m.source_path,u.upload_document #>> '{manifest,assets,0,path}'),
                r.recording_document->'quality_summary',
-               r.recording_document->>'quality_error_code'
+               r.recording_document->>'quality_error_code',
+               r.recording_document->>'quality_discarded_at'
         FROM uploads u
         LEFT JOIN LATERAL (
           SELECT DISTINCT ON (source_path) processing_id,recording_id,status,error,source_path,duplicate_of
@@ -165,7 +171,7 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
           SELECT jsonb_agg(item) AS items FROM (
             SELECT jsonb_build_object('status', CASE WHEN dispatch.last_error_code IS NOT NULL
               THEN 'DISPATCH_BLOCKED' ELSE COALESCE(p.status,'PENDING_QC') END,
-              'quality', CASE WHEN p.status='QC_FAILED' THEN 'REJECT'
+              'quality', CASE WHEN p.status='QC_FAILED' OR latest_qc.status='REJECT' THEN 'REJECT'
                               WHEN p.qc_report_id IS NOT NULL
                               AND p.status IN ('PENDING_ALIGNMENT','ALIGNING','READY','FAILED')
                               THEN 'PASS' END,
@@ -175,6 +181,7 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
               ON p.organization_id=s.organization_id AND p.project_id=s.project_id
              AND p.region_code=s.region_code AND p.recording_id=s.recording_id
              AND p.episode_id=s.episode_id AND p.finalized_revision=s.revision
+            LEFT JOIN """ + CURRENT_EPISODE_QC + """ latest_qc ON TRUE
             LEFT JOIN core.outbox_events dispatch
               ON dispatch.organization_id=p.organization_id AND dispatch.project_id=p.project_id
              AND dispatch.region_code=p.region_code AND dispatch.event_id=p.event_id
@@ -274,7 +281,7 @@ def capture_from_row(row):
         error = source[3]
     stage = (
         "DISCARDED"
-        if all_discarded
+        if all_discarded or (len(source) > 4 and source[4])
         else "CANCELLED"
         if state == "CANCELLED"
         else "FAILED"

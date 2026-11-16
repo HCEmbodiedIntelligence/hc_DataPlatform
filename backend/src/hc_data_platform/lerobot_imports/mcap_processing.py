@@ -3,10 +3,15 @@
 import hashlib
 import io
 import json
+import logging
 import re
+import threading
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 from types import SimpleNamespace
 from uuid import NAMESPACE_URL, uuid5
 
@@ -26,15 +31,17 @@ from hc_data_platform.continuous_recordings.registration import (
 )
 from hc_data_platform.core.errors import problem
 from hc_data_platform.core.events import DomainEventEnvelope
+from hc_data_platform.core.structured_logging import log_event
+from hc_data_platform.data_formats.depth_evidence import VerifiedDepthFrames
 from hc_data_platform.ingest.models import utc_now
-from hc_data_platform.object_storage.checksums import crc64_ecma
 from hc_data_platform.quality.processing_errors import recording_preparation_error
-from hc_data_platform.robot_ingest.raw_recording import publish, verify
+from hc_data_platform.quality.recording_diagnostics import preparation_problem
 from hc_data_platform.security.audit import canonical_hash
 
 from .configuration import connections, validate_target
-from .mcap_reference import materialize, read_receipt
 from .mcap_original import ORIGINAL_PATH, original_key, replay_asset
+from .mcap_reference import materialize, read_receipt
+from .mcap_source_cache import copy_registered_input
 from .robot_eligibility import import_robots
 
 
@@ -150,6 +157,15 @@ def progress(scope, raw_id, manifest=None):
             for f in manifest["files"]
             if f["path"].lower().endswith(".mcap")
         ]
+    for file in files:
+        if file["status"] == "FAILED":
+            config = file["configuration"] or {}
+            diagnostic = preparation_problem(
+                file["error"], file["path"], config.get("state_topic"), config.get("action_topic"),
+                file["channel_inventory"], (config.get("postprocessing_rules") or {}).get("rules"),
+            )
+            if diagnostic:
+                file["diagnosis"] = {"label": diagnostic.label, "description": diagnostic.description}
     # Current actions follow the new association; historical attempts keep their
     # original robot identity and frozen configuration.
     if owner_row and owner_row[0]:
@@ -448,6 +464,74 @@ def enqueue_attempt(db, scope, raw_id, ident):
     )
 
 
+_logger = logging.getLogger(__name__)
+
+
+def _log_stage(ident, code, start):
+    end = perf_counter()
+    log_event(_logger, logging.INFO, code, operation_id=ident, duration_ms=(end - start) * 1000)
+    return end
+
+
+def _prepare_previews(storage, ident, recorded, assets, checkpoint, verified_paths=None, preview_frames=None):
+    from hc_data_platform.continuous_recordings.previews import prepare_recording_previews
+
+    started = perf_counter()
+    prepare_recording_previews(
+        storage, recorded, assets, checkpoint, verified_paths=verified_paths, preview_frames=preview_frames
+    )
+    _log_stage(ident, "MCAP_PREVIEWS", started)
+
+
+def _publish_derived(storage, prefix, root, files, checkpoint, workers=4):
+    """Content-addressed upload of every derived file, several at a time.
+
+    The writer checks each file's SHA-256 while streaming and accepts the stored
+    object by its provider CRC-64, so the object is not downloaded again.
+    """
+    from hc_data_platform.object_storage.immutable import MultipartImmutableWriter
+
+    stopped = threading.Event()
+
+    def check():
+        if stopped.is_set():
+            raise RuntimeError("derived publication cancelled")
+
+    def put(path):
+        sha = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(8 * 1024**2), b""):
+                check()
+                sha.update(block)
+        digest, size = sha.hexdigest(), path.stat().st_size
+        key = prefix + "/" + digest + "/" + path.relative_to(root).as_posix()
+        with path.open("rb") as stream:
+            MultipartImmutableWriter(storage).write_immutable(
+                key, stream, size=size, sha256=digest, checkpoint=check
+            )
+        head = storage.head(key)
+        if head is None:
+            raise ValueError("derived object is missing after publication")
+        return path, key, size, digest, head.etag
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(copy_context().run, put, path) for path in files]
+        try:
+            pending = set(futures)
+            while pending:
+                # Heartbeat and cancellation stay on the activity thread.
+                checkpoint()
+                done, pending = wait(pending, timeout=1, return_when=FIRST_EXCEPTION)
+                for future in done:
+                    future.result()
+        except BaseException:
+            stopped.set()
+            for future in futures:
+                future.cancel()
+            raise
+    return [future.result() for future in futures]
+
+
 def process_file(handler, event, checkpoint):
     scope = (event.organization_id, event.project_id, event.region_code)
     ident = event.payload["mcap_processing_id"]
@@ -560,8 +644,10 @@ def process_file(handler, event, checkpoint):
                     replay_asset(handler.storage, asset, original, prefix, reprocessing, checkpoint)
                     for asset in assets
                 )
+                _prepare_previews(handler.storage, ident, recorded, assets, checkpoint)
             else:
                 with TemporaryDirectory(prefix="native-mcap-") as temporary:
+                    started_read = perf_counter()
                     root = Path(temporary)
                     takeover_times = None
                     companion = original.get("takeover_file")
@@ -574,11 +660,17 @@ def process_file(handler, event, checkpoint):
                         companion = materialize(handler.storage, companion, buffer, checkpoint)
                         original = {**original, "takeover_file": companion}
                         takeover_times = parse_takeovers(
-                            buffer.getvalue(), Path(original["path"]).name
+                            buffer.getvalue(), Path(original["path"]).name,
+                            rules=McapProcessingConfig.model_validate(cfg).postprocessing_rules,
                         )
                     source = root / "source.mcap"
-                    with source.open("wb") as output:
-                        original = materialize(handler.storage, original, output, checkpoint)
+                    cached = bool(original.get("sha256")) and copy_registered_input(handler.storage, scope, original, source)
+                    if not cached:
+                        with source.open("wb") as output:
+                            original = materialize(handler.storage, original, output, checkpoint)
+                    started_inspect = _log_stage(
+                        ident, "MCAP_SOURCE_CACHE_HIT" if cached else "MCAP_SOURCE_READ", started_read
+                    )
                     output = root / "derived"
                     from hc_data_platform.continuous_recordings.mcap_native import inspect
 
@@ -593,16 +685,20 @@ def process_file(handler, event, checkpoint):
                             (json.dumps(channels), *scope, ident),
                         )
                         evidence_db.commit()
+                    started_convert = _log_stage(ident, "MCAP_CHANNEL_INVENTORY", started_inspect)
+                    preview_frames = VerifiedDepthFrames()
                     config, provenance = prepare(
                         source,
                         output,
                         cfg,
                         checkpoint,
+                        source_inventory=channels, source_sha256=original["sha256"], preview_frames=preview_frames,
                         preserve_source=bool(
                             row[8]
                             and row[8].get("schema_version") == "capture-recording-snapshot/v1"
                         ),
                     )
+                    started_publish = _log_stage(ident, "MCAP_CONVERSION", started_convert)
                     if row[8] and row[8].get("schema_version") == "capture-recording-snapshot/v1":
                         from hc_data_platform.capture_schemes.models import OutputContract
                         from hc_data_platform.capture_schemes.processing import validate_mcap_output
@@ -631,24 +727,28 @@ def process_file(handler, event, checkpoint):
                     from hc_data_platform.episode_store.selected_cache import freeze_selection
                     freeze_selection(provenance, prefix)
                     (output / "mcap-provenance.json").write_text(json.dumps(provenance))
+                    verified_paths = {}
                     declarations, locations = [], {}
                     camera_files = {
                         "videos/" + c["camera_id"] + ".mp4": c["camera_id"]
                         for c in config["cameras"]
                     }
-                    for path in sorted(output.rglob("*")):
-                        if not path.is_file():
-                            continue
+                    from hc_data_platform.episode_store.selected_cache import RETENTION, SELECTED_PATH
+
+                    rebuildable = (provenance.get("selected_mcap") or {}).get("retention") == RETENTION
+                    # A rebuild-on-demand selection is a near-complete copy of Raw.
+                    # Its hash/size are frozen in provenance; exports rebuild it
+                    # from Raw, so it is not stored a second time.
+                    files = [
+                        path for path in sorted(output.rglob("*"))
+                        if path.is_file()
+                        and not (rebuildable and path.relative_to(output).as_posix() == SELECTED_PATH)
+                    ]
+                    for path, key, size, digest, etag in _publish_derived(
+                        handler.storage, prefix, output, files, checkpoint
+                    ):
                         relative = path.relative_to(output).as_posix()
-                        sha, crc = hashlib.sha256(), 0
-                        with path.open("rb") as stream:
-                            for block in iter(lambda: stream.read(1024**2), b""):
-                                sha.update(block)
-                                crc = crc64_ecma(block, crc)
-                                checkpoint()
-                        digest, size = sha.hexdigest(), path.stat().st_size
-                        key = prefix + "/" + digest + "/" + relative
-                        head = publish(handler.storage, key, path, size, digest, checkpoint)
+                        verified_paths[key] = path
                         role = (
                             "RAW_VIDEO"
                             if relative in camera_files
@@ -670,10 +770,9 @@ def process_file(handler, event, checkpoint):
                                 else "application/octet-stream",
                                 size=size,
                                 sha256=digest,
-                                crc64=crc,
                             )
                         )
-                        locations[relative] = (key, head.etag)
+                        locations[relative] = (key, etag)
                     declarations.append(
                         dict(
                             path=ORIGINAL_PATH,
@@ -743,20 +842,19 @@ def process_file(handler, event, checkpoint):
                         },
                         if_none_match=True,
                     )
-            from hc_data_platform.continuous_recordings.previews import prepare_recording_previews
-
-            prepare_recording_previews(handler.storage, recorded, assets, checkpoint)
+                    _log_stage(ident, "MCAP_DERIVED_PUBLISH", started_publish)
+                    _prepare_previews(handler.storage, ident, recorded, assets, checkpoint, verified_paths, preview_frames)
             with handler.connections() as db, db.cursor() as cursor:
                 lock_source(cursor, scope, event.aggregate_id)
                 handler.registrations.register(cursor, VerifiedRecordingFacts(recorded, assets))
                 cursor.execute(
                     """UPDATE ingest.mcap_processing_files
-                    SET status='READY',recording_id=%s,error=NULL,updated_at=now()
+                    SET status='READY',recording_id=%s,source_document=%s::jsonb,error=NULL,updated_at=now()
 
                     WHERE organization_id=%s AND project_id=%s
                     AND region_code=%s
                     AND processing_id=%s""",
-                    (recorded.command.recording_id, *scope, ident),
+                    (recorded.command.recording_id, json.dumps(original), *scope, ident),
                 )
                 sync_source(cursor, scope, event.aggregate_id)
                 db.commit()

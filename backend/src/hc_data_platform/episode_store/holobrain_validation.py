@@ -1,4 +1,4 @@
-"""Full readback validation of the versioned 19-axis training package."""
+"""Full readback validation of the versioned HoloBrain training package."""
 
 import hashlib
 import json
@@ -8,9 +8,7 @@ from pathlib import Path
 import numpy as np
 import pyarrow as pa
 
-from hc_data_platform.continuous_recordings.joint_normalization import HOLOBRAIN_JOINTS
-
-from .holobrain_schema import FEATURES, PROFILE, schema
+from .holobrain_schema import FEATURES, JOINT_LAYOUTS, profile_name, schema
 
 
 def validate(root, checkpoint=lambda: None):
@@ -22,9 +20,15 @@ def validate(root, checkpoint=lambda: None):
     info = json.loads((root / "dataset_info.json").read_bytes())
     conversion = json.loads((root / "conversion_report.json").read_bytes())
     reference_report = set(conversion) == {"episode_count", "episodes", "total_frames"}
+    config_name = info.get("config_name")
+    if config_name not in JOINT_LAYOUTS:
+        raise ValueError("HOLOBRAIN_METADATA_MISMATCH")
+    joint_names = list(JOINT_LAYOUTS[config_name])
+    width = len(joint_names)
+    profile = profile_name(config_name)
     if (state["robo_orchard_state"]["dataset_format_version"] != "0.1.0"
             or info["features"] != FEATURES
-            or (not reference_report and conversion["target_profile"] != PROFILE)):
+            or (not reference_report and conversion["target_profile"] != profile)):
         raise ValueError("HOLOBRAIN_METADATA_MISMATCH")
     counts, starts, lengths = Counter(), {}, []
     source_positions = {}
@@ -61,11 +65,11 @@ def validate(root, checkpoint=lambda: None):
                             if row["task_index"] not in tasks or row["instruction_index"] not in instructions or row["robot_index"] != 0:
                                 raise ValueError("HOLOBRAIN_METADATA_REFERENCE_INVALID")
                             for key in ("joints", "actions"):
-                                if row[key]["names"] != list(HOLOBRAIN_JOINTS):
+                                if row[key]["names"] != joint_names:
                                     raise ValueError("HOLOBRAIN_JOINT_ORDER_INVALID")
                                 for field in ("position", "velocity", "effort"):
                                     t = row[key][field]
-                                    if t["shape"] != [1, 19] or len(t["data"]) != 19 or not np.isfinite(t["data"]).all():
+                                    if t["shape"] != [1, width] or len(t["data"]) != width or not np.isfinite(t["data"]).all():
                                         raise ValueError("HOLOBRAIN_TENSOR_INVALID")
                                 if len(row[key]["timestamps"]) != 1:
                                     raise ValueError("HOLOBRAIN_TIMESTAMP_INVALID")
@@ -110,7 +114,7 @@ def validate(root, checkpoint=lambda: None):
                     raise ValueError("HOLOBRAIN_REPORT_FRAME_MISMATCH")
     finally:
         db.close()
-    return {"status": "PASSED", "profile": PROFILE, "frames": total, "episodes": len(counts),
+    return {"status": "PASSED", "profile": profile, "frames": total, "episodes": len(counts),
             "all_arrow_rows": True, "all_images_decoded": True, "schema_metadata": True,
             "database_indexes": True, "provenance_indexes": True, "image_bytes_provenance": True,
             "training_integration": "NOT_RUN_BY_STORAGE_VALIDATOR",

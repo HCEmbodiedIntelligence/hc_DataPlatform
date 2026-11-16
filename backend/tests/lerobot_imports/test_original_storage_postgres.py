@@ -4,6 +4,7 @@ import pytest
 
 from hc_data_platform.capture_schemes.transactions import bind_raw_snapshot
 from hc_data_platform.ingest.raw_sources import PostgresRawSourceRepository
+from hc_data_platform.ingest.upload_batches import register
 from hc_data_platform.lerobot_imports import processing
 
 from .test_original_storage import SCOPE, store_source
@@ -31,6 +32,12 @@ def test_original_storage_graph_has_no_dispatch_event(monkeypatch: pytest.Monkey
         _, _, raw = store_source(
             {path: b"unaltered original"}, source_format=format_name, raw_sources=repository
         )
+        with connect() as db:
+            scope = (raw.organization_id, raw.project_id, raw.region_code)
+            number = register(db, scope, "web", "web:raw-test-" + format_name, raw.upload_id)
+        selected = processing.list_progress(**SCOPE, batch_number=number, include_all_sources=True)
+        assert [row.import_id for row in selected] == [raw.raw_source_id]
+        assert not processing.list_progress(**SCOPE, batch_number=number, dataset_id="another-dataset")
         rows = processing.list_progress(**SCOPE, dataset_id="dataset-a")
         stored = next(row for row in rows if row.import_id == raw.raw_source_id)
         assert stored.status == "RAW_COMMITTED" and stored.file_count == 1

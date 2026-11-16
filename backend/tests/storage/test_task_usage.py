@@ -175,3 +175,28 @@ def test_task_usage_requires_storage_capability_and_exact_project(usage):
     with pytest.raises(ProblemException):
         service.task_storage_overview(project_id="project-inventory", actor=reader("other"))
     assert not calls
+
+
+def test_disk_usage_counts_each_device_once(monkeypatch):
+    from types import SimpleNamespace
+
+    from hc_data_platform.storage import task_usage
+
+    devices = {"/": 1, "/workspace": 2, "/cache": 1, "/alignment": 2}
+    monkeypatch.setattr(
+        task_usage, "os", SimpleNamespace(stat=lambda path: SimpleNamespace(st_dev=devices[path]))
+    )
+    measured = []
+
+    def usage(path):
+        measured.append(path)
+        return SimpleNamespace(total=100, used=25, free=70)
+
+    monkeypatch.setattr(task_usage.shutil, "disk_usage", usage)
+    primary, disks = task_usage.local_disk_usage(
+        "/workspace", {"oss_cache": "/cache", "alignment": "/alignment"}
+    )
+    assert measured == ["/workspace", "/"]
+    assert list(disks) == ["平台工作盘", "系统盘（/）"]
+    assert disks["平台工作盘"] == primary
+    assert disks["系统盘（/）"].reserved_bytes == "5"

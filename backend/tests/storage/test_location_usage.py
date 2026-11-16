@@ -144,3 +144,14 @@ def test_saved_oss_capacity_uses_its_prefix_without_switching_local_storage(monk
     unknown = saved_oss_location(settings, unavailable)[0]
     assert not unknown.complete
     assert "private connection detail" not in unknown.model_dump_json()
+
+
+def test_configured_symlink_root_counts_its_target_only_once(tmp_path):
+    actual = tmp_path / "cache"
+    actual.mkdir()
+    (actual / "file").write_bytes(b"cached")
+    link = tmp_path / "configured"
+    link.symlink_to(actual, target_is_directory=True)
+    seen = set()
+    assert scan_local(link, seen=seen) == scan_local(actual)
+    assert sum(scan_local(actual, seen=seen).values()) == 0

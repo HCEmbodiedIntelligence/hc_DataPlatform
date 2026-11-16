@@ -66,13 +66,14 @@ export const processingOperationSchema = z.discriminatedUnion("kind", [
   baseOption.extend({ kind: z.literal("fill_action_from_next_frame") }).strict(),
   baseOption.extend({ kind: z.literal("fill_initial_action") }).strict(),
   baseOption.extend({ kind: z.literal("forward_fill_hands") }).strict(),
+  baseOption.extend({ kind: z.literal("clean_dagger_intervals") }).strict(),
   baseOption.extend({ kind: z.literal("generate_action"), source: z.literal("state") }).strict(),
   baseOption.extend({ kind: z.literal("fill_position"), missing_position_axes: axisNames.nullable(),
     nan_position_axes: axisNames, max_state_delta_ms: z.number().positive().max(1000) }).strict(),
 ]);
 export type ProcessingOperation = z.infer<typeof processingOperationSchema>;
 export const postprocessingRulesSchema = z.discriminatedUnion("version", [
-  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(7)}).strict(),
+  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(8)}).strict(),
 ]);
 export const mcapConfigSchema = z.object({
   postprocessing_rules: postprocessingRulesSchema.nullable().optional(),

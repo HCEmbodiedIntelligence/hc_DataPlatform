@@ -75,6 +75,7 @@ class ProjectTaskStorage(UsageModel):
     categories: tuple[TaskStorageCategory, ...]
     tasks: tuple[TaskStorageSummary, ...]
     disk: StorageDiskUsage | None = None
+    disks: dict[str, StorageDiskUsage] = Field(default_factory=dict)
     database_bytes: ByteString | None = None
     object_store_bytes: ByteString | None = None
     object_store_file_count: int | None = Field(default=None, ge=0)

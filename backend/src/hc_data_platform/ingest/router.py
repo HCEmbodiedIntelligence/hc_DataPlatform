@@ -238,9 +238,18 @@ async def create_upload_session(
     auth: Auth,
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key"),
+    upload_batch_id: str | None = Query(None, min_length=1, max_length=128),
 ) -> UploadSessionGrant:
     _no_store(response)
-    _authorize(auth, project_id, region_code)
+    batch_scope = None
+    if upload_batch_id is None:
+        _authorize(auth, project_id, region_code)
+    else:
+        org = current_request_context().organization_id or _organization_id_for_project(auth, project_id)
+        ScopeGuard.require(auth, project_id, region_code, org)
+        auth.require_capability("upload.manage", project_id, org)
+        select_request_scope(project_id, region_code, organization_id=org)
+        batch_scope = (org, project_id, region_code)
     payload = await _read_limited_json(request, _MAX_CREATE_REQUEST_BYTES)
     try:
         create_request = CreateUploadRequest.model_validate(payload)
@@ -261,6 +270,14 @@ async def create_upload_session(
         part_numbers=create_request.part_numbers,
         object_storage_uri=create_request.object_storage_uri,
     )
+    if batch_scope is not None:
+        from .upload_batches import register_batch
+
+        number = register_batch(
+            batch_scope, "oss" if create_request.object_storage_uri else "web",
+            upload_batch_id, result.session.session_id,
+        )
+        return result.model_copy(update={"batch_number": number})
     return result
 
 

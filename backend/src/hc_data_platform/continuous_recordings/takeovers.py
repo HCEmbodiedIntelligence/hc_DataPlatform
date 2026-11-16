@@ -4,8 +4,10 @@ import json
 from bisect import bisect_left
 from itertools import pairwise
 
+from .mcap_contracts import JointEditRules
 
-def parse_takeovers(content, recording):
+
+def parse_takeovers(content, recording, *, rules=None):
     document = json.loads(content)
     if (
         not isinstance(document, dict)
@@ -31,7 +33,22 @@ def parse_takeovers(content, recording):
             raise ValueError("MCAP_TAKEOVERS_INVALID: invalid interval end")
         if end > start:
             ranges.add((start, end))
-    return sorted(ranges)
+    ordered = sorted(ranges)
+    if isinstance(rules, JointEditRules) and "clean_dagger_intervals" in rules.active:
+        return _clean_dagger_intervals(ordered)
+    return ordered
+
+
+def _clean_dagger_intervals(ordered: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    second_ns = 1_000_000_000
+    merged: list[tuple[int, int]] = []
+    for start, end in ordered:
+        if merged and start - merged[-1][1] <= second_ns:
+            previous_start, previous_end = merged[-1]
+            merged[-1] = (previous_start, max(previous_end, end))
+        else:
+            merged.append((start, end))
+    return [(start, end) for start, end in merged if end - start >= second_ns]
 
 
 def committed_takeover_steps(package):

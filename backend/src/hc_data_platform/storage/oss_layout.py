@@ -86,10 +86,26 @@ class PostgresOssPrefixAliases:
                 raise ValueError("OSS prefix alias conflicts with existing location")
 
     def physical(self, key, *, create=False):
-        result = replace_prefix(key, self._known)
-        if result != key:
+        from .oss_readable import MARKER, asset_subfolder, readable_prefixes, scoped_group
+
+        prefixes = readable_prefixes(key)
+        known = self._known
+        if prefixes and MARKER in known and prefixes[-1] in known:
+            return known[prefixes[-1]] + key[len(prefixes[-1]):]
+        result = replace_prefix(key, known)
+        if result != key and MARKER not in known:
             return result
         aliases = self.all()
+        if prefixes and MARKER in aliases:
+            if create:
+                group = prefixes[0]
+                if group not in aliases:
+                    aliases[group] = self._register_readable(group, scoped_group(self.dsn, group))
+                if len(prefixes) == 2 and prefixes[1] not in aliases:
+                    child = prefixes[1]
+                    path = asset_subfolder(aliases[group], child, key)
+                    aliases[child] = self._register_readable(child, path)
+            return replace_prefix(key, aliases)
         result = replace_prefix(key, aliases)
         if result != key or not create:
             return result
@@ -98,6 +114,16 @@ class PostgresOssPrefixAliases:
             return key
         self.register(*candidate)
         return replace_prefix(key, dict([candidate]))
+
+    def _register_readable(self, logical, physical):
+        # First committed label owns the directory, even if metadata changes later.
+        with self._connect() as db:
+            args = (self.bucket,self.root_prefix,logical)
+            db.execute("""INSERT INTO platform.object_store_prefix_aliases
+                       (bucket,root_prefix,logical_prefix,physical_prefix) VALUES (%s,%s,%s,%s)
+                       ON CONFLICT (bucket,root_prefix,logical_prefix) DO NOTHING""", (*args,physical))
+            return db.execute("""SELECT physical_prefix FROM platform.object_store_prefix_aliases
+                              WHERE bucket=%s AND root_prefix=%s AND logical_prefix=%s""",args).fetchone()[0]
 
     def logical(self, key, aliases=None):
         return replace_prefix(key, self.all() if aliases is None else aliases, reverse=True)

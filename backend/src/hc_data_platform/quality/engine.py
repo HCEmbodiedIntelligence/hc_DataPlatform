@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import sqlite3
 import tempfile
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .boundaries import BOUNDARY_QUALITY_ENGINE_VERSION, active_topic_timing, common_window
+from .evidence import QcEvaluation
 from .models import (
     NANOSECONDS_PER_SECOND,
     FindingSeverity,
@@ -51,8 +53,43 @@ class QualityEngine:
         self._metadata_sink = metadata_sink
         self._engine_version = engine_version
 
+    def reuse_evaluation(
+        self,
+        evaluation: QcEvaluation,
+        *,
+        rollout_id: str,
+        source_sha256: str,
+        profile: QualityProfileV1,
+    ) -> QcEvaluation | None:
+        """Publish already verified observations under the Episode source identity."""
+        previous = evaluation.report
+        if (
+            previous.engine_version != (self._engine_version or profile.engine_version)
+            or previous.profile_sha256 != profile.content_sha256()
+        ):
+            return None
+        identity = {"rollout_id": rollout_id, "source_sha256": source_sha256}
+        report = previous.model_copy(update=identity)
+        report = report.model_copy(
+            update={"content_sha256": hashlib.sha256(report.content_bytes()).hexdigest()}
+        )
+        evidence = evaluation.evidence.model_copy(
+            update={**identity, "report_sha256": report.content_sha256}
+        )
+        evidence = evidence.model_copy(
+            update={"content_sha256": hashlib.sha256(evidence.content_bytes()).hexdigest()}
+        )
+        rebound = QcEvaluation.model_validate(
+            {
+                "report": report.model_dump(mode="json"),
+                "evidence": evidence.model_dump(mode="json"),
+            }
+        )
+        self._persist(rebound.report)
+        return rebound
+
     def evaluate_with_evidence(self, data, profile, *, observations=None, expected_frames=None):
-        from .evidence import QcEvaluation, RuleEvidenceCollector
+        from .evidence import RuleEvidenceCollector
 
         collector = RuleEvidenceCollector(data, profile, streaming=observations is not None)
         report = (

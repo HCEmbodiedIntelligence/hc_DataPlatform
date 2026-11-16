@@ -30,6 +30,7 @@ from .models import (
     ProposeModelSlicesCommand,
     RegisterContinuousRecordingCommand,
     RetryRecordingQualityCommand,
+    DiscardRecordingQualityCommand,
     SaveSliceDraftCommand,
     SliceRevisionEnvelope,
 )
@@ -254,6 +255,16 @@ def register_continuous_recording(
     )
     _recording_headers(response, etag=result.data.etag)
     return result
+
+
+@router.post("/{recording_id}/quality:discard", operation_id="discardRecordingQuality",
+             response_model=ContinuousRecordingEnvelope, responses=PROBLEM_RESPONSES)
+def discard_recording_quality(project_id: str, region_code: str, recording_id: str,
+                              command: DiscardRecordingQualityCommand, auth: VerifiedAuth,
+                              organization_id: OrganizationHeader, service: Service):
+    return service.discard_quality(auth=auth, organization_id=organization_id, project_id=project_id,
+                                   region_code=region_code, recording_id=recording_id,
+                                   report_sha256=command.report_sha256)
 
 
 @router.post(
@@ -558,6 +569,7 @@ def authorize_continuous_recording_videos(
     auth: VerifiedAuth,
     organization_id: OrganizationHeader,
     service: Service,
+    original_rgb: bool = False,
 ) -> RecordingVideoSourceEnvelope:
     response.headers["Cache-Control"] = "no-store"
     return service.authorize_recording_videos(
@@ -565,7 +577,7 @@ def authorize_continuous_recording_videos(
         organization_id=organization_id,
         project_id=project_id,
         region_code=region_code,
-        recording_id=recording_id,
+        recording_id=recording_id, original_rgb=original_rgb,
     )
 
 

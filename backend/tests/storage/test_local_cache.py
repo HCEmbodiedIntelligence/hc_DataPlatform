@@ -177,3 +177,17 @@ def test_unmounted_overflow_refuses_write_without_losing_existing_payload(tmp_pa
     with pytest.raises(OSError, match="mount is unavailable"):
         cache.put_object(KEY, io.BytesIO(b"new"))
     assert (cache.directory(KEY) / "payload").read_bytes() == b"old"
+
+def test_cache_service_uid_is_checked_before_creating_files(tmp_path, monkeypatch):
+    import os
+
+    root = tmp_path / "cache"
+    monkeypatch.setenv("HC_CACHE_SERVICE_UID", str(os.geteuid() + 1))
+    with pytest.raises(RuntimeError, match="platform service account"):
+        LocalCacheBucket(root, "test")
+    assert not root.exists()
+
+    monkeypatch.setenv("HC_CACHE_SERVICE_UID", str(os.geteuid()))
+    cache = LocalCacheBucket(root, "test")
+    cache.put_object(KEY, b"data")
+    assert cache.head_object(KEY).content_length == 4

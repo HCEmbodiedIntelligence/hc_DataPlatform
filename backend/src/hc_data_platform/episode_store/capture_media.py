@@ -1,8 +1,8 @@
 """Select exactly the retained capture rows in every video, using a compact CFR clock."""
-import hashlib
 import io
 import json
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -54,8 +54,7 @@ class CaptureDepthWindow:
 
 
 def select_rgb(source, destination, indices, fps):
-    """Losslessly re-encode decoded YUV planes and verify selected pixels exactly."""
-    expected = hashlib.sha256()
+    """Re-encode the selected decoded YUV planes (crf 12, keyframe every 30 frames)."""
     rate = Fraction(str(fps))
     count = 0
     with av.open(str(source)) as incoming, av.open(str(destination), 'w', options={'movflags': '+faststart'}) as output:
@@ -63,7 +62,7 @@ def select_rgb(source, destination, indices, fps):
         encoder = output.add_stream('libx264', rate=rate)
         encoder.width, encoder.height = original.width, original.height
         encoder.pix_fmt = 'yuv420p'
-        encoder.options = {'crf': '0', 'preset': 'fast', 'threads': '1', 'bf': '0', 'g': '30'}
+        encoder.options = {'crf': '12', 'preset': 'veryfast', 'threads': '1', 'bf': '0', 'g': '30'}
         for index, frame in enumerate(incoming.decode(original)):
             if count == len(indices):
                 break
@@ -71,26 +70,18 @@ def select_rgb(source, destination, indices, fps):
                 continue
             if frame.format.name != 'yuv420p':
                 raise ValueError('capture RGB selection requires decoded yuv420p')
-            expected.update(frame.to_ndarray().tobytes())
             frame.pts, frame.time_base = count, 1 / rate
             for packet in encoder.encode(frame):
                 output.mux(packet)
             count += 1
         for packet in encoder.encode():
             output.mux(packet)
-    observed = hashlib.sha256()
-    decoded = 0
-    with av.open(str(destination)) as output:
-        for frame in output.decode(video=0):
-            if frame.pts is None or abs(float(frame.pts * frame.time_base) - decoded/fps) > 1e-6:
-                raise ValueError('selected RGB timeline mismatch')
-            observed.update(frame.to_ndarray().tobytes())
-            decoded += 1
-    if count != len(indices) or decoded != count or expected.digest() != observed.digest():
-        raise ValueError('selected RGB frames changed during encoding')
+    # inspect_video re-checks the frame count and CFR rate of the output.
+    if count != len(indices):
+        raise ValueError('selected RGB frames are missing from the source video')
 
 
-def compact_capture_media(root: Path):
+def compact_capture_media(root: Path, *, rgb_statistics='legacy'):
     """Upgrade a selected-row package in an unpublished attempt directory only."""
     info = json.loads((root/'meta/info.json').read_bytes())
     if info.get('hc.media_selection') == MEDIA_POLICY:
@@ -105,11 +96,12 @@ def compact_capture_media(root: Path):
     modalities = json.loads((root/'hc/modalities.json').read_bytes())
     fps = info['fps']
     media_evidence = {}
+    keys = [key for key, feature in info['features'].items() if feature['dtype'] == 'video']
     with TemporaryDirectory(prefix='capture-media-', dir=root.parent) as temporary:
         work = Path(temporary)
-        for key, feature in list(info['features'].items()):
-            if feature['dtype'] != 'video':
-                continue
+
+        def select(key):
+            feature = info['features'][key]
             path = root/VIDEO_PATH.format(video_key=key, chunk_index=0, file_index=0)
             parent_hash = file_hash(path)
             if feature.get('info', {}).get('is_depth_map'):
@@ -137,13 +129,22 @@ def compact_capture_media(root: Path):
                     output = work/(key+'.mp4')
                     select_rgb(path, output, indices, fps)
                     shutil.copyfile(output, path)
-                selected_feature, statistics = inspect_video(path, frame_count=len(indices), fps=fps)
+                selected_feature, statistics = inspect_video(path, frame_count=len(indices), fps=fps,
+                    statistics_method=rgb_statistics)
+            evidence = {'source_video_sha256': parent_hash, 'selected_video_sha256': file_hash(path)}
+            return selected_feature, statistics, evidence
+
+        # Cameras are independent files; PyAV and the ffmpeg inspectors release
+        # the GIL, so selecting them concurrently shortens the critical path.
+        with ThreadPoolExecutor(max_workers=max(1, min(4, len(keys)))) as pool:
+            results = list(pool.map(select, keys))
+        for key, (selected_feature, statistics, evidence) in zip(keys, results, strict=True):
             info['features'][key] = selected_feature
             if statistics:
                 stats[key] = statistics
             else:
                 stats.pop(key, None)
-            media_evidence[key] = {'source_video_sha256': parent_hash, 'selected_video_sha256': file_hash(path)}
+            media_evidence[key] = evidence
     schema = parquet.schema_arrow
     if 'hc.source_frame_index' not in schema.names:
         schema = schema.append(pa.field('hc.source_frame_index', pa.int64()))
@@ -179,7 +180,7 @@ def compact_capture_media(root: Path):
         video_duration_seconds=count/fps, source_index_column='hc.source_frame_index')
     conversion = json.loads((root/'hc/conversion_report.json').read_bytes())
     conversion['capture_media_selection'] = {'policy': MEDIA_POLICY, 'media': media_evidence,
-        'operation': 'lossless_decoded_frame_selection', 'requantized': False}
+        'operation': 'decoded_frame_selection_crf12', 'requantized': True}
     conversion['timestamp_policy'] = 'actual capture timestamps; separate dense CFR video clock'
     for relative, document in [('hc/conversion_report.json', conversion), ('meta/info.json', info), ('meta/stats.json', stats),
                                ('hc/training_selection.json', selection)]:

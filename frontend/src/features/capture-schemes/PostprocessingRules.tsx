@@ -156,7 +156,9 @@ export function PostprocessingRules({
               </div>
               {row && (
                 <div className={styles.params}>
-                  {row.kind === "forward_fill_hands" ? (
+                  {row.kind === "clean_dagger_intervals" ? (
+                    <p>同一录制中，相邻 dagger 标签间隔不超过 1 秒时合并，中间也标为 dagger。合并后按整段时长判断（含中间间隔），不足 1 秒的段全部删除，恰好 1 秒保留。</p>
+                  ) : row.kind === "forward_fill_hands" ? (
                     <p>左手和右手分别补值。缺少指令时沿用本次录制中同一只手上一条有效指令；首次有效指令前保持为空。数值 0 会保留。</p>
                   ) : (
                     <>

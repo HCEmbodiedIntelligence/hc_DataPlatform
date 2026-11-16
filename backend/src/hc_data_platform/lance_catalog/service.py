@@ -9,6 +9,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from threading import Lock, RLock
 
+from hc_data_platform.core.ingest_timing import dataset_episode_id, episode_stage
 from hc_data_platform.alignment.canonical import normalize_for_json
 
 from .models import (
@@ -535,6 +536,7 @@ class LanceCatalogService:
             raise KeyError((project_id, dataset_id))
         return schema
 
+    @episode_stage("LANCE_COMMIT", lambda self, manifest, *args, **kwargs: dataset_episode_id(manifest.rollout_id))
     def commit_fragment(
         self,
         manifest: AlignedFragmentManifestV1,

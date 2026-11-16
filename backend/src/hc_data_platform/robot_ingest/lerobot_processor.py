@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
+from collections import OrderedDict
 from concurrent.futures import TimeoutError
 from typing import Any
 
@@ -16,6 +18,7 @@ from temporalio import activity
 from temporalio.common import WorkflowIDReusePolicy
 from temporalio.exceptions import WorkflowAlreadyStartedError
 
+from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.episode_store.catalog_models import (
     CollectionVersion,
@@ -57,6 +60,10 @@ class NativeLeRobotProcessor:
         self.quality_reports = quality_reports
         self.workflow_results = workflow_results
         self.publication_receipts = publication_receipts
+        # Committed Raw is immutable, so every episode of one upload shares the
+        # same discovery. Re-running it re-downloads and re-hashes all metadata.
+        self._discovered: OrderedDict[tuple, Any] = OrderedDict()
+        self._discovered_lock = threading.Lock()
 
     def _discover(self, source: CommittedSource):
         u = source.upload
@@ -68,13 +75,29 @@ class NativeLeRobotProcessor:
         )
         if raw is None or raw.upload_id != u.upload_id:
             raise ProcessingFailure("ROBOT_PROCESSING_SOURCE_NOT_FOUND")
+        context = current_request_context()
+        key = (
+            context.organization_id,
+            context.project_id,
+            context.region_code,
+            raw.model_dump_json(),
+        )
+        with self._discovered_lock:
+            if key in self._discovered:
+                self._discovered.move_to_end(key)
+                return self._discovered[key]
         try:
-            return discover_committed_source(source.storage, raw)
+            discovered = discover_committed_source(source.storage, raw)
         except (ValueError, KeyError, IndexError) as exc:
             code = str(exc).split(":", 1)[0]
             if not re.fullmatch(r"(?:LEROBOT|OPENARM|CAPTURE)_[A-Z0-9_]+", code):
                 code = "LEROBOT_SOURCE_INVALID"
             raise ProcessingFailure(code, detail=str(exc)) from None
+        with self._discovered_lock:
+            self._discovered[key] = discovered
+            while len(self._discovered) > 8:
+                self._discovered.popitem(last=False)
+        return discovered
 
     def discover(self, source: CommittedSource) -> tuple[SourceEpisode, ...]:
         return tuple(

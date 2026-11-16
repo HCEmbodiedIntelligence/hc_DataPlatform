@@ -126,6 +126,15 @@ def retry_postgres(
     try:
         with connection.cursor() as cursor:
             cursor.execute(
+                """SELECT 1 FROM ingest.continuous_recordings
+                   WHERE (organization_id,project_id,region_code,recording_id)=(%s,%s,%s,%s)
+                     AND superseded_by_processing_id IS NULL FOR UPDATE""",
+                (*scoped, recording_id),
+            )
+            if cursor.fetchone() is None:
+                raise problem(status=404, code="CONTINUOUS_RECORDING_NOT_FOUND",
+                              title="录制不可用", detail="请打开最新的解析结果。")
+            cursor.execute(
                 """SELECT episode_document FROM ingest.recording_episode_processing
                 WHERE organization_id=%s AND project_id=%s AND region_code=%s
                   AND recording_id=%s AND episode_id=%s FOR UPDATE""",

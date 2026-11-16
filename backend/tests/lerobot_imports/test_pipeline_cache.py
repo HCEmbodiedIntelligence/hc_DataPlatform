@@ -104,3 +104,69 @@ def test_episode_caches_are_independent_and_idle_entries_are_evicted(tmp_path, p
         for item in manifest["files"]
     )
     storage.delete.assert_not_called()
+
+
+
+def test_shared_chunk_is_downloaded_once_and_linked_for_sibling_episodes(tmp_path):
+    info = {
+        "robot_type": "unitree_g1",
+        "data_path": "data/{file_index}.parquet",
+        "video_path": "videos/{video_key}/{file_index}.mp4",
+        "features": {camera.feature_key: {"dtype": "video"} for camera in reader.CAMERAS},
+    }
+    rows = []
+    for index in range(3):
+        row = {"episode_index": index, "data/chunk_index": 0, "data/file_index": 0}
+        for camera in reader.CAMERAS:
+            row[f"videos/{camera.feature_key}/chunk_index"] = 0
+            row[f"videos/{camera.feature_key}/file_index"] = 0
+        rows.append(row)
+    metadata = pa.BufferOutputStream()
+    pq.write_table(pa.Table.from_pylist(rows), metadata)
+    originals = {
+        "meta/info.json": json.dumps(info).encode(),
+        "meta/episodes/chunk-000/file-000.parquet": metadata.getvalue().to_pybytes(),
+        "data/0.parquet": b"d" * 1000,
+    }
+    for camera in reader.CAMERAS:
+        originals[f"videos/{camera.feature_key}/0.mp4"] = b"v" * 20_000
+    manifest = {
+        "files": [
+            {"path": path, "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+            for path, body in originals.items()
+        ]
+    }
+    storage = Mock()
+    storage.read_chunks.side_effect = lambda key: (originals[key.removeprefix("raw/")],)
+    pipeline = LeRobotPipeline(
+        storage,
+        Mock(),
+        Mock(),
+        tmp_path,
+        raw_sources=Mock(),
+        state=Mock(),
+        registrations=Mock(),
+        planning=Mock(),
+        quality_profiles=Mock(),
+        native_schemas=Mock(),
+        native_catalog=Mock(),
+        cache_max_bytes=10**7,
+    )
+    raw = SimpleNamespace(content_hash="c" * 64, storage_prefix="raw")
+    roots = []
+    for index in range(3):
+        with pipeline.cache.pin(pipeline._episode_cache_key(raw, index)):
+            roots.append(pipeline._localize(raw, manifest, index))
+            # A repeated localization of the same episode must not download again.
+            pipeline._localize(raw, manifest, index)
+    for relative, body in originals.items():
+        downloads = sum(
+            call.args[0] == f"raw/{relative}" for call in storage.read_chunks.call_args_list
+        )
+        assert downloads == 1
+        for root in roots:
+            assert (root / relative).read_bytes() == body
+    video = f"videos/{reader.CAMERAS[0].feature_key}/0.mp4"
+    assert len({(root / video).stat().st_ino for root in roots}) == 1
+    assert not list((tmp_path / ".reservations").glob("*.reservation"))
+    storage.delete.assert_not_called()

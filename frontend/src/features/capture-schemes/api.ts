@@ -44,6 +44,32 @@ async function call(
     signal,
   });
 }
+const parameters = z.record(z.string(), z.union([z.number(), z.boolean(), z.null()]));
+const engineRule = z.object({
+  code: z.string(),
+  group: z.enum(["timing", "completeness", "synchronization", "image", "action", "point_cloud"]).nullable(),
+  defaults: parameters,
+});
+const thresholdRule = z.object({name: z.string(), code: z.string(), parameters});
+const ruleLibrary = z.object({
+  engine_rules: z.array(engineRule),
+  custom_rules: z.array(thresholdRule),
+  recording_checks: z.record(z.string(), z.string()),
+  verification_checks: z.record(z.string(), z.string()),
+});
+export type EngineRule = z.infer<typeof engineRule>;
+export type ThresholdRule = z.infer<typeof thresholdRule>;
+export function useQualityRules(org: string, enabled = true) {
+  return useCaptureQuery(org, "quality-rules", null, async signal => ruleLibrary.parse(
+    await call(org, "GET", root(org) + "/quality-rules", undefined, undefined, signal)
+  ), enabled);
+}
+export function useAddQualityRule(org: string) {
+  return useCaptureMutation(org, async (rule: ThresholdRule) => thresholdRule.parse(
+    await call(org, "POST", root(org) + "/quality-rules", rule)
+  ));
+}
+
 export const captureApi = {
   version: async (
     org: string,

@@ -507,6 +507,7 @@ export async function loadRuntimeAnnotationBundle(
   mode: AnnotationWorkbenchMode,
   signal?: AbortSignal,
   knownTasks?: readonly RuntimeAnnotationTask[],
+  listRequest?: Promise<readonly RuntimeAnnotationTask[]>,
 ): Promise<RuntimeAnnotationBundle> {
   // Task-id requests start together. A navigator hint also starts immutable
   // schema/package reads immediately; history remains authoritative for edits.
@@ -517,7 +518,7 @@ export async function loadRuntimeAnnotationBundle(
   const taskReady = hint ? Promise.resolve(hint) : historyRequest.then(value => value.task);
   const [history, tasks, draft, details] = await Promise.all([
     historyRequest,
-    knownTasks ? Promise.resolve(knownTasks) : listRuntimeAnnotationTasks(scope, signal),
+    knownTasks ?? listRequest ?? listRuntimeAnnotationTasks(scope, signal),
     mode === "annotation" ? getRuntimeAnnotationDraftOrNull(scope, taskId, signal) : Promise.resolve(null),
     taskReady.then(async task => {
       assertTaskIdentity(task, scope, taskId);

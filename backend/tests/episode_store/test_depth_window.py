@@ -287,7 +287,10 @@ def test_selection_preserves_codes_masks_source_units_and_measured_errors(
     report = json.loads((result.evidence_root / "report.json").read_bytes())
     assert report["source_profiles"] == original_report["source_profiles"]
     assert report["profile_sha256"] == original_report["profile_sha256"]
-    assert report["window"]["operation"] == "lossless_code_selection"
+    assert report["window"]["operation"] == "lossless_picture_copy"
+    assert report["video_encoding"]["encoder_configuration_sha256"] == (
+        original_report["video_encoding"]["encoder_configuration_sha256"]
+    )
     assert report["window"]["requantized"] is False
     assert report["window"]["source_video_sha256"] == media.sha256
     assert report["window"]["source_evidence"] == {
@@ -446,3 +449,38 @@ def test_capture_depth_keeps_own_rgb_association_when_export_grid_moves(tmp_path
     assert rows[0]['association_target_timestamp_ns'] == START
     assert not rows[0]['time_threshold_exceeded']
     assert rows[2]['missing']
+
+
+def test_inter_coded_source_falls_back_to_lossless_encoding(tmp_path, monkeypatch):
+    from hc_data_platform.data_formats.hevc_remux import NotIntraCoded
+    from hc_data_platform.episode_store import depth_window
+
+    media = make_depth(tmp_path / "input", fps=25)
+    selected = [1, 2, 3, 3, 4, 5, 6]
+    window = DepthWindow(1, 8, 7, 30, START + 40_000_000)
+
+    def refuse(*args, **kwargs):
+        raise NotIntraCoded("simulated inter-coded source")
+
+    monkeypatch.setattr(depth_window, "remux_hevc_frames", refuse)
+    result = prepare_depth_window(media, window, tmp_path / "output")
+    np.testing.assert_array_equal(
+        decoded(result.path), [decoded(media.path)[i] for i in selected]
+    )
+    report = json.loads((result.evidence_root / "report.json").read_bytes())
+    assert report["window"]["operation"] == "lossless_code_selection"
+
+
+def test_picture_copy_with_wrong_codes_is_rejected(tmp_path, monkeypatch):
+    from hc_data_platform.data_formats import hevc_remux
+    from hc_data_platform.episode_store import depth_window
+
+    media = make_depth(tmp_path / "input", fps=25)
+    real = hevc_remux.remux_hevc_frames
+
+    def shifted(source, destination, indices, *, fps):
+        return real(source, destination, [min(i + 1, 8) for i in indices], fps=fps)
+
+    monkeypatch.setattr(depth_window, "remux_hevc_frames", shifted)
+    with pytest.raises(ValueError):
+        prepare_depth_window(media, DepthWindow(1, 6, 5, 25, START + 40_000_000), tmp_path / "o")

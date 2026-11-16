@@ -31,7 +31,7 @@ _MAX_METADATA_READ = 32 * 1024**2
 class OriginalFile(BaseModel):
     path: str
     size: int
-    sha256: str
+    sha256: str | None = None
 
 
 class OriginalFilePage(BaseModel):
@@ -183,6 +183,11 @@ class OriginalSourceBrowser:
             }
         if not isinstance(value, dict) or value.get("content_hash") != raw.content_hash:
             raise ValueError("original source manifest identity mismatch")
+        if value.get("schema_version") == "raw-oss-reference-manifest/v1":
+            from .mcap_reference import read_receipt
+            for entry in value["files"]:
+                if entry.get("verification_key"):
+                    entry["sha256"] = read_receipt(self.storage, entry)
         return cast(dict[str, Any], value)
 
     def files(self, raw: RawSource, *, offset: int, limit: int) -> OriginalFilePage:
@@ -209,6 +214,9 @@ class OriginalSourceBrowser:
                 title="原文件不存在",
                 detail="该路径不属于已提交的原始数据。",
             )
+        if descriptor.get("verification_key"):
+            from .mcap_reference import require_version
+            require_version(self.storage, descriptor["object_key"], descriptor["size"], descriptor["source_etag"])
         return OriginalFileGrant(
             path=path,
             url=self.storage.presign_read(

@@ -252,7 +252,9 @@ class _ChunkIteratorStream:
     def __init__(self, chunks: Iterable[bytes], max_chunk_size: int) -> None:
         self._chunks = iter(chunks)
         self._max_chunk_size = max_chunk_size
-        self._pending = b""
+        # A view plus offset avoids copying the chunk remainder on every small read.
+        self._pending = memoryview(b"")
+        self._offset = 0
         self._closed = False
 
     def read(self, size: int = -1) -> bytes:
@@ -261,25 +263,31 @@ class _ChunkIteratorStream:
         if size == 0:
             return b""
         if size < 0:
-            result = bytearray(self._pending)
-            self._pending = b""
+            result = bytearray(self._pending[self._offset :])
+            self._pending, self._offset = memoryview(b""), 0
             for chunk in self._chunks:
                 result.extend(self._validate_chunk(chunk))
             return bytes(result)
 
+        available = len(self._pending) - self._offset
+        if available >= size:
+            start = self._offset
+            self._offset += size
+            return bytes(self._pending[start : self._offset])
         result = bytearray()
         while len(result) < size:
-            if self._pending:
-                take = min(size - len(result), len(self._pending))
-                result.extend(self._pending[:take])
-                self._pending = self._pending[take:]
+            available = len(self._pending) - self._offset
+            if available:
+                take = min(size - len(result), available)
+                result.extend(self._pending[self._offset : self._offset + take])
+                self._offset += take
                 continue
             try:
                 chunk = self._validate_chunk(next(self._chunks))
             except StopIteration:
                 break
             if chunk:
-                self._pending = chunk
+                self._pending, self._offset = memoryview(chunk), 0
         return bytes(result)
 
     def seekable(self) -> bool:

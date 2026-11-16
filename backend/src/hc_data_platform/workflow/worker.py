@@ -206,6 +206,7 @@ def discover_temporal_registrations(
         prepare_lerobot_episode,
         update_lerobot_state,
     )
+    from .oss_batch_workflow import OssBatchImportWorkflow, commit_oss_batch_item
     from .temporal_workflows import ALL_WORKFLOWS
 
     if role == "media":
@@ -219,6 +220,7 @@ def discover_temporal_registrations(
         )
 
         return [], [
+            commit_oss_batch_item,
             update_continuous_episode_state,
             create_annotation_task,
             cleanup_alignment_staging,
@@ -226,11 +228,13 @@ def discover_temporal_registrations(
 
     return [
         LeRobotImportWorkflow,
+        OssBatchImportWorkflow,
         *ALL_WORKFLOWS,
         *ALL_STORAGE_WORKFLOWS,
     ], [
         prepare_lerobot_episode,
         update_lerobot_state,
+        commit_oss_batch_item,
         *(
             registered
             for registered in ALL_ACTIVITIES
@@ -365,7 +369,10 @@ async def serve() -> None:
             components.native_processor(client, asyncio.get_running_loop(), task_queue=task_queue),
             execution_scope=execution_scope,
         )
-        robot_executor = ThreadPoolExecutor(max_workers=settings.worker_max_concurrent_activities)
+        robot_concurrency = (
+            settings.worker_robot_max_concurrent_activities or settings.worker_max_concurrent_activities
+        )
+        robot_executor = ThreadPoolExecutor(max_workers=robot_concurrency)
         recording_activity = components.recording_activity(execution_scope=execution_scope)
         worker = WorkerGroup(
             worker,
@@ -379,7 +386,7 @@ async def serve() -> None:
                     recording_activity.failed,
                 ],
                 activity_executor=robot_executor,
-                max_concurrent_activities=settings.worker_max_concurrent_activities,
+                max_concurrent_activities=robot_concurrency,
                 graceful_shutdown_timeout=timedelta(
                     seconds=settings.worker_graceful_shutdown_seconds
                 ),

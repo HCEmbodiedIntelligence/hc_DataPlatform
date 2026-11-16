@@ -25,8 +25,17 @@ export async function downloadRawSources(
   signal: AbortSignal,
   onProgress: (bytes: number) => void,
 ): Promise<RawDownloadResult> {
+  return downloadArchive(scope, signal, onProgress, "原始数据", async () => ({
+    path: `${nativeRoot(scope)}/archive`, body: { import_ids: importIds },
+  }));
+}
+
+export async function downloadArchive(
+  scope: IngestScope, signal: AbortSignal, onProgress: (bytes: number) => void,
+  label: string, prepare: (signal: AbortSignal) => Promise<{path: string; body: Record<string, unknown>}>,
+): Promise<RawDownloadResult> {
   const lease = createSessionScopeLease(scope, signal);
-  const name = `原始数据-${new Date().toISOString().slice(0, 10)}.zip`;
+  const name = `${label}-${new Date().toISOString().slice(0, 10)}.zip`;
   const picker = (window as Window & { showSaveFilePicker?: SavePicker })
     .showSaveFilePicker;
   let file: DownloadFile | undefined;
@@ -64,14 +73,15 @@ export async function downloadRawSources(
         }
       },
     });
+    const archive = await prepare(lease.signal);
     await request<void>({
       method: "POST",
-      path: `${nativeRoot(scope)}/archive`,
+      path: archive.path,
       scope,
       scopeMode: "explicit",
       signal: lease.signal,
       cache: "no-store",
-      body: { import_ids: importIds },
+      body: archive.body,
       downloadTo: sink,
     });
     lease.signal.throwIfAborted();

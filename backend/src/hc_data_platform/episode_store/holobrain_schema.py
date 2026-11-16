@@ -7,9 +7,16 @@ from pathlib import Path
 import numpy as np
 import pyarrow as pa
 
-PROFILE = "hc_tj_19dof_robo_orchard_0.1.0/v1"
+from hc_data_platform.continuous_recordings.joint_normalization import HOLOBRAIN_JOINTS
+
+# Historical archives append the three waist axes after both arm/hand groups.
+JOINT_LAYOUTS = {"16dof": HOLOBRAIN_JOINTS[:16], "19dof": HOLOBRAIN_JOINTS}
 CONTRACT = json.loads(Path(__file__).with_name("holobrain_contract.json").read_text())
 FEATURES = CONTRACT["features"]
+
+
+def profile_name(config_name):
+    return f"hc_tj_{config_name}_robo_orchard_0.1.0/v1"
 
 
 def schema():

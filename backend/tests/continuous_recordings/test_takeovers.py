@@ -12,6 +12,7 @@ from hc_data_platform.annotation.automation import (
     InMemoryAutomaticAnnotationRepository,
 )
 from hc_data_platform.annotation.validation import validate_tag_revision
+from hc_data_platform.continuous_recordings.mcap_contracts import McapDraftConfig
 from hc_data_platform.continuous_recordings.takeovers import (
     committed_takeover_steps,
     parse_takeovers,
@@ -56,6 +57,30 @@ def test_recorder_checkpoint_only_contributes_closed_nonempty_intervals():
     assert parse_takeovers(sidecar([]), "demo.mcap") == []
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_dagger_cleanup_filters_by_duration_after_merging(enabled):
+    second = 1_000_000_000
+    intervals = [
+        (0, 100), (200, 300),  # The merged span is still short.
+        (2 * second, 3 * second),  # Isolated, exactly one second.
+        (4 * second + 1, 5 * second),  # Isolated by one ns, just too short.
+        (7 * second, 8 * second), (7 * second + 5, 7 * second + 10),
+        (9 * second, 9 * second + 1), (10 * second, 11 * second),
+        (13 * second, 13 * second + 10), (14 * second - 10, 14 * second),
+    ]
+    config = McapDraftConfig(postprocessing_rules={
+        "version": 2, "rules": [{"kind": "clean_dagger_intervals", "enabled": enabled}],
+    })
+    assert not config.postprocessing_rules.has_joint_edits
+    rules = config.postprocessing_rules
+    assert parse_takeovers(sidecar(intervals[::-1]), "demo.mcap", rules=rules) == (
+        [(2 * second, 3 * second), (7 * second, 11 * second), (13 * second, 14 * second)]
+        if enabled else intervals
+    )
+    assert parse_takeovers(sidecar([]), "demo.mcap", rules=rules) == []
+    assert parse_takeovers(sidecar([(0, 1)]), "demo.mcap", rules=rules) == ([] if enabled else [(0, 1)])
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -72,13 +97,19 @@ def test_malformed_or_misbound_recording_never_produces_tags(content):
         parse_takeovers(content, "demo.mcap")
 
 
+@pytest.mark.parametrize("cleanup", [False, True])
 @pytest.mark.parametrize("labels", [("pick", "place"), ()])
 @pytest.mark.asyncio
-async def test_takeovers_are_children_on_the_retained_slice_timeline(tmp_path, labels, monkeypatch):
+async def test_takeovers_are_children_on_the_retained_slice_timeline(tmp_path, labels, cleanup, monkeypatch):
     intervals = [(0, 10), (10, 40), (50, 60), (80, 90), (100, 200), (205, 215)]
-    parsed = parse_takeovers(sidecar(intervals), "demo.mcap")
+    rules = McapDraftConfig(postprocessing_rules={
+        "version": 2, "rules": [{"kind": "clean_dagger_intervals", "enabled": cleanup}],
+    }).postprocessing_rules
+    tick_ns = 10_000_000
+    intervals = [(start * tick_ns, end * tick_ns) for start, end in intervals]
+    parsed = parse_takeovers(sidecar(intervals), "demo.mcap", rules=rules)
     # The slice starts inside an intervention and has dropped the frame at 55.
-    stamps = [20, 39, 40, 79, 80, 89, 90, 102]
+    stamps = [tick * tick_ns for tick in [20, 39, 40, 79, 80, 89, 90, 102]]
     frame_map = tmp_path / "frames.parquet"
     pq.write_table(pa.table({"timestamp_ns": stamps}), frame_map)
     identity = EpisodeIdentity(
@@ -104,7 +135,7 @@ async def test_takeovers_are_children_on_the_retained_slice_timeline(tmp_path, l
         file={SOURCE_MAP: nullcontext(frame_map)}.__getitem__,
     )
     steps = committed_takeover_steps(package)
-    assert steps == ((0, 2), (4, 6), (7, 8))
+    assert steps == (((0, len(stamps)),) if cleanup else ((0, 2), (4, 6), (7, 8)))
     repo = InMemoryAutomaticAnnotationRepository()
     _publish_compatible_schema(repo)
     service = AutomaticAnnotationTaskService(repo)

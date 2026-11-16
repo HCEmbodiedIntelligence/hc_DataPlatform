@@ -18,6 +18,7 @@ from pydantic import (
 )
 
 from hc_data_platform.ingest.models import Identifier, Sha256, utc_now
+from hc_data_platform.quality.models import QcFinding
 
 EpisodeId = Annotated[
     str,
@@ -105,6 +106,11 @@ class RecordingQualitySummary(BaseModel):
     checked_at: AwareDatetime
 
 
+class DiscardRecordingQualityCommand(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    report_sha256: Sha256
+
+
 class RetryRecordingQualityCommand(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -143,6 +149,8 @@ class ContinuousRecording(BaseModel):
     status: RecordingStatus = RecordingStatus.READY_FOR_SLICING
     ingest_mode: Literal["SLICE_FIRST", "WHOLE_RECORDING"] = "SLICE_FIRST"
     whole_episode_status: str | None = None
+    quality_discarded_at: AwareDatetime | None = None
+    quality_discarded_by: str | None = None
     quality_workflow_id: str | None = None
     quality_summary: RecordingQualitySummary | None = None
     quality_error_code: str | None = None
@@ -307,10 +315,17 @@ class ContinuousRecordingPage(BaseModel):
     total: int = Field(ge=0)
 
 
+class RecordingQualityEvidence(BaseModel):
+    duplicate_of_recording_id: str | None = None
+    original_mcap_sha256: Sha256 | None = None
+    findings: tuple[QcFinding, ...] = ()
+
+
 class ContinuousRecordingEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     data: ContinuousRecording
+    quality_evidence: RecordingQualityEvidence | None = None
     current_slice_revision: RecordingSliceRevision | None = None
     reusable_slices: RecordingSliceRevision | None = None
 

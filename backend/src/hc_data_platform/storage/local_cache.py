@@ -61,6 +61,9 @@ class CacheBody:
 
 class LocalCacheBucket:
     def __init__(self, root, signing_key, *, ttl_days=None, clock=time.time):
+        service_uid = os.environ.get("HC_CACHE_SERVICE_UID")
+        if service_uid is not None and os.geteuid() != int(service_uid):
+            raise RuntimeError("Run cache operations as the configured platform service account")
         self.root = Path(root).resolve()
         self.overflow = CacheOverflow(
             os.environ.get("HC_CACHE_OSS_OVERFLOW_ROOT"),
@@ -153,6 +156,11 @@ class LocalCacheBucket:
         self.sweep()
         with self.lock(key):
             return self._put_locked(key, body, headers)
+
+    def put_bytes(self, key, body, *, if_none_match):
+        self.put_object(
+            key, body, headers={"x-oss-forbid-overwrite": "true"} if if_none_match else None
+        )
 
     def _put_locked(self, key, body, headers):
         headers = {k.lower(): v for k, v in (headers or {}).items()}

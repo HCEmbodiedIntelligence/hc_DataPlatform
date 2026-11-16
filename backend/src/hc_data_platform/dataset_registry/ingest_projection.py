@@ -10,6 +10,7 @@ from hc_data_platform.aligned_media.models import (
 )
 from hc_data_platform.alignment.models import AlignmentInputV1
 from hc_data_platform.core.context import current_request_context
+from hc_data_platform.core.ingest_timing import timed
 from hc_data_platform.episode_store.catalog_models import CollectionVersion, EpisodeDerivedReady
 from hc_data_platform.episode_store.models import CommitReceipt, PackageInput
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
@@ -278,6 +279,7 @@ class PostgresDatasetIngestProjector:
         finally:
             connection.close()
 
+    @timed("DATASET_PROJECTION")
     def project_continuous_episode(
         self,
         *,

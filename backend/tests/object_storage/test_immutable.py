@@ -13,10 +13,23 @@ from hc_data_platform.object_storage.models import ObjectIntegrityError
 from hc_data_platform.registry.filesystem_storage import FilesystemRobotModelStorage
 
 
-@pytest.fixture(params=["memory", "filesystem"])
+class MultipartOnlyStorage(InMemoryObjectStorage):
+    put_bytes = None
+
+
+@pytest.fixture(params=["memory", "memory-multipart", "filesystem"])
 def storage(request, tmp_path):
     if request.param == "memory":
         return InMemoryObjectStorage()
+    if request.param == "memory-multipart":
+        return MultipartOnlyStorage()
+    return FilesystemRobotModelStorage(tmp_path, signing_secret="immutable-test-only")
+
+
+@pytest.fixture(params=["memory-multipart", "filesystem"])
+def multipart_storage(request, tmp_path):
+    if request.param == "memory-multipart":
+        return MultipartOnlyStorage()
     return FilesystemRobotModelStorage(tmp_path, signing_secret="immutable-test-only")
 
 
@@ -53,8 +66,9 @@ def test_bounded_stream_roundtrip_existing_reuse_and_conflict(storage, body):
 
 @pytest.mark.parametrize("actual,expected", [(b"ab", b"abc"), (b"abcd", b"abc"), (b"abd", b"abc")])
 def test_bad_source_aborts_before_publication_and_allows_retry(
-    storage, monkeypatch, actual, expected
+    multipart_storage, monkeypatch, actual, expected
 ):
+    storage = multipart_storage
     abort, calls = storage.abort_multipart, []
 
     def record_abort(key, upload):
@@ -72,7 +86,10 @@ def test_bad_source_aborts_before_publication_and_allows_retry(
     assert write(storage, expected).size == len(expected)
 
 
-def test_cancel_after_part_upload_aborts_and_keeps_caller_stream_open(storage, monkeypatch):
+def test_cancel_after_part_upload_aborts_and_keeps_caller_stream_open(
+    multipart_storage, monkeypatch
+):
+    storage = multipart_storage
     uploaded, aborts = [], []
     put, abort = storage.upload_part_stream, storage.abort_multipart
 
@@ -95,6 +112,29 @@ def test_cancel_after_part_upload_aborts_and_keeps_caller_stream_open(storage, m
         write(storage, b"body", checkpoint=check)
     assert aborts and storage.head("objects/payload") is None
     assert write(storage, b"body").size == 4
+
+
+@pytest.mark.parametrize("actual,expected", [(b"ab", b"abc"), (b"abcd", b"abc"), (b"abd", b"abc")])
+def test_small_put_rejects_bad_source_before_publication(actual, expected):
+    storage = InMemoryObjectStorage()
+    with pytest.raises(ObjectIntegrityError):
+        MultipartImmutableWriter(storage).write_immutable(
+            "objects/payload", BytesIO(actual), size=len(expected),
+            sha256=sha256(expected).hexdigest(),
+        )
+    assert storage.head("objects/payload") is None
+    assert write(storage, expected).size == len(expected)
+
+
+def test_small_put_cancel_before_publication_writes_nothing():
+    storage = InMemoryObjectStorage()
+
+    def cancel():
+        raise InterruptedError("cancelled")
+
+    with pytest.raises(InterruptedError, match="cancelled"):
+        write(storage, b"body", checkpoint=cancel)
+    assert storage.head("objects/payload") is None
 
 
 def test_lost_successful_completion_response_recovers_by_verified_bytes(storage, monkeypatch):

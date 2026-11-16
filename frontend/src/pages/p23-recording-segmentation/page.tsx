@@ -1,3 +1,7 @@
+import { RecordingQualityReview } from "../../features/quality/RecordingQualityReview";
+import { ProblemProcessingButton } from "../../features/quality/ProblemProcessingButton";
+import { useProblemLocations } from "../../features/quality/ProblemLocations";
+import { recordingPreviewPath } from "../../shared/routing/navigation-routes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -211,7 +215,7 @@ function RecordingListPage({
     const normalized = deferredQuery.trim().toLocaleLowerCase("zh-CN");
     return (list.data?.items ?? [])
       .filter((recording) => {
-        if (recordingQueueStage(recording) !== stage) return false;
+        if (recording.quality_discarded_at || recordingQueueStage(recording) !== stage) return false;
         if (!normalized) return true;
         return recordingSearchValues(recording).some((value) =>
           value.toLocaleLowerCase("zh-CN").includes(normalized),
@@ -225,7 +229,7 @@ function RecordingListPage({
   const counts = useMemo<Record<RecordingQueueStage, number>>(() => {
     const next = { QUALITY: 0, INGESTING: 0, PENDING: 0, REVIEW: 0, SLICED: 0 };
     for (const recording of list.data?.items ?? []) {
-      next[recordingQueueStage(recording)] += 1;
+      if (!recording.quality_discarded_at) next[recordingQueueStage(recording)] += 1;
     }
     return next;
   }, [list.data?.items]);
@@ -479,6 +483,9 @@ function RecordingListPage({
                           ? "检查切片"
                           : "开始切片"}
                     </Button>
+                    {recording.schema_version === "continuous-recording/v2" && (
+                      <Link to={recordingPreviewPath(recording.recording_id)}>预览原始数据</Link>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -542,19 +549,19 @@ function RecordingSegmentationPage({
       ["PENDING_QC", "QC_RUNNING"].includes(query.state.data?.data.status ?? "") ? 3_000 : false,
     staleTime: 5_000,
   });
+  const [episodeSearch] = useSearchParams();
+  const previewOnly = episodeSearch.get("view") === "preview";
+  const loadRawRecording = detail.data?.data.schema_version === "continuous-recording/v2" &&
+    (previewOnly || detail.data.data.ingest_mode !== "WHOLE_RECORDING");
   const sources = useQuery({
     queryKey: ["continuous-recording-video-sources", scopeKey, recordingId],
     queryFn: ({ signal }) =>
       gateway.videoSources(scope as RecordingScope, recordingId, signal),
-    enabled:
-      scope !== null &&
-      detail.data?.data.ingest_mode !== "WHOLE_RECORDING" &&
-      (!detail.data || detail.data.data.schema_version === "continuous-recording/v2"),
+    enabled: scope !== null && (!detail.data || loadRawRecording),
     retry: false,
     staleTime: 5 * 60_000,
   });
   const [slices, setSlices] = useState<EditableSlice[]>([]);
-  const [episodeSearch] = useSearchParams();
   const [selectedId, setSelectedId] = useState<string | null>(() =>
     episodeSearch.get("episode"),
   );
@@ -589,6 +596,16 @@ function RecordingSegmentationPage({
   const canReuse = !!previousSlices && !revision && !dirty;
   const durationNs = recording ? durationOf(recording) : 0;
   const clock = usePlaybackClock("0", String(Math.max(1, durationNs)), recordingId);
+  const currentReport = recording?.status === "QC_FAILED"
+    ? recording.quality_summary?.report_id.match(/^recording_qc_([0-9a-f]{64})$/)?.[1]
+    : undefined;
+  const requestedReport = episodeSearch.get("report");
+  const report = requestedReport ?? currentReport;
+  const code = requestedReport ? episodeSearch.get("finding") :
+    recording?.quality_summary?.finding_codes?.includes("MCAP_INTERIOR_ACTION_MISSING")
+      ? "MCAP_INTERIOR_ACTION_MISSING" : detail.data?.quality_evidence?.findings?.[0]?.code;
+  const diagnostic = useProblemLocations(scope,
+    previewOnly && report && code ? {report, code, recordingId} : undefined, clock);
   const firstSource = sources.data?.sources[0];
   const minimumDurationNs = Math.max(
     1,
@@ -600,6 +617,7 @@ function RecordingSegmentationPage({
       (capabilities.has("annotation.edit") ||
         capabilities.has("upload.manage")));
   const readOnly =
+    previewOnly ||
     capabilityOverride === "read-only" ||
     !canManage ||
     recording?.ingest_mode === "WHOLE_RECORDING" ||
@@ -612,8 +630,7 @@ function RecordingSegmentationPage({
     () =>
       recording &&
       scope &&
-      recording.ingest_mode !== "WHOLE_RECORDING" &&
-      recording.schema_version === "continuous-recording/v2"
+      loadRawRecording
         ? buildRecordingJointAngleStream({
             gateway,
             scope,
@@ -621,7 +638,7 @@ function RecordingSegmentationPage({
             durationNs: recording.duration_ns,
           })
         : null,
-    [gateway, recording, recordingId, scope],
+    [gateway, loadRawRecording, recording, recordingId, scope],
   );
   const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
     recording?.robot_id ?? null,
@@ -1129,7 +1146,7 @@ function RecordingSegmentationPage({
     );
   }
 
-  if (recording.ingest_mode === "WHOLE_RECORDING") {
+  if (recording.ingest_mode === "WHOLE_RECORDING" && !previewOnly) {
     return <RecordingSliceTarget recording={recording} gateway={gateway} scope={scope} />;
   }
 
@@ -1188,7 +1205,7 @@ function RecordingSegmentationPage({
         onSelect={(id) => {
           if (id !== recordingId)
             navigateFromRecording(
-              `/recordings/${encodeURIComponent(id)}/slice`,
+              previewOnly ? recordingPreviewPath(id) : `/recordings/${encodeURIComponent(id)}/slice`,
             );
         }}
       />
@@ -1204,7 +1221,7 @@ function RecordingSegmentationPage({
           adapter={{
             mode: "episode-slicing",
             id: `recording-slicing-${recording.recording_id}`,
-            title: "录制切片",
+            title: previewOnly ? "原始数据预览" : "录制切片",
             description: `${recordingFileName(recording)} · ${formatDuration(durationNs)} · ${recording.video_asset_count} 路相机 · ${recordingRobotName(recording)} · 任务 ${recordingTaskNumber(recording)}`,
             readOnly,
             clock,
@@ -1215,7 +1232,7 @@ function RecordingSegmentationPage({
               : {}),
             collectionItems: [],
             findings: [],
-            timelineTracks,
+            timelineTracks: [...diagnostic.tracks, ...timelineTracks],
             ...(selectedSlice
               ? {
                   timelineSelection: {
@@ -1256,6 +1273,7 @@ function RecordingSegmentationPage({
           slots={{
             workspaceToolbar: () => (
               <div className={styles.sharedWorkbenchToolbar}>
+                {diagnostic.panel}
                 <div className={styles.headerIdentity}>
                   <Button
                     type="text"
@@ -1279,7 +1297,7 @@ function RecordingSegmentationPage({
                         aria-current="page"
                         title={recordingFileName(recording)}
                       >
-                        {recordingFileName(recording)}
+                        {recording.source_file_name ?? recordingFileName(recording)}
                       </span>
                     </nav>
                     <p>
@@ -1295,59 +1313,68 @@ function RecordingSegmentationPage({
                       原始文件
                     </Button>
                   )}
-                  {dirty ? (
-                    <Tag color="warning">有未保存修改</Tag>
-                  ) : (
-                    <Tag color="default">
-                      {recording.current_revision
-                        ? `已保存 r${recording.current_revision}`
-                        : "尚未保存"}
-                    </Tag>
-                  )}
-                  <Button
-                    icon={<Save size={16} />}
-                    disabled={
-                      readOnly || finalize.isPending || issues.length > 0
-                    }
-                    loading={saveDraft.isPending}
-                    onClick={() => saveDraft.mutate()}
-                  >
-                    {needsHumanReview ? "确认并保存人工草稿" : "保存草稿"}
-                  </Button>
-                  <Tooltip
-                    title={
-                      !finalizeAllowed
-                        ? "请先确认模型建议并修复边界问题"
-                        : undefined
-                    }
-                  >
-                    <Button
-                      type="primary"
-                      icon={<CheckCircle2 size={16} />}
-                      disabled={!finalizeAllowed}
-                      loading={finalize.isPending}
-                      onClick={() => {
-                        if (canReuse) {
-                          finalize.mutate();
-                          return;
+                  {previewOnly && scope && report && code && recording.quality_summary?.report_id !== "recording_qc_" + report && <ProblemProcessingButton key={report} scope={scope}
+                    recordingId={recordingId} digest={report} canManage={capabilities.has("upload.manage")}
+                    canReadDataset={capabilities.has("dataset.read")} />}
+                  {previewOnly ? <Tag>只读预览</Tag> : (
+                    <>
+                      {dirty ? (
+                        <Tag color="warning">有未保存修改</Tag>
+                      ) : (
+                        <Tag color="default">
+                          {recording.current_revision
+                            ? `已保存 r${recording.current_revision}`
+                            : "尚未保存"}
+                        </Tag>
+                      )}
+                      <Button
+                        icon={<Save size={16} />}
+                        disabled={
+                          readOnly || finalize.isPending || issues.length > 0
                         }
-                        modal.confirm({
-                          title: slices.length
-                            ? `生成 ${slices.length} 条 Episode？`
-                            : "将完整录制生成为 1 条 Episode？",
-                          content:
-                            "无需填写任务标签。将保存切片区间并生成 Episode；提交后区间锁定，原始录制保留。",
-                          okText: "确认生成",
-                          cancelText: "继续编辑",
-                          onOk: () => finalize.mutateAsync(),
-                        });
-                      }}
-                    >
-                      {canReuse ? "沿用上次切片并继续入库" : "提交成片"}
-                    </Button>
-                  </Tooltip>
+                        loading={saveDraft.isPending}
+                        onClick={() => saveDraft.mutate()}
+                      >
+                        {needsHumanReview ? "确认并保存人工草稿" : "保存草稿"}
+                      </Button>
+                      <Tooltip
+                        title={
+                          !finalizeAllowed
+                            ? "请先确认模型建议并修复边界问题"
+                            : undefined
+                        }
+                      >
+                        <Button
+                          type="primary"
+                          icon={<CheckCircle2 size={16} />}
+                          disabled={!finalizeAllowed}
+                          loading={finalize.isPending}
+                          onClick={() => {
+                            if (canReuse) {
+                              finalize.mutate();
+                              return;
+                            }
+                            modal.confirm({
+                              title: slices.length
+                                ? `生成 ${slices.length} 条 Episode？`
+                                : "将完整录制生成为 1 条 Episode？",
+                              content:
+                                "无需填写任务标签。将保存切片区间并生成 Episode；提交后区间锁定，原始录制保留。",
+                              okText: "确认生成",
+                              cancelText: "继续编辑",
+                              onOk: () => finalize.mutateAsync(),
+                            });
+                          }}
+                        >
+                          {canReuse ? "沿用上次切片并继续入库" : "提交成片"}
+                        </Button>
+                      </Tooltip>
+                    </>
+                  )}
                 </div>
-                {qualityLabel ? (
+                {recording.status === "QC_FAILED" && recording.quality_summary && detail.data && scope ? (
+                  <RecordingQualityReview key={recording.recording_id + recording.quality_summary.report_id} scope={scope} detail={detail.data} />
+                ) : qualityLabel ? (
                   <Alert
                     type={recording.status === "QC_FAILED" || recording.status === "QC_ERROR" ? "error" : "info"}
                     showIcon
@@ -1372,7 +1399,7 @@ function RecordingSegmentationPage({
                         </Button>
                       ) : undefined}
                   />
-                ) : recording.status === "SLICED" && !finalizedNoticeClosed ? (
+                ) : !previewOnly && recording.status === "SLICED" && !finalizedNoticeClosed ? (
                   <div className={styles.finalizedNotice} role="status">
                     <CheckCircle2 size={15} aria-hidden="true" />
                     <span>{revision?.reused_from ? "已沿用上次确认的切片" : "切片已最终提交"}</span>
@@ -1407,10 +1434,10 @@ function RecordingSegmentationPage({
                 visibleStreams={visibleCameraStreams}
                 onViewChange={setCameraView}
               >
-                {sources.isPending ? <span>正在授权视频…</span> : null}
+                {sources.isFetching ? <span>正在授权视频…</span> : null}
               </CameraViewToolbar>
             ),
-            timelineTools: () => (
+            timelineTools: () => previewOnly ? null : (
               <>
                 <div className={styles.sharedTimelineTools}>
                   <div className={styles.markControls}>

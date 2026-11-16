@@ -14,7 +14,7 @@ const path = z.string().min(1);
 const fileWire = z.object({
   path,
   size: count,
-  sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/u).nullish(),
 }) satisfies z.ZodType<OriginalFile>;
 const filePageWire = z.object({
   import_id: path,

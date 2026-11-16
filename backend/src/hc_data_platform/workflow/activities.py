@@ -429,6 +429,7 @@ class ActivityDependencies:
     recording_quality: Any | None = None
     robot_worker: RobotWorkerComponents | None = None
     lerobot_pipeline: Any | None = None
+    oss_uploads: Any | None = None
     episode_packages: Any | None = None
     robot_scenes: Any | None = None
 

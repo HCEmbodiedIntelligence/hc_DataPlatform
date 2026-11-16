@@ -154,6 +154,7 @@ it("requests only completed candidates and exports approved annotations after se
       "rgbd",
       expect.any(String),
       expect.any(AbortSignal),
+      undefined,
     ),
   );
   expect(
@@ -244,6 +245,7 @@ it("exports the current RGB selection and automatically downloads that job once,
       f.scope,
       ready,
       expect.any(AbortSignal),
+      undefined,
     ),
   );
   expect(f.click).toHaveBeenCalledTimes(1);
@@ -261,6 +263,7 @@ it("exports the current RGB selection and automatically downloads that job once,
     "rgb",
     expect.any(String),
     expect.any(AbortSignal),
+    undefined,
   );
 });
 

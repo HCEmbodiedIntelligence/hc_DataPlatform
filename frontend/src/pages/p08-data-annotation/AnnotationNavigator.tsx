@@ -108,10 +108,13 @@ export function AnnotationNavigator({
     ...visible.slice(index + 1),
     ...visible.slice(0, index),
   ].find(isPending);
-  useEffect(() => {
-    for (const id of new Set([previous?.task_id, next?.task_id, nextPending?.task_id]))
-      if (id) onPrefetch?.(id);
-  }, [previous?.task_id, next?.task_id, nextPending?.task_id, onPrefetch]);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const cancelHover = () => clearTimeout(hoverTimer.current);
+  useEffect(() => () => clearTimeout(hoverTimer.current), [task.task_id, onPrefetch]);
+  const warmOnHover = (id: string | undefined) => {
+    cancelHover();
+    if (id && onPrefetch) hoverTimer.current = setTimeout(() => onPrefetch(id), 150);
+  };
   return (
     <aside
       className={styles.navigator}
@@ -179,7 +182,8 @@ export function AnnotationNavigator({
             icon={<ChevronLeft size={14} />}
             disabled={disabled || !previous}
             onClick={() => previous && onSelect(previous.task_id)}
-            onPointerEnter={() => previous && onPrefetch?.(previous.task_id)}
+            onPointerEnter={() => warmOnHover(previous?.task_id)}
+            onPointerLeave={cancelHover}
             onFocus={() => previous && onPrefetch?.(previous.task_id)}
           >
             上一条
@@ -188,7 +192,8 @@ export function AnnotationNavigator({
             size="small"
             disabled={disabled || !next}
             onClick={() => next && onSelect(next.task_id)}
-            onPointerEnter={() => next && onPrefetch?.(next.task_id)}
+            onPointerEnter={() => warmOnHover(next?.task_id)}
+            onPointerLeave={cancelHover}
             onFocus={() => next && onPrefetch?.(next.task_id)}
           >
             下一条 <ChevronRight size={14} />
@@ -198,7 +203,8 @@ export function AnnotationNavigator({
           size="small"
           disabled={disabled || !nextPending}
           onClick={() => nextPending && onSelect(nextPending.task_id)}
-          onPointerEnter={() => nextPending && onPrefetch?.(nextPending.task_id)}
+          onPointerEnter={() => warmOnHover(nextPending?.task_id)}
+            onPointerLeave={cancelHover}
           onFocus={() => nextPending && onPrefetch?.(nextPending.task_id)}
         >
           下一条{pendingLabel}
@@ -219,7 +225,8 @@ export function AnnotationNavigator({
                 disabled={disabled}
                 aria-busy={item.task_id === loadingTaskId || undefined}
                 onClick={() => onSelect(item.task_id)}
-                onPointerEnter={() => onPrefetch?.(item.task_id)}
+                onPointerEnter={() => warmOnHover(item.task_id)}
+                onPointerLeave={cancelHover}
                 onFocus={() => onPrefetch?.(item.task_id)}
               >
                 <Tag

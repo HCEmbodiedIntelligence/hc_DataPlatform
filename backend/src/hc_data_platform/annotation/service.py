@@ -1127,11 +1127,7 @@ class AnnotationService:
         status: AnnotationStatus | None = None,
     ) -> tuple[AnnotationTask, ...]:
         self._authorize_project(project_id, actor, capability=self._READ_CAPABILITY)
-        return tuple(
-            aggregate.task
-            for aggregate in self._repository.list_for_project(project_id)
-            if status is None or aggregate.task.status is status
-        )
+        return self._repository.list_task_rows(project_id, status)
 
     def list_revision_threads(
         self,

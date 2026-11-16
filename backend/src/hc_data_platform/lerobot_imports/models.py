@@ -162,6 +162,7 @@ class LeRobotAssetUploadGrantV1(BaseModel):
 class LeRobotImportGrantV1(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    batch_number: int | None = Field(default=None, ge=1)
     schema_version: Literal["lerobot-web-import-grant/v1"] = "lerobot-web-import-grant/v1"
     import_id: str = Field(pattern=r"^[a-f0-9]{32}$")
     assets: tuple[LeRobotAssetUploadGrantV1, ...]

@@ -264,6 +264,11 @@ class PostgresAnnotationRepository:
         )
 
     def list_for_project(self, project_id: str) -> tuple[AnnotationAggregate, ...]:
+        return tuple(self._load_related(task) for task in self.list_task_rows(project_id))
+
+    def list_task_rows(
+        self, project_id: str, status: AnnotationStatus | None = None
+    ) -> tuple[AnnotationTask, ...]:
         connection = self._connection_factory()
         cursor = connection.cursor()
         try:
@@ -277,15 +282,16 @@ class PostgresAnnotationRepository:
                       current_setting('app.organization_id', true), ''
                   )
                   AND region_code = NULLIF(current_setting('app.region_code', true), '')
+                  AND (%s::text IS NULL OR status = %s)
                 ORDER BY updated_at DESC, task_id DESC
                 """,
-                (project_id,),
+                (project_id, status.value if status else None, status.value if status else None),
             )
             task_rows = _rows(cursor, cursor.fetchall())
         finally:
             cursor.close()
             connection.close()
-        return tuple(self._load_related(self._task_from_row(row)) for row in task_rows)
+        return tuple(self._task_from_row(row) for row in task_rows)
 
     def list_revision_threads(
         self,

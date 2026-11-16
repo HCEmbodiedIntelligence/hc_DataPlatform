@@ -488,6 +488,11 @@ class ContinuousRecordingService:
         )
         return self._envelope(persisted)
 
+    def discard_quality(self, *, auth, organization_id, project_id, region_code, recording_id, report_sha256):
+        scope = self._authorize(auth, organization_id=organization_id, project_id=project_id,
+                                region_code=region_code, capabilities=("upload.manage",))
+        return self._envelope(self._repository.discard_quality(scope, recording_id, report_sha256, auth.subject_id))
+
     def retry_quality(self, *, auth, organization_id, project_id, region_code,
                       recording_id, request_id):
         scope = self._authorize(
@@ -937,6 +942,7 @@ class ContinuousRecordingService:
         project_id: str,
         region_code: str,
         recording_id: str,
+        original_rgb: bool = False,
     ) -> RecordingVideoSourceEnvelope:
         """Authorize original videos before Episodes exist; never materializes a preview."""
         scope = self._authorize(
@@ -966,7 +972,7 @@ class ContinuousRecordingService:
                 recording_id=recording_id,
                 asset_id=asset.asset_id,
                 camera_id=asset.manifest.camera_id or "missing-camera",
-                **self._video_media(upload, asset, assets, cameras[asset.manifest.camera_id or ""]),
+                **self._video_media(upload, asset, assets, cameras[asset.manifest.camera_id or ""], original_rgb=original_rgb),
                 duration_ns=recording.duration_ns,
                 fps=cameras[asset.manifest.camera_id or ""].fps,
                 expires_at=expires_at,
@@ -974,8 +980,9 @@ class ContinuousRecordingService:
             for asset in assets
             if asset.manifest.role is RecordingAssetRole.RAW_VIDEO
             and asset.status is RecordingAssetStatus.COMMITTED
+            and (not original_rgb or not is_depth(cameras[asset.manifest.camera_id or ""]))
         )
-        if not sources and upload.command.recording_config.collection_mode != "JOINT_ONLY":
+        if not original_rgb and not sources and upload.command.recording_config.collection_mode != "JOINT_ONLY":
             raise problem(
                 status=409,
                 code="RECORDING_VIDEO_ASSETS_MISSING",
@@ -984,9 +991,9 @@ class ContinuousRecordingService:
             )
         return RecordingVideoSourceEnvelope(sources=sources)
 
-    def _video_media(self, upload, asset, assets, camera, *, episode=False):
+    def _video_media(self, upload, asset, assets, camera, *, episode=False, original_rgb=False):
         depth = is_depth(camera)
-        selected_preview = any(a.manifest.path == "source/frames.jsonl" for a in assets)
+        selected_preview = not original_rgb and any(a.manifest.path == "source/frames.jsonl" for a in assets)
         preview = read_preview(self._storage, upload, asset, assets) if depth or selected_preview else None
         if (depth or selected_preview) and preview is None:
             from .preview_cache import restore_preview
@@ -1001,7 +1008,7 @@ class ContinuousRecordingService:
         playback = preview
         if playback is None and not depth:
             from .preview_cache import cache_original_video
-            playback = cache_original_video(self._storage, upload, asset, assets)
+            playback = cache_original_video(self._storage, upload, asset, assets, getattr(self._assets, "_connection_factory", None))
         return {
             "modality": "depth" if depth else "rgb",
             "preview_status": "UNAVAILABLE" if depth and not preview else "READY",
@@ -1316,6 +1323,8 @@ class ContinuousRecordingService:
 
         return ContinuousRecordingEnvelope(
             data=self._repository.present((recording,))[0],
+            quality_evidence=self._repository.quality_evidence(recording)
+            if recording.quality_summary and recording.quality_summary.status == "REJECT" else None,
             current_slice_revision=revision,
             reusable_slices=self._repository.reusable_slices(recording, self._storage)
             if eligible(recording) else None,

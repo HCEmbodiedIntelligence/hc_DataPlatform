@@ -55,7 +55,7 @@ def restore_preview(storage, upload, asset, assets, connections):
             prepare_recording_previews(RecoveringStorage(), upload, assets)
 
 
-def cache_original_video(storage, upload, asset, assets):
+def cache_original_video(storage, upload, asset, assets, connections=None):
     """Local browser copy for recordings that do not need a generated preview."""
     cache = local_cache_for(storage)
     if cache is None:
@@ -69,7 +69,14 @@ def cache_original_video(storage, upload, asset, assets):
                 from .previews import _download
 
                 path = Path(root) / "media.mp4"
-                _download(storage, asset, path, lambda: None)
+                if connections and storage.head(asset.object_key) is None:
+                    scope = upload.scope
+                    recovery = DerivedCache(storage, connections, (scope.organization_id,
+                                            scope.project_id, scope.region_code), root)
+                    path = recovery.localize(asset.object_key, asset.manifest.path, asset.manifest.size,
+                                             asset.manifest.sha256, path)
+                else:
+                    _download(storage, asset, path, lambda: None)
                 with path.open("rb") as stream:
                     MultipartImmutableWriter(storage).write_immutable(
                         key, stream, size=asset.manifest.size, sha256=asset.manifest.sha256

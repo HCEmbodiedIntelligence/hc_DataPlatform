@@ -73,6 +73,7 @@ export interface FailedPartTransfer {
 }
 
 export interface UploadQueueItem {
+  readonly batchNumber?: number | null;
   readonly id: string;
   readonly scopeKey: string;
   readonly sessionId: string | null;
@@ -141,6 +142,7 @@ export interface StartUploadInput {
   readonly objectStorageUri?: string;
   /** Internal queue identity so a folder batch can resume the same item. */
   readonly queueItemId?: string;
+  readonly batchId?: string;
   /** Stable per-package key used only by the folder-import scheduler. */
   readonly idempotencyKey?: string;
   /** Queue-first flows renew authorization only when this item actually starts. */
@@ -177,6 +179,7 @@ interface UploadQueueState {
   beginPrepared: (itemId: string) => Promise<void>;
   start: (input: StartUploadInput) => Promise<void>;
   startLeRobot: (input: {
+    readonly batchId?: string;
     readonly scope: IngestScope;
     readonly selection: LeRobotFolderSelection;
     readonly binding: LeRobotTargetBinding;
@@ -471,6 +474,7 @@ async function continueFolderBatch(
         files: [bundle.manifestFile, bundle.rawFile],
         queueItemId: itemId,
         idempotencyKey: folderIdempotencyKey(bundle),
+        batchId,
       });
       const item = get().items.find((candidate) => candidate.id === itemId);
       if (item?.transferStatus === "offline") {
@@ -1103,7 +1107,7 @@ async function prepareUploadSession(
       item.sessionId !== null &&
       item.transferStatus !== "cancelled",
   );
-  if (existing) {
+  if (existing && !input.batchId) {
     runtimeByItem.set(existing.id, {
       scope,
       manifest: preflight.manifest,
@@ -1133,15 +1137,22 @@ async function prepareUploadSession(
         : { object_storage_uri: objectStorageUri?.trim() }),
     },
     input.idempotencyKey ?? newId(),
+    undefined,
+    input.batchId,
   );
   if (!grant.session.session_id) throw new Error("UPLOAD_SESSION_ID_MISSING");
 
-  const id = input.queueItemId ?? grant.session.session_id;
+  if (existing && runtimeByItem.get(existing.id)?.controller) {
+    updateItem(set, existing.id, (current) => ({ ...current, batchNumber: grant.batch_number }));
+    return existing.id;
+  }
+  const id = existing?.id ?? input.queueItemId ?? grant.session.session_id;
   const committed = grant.session.status === "RAW_COMMITTED";
   const item: UploadQueueItem = {
     id,
     scopeKey: scopeKey(scope),
     sessionId: grant.session.session_id,
+    batchNumber: grant.batch_number,
     sourceType,
     fileName: rawFile?.name ?? rawManifestFile?.path ?? "授权对象",
     dataPackageId: preflight.identifiers.data_package_id,
@@ -1190,7 +1201,7 @@ async function beginPreparedUpload(
   if (
     !runtime ||
     !item?.sessionId ||
-    ["committed", "cancelled"].includes(item.transferStatus)
+    ["uploading", "pausing", "finalizing", "committed", "cancelled"].includes(item.transferStatus)
   )
     return;
   if (item.sourceType === "OBJECT_STORAGE_REFERENCE") {
@@ -1337,12 +1348,14 @@ async function runLeRobotUpload(
       },
       runtime.resume,
       {
+        batchId: itemId,
         signal: controller.signal,
         onSession: (resume) => {
           runtime.resume = resume;
           updateItem(set, itemId, (current) => ({
             ...current,
             sessionId: resume.importId,
+            batchNumber: resume.batchNumber,
           }));
         },
       },
@@ -1529,11 +1542,12 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
       }));
     }
   },
-  startLeRobot: async ({ scope, selection, binding }) => {
+  startLeRobot: async ({ scope, selection, binding, batchId }) => {
     get().bindScope(scope);
     const duplicate = get().items.find(
       (item) =>
         item.sourceType === "LEROBOT_NATIVE" &&
+        (!batchId || item.id === batchId) &&
         item.robotId === binding.robotId &&
         item.collectionTaskId === binding.collectionTaskId &&
         item.dataPackageId === binding.datasetId &&
@@ -1544,7 +1558,7 @@ export const useUploadQueueStore = create<UploadQueueState>((set, get) => ({
         await get().resume(duplicate.id);
       return;
     }
-    const id = newId();
+    const id = batchId ?? newId();
     const item = leRobotQueueItem({ id, scope, selection, binding });
     leRobotRuntimeByItem.set(id, {
       scope,

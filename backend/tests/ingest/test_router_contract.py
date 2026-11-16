@@ -222,6 +222,31 @@ def test_router_requires_be02_auth_context_role_and_scope() -> None:
     assert created.json()["parts"][0]["url"].startswith("memory://")
 
 
+def test_formal_upload_returns_the_submission_number(monkeypatch) -> None:
+    from hc_data_platform.ingest import upload_batches
+
+    get_service.cache_clear()
+    scope = ("org-1", "p1", "cn-hz")
+    auth = AuthContext(subject_id="u1", organization_ids=frozenset({scope[0]}),
+                       organization_scope_triples=frozenset({scope}),
+                       organization_scoped_capabilities=frozenset({(scope[0], scope[1], "upload.manage")}),
+                       project_ids=frozenset({scope[1]}), region_codes=frozenset({scope[2]}),
+                       scope_pairs=frozenset({scope[1:]}))
+    received = []
+    def register(tenant, channel, key, upload_id):
+        received.append((tenant, channel, key, upload_id))
+        return 7
+    monkeypatch.setattr(upload_batches, "register_batch", register)
+    client = TestClient(app_with_auth(auth))
+    response = client.post("/api/v1/projects/p1/regions/cn-hz/upload-sessions?upload_batch_id=folder",
+                           json={"manifest": manifest_payload(), "part_numbers": [1]},
+                           headers={"Idempotency-Key":"batch-test"})
+    assert response.status_code == 201, response.text
+    grant = response.json()
+    assert grant["batch_number"] == 7
+    assert received == [(scope, "web", "folder", grant["session"]["session_id"])]
+
+
 def test_router_uses_exact_current_project_capability() -> None:
     get_service.cache_clear()
     path = "/api/v1/projects/p1/regions/cn-hz/upload-sessions"

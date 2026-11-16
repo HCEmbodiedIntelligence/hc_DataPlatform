@@ -1,17 +1,36 @@
 """Complete independent packages: no implicit selection of annotations or modalities."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from .collection_delivery_models import CollectionDeliveryPlan
 from .models import DataVersionRef, Digest, FrozenModel, digest
+from .upload_candidates import UploadExportFilter
 
 ArchiveKind = Literal["independent_episode_zip/1", "independent_episode_batch_zip/1"]
 
 
+class PrepareEpisodePart(FrozenModel):
+    data: DataVersionRef
+    mode: str = Field(min_length=1, max_length=64)
+    export_filter: UploadExportFilter
+
+
+class PreparedEpisodePart(FrozenModel):
+    part_id: Digest
+    status: Literal["preparing", "ready"]
+    reused: bool
+
+
+class DownloadEpisodeBundle(FrozenModel):
+    part_ids: tuple[Digest, ...] = Field(min_length=1, max_length=1000)
+    export_filter: UploadExportFilter
+
+
 class RequestEpisodeDelivery(FrozenModel):
+    export_filter: UploadExportFilter | None = None
     data: tuple[DataVersionRef, ...] = Field(min_length=1, max_length=100)
     archive_format: ArchiveKind = "independent_episode_zip/1"
 

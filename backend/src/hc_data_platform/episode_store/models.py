@@ -173,7 +173,7 @@ class CollectionSnapshot(FrozenModel):
     schema_fingerprint: Digest
     frequency_hz: float = Field(gt=0, allow_inf_nan=False)
     previous_collection_version_id: Identifier | None = None
-    episodes: tuple[EpisodeDataRef, ...] = Field(min_length=1, max_length=10000)
+    episodes: tuple[EpisodeDataRef, ...] = Field(max_length=10000)
 
     @model_validator(mode="after")
     def same_scope(self) -> CollectionSnapshot:

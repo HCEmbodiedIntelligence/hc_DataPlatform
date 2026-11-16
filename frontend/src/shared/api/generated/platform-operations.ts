@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 493a7d4d60eb7e9b96f60a3dca1464c4c1f58b8b7cf87a6a7eddf656fb4e3e83
+// Runtime-OpenAPI-SHA256: e5aa75c747162a103be25ab738a0f2d83f28a6955ec605334acd2db91b026860
 
 export const runtimeOperations = [
   { method: "GET", path: "/account/access-overview" },
@@ -94,6 +94,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/organizations/{organization_id}/projects/{project_id}/membership-requests/{access_request_id}:withdraw" },
   { method: "GET", path: "/organizations/{organization_id}/projects/{project_id}/regions/{region_code}/stream-schemas/{schema_id}/versions/{schema_version}/dataset-references" },
   { method: "POST", path: "/organizations/{organization_id}/projects/{project_id}/regions/{region_code}/stream-schemas/{schema_id}/versions/{schema_version}/dataset-references" },
+  { method: "GET", path: "/organizations/{organization_id}/quality-rules" },
+  { method: "POST", path: "/organizations/{organization_id}/quality-rules" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:authorize-parts" },
   { method: "POST", path: "/organizations/{organization_id}/robot-model-asset-uploads/{upload_id}:complete-file" },
   { method: "GET", path: "/organizations/{organization_id}/robot-model-assets/content" },
@@ -284,6 +286,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:discard" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}:retry" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/episodes/{episode_id}/video-sources" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/quality-reports/{report_sha256}/action-gaps" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/quality:discard" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/quality:retry" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/sensor-window" },
   { method: "PUT", path: "/projects/{project_id}/regions/{region_code}/continuous-recordings/{recording_id}/slice-draft" },
@@ -334,9 +338,13 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/cancel" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/download" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/{job_id}/retry" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/bundle" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/bundle-parts" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/candidates" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/collections" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/formats" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/upload-batches" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/episode-deliveries/upload-candidates" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports:capabilities" },
@@ -363,6 +371,8 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/archive" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/configuration" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:batches" },
+  { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:batches" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:commit" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/oss:inspect" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/lerobot-imports/robot-options" },
@@ -376,6 +386,7 @@ export const runtimeOperations = [
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:triage" },
   { method: "POST", path: "/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}/cleaning-drafts" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/quality-problems" },
+  { method: "GET", path: "/projects/{project_id}/regions/{region_code}/quality-problems/{digest}/locations" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/alignment" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/quality" },
   { method: "GET", path: "/projects/{project_id}/regions/{region_code}/rollouts/{rollout_id}/raw-verification" },

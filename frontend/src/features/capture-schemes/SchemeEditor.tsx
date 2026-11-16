@@ -23,6 +23,7 @@ import {
 import { AdapterFields } from "./AdapterFields";
 import { DefinitionFields } from "./DefinitionFields";
 import { PostprocessingRules } from "./PostprocessingRules";
+import { ApplyQualityRule } from "./ApplyQualityRule";
 import { QualityFields } from "./QualityFields";
 import { Differences, EvidenceView } from "./EvidenceView";
 import {
@@ -319,6 +320,7 @@ export function SchemeEditor({
             )}
             <DefinitionFields document={doc} onChange={change} />
             <PostprocessingRules document={doc} onChange={change} />
+            <ApplyQualityRule org={organizationId} document={doc} onChange={change} />
             <QualityFields document={doc} onChange={change} />
           </>
         )}

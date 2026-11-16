@@ -262,6 +262,12 @@ def test_problem_sources_resolve_native_episodes_within_the_report_scope(isolate
             )
         remaining = repository.list_problem_reports(project_id="project-a", region_code="cn-test")
         assert {row.rollout_id for row in remaining} == {"episode-7", "no-source"}
+        history = repository.list_problem_reports(project_id="project-a", region_code="cn-test", include_discarded=True)
+        assert [row.rollout_id for row in history if row.discarded] == ["episode-0"]
+        archived = next(row for row in history if row.discarded)
+        locations = repository.problem_locations("project-a", "cn-test", archived.report_sha256,
+                                                  archived.finding_codes[0], None, archived.rollout_id)
+        assert [(item.topic, item.start_ns, item.end_ns) for item in locations] == [("camera/front", "0", "100")]
         assert repository.get_report(
             project_id="project-a", region_code="cn-test", rollout_id="episode-0"
         ) is not None

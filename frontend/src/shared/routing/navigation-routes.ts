@@ -1,3 +1,7 @@
+export function recordingPreviewPath(recordingId: string): string {
+  return `/recordings/${encodeURIComponent(recordingId)}/slice?view=preview`;
+}
+
 export const dataUploadRoutes = Object.freeze({
   newUpload: "/ingest/uploads/new",
   records: "/ingest/uploads/records",

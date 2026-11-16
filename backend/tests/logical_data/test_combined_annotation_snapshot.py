@@ -36,6 +36,14 @@ def test_combined_snapshot_reuses_the_exact_authorized_revision(model_read):
             scenes.authorize_assets.assert_called_once_with(revision, result.robot, auth, "glb")
         else:
             scenes.scene.assert_not_called()
+        scenes.scene.reset_mock()
+        scenes.authorize_assets.reset_mock()
+        scenes.scene.side_effect = AssertionError("playback must not wait for model metadata")
+        playback = service.snapshot("task", **scope, auth=auth, include_model=False)
+        assert playback.snapshot == result.snapshot and playback.robot is None
+        scenes.scene.assert_not_called()
+        scenes.authorize_assets.assert_not_called()
+        revisions.episode_revision.assert_not_called()
         revision.scope = N(**{**scope, "organization_id": "foreign"})
         with pytest.raises(ValueError, match="differs from authorized"):
             service.snapshot("task", **scope, auth=auth, include_model=True)

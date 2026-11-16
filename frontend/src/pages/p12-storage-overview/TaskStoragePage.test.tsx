@@ -106,6 +106,22 @@ const data: TaskUsage = {
 };
 
 describe("task storage usage", () => {
+  it("shows the workspace and system filesystems separately", () => {
+    const workspace = data.disk!;
+    const disks = {
+      "平台工作盘": workspace,
+      "系统盘（/）": { ...workspace, total_bytes: "2097152" },
+    };
+    render(
+      <TaskStorageDashboard
+        data={{ ...data, disks }}
+        scope={{ organizationId: "o", projectId: "project-a", regionCode: "global" }}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "平台工作盘" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "系统盘（/）" })).toBeVisible();
+    expect(screen.getByText("可用 / 共 2 MiB")).toBeVisible();
+  });
   it("binds relationship nodes to file bytes and keeps annotation records separate", () => {
     render(<StorageFlow data={data} />);
     expect(screen.getByText("4 KiB")).toBeVisible();

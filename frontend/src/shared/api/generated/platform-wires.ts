@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 493a7d4d60eb7e9b96f60a3dca1464c4c1f58b8b7cf87a6a7eddf656fb4e3e83
+// Runtime-OpenAPI-SHA256: e5aa75c747162a103be25ab738a0f2d83f28a6955ec605334acd2db91b026860
 // Response projections: unknown object fields are stripped; defaults are not filled.
 import { z } from "zod";
 import type { components } from "./platform";
@@ -242,6 +242,7 @@ export const ProjectTaskStorageWire = z.object({
     .union([z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")), z.null()])
     .optional(),
   disk: z.union([StorageDiskUsageWire, z.null()]).optional(),
+  disks: z.record(z.string(), StorageDiskUsageWire).optional(),
   file_count: z.number().int().min(0),
   object_store_bytes: z
     .union([z.string().regex(new RegExp("^(0|[1-9][0-9]*)$", "u")), z.null()])

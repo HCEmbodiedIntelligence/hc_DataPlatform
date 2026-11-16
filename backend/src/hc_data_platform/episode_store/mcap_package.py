@@ -13,7 +13,7 @@ from hc_data_platform.data_formats.depth_source import profile_hash
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.data_formats.holobrain_depth import DEFAULT_PROFILE, ENCODER_PROFILE
 from hc_data_platform.data_formats.mcap_numeric import REVISION, normalize_vector
-from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
+from hc_data_platform.data_formats.rgb_video import RGB_PROFILES, SOURCE_RGB_PROFILE, RgbVideoWriter
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
 from .bundle_models import FrozenObject
@@ -26,11 +26,11 @@ VERSION = "mcap-episode-package/2"
 LEGACY_VERSION = "mcap-episode-package/1"
 
 
-def encoding_configuration():
+def encoding_configuration(rgb_encoder=SOURCE_RGB_PROFILE):
     return {
         "depth_profile": DEFAULT_PROFILE.document(),
         "depth_encoder": ENCODER_PROFILE,
-        "rgb_encoder": "openarm-training-h264-crf18-veryfast/1",
+        "rgb_encoder": rgb_encoder,
         "pyav": av.__version__,
         "ffmpeg": {key: list(value) for key, value in av.library_versions.items()},
     }
@@ -192,7 +192,8 @@ def frame_for(step, topic, contract):
 @contextmanager
 def prepared_mcap_assets(plan, steps, attempt_id):
     type(plan).model_validate(plan.model_dump(mode="json"))
-    if plan.encoding != encoding_configuration():
+    profile = plan.encoding.get("rgb_encoder")
+    if profile not in RGB_PROFILES or plan.encoding != encoding_configuration(profile):
         raise ValueError("MCAP package encoding dependencies differ from its frozen plan")
     fps = plan.alignment_profile.frequency_hz
     if fps != int(fps):
@@ -219,7 +220,9 @@ def prepared_mcap_assets(plan, steps, attempt_id):
                         require_source_profile=True,
                     )
                     if contract.kind == "depth"
-                    else RgbVideoWriter(directory / "video.mp4", fps, contract.shape)
+                    else RgbVideoWriter(
+                        directory / "video.mp4", fps, contract.shape, **RGB_PROFILES[profile]
+                    )
                 )
                 writers[feature] = writer
                 pending.append(writer)

@@ -1,3 +1,4 @@
+import { recordingPreviewPath } from "../../shared/routing/navigation-routes";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Space } from "antd";
 import { Link, Navigate } from "react-router-dom";
@@ -62,6 +63,9 @@ export function RecordingIngestProgress({ canManage, ...props }: Props & { canMa
     <Space orientation="vertical" size="middle">
       <strong>{ready && !episode.annotation_task_id ? "数据已入库，标注任务待准备"
         : wholeRecordingLabel({ ...recording, whole_episode_status: episode?.status ?? recording.whole_episode_status })}</strong>
+      {recording.schema_version === "continuous-recording/v2" && (
+        <Link to={recordingPreviewPath(recording.recording_id)}>预览原始数据</Link>
+      )}
       {recording.quality_error_code && <span role="alert">{recording.quality_error_code}</span>}
       {recording.quality_summary?.finding_codes.join("、")}
       {failedQuality && canManage && gateway.retryQuality && (

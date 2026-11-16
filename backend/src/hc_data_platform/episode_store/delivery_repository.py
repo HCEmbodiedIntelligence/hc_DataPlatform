@@ -41,6 +41,13 @@ def public_job(row):
 
 
 class PostgresEpisodeDeliveries(PostgresEpisodeStore):
+    def has_retired_members(self, members):
+        with self.transaction() as cursor:
+            cursor.execute(f"""SELECT 1 FROM episode_store.qc_retired_versions
+                WHERE {SCOPE} AND data_version_id=ANY(%s) LIMIT 1""",
+                (*scope_key(), [member.data.data_version_id for member in members]))
+            return cursor.fetchone() is not None
+
     def approved_data_versions(self, dataset_id):
         with self.transaction() as cursor:
             cursor.execute(

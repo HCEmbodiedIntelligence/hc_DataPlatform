@@ -14,6 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from PIL import Image
 
+from hc_data_platform.core.ingest_timing import timed
 from hc_data_platform.data_formats.arrow import feature_type, lerobot_value
 from hc_data_platform.data_formats.feature_names import feature_names
 from hc_data_platform.data_formats.lerobot_layout import (
@@ -122,6 +123,7 @@ def typed_stream(steps, contract, capture_values, cameras, camera_topics):
         yield from iterator
 
 
+@timed("PACKAGE_WRITE")
 def write_episode(
     root: Path, source: PackageInput, steps, assets: PreparedAssets, *, fps: float, metadata: dict
 ):
@@ -377,6 +379,9 @@ def write_episode(
         "dataset_to_index": count,
     }
     depth_paths, media_receipts = {}, []
+    # Row compaction re-selects and re-inspects every video, replacing these
+    # features and statistics, so decoding the unselected media is skipped.
+    compacting = bool(capture_masking or invalid_count)
     for key in sorted(cameras):
         media = assets.video(source.identity, key)
         relative = VIDEO_PATH.format(video_key=key, chunk_index=0, file_index=0)
@@ -399,9 +404,29 @@ def write_episode(
                     with Image.open(io.BytesIO(record["flags_png"])) as image:
                         yield np.asarray(image) & 1 != 0
 
-            feature, statistics = inspect_depth_video(
-                path, frame_count=count, fps=fps, info=depth_info, masks=valid_masks()
-            )
+            if compacting:
+                # compact_capture_media re-inspects the selected frames; only
+                # the declared geometry/profile is needed until then.
+                height, width = media.feature["shape"][:2]
+                feature = {
+                    "dtype": "video",
+                    "shape": [height, width, 1],
+                    "names": ["height", "width", "channels"],
+                    "info": {
+                        **depth_info, "video.fps": fps, "video.height": height,
+                        "video.width": width,
+                    },
+                }
+                statistics = None
+            else:
+                feature, statistics = inspect_depth_video(
+                    path, frame_count=count, fps=fps, info=depth_info, masks=valid_masks()
+                )
+        elif compacting:
+            feature = {"dtype": "video", "names": ["height", "width", "channels"],
+                       "info": {"video.fps": fps, "is_depth_map": False, "has_audio": False},
+                       **media.feature}
+            statistics = None
         else:
             feature, statistics = inspect_video(
                 path, frame_count=count, fps=fps,
@@ -487,7 +512,16 @@ def write_episode(
         },
     }.items():
         write_json(root, relative, value)
-    if metadata.get("robot_scene") is not None:
+    if metadata.get("robot_binding") is not None:
+        from hc_data_platform.robotics.scene_models import FrozenRobotBinding, scene_hash
+
+        binding = FrozenRobotBinding.model_validate(metadata["robot_binding"])
+        if binding.robot_id != source.robot_id or binding.calibration_sha256 != scene_hash(
+            metadata.get("calibration", {"status": "unknown"})
+        ):
+            raise ValueError("robot binding differs from the frozen package source")
+        write_json(root, "hc/robot_binding.json", binding.model_dump(mode="json"))
+    elif metadata.get("robot_scene") is not None:
         from hc_data_platform.robotics.scene_models import FrozenRobotScene
 
         scene = FrozenRobotScene.model_validate(metadata["robot_scene"])
@@ -518,9 +552,9 @@ def write_episode(
         if assets.auxiliary_root is None or not entry.path.startswith("hc/recording/"):
             raise ValueError("prepared auxiliary files require their recording evidence root")
         origin = package_file(assets.auxiliary_root, entry.path)
-        from hc_data_platform.data_formats.depth_evidence import file_hash
-
-        if origin.stat().st_size != entry.size or file_hash(origin) != entry.sha256:
+        # The receipt was hashed when the attempt prepared this file, and
+        # validate_package hashes every package file again below.
+        if origin.stat().st_size != entry.size:
             raise ValueError("prepared recording evidence differs from its frozen receipt")
         target = root / entry.path
         if target.exists():
@@ -530,5 +564,7 @@ def write_episode(
     if capture_masking or invalid_count:
         from .capture_selection import compact_capture_rows
 
-        compact_capture_rows(root)
+        compact_capture_rows(
+            root, rgb_statistics=metadata.get("capture_rgb_statistics", "legacy")
+        )
     return validate_package(root, source)

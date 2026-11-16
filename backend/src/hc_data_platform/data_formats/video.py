@@ -14,6 +14,8 @@ from typing import Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from hc_data_platform.core.ingest_timing import timed
+
 from .errors import format_error
 
 RGB_STATISTICS_HISTOGRAM = "uint8-histogram/1"
@@ -80,6 +82,7 @@ def video_process(command: list[str], *, encode: bool = False) -> Iterator[subpr
                 process.stdin.close()
 
 
+@timed("RGB_INSPECTION")
 def inspect_video(
     path: Path,
     *,
@@ -187,6 +190,7 @@ def inspect_video(
     return feature, stats
 
 
+@timed("DEPTH_INSPECTION")
 def inspect_depth_video(
     path: Path,
     frame_count: int,
@@ -197,7 +201,7 @@ def inspect_depth_video(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     import av
 
-    from .holobrain_depth import DepthProfile, dequantize
+    from .holobrain_depth import DepthProfile, dequantize, parallel_decode
 
     total = square = 0.0
     low, high = float("inf"), float("-inf")
@@ -210,6 +214,7 @@ def inspect_depth_video(
     )
     with av.open(str(path)) as container:
         stream = container.streams.video[0]
+        parallel_decode(stream)
         if (
             stream.codec_context.pix_fmt != "gray12le"
             or stream.codec_context.name != "hevc"

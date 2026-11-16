@@ -63,6 +63,40 @@ export async function getAutoQualityProcessing(
   problem: AutoQualityProblem,
   signal?: AbortSignal,
 ): Promise<AutoQualityProcessing> {
+  if (problem.recordingId && !problem.recordingEpisodeId) {
+    const { data } = await request<{
+      data: {
+        status: string;
+        quality_discarded_at?: string | null;
+        updated_at: string;
+      };
+    }>({
+      method: "GET",
+      path: recordingRoot(scope, problem),
+      scope,
+      signal,
+    });
+    const failed = ["QC_FAILED", "QC_ERROR"].includes(data.status);
+    const status = data.quality_discarded_at
+      ? "DISCARDED"
+      : failed
+        ? "FAILED"
+        : data.status === "PENDING_QC"
+          ? "PENDING"
+          : data.status === "QC_RUNNING"
+            ? "RUNNING"
+            : "SUCCEEDED";
+    return {
+      status,
+      episode_count: 1,
+      ready: status === "SUCCEEDED" ? 1 : 0,
+      failed: failed ? 1 : 0,
+      dataset_id: null,
+      updated_at: data.updated_at,
+      targetLabel: "当前录制",
+      retryable: status === "FAILED",
+    };
+  }
   if (problem.recordingId) {
     const page = await request<EpisodePage>({
       method: "GET",
@@ -138,6 +172,15 @@ export async function retryAutoQualityProcessing(
   progress: AutoQualityProcessing,
   requestId: string,
 ): Promise<AutoQualityProcessing> {
+  if (problem.recordingId && !problem.recordingEpisodeId) {
+    await request({
+      method: "POST",
+      path: recordingRoot(scope, problem) + "/quality:retry",
+      scope,
+      body: { request_id: requestId },
+    });
+    return { ...progress, status: "PENDING", retryable: false };
+  }
   if (problem.recordingId) {
     const episode = await request<Episode>({
       method: "POST",
@@ -163,6 +206,15 @@ export async function discardAutoQualityProblem(
   problem: AutoQualityProblem,
   requestId: string,
 ) {
+  if (problem.recordingId && !problem.recordingEpisodeId) {
+    await request({
+      method: "POST",
+      path: recordingRoot(scope, problem) + "/quality:discard",
+      scope,
+      body: { report_sha256: problem.reportSha256 },
+    });
+    return;
+  }
   if (problem.recordingId) {
     const progress = await getAutoQualityProcessing(scope, problem);
     if (progress.status === "DISCARDED") return;

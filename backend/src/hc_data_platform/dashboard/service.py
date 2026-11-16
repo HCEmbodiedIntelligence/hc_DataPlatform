@@ -1214,6 +1214,9 @@ def _blockers(
         code = fact.workflow_error_code or fact.verification_reason_code
         if code == MCAP_ASSET_CONFLICT:
             value = (code, "录制登记失败", "TECHNICAL", True)
+        elif fact.raw_problem and main is TaskPackageMainState.VALIDATION_FAILED:
+            raw = fact.raw_problem
+            value = (raw.code, raw.label, "RAW_VALIDATION", raw.code == "RECORDING_WORKER_SHUTDOWN")
         elif code in PROCESSING_ERRORS:
             value = (code, PROCESSING_ERRORS[code], "RAW_VALIDATION", False)
         elif main is TaskPackageMainState.UPLOAD_FAILED:
@@ -1225,7 +1228,7 @@ def _blockers(
                 if fact.workflow_error_code == "RECORDING_DATASET_SCHEMA_MISMATCH"
                 else "处理配置不完整"
                 if fact.workflow_stage == "dispatch"
-                else "Raw结构验证失败",
+                else "原始数据校验未通过",
                 "RAW_VALIDATION",
                 False,
             )
@@ -1324,6 +1327,10 @@ def _data_issues(packages: tuple[TaskStatusPackageFact, ...]) -> tuple[TaskDataI
                 "TECHNICAL": TaskProcessingStage.STANDARDIZATION,
             }[blocker.category]
             description = f"此数据包在{label}处停止，请核对原始数据及错误码。"
+            if fact.raw_problem and code == fact.raw_problem.code:
+                description = fact.raw_problem.description
+            elif blocker.category == "RAW_VALIDATION":
+                description = f"{label}。本次记录未提供具体的话题或字段。"
             if code == MCAP_ASSET_CONFLICT:
                 stage = TaskProcessingStage.AUTOMATIC_VALIDATION
                 description = "新录制登记文件时与已有录制的存储路径冲突，质检尚未开始。请重试处理，无需重新上传。"

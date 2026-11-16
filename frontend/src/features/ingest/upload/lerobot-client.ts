@@ -42,6 +42,7 @@ interface AssetGrant {
 }
 
 interface ImportGrant {
+  readonly batch_number?: number | null;
   readonly schema_version: "lerobot-web-import-grant/v1";
   readonly import_id: string;
   readonly assets: readonly AssetGrant[];
@@ -68,6 +69,7 @@ export interface LeRobotUploadProgress {
 }
 
 export interface LeRobotUploadResume {
+  readonly batchNumber?: number | null;
   readonly importId: string;
   readonly assets: readonly AssetGrant[];
   readonly transferMode: "direct" | "proxy";
@@ -352,6 +354,7 @@ export async function uploadNativeLeRobot(
   resume: LeRobotUploadResume | null = null,
   options: {
     readonly signal?: AbortSignal;
+    readonly batchId?: string;
     readonly onSession?: (resume: LeRobotUploadResume) => void;
   } = {},
 ): Promise<LeRobotImportAccepted> {
@@ -361,12 +364,14 @@ export async function uploadNativeLeRobot(
     ? {
         schema_version: "lerobot-web-import-grant/v1" as const,
         import_id: resume.importId,
+        batch_number: resume.batchNumber,
         assets: resume.assets,
       }
     : await request<ImportGrant>({
         method: "POST",
         path: root,
         scope,
+        query: options.batchId ? { upload_batch_id: options.batchId } : undefined,
         body: manifest,
         cache: "no-store",
         signal: options.signal,
@@ -377,6 +382,7 @@ export async function uploadNativeLeRobot(
       : (resume?.transferMode ?? "direct");
   const uploadResume = (): LeRobotUploadResume => ({
     importId: grant.import_id,
+    batchNumber: grant.batch_number,
     assets: grant.assets,
     transferMode,
   });

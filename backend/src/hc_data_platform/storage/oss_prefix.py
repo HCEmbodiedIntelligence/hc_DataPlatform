@@ -114,7 +114,15 @@ class PrefixedOssBucket:
             kwargs["start_after"] = self.physical_key(kwargs["start_after"])
         aliases = self.key_layout.all() if self.key_layout is not None else None
         query_prefix = logical_prefix
-        if aliases:
+        # A directory pasted from the OSS console is already a physical path.
+        # Return physical child names so reference imports can address them directly.
+        from .oss_readable import CATEGORIES, MARKER
+        parts = logical_prefix.split("/")
+        physical_listing = bool(
+            aliases and MARKER in aliases and len(parts) > 1 and parts[0] in CATEGORIES
+            and parts[1].startswith(("任务-", "任务未登记-"))
+        )
+        if aliases and not physical_listing:
             from .oss_layout import replace_prefix
 
             query_prefix = replace_prefix(logical_prefix.rstrip("/"), aliases)
@@ -132,10 +140,10 @@ class PrefixedOssBucket:
         )
         result.object_list = [copy(item) for item in result.object_list]
         for item in result.object_list:
-            item.key = self._logical(item.key, aliases)
+            item.key = item.key[len(self.key_prefix):] if physical_listing else self._logical(item.key, aliases)
         result.object_list = [
             item for item in result.object_list if item.key and item.key.startswith(logical_prefix)
         ]
         if hasattr(result, "prefix_list"):
-            result.prefix_list = [self._logical(p, aliases) for p in result.prefix_list]
+            result.prefix_list = [p[len(self.key_prefix):] if physical_listing else self._logical(p, aliases) for p in result.prefix_list]
         return result

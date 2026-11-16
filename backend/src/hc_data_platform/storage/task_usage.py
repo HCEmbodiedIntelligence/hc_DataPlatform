@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import time
 from collections import defaultdict
@@ -37,6 +38,48 @@ def category_totals(files):
         )
         for category in USAGE_CATEGORIES
     )
+
+
+def local_disk_usage(disk_path, local_roots):
+    if not disk_path:
+        return None, {}
+    labels = {
+        "workspace": "平台工作盘",
+        "system": "系统盘（/）",
+        "alignment": "对齐缓存盘",
+        "media": "媒体暂存盘",
+        "models": "模型数据盘",
+        "oss_cache": "预览与导出缓存盘",
+        "minio": "本地对象存储盘",
+        "legacy_alignment": "历史对齐缓存盘",
+        "legacy_media": "历史媒体暂存盘",
+    }
+    root_device = os.stat("/").st_dev
+    disks = {}
+    devices = set()
+    primary = None
+    paths = [("workspace", disk_path), ("system", "/"), *local_roots.items()]
+    for name, path in paths:
+        if name not in labels:
+            continue
+        try:
+            device = os.stat(path).st_dev
+            if device in devices:
+                continue
+            usage = shutil.disk_usage(path)
+        except OSError:
+            continue
+        measurement = StorageDiskUsage(
+            total_bytes=str(usage.total),
+            used_bytes=str(usage.used),
+            available_bytes=str(usage.free),
+            reserved_bytes=str(max(0, usage.total - usage.used - usage.free)),
+        )
+        devices.add(device)
+        disks[labels["system" if device == root_device else name]] = measurement
+        if name == "workspace":
+            primary = measurement
+    return primary, disks
 
 
 class TaskStorageUsageReader:
@@ -161,19 +204,8 @@ class TaskStorageUsageReader:
         tasks.sort(key=lambda t: (-int(t.total_bytes), t.task_code or "", t.task_name))
         files = [file for group in grouped.values() for file in group]
         observed = datetime.now(timezone.utc)
-        disk = None
         bucket_objects = self.bucket_usage_provider() if self.bucket_usage_provider else None
-        if self.disk_path:
-            try:
-                usage = shutil.disk_usage(self.disk_path)
-                disk = StorageDiskUsage(
-                    total_bytes=str(usage.total),
-                    used_bytes=str(usage.used),
-                    available_bytes=str(usage.free),
-                    reserved_bytes=str(max(0, usage.total - usage.used - usage.free)),
-                )
-            except OSError:
-                pass
+        disk, disks = local_disk_usage(self.disk_path, self.local_usage_roots)
         overview = ProjectTaskStorage(
             project_id=project_id,
             observed_at=observed,
@@ -182,6 +214,7 @@ class TaskStorageUsageReader:
             categories=category_totals(files),
             tasks=tuple(tasks),
             disk=disk,
+            disks=disks,
             database_bytes=str(labels.database_bytes)
             if hasattr(labels, "database_bytes")
             else None,

@@ -22,10 +22,13 @@ import pyarrow.parquet as pq
 from numpy.typing import ArrayLike, NDArray
 from PIL import Image
 
+from hc_data_platform.core.ingest_timing import timed
+
 from .depth_source import profile_hash, require_depth_source
-from .holobrain_depth import DEFAULT_PROFILE, DepthProfile, DepthVideo, quantize
+from .holobrain_depth import DEFAULT_PROFILE, DepthProfile, DepthVideo, parallel_decode, quantize
 
 
+@timed("LOCAL_FILE_HASH")
 def file_hash(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
@@ -47,6 +50,25 @@ def missing_measurement_status(totals: Mapping[str, int], frames: int) -> dict[s
     return {}
 
 
+class VerifiedDepthFrames:
+    """Per-recording scratch memory for reusing pixels from lossless HEVC verification."""
+
+    def __init__(self, max_bytes=512 * 1024**2):
+        self.remaining = max_bytes
+        self.frames = {}
+
+    def allocate(self, count, shape):
+        size = count * int(shape[0]) * int(shape[1]) * 2
+        if size > self.remaining:
+            return None
+        try:
+            frames = np.empty((count, *shape), dtype=np.uint16)
+        except MemoryError:
+            return None
+        self.remaining -= size
+        return frames
+
+
 class DepthEvidenceVideo:
     def __init__(
         self,
@@ -57,12 +79,15 @@ class DepthEvidenceVideo:
         profile: DepthProfile = DEFAULT_PROFILE,
         *,
         require_source_profile: bool = False,
+        preview_frames: VerifiedDepthFrames | None = None,
+        encoder_pools: int | None = None,
     ) -> None:
         self.path, self.root = Path(path), Path(evidence_dir)
         self.root.mkdir(parents=True, exist_ok=False)
         (self.root / "validity").mkdir()
-        self.video = DepthVideo(self.path, fps, shape, profile)
+        self.video = DepthVideo(self.path, fps, shape, profile, pools=encoder_pools)
         self.profile, self.fps, self.shape = profile, fps, tuple(shape[:2])
+        self.preview_frames = preview_frames
         self.expected = hashlib.sha256()
         self.frames = 0
         self.previous_source: tuple[str, int | None] | None = None
@@ -150,10 +175,16 @@ class DepthEvidenceVideo:
                 self.source_profiles[source_profile_sha256] = json.loads(json.dumps(source_profile))
                 if len(self.source_profiles) > 64:
                     raise ValueError("too many depth source profile versions")
-            result = quantize(
-                array, scale, self.profile, valid_mask=valid_mask, invalid_values=invalid_values
-            )
-            source_dtype = np.asarray(array).dtype.str
+            pixels = np.asarray(array)
+            if (pixels.dtype == np.uint16 and pixels.ndim == 2 and pixels.size >= 65536
+                    and scale == 0.001 and self.profile == DEFAULT_PROFILE
+                    and valid_mask is None and tuple(invalid_values) in ((), (0,))):
+                from .uint16_depth import millimetre_evidence
+
+                result = millimetre_evidence(pixels)
+            else:
+                result = quantize(pixels, scale, self.profile, valid_mask=valid_mask, invalid_values=invalid_values)
+            source_dtype = pixels.dtype.str
         if result.codes.shape != self.shape:
             raise ValueError("depth resolution differs from declared stream")
         report = result.error_report(self.profile)
@@ -276,8 +307,10 @@ class DepthEvidenceVideo:
         if not self.frames:
             raise ValueError("cannot finalize an empty depth stream")
         actual, count = hashlib.sha256(), 0
+        cached = self.preview_frames.allocate(self.frames, self.shape) if self.preview_frames is not None else None
         with av.open(str(self.path)) as container:
             stream = container.streams.video[0]
+            parallel_decode(stream)
             if (
                 stream.codec_context.name != "hevc"
                 or stream.codec_context.format is None
@@ -295,10 +328,15 @@ class DepthEvidenceVideo:
                 array = frame.to_ndarray(format="gray12le")
                 if array.shape != self.shape:
                     raise ValueError("depth decoded resolution mismatch")
-                actual.update(array.astype("<u2").tobytes())
+                if cached is not None and count < self.frames:
+                    cached[count] = array
+                actual.update(array.astype("<u2", copy=False).tobytes())
                 count += 1
         if count != self.frames or actual.digest() != self.expected.digest():
             raise ValueError("HEVC code losslessness validation failed")
+        if cached is not None:
+            cached.setflags(write=False)
+            self.preview_frames.frames[self.path] = cached
         write_json(
             self.root / "profile.json",
             {

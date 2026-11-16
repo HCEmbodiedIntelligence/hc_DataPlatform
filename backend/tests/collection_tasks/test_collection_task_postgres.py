@@ -156,6 +156,7 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
             ("ingest.recording_source_links", "SELECT"),
             ("ingest.recording_episode_slices", "SELECT"),
             ("ingest.recording_episode_processing", "SELECT"),
+            ("ingest.recording_episode_qc_reports", "SELECT"),
             ("core.outbox_events", "SELECT"),
             ("quality_rollout_summaries", "SELECT"),
         ):

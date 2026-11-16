@@ -59,13 +59,15 @@ import {
   collectionTaskGateway,
   type CollectionTask,
 } from "../../features/collection-tasks/api";
+import { loadUploadBatches } from "../../features/exports/package-deliveries";
 import { PackageBatchPanel } from "./PackageBatchPanel";
 import styles from "./styles.module.css";
 
 const RawDataExportPanel = lazy(() => import("./RawDataExportPanel"));
-type DataStage = ExportDataStage | "raw";
+type DataStage = ExportDataStage | "raw" | "qc_passed";
 const stageLabels: Record<DataStage, string> = {
   annotated: "标注完成数据",
+  qc_passed: "质检通过且已入库的数据",
   dataset: "数据集数据",
   raw: "原始数据",
 };
@@ -303,14 +305,20 @@ export function DataExportPage() {
   const queryClient = useQueryClient();
   const appliedDatasetIds = listParam(params, "datasetId");
   const appliedTasks = listParam(params, "task");
+  const requestedStage = params.get("dataStage");
   const dataStage: DataStage =
-    params.get("dataStage") === "raw"
-      ? "raw"
-      : params.get("dataStage") === "dataset"
-        ? "dataset"
-        : "annotated";
+    requestedStage === "unannotated" || requestedStage === "qc_passed"
+      ? "qc_passed"
+      : requestedStage === "raw" || requestedStage === "dataset"
+        ? requestedStage
+        : requestedStage === "annotated" || params.get("delivery") === "legacy" ? "annotated" : "qc_passed";
   const standardMode =
-    dataStage !== "raw" && params.get("delivery") !== "legacy";
+    dataStage === "qc_passed" || (dataStage !== "raw" && params.get("delivery") !== "legacy");
+  const supportsBatchFilter = standardMode || dataStage === "raw";
+  const batchTags = supportsBatchFilter ? listParam(params, "uploadBatch") : [];
+  const allBatches = batchTags.includes("all");
+  const batchNumbers = batchTags.map(Number).filter(n => Number.isSafeInteger(n) && n > 0);
+  const hasBatchFilter = allBatches || batchNumbers.length > 0;
   const [selectedSourceKeys, setSelectedSourceKeys] = useState<string[]>([]);
   const [formatSelection, setSelectedFormats] = useState<
     PublishedExportFormat[] | null
@@ -335,6 +343,16 @@ export function DataExportPage() {
     capabilities.has("episode.read");
   const canCreate = capabilities.has("export.create");
   const canDownload = capabilities.has("export.download");
+  const batches = useQuery({
+    queryKey: ["export-upload-batches", scopeKey],
+    queryFn: ({ signal }) => loadUploadBatches(scope!, signal),
+    enabled: supportsBatchFilter && canRead && canDownload && Boolean(scope && projectId),
+  });
+  const batchOptions = (batches.data ?? []).map(b => ({
+    value: String(b.batch_number),
+    label: `第 ${b.batch_number} 次上传 · ${b.channel === "historical" ? "历史上传来源" : b.channel === "oss" ? "OSS" : "网页"} · ${formatDate(b.created_at)}`,
+  }));
+  const filteredMode = standardMode && (dataStage === "qc_passed" || hasBatchFilter);
   const formats = useExportFormats(
     scopeKey,
     projectId,
@@ -737,7 +755,7 @@ export function DataExportPage() {
     setParams(
       (current) => {
         const next = new URLSearchParams(current);
-        ["datasetId", "task", "tag", "robotId", "q"].forEach((key) =>
+        ["datasetId", "task", "tag", "robotId", "q", "uploadBatch"].forEach((key) =>
           next.delete(key),
         );
         return next;
@@ -747,7 +765,7 @@ export function DataExportPage() {
     setSelectedSourceKeys([]);
   };
   const startBatch = () => {
-    if (!projectId || dataStage === "raw" || !formats.isSuccess) return;
+    if (!projectId || dataStage === "raw" || dataStage === "qc_passed" || !formats.isSuccess) return;
     setBatchFeedback(null);
     createBatch.mutate(
       selectedSources.flatMap((source) =>
@@ -1021,7 +1039,7 @@ export function DataExportPage() {
                       optionType="button"
                       buttonStyle="solid"
                       value={dataStage}
-                      options={(["annotated", "raw", "dataset"] as const).map(
+                      options={(["annotated", "qc_passed", "raw", "dataset"] as const).map(
                         (value) => ({ value, label: stageLabels[value] }),
                       )}
                       onChange={(event) => {
@@ -1037,7 +1055,7 @@ export function DataExportPage() {
                         );
                       }}
                     />
-                    {dataStage !== "raw" && (
+                    {dataStage !== "raw" && dataStage !== "qc_passed" && (
                       <Radio.Group
                         className={styles.deliverySwitch}
                         optionType="button"
@@ -1069,7 +1087,7 @@ export function DataExportPage() {
                     aria-label="选择数据范围"
                     className={styles.filterSection}
                   >
-                    <div className={styles.filterGrid}>
+                    <div className={`${styles.filterGrid} ${supportsBatchFilter ? styles.batchFilterGrid : ""}`}>
                       <div className={styles.filterField}>
                         <label htmlFor="export-dataset-filter">数据集</label>
                         <Select
@@ -1119,8 +1137,28 @@ export function DataExportPage() {
                           }
                         />
                       </div>
+                      {supportsBatchFilter && (
+                        <div className={styles.filterField}>
+                          <label htmlFor="export-upload-batch">上传批次</label>
+                          <Select
+                            allowClear showSearch optionFilterProp="label" id="export-upload-batch"
+                            placeholder="全部上传批次" loading={batches.isFetching}
+                            mode="multiple" maxTagCount="responsive"
+                            value={allBatches ? batchOptions.map(b => b.value) : batchNumbers.map(String)}
+                            options={batchOptions}
+                            onChange={(values: string[]) => updateSourceFilter("uploadBatch",
+                              batchOptions.length && values.length === batchOptions.length ? ["all"] : values)}
+                          />
+                          <Checkbox checked={allBatches} indeterminate={!allBatches && batchNumbers.length > 0}
+                            disabled={!batchOptions.length}
+                            onChange={e => updateSourceFilter("uploadBatch", e.target.checked ? ["all"] : [])}>
+                            全选上传批次
+                          </Checkbox>
+                          {batches.isError && <Button size="small" onClick={() => void batches.refetch()}>批次读取失败，重试</Button>}
+                        </div>
+                      )}
                       <Button
-                        disabled={activeSourceFilterCount === 0}
+                        disabled={activeSourceFilterCount === 0 && !hasBatchFilter}
                         icon={<RefreshCcw aria-hidden="true" size={14} />}
                         size="small"
                         type="text"
@@ -1129,7 +1167,7 @@ export function DataExportPage() {
                         清空筛选
                       </Button>
                     </div>
-                    {standardMode && appliedTasks.length > 0 && (
+                    {standardMode && !filteredMode && appliedTasks.length > 0 && (
                       <span className={styles.filterHint}>
                         显示任务所属数据集内的数据
                       </span>
@@ -1142,11 +1180,10 @@ export function DataExportPage() {
                     >
                       <RawDataExportPanel
                         scope={scope!}
-                        datasetIds={requestedSources.map(
-                          (source) => source.datasetId,
-                        )}
+                        datasetIds={hasBatchFilter ? appliedDatasetIds : requestedSources.map((source) => source.datasetId)}
                         taskIds={appliedTasks}
-                        hasFilter={activeSourceFilterCount > 0}
+                        batchNumbers={batchNumbers} allBatches={allBatches}
+                        hasFilter={activeSourceFilterCount > 0 || hasBatchFilter}
                         canRead={capabilities.has("upload.read")}
                         canDownload={canDownload}
                       />
@@ -1154,7 +1191,7 @@ export function DataExportPage() {
                   ) : standardMode ? (
                     <>
                       <PackageBatchPanel
-                        key={`${scopeKey}:${dataStage}:${requestedSources.map((s) => s.datasetId).join(",")}:${appliedTasks.join(",")}:${activeSourceFilterCount}`}
+                        key={`${scopeKey}:${dataStage}:${batchTags.join(",")}:${appliedDatasetIds.join(",")}:${requestedSources.map((s) => s.datasetId).join(",")}:${appliedTasks.join(",")}:${activeSourceFilterCount}`}
                         scope={scope!}
                         datasets={
                           activeSourceFilterCount > 0
@@ -1164,6 +1201,9 @@ export function DataExportPage() {
                               }))
                             : []
                         }
+                        filter={filteredMode ? { stage: dataStage, ...(allBatches ? { all_batches: true } : batchNumbers.length ? { batch_numbers: batchNumbers } : {}) } : undefined}
+                        datasetIds={appliedDatasetIds}
+                        taskIds={appliedTasks}
                         annotated={dataStage === "annotated"}
                         canReadAnnotations={capabilities.has(
                           "annotation_task.read",

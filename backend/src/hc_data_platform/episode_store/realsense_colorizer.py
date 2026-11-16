@@ -49,6 +49,7 @@ class RealSenseColorizer:
         self.colorizer.set_option(rs.option.visual_preset, 0)  # Official Dynamic preset.
         self.colorizer.set_option(rs.option.color_scheme, 0)  # Official Jet map.
         self.colorizer.set_option(rs.option.histogram_equalization_enabled, 1)
+        self.code_table_profile = None
         self.index = 0
         self.sensor.open(self.stream)
         self.sensor.start(self.queue)
@@ -68,6 +69,25 @@ class RealSenseColorizer:
             raise ValueError("valid display depth must be finite and positive")
         pixels = np.zeros(self.shape, dtype=np.uint16)
         pixels[valid] = np.clip(np.rint(physical_m[valid] / self.units), 1, 65535).astype(np.uint16)
+        return self._render(pixels)
+
+    def colorize_codes(self, codes, flags, profile):
+        """Map verified 12-bit codes to the SDK input with one lookup per pixel."""
+        from hc_data_platform.data_formats.holobrain_depth import dequantize
+
+        if codes.shape != self.shape or flags.shape != self.shape:
+            raise ValueError("RealSense display input/mask shape mismatch")
+        if self.code_table_profile != profile:
+            metres = dequantize(np.arange(4096, dtype=np.uint16), profile)
+            if not np.isfinite(metres).all() or (metres <= 0).any():
+                return self.colorize(dequantize(codes, profile), flags)
+            self.code_table = np.clip(np.rint(metres / self.units), 1, 65535).astype(np.uint16)
+            self.code_table_profile = profile
+        pixels = self.code_table[codes]
+        pixels[(flags & 1) == 0] = 0
+        return self._render(pixels)
+
+    def _render(self, pixels):
         frame = self.rs.software_video_frame()
         frame.pixels = pixels.data
         frame.bpp, frame.stride = 2, self.shape[1] * 2

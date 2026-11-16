@@ -53,7 +53,10 @@ export function useManualIssues(search: ManualIssuesSearch, allowed = true) {
   const normalized = filters(search);
   const cursor = search.after ?? search.before;
   return useQuery({
-    queryKey: manualIssueKeys.list(normalized, cursor),
+    queryKey: manualIssueKeys.list(
+      { ...normalized, collectionTaskId: search.taskGroup },
+      cursor,
+    ),
     enabled:
       allowed &&
       Boolean(scope.organizationId && scope.projectId && scope.regionCode),
@@ -75,6 +78,7 @@ export function useManualIssues(search: ManualIssuesSearch, allowed = true) {
           ),
           assigneeId: search.assigneeId,
           sort: SORT_TO_WIRE[search.sort],
+          collectionTaskId: search.taskGroup,
           after: search.after,
           before: search.before,
           limit: search.limit,
@@ -133,6 +137,7 @@ export function useManualIssuesPage(
         throw new Error("SCOPE_MISMATCH");
       }
       return {
+        taskGroups: wire.data.task_groups ?? [],
         counts: {
           total: wire.data.counts.total,
           open: wire.data.counts.open,

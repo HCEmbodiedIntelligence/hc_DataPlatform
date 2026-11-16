@@ -32,6 +32,7 @@ class ManualIssueFilters:
     severities: tuple[str, ...] = ()
     discovery_sources: tuple[str, ...] = ()
     assignee_id: str | None = None
+    collection_task_id: str | None = None
 
 
 class ManualIssueDuplicateError(RuntimeError):
@@ -136,6 +137,8 @@ def _matches(record: ManualIssueRecord, filters: ManualIssueFilters) -> bool:
             needle in value.casefold() for value in (record.id, record.episode_id, record.note)
         ):
             return False
+    if filters.collection_task_id is not None and (record.collection_task_id or "") != filters.collection_task_id:
+        return False
     if filters.dataset_id is not None and record.dataset_id != filters.dataset_id:
         return False
     if filters.version_id is not None and record.origin_dataset_version_id != filters.version_id:
@@ -400,11 +403,22 @@ class PostgresManualIssueRepository:
         try:
             cursor.execute(
                 """
-                SELECT issue_document
-                  FROM manual_cleaning.manual_issues
-                 WHERE organization_id = %s
-                   AND project_id = %s
-                   AND region_code = %s
+                WITH scoped AS (
+                    SELECT i.*, COALESCE(t.collection_task_id, d.collection_task_id) AS source_task_id
+                    FROM manual_cleaning.manual_issues i
+                    LEFT JOIN dataset_registry.dataset_version_episodes e
+                      ON (e.organization_id,e.project_id,e.region_code,e.dataset_id,e.version_id,e.episode_id)
+                       = (i.organization_id,i.project_id,i.region_code,i.dataset_id,i.origin_dataset_version_id,i.episode_id)
+                    LEFT JOIN collection_tasks.collection_tasks t
+                      ON (t.organization_id,t.project_id,t.collection_task_id)
+                       = (i.organization_id,i.project_id,e.task)
+                    LEFT JOIN dataset_registry.datasets d
+                      ON (d.organization_id,d.project_id,d.region_code,d.dataset_id)
+                       = (i.organization_id,i.project_id,i.region_code,i.dataset_id)
+                    WHERE i.organization_id = %s AND i.project_id = %s AND i.region_code = %s
+                )
+                SELECT issue_document, source_task_id FROM scoped
+                 WHERE (%s::text IS NULL OR COALESCE(source_task_id, '') = %s)
                    AND (
                         %s::text IS NULL
                         OR manual_issue_id ILIKE '%%' || %s || '%%'
@@ -426,6 +440,7 @@ class PostgresManualIssueRepository:
                 """,
                 (
                     *_scope_key(scope),
+                    filters.collection_task_id, filters.collection_task_id,
                     filters.query,
                     filters.query,
                     filters.query,
@@ -448,7 +463,10 @@ class PostgresManualIssueRepository:
                     filters.assignee_id,
                 ),
             )
-            return tuple(_issue(_row(cursor, raw)["issue_document"]) for raw in cursor.fetchall())
+            return tuple(
+                _issue(row["issue_document"]).model_copy(update={"collection_task_id": row["source_task_id"]})
+                for row in (_row(cursor, raw) for raw in cursor.fetchall())
+            )
         finally:
             cursor.close()
             connection.close()
@@ -543,70 +561,59 @@ class PostgresManualIssueRepository:
         try:
             cursor.execute(
                 """
-                SELECT task.rollout_id, revision.revision_document,
-                       schema.schema_snapshot_id
+                SELECT revision.dataset_id, revision.version_id, revision.episode_id,
+                       revision.revision_id, schema.schema_snapshot_id,
+                       stream->>'episode_stream_id' AS stream_id,
+                       stream->>'channel_path' AS stream_channel_path,
+                       stream->>'t_start_ns' AS stream_start_ns,
+                       stream->>'t_end_ns' AS stream_end_ns
                   FROM annotation.annotation_tasks AS task
+                  LEFT JOIN episode_store.collections AS collection
+                    ON task.data_ref IS NOT NULL
+                   AND collection.organization_id = task.organization_id
+                   AND collection.project_id = task.project_id
+                   AND collection.region_code = task.region_code
+                   AND collection.dataset_id = task.dataset_id
+                   AND collection.version = task.dataset_version
+                   AND collection.document->'episodes' @> jsonb_build_array(task.data_ref)
                   JOIN dataset_registry.dataset_version_episode_revisions AS revision
-                    ON revision.organization_id = %s
+                    ON revision.organization_id = task.organization_id
                    AND revision.project_id = task.project_id
                    AND revision.region_code = task.region_code
                    AND revision.dataset_id = task.dataset_id
-                   AND revision.version_id = 'version_lance_' || task.dataset_version::text
+                   AND revision.version_id = CASE WHEN task.data_ref IS NULL
+                         THEN 'version_lance_' || task.dataset_version::text
+                         ELSE 'version_' || collection.collection_version_id END
+                   AND (task.data_ref IS NULL OR
+                        revision.episode_id = task.data_ref#>>'{identity,episode_id}')
                   JOIN dataset_registry.dataset_version_schema_details AS schema
                     ON schema.organization_id = revision.organization_id
                    AND schema.project_id = revision.project_id
                    AND schema.region_code = revision.region_code
                    AND schema.dataset_id = revision.dataset_id
                    AND schema.version_id = revision.version_id
-                 WHERE task.task_id = %s
-                   AND task.project_id = %s
-                   AND task.region_code = %s
-                 ORDER BY revision.ordinal DESC
+                  CROSS JOIN LATERAL jsonb_array_elements(revision.revision_document->'streams') stream
+                 WHERE task.organization_id = %s AND task.task_id = %s
+                   AND task.project_id = %s AND task.region_code = %s
+                   AND CASE WHEN task.data_ref IS NOT NULL THEN
+                         stream#>'{package_binding,data}' = task.data_ref
+                         AND stream#>>'{package_binding,rollout_id}' = task.rollout_id
+                       ELSE
+                         stream#>>'{aligned_media_binding,rollout_id}' = task.rollout_id
+                         OR stream#>>'{data_binding,rollout_id}' = task.rollout_id
+                       END
+                   AND %s IN (stream->>'episode_stream_id', stream->>'channel_path',
+                              stream#>>'{package_binding,modality_key}',
+                              stream#>>'{aligned_media_binding,camera_id}',
+                              stream#>>'{data_binding,modality_key}')
+                 LIMIT 2
                 """,
-                (scope.organization_id, task_id, scope.project_id, scope.region_code),
+                (scope.organization_id, task_id, scope.project_id, scope.region_code, stream_ref),
             )
-            for raw in cursor.fetchall():
-                row = _row(cursor, raw)
-                rollout_id = str(row["rollout_id"])
-                revision = DatasetPageEpisodeRevision.model_validate(
-                    _decode_json(row["revision_document"])
-                )
-                stream = next(
-                    (
-                        item
-                        for item in revision.streams
-                        if (
-                            item.episode_stream_id == stream_ref
-                            or item.channel_path == stream_ref
-                            or item.aligned_media_binding is not None
-                            and item.aligned_media_binding.camera_id == stream_ref
-                            or item.data_binding is not None
-                            and item.data_binding.modality_key == stream_ref
-                        )
-                        and (
-                            item.aligned_media_binding is not None
-                            and item.aligned_media_binding.rollout_id == rollout_id
-                            or item.data_binding is not None
-                            and item.data_binding.rollout_id == rollout_id
-                        )
-                    ),
-                    None,
-                )
-                if stream is None:
-                    continue
-                return ManualIssueSourceFacts(
-                    scope=scope,
-                    dataset_id=revision.dataset_id,
-                    version_id=revision.version_id,
-                    episode_id=revision.episode_id,
-                    revision_id=revision.revision_id,
-                    stream_id=stream.episode_stream_id,
-                    stream_channel_path=stream.channel_path,
-                    stream_start_ns=stream.t_start_ns,
-                    stream_end_ns=stream.t_end_ns,
-                    schema_snapshot_id=str(row["schema_snapshot_id"]),
-                )
-            return None
+            rows = cursor.fetchall()
+            if len(rows) != 1:
+                return None
+            return ManualIssueSourceFacts.model_validate({"scope": scope, **_row(cursor, rows[0])})
         finally:
             cursor.close()
             connection.close()
@@ -735,7 +742,7 @@ class PostgresManualIssueRepository:
                     workbench_version, created_at, updated_at
                 ) VALUES (
                     %s, %s, %s, %s, 'ISSUE_DERIVED', %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, 1, %s, %s
+                    %s, %s, %s, %s, %s, %s, 1, %s, %s
                 )
                 """,
                 (

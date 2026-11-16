@@ -210,6 +210,30 @@ def test_missing_actions_use_next_aligned_state_and_terminal_current(tmp_path, c
     assert evidence["action_gap_fill"]["filled_frames"] == len(stamps) - len(commands)
 
 
+def test_interior_gaps_reject_but_edge_runs_are_filled(tmp_path):
+    from hc_data_platform.continuous_recordings.capture_quality import interior_action_gaps, summarize
+    from hc_data_platform.continuous_recordings.mcap_native import prepare
+    from types import SimpleNamespace
+    raw, dest = tmp_path / "raw.mcap", tmp_path / "derived"
+    record(raw, [140, 260], state_times=[100, 140, 180, 220, 260, 300])
+    ops = [op.model_dump() for op in rules().postprocessing_rules.rules if op.kind != "generate_action"]
+    cfg = rules(rules=[*ops, {"kind": "fill_action_from_next_frame", "enabled": True}])
+    _, evidence = prepare(raw, dest, cfg)
+    path = dest / "sensors/robot.mcap"
+    with path.open("rb") as stream:
+        rows = [json.loads(m.data) for _, _, m in make_reader(stream).iter_messages(topics=["/action"])]
+    assert evidence["action_gap_fill"]["filled_frames"] == 2
+    assert [rows[i]["action_origin"] for i in (0, 5)] == ["next_frame_state", "terminal_state"]
+    assert all(rows[i]["source_timestamp_ns"] is None and not any(rows[i]["validity"]) for i in (2, 3))
+    profile = SimpleNamespace(default_timing=SimpleNamespace(target_frequency_hz=25,
+        maximum_consecutive_missing_reject=10, maximum_consecutive_missing_risk=10),
+        complete_step=SimpleNamespace(minimum_ratio_reject=0.1, minimum_ratio_risk=0.1))
+    qc = summarize([path], 0, 240_000_000, profile, output=cfg.semantic_output, check_action_gaps=True)
+    assert "MCAP_INTERIOR_ACTION_MISSING" in qc["reject_codes"]
+    assert [gap["frame"] for gap in qc["interior_action_gaps"]] == [2, 3]
+    assert [gap["frame"] for gap in interior_action_gaps([path], 120_000_000, 160_000_000)] == [3]
+
+
 def test_cut_terminal_never_uses_state_outside_slice(tmp_path):
     from hc_data_platform.continuous_recordings.action_labels import window_messages
     from hc_data_platform.continuous_recordings.mcap_native import prepare
@@ -228,3 +252,25 @@ def test_cut_terminal_never_uses_state_outside_slice(tmp_path):
     assert rows[2]["/humanoid/action"]["values"] == rows[2]["/observation/state"]["values"]
     assert rows[2]["/metadata/source"]["action_fill"]["source_frame"] == 2
     assert rows[2]["/action"]["action_origin"] == "terminal_state"
+
+
+def test_only_unmatched_last_source_action_is_trimmed(tmp_path):
+    raw, out = tmp_path / "raw.mcap", tmp_path / "derived.mcap"
+    record(raw, [101, 140, 143])
+    cfg = rules()
+    selection = select_mcap(raw, out, cfg)
+    assert selection["message_counts"][cfg.state_topic] == 2
+    assert selection["message_counts"][cfg.action_topic] == 2
+    with out.open("rb") as stream:
+        assert [m.sequence for _, _, m in make_reader(stream).iter_messages(topics=[cfg.action_topic])] == [0, 1]
+    drop, = json.loads(out.with_suffix(".audit.json").read_text())["dropped"]
+    assert drop["action_number"] == 3
+    assert drop["capture_time_ns"] - drop["last_state_capture_time_ns"] == 3_000_000
+
+
+@pytest.mark.parametrize("actions", [[101, 141, 142], [101, 143, 140]])
+def test_nonfinal_unmatched_action_is_still_rejected(tmp_path, actions):
+    raw = tmp_path / "raw.mcap"
+    record(raw, actions)
+    with pytest.raises(ValueError, match="MCAP_FOLLOWING_STATE_UNAVAILABLE"):
+        select_mcap(raw, tmp_path / "derived.mcap", rules())

@@ -1,6 +1,7 @@
 import { deliveryUrl, waitForDeliveryCache } from "../../shared/lib/delivery-cache";
 import { localObjectStorageUrl } from "../../shared/lib/object-storage-url";
 import { z } from "zod";
+import { downloadArchive } from "./raw-download";
 import type { Scope } from "../../shared/scope/model";
 import { episodeDataReferenceWireSchema as dataWire } from "../datasets/api/episode-package-wire";
 import { request } from "../../shared/api/http-client";
@@ -9,6 +10,11 @@ import { annotationDeliveryPlanWire } from "../annotation/runtime/annotation-del
 
 export type PackageData = z.infer<typeof dataWire>;
 export type BatchMode = string;
+export type PackageExportFilter = {
+  stage: "annotated" | "dataset" | "qc_passed";
+  batch_numbers?: number[];
+  all_batches?: boolean;
+};
 export type AnnotationSelection = {
   task_id: string;
   revision: number;
@@ -196,6 +202,45 @@ export async function loadPackageCandidates(
   value.items.forEach((d) => scopeData(d, scope));
   return value;
 }
+export async function loadUploadBatches(scope: Scope, signal?: AbortSignal) {
+  const row = z.object({
+    batch_number: count.positive(), channel: z.enum(["web", "oss", "historical"]), created_at: z.string(),
+  });
+  const batches: z.infer<typeof row>[] = [];
+  let before: number | undefined;
+  for (;;) {
+    const page = z.array(row).parse(await request({
+      method: "GET", path: base(scope) + "/upload-batches", scope, signal,
+      query: { before, limit: 100 }, cache: "no-store",
+    }));
+    batches.push(...page);
+    if (page.length < 100) return batches;
+    const last = page[page.length - 1]!.batch_number;
+    if (before !== undefined && last >= before) throw new Error("上传批次分页没有前进。");
+    before = last;
+  }
+}
+
+export async function loadUploadCandidates(scope: Scope, filter: PackageExportFilter,
+  datasetIds: readonly string[], taskIds: readonly string[], signal?: AbortSignal, after?: string) {
+  const page = z.object({
+    items: z.array(z.object({data: dataWire, batch_numbers: z.array(count.positive())})),
+    total: count, next_after: z.string().nullable(),
+  }).parse(await request({
+    method: "GET", path: base(scope) + "/upload-candidates", scope, signal, cache: "no-store",
+    query: { stage: filter.stage, batch_number: filter.batch_numbers, all_batches: filter.all_batches, dataset_id: datasetIds, task_id: taskIds, after, limit: 100 },
+  }));
+  page.items.forEach(({data, batch_numbers}) => {
+    scopeData(data, scope);
+    if ((datasetIds.length && !datasetIds.includes(data.identity.dataset_id)) ||
+        (filter.batch_numbers?.length && !batch_numbers.some(n => filter.batch_numbers!.includes(n))) ||
+        (filter.all_batches && !batch_numbers.length)) {
+      throw new Error("候选数据不属于所选导出范围。");
+    }
+  });
+  return page;
+}
+
 export async function listPackageJobs(
   scope: Scope,
   signal?: AbortSignal,
@@ -238,12 +283,43 @@ export async function loadPackageJob(
     throw new Error("导出任务已变化，请刷新导出记录后重试。");
   return job;
 }
+export async function downloadEpisodeBundle(scope: Scope, members: PackageData[], mode: BatchMode,
+  filter: PackageExportFilter, signal: AbortSignal, report: (text: string) => void) {
+  if (!scope.projectId || !scope.regionCode || !scope.organizationId || !members.length || members.length > 1000)
+    throw new Error("每个压缩包可选择 1–1000 条 Episode。");
+  const checkedScope = { organizationId: scope.organizationId, projectId: scope.projectId, regionCode: scope.regionCode };
+  const wire = z.object({ part_id: digest, status: z.enum(["preparing", "ready"]), reused: z.boolean() });
+  return downloadArchive(checkedScope, signal, bytes => report(`已下载 ${Math.floor(bytes/1048576)} MB`),
+    "Episodes", async lease => {
+      const partIds: string[] = [];
+      let reused = 0;
+      for (const data of members) {
+        scopeData(data, scope);
+        report(`准备 Episode ${partIds.length + 1}/${members.length}，已复用 ${reused} 条`);
+        for (;;) {
+          lease.throwIfAborted();
+          const part = wire.parse(await request({method: "POST", path: base(scope) + "/bundle-parts",
+            scope, signal: lease, cache: "no-store", body: {data, mode, export_filter: filter}}));
+          if (part.status === "ready") {
+            partIds.push(part.part_id);
+            if (part.reused) reused++;
+            break;
+          }
+          await new Promise(resolve => window.setTimeout(resolve, 2000));
+        }
+      }
+      report(`正在合并 ${members.length} 条 Episode，已复用 ${reused} 条`);
+      return {path: base(scope) + "/bundle", body: {part_ids: partIds, export_filter: filter}};
+    });
+}
+
 export async function createPackageBatch(
   scope: Scope,
   members: PackageSelection[],
   mode: BatchMode,
   key: string,
   signal?: AbortSignal,
+  filter?: PackageExportFilter,
 ) {
   if (!members.length || members.length > 100)
     throw new Error("请选择 1–100 条 Episode。");
@@ -278,7 +354,7 @@ export async function createPackageBatch(
       signal,
       cache: "no-store",
       idempotencyKey: key,
-      body,
+      body: filter ? { ...body, export_filter: filter } : body,
     }),
     scope,
   );
@@ -349,6 +425,7 @@ export async function downloadPackageJob(
   scope: Scope,
   job: PackageJob,
   signal?: AbortSignal,
+  filter?: PackageExportFilter,
 ) {
   checkedPackageJob(job, scope);
   if (job.status !== "READY") throw new Error("交付尚未就绪。");
@@ -365,6 +442,7 @@ export async function downloadPackageJob(
       await waitForDeliveryCache(() => request({
         method: "POST",
         path: `${base(scope)}/${job.job_id}/download`,
+        ...(filter ? { body: filter } : {}),
         scope,
         signal,
         cache: "no-store",
