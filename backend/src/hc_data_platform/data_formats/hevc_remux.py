@@ -2,8 +2,9 @@
 
 Only safe when every selected picture decodes independently. Each selected
 packet must be a keyframe; otherwise ``NotIntraCoded`` is raised before any
-output is accepted, so callers can fall back to a full encode. Callers must
-still decode the output and compare its codes against the expected hash.
+output is accepted, so callers can fall back to a full encode. Packets are
+copied byte for byte, so the output decodes to the source codes the caller
+already verified.
 """
 from fractions import Fraction
 from pathlib import Path
@@ -53,3 +54,19 @@ def remux_hevc_frames(source: Path, destination: Path, indices, *, fps) -> int:
     if copied != len(indices):
         raise ValueError("remux source ended before every requested frame")
     return copied
+
+
+def assert_copied(source: Path, destination: Path, indices) -> None:
+    """Reject an output whose pictures are not exactly source frames ``indices``."""
+    import av
+
+    indices = tuple(indices)
+    with av.open(str(source)) as incoming:
+        packets = [bytes(p) for p in incoming.demux(video=0) if p.size]
+    with av.open(str(destination)) as outgoing:
+        copied = [bytes(p) for p in outgoing.demux(video=0) if p.size]
+    if len(copied) != len(indices) or any(
+        index >= len(packets) or packets[index] != payload
+        for index, payload in zip(indices, copied, strict=True)
+    ):
+        raise ValueError("copied depth pictures differ from the selected source frames")

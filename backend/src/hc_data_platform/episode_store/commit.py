@@ -8,6 +8,7 @@ from contextvars import copy_context
 from pathlib import Path
 from uuid import uuid4
 
+from hc_data_platform.core.ingest_timing import span
 from hc_data_platform.object_storage.immutable import MultipartImmutableWriter, verify_object
 from hc_data_platform.object_storage.models import ObjectIntegrityError
 from hc_data_platform.object_storage.ports import ImmutableObjectWriter
@@ -78,8 +79,9 @@ class EpisodePackageCommitter:
         # its manifest so the whole package is not decoded and hashed again.
         if manifest is None or manifest.input != source:
             manifest = validate_package(Path(root), source)
-        with self.repository.writer_lock(source.identity):
-            version, previous = self.repository.reserve(manifest)
+        with span("COMMIT_LOCK"), self.repository.writer_lock(source.identity):
+            with span("COMMIT_RESERVE"):
+                version, previous = self.repository.reserve(manifest)
             receipt = CommitReceipt(
                 data=DataVersionRef(
                     identity=source.identity,
@@ -97,7 +99,8 @@ class EpisodePackageCommitter:
                 raise PackageConflict("idempotent receipt mismatch")
             # Even a retry after a lost response verifies the objects before reporting success.
             attempt = uuid4()
-            self.repository.start_attempt(source, attempt)
+            with span("COMMIT_RESERVE"):
+                self.repository.start_attempt(source, attempt)
             try:
                 self.checkpoint("reserved")
                 # Package files are independent immutable keys; uploading them
@@ -121,15 +124,17 @@ class EpisodePackageCommitter:
                         for future in pending:
                             future.cancel()
                         raise
-                self._put_json(
-                    f"{source.package_prefix}/hc/manifest.json", manifest.model_dump(mode="json")
-                )
-                self._put_json(
-                    f"{source.package_prefix}/hc/commit.json", receipt.model_dump(mode="json")
-                )
-                self.repository.set_attempt(source, attempt, "OBJECTS_VERIFIED")
-                self.checkpoint("objects_verified")
-                self.repository.commit(receipt, attempt, activate=activate)
+                with span("COMMIT_RECEIPTS"):
+                    self._put_json(
+                        f"{source.package_prefix}/hc/manifest.json", manifest.model_dump(mode="json")
+                    )
+                    self._put_json(
+                        f"{source.package_prefix}/hc/commit.json", receipt.model_dump(mode="json")
+                    )
+                with span("COMMIT_DATABASE"):
+                    self.repository.set_attempt(source, attempt, "OBJECTS_VERIFIED")
+                    self.checkpoint("objects_verified")
+                    self.repository.commit(receipt, attempt, activate=activate)
                 self.checkpoint("database_committed")
                 return receipt
             except BaseException as exc:

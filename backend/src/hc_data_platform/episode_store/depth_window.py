@@ -23,7 +23,7 @@ from hc_data_platform.data_formats.depth_evidence import (
     missing_measurement_status,
     write_json,
 )
-from hc_data_platform.data_formats.hevc_remux import NotIntraCoded, remux_hevc_frames
+from hc_data_platform.data_formats.hevc_remux import NotIntraCoded, assert_copied, remux_hevc_frames
 from hc_data_platform.data_formats.holobrain_depth import DepthProfile, DepthVideo
 
 from .frame_window import DepthWindow
@@ -236,14 +236,18 @@ def prepare_depth_window(
             encoder.close()
     if whole:
         shutil.copyfile(media.path, video)
+        if file_hash(video) != media.sha256:
+            raise ValueError("copied depth video differs from its verified source")
+    elif reused:
+        assert_copied(media.path, video, selected_frames)
     with av.open(str(video)) as container:
         stream = container.streams.video[0]
         actual_profile = stream.codec_context.profile
         if (stream.codec_context.name, stream.codec_context.format.name) != ("hevc", "gray12le"):
             raise ValueError("depth window changed codec or monochrome precision")
     # The report records the codes the selection must contain. The final
-    # validate_depth decodes the output once and rejects any code, count or PTS
-    # difference, so a separate output decode here would repeat that work.
+    # validate_depth decodes a fresh encode and rejects any code, count or PTS
+    # difference; for copied pictures it checks rows, masks and PTS only.
     mapping = {
         "processor_version": PARENT_TIME_VERSION if preserve_parent_times else VERSION,
         "window": asdict(window),
@@ -301,6 +305,9 @@ def prepare_depth_window(
         if preserve_parent_times
         else ({"hc.timestamp_ns": window.target_time(i)} for i in range(count)),
         feature_key="depth",
+        # Byte or picture copies carry the intra pictures the source decode above
+        # already verified and hashed; only a fresh encode needs another decode.
+        decode=not reused,
     )
     return PreparedVideo(
         video,

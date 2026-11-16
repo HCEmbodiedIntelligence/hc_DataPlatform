@@ -10,7 +10,7 @@ from hc_data_platform.aligned_media.models import (
 )
 from hc_data_platform.alignment.models import AlignmentInputV1
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.core.ingest_timing import timed
+from hc_data_platform.core.ingest_timing import span, timed
 from hc_data_platform.episode_store.catalog_models import CollectionVersion, EpisodeDerivedReady
 from hc_data_platform.episode_store.models import CommitReceipt, PackageInput
 from hc_data_platform.ingest.models import ManifestPreflightResultV1
@@ -309,7 +309,6 @@ class PostgresDatasetIngestProjector:
             or version.project_id != source.project_id
             or version.dataset_id != ready.dataset_id
             or version.version != ready.dataset_version
-            or not self._commit_matches(source, version, ready)
             or version.schema_snapshot_id != schema_snapshot_id
             or not self._frequency_matches(version, frequency_hz)
             or ready.project_id != source.project_id
@@ -319,6 +318,12 @@ class PostgresDatasetIngestProjector:
             or ready.step_count <= 0
             or source.rollout_id not in version.committed_rollouts
         ):
+            raise DatasetIngestProjectionConflict(
+                "continuous Episode lineage does not match the data commit"
+            )
+        with span("PROJECTION_COMMIT_CHECK"):
+            matches = self._commit_matches(source, version, ready)
+        if not matches:
             raise DatasetIngestProjectionConflict(
                 "continuous Episode lineage does not match the data commit"
             )
@@ -334,22 +339,15 @@ class PostgresDatasetIngestProjector:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
-                    (
-                        "/".join(
-                            (
-                                source.organization_id,
-                                source.project_id,
-                                source.region_code,
-                                ready.dataset_id,
-                            )
-                        ),
-                    ),
+                lock = "/".join(
+                    (source.organization_id, source.project_id, source.region_code, ready.dataset_id)
                 )
-                existing = self.projections.existing_target(
-                    cursor, source=source, version=version, target=target
-                )
+                with span("PROJECTION_LOCK"):
+                    cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock,))
+                with span("PROJECTION_EXISTING"):
+                    existing = self.projections.existing_target(
+                        cursor, source=source, version=version, target=target
+                    )
                 if existing is not None:
                     connection.commit()
                     return existing
@@ -359,18 +357,19 @@ class PostgresDatasetIngestProjector:
                     collection_task_id=facts.collection_task_id,
                     dataset_id=target.dataset_id,
                 )
-                self.projections.write(
-                    cursor,
-                    source=source,
-                    alignment=alignment,
-                    schema_snapshot_id=schema_snapshot_id,
-                    frequency_hz=frequency_hz,
-                    version=version,
-                    ready=ready,
-                    target=target,
-                    facts=facts,
-                    media_artifacts=media_artifacts,
-                )
+                with span("PROJECTION_WRITE"):
+                    self.projections.write(
+                        cursor,
+                        source=source,
+                        alignment=alignment,
+                        schema_snapshot_id=schema_snapshot_id,
+                        frequency_hz=frequency_hz,
+                        version=version,
+                        ready=ready,
+                        target=target,
+                        facts=facts,
+                        media_artifacts=media_artifacts,
+                    )
             connection.commit()
             return target
         except Exception:

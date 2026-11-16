@@ -72,10 +72,18 @@ def validate_depth(
     feature_key: str,
     allow_missing_reference: bool = False,
     select_codes=None,
+    decode: bool = True,
 ) -> dict[str, int]:
     """Verify depth evidence. ``select_codes=(indices, hasher)`` also feeds the
     decoded codes of the given nondecreasing source frames, repeats included,
-    into ``hasher`` during the same decode pass."""
+    into ``hasher`` during the same decode pass.
+
+    ``decode=False`` checks every row, mask and PTS from demuxed packets only.
+    Callers use it when the pictures are byte copies of an already decoded and
+    verified source, so the codes and their mask consistency are already known.
+    """
+    if not decode and select_codes is not None:
+        raise ValueError("selected depth codes require a decode pass")
     selected = Counter(select_codes[0]) if select_codes is not None else None
     declaration = document(root, f"{evidence_path}/profile.json")
     profile = DepthProfile(
@@ -154,7 +162,12 @@ def validate_depth(
             raise ValueError("depth requires HEVC gray12le")
         if report["video_encoding"]["codec_profile"] != stream.codec_context.profile:
             raise ValueError("depth codec profile differs from actual stream")
-        for frame in container.decode(stream):
+        frames = (
+            container.decode(stream)
+            if decode
+            else (packet for packet in container.demux(stream) if packet.size)
+        )
+        for frame in frames:
             row, mask = next(rows, None), next(masks, None)
             target = next(target_rows, None)
             if (
@@ -230,19 +243,19 @@ def validate_depth(
                     )
                     if actual != expected:
                         raise ValueError("depth and aligned step source evidence differ")
-            pixels = frame.to_ndarray(format="gray12le")
             with Image.open(io.BytesIO(mask["flags_png"])) as image:
                 flags = np.asarray(image)
+            pixels = frame.to_ndarray(format="gray12le") if decode else None
             if (
                 flags.dtype != np.uint8
-                or flags.shape != pixels.shape
+                or flags.shape != tuple(feature["shape"][:2])
+                or pixels is not None and pixels.shape != flags.shape
                 or np.any(flags > 7)
-                or pixels.shape != tuple(feature["shape"][:2])
                 or np.any((flags & 6 != 0) & (flags & 1 == 0))
                 or np.any(flags & 6 == 6)
             ):
                 raise ValueError("depth mask flags/shape invalid")
-            if (
+            if pixels is not None and (
                 np.any(pixels[flags & 1 == 0] != 0)
                 or np.any(pixels[flags & 2 != 0] != 0)
                 or np.any(pixels[flags & 4 != 0] != 4095)
@@ -289,7 +302,7 @@ def validate_depth(
             if row["missing"]:
                 if (
                     flags.any()
-                    or pixels.any()
+                    or pixels is not None and pixels.any()
                     or target.get(f"hc.valid.{feature_key}", False) is not False
                     or row.get("source_profile_sha256") is not None
                     or any(
@@ -327,6 +340,9 @@ def validate_depth(
                         raise ValueError("depth frame units/dtype differ from source profile")
             if frame.pts is None or abs(float(frame.pts * frame.time_base) - count / fps) > 1e-6:
                 raise ValueError("depth PTS mismatch")
+            if pixels is None:
+                count += 1
+                continue
             codes = pixels.astype("<u2").tobytes()
             observed.update(codes)
             if selected is not None:
@@ -339,7 +355,7 @@ def validate_depth(
         or next(masks, None) is not None
         or not with_source
         and report.get("measurement_status") != "NO_SOURCE_FRAMES"
-        or observed.hexdigest() != report["video_encoding"]["codes_sha256"]
+        or decode and observed.hexdigest() != report["video_encoding"]["codes_sha256"]
         or report["totals"] != totals
         or report["quantization"]["unclipped_max_error_m"] != maximum_error
     ):

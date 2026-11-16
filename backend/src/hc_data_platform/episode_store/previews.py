@@ -23,7 +23,7 @@ from pydantic import Field
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.data_formats.depth_evidence import file_hash
-from hc_data_platform.data_formats.holobrain_depth import DepthProfile
+from hc_data_platform.data_formats.holobrain_depth import DepthProfile, parallel_decode
 from hc_data_platform.data_formats.lerobot_layout import VIDEO_PATH
 
 from hc_data_platform.storage.local_cache import CacheError, local_cache_for
@@ -250,7 +250,7 @@ class EpisodePreviews:
             path = stack.enter_context(package.file(entry.path))
             source = stack.enter_context(av.open(str(path)))
             stream = source.streams.video[0]
-            stream.thread_count = 1
+            parallel_decode(stream)
             width, height = stream.width, stream.height
             if width * height * 3 > 64 * 1024**2:
                 raise ValueError("preview input frame exceeds decode limit")

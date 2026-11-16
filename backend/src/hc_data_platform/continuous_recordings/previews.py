@@ -282,7 +282,7 @@ def _prepare_depth_preview(storage, asset, profile_asset, masks_asset, root, cam
     import av
     import pyarrow.parquet as pq
 
-    from hc_data_platform.data_formats.holobrain_depth import DepthProfile
+    from hc_data_platform.data_formats.holobrain_depth import DepthProfile, parallel_decode
     from hc_data_platform.episode_store.previews import EpisodePreviews
     from hc_data_platform.episode_store.validation import parquet_rows
 
@@ -308,7 +308,7 @@ def _prepare_depth_preview(storage, asset, profile_asset, masks_asset, root, cam
         stream = source.streams.video[0]
         if stream.width * stream.height * 3 > 64 * 1024**2:
             raise ValueError("recording preview frame exceeds limit")
-        stream.thread_count = 1
+        parallel_decode(stream)
         EpisodePreviews._encode(
             source,
             stream,

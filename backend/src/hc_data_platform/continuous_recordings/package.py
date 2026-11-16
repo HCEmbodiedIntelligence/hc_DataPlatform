@@ -651,7 +651,14 @@ def prepare_rgb_window(media, window, destination, profile=WINDOW_RGB_PROFILE):
         index = 0
         try:
             observed = 0
-            for frame in container.decode(stream):
+            # A whole stream is copied, not decoded: its packets carry the grid.
+            # Without B-frames the demux order is the presentation order.
+            frames = (
+                (packet for packet in container.demux(stream) if packet.size)
+                if whole and not stream.codec_context.has_b_frames
+                else container.decode(stream)
+            )
+            for frame in frames:
                 if frame.pts is None or abs(
                     Fraction(frame.pts) * frame.time_base - Fraction(observed) / fps
                 ) > Fraction(1, 1_000_000):
