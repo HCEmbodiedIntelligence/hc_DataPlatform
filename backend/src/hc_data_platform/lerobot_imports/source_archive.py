@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.models import Identifier
+from hc_data_platform.episode_store.upload_candidates import UploadExportFilter
 
 from .local_files import safe_relative
 from .source_browser import OriginalSourceBrowser
@@ -22,6 +23,7 @@ from .source_browser import OriginalSourceBrowser
 class OriginalArchiveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    export_filter: UploadExportFilter | None = None
     import_ids: tuple[Identifier, ...] = Field(min_length=1, max_length=1000)
 
 
@@ -94,6 +96,21 @@ def archive_files(
     return tuple(files)
 
 
+def archive_record_document(scope, command):
+    from hc_data_platform.episode_store.collection_records import raw_records, record_document
+    from .configuration import connections
+
+    with connections()() as db, db.cursor() as cursor:
+        records = raw_records(cursor, scope, command.import_ids, command.export_filter)
+    selection = command.export_filter
+    if selection and (selection.batch_numbers or selection.batch_number or selection.all_batches
+                      or selection.uploaded_from or selection.uploaded_before):
+        if any(source not in records or not records[source].uploads for source in command.import_ids):
+            raise problem(status=409, code="SELECTION_CHANGED", title="上传数据已变化",
+                          detail="请刷新并重新确认所选上传日期和批次。")
+    return record_document(records) if records else None
+
+
 class _ZipBuffer(io.RawIOBase):
     """Non-seekable ZIP output drained after each bounded source chunk."""
 
@@ -115,14 +132,17 @@ class _ZipBuffer(io.RawIOBase):
 
 
 def stream_archive(
-    browser: OriginalSourceBrowser, files: tuple[ArchiveFile, ...]
+    browser: OriginalSourceBrowser, files: tuple[ArchiveFile, ...], records: bytes | None = None
 ) -> Iterator[bytes]:
-    yield from stream_storage_archive(browser.storage, files)
+    yield from stream_storage_archive(browser.storage, files, records)
 
 
-def stream_storage_archive(storage, files: tuple[ArchiveFile, ...]) -> Iterator[bytes]:
+def stream_storage_archive(storage, files: tuple[ArchiveFile, ...], records: bytes | None = None) -> Iterator[bytes]:
     buffer = _ZipBuffer()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
+        if records is not None:
+            archive.writestr(zipfile.ZipInfo("collection_records.json"), records)
+            yield buffer.drain()
         for file in files:
             entry = zipfile.ZipInfo(file.path)
             entry.external_attr = 0o100644 << 16

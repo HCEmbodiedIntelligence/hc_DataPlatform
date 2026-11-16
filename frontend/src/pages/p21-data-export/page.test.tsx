@@ -12,7 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import { datasetIds } from "../../mocks/fixtures/datasets/core";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import {
   afterAll,
   afterEach,
@@ -171,7 +171,35 @@ afterAll(() => {
   resetRuntimeConfigForTests();
 });
 
+function SelectedBatchQuery() {
+  const values = new URLSearchParams(useLocation().search).getAll("uploadBatch");
+  return <output data-testid="selected-batches">{values.sort().join(",")}</output>;
+}
+
 describe("P21 data export page", () => {
+  it("adds and removes all batches for a Shanghai upload date", async () => {
+    rawDownloadSession();
+    const user = userEvent.setup();
+    server.use(http.get("*/episode-deliveries/upload-batches", () => HttpResponse.json([
+      { batch_number: 3, channel: "oss", created_at: "2026-09-02T16:01:00Z" },
+      { batch_number: 2, channel: "web", created_at: "2026-09-01T16:01:00Z" },
+      { batch_number: 1, channel: "web", created_at: "2026-09-02T15:59:00Z" },
+    ])));
+    render(<ProviderHarness><MemoryRouter initialEntries={["/exports?uploadBatch=3"]}>
+      <DataExportPage /><SelectedBatchQuery />
+    </MemoryRouter></ProviderHarness>);
+    const picker = await screen.findByRole("combobox", { name: "按上传日期选择批次（北京时间）" });
+    await user.click(picker);
+    const option = () => screen.getByText("2026-09-02 · 2 个批次", { selector: ".ant-select-item-option-content" });
+    await waitFor(() => expect(option()).toBeVisible());
+    await user.click(option());
+    await waitFor(() => expect(screen.getByTestId("selected-batches")).toHaveTextContent("1,2,3"));
+    await user.click(option());
+    await waitFor(() => expect(screen.getByTestId("selected-batches")).toHaveTextContent(/^3$/));
+    await user.click(screen.getByText("2026-09-03 · 1 个批次", { selector: ".ant-select-item-option-content" }));
+    expect(await screen.findByText("已移除全部日期。请选择要纳入的上传日期或批次。")).toBeVisible();
+  });
+
   it("selects raw batches across pages and downloads all selected files in one archive request", async () => {
     const scope = rawDownloadSession();
     const batches = Array.from({ length: 22 }, (_, i) => ({

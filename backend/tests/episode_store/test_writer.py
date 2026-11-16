@@ -187,12 +187,14 @@ def build_rgbd_package(
     depth_missing_frames=(),
     depth_invalid_frames=(),
     task="synthetic RGB-D codec acceptance",
+    task_id="unknown",
     rgb_statistics="legacy",
 ):
     ident = ident or identity()
     rgb, depth = "observation.images.head_rgb", "observation.images.head_depth"
     source = PackageInput(
         identity=ident,
+        task_id=task_id,
         source_sha256="1" * 64,
         processor_version="test/1",
         configuration_sha256="2" * 64,

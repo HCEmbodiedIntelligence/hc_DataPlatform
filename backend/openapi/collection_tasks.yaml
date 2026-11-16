@@ -264,6 +264,15 @@ components:
     CollectionTask:
       additionalProperties: false
       properties:
+        collection_description:
+          type: string
+          maxLength: 2000
+        upload_day_notes:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 2000
         collection_task_id:
           $ref: '#/components/schemas/CollectionTaskIdentifier'
         dataset_id:
@@ -672,6 +681,15 @@ components:
     CreateCollectionTask:
       additionalProperties: false
       properties:
+        collection_description:
+          type: string
+          maxLength: 2000
+        upload_day_notes:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 2000
         capture_plan:
           anyOf:
           - $ref: '#/components/schemas/SetTaskPlan'
@@ -764,6 +782,15 @@ components:
     UpdateCollectionTask:
       additionalProperties: false
       properties:
+        collection_description:
+          type: string
+          maxLength: 2000
+        upload_day_notes:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 2000
         dataset_id:
           description: New active Dataset; reassignment is rejected after the first package is received.
           pattern: ^dataset_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$

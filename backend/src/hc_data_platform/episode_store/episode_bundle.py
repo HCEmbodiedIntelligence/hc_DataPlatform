@@ -14,6 +14,7 @@ from threading import Lock
 from hc_data_platform.lerobot_imports.source_archive import ArchiveFile
 
 from .collection_delivery import CollectionDelivery
+from .collection_records import CollectionRecord
 from .collection_delivery_models import CollectionDeliveryPlan, RequestCollectionDelivery
 from .delivery_cache import cache_for
 from .delivery_models import PreparedEpisodePart, RequestEpisodeDelivery
@@ -50,11 +51,11 @@ def read_part(service, part_id):
 
 def freeze(service, body, auth):
     if body.mode == "independent":
-        return service._freeze(RequestEpisodeDelivery(data=(body.data,)))
+        return service._freeze(RequestEpisodeDelivery(data=(body.data,), export_filter=body.export_filter))
     lerobot = body.mode in {"rgb", "rgbd"}
     request = RequestCollectionDelivery(members=({"data": body.data},),
                                         output_format="lerobot" if lerobot else body.mode,
-                                        modalities=body.mode if lerobot else "rgbd")
+                                        modalities=body.mode if lerobot else "rgbd", export_filter=body.export_filter)
     return service.collection.freeze(request, auth)[0]
 
 
@@ -118,9 +119,15 @@ def build_part(service, plan, part_id):
                     checksum, size = archive_packages(service.packages, plan, archive, lambda: None, lambda *_: None)
                 with archive.open("rb") as stream:
                     service.writer.write_immutable(key, stream, size=size, sha256=checksum)
+        selected = plan.members[0].collection_record
+        record_hash = None
+        if selected is not None:
+            document = selected.model_dump(mode="json")
+            record_hash = digest(document)
+            service.storage.put_json(f"{prefix()}/{part_id}.record.json", document, if_none_match=False)
         service.storage.put_json(f"{prefix()}/{part_id}.json", {
             "part_id": part_id, "data": plan.members[0].data.model_dump(mode="json"),
-            "key": key, "sha256": checksum, "size": size,
+            "key": key, "sha256": checksum, "size": size, "record_sha256": record_hash,
         }, if_none_match=False)
         return reused
 
@@ -148,7 +155,7 @@ def prepare_part(service, body, auth):
     return PreparedEpisodePart(part_id=part_id, status="preparing", reused=False)
 
 
-def bundle_files(service, body, auth):
+def bundle_files(service, body, auth, *, records=None):
     service.authorize(auth)
     check_filter(body.export_filter)
     parts, refs, seen = [], [], set()
@@ -162,7 +169,13 @@ def bundle_files(service, body, auth):
         seen.add(data.identity.key)
         refs.append(data)
         label = re.sub(r"[^\w.-]", "_", data.identity.episode_id)[:96]
-        parts.append(ArchiveFile(f"{len(parts)+1:06d}-{label}.zip", info["key"], info["size"], info["sha256"]))
+        path = f"{len(parts)+1:06d}-{label}.zip"
+        parts.append(ArchiveFile(path, info["key"], info["size"], info["sha256"]))
+        if records is not None and info.get("record_sha256"):
+            document = json.loads(b"".join(service.storage.read_chunks(f"{prefix()}/{part_id}.record.json")))
+            if digest(document) != info["record_sha256"]:
+                raise failure("INTEGRITY_FAILED", "缓存中的采集记录与导出时的记录不符。")
+            records[path] = CollectionRecord.model_validate(document)
     for start in range(0, len(refs), 100):
         service.verify_export_filter(body.export_filter, refs[start:start+100], auth)
     return tuple(parts)

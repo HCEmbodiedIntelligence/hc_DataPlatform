@@ -59,6 +59,10 @@ async function allPages<T>(
   return items;
 }
 
+const uploadDayFormat = new Intl.DateTimeFormat("sv-SE", {
+  timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+});
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const parsed = new Date(value);
@@ -115,7 +119,7 @@ export function DataExportPage() {
     .add(1, "minute")
     .toISOString();
   const hasUploadFilter =
-    allBatches || batchNumbers.length > 0 || Boolean(uploadRange);
+    allBatches || batchTags.includes("none") || batchNumbers.length > 0 || Boolean(uploadRange);
   const canRead =
     capabilities.has("export.read") &&
     capabilities.has("dataset.read") &&
@@ -132,6 +136,15 @@ export function DataExportPage() {
     value: String(b.batch_number),
     label: `第 ${b.batch_number} 次上传 · ${b.channel === "historical" ? "历史上传来源" : b.channel === "oss" ? "OSS" : "网页"} · ${formatDate(b.created_at)}`,
   }));
+  const batchesByDay = new Map<string, number[]>();
+  for (const batch of batches.data ?? []) {
+    const day = uploadDayFormat.format(new Date(batch.created_at));
+    const group = batchesByDay.get(day) ?? [];
+    group.push(batch.batch_number);
+    batchesByDay.set(day, group);
+  }
+  const selectedBatchNumbers = new Set(allBatches ? (batches.data ?? []).map(b => b.batch_number) : batchNumbers);
+  const selectedDays = [...batchesByDay.keys()].filter(day => batchesByDay.get(day)!.every(n => selectedBatchNumbers.has(n)));
   const filteredMode = dataStage === "qc_passed" || hasUploadFilter;
   const datasets = useQuery({
     queryKey: ["export-datasets", scopeKey],
@@ -183,6 +196,16 @@ export function DataExportPage() {
           (id) => taskById.get(id)?.dataset_id === source.datasetId,
         )),
   );
+  const notesByDay = new Map<string, string[]>();
+  for (const task of collectionTasks.data ?? []) {
+    if (appliedTasks.length && !appliedTasks.includes(task.collection_task_id)) continue;
+    if (appliedDatasetIds.length && !appliedDatasetIds.includes(task.dataset_id)) continue;
+    for (const [day, note] of Object.entries(task.upload_day_notes ?? {})) {
+      const notes = notesByDay.get(day) ?? [];
+      notes.push(task.name + "：" + note);
+      notesByDay.set(day, notes);
+    }
+  }
   const updateSourceFilter = (key: string, values: readonly string[]) => {
     setParams(
       (current) => {
@@ -198,9 +221,15 @@ export function DataExportPage() {
     setParams(
       (current) => {
         const next = new URLSearchParams(current);
-        ["datasetId", "task", "tag", "robotId", "q", "uploadBatch", "uploadTime"].forEach(
-          (key) => next.delete(key),
-        );
+        [
+          "datasetId",
+          "task",
+          "tag",
+          "robotId",
+          "q",
+          "uploadBatch",
+          "uploadTime",
+        ].forEach((key) => next.delete(key));
         return next;
       },
       { replace: true },
@@ -343,6 +372,25 @@ export function DataExportPage() {
                         />
                       </div>
                       <div className={styles.filterField}>
+                        <label htmlFor="export-upload-days">按上传日期选择批次（北京时间）</label>
+                        <Select id="export-upload-days" mode="multiple" allowClear showSearch
+                          placeholder="选择要纳入的日期" maxTagCount="responsive"
+                          loading={batches.isFetching} value={selectedDays}
+                          options={[...batchesByDay.keys()].sort().reverse().map(day => ({
+                            value: day, label: [day, batchesByDay.get(day)!.length + " 个批次", ...(notesByDay.get(day) ?? [])].join(" · "),
+                          }))}
+                          onChange={(days: string[]) => {
+                            const next = new Set(selectedBatchNumbers);
+                            const included = new Set(days);
+                            for (const day of selectedDays) {
+                              if (!included.has(day)) batchesByDay.get(day)!.forEach(n => next.delete(n));
+                            }
+                            for (const day of days) batchesByDay.get(day)!.forEach(n => next.add(n));
+                            updateSourceFilter("uploadBatch", next.size ? [...next].map(String) : ["none"]);
+                          }}
+                        />
+                      </div>
+                      <div className={styles.filterField}>
                         <label htmlFor="export-upload-batch">上传批次</label>
                         <Select
                           allowClear
@@ -412,7 +460,9 @@ export function DataExportPage() {
                       )}
                   </section>
 
-                  {dataStage === "raw" ? (
+                  {batchTags.includes("none") ? (
+                    <p role="status">已移除全部日期。请选择要纳入的上传日期或批次。</p>
+                  ) : dataStage === "raw" ? (
                     <Suspense
                       fallback={<PageState state="loading" label="原始数据" />}
                     >

@@ -32,6 +32,8 @@ def main():
                     "EpisodeFile",
                     "EpisodeFilePage",
                     "EpisodeFileGrant",
+                    "UploadDayRecord",
+                    "CollectionRecord",
                     "UploadExportFilter",
                     "ExportUploadBatch",
                     "UploadCandidatePage",

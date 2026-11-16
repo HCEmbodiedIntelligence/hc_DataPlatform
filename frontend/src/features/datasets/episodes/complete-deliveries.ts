@@ -9,6 +9,16 @@ import { episodeEndpoint } from "./episode-detail";
 
 const digest = z.string().regex(/^[0-9a-f]{64}$/u);
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+export const collectionRecordWire = z.object({
+  collection_task_id: z.string().nullable(),
+  collection_description: z.string(),
+  uploads: z.array(z.object({
+    uploaded_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/u),
+    batch_numbers: z.array(count.positive()),
+    note: z.string(),
+  }).strict()),
+}).strict();
+
 const jobWire = z
   .object({
     job_id: z.string().regex(/^ed_[0-9a-f]{64}$/u),
@@ -21,6 +31,7 @@ const jobWire = z
               .object({
                 data: dataWire,
                 manifest_sha256: digest,
+                collection_record: collectionRecordWire.nullish(),
                 root: z.string().regex(/^(episode|episodes\/[0-9]{6})$/u),
                 file_count: count.positive(),
                 byte_count: count.positive(),

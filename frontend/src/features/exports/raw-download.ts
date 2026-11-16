@@ -26,9 +26,10 @@ export async function downloadRawSources(
   importIds: readonly string[],
   signal: AbortSignal,
   onProgress: (bytes: number) => void,
+  filter?: { stage: "dataset"; batch_numbers: readonly number[]; uploaded_from?: string; uploaded_before?: string },
 ): Promise<ArchiveDownloadOutcome> {
   return downloadArchive(scope, signal, onProgress, "原始数据", async () => ({
-    path: `${nativeRoot(scope)}/archive`, body: { import_ids: importIds },
+    path: `${nativeRoot(scope)}/archive`, body: { import_ids: importIds, ...(filter && { export_filter: filter }) },
   }));
 }
 

@@ -19,6 +19,7 @@ from hc_data_platform.security import ScopeGuard
 
 from .collection_delivery import CollectionDelivery
 from .collection_delivery_models import CollectionDeliveryPlan, EpisodeDeliveryCandidates
+from .collection_records import episode_records, record_document
 from .delivery_inventory import inventory_document
 from .delivery_models import EpisodeDeliveryDownload, EpisodeDeliveryMember, EpisodeDeliveryPlan
 from .delivery_repository import EpisodeDeliveryBusy, failure, public_job, scope_key
@@ -84,6 +85,10 @@ def archive_packages(packages, plan, destination, checkpoint, progress, *, pin_t
                     body = canonical(document.model_dump(mode="json"))
                     member(archive, f"{selection.root}/{name}", io.BytesIO(body),
                            len(body), hashlib.sha256(body).hexdigest())
+        records = {m.data.data_version_id: m.collection_record for m in plan.members if m.collection_record}
+        if records:
+            body = record_document(records)
+            member(archive, "collection_records.json", io.BytesIO(body), len(body), hashlib.sha256(body).hexdigest())
         body = inventory_document(plan)
         member(
             archive, "delivery.json", io.BytesIO(body), len(body), hashlib.sha256(body).hexdigest()
@@ -115,6 +120,7 @@ class EpisodeDeliveryService:
             auth.require_capability(capability, project, organization)
 
     def _freeze(self, request):
+        records = episode_records(self.repository, scope_key(), request.data, request.export_filter)
         members = []
         for index, data in enumerate(sorted(request.data, key=lambda d: d.data_version_id)):
             if data.identity.scope != scope_key():
@@ -129,6 +135,7 @@ class EpisodeDeliveryService:
             members.append(
                 EpisodeDeliveryMember(
                     data=data,
+                    collection_record=records.get(data.data_version_id),
                     manifest_sha256=package.receipt.manifest_sha256,
                     root="episode"
                     if request.archive_format == "independent_episode_zip/1"
@@ -161,8 +168,10 @@ class EpisodeDeliveryService:
             if body.export_filter is not None:
                 self.verify_export_filter(body.export_filter, body.data, auth)
             plan = self._freeze(body)
-            return (plan, sum(m.file_count for m in plan.members) + 1,
-                    sum(m.byte_count for m in plan.members) + len(inventory_document(plan)))
+            records = {m.data.data_version_id: m.collection_record for m in plan.members if m.collection_record}
+            return (plan, sum(m.file_count for m in plan.members) + 1 + bool(records),
+                    sum(m.byte_count for m in plan.members) + len(inventory_document(plan))
+                    + (len(record_document(records)) if records else 0))
 
         if body.export_filter is None:
             plan, count, size = freeze()

@@ -24,6 +24,10 @@ export function packageDeliveryFixture(annotated = false) {
           data,
           manifest_sha256: "b".repeat(64),
           annotation: annotated ? structuredClone(annotation.job.plan) : null,
+          collection_record: {
+            collection_task_id: "task-fixture", collection_description: "透明件采集",
+            uploads: [{ uploaded_on: "2026-11-10", batch_numbers: [4], note: "补采遮挡样本" }],
+          },
           selected_depth_profiles: {
             "observation.images.head_depth": "e".repeat(64),
           },

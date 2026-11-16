@@ -148,13 +148,23 @@ def test_archive_http_permissions_scope_and_selection_validation(sources, monkey
     path = "/api/v1/projects/project-a/regions/cn-hz/lerobot-imports/archive"
     headers = {"X-Organization-Id": "org-a"}
     body = {"import_ids": [raw.raw_source_id for raw in raws]}
+    from hc_data_platform.lerobot_imports import source_archive
+
+    def record_document(scope, command):
+        assert scope == ("org-a", "project-a", "cn-hz")
+        assert list(command.import_ids) == body["import_ids"]
+        return '{"records":{"raw":"当日补采"}}'.encode()
+
+    monkeypatch.setattr(source_archive, "archive_record_document", record_document)
     with TestClient(web._app(service)) as client:
         response = client.post(path, json=body, headers=headers)
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/zip"
         assert response.headers["cache-control"] == "no-store"
         assert "attachment" in response.headers["content-disposition"]
-        assert len(ZipFile(BytesIO(response.content)).namelist()) == 4
+        with ZipFile(BytesIO(response.content)) as archive:
+            assert len(archive.namelist()) == 5
+            assert "当日补采" in archive.read("collection_records.json").decode()
         assert client.post(path, json={"import_ids": []}, headers=headers).status_code == 422
         assert (
             client.post(path, json={"import_ids": ["missing"]}, headers=headers).status_code == 404

@@ -9,7 +9,7 @@ export type CollectionTaskDrawerState =
 export interface CollectionTaskSearch {
   readonly status: CollectionTaskStatusFilter;
   readonly query: string;
-  readonly type: string;
+  readonly notes: string;
   readonly cursor?: string;
   readonly taskId?: string;
   readonly drawer?: CollectionTaskDrawerState;
@@ -26,7 +26,7 @@ const stableIdentifier = /^[A-Za-z0-9._-]{1,128}$/u;
 export const collectionTaskSearchDefaults: CollectionTaskSearch = {
   status: "ALL",
   query: "",
-  type: "",
+  notes: "",
 };
 
 export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
@@ -34,7 +34,7 @@ export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
   parse(params) {
     const statusRaw = params.get("status") ?? "ALL";
     const query = (params.get("q") ?? "").trim().slice(0, 200);
-    const type = (params.get("type") ?? "").trim().slice(0, 100);
+    const notes = (params.get("notes") ?? "").trim().slice(0, 100);
     const cursor = params.get("cursor");
     const taskId = params.get("taskId");
     const drawerRaw = params.get("drawer");
@@ -49,7 +49,7 @@ export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
         ? (statusRaw as CollectionTaskStatusFilter)
         : "ALL",
       query,
-      type,
+      notes,
       ...(cursor && cursor.length <= 16_384 ? { cursor } : {}),
       ...(drawer ? { drawer } : {}),
       ...(taskId && stableIdentifier.test(taskId) ? { taskId } : {}),
@@ -60,7 +60,7 @@ export const collectionTaskQueryCodec = defineQueryCodec<CollectionTaskSearch>({
     const status = value.status ?? "ALL";
     if (status !== "ALL") params.set("status", status);
     if (value.query) params.set("q", value.query);
-    if (value.type) params.set("type", value.type);
+    if (value.notes) params.set("notes", value.notes);
     if (value.cursor) params.set("cursor", value.cursor);
     if (value.taskId) params.set("taskId", value.taskId);
     if (value.drawer?.mode === "create") params.set("drawer", "create");

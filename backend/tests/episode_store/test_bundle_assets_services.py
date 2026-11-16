@@ -50,6 +50,7 @@ def prepared_bundle(services, tmp_path, request):
     _, source, _, assets = build_rgbd_package(
         tmp_path,
         ident,
+        task_id=options.get("task_id", "unknown"),
         mcap_topics=options.get("mcap_topics", False),
         depth_missing_frames=options.get("depth_missing_frames", ()),
         depth_invalid_frames=options.get("depth_invalid_frames", ()),

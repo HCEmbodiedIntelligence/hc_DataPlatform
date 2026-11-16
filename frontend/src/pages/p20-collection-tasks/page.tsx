@@ -128,14 +128,14 @@ function matchesCurrentWindow(
   search: CollectionTaskSearch,
 ): boolean {
   const query = search.query.toLocaleLowerCase("zh-CN");
-  const type = search.type.toLocaleLowerCase("zh-CN");
+  const notes = search.notes.toLocaleLowerCase("zh-CN");
   const identityMatches =
     !query ||
     task.name.toLocaleLowerCase("zh-CN").includes(query) ||
     task.task_code.includes(query);
-  const typeMatches =
-    !type || task.type.toLocaleLowerCase("zh-CN").includes(type);
-  return identityMatches && typeMatches;
+  const notesMatch = !notes || [task.collection_description, ...Object.values(task.upload_day_notes ?? {})]
+    .some(note => note?.toLocaleLowerCase("zh-CN").includes(notes));
+  return identityMatches && notesMatch;
 }
 
 export function CollectionTaskPage({
@@ -576,7 +576,7 @@ export function CollectionTaskPage({
     }
   };
 
-  const locallyFiltered = Boolean(search.query || search.type);
+  const locallyFiltered = Boolean(search.query || search.notes);
   const filtered =
     search.status !== "ALL" || locallyFiltered || Boolean(search.taskId);
   const authorizationState: PageStateKind | "ready" =
@@ -663,19 +663,19 @@ export function CollectionTaskPage({
             </label>
             <label
               className={styles.filterField}
-              htmlFor="collection-task-type"
+              htmlFor="collection-task-notes"
             >
-              <span>任务分类</span>
+              <span>采集描述</span>
               <Input
-                id="collection-task-type"
-                aria-label="当前窗口筛选任务分类"
+                id="collection-task-notes"
+                aria-label="当前窗口筛选采集描述"
                 autoComplete="off"
                 maxLength={100}
-                name="collection-task-type"
-                placeholder="当前窗口筛选任务分类"
-                value={search.type}
+                name="collection-task-notes"
+                placeholder="当前窗口筛选采集描述"
+                value={search.notes}
                 onChange={(event) =>
-                  changeSearch({ type: event.currentTarget.value }, true)
+                  changeSearch({ notes: event.currentTarget.value }, true)
                 }
               />
             </label>
@@ -690,7 +690,7 @@ export function CollectionTaskPage({
                 disabled={list.isFetching}
                 icon={<RotateCcw aria-hidden="true" size={16} />}
                 onClick={() =>
-                  changeSearch({ status: "ALL", query: "", type: "" }, true)
+                  changeSearch({ status: "ALL", query: "", notes: "" }, true)
                 }
               >
                 {search.taskId ? "查看全部任务" : "重置"}

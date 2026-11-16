@@ -80,6 +80,10 @@ class CollectionTaskService:
         )
         if command.capture_plan is not None:
             payload["capture_region_code"] = current_request_context().region_code
+        if not command.collection_description:
+            payload.pop("collection_description")
+        if not command.upload_day_notes:
+            payload.pop("upload_day_notes")
         fingerprint = request_fingerprint(payload)
         task_id = str(
             uuid5(_TASK_ID_NAMESPACE, f"{organization_id}\0{project_id}\0{idempotency_key}")
@@ -114,6 +118,8 @@ class CollectionTaskService:
                     created_by=created_by,
                     name=command.name,
                     type=command.type,
+                    collection_description=command.collection_description,
+                    upload_day_notes=command.upload_day_notes,
                     scenario=command.scenario,
                     description=command.description,
                     target=command.target,

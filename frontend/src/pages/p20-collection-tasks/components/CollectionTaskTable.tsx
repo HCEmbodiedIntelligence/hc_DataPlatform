@@ -152,6 +152,11 @@ function TaskIdentity({ task }: Readonly<{ task: CollectionTask }>) {
       >
         <strong title={task.name}>{task.name}</strong>
       </Link>
+      {task.collection_description && (
+        <span title={task.collection_description} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {task.collection_description}
+        </span>
+      )}
       <code
         className={styles.taskCode}
         title={`原始任务码：${task.task_code}`}
@@ -505,8 +510,14 @@ function TaskDetails({
         <dd>
           <code translate="no">{task.dataset_id}</code>
         </dd>
-        <dt>任务分类</dt>
-        <dd>{task.type || "未分类"}</dd>
+        <dt>采集描述</dt>
+        <dd style={{ whiteSpace: "pre-wrap" }}>{task.collection_description || "尚未填写"}</dd>
+        {Object.entries(task.upload_day_notes ?? {}).sort(([a], [b]) => b.localeCompare(a)).map(([day, note]) => (
+          <div key={day} style={{ display: "contents" }}>
+            <dt>{day}</dt>
+            <dd style={{ whiteSpace: "pre-wrap" }}>{note}</dd>
+          </div>
+        ))}
         <dt>采集场景</dt>
         <dd>{task.scenario}</dd>
         {task.description ? (

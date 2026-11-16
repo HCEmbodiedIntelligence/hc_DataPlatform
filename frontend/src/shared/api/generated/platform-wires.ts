@@ -1,6 +1,6 @@
 // AUTO-GENERATED — DO NOT EDIT
 // Source: production-composed runtime create_app(...).openapi()
-// Runtime-OpenAPI-SHA256: 242aa4224399119d92d0a995f6aa3e6de6b4d03859aa09e20ddc615f0e82bfb1
+// Runtime-OpenAPI-SHA256: 2c485de66bf011a408d8ad8670e83a42c384882834686071fb4a47d7f408ba0b
 // Response projections: unknown object fields are stripped; defaults are not filled.
 import { z } from "zod";
 import type { components } from "./platform";

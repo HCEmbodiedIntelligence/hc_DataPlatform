@@ -15,6 +15,7 @@ from .collection_export import (
     preflight,
     selected_info,
 )
+from .collection_records import episode_records, record_document
 from .delivery_inventory import inventory_document
 from .delivery_repository import failure, scope_key
 from .errors import PackageConflict
@@ -43,6 +44,7 @@ class CollectionDelivery:
             self.owner.verify_export_filter(body.export_filter, [m.data for m in body.members], auth)
         adapter = get_format(body.output_format)
         members, sources = [], []
+        records = episode_records(self.owner.repository, scope_key(), [m.data for m in body.members], body.export_filter)
         for selected in sorted(body.members, key=lambda m: m.data.data_version_id):
             data = selected.data
             if data.identity.scope != scope_key():
@@ -101,6 +103,7 @@ class CollectionDelivery:
                     manifest_sha256=package.receipt.manifest_sha256,
                     annotation=annotation,
                     camera_calibration=calibration,
+                    collection_record=records.get(data.data_version_id),
                     selected_depth_profiles=profiles,
                     excluded_depth_features=tuple(sorted(depth))
                     if body.modalities == "rgb"
@@ -221,6 +224,9 @@ class CollectionDelivery:
             "collection/hc/collection_manifest.json": canonical(manifest),
             "delivery.json": inventory_document(plan),
         }
+        records = {m.data.data_version_id: m.collection_record for m in plan.members if m.collection_record}
+        if records:
+            extra["collection_records.json"] = record_document(records)
         inventory = [
             (prefix + entry["path"], entry["size"], entry["sha256"], root / entry["path"])
             for entry in manifest["files"]

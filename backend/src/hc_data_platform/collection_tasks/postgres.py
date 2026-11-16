@@ -103,11 +103,12 @@ class PostgresCollectionTaskRepository:
                         collection_task_id, organization_id, project_id, created_by,
                         dataset_id, task_code, name, task_type,
                         scenario, description, target_json, quality_threshold, status,
-                        version, create_fingerprint, created_at, updated_at, upload_region_code
+                        version, create_fingerprint, created_at, updated_at, upload_region_code,
+                        collection_description, upload_day_notes
                     ) VALUES (
                         %s, %s, %s, %s, %s,
                         lpad(nextval('collection_tasks.task_code_sequence')::text, 8, '0'),
-                        %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s
+                        %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb
                     )
                     ON CONFLICT (organization_id, project_id, collection_task_id) DO NOTHING
                     """,
@@ -134,6 +135,8 @@ class PostgresCollectionTaskRepository:
                         task.created_at,
                         task.updated_at,
                         region,
+                        task.collection_description,
+                        json.dumps(task.upload_day_notes),
                     ),
                 )
                 inserted = cursor.rowcount == 1
@@ -241,6 +244,8 @@ class PostgresCollectionTaskRepository:
             "dataset_id": "dataset_id",
             "name": "name",
             "type": "task_type",
+            "collection_description": "collection_description",
+            "upload_day_notes": "upload_day_notes",
             "scenario": "scenario",
             "description": "description",
             "target": "target_json",
@@ -250,7 +255,10 @@ class PostgresCollectionTaskRepository:
         params: list[object] = []
         for field, value in changes.items():
             column = column_names[field]
-            if field == "target":
+            if field == "upload_day_notes":
+                set_clauses.append("upload_day_notes = %s::jsonb")
+                params.append(json.dumps(value))
+            elif field == "target":
                 set_clauses.append(f"{column} = %s::jsonb")
                 params.append(self._target_json(value))
             else:
@@ -796,7 +804,7 @@ class PostgresCollectionTaskRepository:
             "task_code, name, "
             "task_type, scenario, "
             "description, target_json, quality_threshold, status, version, "
-            "create_fingerprint, created_at, updated_at"
+            "create_fingerprint, created_at, updated_at, collection_description, upload_day_notes"
         )
 
     def _select_task(
@@ -844,6 +852,8 @@ class PostgresCollectionTaskRepository:
             create_fingerprint=str(values[14]),
             created_at=values[15],
             updated_at=values[16],
+            collection_description=values[17],
+            upload_day_notes=values[18],
         )
 
     @staticmethod

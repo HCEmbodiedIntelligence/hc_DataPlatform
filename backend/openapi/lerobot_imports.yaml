@@ -920,6 +920,10 @@ components:
     OriginalArchiveRequest:
       additionalProperties: false
       properties:
+        export_filter:
+          anyOf:
+          - $ref: '#/components/schemas/UploadExportFilter'
+          - type: 'null'
         import_ids:
           items:
             maxLength: 128
@@ -1419,6 +1423,24 @@ paths:
           default: false
           title: All Batches
           type: boolean
+      - in: query
+        name: uploaded_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Uploaded From
+      - in: query
+        name: uploaded_before
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Uploaded Before
       - in: query
         name: recording_id
         required: false

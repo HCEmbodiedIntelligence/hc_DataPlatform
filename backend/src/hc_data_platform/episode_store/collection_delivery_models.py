@@ -11,6 +11,7 @@ from hc_data_platform.annotation.delivery_models import (
 
 from .upload_candidates import UploadExportFilter
 from .camera_calibration import ExportCameraCalibration
+from .collection_records import CollectionRecord
 from .models import DataVersionRef, Digest, FrozenModel, digest
 
 
@@ -54,6 +55,7 @@ class RequestCollectionDelivery(FrozenModel):
 
 
 class CollectionDeliveryMember(FrozenModel):
+    collection_record: CollectionRecord | None = Field(default=None, exclude_if=lambda v: v is None)
     data: DataVersionRef
     manifest_sha256: Digest
     annotation: AnnotationDeliveryPlan | None = None

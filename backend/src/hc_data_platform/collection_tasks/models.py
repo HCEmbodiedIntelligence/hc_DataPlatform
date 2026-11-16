@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Annotated, cast
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 from hc_data_platform.capture_schemes.references import SetTaskPlan
 
@@ -96,12 +103,26 @@ class CollectionTarget(StrictModel):
         return self
 
 
+def _upload_day(value: str) -> str:
+    if date.fromisoformat(value).isoformat() != value:
+        raise ValueError("expected YYYY-MM-DD")
+    return value
+
+
+UploadDayNotes = dict[
+    Annotated[str, AfterValidator(_upload_day)],
+    Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)],
+]
+
+
 class CreateCollectionTask(StrictModel):
     # Optional when omitted, but explicit JSON null is invalid.
     dataset_id: DatasetIdentifier = Field(default_factory=_omitted_text)
     name: str = Field(min_length=1, max_length=200)
     type: str = Field(default="", max_length=100, description="任务分类，留空表示未分类。")
     scenario: str = Field(min_length=1, max_length=200)
+    collection_description: str = Field(default_factory=str, max_length=2000)
+    upload_day_notes: UploadDayNotes = Field(default_factory=dict)
     description: str = Field(default="", max_length=10_000)
     target: CollectionTarget | None = None
     quality_threshold: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
@@ -123,6 +144,8 @@ class UpdateCollectionTask(StrictModel):
         default_factory=_omitted_text, max_length=100, description="任务分类，空字符串可清除分类。"
     )
     scenario: str = Field(default_factory=_omitted_text, min_length=1, max_length=200)
+    collection_description: str = Field(default_factory=_omitted_text, max_length=2000)
+    upload_day_notes: UploadDayNotes = Field(default_factory=dict)
     description: str = Field(default_factory=_omitted_text, max_length=10_000)
     target: CollectionTarget | None = None
     quality_threshold: float | None = Field(default=None, ge=0, le=1, allow_inf_nan=False)
@@ -138,6 +161,8 @@ class CollectionTask(StrictModel):
     name: str
     type: str
     scenario: str
+    collection_description: str = Field(default_factory=str, max_length=2000)
+    upload_day_notes: UploadDayNotes = Field(default_factory=dict)
     description: str
     target: CollectionTarget | None
     quality_threshold: float | None = Field(ge=0, le=1, allow_inf_nan=False)
@@ -269,6 +294,8 @@ class CollectionTaskRecord(StrictModel):
     name: str
     type: str
     scenario: str
+    collection_description: str = Field(default_factory=str, max_length=2000)
+    upload_day_notes: UploadDayNotes = Field(default_factory=dict)
     description: str
     target: CollectionTarget | None
     quality_threshold: float | None
@@ -296,6 +323,8 @@ class CollectionTaskRecord(StrictModel):
             type=self.type,
             scenario=self.scenario,
             description=self.description,
+            collection_description=self.collection_description,
+            upload_day_notes=self.upload_day_notes,
             target=self.target,
             quality_threshold=self.quality_threshold,
             status=self.status,

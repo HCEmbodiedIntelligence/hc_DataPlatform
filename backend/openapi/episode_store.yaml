@@ -35,6 +35,10 @@ components:
           anyOf:
           - $ref: '#/components/schemas/ExportCameraCalibration'
           - type: 'null'
+        collection_record:
+          anyOf:
+          - $ref: '#/components/schemas/CollectionRecord'
+          - type: 'null'
         data:
           $ref: '#/components/schemas/DataVersionRef'
         excluded_depth_features:
@@ -130,6 +134,28 @@ components:
       required:
       - data
       title: CollectionEpisodeSelection
+      type: object
+    CollectionRecord:
+      additionalProperties: false
+      properties:
+        collection_description:
+          title: Collection Description
+          type: string
+        collection_task_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Id
+        uploads:
+          items:
+            $ref: '#/components/schemas/UploadDayRecord'
+          title: Uploads
+          type: array
+      required:
+      - collection_task_id
+      - collection_description
+      - uploads
+      title: CollectionRecord
       type: object
     CollectionRelease:
       additionalProperties: false
@@ -1048,6 +1074,10 @@ components:
           exclusiveMinimum: 0.0
           title: Byte Count
           type: integer
+        collection_record:
+          anyOf:
+          - $ref: '#/components/schemas/CollectionRecord'
+          - type: 'null'
         data:
           $ref: '#/components/schemas/DataVersionRef'
         file_count:
@@ -2198,6 +2228,27 @@ components:
       - total
       title: UploadCandidatePage
       type: object
+    UploadDayRecord:
+      additionalProperties: false
+      properties:
+        batch_numbers:
+          items:
+            type: integer
+          title: Batch Numbers
+          type: array
+        note:
+          title: Note
+          type: string
+        uploaded_on:
+          format: date
+          title: Uploaded On
+          type: string
+      required:
+      - uploaded_on
+      - batch_numbers
+      - note
+      title: UploadDayRecord
+      type: object
     UploadExportFilter:
       additionalProperties: false
       properties:
@@ -2226,6 +2277,18 @@ components:
           - unannotated
           title: Stage
           type: string
+        uploaded_before:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Uploaded Before
+        uploaded_from:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Uploaded From
       required:
       - stage
       title: UploadExportFilter
@@ -4108,6 +4171,24 @@ paths:
           default: false
           title: All Batches
           type: boolean
+      - in: query
+        name: uploaded_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Uploaded From
+      - in: query
+        name: uploaded_before
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Uploaded Before
       - in: query
         name: dataset_id
         required: false

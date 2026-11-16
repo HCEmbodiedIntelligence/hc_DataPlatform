@@ -47,7 +47,8 @@ import { TaskPlanManager, type TaskPlanForm } from "../../../features/capture-sc
 interface TaskFormValues {
   name: string;
   datasetId: string;
-  type: string;
+  collectionDescription: string;
+  dayNotes: { day: string; note: string }[];
   scenario: string;
   description: string;
   packageCount?: number | null;
@@ -143,7 +144,9 @@ function initialValues(task: CollectionTask | undefined): TaskFormValues {
   return {
     name: task?.name ?? "",
     datasetId: task?.dataset_id ?? NEW_DATASET_VALUE,
-    type: task?.type ?? "",
+    collectionDescription: task?.collection_description ?? "",
+    dayNotes: Object.entries(task?.upload_day_notes ?? {}).sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, note]) => ({ day, note })),
     scenario: task?.scenario ?? "",
     description: task?.description ?? "",
     packageCount: task?.target?.package_count ?? undefined,
@@ -158,7 +161,7 @@ function initialValues(task: CollectionTask | undefined): TaskFormValues {
   };
 }
 
-function commandFromValues(values: TaskFormValues): CreateCollectionTask {
+function commandFromValues(values: TaskFormValues, legacyType = ""): CreateCollectionTask {
   const packageCount = values.packageCount;
   const durationHours = values.durationHours;
   const hasPackageTarget = typeof packageCount === "number";
@@ -168,7 +171,9 @@ function commandFromValues(values: TaskFormValues): CreateCollectionTask {
     ...(values.datasetId === NEW_DATASET_VALUE
       ? {}
       : { dataset_id: values.datasetId }),
-    type: (values.type ?? "").trim(),
+    type: legacyType,
+    collection_description: (values.collectionDescription ?? "").trim(),
+    upload_day_notes: Object.fromEntries((values.dayNotes ?? []).map(({ day, note }) => [day, note.trim()])),
     scenario: values.scenario.trim(),
     description: values.description.trim(),
     target:
@@ -230,7 +235,8 @@ function drawerErrorState(error: unknown): PageStateKind {
 const fieldNames: Readonly<Record<string, keyof TaskFormValues>> = {
   name: "name",
   dataset_id: "datasetId",
-  type: "type",
+  collection_description: "collectionDescription",
+  upload_day_notes: "dayNotes",
   scenario: "scenario",
   description: "description",
   package_count: "packageCount",
@@ -302,7 +308,8 @@ export function CollectionTaskDrawer({
     initialTask?.target?.duration_seconds,
     initialTask?.target?.package_count,
     initialTask?.task_code,
-    initialTask?.type,
+    initialTask?.collection_description,
+    initialTask?.upload_day_notes,
     mode,
     storageKey,
   ]);
@@ -359,14 +366,14 @@ export function CollectionTaskDrawer({
           return;
         }
         savedPlan = result === "saved";
-        if (savedPlan && JSON.stringify(commandFromValues(values)) === JSON.stringify(commandFromValues(initialValues(initialTask)))) {
+        if (savedPlan && JSON.stringify(commandFromValues(values, initialTask?.type)) === JSON.stringify(commandFromValues(initialValues(initialTask), initialTask?.type))) {
           setDirty(false);
           onClose();
           return;
         }
       }
       await onSubmit({
-        ...commandFromValues(values),
+        ...commandFromValues(values, initialTask?.type),
         ...(mode === "create" && capturePlan
           ? { capture_plan: capturePlan }
           : {}),
@@ -578,20 +585,38 @@ export function CollectionTaskDrawer({
             )}
             {mode === "edit" && planError && <Alert type="warning" title={planError} />}
             <Form.Item
-              label="任务分类（选填）"
-              name="type"
-              rules={[
-                { max: 100, message: "任务分类不能超过 100 个字符。" },
-              ]}
-              extra="用于任务展示和筛选，例如抓取、搬运、装配。"
+              label="采集描述（选填）"
+              name="collectionDescription"
             >
-              <Input
-                autoComplete="off"
-                maxLength={100}
-                name="type"
-                placeholder="例如：抓取、搬运、装配；可留空"
-              />
+              <Input.TextArea rows={2} maxLength={2000} showCount
+                placeholder="记录这批数据采了什么、覆盖了哪些情况" />
             </Form.Item>
+            <Form.List name="dayNotes" rules={[{
+              validator: async (_, rows: TaskFormValues["dayNotes"] = []) => {
+                const days = rows.map(row => row?.day).filter(Boolean);
+                if (new Set(days).size !== days.length) throw new Error("同一天的说明请写在一条记录里。");
+              },
+            }]}>
+              {(fields, { add, remove }, { errors }) => (
+                <>
+                  {fields.map(field => (
+                    <div key={field.key}>
+                      <Form.Item name={[field.name, "day"]} label="上传日期"
+                        rules={[{ required: true, message: "请选择上传日期。" }]}>
+                        <Input type="date" />
+                      </Form.Item>
+                      <Form.Item name={[field.name, "note"]} label="当日采集记录"
+                        rules={[{ required: true, whitespace: true, message: "请填写当日采集记录。" }]}>
+                        <Input.TextArea rows={2} maxLength={2000} placeholder="记录采集内容、测试发现或补采原因" />
+                      </Form.Item>
+                      <Button onClick={() => remove(field.name)}>移除这条记录</Button>
+                    </div>
+                  ))}
+                  <Button onClick={() => add({ day: "", note: "" })}>添加按日采集记录</Button>
+                  <Form.ErrorList errors={errors} />
+                </>
+              )}
+            </Form.List>
 
             <Form.Item
               label="采集场景"

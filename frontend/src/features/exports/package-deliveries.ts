@@ -5,7 +5,7 @@ import { downloadArchive } from "./raw-download";
 import type { Scope } from "../../shared/scope/model";
 import { episodeDataReferenceWireSchema as dataWire } from "../datasets/api/episode-package-wire";
 import { request } from "../../shared/api/http-client";
-import { completeDeliveryJobWire } from "../datasets/episodes/complete-deliveries";
+import { collectionRecordWire, completeDeliveryJobWire } from "../datasets/episodes/complete-deliveries";
 import { annotationDeliveryPlanWire } from "../annotation/runtime/annotation-deliveries";
 
 export type PackageData = z.infer<typeof dataWire>;
@@ -43,6 +43,7 @@ const collectionPlan = z
           .object({
             data: dataWire,
             manifest_sha256: digest,
+            collection_record: collectionRecordWire.nullish(),
             annotation: annotationDeliveryPlanWire.nullable(),
             selected_depth_profiles: z.record(z.string(), digest),
             excluded_depth_features: z.array(z.string()),

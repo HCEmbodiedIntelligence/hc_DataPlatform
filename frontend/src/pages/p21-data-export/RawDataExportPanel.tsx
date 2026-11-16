@@ -163,6 +163,9 @@ function RawDataSelection({
         selected.map((item) => item.import_id),
         current.signal,
         setDownloadedBytes,
+        batchNumbers.length || uploadedFrom || uploadedBefore
+          ? { stage: "dataset", batch_numbers: batchNumbers, uploaded_from: uploadedFrom, uploaded_before: uploadedBefore }
+          : undefined,
       );
       if (result.kind === "cancelled") return;
       if (!current.signal.aborted) setDownloadResult(result);

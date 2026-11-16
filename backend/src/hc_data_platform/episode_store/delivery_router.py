@@ -218,8 +218,10 @@ def download_episode_bundle(project_id: str, region_code: str, body: DownloadEpi
 
     with delivery_service(packages, auth, project_id, region_code) as service:
         from .episode_bundle import bundle_files
-        parts = bundle_files(service, body, auth)
-        stream = stream_storage_archive(service.storage, parts)
+        from .collection_records import record_document
+        records = {}
+        parts = bundle_files(service, body, auth, records=records)
+        stream = stream_storage_archive(service.storage, parts, record_document(records) if records else None)
         return StreamingResponse(stream, media_type="application/zip",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
                      "Content-Disposition": 'attachment; filename="episodes.zip"'},

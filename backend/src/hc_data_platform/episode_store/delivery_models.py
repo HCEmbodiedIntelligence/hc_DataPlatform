@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
 from .collection_delivery_models import CollectionDeliveryPlan
+from .collection_records import CollectionRecord
 from .models import DataVersionRef, Digest, FrozenModel, digest
 from .upload_candidates import UploadExportFilter
 
@@ -47,6 +48,7 @@ class RequestEpisodeDelivery(FrozenModel):
 
 
 class EpisodeDeliveryMember(FrozenModel):
+    collection_record: CollectionRecord | None = Field(default=None, exclude_if=lambda v: v is None)
     data: DataVersionRef
     manifest_sha256: Digest
     root: str = Field(pattern=r"^(episode|episodes/[0-9]{6})$")

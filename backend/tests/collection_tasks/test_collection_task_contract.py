@@ -135,6 +135,8 @@ def test_formal_schema_contains_only_confirmed_task_fields() -> None:
         "type",
         "scenario",
         "description",
+        "collection_description",
+        "upload_day_notes",
         "target",
         "quality_threshold",
         "status",

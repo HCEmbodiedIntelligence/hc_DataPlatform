@@ -67,7 +67,8 @@ const task: CollectionTask = {
   project_id: scope.projectId,
   task_code: "00000001",
   name: "透明件抓取采集",
-  type: "抓取采集",
+  type: "",
+  collection_description: "抓取采集",
   scenario: "透明工件工位",
   description: "覆盖反光与遮挡条件。",
   target: { package_count: 20, duration_seconds: 1200 },
@@ -309,7 +310,7 @@ function LocationProbe() {
 async function fillMinimumCreateForm(user: ReturnType<typeof userEvent.setup>) {
   const drawer = screen.getByRole("dialog", { name: "新建采集任务" });
   await user.type(within(drawer).getByLabelText("任务名称"), "夜班工位采集");
-  await user.type(within(drawer).getByLabelText("任务分类（选填）"), "抓取采集");
+  await user.type(within(drawer).getByLabelText("采集描述（选填）"), "抓取采集");
   await user.type(within(drawer).getByLabelText("采集场景"), "夜间灯光条件");
 }
 
@@ -472,7 +473,9 @@ it("keeps capture records open when task progress and task-list reads refresh", 
     vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input), "http://platform.test");
       const offset = Number(url.searchParams.get("offset"));
-      const body = url.pathname.endsWith("/episodes")
+      const body = url.pathname.includes("/continuous-recordings/") && !url.pathname.endsWith("/episodes")
+        ? { data: { recording_id: captures[0]!.recording_id, quality_summary: null } }
+        : url.pathname.endsWith("/episodes")
         ? { items: [], qc_reports: [] }
         : {
             items: captures.slice(offset, offset + 10),
@@ -649,7 +652,7 @@ describe("P20 collection tasks", () => {
     await user.click(screen.getByRole("button", { name: "采集记录" }));
     await user.click(await screen.findByRole("tab", { name: "任务详情" }));
     const details = within(screen.getByRole("region", { name: "任务详情" }));
-    expect(details.getByText(task.type)).toBeVisible();
+    expect(details.getByText(task.collection_description!)).toBeVisible();
     expect(details.getByText(task.scenario)).toBeVisible();
     expect(details.getByText(task.dataset_id)).toBeVisible();
     expect(details.getByText("8 包 / 20 包")).toBeVisible();
@@ -704,12 +707,12 @@ describe("P20 collection tasks", () => {
     });
 
     await user.type(
-      screen.getByRole("textbox", { name: "当前窗口筛选任务分类" }),
+      screen.getByRole("textbox", { name: "当前窗口筛选采集描述" }),
       "抓取",
     );
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
-        "type=%E6%8A%93%E5%8F%96",
+        "notes=%E6%8A%93%E5%8F%96",
       ),
     );
 
@@ -800,12 +803,12 @@ describe("P20 collection tasks", () => {
     const drawer = screen.getByRole("dialog", { name: "新建采集任务" });
     await user.type(within(drawer).getByLabelText("任务名称"), "未分类任务");
     await user.type(within(drawer).getByLabelText("采集场景"), "桌面抓取");
-    expect(within(drawer).getByLabelText("任务分类（选填）")).toHaveValue("");
+    expect(within(drawer).getByLabelText("采集描述（选填）")).toHaveValue("");
     await user.click(screen.getByRole("button", { name: "创建任务" }));
     await waitFor(() => expect(gateway.create).toHaveBeenCalledTimes(1));
     expect(gateway.create).toHaveBeenCalledWith(
       scope,
-      expect.objectContaining({ name: "未分类任务", type: "", scenario: "桌面抓取" }),
+      expect.objectContaining({ name: "未分类任务", collection_description: "", scenario: "桌面抓取" }),
       expect.any(String),
     );
   });
@@ -858,6 +861,9 @@ describe("P20 collection tasks", () => {
     );
 
     await fillMinimumCreateForm(user);
+    await user.click(within(drawer).getByRole("button", { name: "添加按日采集记录" }));
+    fireEvent.change(within(drawer).getByLabelText("上传日期"), { target: { value: "2026-11-12" } });
+    await user.type(within(drawer).getByLabelText("当日采集记录"), "补采透明件");
     await user.type(
       within(drawer).getByLabelText("任务描述"),
       "抓起水瓶，放到指定区域。\n机械臂回到初始位置。",
@@ -877,7 +883,9 @@ describe("P20 collection tasks", () => {
             content_sha256: "a".repeat(64),
           },
         },
-        type: "抓取采集",
+        type: "",
+        collection_description: "抓取采集",
+        upload_day_notes: { "2026-11-12": "补采透明件" },
         scenario: "夜间灯光条件",
         description: "抓起水瓶，放到指定区域。\n机械臂回到初始位置。",
         target: null,

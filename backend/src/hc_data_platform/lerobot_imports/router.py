@@ -502,7 +502,10 @@ def download_original_archive(
     authorize_scope(auth, project_id, "export.download", region_code, organization_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     files = archive_files(browser, organization_id, project_id, region_code, command)
-    stream = stream_archive(browser, files)
+    from .source_archive import archive_record_document
+
+    document = archive_record_document((organization_id, project_id, region_code), command)
+    stream = stream_archive(browser, files, document)
     return StreamingResponse(
         stream,
         media_type="application/zip",
