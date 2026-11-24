@@ -231,6 +231,9 @@ def _require_active_organization(cursor: Any, principal: str, organization: str)
         WHERE principal_id=%s::uuid AND organization_id=%s AND active FOR SHARE
     """, (principal, organization))
     if cursor.fetchone() is None:
+        cursor.execute("SELECT 1 FROM access_control.accounts WHERE principal_id=%s::uuid",(principal,))
+        if cursor.fetchone() is None:
+            raise _account_principal_required()
         raise _organization_membership_required()
 
 
@@ -2418,6 +2421,11 @@ class PostgresAccessRepository(PostgresGovernance):
             if not manages_org(cursor,auth,str(values["organization_id"]),lock=True):
                 raise denied()
             requester_id = str(values.pop("requester_id"))
+            if target_status is AccessRequestStatus.REVOKED and not auth.is_platform_admin:
+                cursor.execute("""SELECT 1 FROM access_control.organization_memberships WHERE
+                    principal_id=%s::uuid AND organization_id=%s AND active AND is_administrator FOR SHARE""",
+                    (requester_id,values["organization_id"]))
+                if cursor.fetchone(): raise denied()
             values["capability_keys"] = tuple(cast(Sequence[str], values["capability_keys"]))
             item = AccountAccessRequest.model_validate(values)
             require_independent_approval(auth, requester_id, target_status)

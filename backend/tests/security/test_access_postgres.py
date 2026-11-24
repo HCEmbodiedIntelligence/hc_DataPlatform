@@ -73,6 +73,12 @@ def _database_url() -> str:
     return value
 
 
+def _enroll_organization(dsn, principal_id, organization_id):
+    with psycopg.connect(dsn.replace("postgresql+asyncpg://","postgresql://",1)) as connection:
+        connection.execute("""INSERT INTO access_control.organization_memberships(principal_id,organization_id,activated_by)
+                            VALUES(%s,%s,'test-fixture') ON CONFLICT DO NOTHING""",(principal_id,organization_id))
+
+
 def _dsn_with_application_name(dsn: str, application_name: str) -> str:
     separator = "&" if "?" in dsn else "?"
     return f"{dsn}{separator}application_name={application_name}"
@@ -168,6 +174,8 @@ def test_postgres_access_request_foreign_keys_map_to_their_actual_resource() -> 
             region_codes=frozenset(),
         )
 
+        _enroll_organization(dsn,account.principal_id,organization_id)
+        _enroll_organization(dsn,account.principal_id,missing_organization_id)
         membership_key = f"foreign-key-membership-{suffix}"
         with pytest.raises(ProblemException) as missing_membership_project:
             service.create_membership_request(
@@ -328,6 +336,8 @@ def test_postgres_access_scope_revocation_and_concurrent_approval() -> None:
         assert alice_auth is not None and bob_auth is not None
         assert service.bootstrap(alice_token).available_scopes == ()
 
+        _enroll_organization(dsn,alice_auth.subject_id,organization_a)
+        _enroll_organization(dsn,bob_auth.subject_id,organization_b)
         alice_membership = service.create_membership_request(
             auth=alice_auth,
             organization_id=organization_a,
@@ -2178,6 +2188,7 @@ def test_postgres_account_notifications_are_recipient_scoped_and_read_once() -> 
         alice_auth = service.authenticate_access_token(alice_token)
         bob_auth = service.authenticate_access_token(bob_token)
         assert alice_auth is not None and bob_auth is not None
+        _enroll_organization(dsn,alice_auth.subject_id,organization_id)
         request = service.create_membership_request(
             auth=alice_auth,
             organization_id=organization_id,

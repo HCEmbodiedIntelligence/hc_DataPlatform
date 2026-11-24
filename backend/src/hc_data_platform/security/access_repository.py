@@ -1779,6 +1779,8 @@ class InMemoryAccessRepository(MemoryGovernance):
             owner_id = self._organization_request_owners.get(item.request_id)
             if owner_id is None:
                 raise _not_found("organization_membership_request")
+            if target_status is AccessRequestStatus.REVOKED and (owner_id,item.organization_id) in self._organization_admins and not auth.is_platform_admin:
+                raise denied()
             require_independent_approval(auth, owner_id, target_status)
             expected = (
                 AccessRequestStatus.APPROVED
