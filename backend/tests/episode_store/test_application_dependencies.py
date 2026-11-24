@@ -38,7 +38,7 @@ def application(calls=None):
 
     @app.middleware("http")
     async def context(request: Request, call_next):
-        request.state.auth_context = _auth("dataset_version.read")
+        request.state.auth_context = _auth("dataset_version.read", "export.read")
         token = bind_request_context(
             RequestContext(
                 organization_id="organization-a", project_id="project-a", region_code="cn-test"

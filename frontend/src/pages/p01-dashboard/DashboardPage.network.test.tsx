@@ -59,13 +59,29 @@ function json(body: unknown, init?: ResponseInit): Response {
 }
 
 function responseFor(url: string): Response {
+  if (url.includes("/dashboard/analytics?"))
+    return json({
+      project_id: scope.projectId,
+      region_code: scope.regionCode,
+      as_of: dashboardWindow.to,
+      analytics: {
+        buckets: [{ start: dashboardWindow.from, episodes: 2, frames: 360, seconds: 12 }],
+        affected_packages: 2, reports: { recording: 4, episode: 3 },
+        outcomes: { PASS: 3, REJECT: 1 },
+        issues: {
+          CAPTURE_INTERRUPTION_TOO_LONG: 1,
+          CAPTURE_VALID_RATIO_LOW: 1,
+          QC_MODALITY_OFFSET: 1,
+        },
+      },
+    });
   if (url.includes("/dashboard/activity?"))
     return json(dashboardActivityFixture);
   if (url.includes("/dashboard/task-status?")) {
     const parsed = new URL(url, "https://frontend.invalid");
     return json(
       parsed.searchParams.has("task_id")
-        ? dashboardTaskStatusFixture
+        ? { ...dashboardTaskStatusFixture, tasks: dashboardTaskStatusAllTasksFixture.tasks }
         : dashboardTaskStatusAllTasksFixture,
     );
   }
@@ -283,16 +299,19 @@ describe("Dashboard production client path", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "最近活动" }),
+      await screen.findByRole("heading", { name: "质检结果占比" }),
     ).toBeVisible();
-    expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "入库 Episode 趋势" })).toBeVisible();
+    expect(await screen.findByText("连续无效采集行超过拒绝阈值")).toBeVisible();
+    expect(screen.getByText("有效采集行比例过低")).toBeVisible();
+    expect(screen.getByText("传感器时间不同步")).toBeVisible();
     expect(screen.getByText("全部任务（2）")).toBeVisible();
     expect(screen.getByLabelText("全部任务汇总")).toHaveTextContent(
       "2 个任务 · 14 个数据包",
     );
     expect(screen.queryByRole("heading", { name: "局部状态" })).toBeNull();
     expect(screen.queryByText("采集覆盖率")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(
       fetchMock.mock.calls.some(([input]) =>
         String(input).includes("/dashboard/coverage"),
@@ -300,7 +319,71 @@ describe("Dashboard production client path", () => {
     ).toBe(false);
   });
 
-  it("renders the Dashboard and issues all three reads for platform.admin", async () => {
+  it("switches the analytics scope with the task selector and restores all tasks", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input), "https://frontend.invalid");
+      const response = responseFor(String(input));
+      if (url.pathname.endsWith("/analytics") && url.searchParams.get("task_id") === "task-assembly-01") {
+        const body = await response.json();
+        return json({ ...body, analytics: { buckets: [], issues: {}, outcomes: {}, reports: {}, affected_packages: 0 } });
+      }
+      return response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/dashboard"]}><DashboardPage /></MemoryRouter></QueryClientProvider>);
+    const bar = await screen.findByLabelText(/2 条 · 360 帧 · 12 秒/);
+    fireEvent.mouseEnter(bar);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("2 条 · 360 帧 · 12 秒");
+    expect(screen.getByText("有问题的数据包 2 个")).toBeVisible();
+    fireEvent.mouseDown(screen.getByRole("combobox", {name:"筛选采集任务"}));
+    fireEvent.click(await screen.findByText("00000042 · 双臂装配采集", { selector: ".ant-select-item-option-content" }));
+    const zeroBuckets = await screen.findAllByLabelText(/0 条 · 0 帧 · 0 秒/);
+    expect(zeroBuckets).toHaveLength(24);
+    fireEvent.mouseLeave(bar);
+    fireEvent.focus(zeroBuckets[0]!);
+    await waitFor(() => expect(screen.getByRole("tooltip")).toHaveTextContent("0 条 · 0 帧 · 0 秒"));
+    expect(screen.getByText("有问题的数据包 0 个")).toBeVisible();
+    expect(screen.getByRole("img", { name: "质检问题分类占比图，0 类问题" })).toBeVisible();
+    expect(screen.getByText("录制报告 0 份 · Episode 报告 0 份")).toBeVisible();
+    fireEvent.mouseDown(screen.getByRole("combobox", {name:"筛选采集任务"}));
+    fireEvent.click(await screen.findByText("全部任务（2）", { selector: ".ant-select-item-option-content" }));
+    expect(await screen.findByLabelText(/2 条 · 360 帧 · 12 秒/)).toBeVisible();
+  });
+
+  it("requests a new analytics interval from the time picker", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      responseFor(String(input)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/dashboard"]}>
+          <DashboardPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("heading", { name: "质检结果占比" });
+    fireEvent.click(screen.getByPlaceholderText("开始时间"));
+    fireEvent.click(await screen.findByText("最近 7 天"));
+    await waitFor(() => {
+      const requests = fetchMock.mock.calls.map(
+        ([input]) => new URL(String(input), "https://frontend.invalid"),
+      );
+      expect(
+        requests.some(
+          (url) =>
+            url.pathname.endsWith("/analytics") &&
+            Date.parse(url.searchParams.get("to")!) -
+              Date.parse(url.searchParams.get("from")!) ===
+              7 * 86400000,
+        ),
+      ).toBe(true);
+    });
+    expect(screen.queryByRole("heading", { name: "我的待办" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "最近活动" })).toBeNull();
+  });
+
+  it("renders the Dashboard and issues both reads for platform.admin", async () => {
     useShellStore.setState({
       authorization: {
         scopeKey: makeScopeKey(scope),
@@ -324,11 +407,11 @@ describe("Dashboard production client path", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "最近活动" }),
+      await screen.findByRole("heading", { name: "质检结果占比" }),
     ).toBeVisible();
-    expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "入库 Episode 趋势" })).toBeVisible();
     expect(screen.queryByText("无权访问")).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(
       fetchMock.mock.calls
         .map(
@@ -337,8 +420,7 @@ describe("Dashboard production client path", () => {
         )
         .sort(),
     ).toEqual([
-      "/api/v1/projects/prj_fx_01/dashboard/activity",
-      "/api/v1/projects/prj_fx_01/dashboard/pending-items",
+      "/api/v1/projects/prj_fx_01/dashboard/analytics",
       "/api/v1/projects/prj_fx_01/dashboard/task-status",
     ]);
   });
@@ -365,8 +447,8 @@ describe("Dashboard production client path", () => {
 
     expect(screen.getByRole("heading", { name: "工作台" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "信号轨道" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "我的待办" })).toBeVisible();
-    expect(screen.getByRole("heading", { name: "最近活动" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "入库 Episode 趋势" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "质检结果占比" })).toBeVisible();
     expect(screen.getByText("当前范围没有采集任务")).toBeVisible();
     expect(screen.queryByText("能力尚未开放")).toBeNull();
     expect(screen.getByRole("button", { name: "刷新工作台" })).toBeDisabled();

@@ -1517,56 +1517,70 @@ class PostgresDatasetPageRepository:
             connection.close()
 
     def working_version_id(self, *, scope: DatasetPageScope, dataset_id: str) -> str | None:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            return self.read_working_version_id(cursor, scope=scope, dataset_id=dataset_id)
+        finally:
+            cursor.close()
+            connection.close()
+
+    @staticmethod
+    def read_working_version_id(
+        cursor: DbApiCursor, *, scope: DatasetPageScope, dataset_id: str
+    ) -> str | None:
         """Follow the active storage branch, including a partially projected head.
 
         Archived newer collections remain explicitly readable after rollback,
         but must not become the default merely because they have a later date.
         A pending product projection falls back to its last projected ancestor.
         """
-        connection = self._connection_factory()
-        cursor = connection.cursor()
-        try:
-            cursor.execute(
-                """WITH RECURSIVE active AS (
-                    SELECT c.organization_id,c.project_id,c.region_code,c.dataset_id,
-                           c.collection_version_id,c.version,c.document,0 AS depth
-                    FROM episode_store.collection_heads h
-                    JOIN episode_store.collections c USING
-                      (organization_id,project_id,region_code,dataset_id,collection_version_id)
-                    WHERE h.organization_id=%s AND h.project_id=%s AND h.region_code=%s
-                      AND h.dataset_id=%s
-                    UNION ALL
-                    SELECT c.organization_id,c.project_id,c.region_code,c.dataset_id,
-                           c.collection_version_id,c.version,c.document,a.depth+1
-                    FROM active a JOIN episode_store.collections c
-                      ON c.organization_id=a.organization_id AND c.project_id=a.project_id
-                     AND c.region_code=a.region_code AND c.dataset_id=a.dataset_id
-                     AND c.collection_version_id=a.document->>'previous_collection_version_id'
-                     AND c.version<a.version
-                ), candidates AS (
-                    SELECT v.version_id,a.depth AS priority FROM active a
-                    JOIN dataset_registry.dataset_versions v
-                      ON v.organization_id=a.organization_id AND v.project_id=a.project_id
-                     AND v.region_code=a.region_code AND v.dataset_id=a.dataset_id
-                     AND v.version_id='version_'||a.collection_version_id
-                    WHERE v.version_scope='INTERNAL' AND v.version_status='READY'
-                    UNION ALL
-                    SELECT v.version_id,2147483647 AS priority
-                    FROM lance_datasets d JOIN dataset_registry.dataset_versions v
-                      ON v.organization_id=d.organization_id AND v.project_id=d.project_id
-                     AND v.dataset_id=d.dataset_id
-                     AND v.version_id='version_lance_'||d.current_version::text
-                    WHERE v.organization_id=%s AND v.project_id=%s AND v.region_code=%s
-                      AND v.dataset_id=%s AND v.version_scope='INTERNAL'
-                      AND v.version_status='READY'
-                ) SELECT version_id FROM candidates ORDER BY priority LIMIT 1""",
-                (scope.organization_id, scope.project_id, scope.region_code, dataset_id) * 2,
-            )
-            row = cursor.fetchone()
-            return None if row is None else row[0]
-        finally:
-            cursor.close()
-            connection.close()
+        cursor.execute(
+            """WITH RECURSIVE active AS (
+                SELECT c.organization_id,c.project_id,c.region_code,c.dataset_id,
+                       c.collection_version_id,c.version,c.document,0 AS depth
+                FROM episode_store.collection_heads h
+                JOIN episode_store.collections c USING
+                  (organization_id,project_id,region_code,dataset_id,collection_version_id)
+                WHERE h.organization_id=%s AND h.project_id=%s AND h.region_code=%s
+                  AND h.dataset_id=%s
+                UNION ALL
+                SELECT c.organization_id,c.project_id,c.region_code,c.dataset_id,
+                       c.collection_version_id,c.version,c.document,a.depth+1
+                FROM active a JOIN episode_store.collections c
+                  ON c.organization_id=a.organization_id AND c.project_id=a.project_id
+                 AND c.region_code=a.region_code AND c.dataset_id=a.dataset_id
+                 AND c.collection_version_id=a.document->>'previous_collection_version_id'
+                 AND c.version<a.version
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM dataset_registry.dataset_versions ready
+                     WHERE (ready.organization_id,ready.project_id,
+                            ready.region_code,ready.dataset_id)
+                         =(a.organization_id,a.project_id,a.region_code,a.dataset_id)
+                       AND ready.version_id='version_'||a.collection_version_id
+                       AND ready.version_scope='INTERNAL' AND ready.version_status='READY'
+                 )
+            ), candidates AS (
+                SELECT v.version_id,a.depth AS priority FROM active a
+                JOIN dataset_registry.dataset_versions v
+                  ON v.organization_id=a.organization_id AND v.project_id=a.project_id
+                 AND v.region_code=a.region_code AND v.dataset_id=a.dataset_id
+                 AND v.version_id='version_'||a.collection_version_id
+                WHERE v.version_scope='INTERNAL' AND v.version_status='READY'
+                UNION ALL
+                SELECT v.version_id,2147483647 AS priority
+                FROM lance_datasets d JOIN dataset_registry.dataset_versions v
+                  ON v.organization_id=d.organization_id AND v.project_id=d.project_id
+                 AND v.dataset_id=d.dataset_id
+                 AND v.version_id='version_lance_'||d.current_version::text
+                WHERE v.organization_id=%s AND v.project_id=%s AND v.region_code=%s
+                  AND v.dataset_id=%s AND v.version_scope='INTERNAL'
+                  AND v.version_status='READY'
+            ) SELECT version_id FROM candidates ORDER BY priority LIMIT 1""",
+            (scope.organization_id, scope.project_id, scope.region_code, dataset_id) * 2,
+        )
+        row = cast(tuple[str] | None, cursor.fetchone())
+        return None if row is None else row[0]
 
     def get_version(
         self, *, scope: DatasetPageScope, dataset_id: str, version_id: str

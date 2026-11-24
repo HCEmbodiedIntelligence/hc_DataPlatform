@@ -1,3 +1,4 @@
+import { useFileDownload } from "../../shared/lib/use-file-download";
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Progress } from "antd";
@@ -32,6 +33,7 @@ export function CompleteDeliveryPanel({
   canDownload: boolean;
   canCreate: boolean;
 }) {
+  const download = useFileDownload(data.data_version_id);
   const lifetime = useRef<AbortController | null>(null);
   const key = useRef<string | null>(null);
   useEffect(() => {
@@ -52,7 +54,7 @@ export function CompleteDeliveryPanel({
   });
   const mutation = useMutation({
     mutationFn: async (command: {
-      action: "create" | "download" | "cancel" | "retry";
+      action: "create" | "cancel" | "retry";
       job?: CompleteDeliveryJob;
     }) => {
       const signal = lifetime.current!.signal;
@@ -61,23 +63,7 @@ export function CompleteDeliveryPanel({
         return requestCompleteDelivery(scope, data, key.current, signal);
       }
       const job = command.job!;
-      if (command.action !== "download")
-        return commandCompleteDelivery(
-          scope,
-          data,
-          job,
-          command.action,
-          signal,
-        );
-      const grant = await authorizeCompleteDelivery(scope, data, job, signal);
-      signal.throwIfAborted();
-      const anchor = document.createElement("a");
-      anchor.href = grant.url;
-      anchor.download = "";
-      anchor.rel = "noopener noreferrer";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
+      return commandCompleteDelivery(scope, data, job, command.action, signal);
     },
     onSuccess: async () => {
       await query.refetch();
@@ -116,11 +102,11 @@ export function CompleteDeliveryPanel({
             description={query.error.message}
           />
         )}
-        {mutation.error && (
+        {(mutation.error || download.error) && (
           <Alert
             type="error"
             title="完整包操作失败"
-            description={mutation.error.message}
+            description={(download.error ?? mutation.error)?.message}
           />
         )}
         {query.isPending && <p>读取打包状态…</p>}
@@ -171,8 +157,9 @@ export function CompleteDeliveryPanel({
               )}
               <div className={styles.actions}>
                 <Button
-                  disabled={job.status !== "READY" || mutation.isPending}
-                  onClick={() => mutation.mutate({ action: "download", job })}
+                  disabled={job.status !== "READY" || mutation.isPending || Boolean(download.pending)}
+                  onClick={() => void download.save(`${data.identity.episode_id}.zip`, signal =>
+                    authorizeCompleteDelivery(scope, data, job, signal))}
                 >
                   下载完整 ZIP
                 </Button>

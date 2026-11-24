@@ -413,6 +413,8 @@ class QualityProfileV1(BaseModel):
     profile_id: str = Field(min_length=1)
     profile_version: int = Field(default=1, ge=1)
     engine_version: str = Field(default=CURRENT_QUALITY_ENGINE_VERSION, min_length=1)
+    # Omit the selection on historical profiles to preserve their content hashes.
+    enabled_codes: tuple[QualityCode, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     required_topics: frozenset[str]
     default_timing: TopicTimingProfileV1 = Field(default_factory=TopicTimingProfileV1)
     topic_timing: dict[str, TopicTimingProfileV1] = Field(default_factory=dict)
@@ -602,6 +604,7 @@ class AutoQualityProblemV1(BaseModel):
     collection_task_id: str | None = None
     source_file_name: str | None = None
     discarded: bool = False
+    progress: Literal["OPEN", "IN_PROGRESS", "DISCARDED"] = "OPEN"
     recording_id: str | None = None
     recording_episode_id: str | None = None
     rollout_id: str = Field(min_length=1, max_length=256)

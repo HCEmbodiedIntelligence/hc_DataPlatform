@@ -87,6 +87,7 @@ class LeRobotWebUploadService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
+            task_id=manifest.collection_task_id,
         )
         manifest_document = _canonical_manifest(manifest)
         import_id = _stable_import_id(
@@ -255,12 +256,8 @@ class LeRobotWebUploadService:
         import_id: str,
         command: AuthorizeLeRobotPartsV1,
     ) -> LeRobotPartGrantV1:
-        self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-        )
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        select_request_scope(project_id, region_code, organization_id=organization_id)
         session = self._require_session(
             organization_id=organization_id,
             project_id=project_id,
@@ -268,6 +265,8 @@ class LeRobotWebUploadService:
             dataset_id=command.dataset_id,
             import_id=import_id,
         )
+        self._authorize(auth, organization_id=organization_id, project_id=project_id, region_code=region_code,
+                        task_id=cast(dict, session["manifest"]).get("collection_task_id"))
         asset = self._require_asset(
             session,
             path=command.path,
@@ -335,12 +334,8 @@ class LeRobotWebUploadService:
         body: BinaryIO,
         size: int,
     ) -> MultipartPart:
-        self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-        )
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        select_request_scope(project_id, region_code, organization_id=organization_id)
         session = self._require_session(
             organization_id=organization_id,
             project_id=project_id,
@@ -348,6 +343,8 @@ class LeRobotWebUploadService:
             dataset_id=dataset_id,
             import_id=import_id,
         )
+        self._authorize(auth, organization_id=organization_id, project_id=project_id, region_code=region_code,
+                        task_id=cast(dict, session["manifest"]).get("collection_task_id"))
         asset = self._require_asset(
             session,
             path=path,
@@ -388,12 +385,8 @@ class LeRobotWebUploadService:
         import_id: str,
         command: CompleteLeRobotAssetV1,
     ) -> LeRobotAssetCompletedV1:
-        self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-        )
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        select_request_scope(project_id, region_code, organization_id=organization_id)
         session = self._require_session(
             organization_id=organization_id,
             project_id=project_id,
@@ -401,6 +394,8 @@ class LeRobotWebUploadService:
             dataset_id=command.dataset_id,
             import_id=import_id,
         )
+        self._authorize(auth, organization_id=organization_id, project_id=project_id, region_code=region_code,
+                        task_id=cast(dict, session["manifest"]).get("collection_task_id"))
         asset = self._require_asset(
             session,
             path=command.path,
@@ -467,12 +462,8 @@ class LeRobotWebUploadService:
         command: CommitLeRobotImportV1,
         inspected_files=None,
     ) -> LeRobotImportAcceptedV1:
-        self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-        )
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        select_request_scope(project_id, region_code, organization_id=organization_id)
         session = self._require_session(
             organization_id=organization_id,
             project_id=project_id,
@@ -480,6 +471,8 @@ class LeRobotWebUploadService:
             dataset_id=command.manifest.dataset_id,
             import_id=import_id,
         )
+        self._authorize(auth, organization_id=organization_id, project_id=project_id, region_code=region_code,
+                        task_id=command.manifest.collection_task_id)
         if session.get("manifest") != _canonical_manifest(command.manifest):
             raise problem(
                 status=409,
@@ -928,11 +921,14 @@ class LeRobotWebUploadService:
         organization_id: str,
         project_id: str,
         region_code: str,
+        task_id: str | None = None,
     ) -> None:
         ScopeGuard.require(auth, project_id, region_code, organization_id)
         select_request_scope(project_id, region_code, organization_id=organization_id)
         capabilities = auth.effective_capabilities(project_id, organization_id)
-        if not auth.is_platform_admin and "upload.manage" not in capabilities:
+        if not auth.is_platform_admin and "upload.manage" not in capabilities and (
+            not task_id or f"upload.manage/{task_id}" not in capabilities
+        ):
             raise problem(
                 status=403,
                 code="CAPABILITY_REQUIRED",

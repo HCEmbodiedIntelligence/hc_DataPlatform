@@ -258,6 +258,14 @@ def test_real_lance_step_window_http_wire_is_precise_scoped_and_audited(tmp_path
     app = FastAPI()
     app.include_router(lance_catalog_router)
 
+    from fastapi.responses import JSONResponse
+    from hc_data_platform.core.context import RequestContext, bind_request_context, reset_request_context
+    from hc_data_platform.core.errors import ProblemException
+
+    @app.exception_handler(ProblemException)
+    async def problem_response(request: Request, exc: ProblemException):
+        return JSONResponse(exc.problem.model_dump(mode="json"), status_code=exc.problem.status)
+
     @app.middleware("http")
     async def install_auth(request: Request, call_next):  # type: ignore[no-untyped-def]
         request.state.auth_context = AuthContext(
@@ -274,14 +282,22 @@ def test_real_lance_step_window_http_wire_is_precise_scoped_and_audited(tmp_path
                     "annotation.save",
                     "annotation.submit",
                     "dataset_version.read",
+                    *({"episode.read"} if request.headers.get("X-Test-Preview") else set()),
                 }
             ),
         )
-        return await call_next(request)
+        token = bind_request_context(RequestContext())
+        try:
+            return await call_next(request)
+        finally:
+            reset_request_context(token)
 
     with TestClient(app) as client:
+        path = "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-p06/steps"
+        assert client.get(path, params={"start_step": 0, "end_step": 2, "version": version.version}).status_code == 403
         response = client.get(
             "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-p06/steps",
+            headers={"X-Test-Preview": "1"},
             params={
                 "start_step": 0,
                 "end_step": 2,

@@ -36,7 +36,7 @@ vi.mock("./RobotResolutionActions", () => ({
 }));
 const onDelete = vi.fn();
 const onCancel = vi.fn();
-function mount() {
+function mount(openRecords = true) {
   render(
     <MemoryRouter>
       <RobotDeletionDialog
@@ -51,7 +51,7 @@ function mount() {
     </MemoryRouter>,
   );
   const tab = screen.queryByRole("tab", { name: "关联清单" });
-  if (tab) fireEvent.click(tab);
+  if (tab && openRecords) fireEvent.click(tab);
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -188,5 +188,49 @@ it("only confirms removal when an unused robot has passed the check", async () =
 it("closes the dialog when opening a reference, enabling browser back navigation", async () => {
   mount();
   await userEvent.click(screen.getByRole("link", { name: "查看上传与处理" }));
+  expect(onCancel).toHaveBeenCalledOnce();
+});
+
+it("opens the capture scheme list with the bound version and management link", async () => {
+  state.data!.blockers = [
+    {
+      kind: "capture_scheme",
+      count: 1,
+      label: "采集方案关联",
+      resolution: "移除关联",
+    },
+  ];
+  state.data!.items = [
+    {
+      kind: "capture_scheme",
+      id: "scheme",
+      name: "X1 采集方案",
+      version: 4,
+      scheme_id: "scheme",
+      status: "ACTIVE",
+      project_id: null,
+      region_code: null,
+      collection_task_id: null,
+      task_code: null,
+      task_name: null,
+      raw_source_id: null,
+      dataset_id: null,
+    },
+  ];
+  mount(false);
+  expect(screen.getByRole("tab", { name: "关联清单" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await waitFor(() => expect(screen.getByText("X1 采集方案 · v4")).toBeVisible());
+  expect(
+    screen.getByRole("button", { name: "有关联，暂不能删除" }),
+  ).toBeDisabled();
+  const manage = screen.getByRole("link", { name: "管理采集方案关联" });
+  expect(manage).toHaveAttribute(
+    "href",
+    "/settings/robot-instances?robot=robot&section=processing",
+  );
+  await userEvent.click(manage);
   expect(onCancel).toHaveBeenCalledOnce();
 });

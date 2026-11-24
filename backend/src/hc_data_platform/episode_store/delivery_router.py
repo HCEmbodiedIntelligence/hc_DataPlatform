@@ -1,22 +1,28 @@
 """Complete-package commands require the same exact scope on every cache access."""
 
 from contextlib import contextmanager
+from contextvars import copy_context
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Header, Query, Response
+from fastapi import APIRouter, Body, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import AwareDatetime
+from pydantic import AwareDatetime, Field
 from starlette.background import BackgroundTask
 
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
+from hc_data_platform.lerobot_imports.source_archive import OriginalArchiveRequest
+from hc_data_platform.storage.export_archive import publish_archive
+
+from .models import FrozenModel
 from .collection_delivery_models import EpisodeDeliveryCandidates, RequestCollectionDelivery
 from .collection_export import CollectionIncompatible
 from .delivery_models import (
     DownloadEpisodeBundle,
     PrepareEpisodePart,
+    PrepareEpisodeParts,
     PreparedEpisodePart,
     EpisodeDeliveryDownload,
     EpisodeDeliveryGeneration,
@@ -33,7 +39,7 @@ BASE = "/projects/{project_id}/regions/{region_code}/episode-deliveries"
 
 
 @contextmanager
-def delivery_service(packages, auth, project_id, region_code):
+def delivery_service(packages, auth, project_id, region_code, *, capability="dataset_version.read"):
     organization = current_request_context().organization_id
     if not organization:
         raise problem(
@@ -42,7 +48,7 @@ def delivery_service(packages, auth, project_id, region_code):
             title="Organization required",
             detail="Select an organization.",
         )
-    authorize_scope(auth, project_id, "dataset_version.read", region_code, organization)
+    authorize_scope(auth, project_id, capability, region_code, organization)
     if packages is None:
         raise problem(
             status=503,
@@ -142,7 +148,7 @@ def list_episode_deliveries(
     kind: Literal["independent", "collection"] | None = None,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(packages, auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code, capability="export.read") as service:
         return service.list(
             auth, data_version_id=data_version_id, limit=limit, before=before, kind=kind
         )
@@ -201,31 +207,101 @@ def list_upload_candidates(
         return service.filtered_candidates(selection, auth, datasets=dataset_id, tasks=task_id, after=after, limit=limit)
 
 
-@router.post(BASE + "/bundle-parts", response_model=PreparedEpisodePart)
-def prepare_episode_part(project_id: str, region_code: str, body: PrepareEpisodePart,
+@router.post(BASE + "/bundle-parts", response_model=PreparedEpisodePart,
+             responses={200: {"content": {"application/x-ndjson": {"schema": {"type": "string"}}}}})
+def prepare_episode_part(project_id: str, region_code: str, body: PrepareEpisodePart | PrepareEpisodeParts,
                          auth: VerifiedAuth, packages: PackageServices):
     from .episode_bundle import prepare_part
 
     with delivery_service(packages, auth, project_id, region_code) as service:
+        if isinstance(body, PrepareEpisodeParts):
+            from .batch_preparation import batch_progress
+
+            return StreamingResponse(batch_progress(service, body, auth), media_type="application/x-ndjson",
+                                     headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
         return prepare_part(service, body, auth)
+
+
+def bundle_archive(service, body, auth):
+    from .bundle_archive import stream_episode_bundle
+    from .episode_bundle import bundle_files
+
+    records = {}
+    from .export_file_names import record_files
+
+    versions = {}
+    parts = bundle_files(service, body, auth, records=records, versions=versions)
+    outer = body.download_name or (
+        f"Episodes-{body.download_date.isoformat()}.zip" if body.download_date else "episodes.zip"
+    )
+    context = copy_context()
+
+    def indexed(files):
+        pairs = [(name, versions[part]) for part, paths in files.items() for name in [outer, *paths]]
+        context.run(record_files, service.repository, pairs)
+
+    stream = stream_episode_bundle(service.storage, parts, records, service.packages.directory,
+                                  on_files=indexed)
+    return outer, stream
 
 
 @router.post(BASE + "/bundle", response_class=StreamingResponse,
              responses={200: {"content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}}})
 def download_episode_bundle(project_id: str, region_code: str, body: DownloadEpisodeBundle,
                             auth: VerifiedAuth, packages: PackageServices):
-    from hc_data_platform.lerobot_imports.source_archive import stream_storage_archive
-
     with delivery_service(packages, auth, project_id, region_code) as service:
-        from .episode_bundle import bundle_files
-        from .collection_records import record_document
-        records = {}
-        parts = bundle_files(service, body, auth, records=records)
-        stream = stream_storage_archive(service.storage, parts, record_document(records) if records else None)
+        outer, stream = bundle_archive(service, body, auth)
         return StreamingResponse(stream, media_type="application/zip",
             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
-                     "Content-Disposition": 'attachment; filename="episodes.zip"'},
+                     "Content-Disposition": f'attachment; filename="{outer}"'},
             background=BackgroundTask(stream.close))
+
+
+class RawOssExport(OriginalArchiveRequest):
+    kind: Literal["raw"]
+
+
+class BundleOssExport(DownloadEpisodeBundle):
+    kind: Literal["bundle"]
+
+
+class JobOssExport(FrozenModel):
+    kind: Literal["job"]
+    job_id: str = Field(pattern=r"^ed_[0-9a-f]{64}$")
+    export_filter: UploadExportFilter | None = None
+
+
+@router.post(BASE + "/oss", response_class=StreamingResponse,
+             responses={200: {"content": {"application/x-ndjson": {"schema": {"type": "string"}}}}})
+def export_archive_to_oss(
+    project_id: str, region_code: str, request: Request, auth: VerifiedAuth, packages: PackageServices,
+    body: Annotated[RawOssExport | BundleOssExport | JobOssExport, Body(discriminator="kind")],
+):
+    organization = current_request_context().organization_id
+    if not organization:
+        raise problem(status=422, code="ORGANIZATION_SCOPE_REQUIRED", title="Organization required",
+                      detail="Select an organization.")
+    scope = (organization, project_id, region_code)
+    authorize_scope(auth, project_id, "export.create", region_code, scope[0])
+    if isinstance(body, RawOssExport):
+        from hc_data_platform.lerobot_imports.router import get_service, original_archive
+
+        uploads = get_service(request)
+        chunks = original_archive(uploads, scope, body, auth)
+        return publish_archive(uploads.storage, scope, body.download_name or "original-data.zip", chunks,
+                               item_count=len(set(body.import_ids)))
+
+    with delivery_service(packages, auth, project_id, region_code) as service:
+        if isinstance(body, BundleOssExport):
+            name, chunks = bundle_archive(service, body, auth)
+            return publish_archive(service.storage, scope, name, chunks, item_count=len(body.part_ids))
+
+        row, name = service.ready_archive(body.job_id, auth, body.export_filter)
+        context = copy_context()
+        return publish_archive(service.storage, scope, name,
+                               service.storage.read_chunks(row["artifact_key"]),
+                               item_count=len(row["plan"]["members"]), expected_sha256=row["artifact_sha256"],
+                               on_complete=lambda: context.run(service.record_archive_access, row, name, auth))
 
 
 @router.get(BASE + "/{job_id}", response_model=EpisodeDeliveryJob)
@@ -238,7 +314,7 @@ def get_episode_delivery(
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with delivery_service(packages, auth, project_id, region_code) as service:
+    with delivery_service(packages, auth, project_id, region_code, capability="export.read") as service:
         return service.status(job_id, auth)
 
 

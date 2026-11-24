@@ -96,6 +96,7 @@ from hc_data_platform.security.recovery import (
     recovery_delivery_from_settings,
 )
 from hc_data_platform.security.scope import ScopeGuard
+from hc_data_platform.teleoperation.store import PresenceStore
 
 from .config import Settings, get_settings, require_durable_runtime
 from .context import (
@@ -110,6 +111,7 @@ from .context import (
     reset_writer_permit,
     reset_writer_permit_retention,
 )
+from .dbapi import psycopg_connection_factory
 from .discovery import discover_module_routers
 from .errors import ProblemDetails, ProblemException
 from .etag import preserve_strong_etag
@@ -191,6 +193,7 @@ _ROBOT_INGEST_UPLOAD_PREFIX = (
     "/api/v1/robot-ingest/uploads",
     "/api/v1/robot-ingest/heartbeat",
     "/api/v1/robot-ingest/connections:redeem",
+    "/api/v1/robot-ingest/teleoperation/",
     "/api/v1/robot-ingest/me",
     "/api/v1/robot-ingest/tasks",
 )
@@ -785,6 +788,11 @@ def create_app(
         docs_url="/docs" if docs_enabled else None,
         redoc_url="/redoc" if docs_enabled else None,
     )
+    app.state.teleoperation = PresenceStore(
+        psycopg_connection_factory(resolved_settings.postgres_dsn)
+        if resolved_settings.runtime_backend == "production"
+        else None
+    )
     app.state.settings = resolved_settings
     release_identity = release_identity_from_settings(resolved_settings)
     if release_identity.component != "api":
@@ -1005,6 +1013,12 @@ def create_app(
         app.state.annotation_logical = runtime.annotation_logical
         if runtime.episode_packages is not None:
             app.router.add_event_handler("shutdown", runtime.episode_packages.close)
+            if resolved_settings.episode_export_processes:
+                from hc_data_platform.episode_store.part_processes import EpisodePartProcesses
+
+                processes = EpisodePartProcesses(resolved_settings)
+                runtime.episode_packages.deliveries.part_processes = processes
+                app.router.add_event_handler("shutdown", processes.close)
         resolved_access_service = resolved_access_service or runtime.access
         resolved_admin_account_service = resolved_admin_account_service or runtime.admin_accounts
         resolved_recovery_service = resolved_recovery_service or runtime.recovery
@@ -1290,12 +1304,20 @@ def create_app(
         exc: RequestValidationError,
     ) -> JSONResponse:
         context = _request_context_from_state(request)
+        detail = "The request does not satisfy the API contract."
+        if getattr(request.scope.get("route"), "operation_id", None) == "saveCaptureSchemeDraft":
+            from hc_data_platform.capture_schemes.save_errors import save_validation_hint
+
+            reason, detail = save_validation_hint(exc.errors())
+            log_event(logger, logging.INFO, "CAPTURE.DRAFT_VALIDATION_FAILED", request_id=context.request_id,
+                      error_type=reason, route=_safe_route_locator(request), http_method=request.method,
+                      status_code=422)
         return _problem_response(
             ProblemDetails(
                 type="https://hc-data-platform.invalid/problems/request-validation",
                 title="Request validation failed",
                 status=422,
-                detail="The request does not satisfy the API contract.",
+                detail=detail,
                 instance=_safe_route_locator(request),
                 code="REQUEST_VALIDATION_FAILED",
                 request_id=context.request_id,

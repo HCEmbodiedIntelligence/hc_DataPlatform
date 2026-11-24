@@ -68,9 +68,31 @@ def test_missing_following_state_reports_capture_clock_and_both_channels():
     assert "1794279194669386411" not in issue.description
 
 
+@pytest.mark.parametrize(("error", "code"), [
+    ("[Errno 28] No space left on device", "MCAP_WORKSPACE_FULL"),
+    ("database or disk is full", "MCAP_WORKSPACE_FULL"),
+    ("recording preview changed source timeline", "MCAP_PREVIEW_TIMELINE_MISMATCH"),
+])
+def test_legacy_preparation_errors_have_specific_diagnoses(error, code):
+    issue = issue_for(preparation_problem(error, "sample.mcap", None, None, None))
+    assert issue.reason_code == code and issue.label != "录制准备失败"
+
+
 def test_unlisted_preparation_code_keeps_worker_evidence():
     issue = issue_for(preparation_problem(
         "MCAP_NEW_FORMAT_ERROR: /cam frame=284", "sample.mcap", None, None, None
     ))
     assert "/cam frame=284" in issue.description
     assert issue.reason_code == "MCAP_NEW_FORMAT_ERROR"
+
+
+def test_long_tail_shows_manual_review_evidence():
+    problem = preparation_problem(
+        "MCAP_FOLLOWING_STATE_UNAVAILABLE: /action capture_time_ns=1000000011 "
+        "last_state_ns=1000000000 tail_actions=3 tail_delta_ns=150000000 "
+        "limit_ns=100000000 rgb_after_state_window=4",
+        "original.mcap", "/state", "/action", {}, [],
+    )
+    assert all(value in problem.description for value in (
+        "1000000000 ns", "连续越界 3 条动作", "150 ms", "100 ms", "人工复核", "RGB 训练帧：4",
+    ))

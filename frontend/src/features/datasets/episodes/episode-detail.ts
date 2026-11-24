@@ -378,6 +378,13 @@ export async function downloadAnnotationMigration(
   signal?.throwIfAborted();
   return blob;
 }
+export function downloadPackageManifest(scope: Scope, data: ReviewDataRef, signal: AbortSignal) {
+  return request<Blob>({
+    method: "GET", path: `${episodeEndpoint(scope, data)}/manifest`,
+    scope, signal, cache: "no-store", responseType: "blob",
+  });
+}
+
 export async function loadEpisodeFiles(
   scope: Scope,
   data: ReviewDataRef,
@@ -410,7 +417,7 @@ export async function authorizeEpisodeFile(
       file_id: digest,
       sha256: digest,
       size: count,
-      url: z.url(),
+      url: z.union([z.url(), z.string().regex(/^\/api\/v1\/oss-archive-member\/[A-Za-z0-9_=-]+\?signature=[0-9a-f]{64}$/u)]),
       expires_seconds: z.literal(300),
     })
     .parse(
@@ -422,7 +429,7 @@ export async function authorizeEpisodeFile(
         cache: "no-store",
       }),
     );
-  const url = new URL(grant.url);
+  const url = new URL(grant.url, globalThis.location?.origin ?? "http://localhost");
   if (
     !same(grant.data, data) ||
     grant.file_id !== file.file_id ||

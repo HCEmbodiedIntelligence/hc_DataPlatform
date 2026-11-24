@@ -45,6 +45,8 @@ LABELS = {
     "MCAP_FRAME_CLOCK_REQUIRES_STATE": "生成帧时间轴需要关节状态消息",
     "MCAP_GENERATED_ACTION_AXIS_MISSING": "生成动作时缺少关节轴",
     "MCAP_NAMED_JOINT_REQUIRED": "关节字段需要按关节名称配置",
+    "MCAP_WORKSPACE_FULL": "录制处理工作空间不足，释放空间后可重试",
+    "MCAP_PREVIEW_TIMELINE_MISMATCH": "预览视频与源帧时间轴不一致",
     "MCAP_PREPARATION_FAILED": "录制准备失败",
     "MCAP_REBUILD_METADATA_MISMATCH": "重建文件的元数据与配置不一致",
     "MCAP_RECORDING_TIME_LAYOUT_INVALID": "录制的时间顺序或时间范围无效",
@@ -130,9 +132,17 @@ def preparation_problem(error, path, state_topic, action_topic, inventory, rules
     label = LABELS.get(code) or PROCESSING_ERRORS.get(code) or "录制准备失败"
     if code == "MCAP_FOLLOWING_STATE_UNAVAILABLE":
         lines = ["方案要求从采集时间等于或晚于这条动作的状态帧补关节值，符合条件的状态帧为 0 条。"]
-        match = re.fullmatch(r"(\S+) capture_time_ns=(\d+)", detail)
+        match = re.fullmatch(
+            r"(\S+) capture_time_ns=(\d+)(?: last_state_ns=(\d+) tail_actions=(\d+) "
+            r"tail_delta_ns=(\d+) limit_ns=(\d+)(?: rgb_after_state_window=(\d+))?)?", detail,
+        )
         if match:
             lines.append(f"出错动作：{match[1]}，采集时间 {match[2]} ns")
+            if match[3]:
+                lines.append(f"最后状态采集时间 {match[3]} ns，连续越界 {match[4]} 条动作。")
+                lines.append(f"尾差 {int(match[5]) / 1e6:g} ms，超过自动剔除上限 {int(match[6]) / 1e6:g} ms，需人工复核。")
+                if match[7] is not None:
+                    lines.append(f"超出末尾状态匹配窗口的 RGB 训练帧：{match[7]}。")
         elif detail:
             lines.append(f"处理记录：{detail}")
         lines.extend(_channel_lines(state_topic, action_topic, inventory))

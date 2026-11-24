@@ -1,0 +1,338 @@
+paths:
+  /api/v1/account/management-directory:
+    get:
+      tags:
+      - access
+      summary: Management Directory
+      operationId: getManagementDirectory
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceDirectory'
+      security:
+      - bearerAuth: []
+  /api/v1/account/managed-projects:
+    post:
+      tags:
+      - access
+      summary: Create Managed Project
+      operationId: createManagedProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformProjectCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      security:
+      - bearerAuth: []
+  /api/v1/account/managed-members:
+    get:
+      tags:
+      - access
+      summary: Managed Members
+      operationId: listManagedMembers
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemberEntry'
+                title: Response Listmanagedmembers
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/management-inbox:
+    get:
+      tags:
+      - access
+      summary: Management Inbox
+      operationId: listManagementInbox
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InboxEntry'
+                title: Response Listmanagementinbox
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}/administrator:
+    put:
+      tags:
+      - access
+      summary: Set Membership Administrator
+      operationId: setMembershipAdministrator
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdministratorChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  schemas:
+    GovernanceDirectory:
+      properties:
+        organizations:
+          items:
+            $ref: '#/components/schemas/OrganizationEntry'
+          type: array
+          title: Organizations
+        projects:
+          items:
+            $ref: '#/components/schemas/ProjectEntry'
+          type: array
+          title: Projects
+      type: object
+      required:
+      - organizations
+      - projects
+      title: GovernanceDirectory
+    OrganizationEntry:
+      properties:
+        organization_id:
+          type: string
+          title: Organization Id
+        organization_name:
+          type: string
+          title: Organization Name
+        join_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Join Code
+        can_manage:
+          type: boolean
+          title: Can Manage
+      type: object
+      required:
+      - organization_id
+      - organization_name
+      - can_manage
+      title: OrganizationEntry
+    ProjectEntry:
+      properties:
+        organization_id:
+          type: string
+          title: Organization Id
+        project_id:
+          type: string
+          title: Project Id
+        project_name:
+          type: string
+          title: Project Name
+      type: object
+      required:
+      - organization_id
+      - project_id
+      - project_name
+      title: ProjectEntry
+    MemberEntry:
+      properties:
+        principal_id:
+          type: string
+          title: Principal Id
+        username:
+          type: string
+          title: Username
+        administrator:
+          type: boolean
+          title: Administrator
+      type: object
+      required:
+      - principal_id
+      - username
+      - administrator
+      title: MemberEntry
+    InboxEntry:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        requester_id:
+          type: string
+          title: Requester Id
+        username:
+          type: string
+          title: Username
+        organization_id:
+          type: string
+          title: Organization Id
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        kind:
+          type: string
+          enum:
+          - ORGANIZATION
+          - PROJECT
+          - CAPABILITY
+          title: Kind
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        capability_keys:
+          items:
+            type: string
+          type: array
+          title: Capability Keys
+        resource_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Id
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+        replaces_request_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replaces Request Id
+      type: object
+      required:
+      - request_id
+      - requester_id
+      - username
+      - organization_id
+      - project_id
+      - kind
+      - reason
+      - capability_keys
+      title: InboxEntry
+    AdministratorChange:
+      properties:
+        organization_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Organization Id
+        project_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Project Id
+        enabled:
+          type: boolean
+          title: Enabled
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - organization_id
+      - enabled
+      - reason
+      title: AdministratorChange

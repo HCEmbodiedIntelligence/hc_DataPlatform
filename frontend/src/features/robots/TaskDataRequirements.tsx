@@ -5,7 +5,7 @@ import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { useShellStore } from "../../shared/scope/shell-store";
 export function TaskDataRequirements({ taskId }: { taskId: string }) {
   const scope = useShellStore((s) => s.scope),
-    canManage = useCapabilities().has("upload.manage");
+    canManage = useCapabilities().has("collection_task.manage");
   const path = `/projects/${scope?.projectId}/collection-tasks/${encodeURIComponent(taskId)}/data-requirements`;
   const query = useQuery({
     queryKey: ["task-data-requirements", scope, taskId],

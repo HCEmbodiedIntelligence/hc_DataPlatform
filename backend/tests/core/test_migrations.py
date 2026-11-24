@@ -246,6 +246,23 @@ EXPECTED_MANIFEST = (
     "ingest/036_shared_original_references.sql",
     "annotation/0019_episode_outcome.sql",
     "annotation/0020_episode_outcome_values.sql",
+    "platform/010_object_store_prefix_aliases.sql",
+    "storage/0007_reclaimable_cache_policies.sql",
+    "storage/0008_cache_policy_targets.sql",
+    "storage/0009_inventory_retention.sql",
+    "storage/0010_superseded_mcap_batches.sql",
+    "ingest/037_quality_rule_templates.sql",
+    "episode_store/0021_qc_retired_versions.sql",
+    "ingest/038_original_mcap_content_lookup.sql",
+    "ingest/039_mcap_duplicate_submissions.sql",
+    "ingest/040_upload_batches.sql",
+    "collection_tasks/0010_collection_notes.sql",
+    "ingest/041_teleoperation.sql",
+    "episode_store/0022_export_file_names.sql",
+    "robotics/0008_capture_scheme_robot_history.sql",
+    "manual_cleaning/0005_discard_reported_package.sql",
+    "ingest/042_annotation_tag_library.sql",
+    "security/024_project_role_grants.sql",
 )
 
 

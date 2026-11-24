@@ -1,4 +1,5 @@
-import { downloadExport as triggerExportDownload } from "../../features/exports/download";
+import { useFileDownload } from "../../shared/lib/use-file-download";
+import { exportDownloadName } from "../../features/exports/download";
 import { useExportFormats } from "../../features/exports/use-export-formats";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -418,16 +419,18 @@ export function VersionDetailPage() {
       applySearch({ tab: "exports", exportJobId: retried.job_id });
     },
   });
-  const downloadExport = useMutation({
-    mutationFn: (jobId: string) =>
-      authorizePublishedExportDownload({ ...exportTarget, jobId }),
-    onSuccess: (authorization) => {
-      triggerExportDownload(authorization);
-      setDownloadFeedback(
-        `文件已开始下载，短期授权过期时间：${new Date(authorization.expires_at).toLocaleString()}。`,
-      );
-    },
-  });
+  const downloadExport = useFileDownload(JSON.stringify([scopeKey, datasetId, versionId]));
+  async function savePublishedExport() {
+    const job = exportJob.data;
+    if (!job) return;
+    setDownloadFeedback(null);
+    const name = exportDownloadName(`${datasetId}-${versionId}`, job.result?.media_type ?? "");
+    const saved = await downloadExport.save(name, async () => {
+      const grant = await authorizePublishedExportDownload({ ...exportTarget, jobId: job.job_id });
+      return { url: grant.download_url, sha256: grant.artifact_content_hash };
+    });
+    if (saved) setDownloadFeedback(`已保存到所选位置：${saved}`);
+  }
 
   const target = checks.data?.eligible_targets.find(
     (item) => item.output_revision_id === selectedRevisionId,
@@ -1445,12 +1448,12 @@ export function VersionDetailPage() {
                     {exportJob.data.status === "SUCCEEDED" && (
                       <Button
                         type="primary"
-                        loading={downloadExport.isPending}
+                        loading={Boolean(downloadExport.pending)}
                         onClick={() =>
-                          downloadExport.mutate(exportJob.data.job_id)
+                          void savePublishedExport()
                         }
                       >
-                        {downloadExport.isPending
+                        {Boolean(downloadExport.pending)
                           ? "正在申请下载授权…"
                           : "下载导出文件"}
                       </Button>
@@ -1468,11 +1471,11 @@ export function VersionDetailPage() {
                       onRetry={() => retryExport.mutate(exportJob.data.job_id)}
                     />
                   ) : null}
-                  {downloadExport.isError ? (
+                  {downloadExport.error ? (
                     <MutationError
                       error={downloadExport.error}
                       onRetry={() =>
-                        downloadExport.mutate(exportJob.data.job_id)
+                        void savePublishedExport()
                       }
                     />
                   ) : null}

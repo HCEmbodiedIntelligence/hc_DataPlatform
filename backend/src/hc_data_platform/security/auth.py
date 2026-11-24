@@ -14,7 +14,8 @@ from .capabilities import (
     KNOWN_BUSINESS_CAPABILITIES,
     PLATFORM_ADMIN_CAPABILITIES,
     PLATFORM_OPERATION_CAPABILITIES,
-    expand_data_workflow_capabilities,
+    expand_project_roles,
+    resource_capability,
 )
 
 # PyJWT supports more algorithms than the platform should accept from configuration. This
@@ -264,13 +265,32 @@ class AuthContext:
     ) -> frozenset[str]:
         """Resolve scope-specific grants and human data-workflow permissions."""
 
+        include_legacy_project_grants = organization_id is None
+        if project_id and organization_id is None and self.organization_scope_triples:
+            # A legacy caller may omit the organization. Never combine two tenants' grants.
+            organizations = {org for org, project, _ in self.organization_scope_triples if project == project_id}
+            from hc_data_platform.core.context import current_request_context
+
+            try:
+                selected_org = current_request_context().organization_id
+            except RuntimeError:
+                selected_org = None
+            if selected_org is not None:
+                if selected_org not in organizations:
+                    return ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES if self.is_platform_admin else frozenset()
+                organization_id = selected_org
+            elif len(organizations) == 1:
+                organization_id = next(iter(organizations))
+            elif len(organizations) > 1:
+                return ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES if self.is_platform_admin else frozenset()
+            include_legacy_project_grants = len(organizations) == 1
         scoped = (
             frozenset(
                 capability
                 for project, capability in self.scoped_capabilities
                 if project == project_id
             )
-            if project_id is not None and organization_id is None
+            if project_id is not None and include_legacy_project_grants
             else frozenset()
         )
         organization_scoped = (
@@ -288,7 +308,7 @@ class AuthContext:
         # JWT or an accidentally approved project capability must never activate it.
         project_capabilities = (scoped | organization_scoped) - {CAPABILITY_PLATFORM_ADMIN}
         granted = self.capabilities | project_capabilities
-        return granted if self.service_identity else expand_data_workflow_capabilities(granted)
+        return granted if self.service_identity else expand_project_roles(granted)
 
     @property
     def is_platform_admin(self) -> bool:
@@ -306,6 +326,30 @@ class AuthContext:
             self.is_platform_admin
             or capability in self.effective_capabilities(project_id, organization_id)
         )
+
+    def readable_upload_tasks(self, project_id: str, organization_id: str) -> tuple[str, ...] | None:
+        """Return None for explicit project-wide read access, otherwise the assigned task IDs."""
+        if self.has_capability("upload.read", project_id, organization_id):
+            return None
+        self.require_capability("role.collector", project_id, organization_id)
+        prefix = "upload.manage/"
+        return tuple(key[len(prefix):] for key in self.effective_capabilities(project_id, organization_id)
+                     if key.startswith(prefix))
+
+    def require_upload_read(self, task_id: str | None, project_id: str, organization_id: str) -> None:
+        tasks = self.readable_upload_tasks(project_id, organization_id)
+        if tasks is not None and task_id not in tasks:
+            self.require_capability("upload.read", project_id, organization_id)
+
+    def resource_action(self, capability: str, resource_ids: tuple[str, ...], project_id: str,
+                        organization_id: str | None) -> str:
+        for resource_id in resource_ids:
+            if not resource_id:
+                continue
+            scoped = resource_capability(capability, resource_id)
+            if self.has_capability(scoped, project_id, organization_id):
+                return scoped
+        return capability
 
     def require_capability(
         self,
@@ -343,7 +387,7 @@ class AuthContext:
             if scoped_organization == organization_id
         )
         if not self.service_identity:
-            granted = expand_data_workflow_capabilities(granted)
+            granted = expand_project_roles(granted)
         return capability in granted
 
     def require_organization_capability(self, organization_id: str, capability: str) -> None:

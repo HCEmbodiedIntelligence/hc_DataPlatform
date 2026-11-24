@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { mockSavePicker } from "../../shared/lib/test-save-picker";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -23,6 +24,7 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.resetAllMocks();
+  vi.unstubAllGlobals();
 });
 function mount(canDownload = true, canCreate = true) {
   const f = completeDeliveryFixture();
@@ -58,9 +60,8 @@ it("reuses one command key after an interrupted response", async () => {
 });
 it("can download an existing archive without granting create permission", async () => {
   const f = mount(true, false);
-  const click = vi
-    .spyOn(HTMLAnchorElement.prototype, "click")
-    .mockImplementation(() => {});
+  const { close } = mockSavePicker();
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array(300))));
   vi.mocked(authorizeCompleteDelivery).mockResolvedValue({
     job_id: f.job.job_id,
     artifact_sha256: f.job.artifact_sha256!,
@@ -74,7 +75,7 @@ it("can download an existing archive without granting create permission", async 
   await userEvent.click(
     await screen.findByRole("button", { name: "下载完整 ZIP" }),
   );
-  await waitFor(() => expect(click).toHaveBeenCalledOnce());
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
   expect(commandCompleteDelivery).not.toHaveBeenCalled();
 });
 it("does not query download jobs without permission", () => {

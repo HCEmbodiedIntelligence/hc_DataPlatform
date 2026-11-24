@@ -1046,10 +1046,15 @@ class PostgresOrganizationRobotAssetRepository:
             if pending_cleanup(cursor, organization_id, robot_id):
                 raise ValueError("数据清理尚未完成，请在处理操作中重试。")
             if blockers:
+                capture = next((b for b in blockers if b.kind == "capture_scheme"), None)
                 raise ValueError(
                     "无法删除："
                     + "；".join(f"{b.label} {b.count} 条" for b in blockers)
-                    + "。请在删除弹窗中转移关联或清理数据后重试。"
+                    + (
+                        "。" + capture.resolution
+                        if capture
+                        else "。请在删除弹窗中转移关联或清理数据后重试。"
+                    )
                 )
             # Archive the last draft. Published snapshots whose active associations
             # were resolved remain attached to the durable historical identity.
@@ -1153,7 +1158,12 @@ class PostgresOrganizationRobotAssetRepository:
         except Exception as exc:
             connection.rollback()
             if getattr(exc, "sqlstate", None) == "23503":
-                raise ValueError("机器人新增了关联记录，请刷新后检查关联再删除。") from exc
+                if (
+                    getattr(getattr(exc, "diag", None), "constraint_name", None)
+                    == "capture_scheme_links_active_robot_fk"
+                ):
+                    raise ValueError("请先在机器人实例的「采集方案」中移除关联。") from exc
+                raise ValueError("仍有记录引用此机器人，请重新检查关联。") from exc
             raise
         finally:
             cursor.close()

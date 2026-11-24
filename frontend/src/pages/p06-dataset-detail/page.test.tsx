@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { openDatasetTestSession } from "../../mocks/fixtures/datasets/session";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -46,22 +47,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   workingVersionId = null;
-  useShellStore.getState().setScope({
-    organizationId: "org_fx_01",
-    projectId: "prj_fx_01",
-    regionCode: "cn-shanghai",
-  });
-  useShellStore.getState().setAuthorization({
-    scopeKey: useShellStore.getState().scopeKey,
-    roleVersion: "capacity-test-v1",
-    capabilities: [
-      "dataset.read",
-      "dataset_version.read",
-      "episode.read",
-      "storage.overview.read",
-    ],
-    fetchedAt: "2026-09-21T00:00:00Z",
-  });
+  openDatasetTestSession(["dataset.read", "dataset_version.read", "episode.read", "storage.overview.read"], "capacity-test-v1");
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn().mockImplementation((query: string) => ({

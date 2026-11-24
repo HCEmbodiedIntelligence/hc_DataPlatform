@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 from hc_data_platform.capture_schemes.references import SetTaskPlan
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
+from hc_data_platform.dataset_registry.models import DatasetPageScope
+from hc_data_platform.dataset_registry.repository import PostgresDatasetPageRepository
 from hc_data_platform.security.audit import canonical_hash
 
 from .dataset import ensure_task_dataset, task_upload_region
@@ -488,11 +490,18 @@ class PostgresCollectionTaskRepository:
         connection = self._connection_factory()
         try:
             with connection.cursor() as cursor:
-                if (
-                    self._select_task(cursor, organization_id, project_id, collection_task_id)
-                    is None
-                ):
+                task = self._select_task(cursor, organization_id, project_id, collection_task_id)
+                if task is None:
                     raise task_not_found()
+                dataset_id = task.dataset_id or dataset_id_for_collection_task(
+                    organization_id, project_id, collection_task_id
+                )
+                scope = DatasetPageScope(
+                    organization_id=organization_id, project_id=project_id, region_code=region_code
+                )
+                version_id = PostgresDatasetPageRepository.read_working_version_id(
+                    cursor, scope=scope, dataset_id=dataset_id
+                )
                 cursor.execute(
                     """
                     WITH received AS (
@@ -521,43 +530,19 @@ class PostgresCollectionTaskRepository:
                          AND summary.region_code = received.region_code
                          AND summary.rollout_id = received.rollout_id
                     ), duration_rows AS (
-                        SELECT received.data_package_id,
-                               CASE
-                                   WHEN NULLIF(
-                                       discovery.preflight_json #>> '{time_range,start_time}', ''
-                                   ) IS NOT NULL
-                                    AND NULLIF(
-                                       discovery.preflight_json #>> '{time_range,end_time}', ''
-                                   ) IS NOT NULL
-                                   THEN extract(
-                                       epoch FROM (
-                                           (
-                                               discovery.preflight_json #>> ARRAY[
-                                                   'time_range',
-                                                   'end_time'
-                                               ]
-                                           )::timestamptz
-                                           - (
-                                               discovery.preflight_json #>> ARRAY[
-                                                   'time_range',
-                                                   'start_time'
-                                               ]
-                                           )::timestamptz
-                                       )
-                                   )
-                                   ELSE NULL
-                               END AS duration_seconds
-                        FROM received
-                        LEFT JOIN ingest.manifest_discoveries discovery
-                          ON discovery.project_id = received.project_id
-                         AND discovery.region_code = received.region_code
-                         AND discovery.data_package_id = received.data_package_id
+                        SELECT revision.revision_document ->> 'duration_ns' AS duration_ns
+                        FROM dataset_registry.dataset_version_episodes episode
+                        LEFT JOIN dataset_registry.dataset_version_episode_revisions revision
+                          USING (organization_id, project_id, region_code, dataset_id,
+                                 version_id, episode_id, revision_id)
+                        WHERE episode.organization_id = %s AND episode.project_id = %s
+                          AND episode.region_code = %s AND episode.dataset_id = %s
+                          AND episode.version_id = %s AND episode.task = %s AND episode.included
+                          AND episode.change_type IS DISTINCT FROM 'DERIVED'
                     ), duration_facts AS (
-                        SELECT sum(duration_seconds)::double precision AS captured_duration_seconds,
-                               count(*) FILTER (WHERE duration_seconds IS NOT NULL)::bigint
-                                   AS duration_observed_package_count,
-                               count(*) FILTER (WHERE duration_seconds IS NULL)::bigint
-                                   AS duration_unknown_package_count
+                        SELECT sum(duration_ns::numeric) / 1000000000 AS captured_duration_seconds,
+                               count(duration_ns) AS duration_observed_package_count,
+                               count(*) - count(duration_ns) AS duration_unknown_package_count
                         FROM duration_rows
                     ), discoveries AS (
                         SELECT discovery.preflight_json
@@ -610,7 +595,17 @@ class PostgresCollectionTaskRepository:
                     FROM counts
                     CROSS JOIN duration_facts
                     """,
-                    (project_id, collection_task_id, region_code),
+                    (
+                        project_id,
+                        collection_task_id,
+                        region_code,
+                        organization_id,
+                        project_id,
+                        region_code,
+                        dataset_id,
+                        version_id,
+                        collection_task_id,
+                    ),
                 )
                 row = cursor.fetchone()
                 if row is None:
@@ -628,7 +623,9 @@ class PostgresCollectionTaskRepository:
                         pass_count=int(row[2]),
                         risk_count=int(row[3]),
                         reject_count=int(row[4]),
-                        captured_duration_seconds=(None if row[5] is None else float(row[5])),
+                        captured_duration_seconds=None
+                        if row[7] or row[5] is None
+                        else float(row[5]),
                         duration_observed_package_count=int(row[6]),
                         duration_unknown_package_count=int(row[7]),
                         device_ids=tuple(map(str, row[8])),

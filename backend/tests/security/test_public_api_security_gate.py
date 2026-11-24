@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -34,7 +35,11 @@ ANONYMOUS_OPERATIONS = frozenset(
         ("GET", "/api/v1/platform/version"),
     }
 )
+CONNECTION_REDEMPTION = ("POST", "/api/v1/robot-ingest/connections:redeem")
 ROBOT_CREDENTIAL_PATH_PREFIXES = (
+    "/api/v1/robot-ingest/me",
+    "/api/v1/robot-ingest/tasks",
+    "/api/v1/robot-ingest/teleoperation/",
     "/api/v1/robot-ingest/uploads",
     "/api/v1/robot-ingest/heartbeat",
 )
@@ -102,6 +107,10 @@ def test_every_runtime_public_resource_operation_rejects_anonymous_before_valida
                 headers={"Content-Type": "application/json"},
                 content=b"{}",
             )
+            if key == CONNECTION_REDEMPTION:
+                assert response.status_code == 422, key
+                assert response.json()["code"] == "REQUEST_VALIDATION_FAILED", key
+                continue
             if key in ANONYMOUS_OPERATIONS:
                 assert response.status_code != 401, key
                 continue
@@ -117,28 +126,45 @@ def test_every_runtime_public_resource_operation_rejects_anonymous_before_valida
             assert all(sentinel not in response.text for sentinel in SENSITIVE_SENTINELS), key
 
 
-def test_runtime_openapi_paths_are_all_enumerated_in_the_be23_matrix() -> None:
+def test_runtime_operations_are_enumerated_in_security_matrix_or_module_contracts() -> None:
     schema = create_app(settings=_settings()).openapi()
-    matrix = (Path(__file__).with_name("BE23-PUBLIC-SECURITY-MATRIX.md")).read_text(
-        encoding="utf-8"
-    )
-    missing = [path for path in sorted(schema["paths"]) if f"`{path}`" not in matrix]
-    assert missing == []
-
-
-def test_openapi_auth_gaps_are_runtime_protected_and_explicitly_marked() -> None:
-    app = create_app(settings=_settings())
-    schema = app.openapi()
-    matrix = Path(__file__).with_name("BE23-PUBLIC-SECURITY-MATRIX.md").read_text(encoding="utf-8")
-    gaps = [
+    tests_dir = Path(__file__).resolve().parents[1]
+    matrix = (tests_dir / "security" / "BE23-PUBLIC-SECURITY-MATRIX.md").read_text(encoding="utf-8")
+    covered = {
         (method, path)
-        for method, path, operation in _operations(schema)
-        if (method, path) not in ANONYMOUS_OPERATIONS
-        and operation.get("security") != [{"bearerAuth": []}]
-    ]
-    for method, path in gaps:
-        row = next(line for line in matrix.splitlines() if f"`{path}`" in line)
-        assert "OpenAPI authn 缺口" in row, (method, path)
+        for path, methods in re.findall(r"^\| `([^`]+)` \| ([^|]+) \|", matrix, re.MULTILINE)
+        for method in re.findall(r"\b(?:GET|POST|PUT|PATCH|DELETE)\b", methods)
+    }
+    loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+    for contract in sorted((tests_dir.parent / "openapi").glob("*.yaml")):
+        fragment = yaml.load(contract.read_text(encoding="utf-8"), Loader=loader)
+        covered.update(
+            (method.upper(), path)
+            for path, item in fragment.get("paths", {}).items()
+            for method in item
+            if method in HTTP_METHODS
+        )
+    runtime = {
+        (method.upper(), path)
+        for path, item in schema["paths"].items()
+        for method in item
+        if method in HTTP_METHODS
+    }
+    assert not (runtime - covered), sorted(runtime - covered)
+
+
+def test_openapi_declares_the_expected_credentials_for_every_operation() -> None:
+    schema = create_app(settings=_settings()).openapi()
+    operations = {(method, path): op for method, path, op in _operations(schema)}
+    assert CONNECTION_REDEMPTION in operations
+    for key, operation in operations.items():
+        if key in ANONYMOUS_OPERATIONS or key == CONNECTION_REDEMPTION:
+            expected = []
+        elif key[1].startswith(ROBOT_CREDENTIAL_PATH_PREFIXES):
+            expected = [{"robotBearerAuth": []}]
+        else:
+            expected = [{"bearerAuth": []}]
+        assert operation.get("security") == expected, key
 
 
 def test_cross_origin_preflight_is_not_permissive_and_cookie_cannot_authenticate() -> None:

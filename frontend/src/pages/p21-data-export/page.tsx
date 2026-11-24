@@ -1,3 +1,6 @@
+import { ExportTaskList } from "../../features/exports/ExportTaskList";
+import { ExportDestinationProvider } from "../../features/exports/ExportControls";
+import { BatchQCDownload } from "../../features/exports/BatchQCDownload";
 import { lazy, Suspense, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Checkbox, DatePicker, Radio, Select } from "antd";
@@ -21,11 +24,10 @@ import { PackageBatchPanel } from "./PackageBatchPanel";
 import styles from "./styles.module.css";
 
 const RawDataExportPanel = lazy(() => import("./RawDataExportPanel"));
-type DataStage = "annotated" | "dataset" | "raw" | "qc_passed";
+type DataStage = "annotated" | "raw" | "qc_passed";
 const stageLabels: Record<DataStage, string> = {
   annotated: "标注完成数据",
   qc_passed: "质检通过且已入库的数据",
-  dataset: "数据集数据",
   raw: "原始数据",
 };
 
@@ -95,7 +97,6 @@ export function DataExportPage() {
   // Old bookmarks without an explicit stage opened annotated data.
   const dataStage: DataStage =
     requestedStage === "raw" ||
-    requestedStage === "dataset" ||
     requestedStage === "annotated"
       ? requestedStage
       : !requestedStage && params.get("delivery") === "legacy"
@@ -123,27 +124,49 @@ export function DataExportPage() {
   const canRead =
     capabilities.has("export.read") &&
     capabilities.has("dataset.read") &&
-    capabilities.has("dataset_version.read") &&
-    capabilities.has("episode.read");
+    capabilities.has("dataset_version.read");
   const canCreate = capabilities.has("export.create");
   const canDownload = capabilities.has("export.download");
+  const canDownloadPackage = capabilities.hasResourceGrant?.("export.download") ?? canDownload;
+  const canDownloadRaw = capabilities.hasResourceGrant?.("dataset_version.download_raw") ??
+    capabilities.has("dataset_version.download_raw");
   const batches = useQuery({
     queryKey: ["export-upload-batches", scopeKey],
     queryFn: ({ signal }) => loadUploadBatches(scope!, signal),
-    enabled: canRead && canDownload && Boolean(scope && projectId),
+    enabled: canRead && capabilities.has("upload.read") && Boolean(scope && projectId),
   });
-  const batchOptions = (batches.data ?? []).map((b) => ({
+  const startMs = uploadedFrom ? Date.parse(uploadedFrom) : undefined;
+  const endMs = uploadedBefore ? Date.parse(uploadedBefore) : undefined;
+  const visibleBatches = (batches.data ?? []).filter(batch => {
+    if (startMs === undefined || endMs === undefined) return true;
+    const time = Date.parse(batch.created_at);
+    return time >= startMs && time < endMs;
+  });
+  const batchOptions = visibleBatches.map((b) => ({
     value: String(b.batch_number),
     label: `第 ${b.batch_number} 次上传 · ${b.channel === "historical" ? "历史上传来源" : b.channel === "oss" ? "OSS" : "网页"} · ${formatDate(b.created_at)}`,
   }));
   const batchesByDay = new Map<string, number[]>();
-  for (const batch of batches.data ?? []) {
+  for (const batch of visibleBatches) {
     const day = uploadDayFormat.format(new Date(batch.created_at));
     const group = batchesByDay.get(day) ?? [];
     group.push(batch.batch_number);
     batchesByDay.set(day, group);
   }
-  const selectedBatchNumbers = new Set(allBatches ? (batches.data ?? []).map(b => b.batch_number) : batchNumbers);
+  const implicitRangeSelection = Boolean(uploadRange) && batchTags.length === 0;
+  const explicitNumbers = new Set(batchNumbers);
+  const selectedBatchNumbers = new Set(
+    allBatches || implicitRangeSelection
+      ? visibleBatches.map(b => b.batch_number)
+      : uploadRange
+        ? visibleBatches.filter(b => explicitNumbers.has(b.batch_number)).map(b => b.batch_number)
+        : batchNumbers,
+  );
+  const allVisibleSelected = batchOptions.length > 0 &&
+    batchOptions.every(option => selectedBatchNumbers.has(Number(option.value)));
+  const emptyBatchSelection = batchTags.includes("none") || (
+    uploadRange && batches.isSuccess && batchNumbers.length > 0 && selectedBatchNumbers.size === 0
+  );
   const selectedDays = [...batchesByDay.keys()].filter(day => batchesByDay.get(day)!.every(n => selectedBatchNumbers.has(n)));
   const filteredMode = dataStage === "qc_passed" || hasUploadFilter;
   const datasets = useQuery({
@@ -185,6 +208,16 @@ export function DataExportPage() {
   const taskById = new Map(
     (collectionTasks.data ?? []).map((task) => [task.collection_task_id, task]),
   );
+  const datasetNumbers = new Map<string, string>();
+  const uniqueTasks = new Map<string, string | null>();
+  for (const task of taskById.values()) {
+    uniqueTasks.set(task.dataset_id, uniqueTasks.has(task.dataset_id) ? null : task.task_code);
+  }
+  for (const ds of datasets.data ?? []) {
+    const owner = ds.collectionTaskId && taskById.get(ds.collectionTaskId);
+    const code = (owner && owner.task_code) || uniqueTasks.get(ds.datasetId);
+    if (code) datasetNumbers.set(ds.datasetId, taskNumber(code));
+  }
   const activeSourceFilterCount =
     appliedDatasetIds.length + appliedTasks.length;
   const requestedSources = allSources.filter(
@@ -211,6 +244,7 @@ export function DataExportPage() {
       (current) => {
         const next = new URLSearchParams(current);
         next.delete(key);
+        if (key === "uploadTime" && values.length) next.delete("uploadBatch");
         values.forEach((value) => next.append(key, value));
         return next;
       },
@@ -236,6 +270,7 @@ export function DataExportPage() {
     );
   };
   return (
+    <ExportDestinationProvider>
     <main className={styles.page} data-page-id="P21">
       <StandardPageScaffold
         header={{
@@ -248,12 +283,15 @@ export function DataExportPage() {
         state={
           <div className={styles.workspace}>
             <Card className={styles.sourceCard}>
-              {!canRead && !capabilities.loading ? (
+              {!canRead && !capabilities.loading && scope && capabilities.has("export.read") ? (
+                <PackageBatchPanel scope={scope} datasets={[]} annotated={false} historyOnly
+                  canReadAnnotations={capabilities.has("annotation_task.read")} canCreate={false} canDownload={false} />
+              ) : !canRead && !capabilities.loading ? (
                 <PageState
                   state="forbidden"
                   description="需要数据集读取和导出查看权限。"
                 />
-              ) : datasets.isPending || capabilities.loading ? (
+              ) : datasets.isPending || collectionTasks.isLoading || capabilities.loading ? (
                 <PageState state="loading" label="可导出数据" />
               ) : datasets.isError ? (
                 <PageState
@@ -273,7 +311,7 @@ export function DataExportPage() {
                       buttonStyle="solid"
                       value={dataStage}
                       options={(
-                        ["annotated", "qc_passed", "raw", "dataset"] as const
+                        ["annotated", "qc_passed", "raw"] as const
                       ).map((value) => ({ value, label: stageLabels[value] }))}
                       onChange={(event) => {
                         setParams(
@@ -374,7 +412,7 @@ export function DataExportPage() {
                       <div className={styles.filterField}>
                         <label htmlFor="export-upload-days">按上传日期选择批次（北京时间）</label>
                         <Select id="export-upload-days" mode="multiple" allowClear showSearch
-                          placeholder="选择要纳入的日期" maxTagCount="responsive"
+                          placeholder="选择要纳入的日期" optionFilterProp="label" maxTagCount="responsive"
                           loading={batches.isFetching} value={selectedDays}
                           options={[...batchesByDay.keys()].sort().reverse().map(day => ({
                             value: day, label: [day, batchesByDay.get(day)!.length + " 个批次", ...(notesByDay.get(day) ?? [])].join(" · "),
@@ -397,15 +435,16 @@ export function DataExportPage() {
                           showSearch
                           optionFilterProp="label"
                           id="export-upload-batch"
-                          placeholder="全部上传批次"
+                          placeholder={
+                            uploadRange && batches.isSuccess && !batchOptions.length
+                              ? "所选时间内无上传批次"
+                              : uploadRange || batchTags.includes("none") ? "选择上传批次" : "全部上传批次"
+                          }
+                          notFoundContent={uploadRange && batches.isSuccess && !batchOptions.length ? "所选时间内无匹配批次" : undefined}
                           loading={batches.isFetching}
                           mode="multiple"
                           maxTagCount="responsive"
-                          value={
-                            allBatches
-                              ? batchOptions.map((b) => b.value)
-                              : batchNumbers.map(String)
-                          }
+                          value={[...selectedBatchNumbers].map(String)}
                           options={batchOptions}
                           onChange={(values: string[]) =>
                             updateSourceFilter(
@@ -413,32 +452,35 @@ export function DataExportPage() {
                               batchOptions.length &&
                                 values.length === batchOptions.length
                                 ? ["all"]
-                                : values,
+                                : !values.length && uploadRange ? ["none"] : values,
                             )
                           }
                         />
-                        <Checkbox
-                          checked={allBatches}
-                          indeterminate={!allBatches && batchNumbers.length > 0}
-                          disabled={!batchOptions.length}
-                          onChange={(e) =>
-                            updateSourceFilter(
-                              "uploadBatch",
-                              e.target.checked ? ["all"] : [],
-                            )
-                          }
-                        >
-                          全选上传批次
-                        </Checkbox>
-                        {batches.isError && (
-                          <Button
-                            size="small"
-                            onClick={() => void batches.refetch()}
-                          >
-                            批次读取失败，重试
-                          </Button>
-                        )}
                       </div>
+                    </div>
+                    <div className={styles.filterActions}>
+                      <Checkbox
+                        checked={allVisibleSelected}
+                        indeterminate={!allVisibleSelected && selectedBatchNumbers.size > 0}
+                        disabled={!batchOptions.length}
+                        onChange={(e) =>
+                          updateSourceFilter(
+                            "uploadBatch",
+                            e.target.checked ? ["all"] : uploadRange ? ["none"] : [],
+                          )
+                        }
+                      >
+                        全选上传批次
+                      </Checkbox>
+                      {scope && selectedBatchNumbers.size > 0 && <BatchQCDownload scope={scope} numbers={[...selectedBatchNumbers]} />}
+                      {batches.isError && (
+                        <Button
+                          size="small"
+                          onClick={() => void batches.refetch()}
+                        >
+                          批次读取失败，重试
+                        </Button>
+                      )}
                       <Button
                         disabled={
                           activeSourceFilterCount === 0 && !hasUploadFilter
@@ -460,13 +502,17 @@ export function DataExportPage() {
                       )}
                   </section>
 
-                  {batchTags.includes("none") ? (
-                    <p role="status">已移除全部日期。请选择要纳入的上传日期或批次。</p>
+                  {emptyBatchSelection ? (
+                    <>
+                      <p role="status">请选择要纳入的上传日期或批次。</p>
+                      {scope && canRead && <ExportTaskList scope={scope} />}
+                    </>
                   ) : dataStage === "raw" ? (
                     <Suspense
                       fallback={<PageState state="loading" label="原始数据" />}
                     >
                       <RawDataExportPanel
+                        datasetNumbers={datasetNumbers}
                         scope={scope!}
                         datasetIds={
                           hasUploadFilter
@@ -481,12 +527,16 @@ export function DataExportPage() {
                         hasFilter={
                           activeSourceFilterCount > 0 || hasUploadFilter
                         }
-                        canRead={capabilities.has("upload.read")}
-                        canDownload={canDownload}
+                        canRead={capabilities.has("upload.read") || canDownloadRaw}
+                        canCreate={canCreate}
+                        canDownload={canDownloadRaw}
+                        canDownloadDataset={id => capabilities.has("dataset_version.download_raw") ||
+                          Boolean(id && capabilities.has("dataset_version.download_raw/dataset:" + id))}
                       />
                     </Suspense>
                   ) : (
                     <PackageBatchPanel
+                      datasetNumbers={datasetNumbers}
                       key={`${scopeKey}:${dataStage}:${uploadedFrom ?? ""}:${uploadedBefore ?? ""}:${batchTags.join(",")}:${appliedDatasetIds.join(",")}:${requestedSources.map((s) => s.datasetId).join(",")}:${appliedTasks.join(",")}:${activeSourceFilterCount}`}
                       scope={scope!}
                       datasets={
@@ -514,11 +564,15 @@ export function DataExportPage() {
                       datasetIds={appliedDatasetIds}
                       taskIds={appliedTasks}
                       annotated={dataStage === "annotated"}
+                      canReadRaw={capabilities.has("upload.read") || canDownloadRaw}
                       canReadAnnotations={capabilities.has(
                         "annotation_task.read",
                       )}
                       canCreate={canCreate}
-                      canDownload={canDownload}
+                      canDownload={canDownloadPackage}
+                      canDownloadData={data => canDownload ||
+                        capabilities.has("export.download/version:" + data.data_version_id) ||
+                        capabilities.has("export.download/dataset:" + data.identity.dataset_id)}
                     />
                   )}
                 </>
@@ -528,6 +582,7 @@ export function DataExportPage() {
         }
       />
     </main>
+    </ExportDestinationProvider>
   );
 }
 

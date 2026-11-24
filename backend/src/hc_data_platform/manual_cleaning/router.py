@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
+from fastapi.responses import JSONResponse
+from pydantic import AwareDatetime
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth
@@ -63,7 +66,7 @@ ManualIssueSort = Literal[
     "severity:desc,updated_at:desc,id:desc",
     "created_at:desc,id:desc",
 ]
-ManualIssueStatus = Literal["OPEN", "IN_PROGRESS", "RESOLVED"]
+ManualIssueStatus = Literal["OPEN", "IN_PROGRESS", "RESOLVED", "DISCARDED"]
 ManualIssueType = Literal[
     "POSE_JITTER",
     "TIMESTAMP_DRIFT",
@@ -115,6 +118,8 @@ def _if_match(value: str | None) -> str:
 def _filters(
     *,
     q: str | None,
+    updated_from: datetime | None,
+    updated_to: datetime | None,
     dataset_id: str | None,
     version_id: str | None,
     episode_id: str | None,
@@ -125,7 +130,11 @@ def _filters(
     assignee_id: str | None,
     collection_task_id: str | None = None,
 ) -> ManualIssueFilters:
+    if updated_from and updated_to and updated_from >= updated_to:
+        raise problem(status=422, code="INVALID_TIME_RANGE", title="Invalid update range",
+                      detail="updated_from must be earlier than updated_to.")
     return ManualIssueFilters(
+        updated_from=updated_from, updated_to=updated_to,
         collection_task_id=collection_task_id,
         query=q,
         dataset_id=dataset_id,
@@ -154,6 +163,8 @@ def get_manual_issues_page(
     organization_id: OrganizationHeader,
     service: ServiceDependency,
     q: OptionalQueryText = None,
+    updated_from: AwareDatetime | None = None,
+    updated_to: AwareDatetime | None = None,
     dataset_id: OptionalQueryText = None,
     version_id: OptionalQueryText = None,
     episode_id: OptionalQueryText = None,
@@ -171,6 +182,7 @@ def get_manual_issues_page(
         region_code=region_code,
         filters=_filters(
             q=q,
+            updated_from=updated_from, updated_to=updated_to,
             dataset_id=dataset_id,
             version_id=version_id,
             episode_id=episode_id,
@@ -199,6 +211,8 @@ def list_manual_issues(
     organization_id: OrganizationHeader,
     service: ServiceDependency,
     q: OptionalQueryText = None,
+    updated_from: AwareDatetime | None = None,
+    updated_to: AwareDatetime | None = None,
     dataset_id: OptionalQueryText = None,
     version_id: OptionalQueryText = None,
     episode_id: OptionalQueryText = None,
@@ -211,16 +225,18 @@ def list_manual_issues(
     sort: ManualIssueSort = "updated_at:desc,id:desc",
     after: OptionalCursor = None,
     before: OptionalCursor = None,
+    include_note: bool = False,
     limit: int = Query(default=50, ge=1, le=100),
 ) -> ManualIssueListEnvelope:
     _no_store(response)
-    return service.list_issues(
+    result = service.list_issues(
         auth=auth,
         organization_id=organization_id,
         project_id=project_id,
         region_code=region_code,
         filters=_filters(
             q=q,
+            updated_from=updated_from, updated_to=updated_to,
             dataset_id=dataset_id,
             version_id=version_id,
             episode_id=episode_id,
@@ -237,6 +253,10 @@ def list_manual_issues(
         limit=limit,
         request_id=_request_id(request),
     )
+    if include_note:
+        return result
+    return JSONResponse(result.model_dump(mode="json", exclude={"items": {"__all__": {"note"}}}),
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.post(
@@ -427,3 +447,13 @@ def resolve_manual_issue(
         auth=auth,
         request_id=_request_id(request),
     )
+
+
+@router.post("/{issue_id}:discard-package", status_code=204, operation_id="discardManualIssuePackage")
+def discard_reported_package(project_id: str, region_code: str, issue_id: str, request: Request,
+                             auth: VerifiedAuth, organization_id: OrganizationHeader,
+                             service: ServiceDependency, if_match: IfMatch = None) -> Response:
+    service.discard_package(auth=auth, organization_id=organization_id, project_id=project_id,
+                            region_code=region_code, issue_id=issue_id,
+                            if_match=_if_match(if_match), request_id=_request_id(request))
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})

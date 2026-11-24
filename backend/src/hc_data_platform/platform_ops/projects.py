@@ -43,6 +43,7 @@ class PlatformOrganization(BaseModel):
 
     organization_id: StableScopeId
     organization_name: str = Field(min_length=1, max_length=256)
+    join_code: str | None = None
 
 
 class PlatformOrganizationPage(BaseModel):
@@ -180,6 +181,7 @@ class DbApiConnection(Protocol):
 
 def _organization_from_row(row: Mapping[str, Any]) -> PlatformOrganization:
     return PlatformOrganization(
+        join_code=row.get("join_code"),
         organization_id=str(row["organization_id"]),
         organization_name=str(row["organization_name"]),
     )
@@ -223,9 +225,11 @@ class PostgresPlatformProjectRepository:
             self._activate_platform_admin(cursor)
             cursor.execute(
                 """
-                SELECT organization_id, display_name AS organization_name
-                FROM access_control.organization_join_codes
-                ORDER BY organization_id
+                SELECT ids.organization_id, COALESCE(directory.display_name,ids.organization_id) AS organization_name, directory.join_code
+                FROM (SELECT organization_id FROM access_control.organization_join_codes
+                      UNION SELECT organization_id FROM registry.organization_projects) ids
+                LEFT JOIN access_control.organization_join_codes directory USING (organization_id)
+                ORDER BY ids.organization_id
                 """
             )
             rows = cursor.fetchall()

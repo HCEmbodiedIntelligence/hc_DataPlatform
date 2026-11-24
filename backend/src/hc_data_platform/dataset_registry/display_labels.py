@@ -53,6 +53,15 @@ DisplayLabelReader = Callable[
 ]
 
 
+def annotation_task_label(ordinal: int | None, task_code: str | None) -> str:
+    episode = f"Episode {ordinal + 1}" if ordinal is not None else "待关联片段"
+    task = (
+        f"任务 {int(task_code) if task_code.isdecimal() else task_code}"
+        if task_code else "未关联采集任务"
+    )
+    return f"{task} · {episode}"
+
+
 class PostgresDisplayLabels:
     def __init__(self, connection_factory):
         self._connection_factory = connection_factory
@@ -156,15 +165,9 @@ class PostgresDisplayLabels:
                             (*params, ids),
                         )
                         for identity, ordinal, task_code in cursor.fetchall():
-                            episode = (
-                                f"Episode {ordinal + 1}" if ordinal is not None else "待关联片段"
+                            labels[(kind, identity, None)] = (
+                                annotation_task_label(ordinal, task_code), None
                             )
-                            task = (
-                                f"任务 {int(task_code) if task_code.isdecimal() else task_code}"
-                                if task_code
-                                else "未关联采集任务"
-                            )
-                            labels[(kind, identity, None)] = (f"{task} · {episode}", None)
                     elif kind == "rollout":
                         cursor.execute(
                             """SELECT recording_document FROM ingest.continuous_recordings

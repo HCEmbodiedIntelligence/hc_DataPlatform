@@ -10,6 +10,7 @@ import os
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 
+from hc_data_platform.data_formats.video import preview_timescale
 from hc_data_platform.object_storage.immutable import MultipartImmutableWriter
 from hc_data_platform.security.audit import canonical_hash
 
@@ -26,24 +27,29 @@ def is_depth(camera):
 
 
 def preview_key(upload, asset, assets, *, selected=True):
+    inputs = sorted((item.manifest.path, item.manifest.sha256) for item in assets)
+    return preview_key_from_inputs(upload.upload_id, upload.scope, upload.manifest_sha256,
+                                   asset.asset_id, inputs, selected=selected)
+
+
+def preview_key_from_inputs(upload_id, scope, manifest_sha256, asset_id, inputs, *, selected):
     # Include every committed evidence identity, scope and display profile. No
     # preview can be reused across recordings or changed evidence manifests.
     identity = canonical_hash(
         {
-            "upload": str(upload.upload_id),
-            "scope": upload.scope.model_dump(),
-            "manifest": upload.manifest_sha256,
-            "asset": str(asset.asset_id),
-            "inputs": sorted((item.manifest.path, item.manifest.sha256) for item in assets),
+            "upload": str(upload_id),
+            "scope": scope.model_dump(),
+            "manifest": manifest_sha256,
+            "asset": str(asset_id),
+            "inputs": inputs,
             "profile": PROFILE,
             **(
                 {"frame_policy": "valid-source-rows-vfr/1"}
-                if selected and any(item.manifest.path == "source/frames.jsonl" for item in assets)
+                if selected and any(path == "source/frames.jsonl" for path, _ in inputs)
                 else {}
             ),
         }
     )
-    scope = upload.scope
     return (
         f"recording-previews/{scope.organization_id}/{scope.project_id}/"
         f"{scope.region_code}/{identity}/media.mp4"
@@ -97,13 +103,14 @@ def _download(storage, asset, path, progress, verified_paths=None):
         raise ValueError("recording preview source checksum mismatch")
 
 
-def _remux_complete_preview(source, destination, frames, fps, progress):
+def _remux_complete_preview(source, destination, frames, fps, progress, scale):
     """Retimestamp every H.264 frame without encoding it a second time."""
     from fractions import Fraction
 
     import av
 
-    clock = Fraction(1, 1_000_000_000)
+    clock = Fraction(1, scale)
+    ns_per_tick = 1_000_000_000 // scale
     with av.open(str(source)) as incoming:
         stream = incoming.streams.video[0]
         codec = stream.codec_context
@@ -113,7 +120,7 @@ def _remux_complete_preview(source, destination, frames, fps, progress):
         count = 0
         previous = None
         with av.open(str(destination), "w", options={
-            "movie_timescale": "1000000000", "video_track_timescale": "1000000000",
+            "movie_timescale": str(scale), "video_track_timescale": str(scale),
         }) as output:
             target = output.add_stream_from_template(stream)
             target.time_base = clock
@@ -131,8 +138,9 @@ def _remux_complete_preview(source, destination, frames, fps, progress):
                 if duration <= 0:
                     return False
                 packet.stream = target
-                packet.pts = packet.dts = stamp
-                packet.duration = duration
+                tick = round(Fraction(stamp, ns_per_tick))
+                packet.pts = packet.dts = tick
+                packet.duration = round(Fraction(stamp + duration, ns_per_tick)) - tick
                 packet.time_base = clock
                 output.mux(packet)
                 count += 1
@@ -148,15 +156,16 @@ def select_preview(source, destination, frames, fps, progress=lambda: None):
     retained = [(r["source_frame"], r["offset_ns"]) for r in frames if r["valid"]]
     if not retained:
         raise ValueError("recording preview has no usable frames")
+    scale = preview_timescale(offset for _, offset in retained)
     if (len(retained) == len(frames)
             and all(index == position for position, (index, _) in enumerate(retained))
-            and _remux_complete_preview(source, destination, frames, fps, progress)):
+            and _remux_complete_preview(source, destination, frames, fps, progress, scale)):
         _verify_preview_timeline(destination, retained)
         return len(retained)
     count = 0
     with av.open(str(source)) as incoming, av.open(
         str(destination), "w",
-        options={"movie_timescale": "1000000000", "video_track_timescale": "1000000000"},
+        options={"movie_timescale": str(scale), "video_track_timescale": str(scale)},
     ) as output:
         stream = incoming.streams.video[0]
         if stream.frames and stream.frames != len(frames):
@@ -166,7 +175,8 @@ def select_preview(source, destination, frames, fps, progress=lambda: None):
         encoder.pix_fmt = "yuv420p"
         # Browser display only; same settings as the depth preview encoder.
         encoder.options = {"crf": "20", "preset": "veryfast", "threads": "2", "bf": "0", "g": "30"}
-        encoder.time_base = Fraction(1, 1_000_000_000)
+        source_clock = Fraction(1, 1_000_000_000)
+        encoder.time_base = Fraction(1, scale)
         encoder.codec_context.time_base = encoder.time_base
         for i, frame in enumerate(incoming.decode(stream)):
             progress()
@@ -175,7 +185,7 @@ def select_preview(source, destination, frames, fps, progress=lambda: None):
             index, offset = retained[count]
             if i != index:
                 continue
-            frame.pts, frame.time_base = offset, encoder.time_base
+            frame.pts, frame.time_base = offset, source_clock
             for packet in encoder.encode(frame):
                 output.mux(packet)
             count += 1

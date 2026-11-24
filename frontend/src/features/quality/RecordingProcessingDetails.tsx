@@ -8,6 +8,7 @@ import type { components } from "../../shared/api/generated/platform";
 import type { CollectionTaskScope } from "../collection-tasks/api";
 import { QualityEvidenceDetails } from "./QualityEvidenceDetails";
 import { collectionTaskGateway } from "../collection-tasks/api";
+import { readQualityRecording } from "./recording-quality-api";
 import { RecordingQualityReview } from "./RecordingQualityReview";
 import { RecordingEpisodeActions } from "./RecordingEpisodeActions";
 
@@ -75,13 +76,7 @@ export function RecordingProcessingDetails({
   });
   const source = useQuery({
     queryKey: ["qc-recording-source", scope, recordingId],
-    queryFn: ({ signal }) =>
-      request<components["schemas"]["ContinuousRecordingEnvelope"]>({
-        method: "GET",
-        scope,
-        signal,
-        path: `/projects/${encodeURIComponent(scope.projectId)}/regions/${encodeURIComponent(scope.regionCode)}/continuous-recordings/${encodeURIComponent(recordingId)}`,
-      }),
+    queryFn: ({ signal }) => readQualityRecording(scope, recordingId, signal),
     retry: false,
   });
   const recording = source.data?.data;

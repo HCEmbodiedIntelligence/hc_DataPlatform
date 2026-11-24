@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
+from hc_data_platform.platform_ops.projects import PlatformProjectCreate
+from .governance import ProjectEntry, AdministratorChange, GovernanceDirectory, InboxEntry, MemberEntry
+
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from hc_data_platform.core.config import Settings
@@ -616,6 +619,38 @@ def _organization_membership_decision(
         idempotency_key=idempotency_key,
         request_id=current_request_context().request_id,
     )
+
+
+@router.get("/account/management-directory", response_model=GovernanceDirectory, operation_id="getManagementDirectory")
+def management_directory(response: Response, auth: VerifiedAuth, service: AccessServiceDependency):
+    _no_store(response)
+    return service.governance_directory(auth)
+
+
+@router.post("/account/managed-projects", response_model=ProjectEntry, operation_id="createManagedProject", status_code=201)
+def create_managed_project(command: PlatformProjectCreate,response: Response,auth: VerifiedAuth,service: AccessServiceDependency):
+    _no_store(response)
+    return service.create_managed_project(auth,command,current_request_context().request_id)
+
+
+@router.get("/account/managed-members", response_model=list[MemberEntry], operation_id="listManagedMembers")
+def managed_members(organization_id: str, response: Response, auth: VerifiedAuth, service: AccessServiceDependency,
+                    project_id: str | None = None, offset: Annotated[int, Query(ge=0)] = 0):
+    _no_store(response)
+    return service.governance_members(auth,organization_id,project_id,offset)
+
+
+@router.get("/account/management-inbox", response_model=list[InboxEntry], operation_id="listManagementInbox")
+def management_inbox(organization_id: str, response: Response, auth: VerifiedAuth, service: AccessServiceDependency,
+                     project_id: str | None = None, offset: Annotated[int, Query(ge=0)] = 0):
+    _no_store(response)
+    return service.governance_inbox(auth,organization_id,project_id,offset)
+
+
+@router.put("/account/managed-members/{principal_id}/administrator", response_model=MemberEntry, operation_id="setMembershipAdministrator")
+def set_membership_administrator(principal_id: UUID, command: AdministratorChange, response: Response, auth: VerifiedAuth, service: AccessServiceDependency):
+    _no_store(response)
+    return service.change_administrator(auth,str(principal_id),command,current_request_context().request_id)
 
 
 @router.post(

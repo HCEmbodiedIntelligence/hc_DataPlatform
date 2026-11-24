@@ -38,16 +38,16 @@ describe("raw recording joint-angle stream", () => {
       recordingJointVector({ values: [null], names: ["arm"], units: ["rad"] }),
     ).toEqual({ values: [Number.NaN], names: ["arm"], units: ["rad"] });
   });
-  it("reads original MCAP windows and drives the shared robot frame source", async () => {
+  it.each([undefined, "/action", "/humanoid/action"])("reads the requested MCAP channel (%s) by joint name", async (actionTopic) => {
     const sensorWindow = vi.fn(
       async (
         _scope: RecordingScope,
         recordingId: string,
-        query: { readonly startOffsetNs: string; readonly endOffsetNs: string },
+        query: { readonly startOffsetNs: string; readonly endOffsetNs: string; readonly topic?: string },
       ) => ({
         schema_version: "recording-sensor-window/v1" as const,
         recording_id: recordingId,
-        topic: "/robot/joint_states",
+        topic: query.topic ?? "/robot/joint_states",
         start_offset_ns: query.startOffsetNs,
         end_offset_ns: query.endOffsetNs,
         samples: [
@@ -77,6 +77,7 @@ describe("raw recording joint-angle stream", () => {
       scope,
       recordingId: "recording-test",
       durationNs: "90000000000",
+      ...(actionTopic ? { actionTopic } : {}),
     });
 
     const payload = await stream.windowSource?.loadWindow(
@@ -107,6 +108,7 @@ describe("raw recording joint-angle stream", () => {
         startOffsetNs: "0",
         endOffsetNs: "4000000000",
         maximumSamples: 10_000,
+        ...(actionTopic ? { topic: actionTopic } : {}),
       },
       expect.any(AbortSignal),
     );

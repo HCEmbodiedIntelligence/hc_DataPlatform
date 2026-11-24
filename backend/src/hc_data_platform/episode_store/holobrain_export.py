@@ -5,6 +5,7 @@ import io
 import json
 import sqlite3
 from collections import Counter
+from contextlib import ExitStack, closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -13,6 +14,7 @@ import pyarrow as pa
 from mcap.reader import make_reader
 from PIL import Image
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_MS
 from hc_data_platform.continuous_recordings.joint_normalization import (
     HANDS, capture_time, nearest_index, reference,
 )
@@ -152,8 +154,9 @@ def committed_action_labels(package, frames):
 
 
 def synchronized(path, temporary, report, checkpoint, reference_report=None, *, joint_names=JOINT_LAYOUTS["16dof"],
-                 action_labels=None):
+                 action_labels=None, legacy_sync=False):
     """Order images by acquisition time on disk; keep numeric streams in memory."""
+    joint_match_ns = (20 if legacy_sync else JOINT_MATCH_MS) * 1_000_000
     action_labels = action_labels or {}
     decoder = McapRos2DecoderProbe()
     numeric = {topic: [] for topic in (STATE, ACTION, *HANDS)}
@@ -212,9 +215,9 @@ def synchronized(path, temporary, report, checkpoint, reference_report=None, *, 
             checkpoint()
             value, rgb_ref = {"data": image}, json.loads(raw_ref)
             report["candidate_frames"] += 1
-            chosen = {topic: nearest_index(t, stamp, 150_000_000 if topic in HANDS else 20_000_000) for topic, t in times.items()}
+            chosen = {topic: nearest_index(t, stamp, 150_000_000 if topic in HANDS else joint_match_ns) for topic, t in times.items()}
             depth = nearest_index(ordered_depth, stamp, 50_000_000)
-            label = action_labels.get(stamp)
+            label = action_labels.get(stamp) if legacy_sync or chosen[ACTION] is None else None
             if label is not None:
                 del chosen[ACTION]
             if reference_report is not None:
@@ -251,8 +254,15 @@ def synchronized(path, temporary, report, checkpoint, reference_report=None, *, 
         db.close()
 
 
+def _write_arrow_batch(writer, rows, arrow_schema):
+    table = pa.Table.from_pylist(rows, schema=arrow_schema)
+    writer.write_table(table)
+    rows.clear()
+    return table.nbytes
+
+
 def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=True,
-                  reference_report=False, config_name="16dof"):
+                  reference_report=False, config_name="16dof", legacy_sync=False, single_arrow=True):
     """Write validated IPC streams/official DuckDB metadata before publication.
 
     Sources contain normalized path, immutable provenance, task text and optional
@@ -273,10 +283,11 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
         "drop_invalid_compact_indices_preserve_source_time/v1"
         if compact_invalid else "drop_invalid_split_at_source_gaps/v1"
     )
-    with (root / "alignment_provenance.jsonl").open("wb") as trace_file:
+    writer, batch = None, []
+    with (root / "alignment_provenance.jsonl").open("wb") as trace_file, ExitStack() as streams:
         for source_index, source in enumerate(sources):
             outcome = outcome_fields(source["episode_outcome"]) if "episode_outcome" in source else {}
-            reference = ReferenceConversionReport(source) if reference_report else None
+            reference = ReferenceConversionReport(source, joint_match_ms=20 if legacy_sync else JOINT_MATCH_MS) if reference_report else None
             provenance = source["provenance"]
             policy = provenance["config"]["normalization"]
             if policy["profile"] != "hc_tj_17dof/v1" or policy["camera_mode"] != "legacy_reference":
@@ -298,81 +309,67 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
             audit_rows = json.loads(body)["messages"]
             action_audit = {(r["action"]["log_time_ns"], r["action"]["sequence"]): r
                             for r in audit_rows if r["topic"] == ACTION}
-            current_segment, episode, writer, sink, batch = None, None, None, None, []
-            try:
-                with TemporaryDirectory(dir=root.parent) as temporary:
-                    for row, trace in synchronized(
-                        source["path"], temporary, report, checkpoint, reference, joint_names=joint_names,
-                        action_labels=source.get("action_labels"),
-                    ):
-                        stamp = trace["rgb_time_ns"]
-                        selected = source.get("frames")
-                        frame = selected.get(stamp) if selected is not None else {"task": source["task"], "segment": 0, "parent_frame_index": report["candidate_frames"] - 1}
-                        if frame is None:
-                            report["selection_excluded_frames"] += 1
-                            continue
-                        report["missing_zero"].update(trace["missing_zero"])
-                        ref = trace["sources"][ACTION]
-                        if "origin" in ref:
-                            trace["action_normalization"] = ref
-                        else:
-                            trace["action_normalization"] = action_audit[(ref["log_time_ns"], ref["sequence"])]
-                        segment = frame["segment"]
-                        if segment != current_segment:
-                            if writer:
-                                if batch:
-                                    table = pa.Table.from_pylist(batch, schema=arrow_schema)
-                                    logical_bytes += table.nbytes
-                                    writer.write_table(table)
-                                    batch.clear()
-                                writer.close()
-                                sink.close()
-                            task = frame["task"]
-                            if not task or task == "unknown":
-                                raise ValueError("HOLOBRAIN_TASK_TEXT_REQUIRED")
-                            if task not in tasks:
-                                tasks.append(task)
-                            episode = {**outcome, "index": len(episodes), "task_index": tasks.index(task), "begin": total,
-                                       "frames": 0, "truncated": selected is not None,
-                                       "info": {**outcome, "target_profile": profile, "source_sha256": report["source_sha256"],
-                                                "source_selection": source.get("identity"), "camera_mode": "legacy_reference",
-                                                "hand_state": "command_proxy", "velocity_effort": "missing_zero",
-                                                "frame_policy": frame_policy,
-                                                "normalization": report["normalization"], "task": task,
-                                                **({"annotation_id": frame["annotation_id"]}
-                                                   if "annotation_id" in frame else {})}}
-                            episodes.append(episode)
+            current_segment, episode = None, None
+            with TemporaryDirectory(dir=root.parent) as temporary:
+                for row, trace in synchronized(
+                    source["path"], temporary, report, checkpoint, reference, joint_names=joint_names,
+                    action_labels=source.get("action_labels"), legacy_sync=legacy_sync,
+                ):
+                    stamp = trace["rgb_time_ns"]
+                    selected = source.get("frames")
+                    frame = selected.get(stamp) if selected is not None else {"task": source["task"], "segment": 0, "parent_frame_index": report["candidate_frames"] - 1}
+                    if frame is None:
+                        report["selection_excluded_frames"] += 1
+                        continue
+                    report["missing_zero"].update(trace["missing_zero"])
+                    ref = trace["sources"][ACTION]
+                    if "origin" in ref:
+                        trace["action_normalization"] = ref
+                    else:
+                        trace["action_normalization"] = action_audit[(ref["log_time_ns"], ref["sequence"])]
+                    segment = frame["segment"]
+                    if segment != current_segment:
+                        task = frame["task"]
+                        if not task or task == "unknown":
+                            raise ValueError("HOLOBRAIN_TASK_TEXT_REQUIRED")
+                        if task not in tasks:
+                            tasks.append(task)
+                        episode = {**outcome, "index": len(episodes), "task_index": tasks.index(task), "begin": total,
+                                   "frames": 0, "truncated": selected is not None,
+                                   "info": {**outcome, "target_profile": profile, "source_sha256": report["source_sha256"],
+                                            "source_selection": source.get("identity"), "camera_mode": "legacy_reference",
+                                            "hand_state": "command_proxy", "velocity_effort": "missing_zero",
+                                            "frame_policy": frame_policy,
+                                            "normalization": report["normalization"], "task": task,
+                                            **({"annotation_id": frame["annotation_id"]}
+                                               if "annotation_id" in frame else {})}}
+                        episodes.append(episode)
+                        if writer is None or not single_arrow:
+                            if batch:
+                                logical_bytes += _write_arrow_batch(writer, batch, arrow_schema)
+                            streams.close()
                             path = root / f"part-{len(shards):05d}.arrow"
+                            sink = streams.enter_context(path.open("wb"))
+                            writer = streams.enter_context(pa.ipc.new_stream(sink, arrow_schema))
                             shards.append(path)
-                            sink = path.open("wb")
-                            writer = pa.ipc.new_stream(sink, arrow_schema)
-                            current_segment = segment
-                        row.update(index=total, episode_index=episode["index"], frame_index=episode["frames"],
-                                   task_index=episode["task_index"], robot_index=0, instruction_index=episode["task_index"])
-                        batch.append(row)
-                        trace_file.write(canonical({**trace, "index": total, "episode_index": episode["index"],
-                                                    "frame_index": episode["frames"], "source_index": source_index,
-                                                    "parent_frame_index": frame["parent_frame_index"]}) + b"\n")
-                        episode["frames"] += 1
-                        if reference is not None:
-                            reference.select(stamp, episode["index"], action_origin=ref.get("origin"))
-                        report["selected_frames"] += 1
-                        total += 1
-                        if len(batch) >= 32:
-                            table = pa.Table.from_pylist(batch, schema=arrow_schema)
-                            logical_bytes += table.nbytes
-                            writer.write_table(table)
-                            batch.clear()
-            finally:
-                if writer:
-                    if batch:
-                        table = pa.Table.from_pylist(batch, schema=arrow_schema)
-                        logical_bytes += table.nbytes
-                        writer.write_table(table)
-                    writer.close()
-                    sink.close()
+                        current_segment = segment
+                    row.update(index=total, episode_index=episode["index"], frame_index=episode["frames"],
+                               task_index=episode["task_index"], robot_index=0, instruction_index=episode["task_index"])
+                    batch.append(row)
+                    trace_file.write(canonical({**trace, "index": total, "episode_index": episode["index"],
+                                                "frame_index": episode["frames"], "source_index": source_index,
+                                                "parent_frame_index": frame["parent_frame_index"]}) + b"\n")
+                    episode["frames"] += 1
+                    if reference is not None:
+                        reference.select(stamp, episode["index"], action_origin=ref.get("origin"))
+                    report["selected_frames"] += 1
+                    total += 1
+                    if len(batch) >= 32:
+                        logical_bytes += _write_arrow_batch(writer, batch, arrow_schema)
             if reference is not None:
                 reference_episodes.extend(reference.finish())
+        if batch:
+            logical_bytes += _write_arrow_batch(writer, batch, arrow_schema)
     if not total:
         raise ValueError("HOLOBRAIN_NO_VALID_FRAMES")
     files = []
@@ -384,7 +381,7 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
     info = {"features": FEATURES, "builder_name": "hc_tj", "config_name": config_name, "version": {"version_str": "0.1.0", "major": 0, "minor": 1, "patch": 0},
             "dataset_size": logical_bytes, "size_in_bytes": logical_bytes, "download_size": 0,
             "splits": {"train": {"name": "train", "num_bytes": logical_bytes, "num_examples": total,
-                                  "shard_lengths": [e["frames"] for e in episodes], "dataset_name": "hc_tj"}}}
+                                  "shard_lengths": [total] if single_arrow else [e["frames"] for e in episodes], "dataset_name": "hc_tj"}}}
     if reference_report:
         info.update(description="", citation="", homepage="", license="", dataset_name="hc_tj")
     conversion = {"target_profile": profile, "dataset_format_version": "0.1.0", "sources": reports,
@@ -392,7 +389,7 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
                   "tasks": tasks, "episode_frame_counts": [e["frames"] for e in episodes],
                   "frames": total, "episodes": len(episodes), "hand_proxy_values": total * 2,
                   "camera_mode": "legacy_reference", "unverified_geometry": ["static zero-head mechanical pose", "depth represented with RGB intrinsics; registration unverified"],
-                  "sync": {"anchor": "RGB", "method": "nearest_earlier_tie", "state_action_ms": 20, "depth_ms": 50, "hand_ms": 150},
+                  "sync": {"anchor": "RGB", "method": "nearest_earlier_tie", "state_action_ms": 20 if legacy_sync else JOINT_MATCH_MS, "depth_ms": 50, "hand_ms": 150},
                   "timestamp_min_max": "RGB/depth only", "originals_included": False}
     state = {"_data_files": files, "_fingerprint": digest(conversion), "_format_columns": None,
              "_format_kwargs": {}, "_format_type": None, "_output_all_columns": False, "_split": "train",
@@ -410,34 +407,47 @@ def write_dataset(root, sources, *, checkpoint=lambda: None, compact_invalid=Tru
 
 def write_collection(root, selections, *, storage, modalities, checkpoint=lambda: None,
                      compact_invalid=True, reference_report=False, split_annotations=True, config_name="16dof",
-                     use_committed_actions=False):
+                     use_committed_actions=False, legacy_sync=False, single_arrow=True):
     if modalities != "rgbd":
         raise ValueError("HOLOBRAIN_REQUIRES_RGBD")
-    with TemporaryDirectory(dir=Path(root).parent) as temporary:
-        from .episode_outcome import selection_outcome
+    from .episode_outcome import selection_outcome
+    from .native_sources import export_source
+    from .selected_cache import materialize_selected
 
-        sources = []
-        for index, selected in enumerate(selections):
-            outcome = selection_outcome(selected)
-            selected_source(selected.package, holobrain=True)
-            from .native_sources import export_source
-            file, provenance, audit = export_source(selected.package, storage, checkpoint)
-            path = Path(temporary) / f"{index}.mcap"
-            from .selected_cache import materialize_selected
-            materialize_selected(storage, file, provenance, path, checkpoint)
-            if audit is None:
-                raise ValueError("native normalized capture has no audit")
-            audit_path = Path(temporary) / f"{index}-audit.json"
-            copy_original(storage, audit, audit_path, checkpoint)
-            identity = {**selected.package.receipt.data.model_dump(mode="json"), **outcome}
-            if selected.annotation_file is not None:
-                identity = {**identity, "annotation_revision": selected.annotation_file.file.revision,
-                    "annotation_file_sha256": selected.annotation_file.file.content_sha256,
-                    "subtask_track": selected.track.model_dump(mode="json")}
-            frames = frame_selection(selected, compact_invalid=compact_invalid, split_annotations=split_annotations)
-            labels = committed_action_labels(selected.package, frames) if use_committed_actions else {}
-            sources.append({**outcome, "path": path, "audit_path": audit_path, "provenance": provenance,
-                            "frames": frames, "action_labels": labels,
-                            "identity": identity})
-        return write_dataset(root, sources, checkpoint=checkpoint, compact_invalid=compact_invalid,
-                             reference_report=reference_report, config_name=config_name)
+    def sources():
+        for selected in selections:
+            with TemporaryDirectory(dir=Path(root).parent) as temporary:
+                outcome = selection_outcome(selected)
+                selected_source(selected.package, holobrain=True)
+                file, provenance, audit = export_source(selected.package, storage, checkpoint)
+                path = Path(temporary) / "selected.mcap"
+                materialize_selected(storage, file, provenance, path, checkpoint)
+                if audit is None:
+                    raise ValueError("native normalized capture has no audit")
+                audit_path = Path(temporary) / "audit.json"
+                copy_original(storage, audit, audit_path, checkpoint)
+                identity = {**selected.package.receipt.data.model_dump(mode="json"), **outcome}
+                if selected.annotation_file is not None:
+                    identity.update(
+                        annotation_revision=selected.annotation_file.file.revision,
+                        annotation_file_sha256=selected.annotation_file.file.content_sha256,
+                        subtask_track=selected.track.model_dump(mode="json"),
+                    )
+                frames = frame_selection(
+                    selected, compact_invalid=compact_invalid, split_annotations=split_annotations
+                )
+                yield {
+                    **outcome,
+                    "path": path,
+                    "audit_path": audit_path,
+                    "provenance": provenance,
+                    "frames": frames,
+                    "action_labels": committed_action_labels(selected.package, frames)
+                    if use_committed_actions else {},
+                    "identity": identity,
+                }
+
+    with closing(sources()) as prepared:
+        return write_dataset(root, prepared, checkpoint=checkpoint, compact_invalid=compact_invalid,
+                             reference_report=reference_report, config_name=config_name, legacy_sync=legacy_sync,
+                             single_arrow=single_arrow)

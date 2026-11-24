@@ -70,7 +70,7 @@ def candidates():
         region_codes=frozenset({"region"}),
         scope_pairs=frozenset({("project", "region")}),
         organization_scope_triples=frozenset({("org", "project", "region")}),
-        capabilities=frozenset({"dataset_version.read", "export.download", "annotation_task.read"}),
+        capabilities=frozenset({"dataset_version.read", "export.read", "annotation_task.read"}),
     )
     token = bind_request_context(
         RequestContext(
@@ -125,3 +125,28 @@ def test_annotated_candidates_require_annotation_access(candidates):
         service.candidates("dataset", auth, data_stage="annotated")
     service.repository.approved_data_versions.assert_not_called()
     assert service.candidates("dataset", auth).total == 44
+
+
+def test_delivery_download_requires_a_grant_covering_each_version(candidates):
+    service, auth, entries = candidates
+    first, second = entries[:2]
+    reader = replace(auth, capabilities=frozenset({"export.read"}))
+    with pytest.raises(ProblemException, match="CAPABILITY_REQUIRED"):
+        service.require_download(reader, first)
+    version = replace(auth, capabilities=frozenset({"export.download/version:" + first.data_version_id}))
+    service.require_download(version, first)
+    with pytest.raises(ProblemException, match="CAPABILITY_REQUIRED"):
+        service.require_download(version, second)
+    dataset = replace(auth, capabilities=frozenset({"export.download/dataset:" + first.identity.dataset_id}))
+    service.require_download(dataset, first)
+    service.require_download(dataset, second)
+
+
+def test_export_read_can_list_jobs_without_dataset_or_download_privileges(candidates):
+    service, auth, _ = candidates
+    auth = replace(auth, capabilities=frozenset({"export.read"}))
+    service.repository.list_jobs.return_value = []
+    assert service.list(auth) == []
+    service.repository.list_jobs.assert_called_once_with(include_annotated=False)
+    with pytest.raises(ProblemException, match="CAPABILITY_REQUIRED"):
+        service.list(replace(auth, capabilities=frozenset()))

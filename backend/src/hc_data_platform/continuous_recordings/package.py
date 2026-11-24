@@ -37,6 +37,7 @@ from hc_data_platform.episode_store.recording_plan import (
 from hc_data_platform.episode_store.validation import parquet_rows
 from hc_data_platform.lance_catalog.models import DatasetSchemaSnapshot
 
+from .action_labels import ALIGNED_ACTION_VERSION
 from .asset_models import RecordingAsset, RecordingAssetRole, RecordingUpload
 from .openarm_grid import frame_at, frame_time
 
@@ -556,11 +557,12 @@ def freeze_plan(request, alignment, manifest, staging, upload, paths, quality, *
     if request.alignment_profile.converter_version in {
         "continuous-episode-package/5",
         "continuous-episode-package/6",
+        ALIGNED_ACTION_VERSION,
     }:
         # The algorithm belongs to the immutable plan; old in-flight packages
         # retain their original floating-point statistics on retries.
         metadata["rgb_statistics"] = RGB_STATISTICS_HISTOGRAM
-    if request.alignment_profile.converter_version == "continuous-episode-package/6":
+    if request.alignment_profile.converter_version in {"continuous-episode-package/6", ALIGNED_ACTION_VERSION}:
         # /6 also uses histogram statistics after selected-row compaction.
         metadata["capture_rgb_statistics"] = RGB_STATISTICS_HISTOGRAM
     if "mcap-provenance.json" in paths:

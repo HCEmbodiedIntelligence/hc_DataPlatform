@@ -1,5 +1,6 @@
 """Versioned HC TJ position scheme, with optional HoloBrain dependencies."""
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_MS
 from hc_data_platform.continuous_recordings.joint_normalization import HANDS, JOINTS
 from hc_data_platform.continuous_recordings.mcap_contracts import JointNormalization, McapProcessingConfig
 
@@ -38,6 +39,6 @@ def configuration(*, holobrain=True, clock_evidence):
         normalization=policy, cameras=cameras, numeric_sources=numeric, metadata_sources=metadata,
         depth_scale_m_per_unit=0.001 if holobrain else None,
         depth_unit_evidence="HC TJ depth recording 16UC1 millimetres" if holobrain else None,
-        semantic_output=output.model_dump(mode="json"), maximum_time_error_ms=20,
+        semantic_output=output.model_dump(mode="json"), maximum_time_error_ms=JOINT_MATCH_MS,
     )
     return cfg, output

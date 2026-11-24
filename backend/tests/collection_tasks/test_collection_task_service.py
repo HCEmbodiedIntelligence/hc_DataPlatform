@@ -392,6 +392,7 @@ def test_progress_reports_target_attainment_without_automatic_state_change() -> 
         collection_task_id=created.collection_task_id,
         package_id="package-1",
         qc_outcome=QcOutcome.PASS,
+        admitted=True,
         duration_seconds=10,
     )
     partial = service.progress(
@@ -421,6 +422,7 @@ def test_progress_reports_target_attainment_without_automatic_state_change() -> 
     )
     assert pending_qc.attainment.status is CollectionTaskAttainmentStatus.IN_PROGRESS
     assert pending_qc.attainment.quality_status.value == "PENDING_QC"
+    assert pending_qc.captured_duration_seconds == 10
 
     repository.record_received_package(
         organization_id=ORGANIZATION_ID,
@@ -428,6 +430,7 @@ def test_progress_reports_target_attainment_without_automatic_state_change() -> 
         collection_task_id=created.collection_task_id,
         package_id="package-2",
         qc_outcome=QcOutcome.PASS,
+        admitted=True,
     )
     attained = service.progress(
         ORGANIZATION_ID,
@@ -445,6 +448,7 @@ def test_progress_reports_target_attainment_without_automatic_state_change() -> 
         package_id="package-3",
         qc_outcome=QcOutcome.PASS,
         duration_seconds=5,
+        admitted=True,
     )
     exceeded = service.progress(
         ORGANIZATION_ID,
@@ -457,7 +461,7 @@ def test_progress_reports_target_attainment_without_automatic_state_change() -> 
     assert exceeded.attainment.package_count.status is CollectionTaskTargetMetricStatus.EXCEEDED
 
 
-def test_duration_target_stays_unknown_when_a_committed_manifest_lacks_time_range() -> None:
+def test_duration_target_stays_unknown_when_an_admitted_episode_lacks_duration() -> None:
     repository = InMemoryCollectionTaskRepository()
     service = CollectionTaskService(repository)
     task_id = service.create(
@@ -476,6 +480,7 @@ def test_duration_target_stays_unknown_when_a_committed_manifest_lacks_time_rang
         project_id="project-a",
         collection_task_id=task_id,
         package_id="legacy-manifest-without-time-range",
+        admitted=True,
     )
 
     progress = service.progress(ORGANIZATION_ID, "project-a", task_id, "cn-test")

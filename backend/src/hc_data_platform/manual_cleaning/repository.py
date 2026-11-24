@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from threading import RLock
 from typing import Any, Protocol, cast
 from uuid import uuid4
@@ -33,6 +34,8 @@ class ManualIssueFilters:
     discovery_sources: tuple[str, ...] = ()
     assignee_id: str | None = None
     collection_task_id: str | None = None
+    updated_from: datetime | None = None
+    updated_to: datetime | None = None
 
 
 class ManualIssueDuplicateError(RuntimeError):
@@ -73,6 +76,9 @@ class ManualIssueRepository(Protocol):
     def create_issue(
         self, *, record: ManualIssueRecord, audit_event: ManualIssueAuditEvent
     ) -> ManualIssueRecord: ...
+
+    def discard_package(self, *, expected_etag: str, record: ManualIssueRecord,
+                        audit_event: ManualIssueAuditEvent) -> None: ...
 
     def update_issue(
         self,
@@ -131,6 +137,10 @@ def _candidate_key(
 
 
 def _matches(record: ManualIssueRecord, filters: ManualIssueFilters) -> bool:
+    if filters.updated_from and record.updated_at < filters.updated_from:
+        return False
+    if filters.updated_to and record.updated_at >= filters.updated_to:
+        return False
     if filters.query:
         needle = filters.query.casefold()
         if not any(
@@ -252,6 +262,11 @@ class InMemoryManualIssueRepository:
             self._issues[key] = record
             self.audit_events.append(audit_event)
             return record
+
+    def discard_package(self, *, expected_etag, record, audit_event):
+        from hc_data_platform.core.errors import problem
+        raise problem(status=409, code="MANUAL_ISSUE_PACKAGE_UNBOUND", title="无法丢弃数据包",
+                      detail="当前问题库未关联可丢弃的入库数据包。")
 
     def update_issue(
         self,
@@ -437,6 +452,8 @@ class PostgresManualIssueRepository:
                            = ANY(%s::text[])
                    )
                    AND (%s::text IS NULL OR assignee_id = %s)
+                   AND (%s::timestamptz IS NULL OR updated_at >= %s)
+                   AND (%s::timestamptz IS NULL OR updated_at < %s)
                 """,
                 (
                     *_scope_key(scope),
@@ -461,6 +478,8 @@ class PostgresManualIssueRepository:
                     list(filters.discovery_sources),
                     filters.assignee_id,
                     filters.assignee_id,
+                    filters.updated_from, filters.updated_from,
+                    filters.updated_to, filters.updated_to,
                 ),
             )
             return tuple(
@@ -653,6 +672,51 @@ class PostgresManualIssueRepository:
         finally:
             cursor.close()
             connection.close()
+
+    def discard_package(self, *, expected_etag, record, audit_event):
+        from .package_discard import retire_reported_version
+
+        connection = self._connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                version = retire_reported_version(cursor, record)
+                self._update_issue(cursor, expected_etag=expected_etag, record=record)
+                self._insert_audit(cursor, audit_event.model_copy(update={
+                    "details": {**audit_event.details, "data_version_id": version}}))
+                self._discard_related_reports(cursor, record, audit_event, version)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _discard_related_reports(self, cursor, record, audit, version):
+        from hc_data_platform.security.audit import canonical_hash
+        from hc_data_platform.security.versioning import ResourceVersion
+
+        cursor.execute("""
+            SELECT i.issue_document FROM manual_cleaning.manual_issues i
+            JOIN dataset_registry.dataset_version_episode_revisions r
+              ON (r.organization_id,r.project_id,r.region_code,r.dataset_id,r.episode_id,r.version_id,r.revision_id)
+                =(i.organization_id,i.project_id,i.region_code,i.dataset_id,i.episode_id,i.origin_dataset_version_id,i.episode_revision_id)
+            WHERE (i.organization_id,i.project_id,i.region_code,i.dataset_id,i.episode_id)=(%s,%s,%s,%s,%s)
+              AND i.status IN ('OPEN','IN_PROGRESS')
+              AND EXISTS (SELECT FROM jsonb_array_elements(r.revision_document->'streams') stream
+                  WHERE stream->>'episode_stream_id'=i.episode_stream_id
+                    AND stream#>>'{package_binding,data,data_version_id}'=%s)
+            ORDER BY i.manual_issue_id FOR UPDATE OF i
+        """, (record.scope.organization_id, record.scope.project_id, record.scope.region_code,
+              record.dataset_id, record.episode_id, version))
+        for (document,) in cursor.fetchall():
+            previous = _issue(document)
+            updated = previous.model_copy(update={"status": "DISCARDED", "updated_at": record.updated_at,
+                "etag": ResourceVersion(_resource_version(previous.etag) + 1).etag})
+            self._update_issue(cursor, expected_etag=previous.etag, record=updated)
+            self._insert_audit(cursor, audit.model_copy(update={"resource_id": previous.id,
+                "before_hash": canonical_hash(previous.model_dump(mode="json")),
+                "after_hash": canonical_hash(updated.model_dump(mode="json")),
+                "details": {"data_version_id": version, "discarded_via_issue": record.id}}))
 
     def update_issue(
         self,

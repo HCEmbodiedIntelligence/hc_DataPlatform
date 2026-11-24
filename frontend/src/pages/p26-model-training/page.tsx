@@ -1,236 +1,451 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
+  Alert,
   Button,
+  Card,
+  Col,
   Descriptions,
-  Drawer,
   Form,
   Input,
   InputNumber,
-  Modal,
   Progress,
+  Row,
   Select,
+  Switch,
   Table,
   Tag,
 } from "antd";
-import { Plus } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  readTraining,
+  startTraining,
+  type TrainingOption,
+  type TrainingRun,
+  type TrainingStart,
+} from "../../features/model-training/api";
+import { useScopedQuery } from "../../shared/api/use-scoped-query";
+import {
+  invalidateScopedDomain,
+  useScopedMutation,
+} from "../../shared/api/use-scoped-mutation";
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
+import type { Scope } from "../../shared/scope/model";
 import { StandardPageScaffold } from "../../shared/ui/layout";
 import layout from "../../shared/ui/workspace.module.css";
 
-interface TrainingConfig {
-  name: string;
-  policy: string;
-  dataset: string;
-  steps: number;
-  batchSize: number;
-}
+const states = {
+  queued: ["排队中", "default"],
+  running: ["训练中", "processing"],
+  succeeded: ["已完成", "success"],
+  failed: ["失败", "error"],
+  cancelled: ["已取消", "default"],
+} as const;
 
-interface Run extends TrainingConfig {
-  id: number;
-  status: "训练中" | "已完成" | "草稿";
-  completed: number;
-}
+function TrainingWorkspace({
+  scope,
+  canStart,
+}: {
+  scope: Scope;
+  canStart: boolean;
+}) {
+  const [selection, setSelection] = useState<
+    Partial<
+      Pick<TrainingStart, "dataset_id" | "model_id" | "card_id" | "config_id">
+    >
+  >({});
+  const [overrides, setOverrides] = useState<
+    Record<string, string | number | boolean | null>
+  >({});
+  const [page, setPage] = useState(1);
+  const submitting = useRef(false);
+  const retry = useRef<{ payload: string; key: string } | null>(null);
+  const client = useQueryClient();
 
-const datasets = ["双臂抓取 · v3", "工件分拣 · v2"];
-const policies = ["ACT", "Diffusion Policy"];
-const examples: Run[] = [
-  {
-    id: 1,
-    name: "双臂抓取基线",
-    policy: "ACT",
-    dataset: datasets[0]!,
-    steps: 20000,
-    batchSize: 16,
-    completed: 7200,
-    status: "训练中",
-  },
-  {
-    id: 2,
-    name: "工件分拣对照实验",
-    policy: "Diffusion Policy",
-    dataset: datasets[1]!,
-    steps: 10000,
-    batchSize: 8,
-    completed: 10000,
-    status: "已完成",
-  },
-];
+  const datasets = useScopedQuery(
+    scope,
+    "training",
+    "datasets",
+    {},
+    {
+      queryFn: ({ signal }) => readTraining(scope, "datasets", {}, signal),
+    },
+  );
+  const dataset = datasets.data?.items.find(
+    (x) => x.id === selection.dataset_id,
+  );
+  const models = useScopedQuery(scope, "training", "models", dataset?.id, {
+    enabled: !!dataset,
+    queryFn: ({ signal }) =>
+      readTraining(scope, "models", { dataset_id: dataset!.id }, signal),
+  });
+  const model = models.data?.items.find((x) => x.id === selection.model_id);
+  const cards = useScopedQuery(
+    scope,
+    "training",
+    "cards",
+    [dataset?.id, model?.id],
+    {
+      enabled: !!dataset && !!model,
+      queryFn: ({ signal }) =>
+        readTraining(
+          scope,
+          "cards",
+          { dataset_id: dataset!.id, model_id: model!.id },
+          signal,
+        ),
+    },
+  );
+  const card = cards.data?.items.find((x) => x.id === selection.card_id);
+  const configs = useScopedQuery(
+    scope,
+    "training",
+    "configs",
+    [dataset?.id, model?.id, card?.id],
+    {
+      enabled: !!dataset && !!model && !!card,
+      queryFn: ({ signal }) =>
+        readTraining(
+          scope,
+          "configs",
+          { dataset_id: dataset!.id, model_id: model!.id, card_id: card!.id },
+          signal,
+        ),
+    },
+  );
+  const config = configs.data?.items.find((x) => x.id === selection.config_id);
+  const runs = useScopedQuery(scope, "training", "runs", page, {
+    queryFn: ({ signal }) =>
+      readTraining(scope, "runs", { page, page_size: 10 }, signal),
+    refetchInterval: 5000,
+  });
+  const start = useScopedMutation(scope, startTraining, {
+    onSuccess: (_run, _intent, binding) => {
+      retry.current = null;
+      setSelection((current) => ({ ...current, config_id: undefined }));
+      setOverrides({});
+      setPage(1);
+      void invalidateScopedDomain(client, binding, "training");
+    },
+  });
 
-function RunStatus({ status }: { status: Run["status"] }) {
-  const colors = { 训练中: "processing", 已完成: "success", 草稿: "default" };
-  return <Tag color={colors[status]}>{status}</Tag>;
-}
+  function choose(next: typeof selection) {
+    setSelection(next);
+    setOverrides({});
+    start.reset();
+  }
 
-export function Component() {
-  const [runs, setRuns] = useState(examples);
-  const [creating, setCreating] = useState(false);
-  const [detail, setDetail] = useState<Run | null>(null);
-  const [form] = Form.useForm<TrainingConfig>();
+  function field(
+    label: string,
+    query: typeof datasets | typeof configs,
+    selected: TrainingOption | undefined,
+    enabled: boolean,
+    onChange: (id: string) => void,
+  ) {
+    return (
+      <Col xs={24} sm={12} xl={6}>
+        <Form.Item label={label} htmlFor={label}>
+          <Select
+            id={label}
+            value={selected?.id}
+            disabled={!enabled || !canStart || start.isPending}
+            loading={query.isFetching}
+            placeholder={label}
+            notFoundContent={query.isFetching ? "加载中" : "暂无可选项"}
+            options={query.data?.items.map((x) => ({
+              value: x.id,
+              label: x.label,
+            }))}
+            onChange={onChange}
+          />
+        </Form.Item>
+      </Col>
+    );
+  }
 
-  function addDraft(values: TrainingConfig) {
-    setRuns((current) => [
-      {
-        ...values,
-        name: values.name.trim(),
-        id: Math.max(...current.map((run) => run.id)) + 1,
-        completed: 0,
-        status: "草稿",
-      },
-      ...current,
+  const optionError = [datasets, models, cards, configs].find(
+    (q) => q.isEnabled && q.error,
+  );
+  const parameters = Object.fromEntries(
+    Object.entries(config?.parameters ?? {}).map(([key, value]) => [
+      key,
+      Object.hasOwn(overrides, key) ? overrides[key] : value,
+    ]),
+  );
+  const valid = Object.values(parameters).every((v) => v != null);
+
+  async function submit() {
+    if (
+      !dataset ||
+      !model ||
+      !card ||
+      !config ||
+      !valid ||
+      optionError ||
+      !canStart ||
+      submitting.current
+    )
+      return;
+    const command: TrainingStart = {
+      dataset_id: dataset.id,
+      model_id: model.id,
+      card_id: card.id,
+      config_id: config.id,
+      parameters: parameters as TrainingStart["parameters"],
+    };
+    const payload = JSON.stringify([
+      dataset.id,
+      model.id,
+      card.id,
+      config.id,
+      Object.entries(command.parameters).sort(([left], [right]) =>
+        left.localeCompare(right),
+      ),
     ]);
-    setCreating(false);
+    if (retry.current?.payload !== payload)
+      retry.current = { payload, key: crypto.randomUUID() };
+    submitting.current = true;
+    try {
+      await start.mutateAsync({ command, key: retry.current.key });
+    } catch {
+      // The mutation exposes its error below. Preserve the key for an uncertain submission.
+    } finally {
+      submitting.current = false;
+    }
   }
 
   return (
-    <div className={layout.page}>
-      <StandardPageScaffold
-        header={{
-          title: "模型训练",
-          description:
-            "查看示例训练进度，或配置训练草稿。草稿仅在当前页面保留。",
-          actions: (
-            <Button
-              type="primary"
-              icon={<Plus size={16} />}
-              onClick={() => setCreating(true)}
-            >
-              新建训练草稿
-            </Button>
-          ),
-        }}
-      >
-        <Table<Run>
-          rowKey="id"
-          dataSource={runs}
-          scroll={{ x: 710 }}
-          pagination={{ pageSize: 8, hideOnSinglePage: true }}
-          columns={[
-            {
-              title: "任务名称",
-              dataIndex: "name",
-              render: (name: string, run) => (
-                <Button type="link" onClick={() => setDetail(run)}>
-                  {name}
+    <>
+      <Card variant="borderless" title="训练配置">
+        <Form layout="vertical" onFinish={submit}>
+          <Row gutter={16}>
+            {field("选择数据", datasets, dataset, true, (id) =>
+              choose({ dataset_id: id }),
+            )}
+            {field("选择模型", models, model, !!dataset, (id) =>
+              choose({ dataset_id: dataset!.id, model_id: id }),
+            )}
+            {field("选择训练卡", cards, card, !!model, (id) =>
+              choose({
+                dataset_id: dataset!.id,
+                model_id: model!.id,
+                card_id: id,
+              }),
+            )}
+            {field("选择参数配置", configs, config, !!card, (id) =>
+              choose({ ...selection, config_id: id }),
+            )}
+          </Row>
+          {config && (
+            <Row gutter={16}>
+              {Object.entries(config.parameters).map(([key, original]) => {
+                const value = parameters[key];
+                const update = (next: typeof original | null) =>
+                  setOverrides((current) => ({ ...current, [key]: next }));
+                const id = `training-param-${key}`;
+                return (
+                  <Col xs={24} sm={12} xl={6} key={key}>
+                    <Form.Item label={key} htmlFor={id}>
+                      {typeof original === "boolean" ? (
+                        <Switch
+                          id={id}
+                          checked={value === true}
+                          onChange={update}
+                          disabled={!canStart || start.isPending}
+                        />
+                      ) : typeof original === "number" ? (
+                        <InputNumber
+                          id={id}
+                          style={{ width: "100%" }}
+                          value={typeof value === "number" ? value : null}
+                          onChange={update}
+                          disabled={!canStart || start.isPending}
+                        />
+                      ) : (
+                        <Input
+                          id={id}
+                          value={String(value ?? "")}
+                          onChange={(e) => update(e.target.value)}
+                          disabled={!canStart || start.isPending}
+                        />
+                      )}
+                    </Form.Item>
+                  </Col>
+                );
+              })}
+            </Row>
+          )}
+          {optionError && (
+            <Alert
+              type="error"
+              showIcon
+              title="训练选项加载失败"
+              description={optionError.error?.message}
+              action={
+                <Button onClick={() => void optionError.refetch()}>重试</Button>
+              }
+            />
+          )}
+          {start.error && (
+            <Alert
+              type="error"
+              showIcon
+              title="训练提交未确认"
+              description={start.error.message}
+              action={
+                <Button
+                  onClick={() => {
+                    for (const query of [
+                      datasets,
+                      models,
+                      cards,
+                      configs,
+                      runs,
+                    ]) {
+                      if (query.isEnabled) void query.refetch();
+                    }
+                  }}
+                >
+                  刷新选项和任务
                 </Button>
-              ),
-            },
-            { title: "策略模型", dataIndex: "policy" },
-            { title: "数据集版本", dataIndex: "dataset" },
+              }
+            />
+          )}
+          {start.data && (
+            <Alert
+              type="success"
+              showIcon
+              title={`训练端已受理任务 ${start.data.id}`}
+            />
+          )}
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={start.isPending}
+            disabled={!canStart || !config || !valid || !!optionError}
+          >
+            开始训练
+          </Button>
+        </Form>
+      </Card>
+      <Card
+        variant="borderless"
+        title="训练任务"
+        extra={
+          <Button loading={runs.isFetching} onClick={() => void runs.refetch()}>
+            刷新状态
+          </Button>
+        }
+      >
+        {runs.error && (
+          <Alert
+            type="error"
+            showIcon
+            title="训练状态刷新失败"
+            description={
+              runs.data ? "表格保留上次成功获取的状态。" : runs.error.message
+            }
+          />
+        )}
+        <Table<TrainingRun>
+          rowKey="id"
+          dataSource={runs.data?.items ?? []}
+          loading={runs.isLoading}
+          scroll={{ x: 840 }}
+          locale={{
+            emptyText: runs.error ? "无法获取任务列表" : "暂无训练任务",
+          }}
+          pagination={{
+            current: page,
+            pageSize: 10,
+            total: runs.data?.total ?? 0,
+            showSizeChanger: false,
+            onChange: setPage,
+            hideOnSinglePage: true,
+          }}
+          expandable={{
+            expandedRowRender: (run) => (
+              <Descriptions
+                size="small"
+                column={1}
+                items={[
+                  {
+                    key: "config",
+                    label: "参数配置",
+                    children: run.config.label,
+                  },
+                  {
+                    key: "params",
+                    label: "训练参数",
+                    children: JSON.stringify(run.parameters),
+                  },
+                  {
+                    key: "time",
+                    label: "提交时间",
+                    children: new Date(run.created_at).toLocaleString(),
+                  },
+                ]}
+              />
+            ),
+          }}
+          columns={[
+            { title: "任务 ID", dataIndex: "id" },
+            { title: "数据", render: (_, r) => r.dataset.label },
+            { title: "模型", render: (_, r) => r.model.label },
+            { title: "训练卡", render: (_, r) => r.card.label },
             {
               title: "状态",
-              dataIndex: "status",
-              render: (status: Run["status"]) => <RunStatus status={status} />,
+              render: (_, r) => (
+                <Tag color={states[r.status][1]}>{states[r.status][0]}</Tag>
+              ),
             },
             {
-              title: "训练进度",
+              title: "进度",
               width: 140,
-              render: (_, run) =>
-                run.status === "草稿" ? (
-                  "待提交"
+              render: (_, r) =>
+                r.progress_percent == null ? (
+                  "—"
                 ) : (
                   <Progress
                     size="small"
-                    percent={Math.round((100 * run.completed) / run.steps)}
+                    percent={r.progress_percent}
+                    status={r.status === "failed" ? "exception" : "normal"}
                   />
                 ),
             },
+            { title: "状态说明", render: (_, r) => r.status_message || "—" },
           ]}
         />
-      </StandardPageScaffold>
-      <Modal
-        title="新建训练草稿"
-        open={creating}
-        onCancel={() => setCreating(false)}
-        onOk={() => form.submit()}
-        okText="添加草稿"
-        cancelText="取消"
-        destroyOnHidden
-      >
-        <Form<TrainingConfig>
-          form={form}
-          layout="vertical"
-          preserve={false}
-          initialValues={{
-            policy: policies[0],
-            dataset: datasets[0],
-            steps: 20000,
-            batchSize: 16,
-          }}
-          onFinish={addDraft}
-        >
-          <Form.Item
-            label="任务名称"
-            name="name"
-            rules={[
-              { required: true, whitespace: true, message: "请输入任务名称" },
-            ]}
-          >
-            <Input placeholder="例如：双臂抓取实验" maxLength={60} />
-          </Form.Item>
-          <Form.Item label="策略模型" name="policy">
-            <Select options={policies.map((value) => ({ value }))} />
-          </Form.Item>
-          <Form.Item label="示例数据集版本" name="dataset">
-            <Select options={datasets.map((value) => ({ value }))} />
-          </Form.Item>
-          <Form.Item
-            label="训练步数"
-            name="steps"
-            rules={[
-              {
-                type: "integer",
-                min: 1,
-                required: true,
-                message: "请输入正整数",
-              },
-            ]}
-          >
-            <InputNumber min={1} precision={0} />
-          </Form.Item>
-          <Form.Item
-            label="批大小"
-            name="batchSize"
-            rules={[
-              {
-                type: "integer",
-                min: 1,
-                required: true,
-                message: "请输入正整数",
-              },
-            ]}
-          >
-            <InputNumber min={1} precision={0} />
-          </Form.Item>
-        </Form>
-      </Modal>
-      <Drawer
-        title="训练任务详情"
-        open={detail !== null}
-        onClose={() => setDetail(null)}
-      >
-        {detail && (
-          <Descriptions
-            bordered
-            column={1}
-            size="small"
-            items={[
-              { key: "name", label: "任务名称", children: detail.name },
-              {
-                key: "status",
-                label: "状态",
-                children: <RunStatus status={detail.status} />,
-              },
-              { key: "policy", label: "策略模型", children: detail.policy },
-              { key: "dataset", label: "数据集版本", children: detail.dataset },
-              { key: "batch", label: "批大小", children: detail.batchSize },
-              {
-                key: "steps",
-                label: "已完成 / 总步数",
-                children: `${detail.completed.toLocaleString()} / ${detail.steps.toLocaleString()}`,
-              },
-            ]}
+      </Card>
+    </>
+  );
+}
+
+export function Component() {
+  const scope = useShellStore((s) => s.scope);
+  const scopeKey = useShellStore((s) => s.scopeKey);
+  const revision = useShellStore((s) => s.sessionRevision);
+  const capabilities = useCapabilities();
+  return (
+    <div className={layout.page}>
+      <StandardPageScaffold header={{ title: "模型训练" }}>
+        {!scope?.projectId || !scope.regionCode ? (
+          <Alert type="info" title="请选择项目和区域" />
+        ) : !capabilities.has("training.read") ? (
+          <Alert
+            type="info"
+            title={
+              capabilities.loading ? "正在加载权限" : "当前项目没有训练查看权限"
+            }
+          />
+        ) : (
+          <TrainingWorkspace
+            key={`${scopeKey}:${revision}`}
+            scope={scope}
+            canStart={capabilities.has("training.create")}
           />
         )}
-      </Drawer>
+      </StandardPageScaffold>
     </div>
   );
 }

@@ -14,6 +14,8 @@ def test_published_quality_changes_follow_task_plan_but_not_old_recording(enviro
         for revision, limit in enumerate((1, 2)):
             command = draft(revision).model_dump(mode='json')
             command['quality_policy'] = {'joint_limits': {'left': [-limit, limit]}}
+            if revision:
+                command['quality_policy']['enabled_codes'] = ['QC_ACTION_MISSING']
             saved = schemes.save(db, scope[0], 'quality-rules', SchemeDraft.model_validate(command), 'tester')
             schemes.record_validation(db, scope[0], 'quality-rules', saved['revision'], {
                 'source_format': 'LEROBOT_V3', 'parser_version': 'lerobot-v3/1',
@@ -29,5 +31,7 @@ def test_published_quality_changes_follow_task_plan_but_not_old_recording(enviro
     first, second = [from_snapshot(s, {'/observation/state','/action'}, 15) for s in snapshots]
     assert first.joint_limits['left'] == (-1, 1)
     assert second.joint_limits['left'] == (-2, 2)
+    assert first.enabled_codes is None
+    assert second.enabled_codes == ('QC_ACTION_MISSING',)
     assert first.profile_id != second.profile_id
     assert snapshots[0]['quality_policy']['joint_limits']['left'] == [-1, 1]

@@ -63,6 +63,7 @@ export type PlatformProject = Readonly<{
 export type PlatformOrganization = Readonly<{
   organization_id: string;
   organization_name: string;
+  join_code?: string | null;
 }>;
 
 export type PlatformOrganizationPage = Readonly<{
@@ -182,6 +183,7 @@ export const platformProjectWireSchema: z.ZodType<PlatformProject> = z
 
 export const platformOrganizationWireSchema: z.ZodType<PlatformOrganization> = z
   .object({
+    join_code: z.string().nullable().optional(),
     organization_id: stableScopeId,
     organization_name: z.string().min(1).max(256),
   })

@@ -8,6 +8,7 @@ import json
 import secrets
 import unicodedata
 from base64 import urlsafe_b64decode, urlsafe_b64encode
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import NoReturn, Protocol
@@ -50,11 +51,11 @@ from .access_models import (
     SessionIssued,
     SessionIssueStaleCredentials,
 )
-from .access_repository import AccessRepository
+from .access_repository import AccessRepository, can_manage_project, can_approve_delivery, check_grant_decision
 from .auth import AuthContext
 from .capabilities import (
     CAPABILITY_PLATFORM_ACCOUNT_SECURITY_MANAGE,
-    expand_data_workflow_capabilities,
+    expand_project_roles,
 )
 from .challenge import (
     DisabledPublicAuthChallengeVerifier,
@@ -388,7 +389,7 @@ class AccessService:
                             else scope.region_codes
                         ),
                         "capabilities": tuple(
-                            sorted(expand_data_workflow_capabilities(scope.capabilities))
+                            sorted(expand_project_roles(scope.capabilities))
                         ),
                     }
                 )
@@ -580,6 +581,21 @@ class AccessService:
         return AccountNotificationUnreadCount(
             unread_count=self._repository.count_unread_notifications(principal_id=auth.subject_id)
         )
+
+    def create_managed_project(self,auth,cmd,request_id):
+        return self._repository.create_managed_project(auth,cmd,request_id)
+
+    def governance_directory(self, auth):
+        return self._repository.governance_directory(auth)
+
+    def governance_members(self, auth, organization, project, offset):
+        return self._repository.governance_members(auth, organization, project, offset)
+
+    def governance_inbox(self, auth, organization, project, offset):
+        return self._repository.governance_inbox(auth, organization, project, offset)
+
+    def change_administrator(self, auth, principal, cmd, request_id):
+        return self._repository.change_administrator(auth, principal, cmd, request_id)
 
     def account_access_overview(self, *, auth: AuthContext) -> AccountAccessOverview:
         return self._repository.account_access_overview(principal_id=auth.subject_id)
@@ -860,6 +876,9 @@ class AccessService:
             organization_id=organization_id,
             project_id=project_id,
             capability_keys=command.capability_keys,
+            expires_at=command.expires_at,
+            resource_id=command.resource_id,
+            replaces_request_id=command.replaces_request_id,
             reason=command.reason,
             idempotency_key=idempotency_key,
             request_id=request_id,
@@ -868,11 +887,46 @@ class AccessService:
     def list_capability_requests(
         self, *, auth: AuthContext, organization_id: str, project_id: str
     ) -> CapabilityRequestList:
-        return CapabilityRequestList(
-            items=self._repository.list_capability_requests(
-                auth=auth, organization_id=organization_id, project_id=project_id
-            )
+        items = self._repository.list_capability_requests(
+            auth=auth, organization_id=organization_id, project_id=project_id
         )
+        now = datetime.now(timezone.utc)
+        active = {}
+        counts = defaultdict(Counter)
+        for item in items:
+            if item.status is AccessRequestStatus.APPROVED and (not item.expires_at or item.expires_at > now):
+                grants = expand_project_roles(item.effective_grant_keys)
+                active[(item.requester_id, item.request_id)] = grants
+                counts[item.requester_id].update(grants)
+
+        manager = can_manage_project(auth, project_id, organization_id) or can_approve_delivery(auth, project_id, organization_id)
+        result = []
+        for item in items:
+            if item.status is AccessRequestStatus.PENDING:
+                before = counts[item.requester_id]
+                proposed = expand_project_roles(item.effective_grant_keys)
+                previous = active.get((item.requester_id, item.replaces_request_id), ())
+                item = item.model_copy(update={
+                    "project_grants_added": tuple(sorted(proposed - before.keys())),
+                    "project_grants_removed": tuple(sorted(key for key in previous
+                        if before[key] == 1 and key not in proposed)),
+                })
+            if manager:
+                transitions = {
+                    AccessRequestStatus.PENDING: (("approve", AccessRequestStatus.APPROVED),
+                                                  ("reject", AccessRequestStatus.REJECTED)),
+                    AccessRequestStatus.APPROVED: (("revoke", AccessRequestStatus.REVOKED),),
+                }
+                decisions = []
+                for name, target in transitions.get(item.status, ()):
+                    try:
+                        check_grant_decision(auth, item, target)
+                    except ProblemException:
+                        continue
+                    decisions.append(name)
+                item = item.model_copy(update={"allowed_decisions": tuple(decisions)})
+            result.append(item)
+        return CapabilityRequestList(items=tuple(result))
 
     def get_capability_request(
         self,

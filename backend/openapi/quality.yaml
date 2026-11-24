@@ -159,6 +159,14 @@ components:
           minLength: 1
           title: Message
           type: string
+        progress:
+          default: OPEN
+          enum:
+          - OPEN
+          - IN_PROGRESS
+          - DISCARDED
+          title: Progress
+          type: string
         recording_episode_id:
           anyOf:
           - type: string
@@ -579,6 +587,12 @@ components:
           $ref: '#/components/schemas/PointCloudQualityProfileV1'
         default_timing:
           $ref: '#/components/schemas/TopicTimingProfileV1'
+        enabled_codes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/QualityCode'
+            type: array
+          - type: 'null'
         engine_version:
           default: be06-qc/2
           minLength: 1
@@ -932,6 +946,13 @@ paths:
         schema:
           default: false
           title: Include Discarded
+          type: boolean
+      - in: query
+        name: include_progress
+        required: false
+        schema:
+          default: false
+          title: Include Progress
           type: boolean
       responses:
         '200':

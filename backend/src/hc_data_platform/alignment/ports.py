@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -51,6 +51,7 @@ class AlignmentPort(Protocol):
         writer: FragmentWriterPort,
         target_timestamps: Iterable[int] | None = None,
         drop_invalid: bool = False,
+        row_transform: Callable[[AlignedRowV1], AlignedRowV1] | None = None,
     ) -> AlignedFragmentManifestV1: ...
 
 

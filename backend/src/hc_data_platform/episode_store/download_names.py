@@ -3,11 +3,44 @@
 import re
 import unicodedata
 from datetime import datetime, timezone
+from typing import Annotated
 from zoneinfo import ZoneInfo
+
+from pydantic import Field
 
 from .scope import assert_scope
 
 LOCAL_TIME = ZoneInfo("Asia/Shanghai")
+ExportArchiveName = Annotated[str, Field(max_length=240, pattern=r"^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$")]
+
+
+def dataset_export_name(repository, plan, format_name, exported_at=None):
+    """Resolve the owning task number as displayed on the dataset export page."""
+    identities = [member.data.identity for member in plan.members]
+    for identity in identities:
+        assert_scope(identity)
+    ids = sorted({identity.dataset_id for identity in identities})
+    with repository.transaction() as cursor:
+        cursor.execute(
+            """SELECT d.dataset_id, COALESCE(owner.task_code, (
+                   SELECT min(t.task_code) FROM collection_tasks.collection_tasks t
+                   WHERE t.organization_id=d.organization_id AND t.project_id=d.project_id
+                     AND t.dataset_id=d.dataset_id HAVING count(*)=1))
+               FROM dataset_registry.datasets d
+               LEFT JOIN collection_tasks.collection_tasks owner
+                 ON owner.organization_id=d.organization_id AND owner.project_id=d.project_id
+                 AND owner.collection_task_id=d.collection_task_id
+               WHERE d.organization_id=%s AND d.project_id=%s AND d.region_code=%s
+                 AND d.dataset_id=ANY(%s)""",
+            (*identities[0].scope, ids),
+        )
+        numbers = {key: str(int(code)) for key, code in cursor.fetchall() if code}
+    labels = sorted({numbers.get(key) or re.sub(r"[^A-Za-z0-9_-]+", "-", key)[:48] for key in ids})
+    selected = "+".join(labels[:3])
+    if len(labels) > 3:
+        selected += f"+{len(labels) - 3}more"
+    minute = (exported_at or datetime.now(LOCAL_TIME)).astimezone(LOCAL_TIME)
+    return f"{format_name}_{selected}_{minute:%Y%m%d_%H%M}.zip"
 
 
 def _component(value, limit):

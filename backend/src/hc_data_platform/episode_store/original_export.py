@@ -74,20 +74,20 @@ def selection_document(selection):
     }
 
 
-def inventory(root, members, format):
+def inventory(root, members, format, *, hash_files=True):
     files = []
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        sha = hashlib.sha256()
-        with path.open("rb") as stream:
-            for block in iter(lambda: stream.read(1024**2), b""):
-                sha.update(block)
+        checksum = {}
+        if hash_files:
+            with path.open("rb") as stream:
+                checksum["sha256"] = hashlib.file_digest(stream, "sha256").hexdigest()
         files.append(
             {
                 "path": path.relative_to(root).as_posix(),
                 "size": path.stat().st_size,
-                "sha256": sha.hexdigest(),
+                **checksum,
             }
         )
     return {"format": format, "members": members, "files": files}, None

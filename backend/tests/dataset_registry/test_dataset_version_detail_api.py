@@ -712,6 +712,18 @@ def test_p07_approval_is_durable_idempotent_and_does_not_fake_ready(upload_opera
     current: dict[str, AuthContext | None] = {"value": auth}
     client = TestClient(_app(current))
     initial_bootstrap = client.get(f"{_root()}/bootstrap", headers=_headers())
+    if upload_operator:
+        assert initial_bootstrap.status_code == 403
+        current["value"] = _auth()
+        review_token = _review_checks(client)["review_token"]
+        current["value"] = auth
+        denied = client.post(
+            f"{_root()}:approve",
+            headers=_headers(**{"If-Match": _reviewing_version().etag, "Idempotency-Key": "upload-only"}),
+            json={"expected_status": "REVIEWING", "review_token": review_token},
+        )
+        assert denied.status_code == 403
+        return
     assert initial_bootstrap.status_code == 200
     initial_snapshot_token = initial_bootstrap.json()["data"]["snapshot_token"]
     checks = _review_checks(client)

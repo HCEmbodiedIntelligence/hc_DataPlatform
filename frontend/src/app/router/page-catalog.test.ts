@@ -4,9 +4,9 @@ import { safeReturnTo } from "../../shared/routing/route-registry";
 
 describe("application page catalog", () => {
   it("discovers ingestion and account pages alongside all enabled business pages", () => {
-    expect(pageCatalog.routes).toHaveLength(38);
+    expect(pageCatalog.routes).toHaveLength(42);
     expect(pageCatalog.routes.map((route) => route.path)).toEqual(
-      expect.arrayContaining(["/teleoperation", "/model-training", "/settings/quality-rules"]),
+      expect.arrayContaining(["/teleoperation", "/model-training", "/annotations/model", "/settings/access/management", "/settings/quality-rules", "/settings/annotation-tags", "/data-trace"]),
     );
     expect(pageCatalog.availability).toMatchObject({
       P02: true,
@@ -60,16 +60,12 @@ describe("application page catalog", () => {
     const permissions = (path: string) =>
       pageCatalog.routes.find((route) => route.path === path)
         ?.requiredCapabilities;
-    expect(permissions("/exports")).toEqual([
-      "export.read",
-      "dataset.read",
-      "dataset_version.read",
-    ]);
+    expect(permissions("/exports")).toEqual(["export.read"]);
     expect(
       permissions(
         "/datasets/:datasetId/versions/:versionId/episodes/:episodeId/view",
       ),
-    ).toEqual(["episode.read"]);
+    ).toEqual(["episode.workspace"]);
     expect(permissions("/settings/access")).toEqual([]);
     expect(permissions("/manual/drafts/:draftId")).toEqual(["cleaning.read"]);
   });

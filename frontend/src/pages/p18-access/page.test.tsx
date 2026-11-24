@@ -129,12 +129,9 @@ describe("P18 page-owned decision feedback", () => {
   });
 
   it("opens only global user management for a platform administrator without project scope", async () => {
-    requestMock.mockResolvedValue({
-      items: [],
-      page: 1,
-      page_size: 10,
-      total: 0,
-    });
+    requestMock.mockImplementation(async options => options.path === "/account/management-directory"
+      ? { organizations: [], projects: [] }
+      : { items: [], page: 1, page_size: 10, total: 0 });
     useShellStore.setState({
       scope: null,
       authorization: null,
@@ -169,6 +166,7 @@ describe("P18 page-owned decision feedback", () => {
 
   it("loads the project queue without automatically opening the first request", async () => {
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (options.path.endsWith("membership-requests"))
         return { items: [pendingMembership] };
       if (options.path.endsWith("capability-requests")) return { items: [] };
@@ -187,6 +185,7 @@ describe("P18 page-owned decision feedback", () => {
     const user = userEvent.setup();
     let membershipRows: MembershipRequest[] = [pendingMembership];
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (
         options.method === "GET" &&
         options.path.endsWith("membership-requests")
@@ -237,6 +236,7 @@ describe("P18 page-owned decision feedback", () => {
     const user = userEvent.setup();
     let membershipRows: MembershipRequest[] = [pendingMembership];
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (
         options.method === "GET" &&
         options.path.endsWith("membership-requests")
@@ -311,6 +311,7 @@ describe("P18 page-owned decision feedback", () => {
       httpStatus: 409,
     });
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (
         options.method === "GET" &&
         options.path.endsWith("membership-requests")
@@ -341,6 +342,7 @@ describe("P18 page-owned decision feedback", () => {
 
   it("closes an open request when the Shell project scope changes", async () => {
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (options.path.endsWith("membership-requests"))
         return { items: [pendingMembership] };
       if (options.path.endsWith("capability-requests")) return { items: [] };

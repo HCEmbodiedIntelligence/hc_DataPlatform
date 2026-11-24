@@ -97,9 +97,12 @@ def schema_document() -> TagSchemaDocument:
 
 
 def service_with_published_schema(
-    *, self_review_policy: SelfReviewPolicy = SelfReviewPolicy.UNCONFIRMED
+    *, self_review_policy: SelfReviewPolicy = SelfReviewPolicy.UNCONFIRMED,
+    allowed_tags=("Event", "Collision", "Safe", "打篮球", "运球"),
 ) -> InMemoryAnnotationService:
-    service = InMemoryAnnotationService(self_review_policy=self_review_policy)
+    service = InMemoryAnnotationService(
+        self_review_policy=self_review_policy, allowed_tags=allowed_tags,
+    )
     service.create_tag_schema_version(
         project_id="project-a",
         schema_id="quality",
@@ -435,3 +438,10 @@ def test_review_checks_exact_submission_and_open_08_policy_is_configurable() -> 
         )
         is not None
     )
+
+
+def test_schema_tag_without_a_label_cannot_bypass_the_scheme_selection():
+    service = service_with_published_schema(allowed_tags=("Safe",))
+    with pytest.raises(AnnotationValidationError) as error:
+        save_tags(service, tag("not-selected", "collision"))
+    assert error.value.problem.details == {"check": ReviewCheckKind.SCHEMA_VERSION.value}

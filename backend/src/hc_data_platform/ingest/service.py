@@ -1072,6 +1072,7 @@ class UploadSessionService:
         *,
         status: UploadStatus | None = None,
         data_package_id: str | None = None,
+        task_ids: tuple[str, ...] | None = None,
         cursor: str | None = None,
         limit: int = 50,
     ) -> UploadSessionListV1:
@@ -1088,6 +1089,7 @@ class UploadSessionService:
             status=None if status is None else status.value,
             data_package_id=data_package_id,
             after=after,
+            **({"task_ids": task_ids} if task_ids is not None else {}),
             limit=limit + 1,
         )
         has_more = len(rows) > limit

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from fastapi import APIRouter, Response
+from fastapi.responses import JSONResponse
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
@@ -73,7 +74,7 @@ def create_quality_profile(
     auth: VerifiedAuth,
 ) -> QualityProfileV1:
     _no_store(response)
-    authorize_scope(auth, project_id, "upload.manage")
+    authorize_scope(auth, project_id, "quality.manage")
     raise problem(
         status=409,
         code="CAPTURE_SCHEME_REQUIRED",
@@ -143,7 +144,8 @@ def list_auto_quality_problems(
     response: Response,
     auth: VerifiedAuth,
     include_discarded: bool = False,
-) -> AutoQualityProblemListV1:
+    include_progress: bool = False,
+) -> AutoQualityProblemListV1 | Response:
     """Expose latest RISK/REJECT reports as read-only unified issue-center rows."""
 
     _no_store(response)
@@ -153,7 +155,13 @@ def list_auto_quality_problems(
         project_id=project_id,
         region_code=region_code,
     )
-    return AutoQualityProblemListV1(items=items, total=len(items))
+    if include_progress:
+        return AutoQualityProblemListV1(items=items, total=len(items))
+    # Older clients use a strict v1 schema and only understand open and discarded rows.
+    legacy = tuple(item for item in items if item.progress in {"OPEN", "DISCARDED"})
+    body = AutoQualityProblemListV1(items=legacy, total=len(legacy))
+    return JSONResponse(body.model_dump(mode="json", exclude={"items": {"__all__": {"progress"}}}),
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.get(

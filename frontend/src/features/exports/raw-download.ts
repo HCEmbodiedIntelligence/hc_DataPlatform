@@ -1,22 +1,14 @@
+import { transferWidth } from "../../shared/lib/ordered-transfer";
 import type { IngestScope } from "../../entities/data-source";
 import { request } from "../../shared/api/http-client";
 import { createSessionScopeLease } from "../../shared/api/session-scope-lease";
 import { nativeRoot } from "../ingest/processing/lerobot-processing";
 
-type DownloadFile = {
-  write: (chunk: Uint8Array) => Promise<void>;
-  close: () => Promise<void>;
-  abort: () => Promise<void>;
-};
+import { exportToOss, type ExportDestination, type OssReceipt } from "./oss-export";
 
-type SavePicker = (options: {
-  suggestedName: string;
-  types: { description: string; accept: Record<string, string[]> }[];
-}) => Promise<{ name: string; createWritable: () => Promise<DownloadFile> }>;
+import { chooseExportFile, writeExportFile } from "./save-file";
 
-export type RawDownloadResult =
-  | { kind: "saved"; filename: string; bytes: number }
-  | { kind: "browser"; filename: string; bytes: number; url: string };
+export type RawDownloadResult = OssReceipt | { kind: "saved"; filename: string; bytes: number };
 
 type ArchiveDownloadOutcome = RawDownloadResult | { kind: "cancelled" };
 
@@ -26,98 +18,98 @@ export async function downloadRawSources(
   importIds: readonly string[],
   signal: AbortSignal,
   onProgress: (bytes: number) => void,
-  filter?: { stage: "dataset"; batch_numbers: readonly number[]; uploaded_from?: string; uploaded_before?: string },
+  filter?: { stage: "dataset"; batch_numbers: readonly number[]; uploaded_from?: string; uploaded_before?: string; all_batches?: boolean },
+  destination: ExportDestination = "zip",
+  suggestedName?: string,
+  checkpoint?: () => Promise<void>, saving?: () => void,
 ): Promise<ArchiveDownloadOutcome> {
-  return downloadArchive(scope, signal, onProgress, "原始数据", async () => ({
-    path: `${nativeRoot(scope)}/archive`, body: { import_ids: importIds, ...(filter && { export_filter: filter }) },
-  }));
+  const name = suggestedName ?? `原始数据-${new Date().toISOString().slice(0, 10)}.zip`;
+  const path = `${nativeRoot(scope)}/archive`;
+  const body = { import_ids: importIds, ...(suggestedName && { download_name: suggestedName }), ...(filter && { export_filter: filter }) };
+  return downloadArchive(scope, signal, onProgress, name, async lease => ({
+    path, body, ...(destination === "zip" && transferWidth(importIds.length) > 1 && {
+      async writeLocal(sink: WritableStream<Uint8Array>) {
+        const { writeSelectionBundle } = await import("./mcap-bundle");
+        await writeSelectionBundle(importIds, (id, active) =>
+          fetchArchivePart(scope, path, { ...body, import_ids: [id] }, active, checkpoint), sink, lease, () => {}, "raw");
+      },
+    }),
+  }), "raw", destination, checkpoint, undefined, saving);
+}
+
+export async function fetchArchivePart(scope: IngestScope, path: string, body: Record<string, unknown>,
+  signal: AbortSignal, checkpoint?: () => Promise<void>) {
+  await checkpoint?.();
+  signal.throwIfAborted();
+  const stream = new TransformStream<Uint8Array, Uint8Array>({
+    async transform(chunk, output) {
+      await checkpoint?.();
+      signal.throwIfAborted();
+      output.enqueue(chunk);
+    },
+  });
+  const download = request<void>({ method: "POST", path, scope, scopeMode: "explicit", body,
+    signal, cache: "no-store", downloadTo: stream.writable });
+  try {
+    const [, blob] = await Promise.all([download, new Response(stream.readable).blob()]);
+    return blob;
+  } catch (error) {
+    await stream.writable.abort(error).catch(() => {});
+    throw error;
+  }
 }
 
 export async function downloadArchive(
   scope: IngestScope, signal: AbortSignal, onProgress: (bytes: number) => void,
-  label: string, prepare: (signal: AbortSignal) => Promise<{path: string; body: Record<string, unknown>}>,
+  name: string, prepare: (signal: AbortSignal, suggestedName: string) => Promise<{
+    path: string; body: Record<string, unknown>; writeLocal?: (sink: WritableStream<Uint8Array>) => Promise<void>;
+  }>,
+  kind: "raw" | "bundle", destination: ExportDestination, beforeStart?: () => Promise<void>,
+  onSaving?: (bytes: number) => void, saving?: () => void,
 ): Promise<ArchiveDownloadOutcome> {
   const lease = createSessionScopeLease(scope, signal);
-  const name = `${label}-${new Date().toISOString().slice(0, 10)}.zip`;
-  const picker = (window as Window & { showSaveFilePicker?: SavePicker })
-    .showSaveFilePicker;
-  let file: DownloadFile | undefined;
-  let filename = name;
-  const chunks: BlobPart[] = [];
   try {
     lease.signal.throwIfAborted();
-    // Invoke the picker before awaiting network work so the user gesture is retained.
-    if (picker) {
-      let handle: Awaited<ReturnType<SavePicker>>;
-      try {
-        handle = await picker.call(window, {
-          suggestedName: name,
-          types: [{ description: "ZIP 压缩包", accept: { "application/zip": [".zip"] } }],
-        });
-      } catch (error) {
-        lease.signal.throwIfAborted();
-        if (error instanceof DOMException && error.name === "AbortError")
-          return { kind: "cancelled" };
-        throw error;
-      }
+    if (destination === "oss") {
+      await beforeStart?.();
       lease.signal.throwIfAborted();
-      filename = handle.name;
-      file = await handle.createWritable();
+      const { body } = await prepare(lease.signal, name);
+      return await exportToOss(scope, { ...body, kind }, lease.signal, onProgress);
     }
+    const handle = await chooseExportFile(name);
     lease.signal.throwIfAborted();
+    if (!handle) return { kind: "cancelled" };
     let received = 0;
     let lastReport = 0;
-    const sink = new WritableStream<Uint8Array>({
-      async write(chunk) {
-        lease.signal.throwIfAborted();
-        if (file) await file.write(chunk);
-        else chunks.push(new Uint8Array(chunk));
-        received += chunk.byteLength;
-        if (performance.now() - lastReport > 100) {
-          onProgress(received);
-          lastReport = performance.now();
-        }
-      },
+    await writeExportFile(handle, lease.signal, async file => {
+      await beforeStart?.();
+      const archive = await prepare(lease.signal, name);
+      const sink = new WritableStream<Uint8Array>({
+        async write(chunk) {
+          await beforeStart?.();
+          lease.signal.throwIfAborted();
+          await file.write(chunk);
+          received += chunk.byteLength;
+          if (performance.now() - lastReport > 100) {
+            onProgress(received);
+            lastReport = performance.now();
+          }
+        },
+      });
+      if (archive.writeLocal) await archive.writeLocal(sink);
+      else await request<void>({
+        method: "POST", path: archive.path, scope, scopeMode: "explicit",
+        signal: lease.signal, cache: "no-store", body: archive.body, downloadTo: sink,
+      });
+      lease.signal.throwIfAborted();
+    }, async () => {
+      await beforeStart?.();
+      saving?.();
+      onSaving?.(received);
     });
-    const archive = await prepare(lease.signal);
-    await request<void>({
-      method: "POST",
-      path: archive.path,
-      scope,
-      scopeMode: "explicit",
-      signal: lease.signal,
-      cache: "no-store",
-      body: archive.body,
-      downloadTo: sink,
-    });
-    lease.signal.throwIfAborted();
-    if (file) {
-      await file.close();
-      file = undefined;
-      onProgress(received);
-      return { kind: "saved", filename, bytes: received };
-    }
-    // Keep the blob available for a real user click if automatic downloading
-    // is blocked. The caller releases it when this result leaves the page.
-    const url = URL.createObjectURL(
-      new Blob(chunks, { type: "application/zip" }),
-    );
-    try {
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = name;
-      anchor.rel = "noopener noreferrer";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-    } catch (error) {
-      URL.revokeObjectURL(url);
-      throw error;
-    }
-    onProgress(received);
-    return { kind: "browser", filename, bytes: received, url };
+    if (!onSaving) onProgress(received);
+    return { kind: "saved", filename: handle.name, bytes: received };
   } finally {
-    await file?.abort().catch(() => {});
     lease.release();
   }
 }

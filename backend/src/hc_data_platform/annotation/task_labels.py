@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from .models import AnnotationTask
+
 
 def collection_task_label_binding(
     cursor: Any,
@@ -34,3 +36,48 @@ def collection_task_label_binding(
     )
     rows = cursor.fetchall()
     return (str(rows[0][0]), int(rows[0][1])) if len(rows) == 1 else None
+
+
+def scheme_tag_names(
+    cursor: Any, task: AnnotationTask, *, lock_plan: bool = False
+) -> tuple[str, ...]:
+    """Follow the collection task's selected published version, including for older Episodes."""
+    cursor.execute(
+        """WITH source AS (
+            SELECT NULLIF(v.input_document->>'task_id','unknown') AS task_id
+            FROM episode_store.versions v
+            WHERE v.organization_id=current_setting('app.organization_id',true)
+              AND (v.project_id,v.region_code,v.dataset_id,v.data_version_id)=(%s,%s,%s,%s)
+        ), owners AS (
+            SELECT t.organization_id,t.project_id,t.collection_task_id
+            FROM collection_tasks.collection_tasks t
+            WHERE t.organization_id=current_setting('app.organization_id',true)
+              AND (t.project_id,t.upload_region_code,t.dataset_id)=(%s,%s,%s)
+              AND ((SELECT task_id FROM source) IS NULL
+                   OR t.collection_task_id=(SELECT task_id FROM source))
+        )
+        SELECT v.document->'annotation_tags' AS names
+        FROM owners JOIN collection_tasks.capture_plan_heads h
+          USING (organization_id,project_id,collection_task_id)
+        JOIN collection_tasks.capture_plans p
+          USING (organization_id,project_id,collection_task_id,revision)
+        JOIN ingest.capture_scheme_versions v ON (v.organization_id,v.scheme_id,v.version)
+            =(p.organization_id,p.scheme_id,p.scheme_version)
+        WHERE (SELECT count(*) FROM owners)=1 AND p.region_code=%s"""
+        + (" FOR SHARE OF h" if lock_plan else ""),
+        (
+            task.project_id,
+            task.region_code,
+            task.dataset_id,
+            task.data_ref.data_version_id if task.data_ref else None,
+            task.project_id,
+            task.region_code,
+            task.dataset_id,
+            task.region_code,
+        ),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return ()
+    names = row["names"] if isinstance(row, dict) else row[0]
+    return tuple(names or ())

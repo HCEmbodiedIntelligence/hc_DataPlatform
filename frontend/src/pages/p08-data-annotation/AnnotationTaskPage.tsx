@@ -47,6 +47,7 @@ import {
 } from "./tag-draft-recovery";
 import type { TagDraftRecoveryIdentity, StoredRecovery } from "./tag-draft-recovery";
 import { annotationRoutes } from "../../features/annotation/routing";
+import { selectRobotActionStream } from "../../features/viewer/robot-action-stream";
 import { buildRuntimeJointAngleStream } from "../../features/annotation/runtime/joint-angle-stream";
 import { useScopeQueryRevision } from "../../shared/api/use-scoped-query";
 import styles from "./workbench.module.css";
@@ -305,7 +306,7 @@ function RuntimeAnnotationTaskPage({
   ]);
   const canRead =
     capabilities.has("annotation_task.read") &&
-    capabilities.has("episode.read") &&
+    capabilities.has("episode.workspace") &&
     capabilities.has("dataset_version.read");
   const query = useQuery({
     queryKey:
@@ -384,7 +385,7 @@ function RuntimeAnnotationTaskPage({
   );
   const { robotScene, robotSceneUnavailableReason } = useLogicalRobotScene(
     canRead ? (bundle?.logical ?? null) : null,
-    jointAngleStream,
+    selectRobotActionStream(bundle?.logical?.streams ?? []),
     bundle?.manifest?.robot_id ?? null,
     describeEpisodeRobotPreview(bundle?.manifest?.robot_id ?? null),
   );
@@ -731,7 +732,7 @@ function RuntimeAnnotationTaskPage({
               scope={scope}
               history={bundle.history}
               dirty={dirty}
-              canCreate={!changingTask && capabilities.has("upload.manage")}
+              canCreate={!changingTask && capabilities.has("episode.derive")}
               canRead={[
                 "dataset_version.read",
                 "annotation_task.read",

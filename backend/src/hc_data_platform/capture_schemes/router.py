@@ -10,7 +10,7 @@ from hc_data_platform.core.context import select_organization_scope
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
-from . import associations, plans, quality_library, schemes
+from . import associations, plans, quality_library, schemes, tag_library
 from .common import digest, reject
 from .components import CaptureServices
 from .dependencies import Services, require_services
@@ -46,16 +46,35 @@ PLAN = "/projects/{project_id}/collection-tasks/{task_id}/capture-plan"
 
 
 def authorize(
-    available: CaptureServices | None, auth: AuthContext, org: str, *, manage: bool = False
+    available: CaptureServices | None, auth: AuthContext, org: str, *, manage: bool = False, capability: str | None = None
 ) -> CaptureServices:
     if not auth.is_platform_admin and org not in auth.organization_ids:
         reject("ORGANIZATION_SCOPE_DENIED", "当前身份无权访问该组织。", 403)
-    auth.require_organization_capability(org, "robot.manage" if manage else "robot.read")
+    auth.require_organization_capability(org, capability or ("robot.manage" if manage else "robot.read"))
     select_organization_scope(org)
     services = require_services(available)
     if auth.is_platform_admin and not services.organization_exists(org):
         reject("ORGANIZATION_NOT_FOUND", "组织不存在。", 404)
     return services
+
+
+TAGS = "/organizations/{organization_id}/annotation-tags"
+
+
+@router.get(TAGS, operation_id="listLibraryTags", response_model=list[str])
+def list_library_tags(organization_id: Identifier, auth: VerifiedAuth, services: Services):
+    services = authorize(services, auth, organization_id)
+    with services.connections() as db:
+        return tag_library.names(db, organization_id)
+
+
+@router.post(TAGS, operation_id="createLibraryTag", response_model=tag_library.LibraryTag, status_code=201)
+def create_library_tag(
+    organization_id: Identifier, command: tag_library.LibraryTag, auth: VerifiedAuth, services: Services
+):
+    services = authorize(services, auth, organization_id, capability="tag.manage")
+    with services.connections() as db:
+        return tag_library.create(db, organization_id, command, auth.subject_id)
 
 
 RULES = "/organizations/{organization_id}/quality-rules"
@@ -80,7 +99,7 @@ def add_quality_rule(
     auth: VerifiedAuth,
     services: Services,
 ):
-    services = authorize(services, auth, organization_id, manage=True)
+    services = authorize(services, auth, organization_id, capability="quality.manage")
     with services.connections() as db:
         return quality_library.add_rule(db, organization_id, command, auth.subject_id)
 
@@ -367,7 +386,12 @@ def get_plan(
     auth: VerifiedAuth,
     services: Services,
 ) -> dict[str, Any]:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    action = "upload.read"
+    if auth.has_capability("collection_task.manage", project_id, organization_id):
+        action = "collection_task.manage"
+    elif auth.has_capability(f"upload.manage/{task_id}", project_id, organization_id):
+        action = f"upload.manage/{task_id}"
+    authorize_scope(auth, project_id, action, region_code, organization_id)
     services = require_services(services)
     with services.connections() as db:
         plan = plans.get_plan(db, (organization_id, project_id, region_code), task_id)
@@ -389,7 +413,7 @@ def set_plan(
     auth: VerifiedAuth,
     services: Services,
 ) -> dict[str, Any]:
-    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    authorize_scope(auth, project_id, "collection_task.manage", region_code, organization_id)
     services = require_services(services)
     with services.connections() as db:
         return {
@@ -414,7 +438,7 @@ def add_task_participants(
     auth: VerifiedAuth,
     services: Services,
 ) -> dict[str, Any]:
-    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    authorize_scope(auth, project_id, "collection_task.manage", region_code, organization_id)
     services = require_services(services)
     with services.connections() as db:
         return {

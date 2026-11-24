@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import stat
 from collections import defaultdict
-from pathlib import Path
 
 from .task_usage_models import StorageLocationUsage, StoragePurposeUsage
 
@@ -37,6 +36,8 @@ PURPOSES = {
         "CONDITIONAL",
         "可在数据版本和标注保留时重新生成；下载或交付仍需使用时保留。",
     ),
+    "exports": ("持久化导出文件", "KEEP", "用户已保存到 OSS 的导出文件。"),
+    "runtime-cache-overflow": ("OSS 缓存溢出文件", "CONDITIONAL", "本地缓存空间不足时写入 OSS 的缓存内容，由对应缓存的生命周期管理。"),
     "oss-smoke": (
         "接入测试副本",
         "CONDITIONAL",
@@ -116,16 +117,14 @@ def scan_local(root, *, minio=False, cache=False, seen=None):
     """
     seen = set() if seen is None else seen
     totals = defaultdict(int)
-    base = Path(os.path.realpath(root, strict=True))
-    pending = [base]
+    base = os.path.realpath(root, strict=True)
+    pending = [(base, (), os.lstat(base))]
     while pending:
-        path = pending.pop()
-        info = path.lstat()
+        path, parts, info = pending.pop()
         identity = (info.st_dev, info.st_ino)
         if identity in seen:
             continue
         seen.add(identity)
-        parts = path.relative_to(base).parts
         category = (
             purpose("/".join(parts[1:-1]) if len(parts) > 2 else parts[1])
             if minio and len(parts) > 1 and not parts[0].startswith(".")
@@ -136,7 +135,8 @@ def scan_local(root, *, minio=False, cache=False, seen=None):
         totals[category] += getattr(info, "st_blocks", (info.st_size + 511) // 512) * 512
         if stat.S_ISDIR(info.st_mode):
             with os.scandir(path) as children:
-                pending.extend(Path(child.path) for child in children)
+                pending.extend((child.path, (*parts, child.name), child.stat(follow_symlinks=False))
+                               for child in children)
     return totals
 
 

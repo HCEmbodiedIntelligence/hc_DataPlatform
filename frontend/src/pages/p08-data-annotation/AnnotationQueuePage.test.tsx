@@ -27,13 +27,17 @@ const { grantedCapabilities, listTasksMock, claimTaskMock, reopenTaskMock } = vi
   }),
 );
 
-vi.mock("../../shared/auth/use-capabilities", () => ({
-  useCapabilities: () => ({
-    has: (capability: string) => grantedCapabilities.has(capability),
-    loading: false,
-    failed: false,
-  }),
-}));
+vi.mock("../../shared/auth/use-capabilities", async (importOriginal) => {
+  const { expandGrantedCapabilities } =
+    await importOriginal<typeof import("../../shared/auth/use-capabilities")>();
+  return {
+    useCapabilities: () => ({
+      has: (capability: string) => expandGrantedCapabilities([...grantedCapabilities]).has(capability),
+      loading: false,
+      failed: false,
+    }),
+  };
+});
 
 vi.mock("../../shared/scope/shell-store", () => ({
   useShellStore: Object.assign((selector: (state: object) => unknown) =>
@@ -133,6 +137,11 @@ function renderQueue(
 }
 
 beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
   vi.stubGlobal(
     "matchMedia",
     vi.fn().mockImplementation(() => ({
@@ -186,6 +195,17 @@ describe("AnnotationQueuePage status architecture", () => {
       expect(within(table).getByText(label)).toBeVisible();
     },
   );
+
+  it("applies the update interval before pagination and preserves it across stages", async () => {
+    listTasksMock.mockResolvedValue([
+      task("DRAFT", { display_label: "Inside" }),
+      task("DRAFT", { task_id: "task-end", display_label: "Exclusive end", updated_at: "2026-08-25T00:00:00Z" }),
+    ]);
+    renderQueue("annotation", "/annotations/annotate?from=2026-08-24T09:30:00Z&to=2026-08-25T00:00:00Z");
+    expect(await screen.findByText("Inside")).toBeVisible();
+    expect(screen.queryByText("Exclusive end")).toBeNull();
+    expect(screen.getByRole("link", { name: /^待审核，/ })).toHaveAttribute("href", expect.stringContaining("from="));
+  });
 
   it("does not expose rejected submissions as a task queue", async () => {
     listTasksMock.mockResolvedValue([task("REJECTED")]);
@@ -569,6 +589,21 @@ describe("AnnotationQueuePage pagination", () => {
       }),
     );
   }
+
+  it("sorts the first page by the labels returned with the task list", async () => {
+    const rows = tasks("DRAFT", 23).map((row, index) => ({
+      ...row, display_label: `任务 30 · Episode ${23 - index}`,
+    }));
+    listTasksMock.mockResolvedValue(rows);
+    renderQueue("annotation");
+
+    const table = await screen.findByRole("table");
+    const first = within(table).getAllByRole("row")[1]!;
+    expect(within(first).getByRole("rowheader")).toHaveTextContent("任务 30 · Episode 1");
+    expect(within(first).getByRole("link")).toHaveAttribute("href", expect.stringContaining("DRAFT-task-23?"));
+    fireEvent.click(screen.getByTitle("2"));
+    expect(await screen.findByText("任务 30 · Episode 21")).toBeVisible();
+  });
 
   it("pages through all tasks, keeps totals and return links, and omits the schema column", async () => {
     listTasksMock.mockResolvedValue(tasks("DRAFT", 45));

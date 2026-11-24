@@ -1642,7 +1642,6 @@ class AnnotationReviewPreparationWorkflow(_JobLifecycle):
                 schema=request.tag_schema,
                 base_step_count=request.base_step_count,
                 tags=revision.tags,
-                episode_outcome=revision.episode_outcome,
                 operations=request.cumulative_operations,
             )
         except TagValidationIssue as exc:

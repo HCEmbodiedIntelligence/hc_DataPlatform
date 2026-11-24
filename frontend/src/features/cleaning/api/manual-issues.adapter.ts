@@ -79,6 +79,7 @@ export function adaptManualIssueListItem(
   return {
     id: asManualIssueId(wire.id),
     etag: wire.etag,
+    note: wire.note ?? "",
     scope: {
       organizationId: wire.scope.organization_id,
       projectId: wire.scope.project_id,

@@ -468,6 +468,34 @@ describe("reusable robot import feature", () => {
     expect(discardImport).not.toHaveBeenCalled();
   });
 
+  it("previews and uploads only the chosen entry alongside its resources", async () => {
+    renderStandalone();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "导入模型" }));
+    const dialog = within(screen.getByRole("dialog"));
+    await user.type(dialog.getByLabelText("制造商"), "HC");
+    await user.type(dialog.getByLabelText("型号代码"), "XR");
+    await user.type(dialog.getByLabelText("模型名称"), "XR model");
+    await user.upload(dialog.getByLabelText("选择机器人模型文件"), [
+      browserFile("<package/>", "package.xml", "application/xml"),
+      browserFile(urdf, "robot.urdf", "application/xml"),
+      browserFile("mesh", "link.stl", "application/octet-stream"),
+    ]);
+    const parse = dialog.getByRole("button", { name: "解析文件并预览" });
+    expect(parse).toBeDisabled();
+    await user.click(dialog.getByRole("combobox", { name: "入口 URDF 文件" }));
+    await user.click(screen.getByText("robot.urdf", { selector: ".ant-select-item-option-content" }));
+    expect(parse).toBeEnabled();
+    await user.click(parse);
+    await screen.findByText("URDF 结构解析通过");
+    await user.click(dialog.getByRole("button", { name: "保存机器人模型" }));
+    await screen.findByText("机器人模型已保存");
+    const files = uploadAssets.mock.calls[0]?.[2] as Array<{ relativePath: string }>;
+    expect(files.map((item) => item.relativePath).sort()).toEqual([
+      "link.stl", "robot.config.json", "robot.urdf",
+    ]);
+  });
+
   it("ignores late URDF parsing after closing and opening a fresh import", async () => {
     renderStandalone();
     const user = userEvent.setup();

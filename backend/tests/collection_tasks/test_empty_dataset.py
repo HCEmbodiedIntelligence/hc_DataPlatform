@@ -102,3 +102,87 @@ def test_task_dataset_opens_before_first_ingest_and_repair_preserves_metadata(
                 (task.dataset_id,),
             ).fetchone()[0]
             assert count == 1
+
+
+@pytest.mark.integration
+def test_duration_sums_only_this_tasks_ingested_episodes_in_the_working_version(
+    isolated_dsn,  # noqa: F811
+    task_role,
+):
+    from hc_data_platform.dataset_registry.models import DatasetPageScope
+    from hc_data_platform.dataset_registry.projection_writer import DatasetProjectionWriter
+    from tests.dataset_registry.test_dataset_version_detail_postgres_integration import (
+        _compare_version,
+        _review_bundle,
+    )
+
+    project, region = "project-a", "cn-east"
+    org = organization_for(project)
+    scope = DatasetPageScope(organization_id=org, project_id=project, region_code=region)
+    with request_scope(project, region):
+        service = CollectionTaskService(
+            PostgresCollectionTaskRepository(restricted_connection_factory(isolated_dsn, task_role))
+        )
+        task = service.create(
+            organization_id=org,
+            project_id=project,
+            command=CreateCollectionTask(
+                name="Admission duration", scenario="test", target={"duration_seconds": 4}
+            ),
+            idempotency_key=str(uuid4()),
+        ).record
+        with psycopg_connection_factory(isolated_dsn)() as db, db.cursor() as cursor:
+            for number in (1, 2):
+                collection = f"duration_{number}"
+                version_id = f"version_{collection}"
+                shared = dict(scope=scope, dataset_id=task.dataset_id, version_id=version_id)
+                cursor.execute(
+                    """INSERT INTO episode_store.collections
+                    (organization_id,project_id,region_code,dataset_id,collection_version_id,
+                     version,content_hash,document) VALUES (%s,%s,%s,%s,%s,%s,%s,'{}')""",
+                    (org, project, region, task.dataset_id, collection, number, "a" * 64),
+                )
+                version, _ = _compare_version()
+                DatasetProjectionWriter._put_version(cursor, version.model_copy(update=shared))
+                # Episode A is carried forward. The second snapshot also contains a
+                # sibling, an Episode from a shared task, and a derived copy.
+                rows = [("a", task.collection_task_id, "INGESTED", 1_250_000_000)]
+                if number == 2:
+                    rows.extend(
+                        [
+                            ("b", task.collection_task_id, "INGESTED", 2_750_000_000),
+                            ("other", "other-task", "INGESTED", 10_000_000_000),
+                            ("derived", task.collection_task_id, "DERIVED", 8_000_000_000),
+                        ]
+                    )
+                for ordinal, (marker, owner, kind, duration) in enumerate(rows):
+                    bundle = _review_bundle(version_id=version_id, marker=marker)
+                    ref = bundle.episode.selected_revision.model_copy(update={"ordinal": ordinal})
+                    episode = bundle.episode.model_copy(
+                        update={
+                            **shared,
+                            "task": owner,
+                            "change_type": kind,
+                            "included": True,
+                            "storage_region_code": region,
+                            "selected_revision": ref,
+                        }
+                    )
+                    revision = bundle.revision.model_copy(
+                        update={
+                            **shared,
+                            "ordinal": ordinal,
+                            "duration_ns": str(duration),
+                        }
+                    )
+                    DatasetProjectionWriter._put_episode(cursor, episode)
+                    DatasetProjectionWriter._put_revision(cursor, revision)
+            cursor.execute(
+                """INSERT INTO episode_store.collection_heads VALUES (%s,%s,%s,%s,%s)""",
+                (org, project, region, task.dataset_id, collection),
+            )
+        progress = service.progress(org, project, task.collection_task_id, region)
+        assert progress.captured_duration_seconds == 4
+        assert progress.duration_observed_package_count == 2
+        assert progress.duration_unknown_package_count == 0
+        assert progress.attainment.duration_seconds.progress == 1

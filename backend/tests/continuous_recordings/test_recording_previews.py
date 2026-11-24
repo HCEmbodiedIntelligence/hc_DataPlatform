@@ -24,24 +24,28 @@ def fixture():
     return upload, asset
 
 
-def test_selected_preview_has_dense_frames_and_keeps_raw_slice_clock(tmp_path):
+@pytest.mark.parametrize("last", [100_081_000, 28_400_081_000])
+def test_selected_preview_has_dense_frames_and_keeps_raw_slice_clock(tmp_path, last):
     import av
     import numpy as np
 
     from hc_data_platform.continuous_recordings.previews import select_preview
-    from tests.episode_store.test_writer import build_rgbd_package
+    from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 
-    root, _, _, _ = build_rgbd_package(tmp_path)
-    source = next((root / "videos/observation.images.head_rgb").rglob("*.mp4"))
+    source = tmp_path / "input.mp4"
+    writer = RgbVideoWriter(source, 30, (32, 32, 3))
+    for i in range(4):
+        writer.write(np.full((32, 32, 3), i * 50, dtype=np.uint8))
+    writer.close()
     frames = [
         {"source_frame": i, "offset_ns": t, "valid": i in (1, 3)}
-        for i, t in enumerate((0, 33_122_000, 67_979_000, 100_081_000))
+        for i, t in enumerate((0, 33_122_000, 67_979_000, last))
     ]
     output = tmp_path / "selected.mp4"
     assert select_preview(source, output, frames, 30) == 2
     with av.open(str(output)) as video:
         decoded = list(video.decode(video=0))
-        assert [round(f.pts * f.time_base * 1e9) for f in decoded] == [33_122_000, 100_081_000]
+        assert [round(f.pts * f.time_base * 1e9) for f in decoded] == [33_122_000, last]
         assert [float(np.mean(f.to_ndarray(format="rgb24"))) for f in decoded] == pytest.approx(
             [50, 150], abs=4
         )
@@ -70,7 +74,8 @@ def test_download_rejects_source_corruption_and_cached_preview_must_match_source
         _download(BrokenStorage(), asset, tmp_path / "source", lambda: None)
 
 
-def test_complete_h264_preview_remuxes_packets_with_source_timestamps(tmp_path):
+@pytest.mark.parametrize("last", [100081000, 28_400_081_000])
+def test_complete_h264_preview_remuxes_packets_with_source_timestamps(tmp_path, last):
     import av
     import numpy as np
     from hc_data_platform.continuous_recordings.previews import select_preview
@@ -78,7 +83,7 @@ def test_complete_h264_preview_remuxes_packets_with_source_timestamps(tmp_path):
 
     src = tmp_path / "input.mp4"
     writer = RgbVideoWriter(src, 30, (32, 32, 3))
-    stamps = (0, 33122000, 67979000, 100081000)
+    stamps = (0, 33122000, 67979000, last)
     for i in range(4):
         writer.write(np.full((32, 32, 3), i * 50, dtype=np.uint8))
     writer.close()
@@ -114,7 +119,8 @@ def test_depth_preview_memory_budget_and_verified_pixels(tmp_path):
     assert memory.allocate(1, shape) is None
 
 
-def test_depth_preview_colorizes_only_valid_rows_on_source_clock(tmp_path):
+@pytest.mark.parametrize("last", [100_081_000, 28_400_081_000])
+def test_depth_preview_colorizes_only_valid_rows_on_source_clock(tmp_path, last):
     import json
 
     import av
@@ -135,10 +141,10 @@ def test_depth_preview_colorizes_only_valid_rows_on_source_clock(tmp_path):
     declaration = json.loads((evidence / "profile.json").read_text())
     profile = DepthProfile(**{k: declaration[k] for k in ("depth_min", "depth_max", "shift", "use_log", "version")})
     flags = evidence / "validity/flags.parquet"
-    offsets = [None, 33_122_000, None, 100_081_000]
+    offsets = [None, 33_122_000, None, last]
     output = tmp_path / "preview.mp4"
     with av.open(str(path)) as source:
         EpisodePreviews._encode(source, source.streams.video[0], output, pq.read_metadata(flags).num_rows,
                                 30, 32, 32, masks=iter(parquet_rows(flags)), profile=profile, offsets=offsets)
     with av.open(str(output)) as video:
-        assert [round(f.pts * f.time_base * 1e9) for f in video.decode(video=0)] == [33_122_000, 100_081_000]
+        assert [round(f.pts * f.time_base * 1e9) for f in video.decode(video=0)] == [33_122_000, last]

@@ -101,6 +101,7 @@ function createRawJointWindowSource(input: {
   readonly gateway: RecordingGateway;
   readonly scope: RecordingScope;
   readonly recordingId: string;
+  readonly actionTopic?: string;
 }): ViewerWindowSource {
   return {
     async loadWindow(window, signal): Promise<ViewerWindowPayload> {
@@ -108,6 +109,7 @@ function createRawJointWindowSource(input: {
         input.scope,
         input.recordingId,
         {
+          ...(input.actionTopic ? { topic: input.actionTopic } : {}),
           startOffsetNs: window.startNs,
           endOffsetNs: window.endNs,
           maximumSamples: 10_000,
@@ -115,6 +117,7 @@ function createRawJointWindowSource(input: {
         signal,
       );
       if (
+        (input.actionTopic !== undefined && response.topic !== input.actionTopic) ||
         response.recording_id !== input.recordingId ||
         response.start_offset_ns !== window.startNs ||
         response.end_offset_ns !== window.endNs
@@ -169,6 +172,7 @@ export function buildRecordingJointAngleStream(input: {
   readonly scope: RecordingScope;
   readonly recordingId: string;
   readonly durationNs: string;
+  readonly actionTopic?: string;
 }): StreamDescriptor {
   const authorization = getShellState();
   const assertAuthorization = () => {
@@ -192,19 +196,19 @@ export function buildRecordingJointAngleStream(input: {
     },
   }, "0", input.durationNs);
   return {
-    id: `p23-raw-joint-angle-${input.recordingId}`,
-    canonicalPath: "状态通道（按录制配置）",
-    displayName: "录制关节角",
-    modality: "joint_state",
+    id: `p23-raw-${input.actionTopic ? "action" : "joint-angle"}-${input.recordingId}`,
+    canonicalPath: input.actionTopic ?? "状态通道（按录制配置）",
+    displayName: input.actionTopic ? "录制动作指令" : "录制关节角",
+    modality: input.actionTopic ? "action" : "joint_state",
     schema: {
-      id: "raw-recording-joint-state",
+      id: input.actionTopic ? "raw-recording-action" : "raw-recording-joint-state",
       version: "recording-sensor-window/v1",
     },
     rateHz: 50,
     startNs: "0",
     endNs: input.durationNs,
     availability: "ready",
-    accessibleSummary:
+    accessibleSummary: input.actionTopic ? `从录制的 ${input.actionTopic} 读取关节动作指令。` :
       "直接从连续录制 SENSOR_DATA MCAP 读取的原始关节角；不依赖 Episode、QC、对齐或 Lance。",
     windowSource: {
       async loadWindow(window, signal) {

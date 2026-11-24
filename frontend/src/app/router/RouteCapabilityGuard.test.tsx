@@ -59,7 +59,7 @@ describe("RouteCapabilityGuard", () => {
     expect(screen.queryByRole("heading", { name: "数据集页面" })).toBeNull();
   });
 
-  it("opens ordinary pages for a bootstrapped personal account without tenant scope", () => {
+  it("restricts a personal account to its unscoped pages", () => {
     useShellStore.setState({
       scope: null,
       scopeKey: makeScopeKey({ organizationId: "unscoped" }),
@@ -71,8 +71,8 @@ describe("RouteCapabilityGuard", () => {
 
     renderGuard();
 
-    expect(screen.getByRole("heading", { name: "数据集页面" })).toBeVisible();
-    expect(screen.queryByText("无权访问")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "数据集页面" })).toBeNull();
+    expect(screen.getByText("无权访问")).toBeVisible();
   });
 
   it("still blocks a scoped account that lacks the required capability", () => {

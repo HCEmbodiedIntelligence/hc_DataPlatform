@@ -155,6 +155,17 @@ class ContinuousRecordingService:
             ingest.storage,
         )
 
+    def _authorize_upload(self, auth, org, project, region, upload_id):
+        ScopeGuard.require(auth, project, region, org)
+        select_request_scope(project, region, organization_id=org)
+        scope = RecordingScope(organization_id=org, project_id=project, region_code=region)
+        upload = self._require_asset_repository().get_upload(scope, upload_id)
+        if upload is None:
+            self._upload_not_found()
+        action = auth.resource_action("upload.manage", (upload.command.collection_task_id,), project, org)
+        auth.require_capability(action, project, org)
+        return scope
+
     def begin_upload(
         self,
         *,
@@ -170,7 +181,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.manage",),
+            capabilities=("upload.manage", f"upload.manage/{command.collection_task_id}"),
         )
         repository = self._require_asset_repository()
         manifest_sha256 = canonical_hash(command.model_dump(mode="json"))
@@ -242,12 +253,13 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
         repository = self._require_asset_repository()
         upload = repository.get_upload(scope, upload_id)
         if upload is None:
             self._upload_not_found()
+        auth.require_upload_read(upload.command.collection_task_id, project_id, organization_id)
         return RecordingUploadEnvelope(
             upload=upload,
             assets=tuple(
@@ -266,13 +278,7 @@ class ContinuousRecordingService:
         asset_id: UUID,
         command: AuthorizeRecordingAssetPartsCommand,
     ) -> RecordingAssetPartGrant:
-        scope = self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            capabilities=("upload.manage",),
-        )
+        scope = self._authorize_upload(auth, organization_id, project_id, region_code, upload_id)
         asset = self._require_asset(scope, upload_id, asset_id)
         if asset.status is not RecordingAssetStatus.UPLOADING:
             raise problem(
@@ -304,13 +310,7 @@ class ContinuousRecordingService:
         asset_id: UUID,
         command: CompleteRecordingAssetCommand,
     ) -> RecordingUploadEnvelope:
-        scope = self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            capabilities=("upload.manage",),
-        )
+        scope = self._authorize_upload(auth, organization_id, project_id, region_code, upload_id)
         repository = self._require_asset_repository()
         upload = repository.get_upload(scope, upload_id)
         if upload is None:
@@ -406,13 +406,7 @@ class ContinuousRecordingService:
         actor_id: str,
         request_id: str,
     ) -> ContinuousRecordingEnvelope:
-        scope = self._authorize(
-            auth,
-            organization_id=organization_id,
-            project_id=project_id,
-            region_code=region_code,
-            capabilities=("upload.manage",),
-        )
+        scope = self._authorize_upload(auth, organization_id, project_id, region_code, upload_id)
         asset_repository = self._require_asset_repository()
         upload = asset_repository.get_upload(scope, upload_id)
         if upload is None:
@@ -490,14 +484,14 @@ class ContinuousRecordingService:
 
     def discard_quality(self, *, auth, organization_id, project_id, region_code, recording_id, report_sha256):
         scope = self._authorize(auth, organization_id=organization_id, project_id=project_id,
-                                region_code=region_code, capabilities=("upload.manage",))
+                                region_code=region_code, capabilities=("quality.discard",))
         return self._envelope(self._repository.discard_quality(scope, recording_id, report_sha256, auth.subject_id))
 
     def retry_quality(self, *, auth, organization_id, project_id, region_code,
                       recording_id, request_id):
         scope = self._authorize(
             auth, organization_id=organization_id, project_id=project_id,
-            region_code=region_code, capabilities=("upload.manage",),
+            region_code=region_code, capabilities=("quality.manage",),
         )
         return self._envelope(self._repository.retry_quality(scope, recording_id, request_id))
 
@@ -517,10 +511,12 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.manage",),
+            capabilities=("upload.manage", "role.collector"),
         )
         existing = self._repository.get_by_upload_session(scope, upload_session_id)
         if existing is not None:
+            action = auth.resource_action("upload.manage", (existing.collection_task_id,), project_id, organization_id)
+            auth.require_capability(action, project_id, organization_id)
             return self._envelope(existing)
         session = self._ingest.get_session(upload_session_id)
         if session.project_id != project_id or session.region_code != region_code:
@@ -534,6 +530,8 @@ class ContinuousRecordingService:
             )
         preflight = self._ingest.get_manifest_preflight(upload_session_id)
         manifest = preflight.manifest
+        action = auth.resource_action("upload.manage", (manifest.task_id,), project_id, organization_id)
+        auth.require_capability(action, project_id, organization_id)
         source = manifest.source_recording
         if (
             manifest.processing_mode is not IngestProcessingMode.CONTINUOUS_RECORDING
@@ -588,9 +586,12 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
         items = self._repository.list(scope)
+        tasks = auth.readable_upload_tasks(project_id, organization_id)
+        if tasks is not None:
+            items = [item for item in items if item.collection_task_id in tasks]
         return ContinuousRecordingPage(items=self._repository.present(items), total=len(items))
 
     def get(
@@ -607,9 +608,10 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
         recording = self._require_recording(scope, recording_id)
+        auth.require_upload_read(recording.collection_task_id, project_id, organization_id)
         return self._envelope(recording)
 
     def save_draft(
@@ -630,7 +632,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.manage",),
+            capabilities=("annotation.save",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.status is RecordingStatus.SLICED:
@@ -686,7 +688,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.manage",),
+            capabilities=("annotation.edit",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.status is RecordingStatus.SLICED:
@@ -744,7 +746,7 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.manage",),
+            capabilities=("annotation.submit",),
         )
         recording = self._require_recording(scope, recording_id)
         if recording.status is RecordingStatus.SLICED:
@@ -850,9 +852,10 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
-        self._require_recording(scope, recording_id)
+        recording = self._require_recording(scope, recording_id)
+        auth.require_upload_read(recording.collection_task_id, project_id, organization_id)
         items = self._repository.list_episode_processing(scope, recording_id)
         return EpisodeProcessingPage(
             items=items,
@@ -875,9 +878,10 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
         recording = self._require_recording(scope, recording_id)
+        auth.require_upload_read(recording.collection_task_id, project_id, organization_id)
         if recording.recording_upload_id is None or recording.finalized_revision is None:
             raise problem(
                 status=409,
@@ -950,9 +954,10 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
         recording = self._require_recording(scope, recording_id)
+        auth.require_upload_read(recording.collection_task_id, project_id, organization_id)
         if recording.recording_upload_id is None:
             raise problem(
                 status=409,
@@ -1043,9 +1048,10 @@ class ContinuousRecordingService:
             organization_id=organization_id,
             project_id=project_id,
             region_code=region_code,
-            capabilities=("upload.read",),
+            capabilities=("upload.read", "role.collector"),
         )
         recording = self._require_recording(scope, recording_id)
+        auth.require_upload_read(recording.collection_task_id, project_id, organization_id)
         if recording.recording_upload_id is None:
             raise problem(
                 status=409,

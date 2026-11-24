@@ -58,11 +58,11 @@ OptionalRegionCode = Annotated[
 
 
 def _authorize_read(auth: AuthContext, organization_id: str, project_id: str) -> None:
-    authorize_scope(auth, project_id, "upload.read", organization_id=organization_id)
+    authorize_scope(auth, project_id, "collection_task.read", organization_id=organization_id)
 
 
 def _authorize_manage(auth: AuthContext, organization_id: str, project_id: str) -> None:
-    authorize_scope(auth, project_id, "upload.manage", organization_id=organization_id)
+    authorize_scope(auth, project_id, "collection_task.manage", organization_id=organization_id)
 
 
 def _command_headers(
@@ -97,7 +97,8 @@ def delete_collection_task(
     idempotency_key: IdempotencyKey,
 ) -> TaskDeletionResult:
     authorize_scope(
-        auth, project_id, "upload.manage", organization_id=organization_id, region_code=region_code
+        auth, project_id, auth.resource_action("collection_task.delete", (collection_task_id,), project_id, organization_id),
+        organization_id=organization_id, region_code=region_code
     )
     if service.deletion is None:
         from hc_data_platform.core.errors import problem
@@ -131,7 +132,7 @@ def create_collection_task(
     idempotency_key: IdempotencyKey,
     region_code: OptionalRegionCode = None,
 ) -> CollectionTask:
-    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    authorize_scope(auth, project_id, "collection_task.manage", region_code, organization_id)
     if command.capture_plan is not None and region_code is None:
         from hc_data_platform.core.errors import problem
 
@@ -331,7 +332,7 @@ def get_collection_task_progress(
     authorize_scope(
         auth,
         project_id,
-        "upload.read",
+        "collection_task.read",
         region_code,
         organization_id=organization_id,
     )
@@ -356,7 +357,7 @@ def list_collection_task_packages(
     authorize_scope(
         auth,
         project_id,
-        "upload.read",
+        "collection_task.read",
         region_code,
         organization_id=organization_id,
     )
@@ -383,7 +384,7 @@ def list_capture_progress(
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> CaptureProgressPage:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id=organization_id)
+    authorize_scope(auth, project_id, "collection_task.read", region_code, organization_id=organization_id)
     _no_store(response)
     return service.captures(
         organization_id,

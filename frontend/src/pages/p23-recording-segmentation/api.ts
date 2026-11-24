@@ -48,6 +48,7 @@ export interface RecordingGateway {
     recordingId: string,
     signal?: AbortSignal,
   ): Promise<ContinuousRecordingEnvelope>;
+  sensorTopics(scope: RecordingScope, uploadId: string, signal: AbortSignal): Promise<string[]>;
   videoSources(
     scope: RecordingScope,
     recordingId: string,
@@ -106,6 +107,17 @@ export const recordingGateway: RecordingGateway = {
       cache: "no-store",
       ...(signal ? { signal } : {}),
     }),
+
+  async sensorTopics(scope, uploadId, signal) {
+    const { upload } = await request<components["schemas"]["RecordingUploadEnvelope"]>({
+      method: "GET",
+      path: `${root(scope)}/uploads/${encodeURIComponent(uploadId)}`,
+      scope,
+      cache: "no-store",
+      signal,
+    });
+    return upload.command.recording_config.sensors.map((sensor) => sensor.topic);
+  },
 
   videoSources: (scope, recordingId, signal) =>
     request<RecordingVideoSourceEnvelope>({

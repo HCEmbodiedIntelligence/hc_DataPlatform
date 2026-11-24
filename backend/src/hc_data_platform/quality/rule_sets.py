@@ -77,5 +77,6 @@ ARCHIVED_RULE_SETS = (
     EvidenceRuleSet("be06-qc/2", BASE_RULE_CODES),
     EvidenceRuleSet("be06-qc/3", BOUNDARY_RULE_CODES),
     EvidenceRuleSet("be06-qc/4", BOUNDARY_RULE_CODES),
+    EvidenceRuleSet("be06-qc/5", BOUNDARY_RULE_CODES),
 )
 BUILTIN_EVIDENCE_RULE_SETS = EvidenceRuleSets(ARCHIVED_RULE_SETS)

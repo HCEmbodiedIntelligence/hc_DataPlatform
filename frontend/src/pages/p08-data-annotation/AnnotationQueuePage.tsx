@@ -1,3 +1,5 @@
+import { TimeRangeFilter } from "../../shared/ui/TimeRangeFilter";
+import { withinTimeRange } from "../../shared/lib/time-range";
 import {
   ResourceLabel,
   readableFallback,
@@ -428,15 +430,21 @@ function RuntimeAnnotationQueuePage({
     retry: false,
     staleTime: 15_000,
   });
+  const rangeFrom = queueSearch.timeRange?.from;
+  const rangeTo = queueSearch.timeRange?.to;
+  const rangedTasks = useMemo(() => {
+    const range = rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : undefined;
+    return (tasks.data ?? []).filter(task => withinTimeRange(task.updated_at, range));
+  }, [tasks.data, rangeFrom, rangeTo]);
+
   const taskReferences = useMemo(
     () =>
-      (tasks.data ?? []).map((task) => ({
-        kind: "annotation_task" as const,
-        id: task.task_id,
-      })),
-    [tasks.data],
+      rangedTasks
+        .filter((task) => task.status === queueSearch.stage && !task.display_label)
+        .map((task) => ({ kind: "annotation_task" as const, id: task.task_id })),
+    [rangedTasks, queueSearch.stage],
   );
-  // Resolve every row before sorting so numbering stays correct across pages.
+  // Older tasks without a current Episode projection resolve names in the background.
   const taskNames = useResourceNames(taskReferences);
   const counts = useMemo<Record<AnnotationQueueStage, number>>(() => {
     const next: Record<AnnotationQueueStage, number> = {
@@ -446,15 +454,15 @@ function RuntimeAnnotationQueuePage({
       APPROVED: 0,
       REJECTED: 0,
     };
-    for (const task of tasks.data ?? []) next[task.status] += 1;
+    for (const task of rangedTasks) next[task.status] += 1;
     return next;
-  }, [tasks.data]);
+  }, [rangedTasks]);
   const visible = useMemo(() => {
     const normalized = deferredQueryText
       .normalize("NFC")
       .trim()
       .toLocaleLowerCase("zh-CN");
-    return (tasks.data ?? [])
+    return rangedTasks
       .filter((task) => {
         if (task.status !== queueSearch.stage) return false;
         if (!normalized) return true;
@@ -472,11 +480,11 @@ function RuntimeAnnotationQueuePage({
         compareAnnotationTasks(
           left,
           right,
-          taskNames.data?.[left.task_id],
-          taskNames.data?.[right.task_id],
+          left.display_label ?? taskNames.data?.[left.task_id],
+          right.display_label ?? taskNames.data?.[right.task_id],
         ),
       );
-  }, [deferredQueryText, queueSearch.stage, tasks.data, taskNames.data]);
+  }, [deferredQueryText, queueSearch.stage, rangedTasks, taskNames.data]);
   const page = Math.min(
     queueSearch.page,
     Math.max(1, Math.ceil(visible.length / queueSearch.limit)),
@@ -523,7 +531,7 @@ function RuntimeAnnotationQueuePage({
 
   if (
     !unscopedAccount &&
-    (capabilities.loading || tasks.isLoading || taskNames.isLoading)
+    (capabilities.loading || tasks.isLoading)
   )
     return <AnnotationPageState kind="first-loading" />;
   if (!unscopedAccount && (capabilities.failed || !canRead))
@@ -564,6 +572,10 @@ function RuntimeAnnotationQueuePage({
       density="compact"
       headerActions={
         <>
+          <TimeRangeFilter label="标注任务更新时间" range={queueSearch.timeRange}
+            onChange={timeRange => setSearchParams(annotationQueueQueryCodec.build({
+              ...queueSearch, timeRange, page: 1, after: undefined, before: undefined,
+            }))} />
           <Link
             className="p08-secondary-action"
             to={annotationRoutes.revisions.pattern}
@@ -630,10 +642,10 @@ function RuntimeAnnotationQueuePage({
                   capabilities.has("annotation.edit") &&
                   capabilities.has("annotation_draft.edit")
                 }
-                canOpen={capabilities.has("episode.read")}
+                canOpen={capabilities.has("episode.workspace")}
                 canReview={capabilities.has("annotation.review")}
                 key={task.task_id}
-                label={taskNames.data?.[task.task_id]}
+                label={task.display_label ?? taskNames.data?.[task.task_id]}
                 returnTo={returnTo}
                 scope={scope!}
                 task={task}

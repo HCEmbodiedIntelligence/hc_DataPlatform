@@ -79,6 +79,7 @@ def params(**changes: str) -> dict[str, str]:
 def test_current_paths_return_factual_or_explicitly_blocked_contracts(api: tuple[Any, ...]) -> None:
     client, _, repository = api
     expected_sections = {
+        "analytics": "analytics",
         "activity": "activity",
         "coverage": "coverage",
         "pending-items": "pending_items",
@@ -104,6 +105,8 @@ def test_current_paths_return_factual_or_explicitly_blocked_contracts(api: tuple
             assert body["pipeline"]["package_count"] == 0
             assert len(body["pipeline"]["stages"]) == 8
             assert body["selected"] is None
+        elif endpoint == "analytics":
+            assert body[section] == {"buckets": [], "outcomes": {}, "issues": {}, "reports": {}, "affected_packages": 0}
         elif endpoint == "coverage":
             assert body[section]["status"] == "BLOCKED"
             assert body[section]["error"]["needs_product_confirmation"] is True

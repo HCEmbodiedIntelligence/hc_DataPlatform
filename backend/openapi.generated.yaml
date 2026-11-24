@@ -767,6 +767,11 @@ components:
         created_at:
           format: date-time
           type: string
+        expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
         kind:
           enum:
           - ORGANIZATION
@@ -786,9 +791,21 @@ components:
           type:
           - string
           - 'null'
+        replaces_request_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
         request_id:
           minLength: 1
           type: string
+        resource_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.:/-]+$
+          type:
+          - string
+          - 'null'
         revision:
           minimum: 1
           type: integer
@@ -1188,6 +1205,35 @@ components:
       - participants
       title: AddParticipants
       type: object
+    AdministratorChange:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        organization_id:
+          maxLength: 256
+          minLength: 1
+          title: Organization Id
+          type: string
+        project_id:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Project Id
+        reason:
+          maxLength: 500
+          minLength: 1
+          title: Reason
+          type: string
+      required:
+      - organization_id
+      - enabled
+      - reason
+      title: AdministratorChange
+      type: object
     AlignedFragmentManifestV1:
       additionalProperties: false
       properties:
@@ -1509,7 +1555,7 @@ components:
           minLength: 1
           type: string
         default_tolerance_ns:
-          default: 20000000
+          default: 25000000
           minimum: 0
           type: integer
         frequency_hz:
@@ -1582,6 +1628,9 @@ components:
           minimum: 1.0
           title: Dataset Version
           type: integer
+        episode_outcome:
+          $ref: '#/components/schemas/EpisodeOutcome'
+          default: UNMARKED
         excluded_ranges:
           items:
             $ref: '#/components/schemas/ExclusionRange'
@@ -1898,6 +1947,9 @@ components:
             $ref: '#/components/schemas/ExclusionRange'
           title: Effective Exclusions
           type: array
+        episode_outcome:
+          $ref: '#/components/schemas/EpisodeOutcome'
+          default: UNMARKED
         etag:
           title: Etag
           type: string
@@ -2165,6 +2217,9 @@ components:
           anyOf:
           - $ref: '#/components/schemas/DataVersionRef'
           - type: 'null'
+        episode_outcome:
+          $ref: '#/components/schemas/EpisodeOutcome'
+          default: UNMARKED
         operations:
           items:
             $ref: '#/components/schemas/AnnotationOperation'
@@ -2590,6 +2645,13 @@ components:
 
         changes only when an immutable draft revision is appended.'
       properties:
+        allowed_tags:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Allowed Tags
         approved_review_id:
           anyOf:
           - type: string
@@ -2619,6 +2681,16 @@ components:
             type: integer
           - type: 'null'
           title: Base Step Count
+        collection_task_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Code
+        collection_task_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Id
         created_at:
           format: date-time
           title: Created At
@@ -2647,6 +2719,11 @@ components:
           minimum: 1.0
           title: Dataset Version
           type: integer
+        display_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Label
         etag:
           minLength: 1
           title: Etag
@@ -2785,6 +2862,27 @@ components:
       - CANCELLED
       title: AssetState
       type: string
+    Assignment:
+      additionalProperties: false
+      properties:
+        ice_servers:
+          items:
+            $ref: '#/components/schemas/IceServer'
+          title: Ice Servers
+          type: array
+        offer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Offer
+        session_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Session Id
+      title: Assignment
+      type: object
     AssociateScheme:
       additionalProperties: false
       properties:
@@ -4437,6 +4535,14 @@ components:
           minLength: 1
           title: Message
           type: string
+        progress:
+          default: OPEN
+          enum:
+          - OPEN
+          - IN_PROGRESS
+          - DISCARDED
+          title: Progress
+          type: string
         recording_episode_id:
           anyOf:
           - type: string
@@ -4744,6 +4850,45 @@ components:
       - total
       title: BatchAccepted
       type: object
+    BatchQCSelection:
+      properties:
+        batch_numbers:
+          items:
+            exclusiveMinimum: 0.0
+            type: integer
+          minItems: 1
+          title: Batch Numbers
+          type: array
+      required:
+      - batch_numbers
+      title: BatchQCSelection
+      type: object
+    BatchQCState:
+      properties:
+        completed:
+          title: Completed
+          type: integer
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
+        phase:
+          title: Phase
+          type: string
+        total:
+          title: Total
+          type: integer
+        version:
+          title: Version
+          type: string
+      required:
+      - version
+      - phase
+      - total
+      - completed
+      title: BatchQCState
+      type: object
     BindOrganizationRobotModelRequest:
       additionalProperties: false
       properties:
@@ -4779,6 +4924,42 @@ components:
       - code
       - message
       title: BlockedReason
+      type: object
+    BundleOssExport:
+      additionalProperties: false
+      properties:
+        download_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Download Date
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
+        export_filter:
+          $ref: '#/components/schemas/UploadExportFilter'
+        kind:
+          const: bundle
+          title: Kind
+          type: string
+        part_ids:
+          items:
+            pattern: ^[0-9a-f]{64}$
+            type: string
+          maxItems: 10000
+          minItems: 1
+          title: Part Ids
+          type: array
+      required:
+      - part_ids
+      - export_filter
+      - kind
+      title: BundleOssExport
       type: object
     BusinessCapacityCategory:
       description: The complete, fixed business-capacity category set.
@@ -5775,6 +5956,15 @@ components:
     CapabilityRequest:
       additionalProperties: false
       properties:
+        allowed_decisions:
+          default: []
+          items:
+            enum:
+            - approve
+            - reject
+            - revoke
+            type: string
+          type: array
         capability_keys:
           items:
             minLength: 1
@@ -5793,13 +5983,33 @@ components:
           type:
           - string
           - 'null'
+        expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
         organization_id:
           minLength: 1
           type: string
+        project_grants_added:
+          default: []
+          items:
+            type: string
+          type: array
+        project_grants_removed:
+          default: []
+          items:
+            type: string
+          type: array
         project_id:
           minLength: 1
           type: string
         reason:
+          type:
+          - string
+          - 'null'
+        replaces_request_id:
+          format: uuid
           type:
           - string
           - 'null'
@@ -5809,6 +6019,13 @@ components:
         requester_id:
           minLength: 1
           type: string
+        resource_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.:/-]+$
+          type:
+          - string
+          - 'null'
         revision:
           minimum: 1
           type: integer
@@ -5838,7 +6055,24 @@ components:
           minItems: 1
           type: array
           uniqueItems: true
+        expires_at:
+          format: date-time
+          type:
+          - string
+          - 'null'
         reason:
+          type:
+          - string
+          - 'null'
+        replaces_request_id:
+          format: uuid
+          type:
+          - string
+          - 'null'
+        resource_id:
+          maxLength: 256
+          minLength: 1
+          pattern: ^[A-Za-z0-9_.:/-]+$
           type:
           - string
           - 'null'
@@ -6217,6 +6451,14 @@ components:
           maxItems: 3
           minItems: 1
           title: Adapters
+          type: array
+        annotation_tags:
+          default: []
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          title: Annotation Tags
           type: array
         description:
           default: ''
@@ -6618,6 +6860,13 @@ components:
           $ref: '#/components/schemas/ActionQualityProfileV1'
         completeness:
           $ref: '#/components/schemas/CompleteStepProfileV1'
+        enabled_codes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/QualityCode'
+            type: array
+          - type: 'null'
+          title: Enabled Codes
         feature_images:
           additionalProperties:
             $ref: '#/components/schemas/ImageQualityProfileV1'
@@ -6657,7 +6906,7 @@ components:
         point_cloud:
           $ref: '#/components/schemas/PointCloudQualityProfileV1'
         synchronization:
-          $ref: '#/components/schemas/ModalityOffsetProfileV1'
+          $ref: '#/components/schemas/CaptureSynchronizationRules'
         timing:
           $ref: '#/components/schemas/CaptureTimingRules'
       title: CaptureQualityPolicy
@@ -7043,6 +7292,14 @@ components:
           minItems: 1
           title: Adapters
           type: array
+        annotation_tags:
+          default: []
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          title: Annotation Tags
+          type: array
         content_sha256:
           pattern: ^[a-f0-9]{64}$
           title: Content Sha256
@@ -7172,6 +7429,21 @@ components:
       - scheme
       - participants
       title: CaptureSelection
+      type: object
+    CaptureSynchronizationRules:
+      additionalProperties: false
+      properties:
+        maximum_p95_offset_ns_reject:
+          default: 25000000
+          minimum: 0.0
+          title: Maximum P95 Offset Ns Reject
+          type: integer
+        maximum_p95_offset_ns_risk:
+          default: 25000000
+          minimum: 0.0
+          title: Maximum P95 Offset Ns Risk
+          type: integer
+      title: CaptureSynchronizationRules
       type: object
     CaptureTaskPlan:
       additionalProperties: false
@@ -7352,12 +7624,12 @@ components:
           title: Maximum Duplicate Timestamps Risk
           type: integer
         maximum_gap_ns_reject:
-          default: 1000000000
+          default: 25000000
           minimum: 0.0
           title: Maximum Gap Ns Reject
           type: integer
         maximum_gap_ns_risk:
-          default: 100000000
+          default: 25000000
           minimum: 0.0
           title: Maximum Gap Ns Risk
           type: integer
@@ -10264,6 +10536,29 @@ components:
       - expires_in_seconds
       title: ConnectionTicket
       type: object
+    ConnectionUpdate:
+      additionalProperties: false
+      properties:
+        api_key:
+          anyOf:
+          - format: password
+            maxLength: 4096
+            minLength: 1
+            type: string
+            writeOnly: true
+          - type: 'null'
+          title: Api Key
+        config:
+          $ref: '#/components/schemas/ModelConnection'
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+      required:
+      - revision
+      - config
+      title: ConnectionUpdate
+      type: object
     Connectivity:
       additionalProperties: false
       properties:
@@ -11568,6 +11863,89 @@ components:
       - as_of
       - activity
       type: object
+    DashboardAnalytics:
+      properties:
+        affected_packages:
+          minimum: 0
+          title: Affected Packages
+          type: integer
+        buckets:
+          items:
+            $ref: '#/components/schemas/DashboardVolumeBucket'
+          title: Buckets
+          type: array
+        issues:
+          additionalProperties:
+            type: integer
+          title: Issues
+          type: object
+        outcomes:
+          additionalProperties:
+            type: integer
+          title: Outcomes
+          type: object
+        reports:
+          additionalProperties:
+            type: integer
+          title: Reports
+          type: object
+      required:
+      - reports
+      - affected_packages
+      - buckets
+      - outcomes
+      - issues
+      title: DashboardAnalytics
+      type: object
+    DashboardAnalyticsResponse:
+      additionalProperties: false
+      properties:
+        analytics:
+          $ref: '#/components/schemas/DashboardAnalytics'
+        as_of:
+          format: date-time
+          title: As Of
+          type: string
+        from:
+          format: date-time
+          title: From
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+          type: string
+        region_code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+          type: string
+        schema_version:
+          const: '1'
+          default: '1'
+          title: Schema Version
+          type: string
+        timezone:
+          maxLength: 64
+          minLength: 1
+          title: Timezone
+          type: string
+        to:
+          format: date-time
+          title: To
+          type: string
+      required:
+      - project_id
+      - region_code
+      - from
+      - to
+      - timezone
+      - as_of
+      - analytics
+      title: DashboardAnalyticsResponse
+      type: object
     DashboardCoverageResponse:
       additionalProperties: false
       properties:
@@ -11853,6 +12231,31 @@ components:
       - pipeline
       - selected_task_id
       - selected
+      type: object
+    DashboardVolumeBucket:
+      properties:
+        episodes:
+          minimum: 0
+          title: Episodes
+          type: integer
+        frames:
+          minimum: 0
+          title: Frames
+          type: integer
+        seconds:
+          minimum: 0
+          title: Seconds
+          type: number
+        start:
+          format: date-time
+          title: Start
+          type: string
+      required:
+      - episodes
+      - start
+      - frames
+      - seconds
+      title: DashboardVolumeBucket
       type: object
     DataReviewLocation:
       additionalProperties: false
@@ -16728,6 +17131,7 @@ components:
           - source
           - collection_job
           - recording_upload
+          - capture_scheme
           title: Kind
           type: string
         label:
@@ -16768,6 +17172,7 @@ components:
           - source
           - collection_job
           - recording_upload
+          - capture_scheme
           title: Kind
           type: string
         name:
@@ -17257,13 +17662,26 @@ components:
     DownloadEpisodeBundle:
       additionalProperties: false
       properties:
+        download_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Download Date
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
         export_filter:
           $ref: '#/components/schemas/UploadExportFilter'
         part_ids:
           items:
             pattern: ^[0-9a-f]{64}$
             type: string
-          maxItems: 1000
+          maxItems: 10000
           minItems: 1
           title: Part Ids
           type: array
@@ -18415,6 +18833,15 @@ components:
       - rollout_id
       title: EpisodeIdentity
       type: object
+    EpisodeOutcome:
+      enum:
+      - UNMARKED
+      - SUCCESS
+      - FAILURE
+      - success
+      - fail
+      title: EpisodeOutcome
+      type: string
     EpisodePreviewGrant:
       additionalProperties: false
       properties:
@@ -19489,6 +19916,29 @@ components:
       - created_at
       title: ExportUploadBatch
       type: object
+    FailedMcapSelection:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        processing_ids:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          minItems: 1
+          title: Processing Ids
+          type: array
+      required:
+      - collection_task_id
+      - processing_ids
+      title: FailedMcapSelection
+      type: object
     FailedPartV1:
       additionalProperties: false
       properties:
@@ -19799,6 +20249,52 @@ components:
       - source
       title: GenerateAction
       type: object
+    GovernanceDirectory:
+      properties:
+        organizations:
+          items:
+            $ref: '#/components/schemas/OrganizationEntry'
+          title: Organizations
+          type: array
+        projects:
+          items:
+            $ref: '#/components/schemas/ProjectEntry'
+          title: Projects
+          type: array
+      required:
+      - organizations
+      - projects
+      title: GovernanceDirectory
+      type: object
+    Guide:
+      additionalProperties: false
+      properties:
+        instructions:
+          maxLength: 12000
+          minLength: 1
+          title: Instructions
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          title: Name
+          type: string
+        prompt:
+          maxLength: 12000
+          minLength: 1
+          title: Prompt
+          type: string
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+      required:
+      - name
+      - revision
+      - instructions
+      - prompt
+      title: Guide
+      type: object
     HTTPValidationError:
       properties:
         detail:
@@ -19853,6 +20349,26 @@ components:
       - repository
       - resolved_revision
       - episode_index
+      type: object
+    IceServer:
+      additionalProperties: false
+      properties:
+        credential:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential
+        urls:
+          title: Urls
+          type: string
+        username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Username
+      required:
+      - urls
+      title: IceServer
       type: object
     IdempotencyConflict:
       additionalProperties: false
@@ -19974,6 +20490,112 @@ components:
       - serial_no
       title: ImportRobotOption
       type: object
+    InboxEntry:
+      properties:
+        capability_keys:
+          items:
+            type: string
+          title: Capability Keys
+          type: array
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+        kind:
+          enum:
+          - ORGANIZATION
+          - PROJECT
+          - CAPABILITY
+          title: Kind
+          type: string
+        organization_id:
+          title: Organization Id
+          type: string
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        replaces_request_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replaces Request Id
+        request_id:
+          title: Request Id
+          type: string
+        requester_id:
+          title: Requester Id
+          type: string
+        resource_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Id
+        username:
+          title: Username
+          type: string
+      required:
+      - request_id
+      - requester_id
+      - username
+      - organization_id
+      - project_id
+      - kind
+      - reason
+      - capability_keys
+      title: InboxEntry
+      type: object
+    InferenceCommand:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        guide:
+          maxLength: 128
+          minLength: 1
+          title: Guide
+          type: string
+        guide_revision:
+          minimum: 1.0
+          title: Guide Revision
+          type: integer
+        mutation_id:
+          format: uuid
+          title: Mutation Id
+          type: string
+      required:
+      - guide
+      - guide_revision
+      - expected_revision
+      - mutation_id
+      title: InferenceCommand
+      type: object
+    InferenceResult:
+      properties:
+        added:
+          title: Added
+          type: integer
+        revision:
+          title: Revision
+          type: integer
+        task_id:
+          title: Task Id
+          type: string
+      required:
+      - task_id
+      - revision
+      - added
+      title: InferenceResult
+      type: object
     IngestIdentifier:
       maxLength: 128
       minLength: 1
@@ -20051,6 +20673,21 @@ components:
       required:
       - status
       title: InstanceReadinessSummary
+      type: object
+    InterpolateShortGaps:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        kind:
+          const: interpolate_short_gaps
+          title: Kind
+          type: string
+      required:
+      - enabled
+      - kind
+      title: InterpolateShortGaps
       type: object
     InvalidMaskOperation:
       additionalProperties: false
@@ -20311,6 +20948,26 @@ components:
       - items
       - total
       type: object
+    JobOssExport:
+      additionalProperties: false
+      properties:
+        export_filter:
+          anyOf:
+          - $ref: '#/components/schemas/UploadExportFilter'
+          - type: 'null'
+        job_id:
+          pattern: ^ed_[0-9a-f]{64}$
+          title: Job Id
+          type: string
+        kind:
+          const: job
+          title: Kind
+          type: string
+      required:
+      - kind
+      - job_id
+      title: JobOssExport
+      type: object
     JobRecord:
       properties:
         attempt:
@@ -20395,6 +21052,7 @@ components:
                 fill_position: '#/components/schemas/FillPosition'
                 forward_fill_hands: '#/components/schemas/ForwardFillHands'
                 generate_action: '#/components/schemas/GenerateAction'
+                interpolate_short_gaps: '#/components/schemas/InterpolateShortGaps'
                 zero_joints: '#/components/schemas/ZeroJoints'
               propertyName: kind
             oneOf:
@@ -20406,7 +21064,8 @@ components:
             - $ref: '#/components/schemas/FillActionFromNextFrame'
             - $ref: '#/components/schemas/ForwardFillHands'
             - $ref: '#/components/schemas/CleanDaggerIntervals'
-          maxItems: 8
+            - $ref: '#/components/schemas/InterpolateShortGaps'
+          maxItems: 9
           title: Rules
           type: array
         version:
@@ -20460,8 +21119,10 @@ components:
           title: Profile
           type: string
         waist_fallback_ms:
-          const: 20
-          default: 20
+          default: 25
+          enum:
+          - 20
+          - 25
           title: Waist Fallback Ms
           type: integer
       required:
@@ -20856,6 +21517,18 @@ components:
       - region_code
       - administrative_state
       title: LegacyRobotSource
+      type: object
+    LibraryTag:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 100
+          minLength: 1
+          title: Name
+          type: string
+      required:
+      - name
+      title: LibraryTag
       type: object
     LifecycleAuditEvent:
       additionalProperties: false
@@ -22764,6 +23437,7 @@ components:
             - OPEN
             - IN_PROGRESS
             - RESOLVED
+            - DISCARDED
             type: string
           title: Statuses
           type: array
@@ -22879,6 +23553,10 @@ components:
           - OTHER
           title: Issue Type
           type: string
+        note:
+          default: ''
+          title: Note
+          type: string
         origin_dataset_version_id:
           pattern: ^version_[A-Za-z0-9][A-Za-z0-9_-]{1,95}$
           title: Origin Dataset Version Id
@@ -22927,6 +23605,7 @@ components:
           - OPEN
           - IN_PROGRESS
           - RESOLVED
+          - DISCARDED
           title: Status
           type: string
         updated_at:
@@ -23218,6 +23897,7 @@ components:
           - OPEN
           - IN_PROGRESS
           - RESOLVED
+          - DISCARDED
           title: Status
           type: string
         updated_at:
@@ -23677,6 +24357,23 @@ components:
           type: object
       title: McapProcessingConfig
       type: object
+    MemberEntry:
+      properties:
+        administrator:
+          title: Administrator
+          type: boolean
+        principal_id:
+          title: Principal Id
+          type: string
+        username:
+          title: Username
+          type: string
+      required:
+      - principal_id
+      - username
+      - administrator
+      title: MemberEntry
+      type: object
     MembershipRequest:
       additionalProperties: false
       properties:
@@ -23780,6 +24477,51 @@ components:
       required:
       - kind
       - samples
+      type: object
+    ModelConnection:
+      additionalProperties: false
+      properties:
+        camera:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Camera
+        endpoint:
+          maxLength: 2048
+          minLength: 1
+          title: Endpoint
+          type: string
+        model:
+          maxLength: 256
+          minLength: 1
+          title: Model
+          type: string
+        sample_frames:
+          default: 16
+          maximum: 48.0
+          minimum: 2.0
+          title: Sample Frames
+          type: integer
+      required:
+      - endpoint
+      - model
+      title: ModelConnection
+      type: object
+    ModelConnectionStatus:
+      properties:
+        config:
+          anyOf:
+          - $ref: '#/components/schemas/ModelConnection'
+          - type: 'null'
+        revision:
+          title: Revision
+          type: integer
+      required:
+      - revision
+      - config
+      title: ModelConnectionStatus
       type: object
     ModelSliceProposalMetadata:
       additionalProperties: false
@@ -24444,6 +25186,51 @@ components:
       - RESTORE
       title: OperationKind
       type: string
+    OperatorState:
+      additionalProperties: false
+      properties:
+        answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer
+      title: OperatorState
+      type: object
+    OperatorSync:
+      additionalProperties: false
+      properties:
+        offer:
+          anyOf:
+          - maxLength: 131072
+            minLength: 1
+            pattern: ^v=0\r?\n
+            type: string
+          - type: 'null'
+          title: Offer
+      title: OperatorSync
+      type: object
+    OrganizationEntry:
+      properties:
+        can_manage:
+          title: Can Manage
+          type: boolean
+        join_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Join Code
+        organization_id:
+          title: Organization Id
+          type: string
+        organization_name:
+          title: Organization Name
+          type: string
+      required:
+      - organization_id
+      - organization_name
+      - can_manage
+      title: OrganizationEntry
+      type: object
     OrganizationMembershipRequestCreate:
       additionalProperties: false
       properties:
@@ -24590,6 +25377,13 @@ components:
     OriginalArchiveRequest:
       additionalProperties: false
       properties:
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
         export_filter:
           anyOf:
           - $ref: '#/components/schemas/UploadExportFilter'
@@ -24600,7 +25394,7 @@ components:
             minLength: 1
             pattern: ^[A-Za-z0-9._-]+$
             type: string
-          maxItems: 1000
+          maxItems: 10000
           minItems: 1
           title: Import Ids
           type: array
@@ -26222,6 +27016,29 @@ components:
       - export_filter
       title: PrepareEpisodePart
       type: object
+    PrepareEpisodeParts:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/DataVersionRef'
+          maxItems: 1000
+          minItems: 1
+          title: Data
+          type: array
+        export_filter:
+          $ref: '#/components/schemas/UploadExportFilter'
+        mode:
+          maxLength: 64
+          minLength: 1
+          title: Mode
+          type: string
+      required:
+      - data
+      - mode
+      - export_filter
+      title: PrepareEpisodeParts
+      type: object
     PrepareRecording:
       additionalProperties: false
       properties:
@@ -26779,6 +27596,23 @@ components:
       - candidate_business_total_bytes
       - categories
       - balanced
+      type: object
+    ProjectEntry:
+      properties:
+        organization_id:
+          title: Organization Id
+          type: string
+        project_id:
+          title: Project Id
+          type: string
+        project_name:
+          title: Project Name
+          type: string
+      required:
+      - organization_id
+      - project_id
+      - project_name
+      title: ProjectEntry
       type: object
     ProjectRole:
       enum:
@@ -27386,6 +28220,12 @@ components:
           $ref: '#/components/schemas/PointCloudQualityProfileV1'
         default_timing:
           $ref: '#/components/schemas/TopicTimingProfileV1'
+        enabled_codes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/QualityCode'
+            type: array
+          - type: 'null'
         engine_version:
           default: be06-qc/2
           minLength: 1
@@ -27586,6 +28426,39 @@ components:
       - sha256
       - file_size
       - committed_at
+      type: object
+    RawOssExport:
+      additionalProperties: false
+      properties:
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
+        export_filter:
+          anyOf:
+          - $ref: '#/components/schemas/UploadExportFilter'
+          - type: 'null'
+        import_ids:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          maxItems: 10000
+          minItems: 1
+          title: Import Ids
+          type: array
+        kind:
+          const: raw
+          title: Kind
+          type: string
+      required:
+      - import_ids
+      - kind
+      title: RawOssExport
       type: object
     RawVerificationReportV1:
       additionalProperties: false
@@ -28650,6 +29523,10 @@ components:
     ReprocessMcap:
       additionalProperties: false
       properties:
+        failed_selection:
+          anyOf:
+          - $ref: '#/components/schemas/FailedMcapSelection'
+          - type: 'null'
         plan_revision:
           minimum: 1.0
           title: Plan Revision
@@ -31586,6 +32463,28 @@ components:
       - expires_at
       title: RobotPartAuthorization
       type: object
+    RobotPresence:
+      additionalProperties: false
+      properties:
+        busy:
+          title: Busy
+          type: boolean
+        last_seen:
+          title: Last Seen
+          type: number
+        name:
+          title: Name
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+      required:
+      - robot_id
+      - name
+      - last_seen
+      - busy
+      title: RobotPresence
+      type: object
     RobotRecord:
       additionalProperties: false
       properties:
@@ -31740,6 +32639,41 @@ components:
       - robot_id
       - message
       title: RobotResolutionResult
+      type: object
+    RobotSync:
+      additionalProperties: false
+      properties:
+        answer:
+          anyOf:
+          - maxLength: 131072
+            minLength: 1
+            pattern: ^v=0\r?\n
+            type: string
+          - type: 'null'
+          title: Answer
+        instance_id:
+          format: uuid
+          title: Instance Id
+          type: string
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        release:
+          default: false
+          title: Release
+          type: boolean
+        session_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Session Id
+      required:
+      - instance_id
+      - name
+      title: RobotSync
       type: object
     RobotTaskPage:
       additionalProperties: false
@@ -32349,6 +33283,14 @@ components:
           minLength: 1
           title: Client Mutation Id
           type: string
+        episode_outcome:
+          anyOf:
+          - enum:
+            - success
+            - fail
+            type: string
+          - type: 'null'
+          title: Episode Outcome
         expected_revision:
           minimum: 0.0
           title: Expected Revision
@@ -32465,6 +33407,14 @@ components:
           maxItems: 3
           minItems: 1
           title: Adapters
+          type: array
+        annotation_tags:
+          default: []
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          title: Annotation Tags
           type: array
         description:
           default: ''
@@ -35025,6 +35975,277 @@ components:
       - maximum_duplicate_timestamps_reject
       - maximum_backward_timestamps_reject
       type: object
+    TraceMember:
+      additionalProperties: false
+      properties:
+        collection_description:
+          title: Collection Description
+          type: string
+        data:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        raw_source_ids:
+          items:
+            type: string
+          title: Raw Source Ids
+          type: array
+        upload_id:
+          title: Upload Id
+          type: string
+        upload_note:
+          title: Upload Note
+          type: string
+        viewer_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Viewer Version Id
+      required:
+      - data
+      - viewer_version_id
+      - upload_id
+      - raw_source_ids
+      - collection_description
+      - upload_note
+      title: TraceMember
+      type: object
+    TraceOrigin:
+      additionalProperties: false
+      properties:
+        batches:
+          items:
+            $ref: '#/components/schemas/ExportUploadBatch'
+          title: Batches
+          type: array
+        data:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        identifier:
+          title: Identifier
+          type: string
+        viewer_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Viewer Version Id
+      required:
+      - data
+      - viewer_version_id
+      - identifier
+      - batches
+      title: TraceOrigin
+      type: object
+    TracePage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TraceMember'
+          title: Items
+          type: array
+        total:
+          title: Total
+          type: integer
+        upload_count:
+          title: Upload Count
+          type: integer
+      required:
+      - items
+      - total
+      - upload_count
+      title: TracePage
+      type: object
+    TrainingConfig:
+      additionalProperties: false
+      properties:
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        label:
+          maxLength: 256
+          minLength: 1
+          title: Label
+          type: string
+        parameters:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+            - type: number
+            - type: string
+          title: Parameters
+          type: object
+      required:
+      - id
+      - label
+      - parameters
+      title: TrainingConfig
+      type: object
+    TrainingConfigs:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TrainingConfig'
+          title: Items
+          type: array
+      required:
+      - items
+      title: TrainingConfigs
+      type: object
+    TrainingOption:
+      additionalProperties: false
+      properties:
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        label:
+          maxLength: 256
+          minLength: 1
+          title: Label
+          type: string
+      required:
+      - id
+      - label
+      title: TrainingOption
+      type: object
+    TrainingOptions:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TrainingOption'
+          title: Items
+          type: array
+      required:
+      - items
+      title: TrainingOptions
+      type: object
+    TrainingRun:
+      additionalProperties: false
+      properties:
+        card:
+          $ref: '#/components/schemas/TrainingOption'
+        config:
+          $ref: '#/components/schemas/TrainingOption'
+        created_at:
+          format: date-time
+          title: Created At
+          type: string
+        dataset:
+          $ref: '#/components/schemas/TrainingOption'
+        id:
+          maxLength: 128
+          minLength: 1
+          title: Id
+          type: string
+        model:
+          $ref: '#/components/schemas/TrainingOption'
+        parameters:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+            - type: number
+            - type: string
+          title: Parameters
+          type: object
+        progress_percent:
+          anyOf:
+          - maximum: 100.0
+            minimum: 0.0
+            type: number
+          - type: 'null'
+          title: Progress Percent
+        status:
+          enum:
+          - queued
+          - running
+          - succeeded
+          - failed
+          - cancelled
+          title: Status
+          type: string
+        status_message:
+          anyOf:
+          - maxLength: 1024
+            type: string
+          - type: 'null'
+          title: Status Message
+      required:
+      - id
+      - dataset
+      - model
+      - card
+      - config
+      - parameters
+      - status
+      - created_at
+      title: TrainingRun
+      type: object
+    TrainingRunPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TrainingRun'
+          title: Items
+          type: array
+        total:
+          minimum: 0.0
+          title: Total
+          type: integer
+      required:
+      - items
+      - total
+      title: TrainingRunPage
+      type: object
+    TrainingStart:
+      additionalProperties: false
+      properties:
+        card_id:
+          maxLength: 128
+          minLength: 1
+          title: Card Id
+          type: string
+        config_id:
+          maxLength: 128
+          minLength: 1
+          title: Config Id
+          type: string
+        dataset_id:
+          maxLength: 128
+          minLength: 1
+          title: Dataset Id
+          type: string
+        model_id:
+          maxLength: 128
+          minLength: 1
+          title: Model Id
+          type: string
+        parameters:
+          additionalProperties:
+            anyOf:
+            - type: boolean
+            - type: integer
+            - type: number
+            - type: string
+          title: Parameters
+          type: object
+      required:
+      - dataset_id
+      - model_id
+      - card_id
+      - config_id
+      - parameters
+      title: TrainingStart
+      type: object
     TransitionStorageObjectRequest:
       additionalProperties: false
       properties:
@@ -35884,6 +37105,53 @@ components:
       - total
       - next_cursor
       type: object
+    UploadSessionSummaryV1:
+      additionalProperties: false
+      properties:
+        data_package_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        dataset_id:
+          oneOf:
+          - $ref: '#/components/schemas/IngestIdentifier'
+          - type: 'null'
+        expected_size:
+          minimum: 1
+          type: integer
+        manifest_fingerprint:
+          pattern: ^[a-f0-9]{64}$
+          type: string
+        project_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        region_code:
+          $ref: '#/components/schemas/IngestIdentifier'
+        rollout_id:
+          $ref: '#/components/schemas/IngestIdentifier'
+        session_id:
+          type: string
+        status:
+          enum:
+          - REGISTERED
+          - UPLOADING
+          - PAUSED
+          - MULTIPART_COMPLETED
+          - RAW_COMMITTED
+          - FAILED
+          - CANCELLED
+          type: string
+        workflow:
+          oneOf:
+          - $ref: '#/components/schemas/IngestWorkflowLocator'
+          - type: 'null'
+      required:
+      - session_id
+      - project_id
+      - region_code
+      - rollout_id
+      - data_package_id
+      - manifest_fingerprint
+      - expected_size
+      - status
+      type: object
     UploadState:
       enum:
       - UPLOADING
@@ -36392,6 +37660,177 @@ paths:
       security:
       - bearerAuth: []
       summary: Read the current account's organization, project, and request relationships.
+      tags:
+      - access
+  /api/v1/account/managed-members:
+    get:
+      operationId: listManagedMembers
+      parameters:
+      - in: query
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: query
+        name: project_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/MemberEntry'
+                title: Response Listmanagedmembers
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Managed Members
+      tags:
+      - access
+  /api/v1/account/managed-members/{principal_id}/administrator:
+    put:
+      operationId: setMembershipAdministrator
+      parameters:
+      - in: path
+        name: principal_id
+        required: true
+        schema:
+          format: uuid
+          title: Principal Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdministratorChange'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberEntry'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Set Membership Administrator
+      tags:
+      - access
+  /api/v1/account/managed-projects:
+    post:
+      operationId: createManagedProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformProjectCreate'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectEntry'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Managed Project
+      tags:
+      - access
+  /api/v1/account/management-directory:
+    get:
+      operationId: getManagementDirectory
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceDirectory'
+          description: Successful Response
+      security:
+      - bearerAuth: []
+      summary: Management Directory
+      tags:
+      - access
+  /api/v1/account/management-inbox:
+    get:
+      operationId: listManagementInbox
+      parameters:
+      - in: query
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: query
+        name: project_id
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/InboxEntry'
+                title: Response Listmanagementinbox
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Management Inbox
       tags:
       - access
   /api/v1/account/notifications:
@@ -38854,6 +40293,76 @@ paths:
       summary: Revoke an approved organization relationship without deleting the account.
       tags:
       - access
+  /api/v1/organizations/{organization_id}/annotation-tags:
+    get:
+      operationId: listLibraryTags
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                title: Response Listlibrarytags
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Library Tags
+      tags:
+      - capture-schemes
+    post:
+      operationId: createLibraryTag
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryTag'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryTag'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Library Tag
+      tags:
+      - capture-schemes
   /api/v1/organizations/{organization_id}/capture-schemes:
     get:
       operationId: listCaptureSchemes
@@ -42257,6 +43766,7 @@ paths:
             - source
             - collection_job
             - recording_upload
+            - capture_scheme
             type: string
           - type: 'null'
           title: Kind
@@ -43379,6 +44889,158 @@ paths:
       summary: Import Stream Schema
       tags:
       - data-schemas
+  /api/v1/organizations/{organization_id}/teleoperation/robots:
+    get:
+      description: List endpoints with a current VR/WebRTC heartbeat in this organization.
+      operationId: listTeleoperationRobots
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RobotPresence'
+                title: Response Listteleoperationrobots
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Robots
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions:
+    post:
+      description: Reserve one online robot for this operator. Synchronize before the 20 s lease expires.
+      operationId: connectTeleoperationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Connect
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions/{session_id}:
+    delete:
+      operationId: releaseTeleoperationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          title: Session Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Disconnect
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions/{session_id}/sync:
+    post:
+      description: Publish a complete (non-trickle ICE) SDP offer once and renew the operator lease.
+      operationId: syncTeleoperationOperator
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorSync'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Sync Operator
+      tags:
+      - teleoperation
   /api/v1/platform/accounts:
     get:
       operationId: listPlatformAccounts
@@ -47609,6 +49271,39 @@ paths:
               $ref: '#/components/headers/DashboardNoStore'
         '400':
           $ref: '#/components/responses/DashboardInvalidCursor'
+        '401':
+          $ref: '#/components/responses/DashboardUnauthorized'
+        '403':
+          $ref: '#/components/responses/DashboardForbidden'
+        '422':
+          $ref: '#/components/responses/DashboardInvalidQuery'
+        '429':
+          $ref: '#/components/responses/DashboardRateLimited'
+      security:
+      - bearerAuth: []
+      tags:
+      - dashboard
+  /api/v1/projects/{project_id}/dashboard/analytics:
+    get:
+      description: Time-bucketed Episode volume and QC report distributions.
+      operationId: getDashboardAnalytics
+      parameters:
+      - $ref: '#/components/parameters/DashboardProjectId'
+      - $ref: '#/components/parameters/DashboardRegionCode'
+      - $ref: '#/components/parameters/DashboardFrom'
+      - $ref: '#/components/parameters/DashboardTo'
+      - $ref: '#/components/parameters/DashboardTimezone'
+      - $ref: '#/components/parameters/DashboardTaskId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardAnalyticsResponse'
+          description: Dashboard analytics for the selected interval.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/DashboardNoStore'
         '401':
           $ref: '#/components/responses/DashboardUnauthorized'
         '403':
@@ -55668,6 +57363,158 @@ paths:
       summary: Test Data Source Connection
       tags:
       - data-sources
+  /api/v1/projects/{project_id}/regions/{region_code}/data-trace/batches/{number}:
+    get:
+      operationId: traceMembers
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: number
+        required: true
+        schema:
+          title: Number
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TracePage'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Trace Members
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/data-trace/origins:
+    get:
+      operationId: traceOrigins
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: identifier
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Identifier
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TraceOrigin'
+                title: Response Trace Origins Api V1 Projects  Project Id  Regions  Region Code  Data
+                  Trace Origins Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Trace Origins
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/data-trace/suggestions:
+    get:
+      operationId: traceSuggestions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: query
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Query
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                title: Response Trace Suggestions Api V1 Projects  Project Id  Regions  Region Code  Data
+                  Trace Suggestions Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Trace Suggestions
+      tags:
+      - episode_data
+      - episode_data
   /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/collection-releases:
     post:
       operationId: publishCollectionRelease
@@ -56534,6 +58381,57 @@ paths:
       security:
       - bearerAuth: []
       summary: Package File Download
+      tags:
+      - episode_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/manifest
+  : get:
+      operationId: downloadPackageManifest
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: path
+        name: data_version_id
+        required: true
+        schema:
+          title: Data Version Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Package Manifest
       tags:
       - episode_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/media/{feature}/authorize
@@ -57535,7 +59433,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PrepareEpisodePart'
+              $ref: '#/components/schemas/Body'
         required: true
       responses:
         '200':
@@ -57543,6 +59441,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PreparedEpisodePart'
+            application/x-ndjson:
+              schema:
+                type: string
           description: Successful Response
         '422':
           content:
@@ -57715,6 +59616,47 @@ paths:
       security:
       - bearerAuth: []
       summary: List Export Formats
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/episode-deliveries/oss:
+    post:
+      operationId: exportArchiveToOss
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Body'
+        required: true
+      responses:
+        '200':
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Export Archive To Oss
       tags:
       - episode_data
       - episode_data
@@ -58731,6 +60673,256 @@ paths:
       security:
       - bearerAuth: []
       summary: Set Mcap Profile
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/tasks/{task_id}/failed-mcap:
+    get:
+      operationId: listTaskFailedMcapFiles
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Task Failed Mcap
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/qc-reports/download:
+    post:
+      operationId: downloadSelectedUploadQCReports
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchQCSelection'
+        required: true
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Selected Qc Reports
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/{batch_number}/qc-report:
+    post:
+      operationId: prepareUploadBatchQCReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: batch_number
+        required: true
+        schema:
+          title: Batch Number
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchQCState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Prepare Upload Qc Report
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/{batch_number}/qc-report/{version}:
+    get:
+      operationId: getUploadBatchQCReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: batch_number
+        required: true
+        schema:
+          title: Batch Number
+          type: integer
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchQCState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Upload Qc Report
+      tags:
+      - lerobot-imports
+  ? /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/{batch_number}/qc-report/{version}/download
+  : get:
+      operationId: downloadUploadBatchQCReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: batch_number
+        required: true
+        schema:
+          title: Batch Number
+          type: integer
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                format: binary
+                type: string
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Upload Qc Report
       tags:
       - lerobot-imports
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts:
@@ -59929,6 +62121,24 @@ paths:
           - type: 'null'
           title: Q
       - in: query
+        name: updated_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated From
+      - in: query
+        name: updated_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated To
+      - in: query
         name: dataset_id
         required: false
         schema:
@@ -59968,6 +62178,7 @@ paths:
               - OPEN
               - IN_PROGRESS
               - RESOLVED
+              - DISCARDED
               type: string
             type: array
           - type: 'null'
@@ -60070,6 +62281,13 @@ paths:
             type: string
           - type: 'null'
           title: Before
+      - in: query
+        name: include_note
+        required: false
+        schema:
+          default: false
+          title: Include Note
+          type: boolean
       - in: query
         name: limit
         required: false
@@ -60476,6 +62694,60 @@ paths:
       summary: Create Cleaning Draft From Manual Issue
       tags:
       - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:discard-package:
+    post:
+      operationId: discardManualIssuePackage
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: issue_id
+        required: true
+        schema:
+          title: Issue Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: false
+        schema:
+          anyOf:
+          - maxLength: 256
+            minLength: 3
+            type: string
+          - type: 'null'
+          title: If-Match
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Discard Reported Package
+      tags:
+      - manual-cleaning
   /api/v1/projects/{project_id}/regions/{region_code}/manual-issues/{issue_id}:resolve:
     post:
       operationId: resolveManualIssue
@@ -60747,6 +63019,24 @@ paths:
           - type: 'null'
           title: Q
       - in: query
+        name: updated_from
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated From
+      - in: query
+        name: updated_to
+        required: false
+        schema:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Updated To
+      - in: query
         name: dataset_id
         required: false
         schema:
@@ -60786,6 +63076,7 @@ paths:
               - OPEN
               - IN_PROGRESS
               - RESOLVED
+              - DISCARDED
               type: string
             type: array
           - type: 'null'
@@ -60921,6 +63212,612 @@ paths:
       summary: Get Manual Issues Page
       tags:
       - manual-cleaning
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/connection:
+    get:
+      operationId: modelConnection
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConnectionStatus'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Model Connection
+      tags:
+      - annotation
+    put:
+      operationId: saveModelConnection
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConnectionStatus'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Model Connection
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/connection/test:
+    post:
+      operationId: testModelConnection
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Test Model Connection
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/guides:
+    get:
+      operationId: modelGuides
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Guide'
+                title: Response Model Guides Api V1 Projects  Project Id  Regions  Region Code  Model
+                  Annotation Guides Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Model Guides
+      tags:
+      - annotation
+    put:
+      operationId: saveModelGuide
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Guide'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guide'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Model Guide
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/tasks/{task_id}/run:
+    post:
+      operationId: runModelAnnotation
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResult'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Run Model Annotation
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-training/cards:
+    get:
+      operationId: listTrainingCards
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: dataset_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: Dataset Id
+          type: string
+      - in: query
+        name: model_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: Model Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingOptions'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Cards
+      tags:
+      - model-training
+  /api/v1/projects/{project_id}/regions/{region_code}/model-training/configs:
+    get:
+      operationId: listTrainingConfigs
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: dataset_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: Dataset Id
+          type: string
+      - in: query
+        name: model_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: Model Id
+          type: string
+      - in: query
+        name: card_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: Card Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingConfigs'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Configs
+      tags:
+      - model-training
+  /api/v1/projects/{project_id}/regions/{region_code}/model-training/datasets:
+    get:
+      operationId: listTrainingDatasets
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingOptions'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Datasets
+      tags:
+      - model-training
+  /api/v1/projects/{project_id}/regions/{region_code}/model-training/models:
+    get:
+      operationId: listTrainingModels
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: dataset_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: Dataset Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingOptions'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Models
+      tags:
+      - model-training
+  /api/v1/projects/{project_id}/regions/{region_code}/model-training/runs:
+    get:
+      operationId: listTrainingRuns
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          default: 1
+          minimum: 1
+          title: Page
+          type: integer
+      - in: query
+        name: page_size
+        required: false
+        schema:
+          default: 20
+          maximum: 100
+          minimum: 1
+          title: Page Size
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingRunPage'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Runs
+      tags:
+      - model-training
+    post:
+      operationId: startTrainingRun
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          format: uuid
+          title: Idempotency-Key
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrainingStart'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingRun'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Start
+      tags:
+      - model-training
   /api/v1/projects/{project_id}/regions/{region_code}/quality-problems:
     get:
       description: Expose latest RISK/REJECT reports as read-only unified issue-center rows.
@@ -60934,6 +63831,13 @@ paths:
         schema:
           default: false
           title: Include Discarded
+          type: boolean
+      - in: query
+        name: include_progress
+        required: false
+        schema:
+          default: false
+          title: Include Progress
           type: boolean
       responses:
         '200':
@@ -61456,6 +64360,31 @@ paths:
         '403': *id005
         '404': *id011
         '409': *id007
+      security:
+      - bearerAuth: []
+      tags:
+      - ingest
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/summary:
+    get:
+      operationId: getUploadSessionSummary
+      parameters:
+      - *id001
+      - *id002
+      - *id003
+      - *id010
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadSessionSummaryV1'
+          description: Task-scoped upload facts and processing locator.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        '403':
+          description: Upload session outside the reader's grant.
       security:
       - bearerAuth: []
       tags:
@@ -64288,6 +67217,34 @@ paths:
       summary: Prepare Task Recording
       tags:
       - robot-connections
+  /api/v1/robot-ingest/teleoperation/sync:
+    post:
+      description: Advertise a VR-capable robot, poll for offers and publish the matching SDP answer.
+      operationId: syncTeleoperationRobot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotSync'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Sync Robot
+      tags:
+      - teleoperation
   /api/v1/robot-ingest/uploads:
     post:
       operationId: createRobotIngestUpload

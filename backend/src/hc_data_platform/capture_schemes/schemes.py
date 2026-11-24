@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from .automatic import validation_coverage
 from .common import Document, audit, check_revision, digest, encoded, lock, now, reject
 from .contracts import output_hash
+from .tag_library import require_names
 from .models import CaptureDefinition, SchemeDraft, VersionReference
 
 
@@ -85,12 +85,19 @@ def save(db: Any, org: str, scheme: str, command: SchemeDraft, actor: str) -> Do
         (org, scheme),
     ).fetchone()
     document = command.model_dump(mode="json", exclude={"expected_revision"})
+    if row and "annotation_tags" not in command.model_fields_set:
+        # Older editors omit the tag selection when saving a draft.
+        if "annotation_tags" in row[1]:
+            document["annotation_tags"] = row[1]["annotation_tags"]
+        else:
+            document.pop("annotation_tags", None)
     if row and row[2]:
         reject("CAPTURE_SCHEME_ARCHIVED", "已归档方案不能编辑")
     # Lost-response replay is allowed only for the exact one-step transition.
     if row and row[0] == command.expected_revision + 1 and row[1] == document:
         return detail(db, org, scheme)
     check_revision(row[0] if row else 0, command.expected_revision)
+    require_names(db, org, tuple(document.get("annotation_tags", ())))
     db.execute(
         """INSERT INTO ingest.capture_schemes (organization_id,scheme_id,revision,draft)
         VALUES(%s,%s,1,%s::jsonb) ON CONFLICT(organization_id,scheme_id) DO UPDATE
@@ -166,16 +173,6 @@ def publish(db: Any, org: str, scheme: str, revision: int, actor: str) -> Docume
             and item.get("parser_version")
         ):
             evidence.setdefault(item["source_format"], item)
-    required = {adapter["source_format"] for adapter in document["adapters"]}
-    covered = validation_coverage(document, evidence.keys())
-    if required - covered:
-        reject(
-            "CAPTURE_SAMPLE_VALIDATION_REQUIRED",
-            "请用实际样本验证当前方案"
-            if document.get("input_mode") == "AUTO"
-            else "请用实际样本验证当前草稿的每种输入格式",
-            missing_formats=sorted(required - covered),
-        )
     CaptureDefinition.model_validate(document)
     version = (current["latest_version"] or 0) + 1
     published = {

@@ -13,6 +13,7 @@ import {
   authorizeLogicalRobotAssets,
   type LogicalRobotScene,
 } from "../api/logical-robot-scene";
+import { selectRobotActionStream } from "../../viewer/robot-action-stream";
 import { currentBindingPreview } from "../../viewer/robot-scene-provenance";
 import type { StreamDescriptor } from "../../viewer/types";
 import type { RobotSceneAssetResolver } from "../../viewer/lazy-three-loader";
@@ -128,6 +129,28 @@ const stream: StreamDescriptor = {
     }),
   },
 };
+const action: StreamDescriptor = {
+  ...stream,
+  id: "action",
+  canonicalPath: "/humanoid/action",
+  modality: "action",
+  windowSource: {
+    loadWindow: async () => ({
+      generation: 0,
+      timestampsNs: ["0"],
+      values: [[1.25]],
+      series: [{ id: "q1", displayName: "q1" }],
+    }),
+  },
+};
+const poseStream = selectRobotActionStream([stream, action]);
+it("requires a joint action channel even when other numeric streams are available", () => {
+  const endEffector = { ...action, canonicalPath: "/robot/end_effector/action" };
+  expect(selectRobotActionStream([stream, endEffector])).toBeNull();
+  expect(selectRobotActionStream([endEffector, action])).toBe(action);
+  const legacy = { ...stream, canonicalPath: "/action/joint_states" };
+  expect(selectRobotActionStream([stream, legacy])).toBe(legacy);
+});
 let client: QueryClient;
 function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -135,7 +158,7 @@ function wrapper({ children }: { children: ReactNode }) {
 function mount(robot = "current-robot") {
   return renderHook(
     ({ robotId }) =>
-      useLogicalRobotScene(target, stream, robotId, currentBindingPreview),
+      useLogicalRobotScene(target, poseStream, robotId, currentBindingPreview),
     { wrapper, initialProps: { robotId: robot } },
   );
 }
@@ -196,7 +219,7 @@ it("reuses snapshot assets and directions while the recorded instance still bind
       "0",
       new AbortController().signal,
     ),
-  ).resolves.toEqual({ q1: -0.5 });
+  ).resolves.toEqual({ q1: -1.25 });
   const assets = await calls.resolver!(
     result.current.robotScene!,
     new AbortController().signal,
@@ -231,7 +254,7 @@ it("enables explicitly labelled compatibility only for missing historical eviden
   await waitFor(() =>
     expect(calls.compatibility).toHaveBeenCalledWith(
       "current-robot",
-      stream,
+      action,
       scope,
       currentBindingPreview,
       undefined,

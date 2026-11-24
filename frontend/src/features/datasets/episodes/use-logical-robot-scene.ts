@@ -27,7 +27,7 @@ const instancePreview = {
 } as const;
 export function useLogicalRobotScene(
   target: LogicalRobotTarget | null,
-  jointStream: StreamDescriptor | null,
+  actionStream: StreamDescriptor | null,
   historicalRobotId: string | null,
   historicalProvenance: RobotSceneProvenance,
 ) {
@@ -54,13 +54,13 @@ export function useLogicalRobotScene(
   const useInstance = !sceneFailed && (historical || Boolean(fixed));
   const preview = useEpisodeRobotScene(
     useInstance ? (fixed?.robot_id || historicalRobotId) : null,
-    useInstance ? jointStream : null,
+    useInstance ? actionStream : null,
     useInstance ? (target?.selection.scope ?? null) : null,
     fixed ? instancePreview : historicalProvenance,
     fixed?.model_version_id,
   );
   const jointFrameSource = useMemo(() => {
-    const source = buildJointFrameSource(jointStream);
+    const source = buildJointFrameSource(actionStream);
     if (!source || fixed?.status !== "FROZEN") return;
     const directions = new Map(
       fixed.joint_mappings.map((m) => [m.source_joint_name, m.direction]),
@@ -76,7 +76,7 @@ export function useLogicalRobotScene(
         );
       },
     };
-  }, [jointStream, fixed]);
+  }, [actionStream, fixed]);
   const robotScene = useMemo(() => {
     const view = sceneView;
     const urdf = fixed?.assets.find((asset) => asset.role === "URDF");
@@ -128,7 +128,7 @@ export function useLogicalRobotScene(
       : sceneFailed
         ? "固定机器人场景读取失败或读取权限已失效，请重新加载。"
         : !jointFrameSource
-            ? "固定数据未提供可用的关节角样本，暂时无法同步机器人姿态。"
+            ? "当前快照缺少可用于姿态回放的关节动作指令（action）。"
             : !robotScene
               ? "固定机器人场景缺少可用的 URDF 资产。"
               : undefined;

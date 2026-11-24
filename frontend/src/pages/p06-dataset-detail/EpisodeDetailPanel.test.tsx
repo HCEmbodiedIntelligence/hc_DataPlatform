@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { mockSavePicker } from "../../shared/lib/test-save-picker";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -52,24 +53,14 @@ it("shows historical approval separately and saves verified mapping bytes", asyn
   ).toBeVisible();
   expect(screen.getByText("尚未批准")).toBeVisible();
   expect(screen.getByText(/来源：历史数据版本 132/)).toBeVisible();
-  const create = vi.fn().mockReturnValue("blob:verified-mapping");
-  vi.stubGlobal(
-    "URL",
-    Object.assign(class {}, {
-      createObjectURL: create,
-      revokeObjectURL: vi.fn(),
-    }),
-  );
-  const click = vi
-    .spyOn(HTMLAnchorElement.prototype, "click")
-    .mockImplementation(() => {});
+  const { write, close: committed } = mockSavePicker();
   const bytes = new Blob(["{ }\n"]);
   vi.mocked(downloadAnnotationMigration).mockResolvedValue(bytes);
   await userEvent.click(
     screen.getByRole("button", { name: "下载历史标注映射 JSON" }),
   );
-  await waitFor(() => expect(click).toHaveBeenCalledOnce());
-  expect(create).toHaveBeenCalledWith(bytes);
+  await waitFor(() => expect(committed).toHaveBeenCalledOnce());
+  expect(write).toHaveBeenCalledWith(bytes);
   expect(downloadAnnotationMigration).toHaveBeenCalledWith(
     f.scope,
     f.data,
@@ -123,15 +114,14 @@ function mount(
   );
   return { ...f, close };
 }
-it("shows distinct statuses and authorizes a file without fetching its bytes", async () => {
+it("shows distinct statuses and saves the authorized file", async () => {
   const { view, close } = mount();
   expect(await screen.findByText("抓取演示")).toBeVisible();
   expect(screen.getByText("未指定")).toBeVisible();
   await userEvent.click(screen.getByRole("tab", { name: "数据文件" }));
   expect(await screen.findByText("meta/info.json")).toBeVisible();
-  const click = vi
-    .spyOn(HTMLAnchorElement.prototype, "click")
-    .mockImplementation(() => {});
+  const { close: committed } = mockSavePicker();
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array(view.files.items[0]!.size))));
   vi.mocked(authorizeEpisodeFile).mockResolvedValue({
     data: view.data,
     file_id: view.files.items[0]!.file_id,
@@ -141,7 +131,7 @@ it("shows distinct statuses and authorizes a file without fetching its bytes", a
     expires_seconds: 300,
   });
   await userEvent.click(screen.getByRole("button", { name: "下载文件" }));
-  await waitFor(() => expect(click).toHaveBeenCalledOnce());
+  await waitFor(() => expect(committed).toHaveBeenCalledOnce());
   await userEvent.click(screen.getByRole("button", { name: "返回同步回放" }));
   expect(close).toHaveBeenCalledOnce();
 });

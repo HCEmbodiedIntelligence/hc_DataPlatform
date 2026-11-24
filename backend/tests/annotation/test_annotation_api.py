@@ -267,6 +267,9 @@ def test_claim_save_replay_submit_review_publish_and_invalidate_api(
         headers={"If-Match": submitted.headers["etag"]},
         json={"revision": 1, "decision": "APPROVE", "comment": "ready"},
     )
+    if reviewer_id == "alice":
+        assert reviewed.status_code == 403
+        return
     assert reviewed.status_code == 200
     assert reviewed.json()["approved_revision"] == 1
     assert service.get_task("task-api").submitted_by == "alice"
@@ -408,7 +411,7 @@ def test_api_denies_cross_project_and_reports_unconfigured_provider(
     assert cross_project.status_code == 403
 
     current["auth"] = auth("uploader", "upload.read", "upload.manage")
-    assert client.get("/api/v1/annotation-tasks/task-api").status_code == 200
+    assert client.get("/api/v1/annotation-tasks/task-api").status_code == 403
 
     current["auth"] = auth("reader", "upload.read")
     wrong_role = client.get("/api/v1/annotation-tasks/task-api")

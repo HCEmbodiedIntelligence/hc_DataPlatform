@@ -58,7 +58,7 @@ components:
           type: object
           additionalProperties: {type: integer, minimum: 0}
           default: {}
-        default_tolerance_ns: {type: integer, minimum: 0, default: 20000000}
+        default_tolerance_ns: {type: integer, minimum: 0, default: 25000000}
     AlignmentInputV1:
       type: object
       additionalProperties: false

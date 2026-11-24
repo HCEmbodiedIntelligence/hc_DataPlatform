@@ -151,7 +151,7 @@ export function AnnotationRevisionPage(): JSX.Element {
   const [status, setStatus] = useState<RevisionStatusFilter>("ALL");
   const [origin, setOrigin] = useState<RevisionOriginFilter>("ALL");
   const canRead = capabilities.has("annotation_task.read");
-  const canOpenTask = capabilities.has("episode.read");
+  const canOpenTask = capabilities.has("episode.workspace");
   const revisions = useInfiniteQuery({
     queryKey: [
       "p08-revision-threads",

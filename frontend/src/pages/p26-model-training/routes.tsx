@@ -6,7 +6,7 @@ import {
 const routes: PageRoute[] = [
   {
     path: "/model-training",
-    requiredCapabilities: [],
+    requiredCapabilities: ["training.read"],
     navigation: {
       label: "模型训练",
       groupId: "production",

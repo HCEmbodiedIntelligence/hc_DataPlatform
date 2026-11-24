@@ -1,3 +1,4 @@
+import { saveFileFromClick } from "../../../shared/lib/save-file";
 import { decodedFileName } from "../../../shared/lib/resource-labels";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -90,21 +91,10 @@ function Explorer({ scope, importId, canDownload = true }: Props) {
     setDownloading(file.path);
     setDownloadError(null);
     try {
-      const grant = await authorizeOriginalFile(
-        scope,
-        importId,
-        file.path,
-        true,
-        signal,
-      );
-      signal.throwIfAborted();
-      const link = document.createElement("a");
-      link.href = grant.url;
-      link.download = decodedFileName(file.name);
-      link.rel = "noopener noreferrer";
-      document.body.append(link);
-      link.click();
-      link.remove();
+      await saveFileFromClick(decodedFileName(file.name), signal, async () => {
+        const grant = await authorizeOriginalFile(scope, importId, file.path, true, signal);
+        return { url: grant.url, size_bytes: file.size };
+      });
     } catch (error) {
       if (!signal.aborted)
         setDownloadError(

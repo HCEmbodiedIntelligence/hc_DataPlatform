@@ -63,8 +63,9 @@ def test_http_empty_rate_save_reload_validate_publish_preserves_old_version(envi
         assert saved.status_code == 200, saved.text
         assert saved.json()["draft"]["output"]["frequency_hz"] is None
         assert client.get(path).json()["draft"]["output"]["frequency_hz"] is None
-        premature = client.post(path + ":publish", json={"expected_revision": 2})
-        assert premature.json()["code"] == "CAPTURE_SAMPLE_VALIDATION_REQUIRED"
+        direct = client.post(path + ":publish", json={"expected_revision": 2})
+        assert direct.status_code == 200, direct.text
+        assert direct.json()["validations"] == {}
         validation["expected_revision"] = 2
         checked = client.post(path + ":validate", json=validation)
         assert checked.status_code == 200, checked.text
@@ -76,6 +77,7 @@ def test_http_empty_rate_save_reload_validate_publish_preserves_old_version(envi
         assert evidence["draft_sha256"] == digest(result["draft"])
         published = client.post(path + ":publish", json={"expected_revision": 2})
         assert published.status_code == 200, published.text
+        assert published.json() == direct.json()
         assert published.json()["output"]["frequency_hz"] is None
         assert published.json()["content_sha256"] == digest(result["draft"])
         assert client.get(path).json()["versions"][1] == first
@@ -94,6 +96,8 @@ def test_failed_sample_does_not_fill_rate_or_advance_revision(environment, tmp_p
         evidence = validator.validate(scope[0], saved["draft"], sample)
         assert evidence["status"] == "FAILED"
         result = schemes.record_validation(db, scope[0], "bad-sample", 1, evidence, "tester")
+        published = schemes.publish(db, scope[0], "bad-sample", 1, "tester")
+        assert published["validations"] == {}
         assert result["revision"] == 1 and result["draft"]["output"]["frequency_hz"] is None
 
 

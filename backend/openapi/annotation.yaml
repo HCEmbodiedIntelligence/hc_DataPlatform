@@ -29,6 +29,9 @@ components:
           minimum: 1.0
           title: Dataset Version
           type: integer
+        episode_outcome:
+          $ref: '#/components/schemas/EpisodeOutcome'
+          default: UNMARKED
         excluded_ranges:
           items:
             $ref: '#/components/schemas/ExclusionRange'
@@ -345,6 +348,9 @@ components:
             $ref: '#/components/schemas/ExclusionRange'
           title: Effective Exclusions
           type: array
+        episode_outcome:
+          $ref: '#/components/schemas/EpisodeOutcome'
+          default: UNMARKED
         etag:
           title: Etag
           type: string
@@ -589,6 +595,9 @@ components:
           anyOf:
           - $ref: '#/components/schemas/DataVersionRef'
           - type: 'null'
+        episode_outcome:
+          $ref: '#/components/schemas/EpisodeOutcome'
+          default: UNMARKED
         operations:
           items:
             $ref: '#/components/schemas/AnnotationOperation'
@@ -1014,6 +1023,13 @@ components:
 
         changes only when an immutable draft revision is appended.'
       properties:
+        allowed_tags:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Allowed Tags
         approved_review_id:
           anyOf:
           - type: string
@@ -1043,6 +1059,16 @@ components:
             type: integer
           - type: 'null'
           title: Base Step Count
+        collection_task_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Code
+        collection_task_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Collection Task Id
         created_at:
           format: date-time
           title: Created At
@@ -1071,6 +1097,11 @@ components:
           minimum: 1.0
           title: Dataset Version
           type: integer
+        display_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Label
         etag:
           minLength: 1
           title: Etag
@@ -1498,6 +1529,29 @@ components:
       - cost_micros
       title: AutoAnnotationUsage
       type: object
+    ConnectionUpdate:
+      additionalProperties: false
+      properties:
+        api_key:
+          anyOf:
+          - format: password
+            maxLength: 4096
+            minLength: 1
+            type: string
+            writeOnly: true
+          - type: 'null'
+          title: Api Key
+        config:
+          $ref: '#/components/schemas/ModelConnection'
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+      required:
+      - revision
+      - config
+      title: ConnectionUpdate
+      type: object
     CreateTagSchemaVersionRequest:
       additionalProperties: false
       properties:
@@ -1543,6 +1597,15 @@ components:
       - expected_generation
       title: DeliveryGeneration
       type: object
+    EpisodeOutcome:
+      enum:
+      - UNMARKED
+      - SUCCESS
+      - FAILURE
+      - success
+      - fail
+      title: EpisodeOutcome
+      type: string
     ExclusionRange:
       description: Normalized half-open range that applies to every synchronized modality.
       properties:
@@ -1564,6 +1627,35 @@ components:
       - end_step
       title: ExclusionRange
       type: object
+    Guide:
+      additionalProperties: false
+      properties:
+        instructions:
+          maxLength: 12000
+          minLength: 1
+          title: Instructions
+          type: string
+        name:
+          maxLength: 128
+          minLength: 1
+          title: Name
+          type: string
+        prompt:
+          maxLength: 12000
+          minLength: 1
+          title: Prompt
+          type: string
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+      required:
+      - name
+      - revision
+      - instructions
+      - prompt
+      title: Guide
+      type: object
     HTTPValidationError:
       properties:
         detail:
@@ -1572,6 +1664,95 @@ components:
           title: Detail
           type: array
       title: HTTPValidationError
+      type: object
+    InferenceCommand:
+      additionalProperties: false
+      properties:
+        expected_revision:
+          minimum: 0.0
+          title: Expected Revision
+          type: integer
+        guide:
+          maxLength: 128
+          minLength: 1
+          title: Guide
+          type: string
+        guide_revision:
+          minimum: 1.0
+          title: Guide Revision
+          type: integer
+        mutation_id:
+          format: uuid
+          title: Mutation Id
+          type: string
+      required:
+      - guide
+      - guide_revision
+      - expected_revision
+      - mutation_id
+      title: InferenceCommand
+      type: object
+    InferenceResult:
+      properties:
+        added:
+          title: Added
+          type: integer
+        revision:
+          title: Revision
+          type: integer
+        task_id:
+          title: Task Id
+          type: string
+      required:
+      - task_id
+      - revision
+      - added
+      title: InferenceResult
+      type: object
+    ModelConnection:
+      additionalProperties: false
+      properties:
+        camera:
+          anyOf:
+          - maxLength: 256
+            minLength: 1
+            type: string
+          - type: 'null'
+          title: Camera
+        endpoint:
+          maxLength: 2048
+          minLength: 1
+          title: Endpoint
+          type: string
+        model:
+          maxLength: 256
+          minLength: 1
+          title: Model
+          type: string
+        sample_frames:
+          default: 16
+          maximum: 48.0
+          minimum: 2.0
+          title: Sample Frames
+          type: integer
+      required:
+      - endpoint
+      - model
+      title: ModelConnection
+      type: object
+    ModelConnectionStatus:
+      properties:
+        config:
+          anyOf:
+          - $ref: '#/components/schemas/ModelConnection'
+          - type: 'null'
+        revision:
+          title: Revision
+          type: integer
+      required:
+      - revision
+      - config
+      title: ModelConnectionStatus
       type: object
     MutualExclusionConstraint:
       properties:
@@ -1762,6 +1943,14 @@ components:
           minLength: 1
           title: Client Mutation Id
           type: string
+        episode_outcome:
+          anyOf:
+          - enum:
+            - success
+            - fail
+            type: string
+          - type: 'null'
+          title: Episode Outcome
         expected_revision:
           minimum: 0.0
           title: Expected Revision
@@ -3568,6 +3757,283 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
           description: Validation Error
       summary: Get Annotation Task Manifest Discovery
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/connection:
+    get:
+      operationId: model_connection_api_v1_projects__project_id__regions__region_code__model_annotation_connection_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConnectionStatus'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Model Connection
+      tags:
+      - annotation
+    put:
+      operationId: save_model_connection_api_v1_projects__project_id__regions__region_code__model_annotation_connection_put
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionUpdate'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelConnectionStatus'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Model Connection
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/connection/test:
+    post:
+      operationId: test_model_connection_api_v1_projects__project_id__regions__region_code__model_annotation_connection_test_post
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Test Model Connection
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/guides:
+    get:
+      operationId: model_guides_api_v1_projects__project_id__regions__region_code__model_annotation_guides_get
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/Guide'
+                title: Response Model Guides Api V1 Projects  Project Id  Regions  Region Code  Model
+                  Annotation Guides Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Model Guides
+      tags:
+      - annotation
+    put:
+      operationId: save_model_guide_api_v1_projects__project_id__regions__region_code__model_annotation_guides_put
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Guide'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Guide'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Save Model Guide
+      tags:
+      - annotation
+  /api/v1/projects/{project_id}/regions/{region_code}/model-annotation/tasks/{task_id}/run:
+    post:
+      operationId: run_model_annotation_api_v1_projects__project_id__regions__region_code__model_annotation_tasks__task_id__run_post
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-ID
+        required: true
+        schema:
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      - in: header
+        name: If-Match
+        required: true
+        schema:
+          title: If-Match
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceResult'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Run Model Annotation
       tags:
       - annotation
   /api/v1/projects/{project_id}/rollouts/{rollout_id}/approved-annotation:

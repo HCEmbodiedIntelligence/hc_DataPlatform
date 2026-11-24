@@ -1,3 +1,4 @@
+import { ModelConnectionPanel } from "./ModelConnectionPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Select } from "antd";
 import {
@@ -1440,6 +1441,7 @@ export function PlatformOperationsPage() {
               <OrganizationInitializationPanel />
               <ProjectInitializationPanel />
               <ObjectStoreConfigurationPanel />
+              <ModelConnectionPanel />
             </div>
           </section>
         ) : null}

@@ -68,6 +68,7 @@ export type EpisodeViewerRouteInput = Readonly<{
   datasetId: DatasetId;
   versionId: DatasetVersionId;
   episodeId: EpisodeId;
+  issueId?: string;
   returnTo?: string;
 }>;
 
@@ -141,6 +142,7 @@ function buildVersionDetail(input: VersionDetailRouteInput): string {
 
 function buildEpisodeViewer(input: EpisodeViewerRouteInput): string {
   const search = new URLSearchParams();
+  if (input.issueId) search.set("issueId", input.issueId);
   if (input.returnTo && isSafeAppRelativeUrl(input.returnTo)) {
     search.set('returnTo', input.returnTo);
   }

@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   Alert,
   Button,
@@ -213,6 +215,7 @@ export function UserManagementPanel({
   const [createForm] = Form.useForm<CreateFormValues>();
   const [resetForm] = Form.useForm<ResetFormValues>();
 
+  const platformAdmin = useShellStore(s=>s.platformCapabilities.includes("platform.admin"));
   const items = page?.items ?? [];
   const activeCount = items.filter((item) => item.state === "ACTIVE").length;
   const adminCount = items.filter(
@@ -291,6 +294,8 @@ export function UserManagementPanel({
         render: (_, account) => {
           const isSelf = account.principal_id === currentPrincipalId;
           const menuItems: MenuProps["items"] = [
+            ...(platformAdmin && !isSelf && account.state==="ACTIVE" ? [{key:"assign-organization",label:
+              <Link to={`/settings/access/management?user=${encodeURIComponent(account.principal_id)}&username=${encodeURIComponent(account.username)}`}>设置组织权限</Link>}] : []),
             {
               key: "reset",
               label: isSelf ? "重置密码（请前往账户设置）" : "重置密码",

@@ -34,6 +34,19 @@ def write(path, content, readable=False):
         os.chown(temporary, account.pw_uid, account.pw_gid)
     temporary.replace(path)
 
+pool_file = base / "config/ingest-worker-pool.json"
+pool = {"processes": 1, "mcap_slots": 3, "ingest_slots": 2}
+if mode == "live" and pool_file.exists():
+    values = json.loads(pool_file.read_text())
+    limits = {"processes": 12, "mcap_slots": 6, "ingest_slots": 4}
+    if not isinstance(values, dict) or set(values) != set(limits) or any(
+        type(values[key]) is not int or not 1 <= values[key] <= limit
+        for key, limit in limits.items()
+    ):
+        raise SystemExit("Invalid DSW ingest worker pool configuration.")
+    pool.update(values)
+worker_count = pool["processes"]
+
 for role in ("api","worker"):
     env = {k:str(v) for k,v in composed[role]["environment"].items() if k.startswith("HC_") and v is not None}
     assert env["HC_OBJECT_STORE_PROVIDER"] == "oss" and env["HC_PLATFORM_ENVIRONMENT_ID"] == "hc-oss"
@@ -44,7 +57,9 @@ for role in ("api","worker"):
                HC_ALIGNED_MEDIA_STAGING_ROOT=roots["media"], HC_ROBOT_MODEL_ASSET_ROOT=str(cache/"robot-assets"),
                HC_ROBOT_MODEL_PREVIEW_ROOT=str(assets), HC_STORAGE_LOCAL_USAGE_ROOTS=json.dumps(roots),
                HC_STORAGE_DISK_USAGE_PATH=str(base))
-    if role == "worker":
+    if role == "api" and mode == "live":
+        env["HC_EPISODE_EXPORT_PROCESSES"] = "12"
+    if role == "worker" and worker_count == 1:
         # Compose runs 4 single-slot worker replicas; DSW runs one process, so
         # it needs the combined slot count or every activity queues serially.
         cpus = os.cpu_count() or 4
@@ -55,6 +70,10 @@ for role in ("api","worker"):
                    HC_WORKER_MAX_CONCURRENT_WORKFLOW_TASKS="16",
                    HC_MEDIA_MAX_CONCURRENT_GENERATIONS="4",
                    HC_MEDIA_GLOBAL_MAX_CONCURRENT_GENERATIONS="4")
+    if role == "worker" and mode == "live" and pool_file.exists():
+        env.update(HC_WORKER_MAX_CONCURRENT_ACTIVITIES=str(pool["ingest_slots"]),
+                   HC_WORKER_ROBOT_MAX_CONCURRENT_ACTIVITIES=str(pool["mcap_slots"]),
+                   HC_WORKER_CONTROL_MAX_CONCURRENT_ACTIVITIES="2")
     if mode == "live" and env.get("HC_JWT_ALGORITHMS") == '["HS256"]':
         keyfile = base/"config/site-jwt.key"
         if not keyfile.exists():
@@ -84,7 +103,8 @@ supervisor.rpcinterface_factory=supervisor.rpcinterface:make_main_rpcinterface
 [supervisorctl]
 serverurl=unix://{run}/control.sock
 """
-for n, role in enumerate(("temporal","api","web","worker")):
+roles = ["temporal", "api", "web", "worker", *(f"worker-{i}" for i in range(2, worker_count + 1))]
+for n, role in enumerate(roles):
     start = "false" if role=="worker" and mode=="preview" else "true"
     header+=f"""
 [program:{role}]

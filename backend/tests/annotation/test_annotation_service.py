@@ -41,8 +41,8 @@ def actor(actor_id: str, *capabilities: str, projects: tuple[str, ...] = ("proje
     )
 
 
-def service_with_claimed_task():
-    service = InMemoryAnnotationService()
+def service_with_claimed_task(*, allowed_tags=()):
+    service = InMemoryAnnotationService(allowed_tags=allowed_tags)
     service.create_task(
         task_id="task-1",
         project_id="project-a",
@@ -342,7 +342,7 @@ def test_edit_after_approval_creates_new_draft_and_keeps_review_history() -> Non
 
 @pytest.mark.parametrize("approved_revision", [0, 1])
 def test_reopen_copy_edit_and_reapprove_preserves_completed_snapshot(approved_revision: int) -> None:
-    service, annotator = service_with_claimed_task()
+    service, annotator = service_with_claimed_task(allowed_tags=("拿起物体", "拿起物体并放入盒中"))
     original_tag = AnnotationTag(
         annotation_id="manual-task",
         tag_id="manual-task",
@@ -449,7 +449,7 @@ def test_reviewer_scope_and_role_are_enforced() -> None:
         (ReviewDecision.REJECT, AnnotationStatus.REJECTED),
     ],
 )
-def test_submitter_can_review_own_revision_by_default(
+def test_default_policy_requires_an_independent_reviewer(
     use_fake_service: bool, decision: ReviewDecision, expected_status: AnnotationStatus
 ) -> None:
     service = (
@@ -468,9 +468,12 @@ def test_submitter_can_review_own_revision_by_default(
     claimed = service.claim("task-1", dual_role)
     submitted = service.submit("task-1", dual_role, expected_revision=0, if_match=claimed.etag)
 
+    with pytest.raises(AnnotationPermissionError):
+        service.review("task-1", dual_role, decision, revision=0,
+                       submission_id=submitted.current_submission_id, if_match=submitted.etag)
     approved = service.review(
         "task-1",
-        dual_role,
+        actor("beth", *REVIEWER_CAPABILITIES),
         decision,
         revision=0,
         submission_id=submitted.current_submission_id,
@@ -480,7 +483,7 @@ def test_submitter_can_review_own_revision_by_default(
     task = service.get_task("task-1")
     review = service.list_reviews("task-1")[0]
     assert task.status is expected_status
-    assert task.submitted_by == review.reviewer_id == "alice"
+    assert task.submitted_by == "alice" and review.reviewer_id == "beth"
     assert review.decision is decision
     assert review.submission_id == submitted.current_submission_id
     assert (approved is not None) == (decision is ReviewDecision.APPROVE)

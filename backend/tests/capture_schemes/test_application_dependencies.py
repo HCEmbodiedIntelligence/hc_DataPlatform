@@ -144,6 +144,12 @@ def test_authorization_precedes_unavailable_dependencies_for_org_and_task_routes
         task_path = "/api/v1/projects/project/collection-tasks/task/capture-plan"
         headers = {"X-Organization-Id": "org", "X-Region-Code": "region"}
         assert reader.get(task_path, headers=headers).status_code == 403
+    with TestClient(application(identity(scope, "collection_task.manage"))) as manager:
+        assert manager.get(task_path, headers=headers).status_code == 503
+    with TestClient(application(identity(scope, "upload.manage/task"))) as collector:
+        assert collector.get(task_path, headers=headers).status_code == 503
+        other_task = task_path.replace("/task/capture-plan", "/other/capture-plan")
+        assert collector.get(other_task, headers=headers).status_code == 403
     with TestClient(application(identity(scope, "upload.read"))) as task_reader:
         assert task_reader.get(task_path, headers=headers).status_code == 503
         assert (

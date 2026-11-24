@@ -23,11 +23,22 @@ from .collection_records import episode_records, record_document
 from .delivery_inventory import inventory_document
 from .delivery_models import EpisodeDeliveryDownload, EpisodeDeliveryMember, EpisodeDeliveryPlan
 from .delivery_repository import EpisodeDeliveryBusy, failure, public_job, scope_key
-from .download_names import episode_download_name
+from .download_names import dataset_export_name
+from .export_file_names import record_files
 from .errors import PackageConflict
 from .models import canonical, digest
 
 logger = logging.getLogger(__name__)
+
+
+def delivery_archive_name(repository, plan):
+    format_name = "lerobot"
+    if isinstance(plan, CollectionDeliveryPlan):
+        from .export_formats import from_archive
+        format_name = from_archive(plan.archive_format).name
+        if format_name == "lerobot":
+            format_name = f"lerobot_{plan.modalities}"
+    return dataset_export_name(repository, plan, format_name)
 
 
 def archive_packages(packages, plan, destination, checkpoint, progress, *, pin_totals=lambda *_: None):
@@ -114,9 +125,8 @@ class EpisodeDeliveryService:
     def authorize(auth, *, command=False):
         organization, project, region = scope_key()
         ScopeGuard.require(auth, project, region, organization)
-        for capability in ("dataset_version.read", "export.download") + (
-            ("export.create",) if command else ()
-        ):
+        action = "export.create" if command else "export.read"
+        for capability in ("dataset_version.read", action):
             auth.require_capability(capability, project, organization)
 
     def _freeze(self, request):
@@ -256,14 +266,17 @@ class EpisodeDeliveryService:
             self.collection.authorize(plan, auth)
 
     def status(self, job_id, auth):
-        self.authorize(auth)
+        organization, project, region = scope_key()
+        ScopeGuard.require(auth, project, region, organization)
+        auth.require_capability("export.read", project, organization)
         job = public_job(self.repository.get_job(job_id))
         self._authorize_plan(job.plan, auth)
         return job
 
     def list(self, auth, **page):
-        self.authorize(auth)
-        organization, project, _ = scope_key()
+        organization, project, region = scope_key()
+        ScopeGuard.require(auth, project, region, organization)
+        auth.require_capability("export.read", project, organization)
         jobs = self.repository.list_jobs(
             **page,
             include_annotated=auth.has_capability("annotation_task.read", project, organization),
@@ -289,9 +302,19 @@ class EpisodeDeliveryService:
         except ObjectIntegrityError as exc:
             raise PackageConflict(str(exc)) from exc
 
-    def download(self, job_id, auth, export_filter=None):
-        self.authorize(auth)
+    def require_download(self, auth, data):
+        org, project, region = scope_key()
+        ScopeGuard.require(auth, project, region, org)
+        action = auth.resource_action("export.download",
+            (f"version:{data.data_version_id}", f"dataset:{data.identity.dataset_id}"), project, org)
+        auth.require_capability(action, project, org)
+
+    def ready_archive(self, job_id, auth, export_filter=None):
+        org, project, region = scope_key()
+        ScopeGuard.require(auth, project, region, org)
         row = self.repository.get_job(job_id)
+        for member in public_job(row).plan.members:
+            self.require_download(auth, member.data)
         self._authorize_plan(public_job(row).plan, auth)
         if row["status"] != "READY":
             raise failure("NOT_READY", "Wait for packaging or retry a failed delivery.")
@@ -302,29 +325,21 @@ class EpisodeDeliveryService:
         from .delivery_cache import ensure_cached
 
         ensure_cached(self, row)
-        self._verify_artifact(row)
         plan = public_job(row).plan
-        if isinstance(plan, CollectionDeliveryPlan):
-            from .export_formats import from_archive
+        return row, delivery_archive_name(self.repository, plan)
 
-            format_name = from_archive(plan.archive_format).name
-            label = {
-                "lerobot": "LeRobot", "holobrain": "HoloBrain",
-                "mcap": "MCAP", "original": "Original",
-            }.get(format_name, format_name)
-            variant = f"{label}_{plan.modalities.upper()}"
-        else:
-            variant = "LeRobot" if len(plan.members) == 1 else "LeRobot_batch"
-        name = episode_download_name(
-            self.repository,
-            (member.data for member in plan.members),
-            exported_at=row["updated_at"],  # Completion time stays fixed on cached downloads.
-            variant=variant,
-        )
+    def record_archive_access(self, row, name, auth):
+        plan = public_job(row).plan
+        record_files(self.repository, [(name, m.data.data_version_id) for m in plan.members])
+        self.repository.audit_download(row, auth.subject_id)
+
+    def download(self, job_id, auth, export_filter=None):
+        row, name = self.ready_archive(job_id, auth, export_filter)
+        self._verify_artifact(row)
         url = self.storage.presign_read(
             row["artifact_key"], 300, download_name=name
         )
-        self.repository.audit_download(row, auth.subject_id)
+        self.record_archive_access(row, name, auth)
         return EpisodeDeliveryDownload(
             job_id=job_id,
             artifact_sha256=row["artifact_sha256"],
@@ -358,9 +373,10 @@ class EpisodeDeliveryService:
                 directory.mkdir(parents=True, exist_ok=True)
                 with TemporaryDirectory(prefix="attempt-", dir=directory) as temporary:
                     archive = Path(temporary) / "delivery.zip"
+                    file_names = []
                     if isinstance(plan, CollectionDeliveryPlan):
                         checksum, size = self.collection.build(
-                            plan, Path(temporary), archive, row, checkpoint
+                            plan, Path(temporary), archive, row, checkpoint, file_names=file_names
                         )
                     else:
                         self.repository.phase(row, "archiving")
@@ -373,6 +389,13 @@ class EpisodeDeliveryService:
                             pin_totals=lambda files, size: self.repository.pin_totals(row, files, size),
                         )
                     key = f"episode-deliveries/{digest(scope_key())}/{job_id}/{checksum}.zip"
+                    if not isinstance(plan, CollectionDeliveryPlan):
+                        with zipfile.ZipFile(archive) as built:
+                            entries = built.namelist()
+                            for member in plan.members:
+                                file_names.extend((p, member.data.data_version_id) for p in entries
+                                                  if p.startswith(member.root + "/"))
+                    record_files(self.repository, file_names)
                     self.repository.pin_artifact(row, key, checksum, size)
                     row.update(artifact_key=key, artifact_sha256=checksum, size_bytes=size)
                     self.repository.phase(row, "uploading")

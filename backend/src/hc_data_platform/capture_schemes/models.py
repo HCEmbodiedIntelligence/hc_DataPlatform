@@ -23,6 +23,7 @@ from .references import SourceFormat as SourceFormat
 from .references import Strict as Strict
 from .references import VersionReference as VersionReference
 from .quality_models import CaptureQualityPolicy
+from .tag_library import TagName
 
 
 class Feature(Strict):
@@ -160,12 +161,15 @@ class CaptureDraftDefinition(Strict):
     description: str = Field(default="", max_length=10000)
     software: str = Field(default="", max_length=120)
     model_version_ids: tuple[Identifier, ...] = ()
+    annotation_tags: tuple[TagName, ...] = ()
     adapters: tuple[DraftAdapter, ...] = Field(min_length=1, max_length=3)
     output: DraftOutputContract
     quality_policy: CaptureQualityPolicy = Field(default_factory=CaptureQualityPolicy)
 
     @model_validator(mode="after")
     def unique_adapters(self) -> Self:
+        if len(self.annotation_tags) != len(set(self.annotation_tags)):
+            raise ValueError("采集方案中的标注标签不能重复")
         policy = self.quality_policy
         overrides = set(policy.feature_timing) | set(policy.feature_images) | set(policy.feature_point_clouds)
         if overrides - set(self.output.features):

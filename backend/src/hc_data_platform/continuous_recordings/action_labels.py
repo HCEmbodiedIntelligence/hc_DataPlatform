@@ -85,3 +85,54 @@ def terminal_messages(messages, cfg):
         if channel.topic in changed:
             message = replace(message, data=canonical(changed[channel.topic]))
         yield schema, channel, message
+
+
+ALIGNED_ACTION_VERSION = "continuous-episode-package/7"
+
+
+def left_action_axes(snapshot):
+    """Only axes explicitly selected by the frozen action-from-state rule."""
+    from .joint_normalization import JOINTS
+
+    config = (snapshot or {}).get("effective_adapter", {}).get("configuration", {})
+    rules = (config.get("postprocessing_rules") or {}).get("rules", ())
+    axes = next((rule["axes"] for rule in rules if rule["kind"] == "action_from_state"
+                 and rule.get("enabled", True)), ())
+    return tuple(axis for axis in JOINTS[7:14] if axis in axes)
+
+
+def aligned_left_action(snapshot, topics):
+    """Bind names once, then copy from the observation selected for each output row."""
+    import numpy as np
+    from hc_data_platform.data_formats.feature_names import feature_names
+
+    logical = {target: name for name, target in feature_names(sorted(topics)).items()}
+    state_key, action_key = logical["observation.state"], logical["action"]
+    features = snapshot["output"]["features"]
+    state_feature, action_feature = features["observation.state"], features["action"]
+    state_names, action_names = state_feature["names"], action_feature["names"]
+    axes = [(axis, state_names.index(axis), action_names.index(axis)) for axis in left_action_axes(snapshot)]
+    mixed_precision = state_feature["dtype"] != action_feature["dtype"]
+
+    def apply(row):
+        observed, command = row.modalities[state_key], row.modalities[action_key]
+        if not observed.valid or not command.valid:
+            return row
+        state, action = observed.value, command.value
+        positions = list(action["values"])
+        valid = list(action["validity"])
+        origins = dict(action.get("source_origins", {}))
+        for name, si, ai in axes:
+            value = state["values"][si]
+            valid[ai] = valid[ai] and state["validity"][si]
+            if mixed_precision and value is not None:
+                value = np.asarray(value, dtype=state_feature["dtype"]).item()
+                if np.asarray(value, dtype=action_feature["dtype"]).item() != value:
+                    raise ValueError(f"aligned state cannot be represented exactly in action: {name}")
+            positions[ai] = value
+            origins[name] = {"source": "aligned_observation_state", "frame": row.step_index}
+        updated = {**action, "values": positions, "validity": valid, "source_origins": origins}
+        return row.model_copy(update={"modalities": {**row.modalities,
+            action_key: command.model_copy(update={"value": updated})}})
+
+    return apply

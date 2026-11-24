@@ -24,6 +24,10 @@ class ExportFormat:
     standalone_dataset: bool = False
 
 
+MCAP_PAYLOAD_ARCHIVE = "mcap_collection_zip/9"
+MCAP_PAYLOAD_ARCHIVES = {"mcap_collection_zip/7", "mcap_collection_zip/8", MCAP_PAYLOAD_ARCHIVE}
+
+
 _FORMATS: dict[str, ExportFormat] = {}
 
 
@@ -54,6 +58,27 @@ def from_archive(archive):
         return ExportFormat("mcap", archive, "MCAP", False,
                             partial(mcap, split_annotations=False),
                             reader_version="hc-selected-mcap/2")
+    if archive == "mcap_collection_zip/4":
+        return ExportFormat("mcap", archive, "MCAP", False, mcap, reader_version="hc-selected-mcap/2")
+    if archive == "mcap_collection_zip/5":
+        return ExportFormat("mcap", archive, "MCAP", False, partial(mcap, committed_rows=True),
+                            reader_version="hc-selected-mcap/3")
+    if archive in {"mcap_collection_zip/6", "mcap_collection_zip/7"}:
+        return ExportFormat("mcap", archive, "MCAP", False,
+                            partial(mcap, committed_rows=True, upload_names=True),
+                            reader_version="hc-selected-mcap/3")
+    if archive == "mcap_collection_zip/8":
+        return ExportFormat("mcap", archive, "MCAP", False,
+                            partial(mcap, committed_rows=True, upload_names=True, legacy_sync=False),
+                            reader_version="hc-selected-mcap/3")
+    if archive == "holobrain_collection_zip/7":
+        return ExportFormat("holobrain", archive, "HoloBrain（16维，双臂和夹爪）", False,
+                            partial(holobrain, use_committed_actions=True, legacy_sync=False),
+                            reader_version="hc_tj_16dof_robo_orchard_0.1.0/v1", standalone_dataset=True)
+    if archive == "holobrain_collection_zip/6":
+        return ExportFormat("holobrain", archive, "HoloBrain（16维，双臂和夹爪）", False,
+                            partial(holobrain, use_committed_actions=True),
+                            reader_version="hc_tj_16dof_robo_orchard_0.1.0/v1", standalone_dataset=True)
     if archive == "holobrain_collection_zip/5":
         return ExportFormat("holobrain", archive, "HoloBrain（16维，双臂和夹爪）", False, holobrain,
                             reader_version="hc_tj_16dof_robo_orchard_0.1.0/v1", standalone_dataset=True)
@@ -104,11 +129,11 @@ def lerobot(root, selections, *, storage, modalities, checkpoint, processor_vers
     )
 
 
-def mcap(root, selections, *, storage, modalities, checkpoint, split_annotations=True):
+def mcap(root, selections, *, storage, modalities, checkpoint, split_annotations=True, committed_rows=False, upload_names=False, legacy_sync=True, fast_png=False, hash_files=True):
     from .normalized_export import write_mcap_collection
 
     return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint,
-                                 split_annotations=split_annotations)
+                                 split_annotations=split_annotations, committed_rows=committed_rows, upload_names=upload_names, legacy_sync=legacy_sync, fast_png=fast_png, hash_files=hash_files)
 
 
 def legacy_mcap(root, selections, *, storage, modalities, checkpoint):
@@ -119,16 +144,16 @@ def legacy_mcap(root, selections, *, storage, modalities, checkpoint):
 def legacy_selected_mcap(root, selections, *, storage, modalities, checkpoint):
     from .normalized_export import write_mcap_collection
     return write_mcap_collection(root, selections, storage=storage, checkpoint=checkpoint,
-                                 compact_invalid=False, split_annotations=False)
+                                 compact_invalid=False, split_annotations=False, legacy_sync=True)
 
 
 def holobrain(root, selections, *, storage, modalities, checkpoint, reference_layout=True,
-              split_annotations=True, config_name="16dof", use_committed_actions=False):
+              split_annotations=True, config_name="16dof", use_committed_actions=False, legacy_sync=True, single_arrow=False):
     from .holobrain_export import write_collection
     manifest, _ = write_collection(
         root, selections, storage=storage, modalities=modalities, checkpoint=checkpoint,
         reference_report=reference_layout, split_annotations=split_annotations, config_name=config_name,
-        use_committed_actions=use_committed_actions,
+        use_committed_actions=use_committed_actions, legacy_sync=legacy_sync, single_arrow=single_arrow,
     )
     if reference_layout:
         state = json.loads((root / "state.json").read_bytes())
@@ -143,7 +168,7 @@ def holobrain(root, selections, *, storage, modalities, checkpoint, reference_la
 def legacy_holobrain(root, selections, *, storage, modalities, checkpoint):
     from .holobrain_export import write_collection
     return write_collection(root, selections, storage=storage, modalities=modalities,
-                            checkpoint=checkpoint, compact_invalid=False, split_annotations=False, config_name="19dof")
+                            checkpoint=checkpoint, compact_invalid=False, split_annotations=False, config_name="19dof", legacy_sync=True, single_arrow=False)
 
 
 def original(root, selections, *, storage, modalities, checkpoint):
@@ -165,14 +190,14 @@ register(
 register(
     ExportFormat(
         "mcap",
-        "mcap_collection_zip/4",
+        MCAP_PAYLOAD_ARCHIVE,
         "MCAP",
         False,
-        mcap,
-        reader_version="hc-selected-mcap/2",
+        partial(mcap, committed_rows=True, upload_names=True, legacy_sync=False, fast_png=True),
+        reader_version="hc-selected-mcap/3",
     )
 )
 register(ExportFormat("original", "original_collection_zip/1", "原始文件", False, original, True))
-register(ExportFormat("holobrain", "holobrain_collection_zip/6", "HoloBrain（16维，双臂和夹爪）", False,
-                      partial(holobrain, use_committed_actions=True),
+register(ExportFormat("holobrain", "holobrain_collection_zip/8", "HoloBrain（16维，双臂和夹爪）", False,
+                      partial(holobrain, use_committed_actions=True, legacy_sync=False, single_arrow=True),
                       reader_version="hc_tj_16dof_robo_orchard_0.1.0/v1", standalone_dataset=True))

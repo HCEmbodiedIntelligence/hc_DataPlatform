@@ -34,13 +34,17 @@ const { grantedCapabilities, loadBundleMock, reviewMock, reviewErrorMock, reopen
   claimMock: vi.fn(),
 }));
 
-vi.mock("../../shared/auth/use-capabilities", () => ({
-  useCapabilities: () => ({
-    has: (capability: string) => grantedCapabilities.has(capability),
-    loading: false,
-    failed: false,
-  }),
-}));
+vi.mock("../../shared/auth/use-capabilities", async (importOriginal) => {
+  const { expandGrantedCapabilities } =
+    await importOriginal<typeof import("../../shared/auth/use-capabilities")>();
+  return {
+    useCapabilities: () => ({
+      has: (capability: string) => expandGrantedCapabilities([...grantedCapabilities]).has(capability),
+      loading: false,
+      failed: false,
+    }),
+  };
+});
 
 vi.mock("../../shared/scope/shell-store", () => ({
   useShellStore: Object.assign((selector: (state: object) => unknown) =>

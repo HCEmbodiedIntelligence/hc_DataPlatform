@@ -22,10 +22,12 @@ function filters(
 ): Readonly<Record<string, unknown>> {
   return {
     q: search.q,
+    updatedFrom: search.timeRange?.from,
+    updatedTo: search.timeRange?.to,
     datasetId: search.datasetId,
     versionId: search.versionId,
     episodeId: search.episodeId,
-    status: search.status,
+    status: search.discarded ? ["DISCARDED"] : search.status,
     issueType: search.issueType,
     severity: search.severity,
     discoverySource: search.discoverySource,
@@ -67,10 +69,12 @@ export function useManualIssues(search: ManualIssuesSearch, allowed = true) {
         path: endpoint(scope.projectId!, scope.regionCode!),
         query: {
           q: search.q,
+          updatedFrom: search.timeRange?.from,
+          updatedTo: search.timeRange?.to,
           datasetId: search.datasetId,
           versionId: search.versionId,
           episodeId: search.episodeId,
-          status: search.status,
+          status: search.discarded ? ["DISCARDED"] : search.status,
           issueType: search.issueType,
           severity: search.severity,
           discoverySource: search.discoverySource?.filter(
@@ -79,6 +83,7 @@ export function useManualIssues(search: ManualIssuesSearch, allowed = true) {
           assigneeId: search.assigneeId,
           sort: SORT_TO_WIRE[search.sort],
           collectionTaskId: search.taskGroup,
+          includeNote: true,
           after: search.after,
           before: search.before,
           limit: search.limit,
@@ -113,10 +118,12 @@ export function useManualIssuesPage(
         path,
         query: {
           q: search.q,
+          updatedFrom: search.timeRange?.from,
+          updatedTo: search.timeRange?.to,
           datasetId: search.datasetId,
           versionId: search.versionId,
           episodeId: search.episodeId,
-          status: search.status,
+          status: search.discarded ? ["DISCARDED"] : search.status,
           issueType: search.issueType,
           severity: search.severity,
           discoverySource: search.discoverySource?.filter(

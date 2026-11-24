@@ -1,4 +1,5 @@
 import {
+  JOINT_MATCH_MS,
   featureSchema,
   type Feature,
   type McapConfig,
@@ -25,6 +26,7 @@ export function emptyDocument(): SchemeDocument {
     description: "",
     software: "",
     model_version_ids: [],
+    annotation_tags: [],
     adapters: [
       {
         source_format: "LEROBOT_V3",
@@ -118,7 +120,9 @@ export function mcapConfiguration(
         }
       : {}),
     fps: doc.output.frequency_hz,
-    maximum_time_error_ms: doc.output.validity_max_age_ms ?? previous?.maximum_time_error_ms ?? 50,
+    maximum_time_error_ms: previous?.normalization
+      ? JOINT_MATCH_MS
+      : doc.output.validity_max_age_ms ?? previous?.maximum_time_error_ms ?? 50,
     cameras,
     collection_mode: cameras.length ? "RGB" : "JOINT_ONLY",
     primary_camera: cameras.some(

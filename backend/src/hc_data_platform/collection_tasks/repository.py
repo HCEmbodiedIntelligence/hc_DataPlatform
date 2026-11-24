@@ -78,6 +78,7 @@ class InMemoryCollectionTaskRepository:
                     tuple[str, ...],
                     tuple[str, ...],
                     float | None,
+                    bool,
                 ],
             ],
         ] = {}
@@ -300,6 +301,7 @@ class InMemoryCollectionTaskRepository:
         camera_ids: tuple[str, ...] = (),
         topic_names: tuple[str, ...] = (),
         duration_seconds: float | None = None,
+        admitted: bool | None = None,
     ) -> None:
         """Test/reference equivalent of the PostgreSQL association trigger."""
 
@@ -322,6 +324,7 @@ class InMemoryCollectionTaskRepository:
                     camera_ids,
                     topic_names,
                     duration_seconds,
+                    bool(admitted),
                 )
                 return
             packages[package_key] = (
@@ -330,6 +333,7 @@ class InMemoryCollectionTaskRepository:
                 tuple(sorted(set(existing[2]).union(camera_ids))),
                 tuple(sorted(set(existing[3]).union(topic_names))),
                 existing[4] if duration_seconds is None else duration_seconds,
+                existing[5] if admitted is None else admitted,
             )
 
     def captures(self, organization_id, project_id, region_code, task_id=None):
@@ -352,7 +356,7 @@ class InMemoryCollectionTaskRepository:
                 if saved_region == region_code
             )
             outcomes = tuple(fact[0] for fact in package_facts)
-            durations = tuple(fact[4] for fact in package_facts)
+            durations = tuple(fact[4] for fact in package_facts if fact[5])
             unknown_duration_count = sum(item is None for item in durations)
             return ProgressFacts(
                 as_of=utc_now(),
@@ -362,7 +366,7 @@ class InMemoryCollectionTaskRepository:
                 reject_count=outcomes.count(QcOutcome.REJECT),
                 captured_duration_seconds=(
                     None
-                    if not durations or unknown_duration_count
+                    if not package_facts or unknown_duration_count
                     else float(sum(item for item in durations if item is not None))
                 ),
                 duration_observed_package_count=len(durations) - unknown_duration_count,

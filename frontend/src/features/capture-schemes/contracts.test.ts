@@ -125,6 +125,18 @@ it("builds the processing terminal MCAP contract with separate layouts at 15 Hz"
   expect(config.fps).toBe(15);
 });
 
+it("uses the backend frequency policy default for sparse MCAP semantic outputs", () => {
+  const doc = fixtureDocument();
+  const { algorithm, features, time_source } = doc.output;
+  const semantic_output = { algorithm, features, time_source };
+  const config = { ...mcapConfiguration(doc), semantic_output };
+  expect(mcapConfigSchema.parse(config).semantic_output?.frequency_policy).toBe("PRESERVE");
+  expect(mcapConfigSchema.safeParse({
+    ...config,
+    semantic_output: { ...semantic_output, frequency_policy: "FIXED_GRID" },
+  }).success).toBe(false);
+});
+
 it.each([
   {},
   { "head.calibration": "/camera/info" },
@@ -273,4 +285,14 @@ it("round-trips the optional hand rule without enabling it in old plans", () => 
   const hand = initialRows({...mapped, postprocessing_rules: saved}).find((row) => row.kind === "forward_fill_hands")!;
   expect(hand.enabled).toBe(true);
   expect(() => parseRow(hand, {...cfg, numeric_sources: {}})).toThrow("映射左手或右手指令");
+});
+
+it("round-trips short state and action interpolation as an optional rule", () => {
+  const cfg = mcapConfiguration(fixtureDocument());
+  const rows = initialRows(cfg);
+  expect(rows.find((r) => r.kind === "interpolate_short_gaps")?.enabled).toBe(false);
+  const rules = rows.map((r) => parseRow({ ...r, enabled: r.kind === "interpolate_short_gaps" }, cfg));
+  const saved = postprocessingRulesSchema.parse({ version: 2, rules });
+  expect(initialRows({ ...cfg, postprocessing_rules: saved }).filter((r) => r.enabled).map((r) => r.kind))
+    .toEqual(["interpolate_short_gaps"]);
 });

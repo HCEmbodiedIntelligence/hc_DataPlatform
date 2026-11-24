@@ -370,7 +370,7 @@ export function AssetCapacityBoard({
       {issueFilter ? (
         <Suspense fallback={<span role="status">正在加载问题数据…</span>}>
           <TaskIssueDrawer
-            key={`${issueFilter.stage}:${issueFilter.category}`}
+            key={JSON.stringify([scope?.organizationId, scope?.projectId, scope?.regionCode, taskStatus.selectedTaskId, issueFilter.stage, issueFilter.category])}
             scope={scope}
             issues={issues.filter(
               (issue) =>

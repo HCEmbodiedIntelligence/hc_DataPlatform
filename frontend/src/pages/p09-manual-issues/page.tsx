@@ -1,3 +1,6 @@
+import { TimeRangeFilter } from "../../shared/ui/TimeRangeFilter";
+import { withinTimeRange } from "../../shared/lib/time-range";
+import { DiscardReportedPackage } from "../../features/cleaning/DiscardReportedPackage";
 import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { ActionGapPreview } from "../../features/quality/ActionGapPreview";
 import { RecordingProcessingDetails } from "../../features/quality/RecordingProcessingDetails";
@@ -42,6 +45,7 @@ import type {
 } from "../../entities/manual-issue";
 import {
   type AutoQualityProblem,
+  progressNotice,
   useAutoQualityProblems,
   useCreateDraftFromManualIssue,
   useManualIssue,
@@ -58,6 +62,7 @@ import { routes as datasetRoutes } from "../../features/datasets/routing";
 import { useIngestScope } from "../../features/ingest/use-ingest-scope";
 import { VideoPreviewModal } from "../../features/viewer/VideoPreviewModal";
 import { isDomainError } from "../../shared/api/domain-error";
+import { DataTraceLink } from "../../features/datasets/episodes/DataTraceLink";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import {
   formatEffectiveDuration,
@@ -173,7 +178,13 @@ function autoProblemRow(problem: AutoQualityProblem): ProblemDataRow {
     id: problem.id,
     issueType: issueTypeFromQuality(problem),
     severity: problem.severity,
-    status: { kind: "known", value: "OPEN" },
+    status: {
+      kind: "known",
+      value:
+        problem.progress === "DISCARDED"
+          ? "RESOLVED"
+          : (problem.progress ?? "OPEN"),
+    },
     assignee: null,
     startNs: problem.startNs,
     endNs: problem.endNs,
@@ -192,7 +203,7 @@ function statusLabel(issue: Pick<ManualIssueListItem, "status">): string {
   if (issue.status.kind === "unknown") return "新状态（只读）";
   if (issue.status.value === "OPEN") return "待分诊";
   if (issue.status.value === "IN_PROGRESS") return "处理中";
-  return "已完成";
+  return issue.status.value === "DISCARDED" ? "已丢弃" : "已完成";
 }
 
 function severityTone(
@@ -201,20 +212,6 @@ function severityTone(
   if (severity === "CRITICAL") return "danger";
   if (severity === "HIGH") return "warning";
   return "neutral";
-}
-
-function formatNanoseconds(value: string): string {
-  try {
-    const totalMs = BigInt(value) / 1_000_000n;
-    const hours = totalMs / 3_600_000n;
-    const minutes = (totalMs % 3_600_000n) / 60_000n;
-    const seconds = (totalMs % 60_000n) / 1_000n;
-    const milliseconds = totalMs % 1_000n;
-    const prefix = hours > 0n ? `${hours.toString().padStart(2, "0")}:` : "";
-    return `${prefix}${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}.${milliseconds.toString().padStart(3, "0")}`;
-  } catch {
-    return value;
-  }
 }
 
 function formatDuration(startNs: string, endNs: string): string {
@@ -237,6 +234,24 @@ function formatUpdatedAt(value: string): string {
   }).format(date);
 }
 
+function packageKey(problem: AutoQualityProblem) {
+  return JSON.stringify([
+    problem.collectionTaskId ?? "",
+    problem.dataPackageId ?? problem.rolloutId,
+  ]);
+}
+
+function countPackages(
+  problems: readonly AutoQualityProblem[],
+  progress?: AutoQualityProblem["progress"],
+) {
+  return new Set(
+    problems
+      .filter((p) => !progress || p.progress === progress)
+      .map(packageKey),
+  ).size;
+}
+
 function filteredAutoProblems(
   problems: readonly AutoQualityProblem[],
   search: ReturnType<typeof manualIssuesQueryCodec.parse>,
@@ -248,10 +263,16 @@ function filteredAutoProblems(
     !search.discoverySource.includes("AUTO_QC")
   )
     return [];
-  if (search.status?.length && !search.status.includes("OPEN")) return [];
   return problems.filter((problem) => {
-    if (search.discarded && !problem.discarded) return false;
-    if (search.status?.includes("OPEN") && problem.discarded) return false;
+    if (!withinTimeRange(problem.updatedAt, search.timeRange)) return false;
+    const progress =
+      problem.progress ?? (problem.discarded ? "DISCARDED" : "OPEN");
+    if (search.discarded && progress !== "DISCARDED") return false;
+    if (
+      search.status?.length &&
+      (progress === "DISCARDED" || !search.status.includes(progress))
+    )
+      return false;
     const issueType = issueTypeFromQuality(problem);
     if (search.issueType?.length && !search.issueType.includes(issueType))
       return false;
@@ -374,7 +395,7 @@ function statusTone(
 }
 
 function viewerHref(
-  issue: Pick<ManualIssueListItem, "source">,
+  issue: Pick<ManualIssueListItem, "id" | "source">,
   returnTo: string,
 ): string | null {
   const source = issue.source;
@@ -389,6 +410,7 @@ function viewerHref(
     datasetId: source.datasetId,
     versionId: source.versionId,
     episodeId: source.episodeId,
+    issueId: issue.id,
     returnTo,
   });
 }
@@ -437,15 +459,12 @@ function IssueDetail({
         <div>
           <strong>已绑定到具体数据段</strong>
           <span>
-            {formatNanoseconds(issue.source.startNs)}–
-            {formatNanoseconds(issue.source.endNs)}
-            {" · "}
-            {formatDuration(issue.source.startNs, issue.source.endNs)}
+            片段时长 {formatDuration(issue.source.startNs, issue.source.endNs)}
           </span>
-          <small>
-            当前接口不返回安全缩略图，请到数据工作台查看相机画面、曲线和上下文。
-          </small>
+
         </div>
+        <DataTraceLink identifier={issue.source.episodeId} />
+        <DiscardReportedPackage key={issue.id} issue={issue} />
         {href ? (
           <Button type="primary" href={href}>
             在工作台定位
@@ -622,7 +641,7 @@ export function ManualIssuesPage() {
     ? search.problemType.slice(7)
     : undefined;
   const manualLeaf = Boolean(
-    manualType && manualSourceAllowed && !search.discarded,
+    manualType && manualSourceAllowed,
   );
   const list = useManualIssues(
     manualType ? { ...search, issueType: [manualType] } : search,
@@ -630,7 +649,7 @@ export function ManualIssuesPage() {
   );
   const groupStats = useManualIssuesPage(
     search,
-    canRead && manualSourceAllowed && !search.discarded,
+    canRead && manualSourceAllowed,
   );
   const summary = useManualIssuesPage(
     summarySearch,
@@ -651,7 +670,11 @@ export function ManualIssuesPage() {
     readonly problem: AutoQualityProblem;
   } | null>(null);
   const rawProblem =
-    rawSelection?.scopeKey === rawScopeKey ? rawSelection?.problem : null;
+    rawSelection && rawSelection.scopeKey === rawScopeKey
+      ? (autoProblems.data?.items.find(
+          (item) => item.id === rawSelection.problem.id,
+        ) ?? rawSelection.problem)
+      : null;
   const openRawProblem = (problem: AutoQualityProblem | null) => {
     if (problem) setRawSelection({ scopeKey: rawScopeKey, problem });
   };
@@ -671,7 +694,7 @@ export function ManualIssuesPage() {
   > | null>(null);
 
   const filtered = Boolean(
-    search.q ||
+    search.timeRange || search.q ||
       search.datasetId ||
       search.versionId ||
       search.episodeId ||
@@ -706,14 +729,27 @@ export function ManualIssuesPage() {
       }
       return group;
     }
+    const packages = new Map<
+      string,
+      { taskId: AutoQualityProblem["collectionTaskId"]; codes: Set<string> }
+    >();
     for (const problem of visibleAutoProblems) {
-      const group = task(problem.collectionTaskId);
+      const key = packageKey(problem);
+      const member = packages.get(key) ?? {
+        taskId: problem.collectionTaskId,
+        codes: new Set<string>(),
+      };
+      for (const code of problem.findingCodes) member.codes.add(code);
+      packages.set(key, member);
+    }
+    for (const member of packages.values()) {
+      const group = task(member.taskId);
       group.count++;
-      for (const code of new Set(problem.findingCodes)) {
+      for (const code of member.codes) {
         group.types.set(code, (group.types.get(code) ?? 0) + 1);
       }
     }
-    if (!search.discarded && manualSourceAllowed) {
+    if (manualSourceAllowed) {
       for (const item of groupStats.data?.taskGroups ?? []) {
         const group = task(item.collection_task_id);
         group.count += item.count;
@@ -800,7 +836,6 @@ export function ManualIssuesPage() {
     automaticCount: number,
   ): string | number | undefined => {
     if (
-      value === undefined &&
       !unscopedAccount &&
       ((manualSummarySourceAllowed && summary.isPending) ||
         (autoSourceAllowed && autoProblems.isPending))
@@ -921,14 +956,14 @@ export function ManualIssuesPage() {
     },
     {
       id: "source",
-      header: "原始文件",
+      header: manualLeaf ? "上报说明" : "原始文件",
       size: 270,
       cell: ({ row: { original: row } }) => (
         <span
           className={styles.filename}
-          title={row.autoProblem?.sourceFileName ?? row.sourceTitle}
+          title={row.manualIssue?.note || row.autoProblem?.sourceFileName || row.sourceTitle}
         >
-          {row.autoProblem?.sourceFileName ??
+          {row.manualIssue?.note || (row.autoProblem?.sourceFileName ??
             (row.manualIssue ? (
               <ResourceLabel
                 kind="dataset"
@@ -938,7 +973,7 @@ export function ManualIssuesPage() {
               "查看原始文件清单"
             ) : (
               "文件名未记录"
-            ))}
+            )))}
         </span>
       ),
     },
@@ -1014,28 +1049,38 @@ export function ManualIssuesPage() {
         if (row.original.autoProblem) {
           const href = autoProblemHref(row.original.autoProblem, currentReturn);
           const original = canPreviewOriginal(row.original.autoProblem);
-          return original || href ? (
+          const problem = row.original.autoProblem;
+          return (
             <Space>
-              <Button
-                type="primary"
-                {...(original
-                  ? { onClick: () => openRawProblem(row.original.autoProblem) }
-                  : { href: href! })}
-                icon={<LocateFixed aria-hidden="true" size={16} />}
-              >
-                查看与处理
-              </Button>
+              {original || href ? (
+                <Button
+                  type="primary"
+                  {...(original
+                    ? { onClick: () => openRawProblem(problem) }
+                    : { href: href! })}
+                  icon={<LocateFixed aria-hidden="true" size={16} />}
+                >
+                  {problem.progress === "OPEN" ? "查看与处理" : "查看详情"}
+                </Button>
+              ) : (
+                <Tooltip title="该质检记录未关联可预览的原始数据来源或上传会话。">
+                  <Button disabled>Raw 入口不可用</Button>
+                </Tooltip>
+              )}
+              <DataTraceLink
+                identifier={
+                  problem.sourceImportId ||
+                  problem.sessionId ||
+                  problem.rolloutId
+                }
+              />
             </Space>
-          ) : (
-            <Tooltip title="该质检记录未关联可预览的原始数据来源或上传会话。">
-              <Button disabled>Raw 入口不可用</Button>
-            </Tooltip>
           );
         }
         const issue = row.original.manualIssue;
         if (!issue) return null;
         const known = issue.status.kind === "known";
-        const mutable = known && issue.status.value !== "RESOLVED";
+        const mutable = known && issue.status.value !== "RESOLVED" && issue.status.value !== "DISCARDED";
         const href = viewerHref(issue, currentReturn);
         const canTriage =
           mutable &&
@@ -1096,6 +1141,8 @@ export function ManualIssuesPage() {
 
         return (
           <Space size="small" className={styles.rowActions}>
+            <Button onClick={() => update({issueId: issue.id})}>查看上报</Button>
+            <DiscardReportedPackage key={issue.id} issue={issue} />
             {issue.allowedActions.includes("CONTINUE_DRAFT") && canDraft ? (
               <Button
                 type="primary"
@@ -1110,7 +1157,7 @@ export function ManualIssuesPage() {
                 href={href}
                 icon={<LocateFixed aria-hidden="true" size={16} />}
               >
-                定位处理
+                定位问题片段
               </Button>
             ) : (
               <Button disabled>无法定位</Button>
@@ -1138,19 +1185,19 @@ export function ManualIssuesPage() {
       : columns;
 
   const dataPending =
-    (manualSourceAllowed && !search.discarded && groupStats.isPending) ||
+    (manualSourceAllowed && groupStats.isPending) ||
     (manualLeaf && list.isPending) ||
-    (autoSourceAllowed && autoProblems.isPending);
+    (!manualLeaf && totalItems === 0 && autoSourceAllowed && autoProblems.isPending);
   const dataError =
     (manualLeaf ? list.error : null) ??
-    (manualSourceAllowed && !search.discarded ? groupStats.error : null) ??
-    (autoSourceAllowed ? autoProblems.error : null);
+    (manualSourceAllowed ? groupStats.error : null) ??
+    (!manualLeaf && !totalItems && autoSourceAllowed ? autoProblems.error : null);
   const summaryError =
     (manualSummarySourceAllowed ? summary.error : null) ??
     (autoSourceAllowed ? autoProblems.error : null);
   const dataFetching =
     (manualLeaf && list.isFetching) ||
-    (autoSourceAllowed && autoProblems.isFetching);
+    (!manualLeaf && autoSourceAllowed && autoProblems.isFetching);
 
   const listState: PageStateKind | "ready" = unscopedAccount
     ? "ready"
@@ -1215,7 +1262,11 @@ export function ManualIssuesPage() {
     : "当前筛选没有匹配的问题";
   const content =
     listState === "ready" || listState === "refreshing" ? (
-      table
+      <>
+        {!manualLeaf && autoSourceAllowed && autoProblems.isPending && <span role="status">已显示人工上报，正在载入自动质检记录…</span>}
+        {!manualLeaf && autoSourceAllowed && autoProblems.isError && <Button onClick={() => void autoProblems.refetch()}>重试加载自动质检记录</Button>}
+        {table}
+      </>
     ) : (
       <PageState
         state={listState}
@@ -1237,7 +1288,7 @@ export function ManualIssuesPage() {
           dataError
             ? () => {
                 if (manualLeaf) void list.refetch();
-                if (manualSourceAllowed && !search.discarded)
+                if (manualSourceAllowed)
                   void groupStats.refetch();
                 if (autoSourceAllowed) void autoProblems.refetch();
               }
@@ -1292,7 +1343,7 @@ export function ManualIssuesPage() {
                       description: "等待确认与分派",
                       count: countWithAutomatic(
                         summary.data?.counts.open,
-                        summaryAutoProblems.filter((p) => !p.discarded).length,
+                        countPackages(summaryAutoProblems, "OPEN"),
                       ),
                       icon: CircleDotDashed,
                     },
@@ -1302,14 +1353,14 @@ export function ManualIssuesPage() {
                       description: "清洗或补充证据",
                       count: countWithAutomatic(
                         summary.data?.counts.inProgress,
-                        0,
+                        countPackages(summaryAutoProblems, "IN_PROGRESS"),
                       ),
                       icon: Wrench,
                     },
                     {
                       key: "resolved",
                       label: "已完成",
-                      description: "已关联解决结果",
+                      description: "问题已处理完成",
                       count: countWithAutomatic(
                         summary.data?.counts.resolved,
                         0,
@@ -1320,8 +1371,8 @@ export function ManualIssuesPage() {
                       key: "discarded",
                       label: "已丢弃",
                       description: "保留原始数据",
-                      count: summaryAutoProblems.filter((p) => p.discarded)
-                        .length,
+                      count: countWithAutomatic(summary.data ? (BigInt(summary.data.counts.total) - BigInt(summary.data.counts.open) -
+                        BigInt(summary.data.counts.inProgress) - BigInt(summary.data.counts.resolved)).toString() : undefined, countPackages(summaryAutoProblems, "DISCARDED")),
                       icon: ListChecks,
                     },
                     {
@@ -1330,7 +1381,7 @@ export function ManualIssuesPage() {
                       description: "完整问题记录",
                       count: countWithAutomatic(
                         summary.data?.counts.total,
-                        summaryAutoProblems.length,
+                        countPackages(summaryAutoProblems),
                       ),
                       icon: ListChecks,
                     },
@@ -1368,6 +1419,11 @@ export function ManualIssuesPage() {
               onReset={filtered ? resetFilters : undefined}
               disabled={false}
             >
+              <div className={styles.filterField}>
+                更新时间
+                <TimeRangeFilter label="问题更新时间" range={search.timeRange}
+                  onChange={timeRange => update({ timeRange, issueId: undefined })} />
+              </div>
               <label className={styles.filterField}>
                 搜索
                 <IssueSearchField
@@ -1634,8 +1690,8 @@ export function ManualIssuesPage() {
                 problem={rawProblem}
               />
             ) : null}
-            {rawProblem.discarded ? (
-              <Alert type="info" title="已丢弃 · 原始数据已保留" />
+            {rawProblem.progress !== "OPEN" ? (
+              <Alert type="info" title={progressNotice(rawProblem)} />
             ) : (
               <AutoQualityProblemActions
                 key={`${rawScopeKey}:${rawProblem.id}`}
@@ -1668,16 +1724,20 @@ export function ManualIssuesPage() {
           onCancel={() => setRawSelection(null)}
         >
           <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-            <RawDiagnosticActions
-              key={`${rawScopeKey}:${rawProblem.id}`}
-              scope={scope}
-              problem={rawProblem}
-              canManage={
-                !rawProblem.discarded && capabilities.has("upload.manage")
-              }
-              canReadDataset={capabilities.has("dataset.read")}
-              onDeleted={() => setRawSelection(null)}
-            />
+            {rawProblem.progress === "OPEN" ? (
+              <RawDiagnosticActions
+                key={`${rawScopeKey}:${rawProblem.id}`}
+                scope={scope}
+                problem={rawProblem}
+                canManage={
+                  !rawProblem.discarded && capabilities.has("upload.manage")
+                }
+                canReadDataset={capabilities.has("dataset.read")}
+                onDeleted={() => setRawSelection(null)}
+              />
+            ) : (
+              <Alert type="info" title={progressNotice(rawProblem)} />
+            )}
             <Suspense fallback={<PageState state="loading" label="原始数据" />}>
               <OriginalSourceBrowser
                 key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}:${rawProblem.sourceImportId}:${rawProblem.sourceEpisodeIndex}`}

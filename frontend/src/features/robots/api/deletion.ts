@@ -9,6 +9,7 @@ const kindSchema = z.enum([
   "collection_job",
   "recording_upload",
   "configuration",
+  "capture_scheme",
   "component",
   "calibration",
   "source",

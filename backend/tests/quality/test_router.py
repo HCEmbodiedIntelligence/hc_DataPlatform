@@ -72,7 +72,7 @@ def _report() -> QcReportV1:
     )
 
 
-def _client() -> TestClient:
+def _client(*extra_capabilities: str) -> TestClient:
     configure_quality_repository(_Repository(_report()))
     app = FastAPI()
 
@@ -86,7 +86,7 @@ def _client() -> TestClient:
             subject_id="quality-router-reader",
             project_ids=frozenset({"p1"}),
             region_codes=frozenset({"cn-hz"}),
-            capabilities=frozenset({"upload.read", "upload.manage"}),
+            capabilities=frozenset({"upload.read", "upload.manage", *extra_capabilities}),
             scope_pairs=frozenset({("p1", "cn-hz"), ("p1", None)}),
         )
         return await call_next(request)
@@ -105,7 +105,10 @@ def test_rollout_quality_is_tenant_scoped_and_not_cacheable() -> None:
 
 def test_independent_qc_configuration_is_replaced_by_capture_scheme():
     profile = QualityProfileV1(profile_id="independent", required_topics=frozenset())
-    response = _client().post('/api/v1/projects/p1/quality-profiles', json=profile.model_dump(mode='json'))
+    url = "/api/v1/projects/p1/quality-profiles"
+    body = profile.model_dump(mode="json")
+    assert _client().post(url, json=body).status_code == 403
+    response = _client("quality.manage").post(url, json=body)
     assert response.status_code == 409
     assert response.json()['code'] == 'CAPTURE_SCHEME_REQUIRED'
 

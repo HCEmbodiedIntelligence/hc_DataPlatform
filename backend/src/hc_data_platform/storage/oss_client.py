@@ -232,7 +232,7 @@ class OssBotoCompatClient:
         return {
             "Parts": parts,
             "IsTruncated": bool(getattr(result, "is_truncated", False)),
-            "NextPartNumberMarker": int(getattr(result, "next_part_number_marker", 0) or 0),
+            "NextPartNumberMarker": int(getattr(result, "next_marker", 0) or 0),
         }
 
     def complete_multipart_upload(self, **kwargs: Any) -> dict[str, object]:

@@ -191,7 +191,8 @@ def test_committed_state_labels_follow_selected_rows_and_preserve_command_audit(
     assert [tr["parent_frame_index"] for tr in traces] == ([0, 1, 4] if remove_command_stream else [0, 1, 3, 4])
     for row, tr in zip(rows(out), traces, strict=True):
         i = tr["parent_frame_index"]
-        if i == 3:
+        if i == 3 or (i == 1 and not remove_command_stream):
+            assert row["actions"]["timestamps"] == [stamps[i]]
             assert "axes" in tr["action_normalization"]
             continue
         assert tr["action_normalization"]["origin"] == kinds[i]
@@ -200,4 +201,6 @@ def test_committed_state_labels_follow_selected_rows_and_preserve_command_audit(
             i % 2 if n in ("L_ban", "R_ban") else 100 * i + JOINTS.index(n) for n in row["actions"]["names"]
         ]
     report = json.loads((out / "conversion_report.json").read_bytes())
-    assert report["episodes"][0]["frames"]["state_derived_actions"] == {"next_frame_state": 2, "terminal_state": 1}
+    assert report["episodes"][0]["frames"]["state_derived_actions"] == {
+        "next_frame_state": 2 if remove_command_stream else 1, "terminal_state": 1,
+    }

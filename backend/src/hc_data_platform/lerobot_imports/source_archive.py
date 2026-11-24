@@ -6,7 +6,7 @@ import hashlib
 import io
 import re
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,6 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hc_data_platform.core.errors import problem
 from hc_data_platform.ingest.models import Identifier
+from hc_data_platform.ingest.raw_sources import RawSource
+from hc_data_platform.episode_store.download_names import ExportArchiveName
 from hc_data_platform.episode_store.upload_candidates import UploadExportFilter
 
 from .local_files import safe_relative
@@ -23,8 +25,9 @@ from .source_browser import OriginalSourceBrowser
 class OriginalArchiveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    download_name: ExportArchiveName | None = None
     export_filter: UploadExportFilter | None = None
-    import_ids: tuple[Identifier, ...] = Field(min_length=1, max_length=1000)
+    import_ids: tuple[Identifier, ...] = Field(min_length=1, max_length=10000)
 
 
 @dataclass(frozen=True)
@@ -42,12 +45,16 @@ def archive_files(
     project_id: str,
     region_code: str,
     command: OriginalArchiveRequest,
+    *,
+    authorize: Callable[[RawSource], None] | None = None,
 ) -> tuple[ArchiveFile, ...]:
     """Authorize every batch before sending any bytes, including unprocessed sources."""
     files: list[ArchiveFile] = []
     paths: set[str] = set()
     for import_id in dict.fromkeys(command.import_ids):
         raw = browser.source(organization_id, project_id, region_code, import_id)
+        if authorize is not None:
+            authorize(raw)
         try:
             root = safe_relative(raw.raw_source_id)
             for entry in browser.manifest(raw)["files"]:

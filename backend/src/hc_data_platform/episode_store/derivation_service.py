@@ -58,7 +58,7 @@ class TagDerivationService:
         if command:
             # This creates primary data. Export or Tag-edit permission alone does
             # not confer the existing ingestion/data-creation capability.
-            auth.require_capability("upload.manage", project, organization)
+            auth.require_capability("episode.derive", project, organization)
         return self.annotations.authorize(task_id, auth)
 
     @staticmethod

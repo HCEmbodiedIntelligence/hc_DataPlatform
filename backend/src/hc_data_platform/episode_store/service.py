@@ -101,7 +101,7 @@ class EpisodePackageService:
             return self.write_and_publish(source, steps, assets, schema=schema, metadata=metadata)
 
     @episode_stage("WRITE_PUBLISH", lambda self, source, *args, **kwargs: source.identity.episode_id)
-    def write_and_publish(self, source, steps, assets, *, schema, metadata):
+    def write_and_publish(self, source, steps, assets, *, schema, metadata, project=None):
         """Processing hand-off; returns a real package and collection data reference.
 
         A failed collection publication leaves a recoverable complete package,
@@ -127,10 +127,10 @@ class EpisodePackageService:
             # downloading what was just uploaded.
             for entry in manifest.files:
                 self.cache.adopt(package_file(root, entry.path), entry)
-        return self._publish_committed(receipt, source, schema)
+        return self._publish_committed(receipt, source, schema, project)
 
-    @episode_stage("RECOVER_BUNDLE", lambda self, plan: plan.input.identity.episode_id)
-    def recover_bundle(self, plan):
+    @episode_stage("RECOVER_BUNDLE", lambda self, plan, **_: plan.input.identity.episode_id)
+    def recover_bundle(self, plan, *, project=None):
         """Resume a frozen workflow plan without retaining temporary Arrow/media.
 
         Unlike a general write retry, this is only valid for a plan whose package
@@ -158,24 +158,27 @@ class EpisodePackageService:
         with ThreadPoolExecutor(max_workers=8) as pool:
             list(pool.map(present, package.manifest.files))
         self.schemas.register_schema(plan.schema_snapshot)
-        return self._publish_committed(package.receipt, source, plan.schema_snapshot)
+        return self._publish_committed(package.receipt, source, plan.schema_snapshot, project)
 
-    def _publish_committed(self, receipt, source, schema):
+    def _publish_committed(self, receipt, source, schema, project=None):
         # Browser derivatives are separate objects. Primary RGB-D bytes and the
         # complete package manifest remain unchanged, including on preview retry.
         with span("PREVIEW_PREPARE"):
             self.previews.prepare_all(receipt.data)
-        collection = self.collections.publish(receipt.data, schema)
-        ready = EpisodeDerivedReady(
-            data=receipt.data,
-            collection_version_id=collection.collection_version_id,
-            project_id=source.identity.project_id,
-            dataset_id=source.identity.dataset_id,
-            rollout_id=source.identity.rollout_id,
-            source_sha256=source.source_sha256,
-            converter_version=source.processor_version,
-            dataset_version=collection.version,
-            step_count=receipt.data.frame_count,
-            content_hash=collection.content_hash,
-        )
-        return collection, ready
+
+        def complete(collection):
+            ready = EpisodeDerivedReady(
+                data=receipt.data,
+                collection_version_id=collection.collection_version_id,
+                project_id=source.identity.project_id,
+                dataset_id=source.identity.dataset_id,
+                rollout_id=source.identity.rollout_id,
+                source_sha256=source.source_sha256,
+                converter_version=source.processor_version,
+                dataset_version=collection.version,
+                step_count=receipt.data.frame_count,
+                content_hash=collection.content_hash,
+            )
+            return project(collection, ready) if project else (collection, ready)
+
+        return self.collections.publish(receipt.data, schema, on_published=complete)

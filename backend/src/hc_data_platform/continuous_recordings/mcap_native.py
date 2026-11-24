@@ -17,6 +17,7 @@ import numpy as np
 from mcap.reader import make_reader
 from mcap.writer import CompressionType, Writer
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_NS
 from hc_data_platform.data_formats.depth_evidence import DepthEvidenceVideo
 from hc_data_platform.data_formats.rgb_video import RgbVideoWriter
 from hc_data_platform.episode_store.mcap_images import decode_camera, get_field
@@ -304,8 +305,8 @@ RGB_KEYFRAME_INTERVAL = 30
 DEPTH_ENCODER_POOLS = 4
 
 
-def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False, fill_action_gaps=False, source_inventory=None, source_sha256=None, preview_frames=None, rgb_keyframe_interval=RGB_KEYFRAME_INTERVAL, depth_encoder_pools=DEPTH_ENCODER_POOLS):
-    config = McapProcessingConfig.model_validate(config)
+def prepare(path, destination, config, progress=lambda: None, *, preserve_source=False, fill_action_gaps=False, interpolate_short_gaps=False, source_inventory=None, source_sha256=None, preview_frames=None, rgb_keyframe_interval=RGB_KEYFRAME_INTERVAL, depth_encoder_pools=DEPTH_ENCODER_POOLS):
+    config = McapProcessingConfig.model_validate(config).current_joint_timing()
     if config.semantic_output is not None:
         from .mcap_semantic import prepare_semantic
 
@@ -421,7 +422,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             if cfg.normalization:
                 from .joint_normalization import nearest_index
 
-                return nearest_index(stamps, target, tolerance or 20_000_000)
+                return nearest_index(stamps, target, JOINT_MATCH_NS if tolerance is None else tolerance)
             if cfg.action_required_axes is not None or cfg.state_required_axes is not None:
                 index = bisect.bisect_right(stamps, target) - 1
                 return index if index >= 0 and target - stamps[index] <= limit else None
@@ -455,6 +456,12 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                 **({"evidence_path": evidence} if c["kind"] == "depth" else {}),
             }
         numeric_times = {k: [x[0] for x in v] for k, v in numeric.items()}
+        repairs = {}
+        if interpolate_short_gaps:
+            from .joint_interpolation import short_gap_fills
+
+            repairs = {topic: short_gap_fills(primary, samples, numeric_times[topic], nearest)
+                       for topic, samples in numeric.items()}
         # This rule uses the preserved training clock. Only the leading and
         # trailing runs outside accepted command frames may use state labels.
         first_command = count
@@ -546,11 +553,18 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                                     origin = {"action_origin": kind, "source_frame": next_index,
                                               "state_reference_timestamp_ns": state_target}
                                     filled[kind] += 1
-                        if source_time is None:
+                        repair = repairs.get(topic, {}).get(index)
+                        if repair and not origin:
+                            sample = {**sample, **{name: item[0] for name, item in repair.items()}}
+                            origin["source_origins"] = {name: item[1] for name, item in repair.items()}
+                            if key == TOPICS[1] and source_time is None and set(cfg.required_axes("action")) <= sample.keys():
+                                origin["action_origin"] = "linear_interpolation"
+                        if source_time is None and (not sample or not set(cfg.required_axes(
+                                "state" if key == TOPICS[0] else "action")).issubset(sample)):
                             reasons.append(key + ":missing")
                         values[key] = {
                             "values": [sample.get(name, 0.0) for name in names]
-                            if source_time is not None
+                            if source_time is not None or sample
                             else [0.0 if cfg.action_required_axes is not None or cfg.state_required_axes is not None else None] * len(names),
                             "validity": [name in sample for name in names],
                             "source_timestamp_ns": source_time,
@@ -562,7 +576,7 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
                             "units": list(units) if units else ["unknown"] * len(names),
                         }
                     for topic, c in cameras.items():
-                        j = nearest(times[topic], stamp, 50_000_000 if c["kind"] == "depth" else 20_000_000)
+                        j = nearest(times[topic], stamp, 50_000_000 if c["kind"] == "depth" else JOINT_MATCH_NS)
                         row = frames.get(topic, times[topic][j]) if j is not None else None
                         if row is None:
                             reasons.append(topic + ":missing")
@@ -671,6 +685,9 @@ def prepare(path, destination, config, progress=lambda: None, *, preserve_source
             **({"action_gap_fill": {"policy": "edge_runs_next_frame_state_terminal_current",
                                     "filled_frames": sum(filled.values()), **filled}}
                if fill_action_gaps else {}),
+            **({"short_gap_interpolation": {"max_consecutive_frames": 2, "filled_frames": {
+                role: len(repairs[getattr(cfg, role + "_topic")]) for role in ("state", "action")
+            }}} if interpolate_short_gaps else {}),
             "invalid_frames": invalid,
             "frames": count,
             "source_frequency_hz": (

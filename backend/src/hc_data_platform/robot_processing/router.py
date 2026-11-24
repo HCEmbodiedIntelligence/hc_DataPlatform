@@ -267,7 +267,7 @@ def save_task_requirements(
     auth: VerifiedAuth,
     organization_id: OrgHeader,
 ):
-    authorize_scope(auth, project_id, "upload.manage", organization_id=organization_id)
+    authorize_scope(auth, project_id, "collection_task.manage", organization_id=organization_id)
     with connections()() as db:
         task_exists(db, organization_id, project_id, task_id)
         db.execute(

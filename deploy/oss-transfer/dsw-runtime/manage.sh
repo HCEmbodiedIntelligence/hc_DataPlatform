@@ -38,6 +38,10 @@ for _ in {1..120}; do
   if curl --noproxy '*' -fsS --max-time 3 http://127.0.0.1:8089/health/ready >/dev/null 2>&1 &&
      curl --noproxy '*' -fsS http://127.0.0.1:8089/ | grep -q 'id="root"' &&
      { [[ "$mode" == preview ]] || super status worker | grep -q RUNNING; }; then
+    if [[ "$mode" == live ]]; then
+      curl --noproxy '*' -fsS http://127.0.0.1:8089/config.js |
+        python3 "$rt/ctl/frontend_digest.py" --check-config || exit 1
+    fi
     echo "DSW $mode ready on 127.0.0.1:8089"; exit 0
   fi
   sleep 2

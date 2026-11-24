@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { request } from "../../../shared/api/http-client";
 import { createDomainError } from "../../../shared/api/domain-error";
 import { parseWire } from "../../../shared/api/validate";
@@ -39,6 +40,51 @@ function assertDashboardScope(
     retryable: false,
     httpStatus: null,
   });
+}
+
+const count = z.number().int().nonnegative();
+const analyticsSchema = z.object({
+  project_id: z.string(),
+  region_code: z.string(),
+  as_of: z.string().datetime({ offset: true }),
+  analytics: z.object({
+    buckets: z.array(
+      z.object({
+        start: z.string().datetime({ offset: true }),
+        episodes: count,
+        frames: count,
+        seconds: z.number().nonnegative(),
+      }),
+    ),
+    affected_packages: count,
+    reports: z.record(z.string(), count),
+    outcomes: z.record(z.string(), count),
+    issues: z.record(z.string(), count),
+  }),
+});
+export type DashboardAnalytics = z.infer<typeof analyticsSchema>["analytics"];
+
+export async function getDashboardAnalytics(
+  scope: DashboardScope,
+  window: DashboardWindow,
+  signal?: AbortSignal,
+  taskId?: string,
+) {
+  const endpoint = `${dashboardRoot(scope)}/analytics`;
+  const raw = await request<unknown>({
+    method: "GET",
+    path: endpoint,
+    query: {
+      ...window,
+      ...(taskId ? { task_id: taskId } : {}),
+      region_code: scope.regionCode,
+      timezone: scope.timezone,
+    },
+    signal,
+  });
+  const wire = parseWire(analyticsSchema, raw, { endpoint });
+  assertDashboardScope(wire, scope, "dashboard-analytics");
+  return wire;
 }
 
 export async function getDashboardActivity(

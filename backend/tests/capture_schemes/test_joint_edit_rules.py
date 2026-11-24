@@ -254,23 +254,94 @@ def test_cut_terminal_never_uses_state_outside_slice(tmp_path):
     assert rows[2]["/action"]["action_origin"] == "terminal_state"
 
 
-def test_only_unmatched_last_source_action_is_trimmed(tmp_path):
+@pytest.mark.parametrize("tail", [[143], [141, 142, 143], [141, 240]])
+def test_only_contiguous_unmatched_tail_is_trimmed(tmp_path, tail):
     raw, out = tmp_path / "raw.mcap", tmp_path / "derived.mcap"
-    record(raw, [101, 140, 143])
+    record(raw, [101, 140, *tail])
     cfg = rules()
     selection = select_mcap(raw, out, cfg)
     assert selection["message_counts"][cfg.state_topic] == 2
     assert selection["message_counts"][cfg.action_topic] == 2
     with out.open("rb") as stream:
         assert [m.sequence for _, _, m in make_reader(stream).iter_messages(topics=[cfg.action_topic])] == [0, 1]
-    drop, = json.loads(out.with_suffix(".audit.json").read_text())["dropped"]
-    assert drop["action_number"] == 3
-    assert drop["capture_time_ns"] - drop["last_state_capture_time_ns"] == 3_000_000
+    summary = selection["normalization"]["action_tail"]
+    assert summary["action_count"] == len(tail)
+    assert summary["tail_delta_ns"] == (tail[-1] - 140) * 1_000_000
+    drops = json.loads(out.with_suffix(".audit.json").read_text())["dropped"]
+    assert [d["action_number"] for d in drops] == list(range(3, 3 + len(tail)))
+    assert [d["capture_time_ns"] - d["last_state_capture_time_ns"] for d in drops] == [
+        (t - 140) * 1_000_000 for t in tail
+    ]
 
 
-@pytest.mark.parametrize("actions", [[101, 141, 142], [101, 143, 140]])
+@pytest.mark.parametrize("actions", [[141, 142], [101, 143, 140]])
 def test_nonfinal_unmatched_action_is_still_rejected(tmp_path, actions):
     raw = tmp_path / "raw.mcap"
     record(raw, actions)
     with pytest.raises(ValueError, match="MCAP_FOLLOWING_STATE_UNAVAILABLE"):
         select_mcap(raw, tmp_path / "derived.mcap", rules())
+
+
+@pytest.mark.parametrize("offset_ns,accepted", [(0, True), (1, False)])
+def test_tail_limit_is_inclusive_to_the_nanosecond(tmp_path, offset_ns, accepted):
+    from .test_mcap_v4 import fixture
+    raw = fixture(tmp_path / "raw.mcap", [(101, list(JOINTS)), (240, list(JOINTS))],
+                  command_offset_ns=offset_ns)
+    out = tmp_path / "selected.mcap"
+    if accepted:
+        selection = select_mcap(raw, out, rules())
+        assert selection["normalization"]["action_tail"]["tail_delta_ns"] == 100_000_000
+    else:
+        with pytest.raises(ValueError, match="tail_delta_ns=100000001"):
+            select_mcap(raw, out, rules())
+
+
+def test_long_tail_requires_review_and_frozen_legacy_still_rebuilds(tmp_path):
+    raw, out = tmp_path / "raw.mcap", tmp_path / "selected.mcap"
+    record(raw, [101, 142, 241])
+    with pytest.raises(ValueError, match=r"tail_actions=2 tail_delta_ns=101000000 limit_ns=100000000"):
+        select_mcap(raw, out, rules())
+    assert select_mcap(raw, out, rules(), legacy_tail=True)["message_counts"]["/action/joint_states"] == 1
+
+
+@pytest.mark.parametrize("actions,states", [
+    ([101, 150, 149], [100, 140]), ([102, 101, 143], [100, 140]),
+    ([101, 143], [140, 100]), ([101, 143, 143], [100, 140]),
+])
+def test_tail_requires_monotone_capture_times(tmp_path, actions, states):
+    raw = tmp_path / "raw.mcap"
+    record(raw, actions, state_times=states)
+    with pytest.raises(ValueError, match="MCAP_TIME_DISCONTINUITY"):
+        select_mcap(raw, tmp_path / "selected.mcap", rules())
+
+
+def test_final_left_action_uses_same_aligned_state_by_joint_name():
+    from hc_data_platform.alignment.models import AlignedRowV1, AlignedValueV1
+    from hc_data_platform.continuous_recordings.action_labels import aligned_left_action, left_action_axes
+    from hc_data_platform.data_formats.feature_names import native_feature_topic
+
+    selected = {"kind": "action_from_state", "enabled": True, "axes": ["Joint1_L", "Joint2_L"]}
+    state_names = ["Joint1_R", "Joint1_L", "Joint2_L"]
+    action_names = list(reversed(state_names))
+    spec = lambda names: {"names": names, "dtype": "float64"}
+    snapshot = {
+        "effective_adapter": {"configuration": {"postprocessing_rules": {"rules": [selected]}}},
+        "output": {"features": {"observation.state": spec(state_names), "action": spec(action_names)}},
+    }
+    state_key, action_key = map(native_feature_topic, ("observation.state", "action"))
+    def value(values, mask):
+        return AlignedValueV1(value={"values": values, "validity": mask}, valid=True,
+                              source_timestamps_ns=(10,), time_error_ns=0, strategy="nearest")
+    row = AlignedRowV1(rollout_id="recording", step_index=3, timestamp_ns=10, sample_valid=True,
+                        modalities={state_key: value([1., 2., 3.], [True, True, False]),
+                                    action_key: value([4., 5., 6.], [True, True, True])})
+    corrected = aligned_left_action(snapshot, row.modalities)(row)
+    command = corrected.modalities[action_key].value
+    assert command["values"] == [3., 2., 6.]
+    assert command["validity"] == [False, True, True]
+    assert command["source_origins"] == {
+        name: {"source": "aligned_observation_state", "frame": 3} for name in selected["axes"]
+    }
+    assert row.modalities[action_key].value["values"] == [4., 5., 6.]
+    selected["enabled"] = False
+    assert left_action_axes(snapshot) == ()

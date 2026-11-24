@@ -31,6 +31,9 @@ const capability: CapabilityRequest = {
   ...membership,
   request_id: "capability-1",
   capability_keys: ["dataset.read"],
+  allowed_decisions: ["approve", "reject"],
+  project_grants_added: ["dataset.read"],
+  project_grants_removed: [],
 };
 
 beforeEach(() => {

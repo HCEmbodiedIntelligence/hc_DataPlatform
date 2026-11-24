@@ -84,7 +84,7 @@ def joint_values(value, selected, required, *, topic, stamp, nan_as_missing=(), 
     return {n: float(positions[indices[n]]) for n in selected if positions and n in indices and n not in ignored}
 
 
-def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=None, source_inventory=None, source_sha256=None):
+def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=None, source_inventory=None, source_sha256=None, legacy_tail=False):
     """Validate the full container, decode only selected fields, preserve all three clocks."""
     from .mcap_contracts import HAND_COMMAND_FEATURES
     if metadata_output is None:
@@ -118,6 +118,9 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
     first_action_log = None
     generated = 0
     action_messages_seen = 0
+    first_unmatched_tail_error = None
+    last_action_stamp = None
+    ordered_for_tail = True
     synthesize_action = False
     if cfg.normalization or edits:
         from .joint_normalization import JOINTS, capture_time, normalize, reference
@@ -167,6 +170,8 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
                 else:
                     measured = joint_values(value, JOINTS, JOINTS, topic=channel.topic, stamp=stamp)
                 states.append((measured, reference(message, stamp, ordinal)))
+        ordered_for_tail = all(a[1]["capture_time_ns"] < b[1]["capture_time_ns"]
+                               for a, b in zip(states, states[1:]))
         states.sort(key=lambda item: (item[1]["capture_time_ns"], item[1]["message_index"]))
         state_times = [item[1]["capture_time_ns"] for item in states]
         if len(set(state_times)) != len(state_times):
@@ -218,6 +223,13 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
                     from .joint_edits import edit_joints
                     if "action" in roles:
                         action_messages_seen += 1
+                        if edits.action_from_state:
+                            stamp = capture_time(value, message, verify_domain=bool(cfg.normalization))
+                            if first_unmatched_tail_error and stamp <= state_times[-1]:
+                                raise ValueError(first_unmatched_tail_error)
+                            if last_action_stamp is not None and stamp <= last_action_stamp:
+                                ordered_for_tail = False
+                            last_action_stamp = stamp
                     try:
                         projected, evidence = edit_joints(
                             value, names, rules=edits, action="action" in roles, states=states, state_times=state_times,
@@ -227,10 +239,11 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
                         reason = str(exc)
                         drop = {"topic": topic, "message_index": ordinal, "log_time_ns": message.log_time, "reason": reason}
                         if reason.startswith("MCAP_FOLLOWING_STATE_UNAVAILABLE:"):
-                            # Only trim a trailing source command after retaining a real command.
-                            if (topic != cfg.action_topic or counts[topic] <= generated
-                                    or action_messages_seen != inventory[channel.topic]["message_count"]):
+                            if topic != cfg.action_topic or not state_times or counts[topic] <= generated:
                                 raise
+                            if not legacy_tail and not ordered_for_tail:
+                                raise ValueError("MCAP_TIME_DISCONTINUITY: unordered capture times before or in action tail") from exc
+                            first_unmatched_tail_error = first_unmatched_tail_error or reason
                             drop.update(
                                 action_number=action_messages_seen,
                                 capture_time_ns=capture_time(value, message, verify_domain=bool(cfg.normalization)),
@@ -250,6 +263,7 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
                         projected, evidence = normalize(
                             value, names, topic=topic, message=message, ordinal=ordinal,
                             rules=cfg.postprocessing_rules if "action" in roles else None,
+                            fallback_ms=cfg.normalization.waist_fallback_ms,
                             states=states, state_times=state_times, action="action" in roles or topic.startswith("/action/"),
                         )
                     except ValueError as exc:
@@ -328,6 +342,10 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
         # Source metadata/attachments are not an implicit export whitelist.
         writer.add_metadata("hc.capture.format", {"parser_version": "native-mcap-recording/4" if cfg.normalization else "native-mcap-recording/3", "output": metadata_output})
         writer.finish()
+    tail = None
+    if first_unmatched_tail_error and not legacy_tail:
+        from .action_tail import summarize_tail
+        tail = summarize_tail(Path(path), cfg, sources, dropped, progress)
     def sha(file):
         h = hashlib.sha256()
         with Path(file).open("rb") as stream:
@@ -354,6 +372,7 @@ def select_mcap(path, target, cfg, progress=lambda: None, *, metadata_output=Non
             "fallback_by_axis": dict(fallback_counts),
             "fallback_messages": sum(any(v["source"] == "state_fallback" for v in row["axes"].values()) for row in audit),
             "dropped_action_messages": len(dropped),
+            **({"action_tail": tail} if tail else {}),
             "unavailable_fields": dict(Counter(f for row in audit for f in row["unavailable_fields"])),
         }
         audit_path.write_bytes(canonical({**normalization, "messages": audit, "dropped": dropped}))

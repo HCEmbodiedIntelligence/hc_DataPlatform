@@ -6,7 +6,9 @@ from pathlib import Path
 base=Path("/mnt/workspace/hc-platform")
 runtime=base/"runtime"
 run=base/"service"
-role=sys.argv[1]
+service_name=sys.argv[1]
+replica = service_name in {f"worker-{index}" for index in range(2, 13)}
+role = "worker" if replica else service_name
 python=str(runtime/"venv/bin/python")
 commands={"api":[python,"-m","uvicorn","hc_data_platform.core.app:create_app","--factory","--host","127.0.0.1","--port","18001"],
           "worker":[python,"-m","hc_data_platform.workflow.worker"],
@@ -22,7 +24,14 @@ if role == "script":
 if role in ("api","worker","verify","script"):
     env.update(json.loads((run/("worker.json" if role=="worker" else "api.json")).read_text()))
 if role == "worker":
-    env["HC_WORKER_READINESS_FILE"] = str(base/"cache/service-home/worker-ready")
+    # DSW mounts /tmp on the persistent PostgreSQL volume. Keep disposable MCAP
+    # files and SQLite sorting on the separate container disk.
+    env.setdefault("TMPDIR", "/var/tmp")
+    env["HC_WORKER_READINESS_FILE"] = str(base/"cache/service-home"/f"{service_name}-ready")
+    if replica:
+        env.update(HC_WORKER_ROLE="main", HC_WORKER_BACKGROUND_SERVICES="false",
+                   HC_WORKFLOW_ACTIVITY_FACTORY="hc_data_platform.runtime:activity_dependencies")
+        env.pop("HC_INSTANCE_ID", None)
 account=pwd.getpwnam("hcplatform")
 os.setgroups([])
 os.setgid(account.pw_gid)

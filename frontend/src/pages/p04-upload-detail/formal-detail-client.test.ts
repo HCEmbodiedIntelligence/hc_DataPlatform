@@ -29,11 +29,7 @@ const session = {
   rollout_id: "rollout-a",
   data_package_id: "package-a",
   manifest_fingerprint: "manifest-fingerprint-a",
-  expected_crc64: "1",
-  expected_sha256: "sha256-a",
   expected_size: 1024,
-  object_key: "objects/package-a.mcap",
-  source_type: "BROWSER_MULTIPART",
   status: "RAW_COMMITTED",
   workflow: {
     event_id: "a1111111-1111-4111-8111-111111111111",
@@ -146,7 +142,7 @@ describe("P04 formal upload detail client", () => {
       if (url.endsWith(`/upload-sessions/${session.session_id}/manifest`)) {
         return Promise.resolve(json(manifest));
       }
-      if (url.endsWith(`/upload-sessions/${session.session_id}`)) {
+      if (url.endsWith(`/upload-sessions/${session.session_id}/summary`)) {
         return sessionResponse;
       }
       if (url.endsWith("/rollouts/rollout-a/quality")) {
@@ -160,7 +156,7 @@ describe("P04 formal upload detail client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
       `/api/v1/projects/project-a/regions/cn-test/upload-sessions/${session.session_id}/manifest`,
-      `/api/v1/projects/project-a/regions/cn-test/upload-sessions/${session.session_id}`,
+      `/api/v1/projects/project-a/regions/cn-test/upload-sessions/${session.session_id}/summary`,
     ]);
 
     resolveSession(json(session));

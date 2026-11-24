@@ -86,6 +86,7 @@ function progress(task: CollectionTask): CollectionTaskProgress {
   const received = task.collection_task_id.endsWith("02") ? 98 : 146;
   const evaluated = received - 7;
   const passed = evaluated - 8;
+  const admitted = passed - 3;
   return {
     schema_version: "1",
     collection_task_id: task.collection_task_id,
@@ -94,8 +95,8 @@ function progress(task: CollectionTask): CollectionTaskProgress {
     status: task.status,
     as_of: "2026-08-18T05:30:00Z",
     received_package_count: received,
-    captured_duration_seconds: received * 75,
-    duration_observed_package_count: received,
+    captured_duration_seconds: admitted * 75,
+    duration_observed_package_count: admitted,
     duration_unknown_package_count: 0,
     qc: {
       evaluated_count: evaluated,

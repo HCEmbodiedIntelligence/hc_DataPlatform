@@ -56,6 +56,7 @@ from hc_data_platform.core.structured_logging import (
     log_event,
 )
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
+from hc_data_platform.episode_store.validation_cache import PackageChangedDuringValidation
 from hc_data_platform.ingest.manifest import ManifestParserPort
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -596,6 +597,10 @@ async def _invoke(
             str(exc),
             type=exc.code,
             non_retryable=isinstance(exc, (CatalogConflictError, SchemaIncompatibleError)),
+        ) from exc
+    except PackageChangedDuringValidation as exc:
+        raise ApplicationError(
+            str(exc), type="EPISODE_PACKAGE_CHANGED_DURING_VALIDATION", non_retryable=False
         ) from exc
     except (KeyError, TypeError, ValidationError, ValueError) as exc:
         raise ApplicationError(

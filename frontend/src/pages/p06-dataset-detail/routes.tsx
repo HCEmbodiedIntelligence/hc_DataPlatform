@@ -16,7 +16,7 @@ export const p06Routes: PageRoute[] = [
   },
   {
     path: "/datasets/:datasetId/versions/:versionId/episodes/:episodeId/view",
-    requiredCapabilities: ["episode.read"],
+    requiredCapabilities: ["episode.workspace"],
     navigationOwnerPageId: "P05",
     lazy: async () => ({
       Component: (await import("./ViewerShell")).EpisodeViewerShell,

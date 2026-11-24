@@ -52,6 +52,45 @@ components:
       - total
       title: BatchAccepted
       type: object
+    BatchQCSelection:
+      properties:
+        batch_numbers:
+          items:
+            exclusiveMinimum: 0.0
+            type: integer
+          minItems: 1
+          title: Batch Numbers
+          type: array
+      required:
+      - batch_numbers
+      title: BatchQCSelection
+      type: object
+    BatchQCState:
+      properties:
+        completed:
+          title: Completed
+          type: integer
+        message:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Message
+        phase:
+          title: Phase
+          type: string
+        total:
+          title: Total
+          type: integer
+        version:
+          title: Version
+          type: string
+      required:
+      - version
+      - phase
+      - total
+      - completed
+      title: BatchQCState
+      type: object
     CameraMapping:
       additionalProperties: false
       properties:
@@ -357,6 +396,29 @@ components:
       - status
       - available
       title: EpisodeResolution
+      type: object
+    FailedMcapSelection:
+      additionalProperties: false
+      properties:
+        collection_task_id:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Collection Task Id
+          type: string
+        processing_ids:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          minItems: 1
+          title: Processing Ids
+          type: array
+      required:
+      - collection_task_id
+      - processing_ids
+      title: FailedMcapSelection
       type: object
     InspectOssImport:
       additionalProperties: false
@@ -920,6 +982,13 @@ components:
     OriginalArchiveRequest:
       additionalProperties: false
       properties:
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
         export_filter:
           anyOf:
           - $ref: '#/components/schemas/UploadExportFilter'
@@ -930,7 +999,7 @@ components:
             minLength: 1
             pattern: ^[A-Za-z0-9._-]+$
             type: string
-          maxItems: 1000
+          maxItems: 10000
           minItems: 1
           title: Import Ids
           type: array
@@ -1232,6 +1301,10 @@ components:
     ReprocessMcap:
       additionalProperties: false
       properties:
+        failed_selection:
+          anyOf:
+          - $ref: '#/components/schemas/FailedMcapSelection'
+          - type: 'null'
         plan_revision:
           minimum: 1.0
           title: Plan Revision
@@ -1967,6 +2040,256 @@ paths:
       security:
       - bearerAuth: []
       summary: Set Mcap Profile
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/tasks/{task_id}/failed-mcap:
+    get:
+      operationId: listTaskFailedMcapFiles
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: task_id
+        required: true
+        schema:
+          title: Task Id
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Task Failed Mcap
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/qc-reports/download:
+    post:
+      operationId: downloadSelectedUploadQCReports
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchQCSelection'
+        required: true
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Selected Qc Reports
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/{batch_number}/qc-report:
+    post:
+      operationId: prepareUploadBatchQCReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: batch_number
+        required: true
+        schema:
+          title: Batch Number
+          type: integer
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchQCState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Prepare Upload Qc Report
+      tags:
+      - lerobot-imports
+  /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/{batch_number}/qc-report/{version}:
+    get:
+      operationId: getUploadBatchQCReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: batch_number
+        required: true
+        schema:
+          title: Batch Number
+          type: integer
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchQCState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Upload Qc Report
+      tags:
+      - lerobot-imports
+  ? /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/upload-batches/{batch_number}/qc-report/{version}/download
+  : get:
+      operationId: downloadUploadBatchQCReport
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: batch_number
+        required: true
+        schema:
+          title: Batch Number
+          type: integer
+      - in: path
+        name: version
+        required: true
+        schema:
+          title: Version
+          type: string
+      - in: header
+        name: X-Organization-Id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          title: X-Organization-Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                format: binary
+                type: string
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Upload Qc Report
       tags:
       - lerobot-imports
   /api/v1/projects/{project_id}/regions/{region_code}/lerobot-imports/{import_id}/assets:authorize-parts:

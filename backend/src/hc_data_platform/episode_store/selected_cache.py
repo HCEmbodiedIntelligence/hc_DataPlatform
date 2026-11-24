@@ -85,6 +85,8 @@ def materialize_selected(
             cfg,
             checkpoint,
             metadata_output=selected.get("format_metadata_output"),
+            # Reproduce previously accepted tails under their frozen selection hash.
+            legacy_tail=not (selected.get("normalization") or {}).get("action_tail"),
         )
     h = hashlib.sha256()
     with destination.open("rb") as stream:

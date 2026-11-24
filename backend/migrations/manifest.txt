@@ -199,3 +199,11 @@ ingest/038_original_mcap_content_lookup.sql
 ingest/039_mcap_duplicate_submissions.sql
 ingest/040_upload_batches.sql
 collection_tasks/0010_collection_notes.sql
+ingest/041_teleoperation.sql
+episode_store/0022_export_file_names.sql
+robotics/0008_capture_scheme_robot_history.sql
+manual_cleaning/0005_discard_reported_package.sql
+ingest/042_annotation_tag_library.sql
+security/024_project_role_grants.sql
+annotation/0021_model_annotation.sql
+security/025_membership_administrators.sql

@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 from hc_data_platform.quality.models import (
-    ActionQualityProfileV1, CompleteStepProfileV1, ImageQualityProfileV1,
+    QualityCode, ActionQualityProfileV1, CompleteStepProfileV1, ImageQualityProfileV1,
     ModalityOffsetProfileV1, PointCloudQualityProfileV1, TopicTimingProfileV1,
 )
 
@@ -16,8 +16,8 @@ class CaptureTimingRules(BaseModel):
     minimum_frequency_ratio_reject: float = Field(default=0.75, ge=0, le=1)
     minimum_coverage_ratio_risk: float = Field(default=0.98, ge=0, le=1)
     minimum_coverage_ratio_reject: float = Field(default=0.8, ge=0, le=1)
-    maximum_gap_ns_risk: int = Field(default=100_000_000, ge=0)
-    maximum_gap_ns_reject: int = Field(default=1_000_000_000, ge=0)
+    maximum_gap_ns_risk: int = Field(default=25_000_000, ge=0)
+    maximum_gap_ns_reject: int = Field(default=25_000_000, ge=0)
     maximum_consecutive_missing_risk: int = Field(default=2, ge=0)
     maximum_consecutive_missing_reject: int = Field(default=29, ge=0)
     maximum_duplicate_timestamps_risk: int = Field(default=0, ge=0)
@@ -36,9 +36,15 @@ class CaptureTimingRules(BaseModel):
         return self
 
 
+class CaptureSynchronizationRules(ModalityOffsetProfileV1):
+    maximum_p95_offset_ns_risk: int = Field(default=25_000_000, ge=0)
+    maximum_p95_offset_ns_reject: int = Field(default=25_000_000, ge=0)
+
+
 class CaptureQualityPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True,
                               json_schema_extra=lambda schema: schema.pop("required", None))
+    enabled_codes: tuple[QualityCode, ...] | None = None
     missing_required: Literal["reject"] = "reject"
     timing: CaptureTimingRules = Field(default_factory=CaptureTimingRules)
     feature_timing: dict[str, CaptureTimingRules] = Field(default_factory=dict)
@@ -49,7 +55,7 @@ class CaptureQualityPolicy(BaseModel):
     action: ActionQualityProfileV1 = Field(default_factory=ActionQualityProfileV1)
     point_cloud: PointCloudQualityProfileV1 = Field(default_factory=PointCloudQualityProfileV1)
     feature_point_clouds: dict[str, PointCloudQualityProfileV1] = Field(default_factory=dict)
-    synchronization: ModalityOffsetProfileV1 = Field(default_factory=ModalityOffsetProfileV1)
+    synchronization: CaptureSynchronizationRules = Field(default_factory=CaptureSynchronizationRules)
     completeness: CompleteStepProfileV1 = Field(default_factory=CompleteStepProfileV1)
 
     @model_serializer(mode="wrap")

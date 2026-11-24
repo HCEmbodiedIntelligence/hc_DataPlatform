@@ -294,6 +294,7 @@ from hc_data_platform.storage.postgres import (
     PostgresStorageRepository,
     StorageTransactionConnectionFactory,
 )
+from hc_data_platform.storage.usage_objects import oss_usage_objects
 from hc_data_platform.storage.router import configure_storage_governance
 from hc_data_platform.storage.service import StorageGovernanceService
 from hc_data_platform.storage.task_usage import TaskStorageUsageReader
@@ -935,6 +936,11 @@ def build_runtime(
             ),
             S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
             disk_path=resolved.storage_disk_usage_path,
+            report_root=resolved.storage_usage_report_root,
+            report_namespace=(resolved.postgres_dsn, resolved.object_store_endpoint, resolved.object_store_bucket,
+                              resolved.object_store_prefix, resolved.object_store_provider, resolved.object_store_cache_root),
+            inventory_snapshot=(lambda: oss_usage_objects(s3_client, overflow_uri=resolved.storage_usage_overflow_uri))
+            if resolved.environment == "local" and resolved.object_store_provider == "oss" else None,
             object_store_provider=resolved.object_store_provider,
             object_scope=f"oss://{resolved.object_store_bucket}/{resolved.object_store_prefix.strip('/')}/",
             local_usage_roots=resolved.storage_local_usage_roots,

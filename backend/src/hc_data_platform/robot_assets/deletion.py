@@ -16,6 +16,7 @@ Kind = Literal[
     "source",
     "collection_job",
     "recording_upload",
+    "capture_scheme",
 ]
 
 
@@ -143,6 +144,20 @@ REFERENCES = (
         "可建立目标实例的新配置关联；数据清空后可清理当前关联。历史版本不可删除，保留追溯。",
     ),
     Reference(
+        "capture_scheme",
+        "采集方案关联",
+        "ingest.capture_scheme_links",
+        "r.robot_id=%s AND r.active",
+        """r.scheme_id AS id,COALESCE(v.document->>'name',r.scheme_id) AS name,
+        'ACTIVE'::text AS status,NULL::text AS project_id,NULL::text AS region_code,
+        NULL::text AS collection_task_id,NULL::text AS raw_source_id,NULL::text AS dataset_id,
+        r.scheme_id,r.scheme_version AS version""",
+        "请在机器人实例的「采集方案」中移除关联。",
+        joins="""JOIN ingest.capture_scheme_versions v
+        ON (v.organization_id,v.scheme_id,v.version)
+        = (r.organization_id,r.scheme_id,r.scheme_version)""",
+    ),
+    Reference(
         "component",
         "拓扑组件",
         "robotics.robot_asset_components",
@@ -233,6 +248,7 @@ def read_deletion_check(cursor, organization_id, robot_id, auth, kind, offset, l
             "recording_upload": "r.upload_document #>> '{command,robot_id}'",
             "upload": "r.authenticated_robot_id",
             "configuration": "r.robot_id",
+            "capture_scheme": "r.robot_id",
             "component": "r.robot_id",
             "calibration": "r.robot_instance_id",
             "source": "r.source_document #>> '{binding,robot_id}'",

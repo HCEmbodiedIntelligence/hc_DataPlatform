@@ -191,6 +191,10 @@ class LocalCacheBucket:
             )
             old_target = self.overflow.target(directory / "payload")
             try:
+                expected_sha = headers.get("x-oss-meta-sha256")
+                if ((expected_sha is not None and sha != expected_sha)
+                        or ("content-length" in headers and size != int(headers["content-length"]))):
+                    raise ValueError("cache payload differs from its frozen receipt")
                 (staging / "meta.json").write_text(json.dumps(meta))
                 os.utime(staging / "meta.json", (self.clock(), self.clock()))
                 if directory.exists():
@@ -208,7 +212,7 @@ class LocalCacheBucket:
                 self.overflow.release(self.overflow.target(staging / "payload"))
                 raise
             self.overflow.release(old_target)
-            return SimpleNamespace(etag=meta["etag"], headers={})
+            return SimpleNamespace(etag=meta["etag"], headers={"x-oss-meta-sha256": sha})
 
     def remove_directory(self, directory):
         self.overflow.release(self.overflow.target(directory / "payload"))
@@ -281,7 +285,7 @@ class LocalCacheBucket:
                     headers={},
                 )
             )
-        return SimpleNamespace(parts=parts, is_truncated=False, next_part_number_marker="")
+        return SimpleNamespace(parts=parts, is_truncated=False, next_marker="")
 
     def complete_multipart_upload(self, key, upload_id, parts, headers=None):
         self.sweep()
@@ -369,8 +373,9 @@ class LocalCacheBucket:
             os.utime(directory / "meta.json", (self.clock(), self.clock()))
             return directory / "payload", meta
 
-    def listing(self, prefix=""):
-        self.sweep()
+    def listing(self, prefix="", *, sweep=True):
+        if sweep:
+            self.sweep()
         items = []
         for kind in sorted(CACHE_KINDS):
             if prefix and not (

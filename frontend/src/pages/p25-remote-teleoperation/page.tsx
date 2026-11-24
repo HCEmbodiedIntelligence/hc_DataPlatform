@@ -1,159 +1,209 @@
-import { useState } from "react";
-import { Button, Card, Flex, Segmented, Select, Tag } from "antd";
-import { CameraOff, Minus, Play, Plus, Square } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Button, Card, Empty, Flex, Spin, Tag, Typography } from "antd";
+import { RefreshCw } from "lucide-react";
+import {
+  useScopedQuery,
+  useScopeQueryRevision,
+} from "../../shared/api/use-scoped-query";
+import { useOrganizationCapabilities } from "../../shared/auth/use-capabilities";
+import { useShellStore } from "../../shared/scope/shell-store";
 import { PageHeader } from "../../shared/ui/layout";
+import { connectVR, onlineRobots, type OnlineRobot } from "./connection";
+import type { DeviceStatus } from "./vr-view";
 import styles from "./styles.module.css";
 
-const axes = ["X", "Y", "Z"] as const;
-type Axis = (typeof axes)[number];
-const origin = { X: 0, Y: 0, Z: 0 };
-const limit = 100;
+const idle: DeviceStatus = { video: false, control: false, inputs: [] };
 
-export function Component() {
-  const [station, setStation] = useState("双臂采集台 A");
-  const [active, setActive] = useState(false);
-  const [position, setPosition] = useState(origin);
-  const [step, setStep] = useState(10);
-  const [view, setView] = useState("位姿示意");
-  const [camera, setCamera] = useState("主相机");
+function Workspace({ org, allowed }: { org: string; allowed: (id: string) => boolean }) {
+  const [vr, setVr] = useState("正在检测");
+  const [supported, setSupported] = useState(false);
+  const [robot, setRobot] = useState<OnlineRobot | null>(null);
+  const [phase, setPhase] = useState("未连接");
+  const [device, setDevice] = useState(idle);
+  const [error, setError] = useState("");
+  const active = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
 
-  function jog(axis: Axis, direction: number) {
-    if (!active) return;
-    setPosition((point) => ({
-      ...point,
-      [axis]: Math.min(limit, Math.max(-limit, point[axis] + direction * step)),
-    }));
+  const robots = useScopedQuery(
+    org ? { organizationId: org } : null,
+    "teleoperation",
+    "robots",
+    null,
+    {
+      queryFn: ({ signal }) => onlineRobots(org, signal),
+      refetchInterval: 3000,
+      retry: false,
+    },
+  );
+  const detect = useCallback(async () => {
+    let available = false;
+    let message = "本机未检测到可用头显";
+    if (!window.isSecureContext)
+      message = "请通过 HTTPS 或 localhost 访问以检测头显";
+    else if (!navigator.xr) message = "当前浏览器未提供 WebXR";
+    else {
+      try {
+        available = await navigator.xr.isSessionSupported("immersive-vr");
+        if (available) message = "本机头显可用";
+      } catch {
+        message = "无法访问 VR 设备，请检查浏览器权限";
+      }
+    }
+    if (mounted.current) {
+      setSupported(available);
+      setVr(message);
+    }
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    void detect();
+    navigator.xr?.addEventListener("devicechange", detect);
+    const leave = () => active.current?.abort();
+    window.addEventListener("pagehide", leave);
+    return () => {
+      mounted.current = false;
+      navigator.xr?.removeEventListener("devicechange", detect);
+      window.removeEventListener("pagehide", leave);
+      leave();
+    };
+  }, [detect]);
+
+  async function connect(target: OnlineRobot) {
+    if (active.current || !allowed(target.robot_id)) return;
+    const life = new AbortController();
+    active.current = life;
+    setRobot(target);
+    setError("");
+    setDevice(idle);
+    setPhase("等待头显授权");
+    try {
+      await connectVR(org, target.robot_id, life.signal, setPhase, setDevice);
+    } catch (cause) {
+      if (mounted.current && !life.signal.aborted)
+        setError(cause instanceof Error ? cause.message : "连接失败");
+    } finally {
+      active.current = null;
+      if (mounted.current) {
+        setRobot(null);
+        setDevice(idle);
+        setPhase("未连接");
+        void robots.refetch();
+        void detect();
+      }
+    }
   }
 
   return (
     <div className={styles.page}>
       <PageHeader
         title="远程遥操作"
-        description="在示例工作站预览末端点动和相机视图，所有操作仅在当前页面模拟。"
+        description="选择在线机器人，连接这台电脑上的 VR 设备。"
       />
+      {error && <Alert type="error" showIcon message={error} />}
       <div className={styles.layout}>
-        <Card title="工作站视图" extra={<Tag>模拟工作站</Tag>}>
-          <Flex gap={12} wrap="wrap" align="center" justify="space-between">
-            <Segmented
-              aria-label="工作站视图"
-              options={["位姿示意", "相机画面"]}
-              value={view}
-              onChange={setView}
-            />
-            {view === "相机画面" && (
-              <Select
-                aria-label="相机视角"
-                value={camera}
-                onChange={setCamera}
-                options={["主相机", "腕部相机"].map((value) => ({ value }))}
-              />
-            )}
-          </Flex>
-          <div className={styles.monitor}>
-            <span className={styles.caption}>
-              {station} · {view === "位姿示意" ? "XY 俯视图" : camera}
-            </span>
-            {view === "位姿示意" ? (
-              <div
-                className={styles.plot}
-                role="img"
-                aria-label={`末端位置 X ${position.X}，Y ${position.Y} 毫米`}
-              >
-                <span className={styles.horizontal} />
-                <span className={styles.vertical} />
-                <span className={styles.axisX}>+X</span>
-                <span className={styles.axisY}>+Y</span>
-                <span
-                  className={styles.cursor}
-                  style={{
-                    left: `${50 + position.X / 2}%`,
-                    top: `${50 - position.Y / 2}%`,
-                  }}
-                />
-              </div>
-            ) : (
-              <div className={styles.offline}>
-                <CameraOff size={32} aria-hidden="true" />
-                <strong>{camera}尚未接入</strong>
-                <span>视频流接入后将在此显示</span>
-              </div>
-            )}
-          </div>
-          <dl className={styles.readings} aria-label="模拟末端坐标">
-            {axes.map((axis) => (
-              <div key={axis}>
-                <dt>{axis} 轴</dt>
-                <dd>
-                  {position[axis]} <small>mm</small>
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
         <Card
-          title="点动控制"
+          title="支持遥操作的机器人"
           extra={
-            <Tag color={active ? "processing" : undefined}>
-              {active ? "模拟中" : "待机"}
-            </Tag>
+            <Button
+              icon={<RefreshCw size={15} />}
+              aria-label="刷新在线机器人"
+              onClick={() => void robots.refetch()}
+              disabled={!org}
+            />
           }
         >
-          <div className={styles.controls}>
-            <label htmlFor="teleop-station">示例工作站</label>
-            <Select
-              id="teleop-station"
-              disabled={active}
-              value={station}
-              options={["双臂采集台 A", "单臂采集台 B"].map((value) => ({
-                value,
-              }))}
-              onChange={(value) => {
-                setStation(value);
-                setPosition(origin);
-              }}
+          {!org ? (
+            <Empty description="请先选择组织" />
+          ) : robots.isError ? (
+            <Alert
+              type="error"
+              showIcon
+              message="无法获取在线机器人"
+              description={robots.error.message}
             />
-            <label id="teleop-step">点动步长</label>
-            <Segmented
-              block
-              aria-labelledby="teleop-step"
-              value={step}
-              onChange={setStep}
-              options={[1, 5, 10].map((value) => ({
-                value,
-                label: `${value} mm`,
-              }))}
-            />
-            <div className={styles.jogs}>
-              {axes.map((axis) => (
-                <div className={styles.jog} key={axis}>
-                  <strong>{axis} 轴</strong>
+          ) : robots.isPending ? (
+            <Spin aria-label="正在获取机器人" />
+          ) : robots.data.length === 0 ? (
+            <Empty description="当前没有机器人上报遥操作心跳" />
+          ) : (
+            <ul className={styles.robots}>
+              {robots.data.map((item) => (
+                <li key={item.robot_id}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <Typography.Text type="secondary">
+                      {item.robot_id}
+                    </Typography.Text>
+                  </div>
+                  <Tag color={item.busy ? "gold" : "green"}>
+                    {item.busy ? "占用中" : "可连接"}
+                  </Tag>
                   <Button
-                    aria-label={`${axis} 轴减小`}
-                    icon={<Minus size={16} />}
-                    disabled={!active || position[axis] <= -limit}
-                    onClick={() => jog(axis, -1)}
-                  />
-                  <Button
-                    aria-label={`${axis} 轴增大`}
-                    icon={<Plus size={16} />}
-                    disabled={!active || position[axis] >= limit}
-                    onClick={() => jog(axis, 1)}
-                  />
-                </div>
+                    disabled={!!robot || item.busy || !supported || !allowed(item.robot_id)}
+                    onClick={() => void connect(item)}
+                  >
+                    连接
+                  </Button>
+                </li>
               ))}
-            </div>
-            <span className={styles.hint}>每轴模拟范围 −100 至 100 mm</span>
-            <Button
-              type="primary"
-              danger={active}
-              icon={active ? <Square size={15} /> : <Play size={15} />}
-              onClick={() => setActive(!active)}
-            >
-              {active ? "停止模拟" : "开始模拟"}
+            </ul>
+          )}
+          {robots.data && robots.data.every(item => !allowed(item.robot_id)) && (
+            <Typography.Text type="secondary">
+              当前账号没有遥操作连接权限。
+            </Typography.Text>
+          )}
+        </Card>
+        <Card
+          title="本机 VR 与连接状态"
+          extra={
+            <Button onClick={() => void detect()} disabled={!!robot}>
+              检测设备
             </Button>
-          </div>
+          }
+        >
+          <dl className={styles.details}>
+            <dt>VR 头显</dt>
+            <dd>{robot && phase !== "等待头显授权" ? "已进入 VR 会话" : vr}</dd>
+            <dt>输入设备</dt>
+            <dd>
+              {device.inputs.join("、") ||
+                (robot ? "等待设备输入" : "进入 VR 后检测")}
+            </dd>
+            <dt>目标机器人</dt>
+            <dd>{robot?.name || "尚未选择"}</dd>
+            <dt>网络连接</dt>
+            <dd>{phase}</dd>
+            <dt>机器人视频</dt>
+            <dd>
+              {device.video ? "正在接收画面" : robot ? "等待视频帧" : "未连接"}
+            </dd>
+            <dt>控制通道</dt>
+            <dd>
+              {device.control ? "已打开" : robot ? "等待通道打开" : "未连接"}
+            </dd>
+          </dl>
+          {robot && (
+            <Flex justify="end">
+              <Button onClick={() => active.current?.abort()}>断开连接</Button>
+            </Flex>
+          )}
         </Card>
       </div>
     </div>
+  );
+}
+
+export function Component() {
+  const org = useShellStore((s) => s.scope?.organizationId ?? "");
+  const revision = useScopeQueryRevision();
+  const { has } = useOrganizationCapabilities(org);
+  const allowed = (id: string) => has("teleoperation.connect") || has(`teleoperation.connect/${id}`);
+  return (
+    <Workspace
+      key={`${org}/${revision}`}
+      org={org}
+      allowed={allowed}
+    />
   );
 }

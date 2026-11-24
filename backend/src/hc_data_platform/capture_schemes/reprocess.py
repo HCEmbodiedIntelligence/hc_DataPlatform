@@ -4,16 +4,22 @@ from types import SimpleNamespace
 
 from pydantic import Field
 
-from . import plans
+from . import failed_mcap, plans
 from .common import audit, digest, encoded, now, reject
 from .processing import require_snapshot, resolve_raw_snapshot, validate_snapshot
 from .references import Identifier, Strict
 from .schema import format_version
 
 
+class FailedMcapSelection(Strict):
+    collection_task_id: Identifier
+    processing_ids: tuple[Identifier, ...] = Field(min_length=1)
+
+
 class ReprocessMcap(Strict):
     request_id: Identifier
     plan_revision: int = Field(ge=1)
+    failed_selection: FailedMcapSelection | None = None
 
 
 def _retryable_intake(original):
@@ -52,7 +58,13 @@ def request(db, scope, raw, manifest, command, actor):
         WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
         AND request_id=%s""", (*scope, raw_id, command.request_id),
     ).fetchone()
+    selection = command.failed_selection
+    selected = selection.model_dump(mode="json") if selection else None
+    if selected:
+        selected["processing_ids"] = sorted(set(selected["processing_ids"]))
     if previous:
+        if previous[0].get("failed_selection") != selected:
+            reject("CAPTURE_REPROCESS_CONFLICT", "此请求编号已绑定其他处理记录")
         if previous[1] != digest(previous[0]) or previous[0]["plan_revision"] != command.plan_revision:
             reject("CAPTURE_REPROCESS_CONFLICT", "此请求编号已绑定其他方案版本")
         return previous[0]
@@ -76,6 +88,7 @@ def request(db, scope, raw, manifest, command, actor):
     ).fetchall()
     if any(row[0] in {"PENDING", "RUNNING"} for row in statuses):
         reject("CAPTURE_REPROCESS_BUSY", "该 Raw 正在处理，请等待本次执行结束")
+    paths = failed_mcap.selected_paths(db, scope, task, raw_id, command, manifest)
     original = resolve_raw_snapshot(db, scope, raw_id)
     if _retryable_intake(original):
         identity = _bound_intake(db, scope, raw_id, original)
@@ -107,7 +120,8 @@ def request(db, scope, raw, manifest, command, actor):
     }
     snapshot = {**content, "snapshot_sha256": digest(content)}
     enqueue_files(db, scope, raw, manifest, SimpleNamespace(collection_task_id=task, robot_id=robot),
-                  McapProcessingConfig.model_validate(resolved["adapter"]["configuration"]), reference=snapshot)
+                  McapProcessingConfig.model_validate(resolved["adapter"]["configuration"]), reference=snapshot,
+                  source_paths=paths)
     records = db.execute(
         """SELECT processing_id,source_document FROM ingest.mcap_processing_files
         WHERE organization_id=%s AND project_id=%s AND region_code=%s AND raw_source_id=%s
@@ -121,6 +135,8 @@ def request(db, scope, raw, manifest, command, actor):
                 "original_snapshot": original, "execution_snapshot": snapshot,
                 "files": [{"processing_id": ident, "source": source} for ident, source in records],
                 "created_by": actor, "created_at": now()}
+    if selected:
+        document["failed_selection"] = selected
     db.execute(
         """INSERT INTO ingest.capture_reprocess_requests
         (organization_id,project_id,region_code,raw_source_id,request_id,plan_revision,document,content_hash)

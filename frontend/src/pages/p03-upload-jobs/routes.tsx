@@ -7,7 +7,7 @@ import { dataUploadRoutes } from "../../shared/routing/navigation-routes";
 export const routes: PageRoute[] = [
   {
     path: dataUploadRoutes.newUpload,
-    requiredCapabilities: ["upload.read"],
+    requiredCapabilities: ["upload.workspace"],
     navigation: {
       label: "数据上传",
       groupId: "ingest",
@@ -18,7 +18,7 @@ export const routes: PageRoute[] = [
   },
   {
     path: dataUploadRoutes.records,
-    requiredCapabilities: ["upload.read"],
+    requiredCapabilities: ["upload.workspace"],
     lazy: async () => ({ Component: (await import("./page")).default }),
   },
 ];

@@ -1,0 +1,304 @@
+components:
+  schemas:
+    Assignment:
+      additionalProperties: false
+      properties:
+        ice_servers:
+          items:
+            $ref: '#/components/schemas/IceServer'
+          title: Ice Servers
+          type: array
+        offer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Offer
+        session_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Session Id
+      title: Assignment
+      type: object
+    IceServer:
+      additionalProperties: false
+      properties:
+        credential:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential
+        urls:
+          title: Urls
+          type: string
+        username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Username
+      required:
+      - urls
+      title: IceServer
+      type: object
+    OperatorState:
+      additionalProperties: false
+      properties:
+        answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer
+      title: OperatorState
+      type: object
+    OperatorSync:
+      additionalProperties: false
+      properties:
+        offer:
+          anyOf:
+          - maxLength: 131072
+            minLength: 1
+            pattern: ^v=0\r?\n
+            type: string
+          - type: 'null'
+          title: Offer
+      title: OperatorSync
+      type: object
+    RobotPresence:
+      additionalProperties: false
+      properties:
+        busy:
+          title: Busy
+          type: boolean
+        last_seen:
+          title: Last Seen
+          type: number
+        name:
+          title: Name
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+      required:
+      - robot_id
+      - name
+      - last_seen
+      - busy
+      title: RobotPresence
+      type: object
+    RobotSync:
+      additionalProperties: false
+      properties:
+        answer:
+          anyOf:
+          - maxLength: 131072
+            minLength: 1
+            pattern: ^v=0\r?\n
+            type: string
+          - type: 'null'
+          title: Answer
+        instance_id:
+          format: uuid
+          title: Instance Id
+          type: string
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        release:
+          default: false
+          title: Release
+          type: boolean
+        session_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Session Id
+      required:
+      - instance_id
+      - name
+      title: RobotSync
+      type: object
+paths:
+  /api/v1/organizations/{organization_id}/teleoperation/robots:
+    get:
+      description: List endpoints with a current VR/WebRTC heartbeat in this organization.
+      operationId: listTeleoperationRobots
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RobotPresence'
+                title: Response Listteleoperationrobots
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Robots
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions:
+    post:
+      description: Reserve one online robot for this operator. Synchronize before the 20 s lease expires.
+      operationId: connectTeleoperationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Connect
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions/{session_id}:
+    delete:
+      operationId: releaseTeleoperationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          title: Session Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Disconnect
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions/{session_id}/sync:
+    post:
+      description: Publish a complete (non-trickle ICE) SDP offer once and renew the operator lease.
+      operationId: syncTeleoperationOperator
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorSync'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Sync Operator
+      tags:
+      - teleoperation
+  /api/v1/robot-ingest/teleoperation/sync:
+    post:
+      description: Advertise a VR-capable robot, poll for offers and publish the matching SDP answer.
+      operationId: syncTeleoperationRobot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotSync'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Sync Robot
+      tags:
+      - teleoperation

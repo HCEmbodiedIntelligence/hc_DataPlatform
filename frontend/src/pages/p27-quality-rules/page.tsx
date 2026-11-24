@@ -11,6 +11,7 @@ import { qualityFindingText } from "../../shared/lib/quality-presentation";
 import { useCurrentOrganizationId } from "../../shared/scope/current-organization";
 import { useOrganizationCapabilities } from "../../shared/auth/use-capabilities";
 import { StandardPageScaffold } from "../../shared/ui";
+import { inspectionDescriptions } from "./inspection-descriptions";
 import { AddRuleDialog } from "./AddRuleDialog";
 
 const categories = [
@@ -27,13 +28,20 @@ type Row = {
   parameters?: Values;
 };
 
+function duplicateLimits(values: Values) {
+  const risk = values.maximum_duplicate_timestamps_risk;
+  const reject = values.maximum_duplicate_timestamps_reject;
+  return `同一通道重复超过 ${risk} 次时提示。` +
+    (typeof reject === "number" ? `超过 ${reject} 次时拒绝，优先按拒绝判定。` : "未设拒绝次数，仅凭重复次数不会拒绝。");
+}
+
 function Thresholds({ values }: { values: Values }) {
   return (
     <div>
       {Object.entries(values).map(([key, raw]) => {
         const value =
           typeof raw === "number"
-            ? raw / parameterScale(key)
+            ? key.includes("ratio") ? `${Number((raw * 100).toFixed(6))}%` : raw / parameterScale(key)
             : raw === null
               ? "不限制"
               : raw
@@ -72,7 +80,7 @@ function Library({ org }: { org: string }) {
           name: rule.name,
           code: rule.code,
           category: categories[0],
-          description: qualityFindingText(rule.code).title,
+          description: qualityFindingText(rule.code).description,
           parameters: rule.parameters,
         })),
         ...data.engine_rules.map((rule) => ({
@@ -86,11 +94,13 @@ function Library({ org }: { org: string }) {
           name,
           code,
           category: categories[2],
+          description: inspectionDescriptions[code],
         })),
         ...Object.entries(data.verification_checks).map(([code, name]) => ({
           name,
           code,
           category: categories[3],
+          description: inspectionDescriptions[code],
         })),
       ]
     : [];
@@ -112,7 +122,7 @@ function Library({ org }: { org: string }) {
         ],
         description:
           "查看各阶段的检查项。自定义规则保存到当前组织，应用到采集方案并发布后生效。",
-        actions: rights.has("robot.manage") && (
+        actions: rights.has("quality.manage") && (
           <Button
             type="primary"
             disabled={!data}
@@ -198,7 +208,19 @@ function Library({ org }: { org: string }) {
         ]}
         expandable={{
           rowExpandable: (row) => !!row.description,
-          expandedRowRender: (row) => row.description,
+          expandedRowRender: (row) => (
+            <div>
+              <p>{row.description}</p>
+              {row.parameters && Object.keys(row.parameters).length > 0 && (
+                <div>
+                  <strong>{row.category === categories[0] ? "此模板的阈值" : "默认阈值"}</strong>
+                  {row.code === "QC_TIMESTAMP_DUPLICATE" ? (
+                    <p>{duplicateLimits(row.parameters)}</p>
+                  ) : <Thresholds values={row.parameters} />}
+                </div>
+              )}
+            </div>
+          ),
         }}
       />
       {adding && data && (

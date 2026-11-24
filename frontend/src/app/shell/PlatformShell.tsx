@@ -27,6 +27,7 @@ import {
   Download,
   FolderKanban,
   HardDrive,
+  History,
   House,
   ListChecks,
   LogOut,
@@ -159,8 +160,10 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P03: <CloudUpload aria-hidden="true" size={18} strokeWidth={1.8} />,
   P23: <Scissors aria-hidden="true" size={18} strokeWidth={1.8} />,
   P05: <Box aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P30: <Cpu aria-hidden="true" size={18} strokeWidth={1.8} />,
   P08: <Tags aria-hidden="true" size={18} strokeWidth={1.8} />,
   P21: <Download aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P28: <History aria-hidden="true" size={18} strokeWidth={1.8} />,
   P09: <ShieldAlert aria-hidden="true" size={18} strokeWidth={1.8} />,
   P10Q: <ListChecks aria-hidden="true" size={18} strokeWidth={1.8} />,
   P12: <HardDrive aria-hidden="true" size={18} strokeWidth={1.8} />,
@@ -169,6 +172,7 @@ const pageIcons: Readonly<Record<string, ReactNode>> = {
   P25: <Gamepad2 aria-hidden="true" size={18} strokeWidth={1.8} />,
   P26: <Cpu aria-hidden="true" size={18} strokeWidth={1.8} />,
   P24: <SlidersHorizontal aria-hidden="true" size={18} strokeWidth={1.8} />,
+  P29: <Tags aria-hidden="true" size={18} strokeWidth={1.8} />,
   P27: <ListChecks aria-hidden="true" size={18} strokeWidth={1.8} />,
   P15: <BotMessageSquare aria-hidden="true" size={18} strokeWidth={1.8} />,
   P16: <Crosshair aria-hidden="true" size={18} strokeWidth={1.8} />,
@@ -657,6 +661,7 @@ export function PlatformShell({
       ]),
     );
     if (
+      expanded.has("access.download_approval.manage") ||
       platformCapabilities.includes("platform.account.read") ||
       platformCapabilities.includes("platform.account.manage")
     ) {

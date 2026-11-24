@@ -8,6 +8,9 @@ import type {
   DashboardScope,
   DashboardTaskListItem,
 } from "../../../features/dashboard/types";
+import { useCapabilities } from "../../../shared/auth/use-capabilities";
+import { DiscardRecordingsModal, type DiscardTarget } from "./DiscardRecordingsModal";
+import { DashboardMcapRetry } from "./DashboardMcapRetry";
 import { EntityDrawer } from "../../../shared/ui";
 import { VideoPreviewModal } from "../../../features/viewer/VideoPreviewModal";
 
@@ -16,6 +19,10 @@ const OriginalSourceBrowser = lazy(
 );
 const DuplicateIssueActions = lazy(() => import("./DuplicateIssueActions"));
 const ResumeProcessingAction = lazy(() => import("./ResumeProcessingAction"));
+
+function rowKey(issue: DashboardDataIssue) {
+  return JSON.stringify([issue.task_id, issue.rollout_id, issue.recording_id]);
+}
 
 function issueSummary(issue: DashboardDataIssue): string {
   const findings = issue.findings ?? [];
@@ -44,6 +51,16 @@ export default function TaskIssueDrawer({
   const [selectedIssue, setSelectedIssue] = useState<DashboardDataIssue | null>(
     null,
   );
+  const canManage = useCapabilities().has("upload.manage");
+  const [checked, setChecked] = useState<string[]>([]);
+  const [discardTargets, setDiscardTargets] = useState<DiscardTarget[] | null>(null);
+  const candidates = issues.filter(issue => issue.category === "QUALITY" && issue.recording_id);
+  const enableDiscard = !!scope && canManage && candidates.length > 0;
+  const checkedKeys = new Set(checked);
+  const chosen = candidates.filter(issue => checkedKeys.has(rowKey(issue)));
+  const targets = [...new Map(chosen.map(issue => [issue.recording_id!, {
+    id: issue.recording_id!, label: issue.data_package_id,
+  }])).values()];
   const [previewOpen, setPreviewOpen] = useState(false);
   const selected = issues.find(
     (item) =>
@@ -240,8 +257,23 @@ export default function TaskIssueDrawer({
             共 {issues.length}{" "}
             个问题数据包。点击“查看详情”可查看原因、检测值和对应原始数据。
           </p>
+          <Space wrap>
+            <DashboardMcapRetry scope={scope} tasks={tasks} issues={issues} />
+            {enableDiscard && <Button danger disabled={!targets.length} onClick={() => setDiscardTargets(targets)}>
+              批量丢弃当前录制{targets.length > 0 && `（${targets.length}）`}
+            </Button>}
+          </Space>
           <Table
-            rowKey="rollout_id"
+            rowKey={rowKey}
+            rowSelection={enableDiscard ? {
+              selectedRowKeys: chosen.map(rowKey),
+              onChange: keys => setChecked(keys.map(String)),
+              getCheckboxProps: issue => ({ disabled: issue.category !== "QUALITY" || !issue.recording_id }),
+              selections: [
+                { key: "all", text: "全选所有页的录制", onSelect: () => setChecked(candidates.map(rowKey)) },
+                { key: "clear", text: "清空选择", onSelect: () => setChecked([]) },
+              ],
+            } : undefined}
             size="small"
             dataSource={[...issues]}
             pagination={{
@@ -292,6 +324,14 @@ export default function TaskIssueDrawer({
           />
         </>
       )}
+      {discardTargets && scope && canManage && <DiscardRecordingsModal
+        scope={scope} targets={discardTargets} onClose={() => setDiscardTargets(null)}
+        onDiscarded={ids => {
+          const succeeded = new Set(ids);
+          const finished = new Set(chosen.filter(issue => succeeded.has(issue.recording_id!)).map(rowKey));
+          setChecked(previous => previous.filter(key => !finished.has(key)));
+        }}
+      />}
       {previewOpen && canPreview ? (
         <VideoPreviewModal
           open

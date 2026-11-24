@@ -381,6 +381,9 @@ class QualityEngine:
         findings: list[QcFinding],
         profile: QualityProfileV1,
     ) -> list[QcFinding]:
+        if profile.enabled_codes is not None:
+            enabled = set(profile.enabled_codes)
+            findings = [finding for finding in findings if finding.code in enabled]
         # Archived v1 profiles remain reproducible for historical workflow replay.
         if (self._engine_version or profile.engine_version) in {LEGACY_QUALITY_ENGINE_VERSION, "be06-qc/4"}:
             return findings

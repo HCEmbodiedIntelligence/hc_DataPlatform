@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { StrictMode } from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -26,8 +26,10 @@ vi.mock("../../features/datasets/episodes/episode-annotations", () => ({
 
 const state = vi.hoisted(() => ({
   data: {} as Record<string, unknown>,
+  reported: undefined as Record<string, unknown> | undefined,
   createIssue: vi.fn(),
   fetchLogicalSnapshot: vi.fn(),
+  robotScene: vi.fn(),
   capabilities: new Set<string>(),
 }));
 vi.mock("../../features/datasets/api/logical-data", async (original) => ({
@@ -50,14 +52,20 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
     has: (key: string) => state.capabilities.has(key),
   }),
 }));
+vi.mock("../../features/cleaning/api", async (original) => ({
+  ...(await original<typeof import("../../features/cleaning/api")>()),
+  useManualIssue: () => ({data: state.reported}),
+  useManualIssues: () => ({data: {items: state.reported ? [state.reported] : []}}),
+}));
 vi.mock("../../features/cleaning/routing", async (original) => ({
   ...(await original<typeof import("../../features/cleaning/routing")>()),
   createManualIssueCommand: state.createIssue,
 }));
 vi.mock("../../features/datasets/episodes/use-logical-robot-scene", () => ({
-  useLogicalRobotScene: () => ({
-    robotSceneUnavailableReason: "当前 Episode 未绑定机器人模型。",
-  }),
+  useLogicalRobotScene: (...args: unknown[]) => {
+    state.robotScene(...args);
+    return { robotSceneUnavailableReason: "当前 Episode 未绑定机器人模型。" };
+  },
 }));
 vi.mock("../../shared/scope/shell-store", async (original) => ({
   ...(await original<typeof import("../../shared/scope/shell-store")>()),
@@ -125,6 +133,7 @@ function mount(search = "") {
 }
 
 beforeEach(() => {
+  state.reported = undefined;
   state.capabilities = new Set([
     "episode.read",
     "manual_issue.create",
@@ -167,6 +176,27 @@ afterEach(() => {
 });
 
 describe("dataset Episode shared workbench", () => {
+  it("passes the recorded joint action to the URDF when state and other actions also exist", async () => {
+    const topics = [
+      ["/observation/state", "JOINT_STATE"],
+      ["/robot/end_effector/action", "ACTION"],
+      ["/humanoid/action", "ACTION"],
+    ];
+    state.fetchLogicalSnapshot.mockResolvedValue({
+      snapshot_id: "snapshot-action",
+      snapshot: {
+        streams: topics.map(([name, kind]) => ({
+          stream_id: name, name, kind, value_kind: "VECTOR",
+          sample_count: 1, temporal: true, start_ns: "0", end_ns: "1000000000",
+        })),
+      },
+    });
+    mount();
+    await waitFor(() => expect(state.robotScene).toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ canonicalPath: "/humanoid/action" }),
+      null, expect.anything(),
+    ));
+  });
   it("uses the annotation layout in read-only mode with camera selection and a single shared timeline", async () => {
     const { container } = mount();
     const workbench = container.querySelector(
@@ -296,4 +326,17 @@ describe("dataset Episode shared workbench", () => {
     expect(screen.getByText("原数据集页面")).toBeInTheDocument();
     expect(state.createIssue).not.toHaveBeenCalled();
   });
+});
+
+it.each(["?issueId=issue_test", ""])("shows a scoped report and its relative timeline location (%s)", async (search) => {
+  const origin = 1794277792847381000n;
+  state.data = {...state.data, revision: {...revision, started_at_ns: origin.toString()}};
+  state.reported = {id: "issue_test", note: "过长的无视角停顿", status: {kind: "known", value: "OPEN"},
+    scope: {organizationId: "org-p06", projectId: "project-p06", regionCode: "region-p06"},
+    source: {datasetId, versionId, episodeId, revisionId: revision.revision_id,
+      startNs: (origin + 199997000n).toString(), endNs: (origin + 3832853000n).toString()}};
+  mount(search);
+  expect(await screen.findByText("问题片段 0.200–3.833 秒")).toBeVisible();
+  expect(screen.getAllByText("过长的无视角停顿").length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", {name: "跳到问题起点"})).toBeEnabled();
 });

@@ -1,3 +1,4 @@
+import { grantLabel } from "../../shared/auth/project-grants";
 import type { StatusTone } from "../../shared/ui";
 import type {
   AccessDecision,
@@ -30,7 +31,7 @@ const capabilityLabels: Readonly<Record<string, string>> = {
   "dataset.create": "创建数据集",
   "dataset.update": "编辑数据集",
   "dataset_version.publish": "数据集发布",
-  "upload.manage": "数据全流程（上传、标注、审核、发布、导出）",
+  "upload.manage": "上传与导入",
   "ingest.import": "数据导入",
   "annotation.edit": "数据标注",
   "annotation.review": "标注审核",
@@ -40,7 +41,7 @@ const capabilityLabels: Readonly<Record<string, string>> = {
 
 const elevatedImpact: Readonly<Record<string, string>> = {
   "upload.manage":
-    "批准后，同一账号可在当前项目内完成上传、标注、自审、发布和导出下载。",
+    "批准后可在当前项目上传数据。",
   "access.manage": "批准后可管理并审批当前项目的访问申请。",
   "dataset_version.publish": "批准后可冻结并发布当前项目的数据集版本。",
   "data_schema.publish": "批准后可变更当前项目的数据结构。",
@@ -67,7 +68,7 @@ export function statusTone(status: AccessRequestStatus): StatusTone {
 }
 
 export function capabilityLabel(key: string): string {
-  return capabilityLabels[key] ?? key;
+  return capabilityLabels[key] ?? grantLabel(key);
 }
 
 export function accessRequestTitle(row: AccessRequestRow): string {
@@ -89,10 +90,12 @@ export function elevatedImpactNotes(row: AccessRequestRow): readonly string[] {
 export function availableDecisions(
   row: AccessRequestRow,
   canManage: boolean,
-  _principalId: string | null,
+  principalId: string | null,
 ): readonly AccessDecision[] {
+  if (row.kind === "capability" && row.allowed_decisions) return canManage ? row.allowed_decisions : [];
   if (row.status === "PENDING") {
-    return canManage ? ["approve", "reject"] : [];
+    if (!canManage) return [];
+    return row.requesterId === principalId ? ["reject"] : ["approve", "reject"];
   }
   if (row.status === "APPROVED" && canManage) return ["revoke"];
   return [];

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from fractions import Fraction
 from pathlib import Path
@@ -19,6 +19,18 @@ from hc_data_platform.core.ingest_timing import timed
 from .errors import format_error
 
 RGB_STATISTICS_HISTOGRAM = "uint8-histogram/1"
+
+
+def preview_timescale(offsets_ns: Iterable[int]) -> int:
+    """Keep the finest decimal clock that fits each MP4 packet duration in int32."""
+    previous = largest = 0
+    for offset in offsets_ns:
+        largest = max(largest, offset - previous)
+        previous = offset
+    scale = 1_000_000_000
+    while scale > 1 and largest * scale > (2**31 - 1) * 1_000_000_000:
+        scale //= 10
+    return scale
 
 
 class RgbHistogram:

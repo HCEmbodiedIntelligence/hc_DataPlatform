@@ -33,6 +33,9 @@ export function RobotModelImportDialog({
     modelMetadata,
     modelAssets,
     modelAssetCounts,
+    urdfCandidates,
+    entryUrdfPath,
+    setEntryUrdfPath,
     analysis,
     mappings,
     mappingsValid,
@@ -256,6 +259,31 @@ export function RobotModelImportDialog({
                 <span>纹理 {modelAssetCounts.TEXTURE}</span>
                 <span>配置 {modelAssetCounts.CONFIG}</span>
               </div>
+              {urdfCandidates.length > 1 && (
+                <Alert
+                  type={entryUrdfPath ? "info" : "warning"}
+                  showIcon
+                  title={`识别到 ${urdfCandidates.length} 个 URDF 候选文件，请选择一个作为入口`}
+                  description={
+                    <Select
+                      aria-label="入口 URDF 文件"
+                      placeholder="选择入口 URDF"
+                      style={{ width: "100%" }}
+                      showSearch
+                      value={entryUrdfPath ?? undefined}
+                      options={urdfCandidates.map(({ relativePath }) => ({
+                        label: relativePath,
+                        value: relativePath,
+                      }))}
+                      onChange={(path: string) => {
+                        setEntryUrdfPath(path);
+                        clearAnalysis();
+                        setModelError(null);
+                      }}
+                    />
+                  }
+                />
+              )}
               <ul className={uploadStyles.fileList} aria-label="待解析模型文件">
                 {modelAssets.map((asset) => (
                   <li className={uploadStyles.fileRow} key={asset.relativePath}>
@@ -273,6 +301,7 @@ export function RobotModelImportDialog({
                       type="button"
                       aria-label={`移除 ${asset.relativePath}`}
                       onClick={() => {
+                        if (entryUrdfPath === asset.relativePath) setEntryUrdfPath(null);
                         setModelAssets((current) =>
                           current.filter(
                             (item) => item.relativePath !== asset.relativePath,

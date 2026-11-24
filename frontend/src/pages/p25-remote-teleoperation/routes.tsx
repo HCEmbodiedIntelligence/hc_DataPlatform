@@ -6,7 +6,7 @@ import {
 const routes: PageRoute[] = [
   {
     path: "/teleoperation",
-    requiredCapabilities: [],
+    requiredCapabilities: ["robot.read"],
     navigation: {
       label: "远程遥操作",
       groupId: "ingest",

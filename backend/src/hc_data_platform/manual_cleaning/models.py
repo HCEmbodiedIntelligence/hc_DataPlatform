@@ -42,7 +42,7 @@ CleaningDraftId = Annotated[
 ]
 DecimalString = Annotated[str, Field(pattern=r"^(0|[1-9][0-9]*)$")]
 
-ManualIssueStatus: TypeAlias = Literal["OPEN", "IN_PROGRESS", "RESOLVED"]
+ManualIssueStatus: TypeAlias = Literal["OPEN", "IN_PROGRESS", "RESOLVED", "DISCARDED"]
 ManualIssueSeverity: TypeAlias = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 ManualIssueDiscoverySource: TypeAlias = Literal[
     "DATA_VIEWER",
@@ -172,6 +172,7 @@ class ManualIssueListItem(_ManualCleaningModel):
     episode_stream_id: EpisodeStreamId
     start_ns: DecimalString
     end_ns: DecimalString
+    note: str = ""
     issue_type: ManualIssueType
     severity: ManualIssueSeverity
     discovery_source: ManualIssueDiscoverySource = "DATA_VIEWER"

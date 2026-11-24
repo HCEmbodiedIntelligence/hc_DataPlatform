@@ -285,14 +285,14 @@ def test_pending_four_sources_capability_intersection_sort_links_and_close_proje
     assert all(".." not in str(item.target.deep_link) for item in all_sources.items)
     assert "upload-closed" not in {item.source_id for item in all_sources.items}
 
-    # Human upload operators receive the same workflow access within their project.
+    # A human upload grant exposes only failed uploads, just like a service upload grant.
     human_operator = service.pending_items(
         **common(auth(capabilities=(CAPABILITY_UPLOAD_MANAGE,))),
         cursor=None,
         limit=50,
     ).pending_items
-    assert human_operator.authorized_source_types == all_sources.authorized_source_types
-    assert human_operator.items == all_sources.items
+    assert human_operator.authorized_source_types == upload_only.authorized_source_types
+    assert human_operator.items == upload_only.items
 
 
 def test_coverage_is_always_blocked_without_versioned_denominator() -> None:

@@ -3,8 +3,8 @@
 import hashlib
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from concurrent.futures import ThreadPoolExecutor, wait
+from contextlib import closing, nullcontext
 from contextvars import copy_context
 from copy import copy
 from pathlib import Path
@@ -19,9 +19,11 @@ from .collection_delivery_models import CollectionDeliveryPlan, RequestCollectio
 from .delivery_cache import cache_for
 from .delivery_models import PreparedEpisodePart, RequestEpisodeDelivery
 from .delivery_repository import SCOPE, failure, scope_key
+from .files import PackageFiles, VerifiedFileCache
 from .models import DataVersionRef, digest
 
-_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="episode-part")
+PART_WORKERS = 6
+_pool = ThreadPoolExecutor(max_workers=PART_WORKERS, thread_name_prefix="episode-part")
 _guard = Lock()
 _active = {}
 
@@ -51,6 +53,7 @@ def read_part(service, part_id):
 
 def freeze(service, body, auth):
     if body.mode == "independent":
+        service.verify_export_filter(body.export_filter, [body.data], auth)
         return service._freeze(RequestEpisodeDelivery(data=(body.data,), export_filter=body.export_filter))
     lerobot = body.mode in {"rgb", "rgbd"}
     request = RequestCollectionDelivery(members=({"data": body.data},),
@@ -107,18 +110,36 @@ def build_part(service, plan, part_id):
             checksum, size = checksum_hash.hexdigest(), head.size
         else:
             reused = False
-            directory = service.packages.directory / "complete-deliveries"
+            directory = cache.root / ".work" if cache else service.packages.directory / "complete-deliveries"
             directory.mkdir(parents=True, exist_ok=True)
             with TemporaryDirectory(prefix="episode-", dir=directory) as temp:
-                archive = Path(temp) / "episode.zip"
-                if isinstance(plan, CollectionDeliveryPlan):
-                    owner = copy(service)
-                    owner.repository = PartProgress()
-                    checksum, size = CollectionDelivery(owner).build(plan, Path(temp), archive, {}, lambda: None)
-                else:
-                    checksum, size = archive_packages(service.packages, plan, archive, lambda: None, lambda *_: None)
+                root = Path(temp)
+                archive = root / "episode.zip"
+                # A reader holds its lock throughout video decoding. Give each build
+                # its own bounded reader so Episodes can encode concurrently.
+                packages = copy(service.packages)
+                limits = packages.files.cache
+                with closing(VerifiedFileCache(root / "reader", capacity_bytes=limits.capacity,
+                                               max_object_bytes=limits.max_object)) as reader:
+                    packages.files = PackageFiles(packages.files.repository, service.storage, reader)
+                    if isinstance(plan, CollectionDeliveryPlan):
+                        owner = copy(service)
+                        owner.packages = packages
+                        owner.repository = PartProgress()
+                        checksum, size = CollectionDelivery(owner).build(
+                            plan, root, archive, {}, lambda: None, cache_receipt=cache is not None
+                        )
+                    else:
+                        checksum, size = archive_packages(packages, plan, archive, lambda: None, lambda *_: None)
                 with archive.open("rb") as stream:
-                    service.writer.write_immutable(key, stream, size=size, sha256=checksum)
+                    if cache:
+                        headers = {"content-length": str(size), "x-oss-forbid-overwrite": "true"}
+                        if checksum is not None:
+                            headers["x-oss-meta-sha256"] = checksum
+                        receipt = cache.put_object(key, stream, headers=headers)
+                        checksum = receipt.headers["x-oss-meta-sha256"]
+                    else:
+                        service.writer.write_immutable(key, stream, size=size, sha256=checksum)
         selected = plan.members[0].collection_record
         record_hash = None
         if selected is not None:
@@ -133,9 +154,30 @@ def build_part(service, plan, part_id):
 
 
 def prepare_part(service, body, auth):
+    from .files import reuse_export_reads
+
     service.authorize(auth, command=True)
     check_filter(body.export_filter)
-    service.verify_export_filter(body.export_filter, [body.data], auth)
+    with reuse_export_reads(body.data.package_prefix, service.packages.files.cache):
+        if (processes := getattr(service, "part_processes", None)) is not None:
+            return processes.prepare(service, body, auth)
+        return _prepare_authorized_part(service, body, auth)
+
+
+def cached_part(service, plan, part_id):
+    if read_part(service, part_id):
+        return PreparedEpisodePart(part_id=part_id, status="ready", reused=True)
+    # Both encodings satisfy the same MCAP delivery contract. Keep the existing
+    # archive under its own identity when every other frozen field still matches.
+    if isinstance(plan, CollectionDeliveryPlan) and plan.archive_format == "mcap_collection_zip/9":
+        older = plan.model_copy(update={"archive_format": "mcap_collection_zip/8"})
+        old_id = digest(older.model_dump(mode="json"))
+        if read_part(service, old_id):
+            return PreparedEpisodePart(part_id=old_id, status="ready", reused=True)
+    return None
+
+
+def _prepare_authorized_part(service, body, auth):
     plan = freeze(service, body, auth)
     part_id = digest(plan.model_dump(mode="json"))
     identity = (scope_key(), part_id)
@@ -144,19 +186,27 @@ def prepare_part(service, body, auth):
         if future and future.done():
             del _active[identity]
             return PreparedEpisodePart(part_id=part_id, status="ready", reused=future.result())
-    if read_part(service, part_id):
-        return PreparedEpisodePart(part_id=part_id, status="ready", reused=True)
+    if ready := cached_part(service, plan, part_id):
+        return ready
     with _guard:
         for other, future in list(_active.items()):
             if other != identity and future.done():
                 del _active[other]
-        if not _active:
-            _active[identity] = _pool.submit(copy_context().run, build_part, service, plan, part_id)
+        future = _active.get(identity)
+        if future is None and len(_active) < PART_WORKERS:
+            future = _active[identity] = _pool.submit(copy_context().run, build_part, service, plan, part_id)
+        else:
+            future = None
+    # Only the request that submitted work waits for it.
+    if future is not None and wait([future], timeout=20).done:
+        with _guard:
+            if _active.get(identity) is future:
+                del _active[identity]
+        return PreparedEpisodePart(part_id=part_id, status="ready", reused=future.result())
     return PreparedEpisodePart(part_id=part_id, status="preparing", reused=False)
 
 
-def bundle_files(service, body, auth, *, records=None):
-    service.authorize(auth)
+def bundle_files(service, body, auth, *, records=None, versions=None):
     check_filter(body.export_filter)
     parts, refs, seen = [], [], set()
     for part_id in body.part_ids:
@@ -166,11 +216,14 @@ def bundle_files(service, body, auth, *, records=None):
         data = DataVersionRef.model_validate(info["data"])
         if data.identity.scope != scope_key() or data.identity.key in seen:
             raise ValueError("Episode 范围或选择重复。")
+        service.require_download(auth, data)
         seen.add(data.identity.key)
         refs.append(data)
         label = re.sub(r"[^\w.-]", "_", data.identity.episode_id)[:96]
         path = f"{len(parts)+1:06d}-{label}.zip"
         parts.append(ArchiveFile(path, info["key"], info["size"], info["sha256"]))
+        if versions is not None:
+            versions[path] = data.data_version_id
         if records is not None and info.get("record_sha256"):
             document = json.loads(b"".join(service.storage.read_chunks(f"{prefix()}/{part_id}.record.json")))
             if digest(document) != info["record_sha256"]:

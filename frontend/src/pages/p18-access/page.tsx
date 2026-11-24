@@ -1,3 +1,4 @@
+import { ManagementLink } from "./GovernancePage";
 import { useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
@@ -27,11 +28,13 @@ export function Component() {
   const capabilityKeys = authorization?.capabilities as
     | readonly string[]
     | undefined;
-  const canManage = capabilityKeys?.includes("access.manage") ?? false;
   const projectCapabilities = expandGrantedCapabilities(capabilityKeys ?? []);
   const platformCapabilities = useShellStore(
     (state) => state.platformCapabilities,
   );
+  const isPlatformAdmin = platformCapabilities.includes("platform.admin");
+  const deliveryApprover = projectCapabilities.has("access.download_approval.manage");
+  const canManage = isPlatformAdmin || projectCapabilities.has("access.manage");
   const canReadPlatformAccounts = platformCapabilities.some(
     (key) =>
       key === "platform.account.read" || key === "platform.account.manage",
@@ -43,7 +46,7 @@ export function Component() {
     "platform.account_security.manage",
   );
   const canReadProjectRequests =
-    activeScope !== null && projectCapabilities.has("access.read");
+    activeScope !== null && (isPlatformAdmin || deliveryApprover || projectCapabilities.has("access.read"));
   const platformOnlyAccount = activeScope === null && canReadPlatformAccounts;
   const effectiveSearch: AccessSearch = platformOnlyAccount
     ? {
@@ -141,7 +144,7 @@ export function Component() {
   }
 
   return (
-    <AccessApprovalView
+    <><ManagementLink/><AccessApprovalView
       search={effectiveSearch}
       membership={{
         rows: membershipRows,
@@ -155,7 +158,7 @@ export function Component() {
         fetching: capabilityQuery.isFetching,
         error: capabilityQuery.error,
       }}
-      canManage={canManage}
+      canManage={canManage || (deliveryApprover && effectiveSearch.tab === "capability-requests")}
       canReadPlatformAccounts={canReadPlatformAccounts}
       canReadProjectRequests={canReadProjectRequests}
       userManagement={
@@ -180,7 +183,7 @@ export function Component() {
         else void capabilityQuery.refetch();
       }}
       onDecision={submitDecision}
-    />
+    /></>
   );
 }
 

@@ -37,11 +37,11 @@ import type {
 import { draftKey, saveDraft } from "./navigation";
 import { versionSchema } from "./contracts";
 import { normalizeAdapters } from "./editor-model";
+import { Component as TagLibraryPage } from "../../pages/p29-tag-library/page";
 import { Component as QualityRulePage } from "../../pages/p27-quality-rules/page";
 import { ApplyQualityRule } from "./ApplyQualityRule";
 import type { ThresholdRule } from "./api";
 import { qualityDefaults } from "./quality-contract";
-import { QualityFields } from "./QualityFields";
 expect.extend(matchers);
 
 const flags = vi.hoisted(() => ({ manage: true, taskManage: true }));
@@ -51,7 +51,7 @@ vi.mock("../../shared/auth/use-capabilities", () => ({
     has: (cap: string) => !cap.endsWith("manage") || flags.manage,
   }),
   useCapabilities: () => ({
-    has: (cap: string) => cap !== "upload.manage" || flags.taskManage,
+    has: (cap: string) => cap !== "collection_task.manage" || flags.taskManage,
   }),
 }));
 vi.mock("../../shared/scope/current-organization", () => ({
@@ -194,6 +194,7 @@ beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
   vi.mocked(request).mockReset();
   vi.mocked(request).mockImplementation(async (options) => {
+    if (options.path.endsWith("/annotation-tags")) return ["抓取", "放置"];
     if (options.path.endsWith("/quality-rules"))
       return {engine_rules: [], custom_rules: [], recording_checks: {}, verification_checks: {}};
     if (options.path.includes("/capture-plan")) {
@@ -456,19 +457,13 @@ it("has no frequency input or requirement and publishes without changing v1", as
   ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "下一步：确认与保存" }));
   expect(screen.getAllByRole("button", { name: "保存方案" })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "发布新版本" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "保存方案" }));
   await waitFor(() => expect(state.revision).toBe(2));
   expect(state.draft.output.frequency_hz).toBeNull();
   await user.click(screen.getByText("确认与保存"));
-  expect(screen.getByRole("button", { name: "发布新版本" })).toBeDisabled();
-  await user.click(screen.getByRole("button", { name: "选择测试样本" }));
-  await user.click(screen.getByRole("button", { name: "验证当前格式" }));
-  expect(await screen.findByText("未采集")).toBeVisible();
-  expect(state.revision).toBe(2);
-  expect(state.draft.output.frequency_hz).toBeNull();
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled(),
-  );
+  expect(state.validations).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "发布新版本" }));
   expect(await screen.findByText("已发布 v2 · 只读")).toBeVisible();
   expect(state.versions.find((v) => v.version === 1)?.name).toBe("X1 关节方案");
@@ -487,12 +482,13 @@ it("publishes an automatic scheme after one actual sample while retaining three 
   await user.click(screen.getByRole("button", { name: "保存方案" }));
   await waitFor(() => expect(state.revision).toBe(2));
   await user.click(screen.getByText("确认与保存"));
-  expect(screen.getByRole("button", { name: "发布新版本" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled();
   await user.click(screen.getByRole("button", { name: "选择测试样本" }));
   await user.click(screen.getByRole("button", { name: "验证采集方案" }));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled(),
   );
+  expect(await screen.findByText("未采集")).toBeVisible();
   expect(state.validations).toHaveLength(1);
   expect(state.draft.adapters).toHaveLength(3);
   await user.click(screen.getByRole("button", { name: "发布新版本" }));
@@ -852,12 +848,14 @@ it("reuses an older definition as an optional shortcut while keeping the new sch
     vi
       .mocked(request)
       .mock.calls.every(([options]) =>
-        options.path.startsWith("/organizations/org/capture-schemes"),
+        options.path.startsWith("/organizations/org/capture-schemes") ||
+        (options.method === "GET" && options.path === "/organizations/org/annotation-tags") ||
+        (options.method === "GET" && options.path === "/organizations/org/quality-rules"),
       ),
   ).toBe(true);
   await user.click(await screen.findByText("确认与保存"));
   expect(screen.getByRole("button", { name: "选择测试样本" })).toBeVisible();
-  expect(screen.getByRole("button", { name: "发布新版本" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "发布新版本" })).toBeEnabled();
 });
 
 it.each([true, false])(
@@ -1062,18 +1060,37 @@ it("provides a visible parent route on create and calls editing a scheme", async
 });
 
 it("edits QC as part of the capture document and preserves other rules", async () => {
+  vi.mocked(request).mockResolvedValue({
+    engine_rules: [
+      {code: "QC_COMPLETE_STEP_RATIO_LOW", group: "completeness", defaults: qualityDefaults.completeness},
+      {code: "QC_JOINT_OUT_OF_RANGE", group: null, defaults: {}},
+    ], custom_rules: [], recording_checks: {}, verification_checks: {},
+  });
   function Editor() {
     const initial = fixtureDocument();
     const [doc, setDoc] = useState<SchemeDocument>({...initial, quality_policy: {...initial.quality_policy, joint_limits: {left: [-1, 1]}}});
-    return <><QualityFields document={doc} onChange={setDoc} />
+    return <><ApplyQualityRule org="org" document={doc} onChange={setDoc} />
       <output data-testid="quality-value">{JSON.stringify(doc.quality_policy)}</output></>;
   }
   mount(<Editor />);
-  await userEvent.click(screen.getByText('完整帧'));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", {name: "选择规则"}));
+  expect(await screen.findByRole("checkbox", {name: "启用完整采样比例不足"})).toBeChecked();
+  await user.click(screen.getByRole("button", {name: /清\s*空/}));
+  await user.click(screen.getByRole("button", {name: /取\s*消/}));
+  await user.click(screen.getByRole("button", {name: "选择规则"}));
+  expect(await screen.findByRole("checkbox", {name: "启用关节值超出范围"})).toBeChecked();
+  await user.click(screen.getByRole("checkbox", {name: "启用关节值超出范围"}));
+  await user.click(screen.getByRole("button", {name: "编辑完整采样比例不足"}));
   fireEvent.change(screen.getByLabelText('最小完整帧比例 · 拒绝'), {target: {value: '0.6'}});
+  await user.click(screen.getByRole("button", {name: "应用到草稿"}));
   await waitFor(() => expect(JSON.parse(screen.getByTestId('quality-value').textContent!)).toMatchObject({
-    completeness: {minimum_ratio_reject: .6}, joint_limits: {left: [-1, 1]},
+    enabled_codes: ["QC_COMPLETE_STEP_RATIO_LOW"], completeness: {minimum_ratio_reject: .6}, joint_limits: {left: [-1, 1]},
   }));
+  await user.click(screen.getByRole("button", {name: "选择规则"}));
+  expect(await screen.findByRole("checkbox", {name: "启用完整采样比例不足"})).toBeChecked();
+  expect(screen.getByRole("checkbox", {name: "启用关节值超出范围"})).not.toBeChecked();
+  expect(Number(screen.getByLabelText<HTMLInputElement>("最小完整帧比例 · 拒绝").value)).toBe(0.6);
 });
 
 it("preserves local input after a revision conflict and loads the reviewed server revision", async () => {
@@ -1101,12 +1118,12 @@ it("preserves local input after a revision conflict and loads the reviewed serve
     await waitFor(()=>expect(load).toBeEnabled());
     await user.click(load);
     expect(screen.getByLabelText("方案名称")).toHaveValue("服务器草稿");
-    expect(await screen.findByText("草稿已保存 · 待验证")).toBeVisible();
+    expect(await screen.findByText("草稿已保存 · 可直接发布")).toBeVisible();
     await user.type(screen.getByLabelText("方案名称"), " 新");
     await user.click(screen.getByText("确认与保存"));
     await user.click(screen.getByRole("button", {name:"保存方案"}));
     await waitFor(()=>expect(save).toHaveBeenLastCalledWith("org","shared",expect.objectContaining({expected_revision:2})));
-    expect(await screen.findByText("草稿已保存 · 待验证")).toBeVisible();
+    expect(await screen.findByText("草稿已保存 · 可直接发布")).toBeVisible();
   } finally {
     save.mockRestore();
   }
@@ -1151,9 +1168,41 @@ it("creates a reusable QC threshold, reloads it and applies only that check to a
       <output>{JSON.stringify(doc.quality_policy.timing)}</output></>;
   }
   mount(<Editor />);
-  fireEvent.mouseDown(screen.getByRole("combobox", {name: "选择质检规则"}));
-  await user.click(await screen.findByText("严格频率 · 采样频率偏低"));
+  await user.click(screen.getByRole("button", {name: "选择规则"}));
+  fireEvent.mouseDown(await screen.findByRole("combobox", {name: "使用组织阈值模板"}));
+  await user.click(await screen.findByText("严格频率", {selector: ".ant-select-item-option-content"}));
   await user.click(screen.getByRole("button", {name: "应用到草稿"}));
   expect(document.querySelector("output")?.textContent).toContain('"minimum_frequency_ratio_risk":0.98');
   expect(document.querySelector("output")?.textContent).toContain('"maximum_gap_ns_risk":777');
+});
+
+it("creates an organization tag and persists only selected names in the scheme", async () => {
+  const user = userEvent.setup();
+  const tags = ["放置"];
+  const fallback = vi.mocked(request).getMockImplementation()!;
+  vi.mocked(request).mockImplementation(async (options) => {
+    if (options.path !== "/organizations/org/annotation-tags") return fallback(options);
+    if (options.method === "POST") {
+      const tag = options.body as { name: string };
+      tags.push(tag.name);
+      return tag;
+    }
+    return [...tags];
+  });
+  const library = mount(<TagLibraryPage />);
+  await screen.findByText("放置");
+  await user.type(screen.getByRole("textbox", { name: "标签名称" }), "抓取");
+  await user.click(screen.getByRole("button", { name: "创建标签" }));
+  expect(await screen.findByRole("cell", { name: "抓取" })).toBeVisible();
+  library.unmount();
+
+  mount(<Library />, "/settings/capture-schemes/shared?edit=1");
+  const select = await screen.findByRole("combobox", { name: "标注标签" });
+  await waitFor(() => expect(select).toBeEnabled());
+  fireEvent.mouseDown(select);
+  await user.click(await screen.findByText("抓取", { selector: ".ant-select-item-option-content" }));
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByText("确认与保存"));
+  await user.click(screen.getByRole("button", { name: "保存方案" }));
+  await waitFor(() => expect(state.draft.annotation_tags).toEqual(["抓取"]));
 });

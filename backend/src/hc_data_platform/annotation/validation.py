@@ -103,6 +103,7 @@ def validate_tag_revision(
     base_step_count: int | None,
     tags: Sequence[AnnotationTag],
     operations: Sequence[AnnotationOperation],
+    allowed_tags: Sequence[str] | None = None,
 ) -> tuple[AnnotationReviewCheck, ...]:
     """Validate all six review dimensions and return their auditable checklist."""
 
@@ -118,6 +119,16 @@ def validate_tag_revision(
         )
 
     node_by_id = {node.tag_id: node for node in schema.document.nodes}
+    if allowed_tags is not None:
+        allowed = set(allowed_tags)
+        for tag in tags:
+            node = node_by_id.get(tag.tag_id)
+            name = tag.label if tag.label is not None else node.display_name if node else None
+            if name not in allowed:
+                raise TagValidationIssue(
+                    ReviewCheckKind.SCHEMA_VERSION,
+                    f"标签「{name or tag.tag_id}」不在该采集任务的方案中，请重新选择",
+                )
     annotation_ids = [tag.annotation_id for tag in tags]
     if len(annotation_ids) != len(set(annotation_ids)):
         raise TagValidationIssue(

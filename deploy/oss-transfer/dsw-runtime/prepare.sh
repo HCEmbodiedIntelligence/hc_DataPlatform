@@ -15,13 +15,16 @@ mkdir -p "$stage"/{bin,web,python,ctl}
 docker exec -i "$svc-frontend-1" tar -xz -C "$front" --strip-components=1 frontend <"$src/code.tar.gz"
 docker exec "$svc-frontend-1" sh -ec 'cd "$1"; ln -s /app/node_modules node_modules; VITE_MOCK_MODE=off VITE_API_BASE_URL=/api/v1 VITE_ROBOT_PLATFORM_BASE_URL="" VITE_PUBLISH_SOURCEMAPS=false pnpm exec vite build > /dev/null' sh "$front"
 docker cp "$svc-frontend-1:$front/dist/." "$stage/web"
-test -s "$stage/web/index.html"
+component_digest=$(python3 "$repo/deploy/oss-transfer/dsw-runtime/frontend_digest.py" --bundle "$stage/web")
+printf '\nglobalThis.__HC_RUNTIME_CONFIG__ = Object.assign({}, globalThis.__HC_RUNTIME_CONFIG__, {"VITE_COMPONENT_IMAGE_DIGEST":"%s"});\n' \
+  "$component_digest" >> "$stage/web/config.js"
+python3 "$repo/deploy/oss-transfer/dsw-runtime/frontend_digest.py" --check-config < "$stage/web/config.js"
 docker exec "$svc-api-1" tar --exclude='*/__pycache__' --exclude='*.pyc' -C /opt/venv/lib/python3.12/site-packages -cf - . | tar -xf - --no-same-owner -C "$stage/python"
 docker cp "$svc-temporal-1:/usr/local/bin/temporal-server" "$stage/bin/temporal-server"
 docker cp "$svc-temporal-1:/etc/temporal/config/dynamicconfig/docker.yaml" "$stage/ctl/dynamic.yaml"
 docker exec "$svc-temporal-1" cat /etc/temporal/config/docker.yaml | python3 -c 'import sys,yaml,json; c=yaml.safe_load(sys.stdin); assert c["clusterMetadata"]["currentClusterName"]=="active"; print(json.dumps({"shards":c["persistence"]["numHistoryShards"],"cluster":c["clusterMetadata"]}))' > "$stage/ctl/temporal-base.json"
 cp /usr/libexec/docker/cli-plugins/docker-compose "$stage/bin/compose-config"
-cp "$repo"/deploy/oss-transfer/dsw-runtime/{manage.sh,configure.py,service.py,nginx.conf,final-data.sh} "$stage/ctl/"
+cp "$repo"/deploy/oss-transfer/dsw-runtime/{manage.sh,configure.py,service.py,frontend_digest.py,nginx.conf,final-data.sh} "$stage/ctl/"
 cp "$repo/deploy/oss-transfer/dsw-restore-db.sh" "$stage/ctl/db-restore.sh"
 cp "$repo/deploy/oss-transfer/verify-oss.py" "$stage/ctl/verify-oss.py"
 cp "$repo/deploy/oss-transfer/dsw-runtime/install.sh" .

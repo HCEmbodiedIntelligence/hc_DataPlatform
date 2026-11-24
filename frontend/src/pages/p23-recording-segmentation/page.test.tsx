@@ -74,6 +74,7 @@ function makeGateway(): RecordingGateway {
       data: recording,
       current_slice_revision: null,
     })),
+    sensorTopics: vi.fn(async () => ["/robot/joint_states", "/humanoid/action"]),
     videoSources: vi.fn(
       async (): Promise<RecordingVideoSourceEnvelope> => ({
         sources: [
@@ -100,7 +101,7 @@ function makeGateway(): RecordingGateway {
     sensorWindow: vi.fn(async (_scope, recordingId, query) => ({
       schema_version: "recording-sensor-window/v1" as const,
       recording_id: recordingId,
-      topic: "/robot/joint_states",
+      topic: query.topic ?? "/robot/joint_states",
       start_offset_ns: query.startOffsetNs,
       end_offset_ns: query.endOffsetNs,
       samples: [

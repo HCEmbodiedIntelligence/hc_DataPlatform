@@ -1,3 +1,5 @@
+import { BatchQCDownload } from "../../../features/exports/BatchQCDownload";
+import type { Scope } from "../../../shared/scope/model";
 import { Button, Popconfirm, Progress, Tag } from "antd";
 import {
   CircleAlert,
@@ -51,6 +53,7 @@ function statusTone(status: UploadQueueItem["transferStatus"]) {
 }
 
 function QueueItemCard(props: {
+  readonly scope?: Scope | null;
   readonly item: UploadQueueItem;
   readonly canManage: boolean;
   readonly onPause: () => void;
@@ -115,6 +118,7 @@ function QueueItemCard(props: {
         size="small"
         format={(value) => `${Number(value).toFixed(1)}%`}
       />
+      {item.batchNumber && props.scope && item.transferStatus === "committed" && <BatchQCDownload scope={props.scope} number={item.batchNumber} />}
       <dl className={styles.queueMetrics}>
         <div>
           <dt>{isLeRobot ? "文件" : "分片"}</dt>
@@ -305,6 +309,7 @@ function QueueItemCard(props: {
 }
 
 export function UploadQueuePanel(props: {
+  readonly scope?: Scope | null;
   readonly items: readonly UploadQueueItem[];
   readonly recovering: boolean;
   readonly recoveryProblem: UploadProblemCopy | null;
@@ -456,6 +461,7 @@ export function UploadQueuePanel(props: {
         <div className={styles.queueList} aria-live="polite">
           {props.items.map((item) => (
             <QueueItemCard
+              scope={props.scope}
               key={item.id}
               item={item}
               canManage={props.canManage}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
+from hc_data_platform.core.context import RequestContext, bind_request_context, reset_request_context
 from hc_data_platform.core.errors import ProblemException, problem
 from hc_data_platform.publishing.audit import InMemoryExportAuditRecorder
 from hc_data_platform.publishing.memory import (
@@ -174,7 +176,11 @@ def export_api(
     @app.middleware("http")
     async def install_verified_context(request: Request, call_next):  # type: ignore[no-untyped-def]
         request.state.auth_context = current["auth"]
-        return await call_next(request)
+        token = bind_request_context(RequestContext(organization_id="org-a", region_code="region-a"))
+        try:
+            return await call_next(request)
+        finally:
+            reset_request_context(token)
 
     @app.exception_handler(ProblemException)
     async def problem_handler(_: Request, exc: ProblemException) -> JSONResponse:
@@ -189,19 +195,16 @@ def export_api(
 
 
 def _publisher_auth(project_id: str = "project-a", *, upload_operator: bool = False) -> AuthContext:
+    permissions = {"upload.manage"} if upload_operator else {
+        "dataset_version.publish", "data_schema.publish", "export.read", "export.create", "export.download"
+    }
     return AuthContext(
-        subject_id="publisher-a",
-        project_ids=frozenset({project_id}),
-        region_codes=frozenset(),
-        scoped_capabilities=frozenset(
-            (project_id, capability)
-            for capability in (
-                {"upload.manage"}
-                if upload_operator
-                else {"dataset_version.publish", "data_schema.publish", "export.read"}
-            )
-        ),
-        scope_pairs=frozenset({(project_id, None)}),
+        subject_id="publisher-a", project_ids=frozenset({project_id}),
+        region_codes=frozenset({"region-a"}), organization_ids=frozenset({"org-a"}),
+        scope_pairs=frozenset({(project_id, None), (project_id, "region-a")}),
+        organization_scope_triples=frozenset({("org-a", project_id, None), ("org-a", project_id, "region-a")}),
+        scoped_capabilities=frozenset((project_id, key) for key in permissions),
+        organization_scoped_capabilities=frozenset(("org-a", project_id, key) for key in permissions),
     )
 
 
@@ -285,6 +288,8 @@ def test_dataset_stage_exports_unannotated_rows_without_publishing(export_api, m
     assert created.status_code == 202
     assert created.json()["status"] == "SUCCEEDED"
     assert created.json()["result"]["row_count"] == 1
+    download = client.get(f"{url}/{created.json()['job_id']}/download", params={"project_id": "project-a"})
+    assert download.status_code == 200, download.text
     manifest = publisher.dataset_export_manifest(
         PublishDatasetRequestV1(
             project_id="project-a",
@@ -351,6 +356,10 @@ def test_first_export_materializes_missing_ready_lance_manifest(
         headers={"Idempotency-Key": "first-ready-export"},
     )
 
+    if upload_operator:
+        assert created.status_code == 403
+        assert created.json()["code"] == "CAPABILITY_REQUIRED"
+        return
     assert created.status_code == 202
     assert created.json()["status"] == "SUCCEEDED"
     assert created.json()["dataset_version"] == "version_lance_1"
@@ -392,6 +401,10 @@ def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_downl
         json={"project_id": "project-a", "format": "lance_snapshot"},
         headers={"Idempotency-Key": "export-1"},
     )
+    if upload_operator:
+        assert created.status_code == 403
+        assert created.json()["code"] == "CAPABILITY_REQUIRED"
+        return
     assert created.status_code == 202
     assert created.headers["cache-control"] == "no-store"
     assert created.headers["location"].endswith(created.json()["job_id"])
@@ -447,6 +460,57 @@ def test_export_job_is_idempotent_redacts_worker_locators_and_reauthorizes_downl
     current["auth"] = _publisher_auth("project-b", upload_operator=upload_operator)
     denied = client.get(f"{_export_url(job_id)}/download", params={"project_id": "project-a"})
     assert denied.status_code == 403
+    assert len(audit.events) == 2
+
+
+def test_export_read_create_and_scoped_download_are_independent(export_api):
+    client, current, audit = export_api
+    base = _publisher_auth()
+
+    def grant(*keys):
+        current["auth"] = replace(
+            base, scoped_capabilities=frozenset(),
+            organization_scoped_capabilities=frozenset(("org-a", "project-a", key) for key in keys),
+        )
+
+    command = {"project_id": "project-a", "format": "lance_snapshot"}
+    headers = {"Idempotency-Key": "export-independent"}
+    params = {"project_id": "project-a"}
+    grant("dataset_version.publish")
+    assert client.post(_export_url(), json=command, headers=headers).status_code == 403
+    grant("export.create")
+    new_version = "/api/v1/datasets/dataset-a/versions/version_lance_1/exports"
+    assert client.post(new_version, json=command, headers=headers).status_code == 403
+    created = client.post(_export_url(), json=command, headers=headers)
+    assert created.status_code == 202
+    job_id = created.json()["job_id"]
+    status_url = _export_url(job_id)
+    download_url = f"{status_url}/download"
+    grant("role.observer")
+    assert client.get(f"/api/v1/jobs/{job_id}").status_code == 403
+    listing = client.get("/api/v1/jobs", params=params)
+    assert listing.status_code == 200 and listing.json()["items"] == []
+    manifest_url = _export_url().removesuffix("/exports")
+    grant("export.read")
+    assert client.get(manifest_url, params=params).status_code == 403
+    assert client.get(f"/api/v1/jobs/{job_id}").status_code == 200
+    listing = client.get("/api/v1/jobs", params=params)
+    assert listing.json()["total"] == 1
+    assert all(key not in listing.text for key in ("artifact_uri", "download_uri", "frozen_manifest"))
+    assert client.post(f"/api/v1/jobs/{job_id}:cancel").status_code == 403
+    assert client.get(status_url, params=params).status_code == 200
+    assert client.get(download_url, params=params).status_code == 403
+    grant(f"export.download/version:other:{created.json()['dataset_version']}")
+    assert client.get(download_url, params=params).status_code == 403
+    grant("export.download/dataset:dataset-a")
+    assert client.get(download_url, params=params).status_code == 200
+    grant(f"export.download/version:dataset-a:{created.json()['dataset_version']}")
+    assert client.get(download_url, params=params).status_code == 200
+    grant("export.read")
+    assert client.get(download_url, params=params).status_code == 403
+    grant("dataset_version.download_manifest/dataset:dataset-a")
+    assert client.get(manifest_url, params=params).status_code == 200
+    assert client.get(download_url, params=params).status_code == 403
     assert len(audit.events) == 2
 
 

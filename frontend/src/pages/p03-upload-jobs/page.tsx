@@ -144,8 +144,8 @@ export default function UploadJobsPage() {
   );
   const cancelUpload = useUploadQueueStore((state) => state.cancel);
   const clearSettled = useUploadQueueStore((state) => state.clearSettled);
-  const canRead = capabilities.has("upload.read");
-  const canManage = capabilities.has("upload.manage");
+  const canRead = capabilities.has("upload.read") || capabilities.has("role.collector");
+  const canManage = capabilities.has("upload.manage") || capabilities.has("role.collector");
   const canReadRobotIngest = capabilities.has("ingest_source.read");
 
   useEffect(() => {
@@ -555,7 +555,7 @@ export default function UploadJobsPage() {
                     <OssImportPanel
                       key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}`}
                       scope={scope}
-                      disabled={!canManage || !online || flow.phase !== "idle"}
+                      disabled={!capabilities.has("upload.manage") || !online || flow.phase !== "idle"}
                       onImported={() => navigate(dataUploadRoutes.records)}
                     />
                   )
@@ -610,6 +610,7 @@ export default function UploadJobsPage() {
           {queueVisible && !precheckVisible && !selectionVisible ? (
             <div className={styles.serialWorkspace}>
               <UploadQueuePanel
+                scope={scope}
                 items={queueItems}
                 recovering={recovering}
                 recoveryProblem={recoveryProblem}
@@ -670,6 +671,7 @@ export default function UploadJobsPage() {
           (queueItems.length > 0 || recovering || recoveryProblem) ? (
             <div className={styles.recordsActiveQueue}>
               <UploadQueuePanel
+                scope={scope}
                 items={queueItems}
                 recovering={recovering}
                 recoveryProblem={recoveryProblem}

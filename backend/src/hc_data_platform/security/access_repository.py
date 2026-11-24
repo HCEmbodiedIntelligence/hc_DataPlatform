@@ -55,6 +55,7 @@ from .recovery import (
     PasswordRecoveryTarget,
 )
 from .scope import ScopeGuard
+from .capabilities import PROJECT_ROLES
 
 
 def _now() -> datetime:
@@ -149,6 +150,12 @@ def _transition_conflict(status: AccessRequestStatus) -> ProblemException:
     )
 
 
+def _organization_membership_required() -> ProblemException:
+    return problem(status=403, code="ORGANIZATION_MEMBERSHIP_REQUIRED",
+                   title="Organization membership required",
+                   detail="请先加入该项目所属的组织，再申请或批准项目成员资格。")
+
+
 def _account_principal_required() -> ProblemException:
     return problem(
         status=403,
@@ -198,6 +205,18 @@ def can_manage_project(
     return auth.has_capability("access.manage", project_id, organization_id)
 
 
+DELIVERY_GRANTS = frozenset({"export.read", "export.create", "export.download", "dataset_version.download_raw",
+                             "dataset_version.download_manifest"})
+
+
+def can_approve_delivery(auth: AuthContext, project_id: str, organization_id: str) -> bool:
+    try:
+        ScopeGuard.require(auth, project_id, organization_id=organization_id)
+    except ProblemException:
+        return False
+    return auth.has_capability("access.download_approval.manage", project_id, organization_id)
+
+
 def require_project_manager(
     auth: AuthContext, project_id: str, organization_id: str | None = None
 ) -> None:
@@ -209,6 +228,45 @@ def require_project_manager(
             title="Access management permission required",
             detail="This project scope does not grant access-request management.",
         )
+
+
+def require_independent_approval(auth: AuthContext, requester_id: str, status: AccessRequestStatus) -> None:
+    if status is AccessRequestStatus.APPROVED and auth.subject_id == requester_id:
+        raise problem(status=403, code="SELF_APPROVAL_DENIED", title="Self approval denied",
+                      detail="Another authorized person must approve the request.")
+
+
+def check_grant_decision(auth: AuthContext, item: CapabilityRequest, status: AccessRequestStatus) -> None:
+    require_independent_approval(auth, item.requester_id, status)
+    if status is AccessRequestStatus.APPROVED and item.expires_at and item.expires_at <= _now():
+        raise problem(status=409, code="GRANT_EXPIRED", title="Grant expired",
+                      detail="The requested grant has already expired.")
+    if auth.is_platform_admin:
+        return
+    keys = set(item.capability_keys)
+    if keys <= DELIVERY_GRANTS and can_approve_delivery(auth, item.project_id, item.organization_id):
+        return
+    require_project_manager(auth, item.project_id, item.organization_id)
+    if status is AccessRequestStatus.REJECTED:
+        return
+    if keys == {"role.project_admin"} and auth.has_capability("organization.admin", item.project_id, item.organization_id):
+        return
+    ordinary_roles = PROJECT_ROLES.keys() - {"role.project_admin"}
+    ordinary = set(ordinary_roles).union(*(PROJECT_ROLES[key] for key in ordinary_roles))
+    if keys <= ordinary:
+        return
+    raise problem(status=403, code="GRANT_AUTHORITY_REQUIRED", title="Grant authority required",
+                  detail="The requested grant exceeds your delegation authority.")
+
+
+def validate_transfer(auth: AuthContext, item: CapabilityRequest, previous: CapabilityRequest | None) -> None:
+    if (previous is None or previous.requester_id != item.requester_id
+        or previous.organization_id != item.organization_id or previous.project_id != item.project_id
+        or previous.status is not AccessRequestStatus.APPROVED
+        or not set(previous.capability_keys) <= PROJECT_ROLES.keys()):
+        raise problem(status=409, code="ROLE_TRANSFER_CONFLICT", title="Role transfer conflict",
+                      detail="The source role is no longer eligible for this transfer.")
+    check_grant_decision(auth, previous, AccessRequestStatus.REVOKED)
 
 
 class AccessRepository(AccountRecoveryRepository, AdminAccountRepository, Protocol):
@@ -313,6 +371,13 @@ class AccessRepository(AccountRecoveryRepository, AdminAccountRepository, Protoc
         self, *, principal_id: str
     ) -> tuple[AccountOrganizationMembership, ...]: ...
 
+    def create_managed_project(self,auth,cmd,request_id): ...
+
+    def governance_directory(self, auth): ...
+    def governance_members(self, auth, organization, project, offset): ...
+    def governance_inbox(self, auth, organization, project, offset): ...
+    def change_administrator(self, auth, principal, cmd, request_id): ...
+
     def account_access_overview(self, *, principal_id: str) -> AccountAccessOverview: ...
 
     def create_organization_membership_request(
@@ -401,6 +466,9 @@ class AccessRepository(AccountRecoveryRepository, AdminAccountRepository, Protoc
         organization_id: str,
         project_id: str,
         capability_keys: tuple[str, ...],
+        expires_at: datetime | None = None,
+        resource_id: str | None = None,
+        replaces_request_id: str | None = None,
         reason: str | None,
         idempotency_key: str,
         request_id: str,
@@ -449,7 +517,10 @@ class AccessRepository(AccountRecoveryRepository, AdminAccountRepository, Protoc
     ) -> tuple[AccessAuditEvent, ...]: ...
 
 
-class InMemoryAccessRepository:
+from .governance_memory import MemoryGovernance
+
+
+class InMemoryAccessRepository(MemoryGovernance):
     """Thread-safe executable specification for the PostgreSQL adapter."""
 
     def __init__(
@@ -484,6 +555,8 @@ class InMemoryAccessRepository:
         self._organization_memberships: set[tuple[str, str]] = set()
         self._organization_projects = set(organization_projects)
         self._organization_membership_requests: dict[str, AccountAccessRequest] = {}
+        self._organization_admins: set[tuple[str,str]] = set()
+        self._project_admins: set[tuple[str,str,str]] = set()
         self._organization_request_owners: dict[str, str] = {}
         self._membership_requests: dict[str, MembershipRequest] = {}
         self._capability_requests: dict[str, CapabilityRequest] = {}
@@ -1245,6 +1318,8 @@ class InMemoryAccessRepository:
                     if member_id == principal_id
                 )
             )
+            managed={o for a,o in self._organization_admins if a==principal_id}
+            projects=sorted(set(projects)|{(o,p) for o,p in self._organization_projects if o in managed})
             scopes = tuple(
                 AvailableScope(
                     organization_id=organization_id,
@@ -1264,8 +1339,10 @@ class InMemoryAccessRepository:
                                 and request.organization_id == organization_id
                                 and request.project_id == project_id
                                 and request.status is AccessRequestStatus.APPROVED
-                                for capability in request.capability_keys
-                            }
+                                and (request.expires_at is None or request.expires_at > timestamp)
+                                for capability in request.effective_grant_keys
+                            } | ({"access.read","access.manage","organization.admin"} if organization_id in managed else set())
+                            | ({"role.project_admin"} if (principal_id,organization_id,project_id) in self._project_admins else set())
                         )
                     ),
                 )
@@ -1564,6 +1641,7 @@ class InMemoryAccessRepository:
                     organization_id=item.organization_id,
                     project_id=item.project_id,
                     capability_keys=item.capability_keys,
+                    expires_at=item.expires_at, resource_id=item.resource_id, replaces_request_id=item.replaces_request_id,
                     status=item.status,
                     reason=item.reason,
                     created_at=item.created_at,
@@ -1674,7 +1752,6 @@ class InMemoryAccessRepository:
         idempotency_key: str,
         request_id: str,
     ) -> AccountAccessRequest:
-        auth.require_capability(CAPABILITY_PLATFORM_ADMIN)
         if target_status not in {
             AccessRequestStatus.APPROVED,
             AccessRequestStatus.REJECTED,
@@ -1687,6 +1764,10 @@ class InMemoryAccessRepository:
             "reason": reason,
         }
         with self._lock:
+            from .governance import denied
+            obj=self._organization_membership_requests.get(access_request_id)
+            if not auth.is_platform_admin and (obj is None or (auth.subject_id,obj.organization_id) not in self._organization_admins):
+                raise denied()
             repeated = self._repeat(
                 auth.subject_id, "organization-membership.decide", idempotency_key, payload
             )
@@ -1695,6 +1776,10 @@ class InMemoryAccessRepository:
             item = self._organization_membership_requests.get(access_request_id)
             if item is None:
                 raise _not_found("organization_membership_request")
+            owner_id = self._organization_request_owners.get(item.request_id)
+            if owner_id is None:
+                raise _not_found("organization_membership_request")
+            require_independent_approval(auth, owner_id, target_status)
             expected = (
                 AccessRequestStatus.APPROVED
                 if target_status is AccessRequestStatus.REVOKED
@@ -1714,13 +1799,12 @@ class InMemoryAccessRepository:
                 )
             )
             self._organization_membership_requests[item.request_id] = updated
-            owner_id = self._organization_request_owners.get(item.request_id)
-            if owner_id is None:
-                raise _not_found("organization_membership_request")
             if target_status is AccessRequestStatus.APPROVED:
                 self._organization_memberships.add((owner_id, item.organization_id))
                 self._bump_revision(owner_id)
             elif target_status is AccessRequestStatus.REVOKED:
+                self._organization_admins.discard((owner_id,item.organization_id))
+                self._project_admins={k for k in self._project_admins if k[:2]!=(owner_id,item.organization_id)}
                 self._organization_memberships.discard((owner_id, item.organization_id))
                 revoked_projects = {
                     project_id
@@ -1819,6 +1903,8 @@ class InMemoryAccessRepository:
             repeated = self._repeat(auth.subject_id, "membership.create", idempotency_key, payload)
             if repeated is not None:
                 return self._membership_requests[repeated]
+            if (auth.subject_id, organization_id) not in self._organization_memberships:
+                raise _organization_membership_required()
             if (auth.subject_id, organization_id, project_id) in self._memberships:
                 raise problem(
                     status=409,
@@ -1935,6 +2021,7 @@ class InMemoryAccessRepository:
                 or item.project_id != project_id
             ):
                 raise _not_found("membership_request")
+            require_independent_approval(auth, item.requester_id, target_status)
             if item.status is target_status:
                 self._remember(
                     auth.subject_id,
@@ -1951,6 +2038,8 @@ class InMemoryAccessRepository:
             )
             if item.status is not expected:
                 raise _transition_conflict(item.status)
+            if target_status is AccessRequestStatus.APPROVED and (item.requester_id, organization_id) not in self._organization_memberships:
+                raise _organization_membership_required()
             updated = item.model_copy(
                 update={
                     "status": target_status,
@@ -1962,10 +2051,10 @@ class InMemoryAccessRepository:
             )
             self._membership_requests[item.request_id] = updated
             if target_status is AccessRequestStatus.APPROVED:
-                self._organization_memberships.add((item.requester_id, organization_id))
                 self._memberships.add((item.requester_id, organization_id, project_id))
                 self._bump_revision(item.requester_id)
             elif target_status is AccessRequestStatus.REVOKED:
+                self._project_admins.discard((item.requester_id,organization_id,project_id))
                 self._memberships.discard((item.requester_id, organization_id, project_id))
                 self._revoke_capability_requests(
                     item.requester_id, organization_id, project_id, auth.subject_id
@@ -2055,6 +2144,9 @@ class InMemoryAccessRepository:
         organization_id: str,
         project_id: str,
         capability_keys: tuple[str, ...],
+        expires_at: datetime | None = None,
+        resource_id: str | None = None,
+        replaces_request_id: str | None = None,
         reason: str | None,
         idempotency_key: str,
         request_id: str,
@@ -2063,6 +2155,9 @@ class InMemoryAccessRepository:
             "organization_id": organization_id,
             "project_id": project_id,
             "capability_keys": list(capability_keys),
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "resource_id": resource_id,
+            "replaces_request_id": replaces_request_id,
             "reason": reason,
         }
         with self._lock:
@@ -2078,6 +2173,7 @@ class InMemoryAccessRepository:
                 project_id=project_id,
                 requester_id=auth.subject_id,
                 capability_keys=capability_keys,
+                expires_at=expires_at, resource_id=resource_id, replaces_request_id=replaces_request_id,
                 status=AccessRequestStatus.PENDING,
                 reason=reason,
                 created_at=timestamp,
@@ -2103,7 +2199,8 @@ class InMemoryAccessRepository:
                         for item in self._capability_requests.values()
                         if item.organization_id == organization_id
                         and item.project_id == project_id
-                        and (manager or item.requester_id == auth.subject_id)
+                        and (manager or item.requester_id == auth.subject_id or
+                             (set(item.capability_keys) <= DELIVERY_GRANTS and can_approve_delivery(auth, project_id, organization_id)))
                     ),
                     key=lambda item: (item.created_at, item.request_id),
                     reverse=True,
@@ -2128,7 +2225,7 @@ class InMemoryAccessRepository:
                 raise _not_found("capability_request")
             if item.requester_id != auth.subject_id and not can_manage_project(
                 auth, project_id, organization_id
-            ):
+            ) and not (set(item.capability_keys) <= DELIVERY_GRANTS and can_approve_delivery(auth, project_id, organization_id)):
                 raise _not_found("capability_request")
             return item
 
@@ -2150,7 +2247,8 @@ class InMemoryAccessRepository:
             AccessRequestStatus.REVOKED,
         }:
             raise ValueError("unsupported manager transition")
-        require_project_manager(auth, project_id, organization_id)
+        if not can_approve_delivery(auth, project_id, organization_id):
+            require_project_manager(auth, project_id, organization_id)
         payload = {
             "organization_id": organization_id,
             "request_id": access_request_id,
@@ -2168,6 +2266,7 @@ class InMemoryAccessRepository:
                 or item.project_id != project_id
             ):
                 raise _not_found("capability_request")
+            check_grant_decision(auth, item, target_status)
             if item.status is target_status:
                 self._remember(
                     auth.subject_id,
@@ -2184,6 +2283,15 @@ class InMemoryAccessRepository:
             )
             if item.status is not expected:
                 raise _transition_conflict(item.status)
+            if target_status is AccessRequestStatus.APPROVED and item.replaces_request_id:
+                previous = self._capability_requests.get(item.replaces_request_id)
+                validate_transfer(auth, item, previous)
+                assert previous is not None
+                revoked = previous.model_copy(update={"status": AccessRequestStatus.REVOKED,
+                    "decided_by": auth.subject_id, "decision_reason": f"Role transfer {item.request_id}",
+                    "revision": previous.revision + 1, "updated_at": _now()})
+                self._capability_requests[previous.request_id] = revoked
+                self._audit_capability(revoked, auth.subject_id, "access.capability.revoked", request_id)
             updated = item.model_copy(
                 update={
                     "status": target_status,

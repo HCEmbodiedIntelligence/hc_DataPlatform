@@ -12,6 +12,7 @@ const autoQualityProblemSchema = z
     collection_task_id: z.string().nullish(),
     source_file_name: z.string().nullish(),
     discarded: z.boolean().optional(),
+    progress: z.enum(["OPEN", "IN_PROGRESS", "DISCARDED"]).optional(),
     session_id: z.string().min(1).nullable(),
     source_import_id: z.string().min(1).nullish(),
     source_episode_index: z.number().int().nonnegative().nullish(),
@@ -46,6 +47,7 @@ export interface AutoQualityProblem {
   readonly collectionTaskId?: string | null;
   readonly sourceFileName?: string | null;
   readonly discarded?: boolean;
+  readonly progress?: "OPEN" | "IN_PROGRESS" | "DISCARDED";
   readonly sessionId: string | null;
   readonly sourceImportId: string | null;
   readonly sourceEpisodeIndex: number | null;
@@ -63,6 +65,11 @@ export interface AutoQualityProblem {
   readonly topics: readonly string[];
   readonly reportSha256: string;
   readonly updatedAt: string;
+}
+
+export function progressNotice(problem: AutoQualityProblem) {
+  if (problem.progress === "IN_PROGRESS") return "处理中 · 可查看历史质检报告";
+  return "已丢弃 · 原始数据已保留";
 }
 
 export function useAutoQualityProblems(allowed = true) {
@@ -86,7 +93,7 @@ export function useAutoQualityProblems(allowed = true) {
           path,
           scope: scope!,
           signal,
-          query: { includeDiscarded: true },
+          query: { includeDiscarded: true, includeProgress: true },
         }),
         {
           endpoint: "listAutoQualityProblems",
@@ -101,6 +108,7 @@ export function useAutoQualityProblems(allowed = true) {
             collectionTaskId: item.collection_task_id ?? null,
             sourceFileName: item.source_file_name ?? null,
             discarded: item.discarded ?? false,
+            progress: item.progress ?? (item.discarded ? "DISCARDED" : "OPEN"),
             sessionId: item.session_id,
             sourceImportId: item.source_import_id ?? null,
             sourceEpisodeIndex: item.source_episode_index ?? null,

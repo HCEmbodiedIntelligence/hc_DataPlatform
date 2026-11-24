@@ -17,7 +17,7 @@ import {
 
 export function useEpisodeRobotScene(
   manifestRobotId: string | null,
-  jointAngleStream: StreamDescriptor | null,
+  actionStream: StreamDescriptor | null,
   scope: Scope | null,
   provenance: RobotSceneProvenance = currentBindingPreview,
   snapshotVersionId?: string | null,
@@ -42,7 +42,7 @@ export function useEpisodeRobotScene(
     versionId,
   );
   const jointFrameSource = useMemo(() => {
-    const base = buildJointFrameSource(jointAngleStream);
+    const base = buildJointFrameSource(actionStream);
     if (!base) return;
     const directions = new Map(
       (robotJointMappings.data ?? []).map((mapping) => [
@@ -61,7 +61,7 @@ export function useEpisodeRobotScene(
         );
       },
     };
-  }, [jointAngleStream, robotJointMappings.data]);
+  }, [actionStream, robotJointMappings.data]);
   const urdfAsset = robotModelAssets.data?.find(
     (asset) => asset.role === "URDF",
   );
@@ -124,8 +124,8 @@ export function useEpisodeRobotScene(
   ]);
   const robotSceneUnavailableReason = useMemo(() => {
     if (provenance.availability === "unavailable") return provenance.reason;
-    if (!jointAngleStream)
-      return "当前数据未发现关节角 Topic；写入关节角数据后才能同步机器人姿态。";
+    if (!actionStream)
+      return "当前数据缺少可用于姿态回放的关节动作指令（action）。";
     if (!manifestRobotId) return "此数据缺少机器人实例引用，无法解析回放模型。";
     if (robotBootstrap.isError) return "机器人实例配置读取失败，请重新加载。";
     if (robotBootstrap.isPending) return "正在读取机器人实例当前绑定的模型…";
@@ -144,7 +144,7 @@ export function useEpisodeRobotScene(
   }, [
     boundVersionId,
     provenance,
-    jointAngleStream,
+    actionStream,
     manifestRobotId,
     robotBootstrap.isError,
     robotBootstrap.isPending,

@@ -129,9 +129,11 @@ def test_automatic_scheme_uses_one_real_sample_without_fabricating_other_format_
     with psycopg.connect(dsn) as db:
         value = draft().model_dump(mode="json")
         value["input_mode"] = "AUTO"
-        saved = schemes.save(db, org, "auto", SchemeDraft.model_validate(value), "tester")
-        with pytest.raises(ProblemException):
-            schemes.publish(db, org, "auto", 1, "tester")
+        command = SchemeDraft.model_validate(value)
+        schemes.save(db, org, "auto-unchecked", command, "tester")
+        unchecked = schemes.publish(db, org, "auto-unchecked", 1, "tester")
+        assert unchecked["validations"] == {}
+        saved = schemes.save(db, org, "auto", command, "tester")
         schemes.record_validation(
             db,
             org,
@@ -496,21 +498,18 @@ def test_start_racing_plan_change_keeps_each_recording_on_its_requested_revision
         assert bool(head["locked_at"]) == isinstance(results[0], dict)
 
 
-def test_stale_validation_cannot_publish_and_lost_publication_is_idempotent(environment):
+def test_publish_excludes_stale_validation_and_lost_publication_is_idempotent(environment):
     dsn, scope, _ = environment
     org = scope[0]
     with psycopg.connect(dsn) as db:
         ref = publish(db, org)
         schemes.save(db, org, "joints", draft(1, fps=20), "tester")
         assert schemes.publish(db, org, "joints", 1, "tester")["version"] == ref.version
-    with (
-        psycopg.connect(dsn) as db,
-        pytest.raises(
-            ProblemException,
-            match="CAPTURE_SAMPLE_VALIDATION_REQUIRED",
-        ),
-    ):
-        schemes.publish(db, org, "joints", 2, "tester")
+    with psycopg.connect(dsn) as db:
+        published = schemes.publish(db, org, "joints", 2, "tester")
+        assert published["version"] == 2
+        assert published["validations"] == {}
+        assert schemes.publish(db, org, "joints", 2, "tester") == published
 
 
 @pytest.mark.parametrize(

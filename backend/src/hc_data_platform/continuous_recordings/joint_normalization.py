@@ -6,6 +6,8 @@ or NaN commands may use measured state. Raw messages and clocks stay intact.
 
 from bisect import bisect_left
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_MS
+
 JOINTS = tuple(f"Joint{i}_{side}" for side in ("R", "L") for i in range(1, 8)) + (
     "leg_1", "leg_2", "zhi",
 )
@@ -46,7 +48,7 @@ def reference(message, stamp, ordinal):
             "publish_time_ns": message.publish_time}
 
 
-def normalize(value, names, *, topic, message, ordinal, states=(), state_times=(), action=False, rules=None):
+def normalize(value, names, *, topic, message, ordinal, states=(), state_times=(), action=False, rules=None, fallback_ms=JOINT_MATCH_MS):
     from .mcap_selection import joint_values
 
     stamp = capture_time(value, message)
@@ -61,7 +63,7 @@ def normalize(value, names, *, topic, message, ordinal, states=(), state_times=(
     missing = [name for name in names if name not in selected]
     fallback = None
     if missing:
-        tolerance_ms = rules.max_state_delta_ms if rules else 20
+        tolerance_ms = rules.max_state_delta_ms if rules else fallback_ms
         match = nearest_index(state_times, stamp, round(tolerance_ms * 1_000_000))
         if not action or match is None:
             raise ValueError(f"MCAP_WAIST_STATE_UNAVAILABLE: {topic} axes={missing} capture_time_ns={stamp} tolerance_ms={tolerance_ms}")

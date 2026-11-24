@@ -197,6 +197,14 @@ def test_production_routes_use_machine_auth_and_never_echo_ticket_in_errors():
             ).status_code
             == 401
         )
+        unknown = command(ticket).model_copy(update={"ticket": "never-issued-" + "0" * 32})
+        refused = client.post(
+            "/api/v1/robot-ingest/connections:redeem", json=unknown.model_dump(mode="json")
+        )
+        assert refused.status_code == 401
+        assert refused.json()["code"] == "CONNECTION_TICKET_INVALID"
+        assert unknown.ticket not in refused.text
+
         invalid = client.post(
             "/api/v1/robot-ingest/connections:redeem",
             json={"ticket": ticket["ticket"], "request_id": "bad"},
