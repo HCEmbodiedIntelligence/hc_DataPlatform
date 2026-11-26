@@ -128,7 +128,7 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
         connection.execute(
             sql.SQL(
                 "GRANT USAGE ON SCHEMA access_control, core, collection_tasks, ingest, "
-                "registry, dataset_registry, annotation, public TO {}"
+                "registry, dataset_registry, episode_store, annotation, public TO {}"
             ).format(sql.Identifier(role_name))
         )
         for relation, privileges in (
@@ -159,6 +159,12 @@ def create_runtime_role(dsn: str, role_name: str) -> None:
             ("ingest.recording_episode_qc_reports", "SELECT"),
             ("core.outbox_events", "SELECT"),
             ("quality_rollout_summaries", "SELECT"),
+            ("episode_store.collection_heads", "SELECT"),
+            ("episode_store.collections", "SELECT"),
+            ("lance_datasets", "SELECT"),
+            ("dataset_registry.dataset_versions", "SELECT"),
+            ("dataset_registry.dataset_version_episodes", "SELECT"),
+            ("dataset_registry.dataset_version_episode_revisions", "SELECT"),
         ):
             connection.execute(
                 sql.SQL("GRANT {} ON {} TO {}").format(
@@ -555,14 +561,18 @@ def test_postgres_duration_attainment_cancel_and_reopen() -> None:
                 task.collection_task_id,
                 "cn-test",
             )
-        assert progress.captured_duration_seconds == 30
-        assert progress.duration_observed_package_count == 2
+        # Both manifests passed QC, but neither Episode has been admitted.
+        assert progress.captured_duration_seconds == 0
+        assert progress.duration_observed_package_count == 0
         assert progress.duration_unknown_package_count == 0
-        assert progress.attainment.status is CollectionTaskAttainmentStatus.ATTAINED
+        assert progress.attainment.status is CollectionTaskAttainmentStatus.IN_PROGRESS
         assert progress.attainment.package_count is not None
         assert progress.attainment.package_count.status is CollectionTaskTargetMetricStatus.MET
         assert progress.attainment.duration_seconds is not None
-        assert progress.attainment.duration_seconds.status is CollectionTaskTargetMetricStatus.MET
+        assert (
+            progress.attainment.duration_seconds.status
+            is CollectionTaskTargetMetricStatus.IN_PROGRESS
+        )
         assert progress.status is CollectionTaskStatus.ACTIVE
 
         with request_scope(project_id):

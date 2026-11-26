@@ -85,8 +85,8 @@ const progress: CollectionTaskProgress = {
   as_of: "2026-08-18T05:30:00Z",
   received_package_count: 8,
   captured_duration_seconds: 600,
-  duration_observed_package_count: 8,
-  duration_unknown_package_count: 2,
+  duration_observed_package_count: 5,
+  duration_unknown_package_count: 0,
   qc: {
     evaluated_count: 7,
     pass_count: 6,
@@ -624,12 +624,12 @@ describe("P20 collection tasks", () => {
       "0000 0001",
     );
     expect(screen.getByText("8 包 / 20 包")).toBeVisible();
-    expect(screen.getByText("10 分钟")).toBeVisible();
+    expect(screen.getByText("已入库时长 10 分钟")).toBeVisible();
     expect(screen.getByText("通过率 85.7%")).toBeVisible();
     expect(screen.getByText("1 待质检")).toBeVisible();
     expect(screen.queryByText(task.scenario)).not.toBeInTheDocument();
     expect(screen.queryByText(task.dataset_id)).not.toBeInTheDocument();
-    expect(screen.queryByText("2 包时长未知")).not.toBeInTheDocument();
+    expect(screen.queryByText(/已入库成片时长未知/u)).not.toBeInTheDocument();
     expect(screen.queryByText("1 设备 · 1 相机")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("columnheader", { name: "数据截至" }),
@@ -657,7 +657,7 @@ describe("P20 collection tasks", () => {
     expect(details.getByText(task.dataset_id)).toBeVisible();
     expect(details.getByText("8 包 / 20 包")).toBeVisible();
     expect(details.getByText("10 分钟 / 20 分钟")).toBeVisible();
-    expect(details.getByText("2 包时长未知")).toBeVisible();
+    expect(details.getByText("已入库时长")).toBeVisible();
     expect(
       details.getByLabelText("Pass 6，Risk 1，Reject 0，未出质检 1"),
     ).toBeVisible();

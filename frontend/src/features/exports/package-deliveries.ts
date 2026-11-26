@@ -1,10 +1,14 @@
 import { deliveryUrl, waitForDeliveryCache } from "../../shared/lib/delivery-cache";
 import { localObjectStorageUrl } from "../../shared/lib/object-storage-url";
 import { z } from "zod";
-import { downloadArchive } from "./raw-download";
+import type { ExportDestination } from "./oss-export";
+import { exportArchiveName } from "./archive-name";
+import { MAX_EXPORT_ITEMS, transferWidth } from "../../shared/lib/ordered-transfer";
+import { downloadArchive, fetchArchivePart } from "./raw-download";
 import type { Scope } from "../../shared/scope/model";
 import { episodeDataReferenceWireSchema as dataWire } from "../datasets/api/episode-package-wire";
 import { request } from "../../shared/api/http-client";
+import { isDomainError } from "../../shared/api/domain-error";
 import { collectionRecordWire, completeDeliveryJobWire } from "../datasets/episodes/complete-deliveries";
 import { annotationDeliveryPlanWire } from "../annotation/runtime/annotation-deliveries";
 
@@ -128,7 +132,7 @@ export function checkedPackageJob(raw: unknown, scope: Scope) {
   )
     throw new Error("任务的固定选择或归档状态不一致。");
   if (plan.format === "hc-collection-delivery-plan/1") {
-    if (plan.members.length > 100 && !plan.archive_format.startsWith("holobrain_collection_zip/"))
+    if (plan.members.length > MAX_EXPORT_ITEMS && !plan.archive_format.startsWith("holobrain_collection_zip/"))
       throw new Error("集合的 Episode 数量超出格式限制。");
     for (const member of plan.members) {
       const a = member.annotation;
@@ -289,33 +293,90 @@ export async function loadPackageJob(
   return job;
 }
 export async function downloadEpisodeBundle(scope: Scope, members: PackageData[], mode: BatchMode,
-  filter: PackageExportFilter, signal: AbortSignal, report: (text: string) => void) {
-  if (!scope.projectId || !scope.regionCode || !scope.organizationId || !members.length || members.length > 1000)
-    throw new Error("每个压缩包可选择 1–1000 条 Episode。");
+  filter: PackageExportFilter, signal: AbortSignal, report: (text: string, completed?: number, total?: number) => void,
+  destination: ExportDestination = "zip", datasetNumbers?: ReadonlyMap<string, string>, beforeStart?: () => Promise<void>, saving?: () => void) {
+  if (!scope.projectId || !scope.regionCode || !scope.organizationId || !members.length || members.length > MAX_EXPORT_ITEMS)
+    throw new Error("每个压缩包可选择 1–10000 条 Episode。");
   const checkedScope = { organizationId: scope.organizationId, projectId: scope.projectId, regionCode: scope.regionCode };
-  const wire = z.object({ part_id: digest, status: z.enum(["preparing", "ready"]), reused: z.boolean() });
-  return downloadArchive(checkedScope, signal, bytes => report(`已下载 ${Math.floor(bytes/1048576)} MB`),
-    "Episodes", async lease => {
-      const partIds: string[] = [];
+  const progress = z.union([
+    z.object({ index: z.number().int().min(0).max(members.length - 1), part_id: digest, reused: z.boolean() }),
+    z.object({ error: z.string() }),
+  ]);
+  return downloadArchive(checkedScope, signal, bytes => report(`${destination === "oss" ? "已上传到 OSS" : "已下载"} ${Math.floor(bytes/1048576)} MB`),
+    exportArchiveName(mode, members.map(({ identity }) => datasetNumbers?.get(identity.dataset_id) ?? identity.dataset_id)),
+    async (lease, suggestedName) => {
+      const partIds = new Array<string>(members.length);
+      members.forEach(data => scopeData(data, scope));
+      if (new Set(members.map(d => JSON.stringify([d.identity.dataset_id, d.identity.episode_id]))).size !== members.length)
+        throw new Error("同一 Episode 只能选择一个数据版本。");
+      let ready = 0;
       let reused = 0;
-      for (const data of members) {
-        scopeData(data, scope);
-        report(`准备 Episode ${partIds.length + 1}/${members.length}，已复用 ${reused} 条`);
-        for (;;) {
-          lease.throwIfAborted();
-          const part = wire.parse(await request({method: "POST", path: base(scope) + "/bundle-parts",
-            scope, signal: lease, cache: "no-store", body: {data, mode, export_filter: filter}}));
-          if (part.status === "ready") {
-            partIds.push(part.part_id);
-            if (part.reused) reused++;
-            break;
+      const maxAttempts = mode === "mcap" && destination === "zip" ? 3 : 1;
+      report(`已准备 Episode 0/${members.length}，已复用 0 条`);
+      // Bound the request body for large selections. Each page is prepared in parallel server-side.
+      for (let start = 0; start < members.length; start += 256) {
+        const end = Math.min(start + 256, members.length);
+        for (let attempt = 1; ready < end; attempt++) {
+          await beforeStart?.();
+          const remaining = Array.from({ length: end - start }, (_, i) => start + i).filter(i => partIds[i] === undefined);
+          let pending = "";
+          let eventError: unknown;
+          const decoder = new TextDecoder();
+          function line(value: string) {
+            if (!value.trim()) return;
+            try {
+              const event = progress.parse(JSON.parse(value));
+              if ("error" in event) throw new Error(event.error);
+              const index = remaining[event.index];
+              if (index === undefined || partIds[index] !== undefined) throw new Error("Episode 准备结果与请求不符。");
+              partIds[index] = event.part_id;
+              ready++;
+              if (event.reused) reused++;
+              report(`已准备 Episode ${ready}/${members.length}，已复用 ${reused} 条`, ready, members.length);
+            } catch (error) {
+              eventError = error;
+              throw error;
+            }
           }
-          await new Promise(resolve => window.setTimeout(resolve, 2000));
+          try {
+            await request({
+              method: "POST", path: base(scope) + "/bundle-parts", scope, scopeMode: "explicit",
+              signal: lease, cache: "no-store", body: { data: remaining.map(i => members[i]), mode, export_filter: filter },
+              downloadTo: new WritableStream<Uint8Array>({
+                async write(chunk) {
+                  await beforeStart?.();
+                  const lines = (pending + decoder.decode(chunk, { stream: true })).split("\n");
+                  pending = lines.pop()!;
+                  lines.forEach(line);
+                },
+                close() { line(pending + decoder.decode()); },
+              }),
+            });
+            if (ready !== end && attempt === maxAttempts) throw new Error("准备进度中断，请重新导出。");
+          } catch (error) {
+            lease.throwIfAborted();
+            if (eventError) throw eventError;
+            if (attempt === maxAttempts || !isDomainError(error) ||
+                (error.code !== "NETWORK_ERROR" && ![502, 503, 504].includes(error.httpStatus ?? 0))) throw error;
+          }
+          if (ready < end) {
+            report(`准备连接中断，正在重试剩余 ${members.length - ready} 条 Episode`);
+            await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+            lease.throwIfAborted();
+          }
         }
       }
       report(`正在合并 ${members.length} 条 Episode，已复用 ${reused} 条`);
-      return {path: base(scope) + "/bundle", body: {part_ids: partIds, export_filter: filter}};
-    });
+      const path = base(scope) + "/bundle";
+      const body = { part_ids: partIds, export_filter: filter, download_name: suggestedName };
+      if (destination !== "zip" || (mode !== "mcap" && transferWidth(partIds.length) === 1)) return { path, body };
+      return { path, body, async writeLocal(sink: WritableStream<Uint8Array>) {
+        const { writeSelectionBundle } = await import("./mcap-bundle");
+        await writeSelectionBundle(partIds, (id, active) =>
+          fetchArchivePart(checkedScope, path, { ...body, part_ids: [id] }, active, beforeStart),
+          sink, lease, report, mode === "mcap" ? "mcap" : "nested");
+      } };
+    }, "bundle", destination, beforeStart, bytes => report(`正在保存 ZIP（${Math.floor(bytes / 1048576)} MiB），完成后文件将出现在所选文件夹。`), saving);
 }
 
 export async function createPackageBatch(
@@ -327,8 +388,9 @@ export async function createPackageBatch(
   filter?: PackageExportFilter,
 ) {
   if (!members.length) throw new Error("请至少选择一条 Episode。");
-  if (mode !== "holobrain" && members.length > 100)
-    throw new Error("请选择 1–100 条 Episode。");
+  const limit = mode === "independent" ? 100 : MAX_EXPORT_ITEMS;
+  if (mode !== "holobrain" && members.length > limit)
+    throw new Error(`请选择 1–${limit} 条 Episode。`);
   members.forEach((m) => scopeData(dataWire.parse(m.data), scope));
   if (mode === "independent" && members.some((m) => m.annotation))
     throw new Error("带选定标注的批量交付请选择 LeRobot 集合。");

@@ -6,7 +6,9 @@ import hashlib
 import os
 import shutil
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import datetime, timezone
 from pathlib import PurePosixPath
 from threading import Lock
@@ -30,12 +32,13 @@ from .task_usage_models import (
 
 
 def category_totals(files):
+    sizes = defaultdict(int)
+    counts = defaultdict(int)
+    for file in files:
+        sizes[file.category] += int(file.bytes)
+        counts[file.category] += 1
     return tuple(
-        TaskStorageCategory(
-            category=category,
-            bytes=str(sum(int(f.bytes) for f in files if f.category == category)),
-            file_count=sum(f.category == category for f in files),
-        )
+        TaskStorageCategory(category=category, bytes=str(sizes[category]), file_count=counts[category])
         for category in USAGE_CATEGORIES
     )
 
@@ -91,6 +94,9 @@ class TaskStorageUsageReader:
         *,
         disk_path: str | None = None,
         bucket_usage_provider=None,
+        inventory_snapshot=None,
+        report_root=None,
+        report_namespace=None,
         object_store_provider="s3",
         object_scope="",
         local_usage_roots=None,
@@ -105,6 +111,11 @@ class TaskStorageUsageReader:
         self.object_scope = object_scope
         self.extra_location_provider = extra_location_provider
         self.local_usage_roots = local_usage_roots or {}
+        self.inventory_snapshot = inventory_snapshot
+        self.reports = None
+        if report_root:
+            from .usage_reports import UsageReports
+            self.reports = UsageReports(report_root, report_namespace, self._scan)
         self.cache = {}
         self.lock = Lock()
 
@@ -122,39 +133,59 @@ class TaskStorageUsageReader:
             return value
 
     def _scan(self, project_id):
-        labels = load_task_inventory(self.connections, project_id)
-        entries = (*self.catalog.entries(project_id=project_id), *labels.extra_entries)
-        selected, owners = {}, defaultdict(set)
-        missing = 0
+        provider, bucket_objects = self.provider, None
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            snapshot = pool.submit(copy_context().run, self.inventory_snapshot) if self.inventory_snapshot else None
+            labels = load_task_inventory(self.connections, project_id)
+            entries = self.catalog.entries(project_id=project_id)
+            if snapshot is not None:
+                provider, bucket_objects = snapshot.result()
+        entries = (*entries, *labels.extra_entries)
+        selected = {}
+        missing = Counter()
+        unknown_owner = FileOwner()
         for entry in entries:
+            lookup = self.provider if "://" in entry.object_key else provider
             objects = (
-                self.provider.list_prefix(entry.object_key)
+                lookup.list_prefix(entry.object_key)
                 if entry.prefix
-                else (tuple(filter(None, (self.provider.head(entry.object_key),))))
+                else (tuple(filter(None, (lookup.head(entry.object_key),))))
             )
+            owner = labels.owners.get(entry.identity, unknown_owner)
             if not objects and entry.required:
-                missing += 1
-            owner = labels.owners.get(entry.identity, FileOwner())
+                kind = {"episode": "成片目录", "episode-preview": "成片预览", "annotation-file": "标注文件",
+                        "episode-delivery": "导出包"}.get(entry.identity.split(":")[0], "登记文件或目录")
+                task = "、".join(labels.tasks[t]["task_code"].strip().lstrip("0") or "0" for t in owner.task_ids)
+                missing[(task, kind)] += 1
             for obj in objects:
-                owners[obj.object_key].update(owner.task_ids)
                 previous = selected.get(obj.object_key)
-                if previous is None or entry.priority > previous[0].priority:
-                    selected[obj.object_key] = (entry, obj, owner)
+                if previous is None:
+                    selected[obj.object_key] = (entry, obj, owner, owner.task_ids)
+                    continue
+                prev_entry, prev_obj, prev_owner, task_ids = previous
+                if owner.task_ids and owner.task_ids != task_ids:
+                    task_ids = tuple(sorted(set(task_ids).union(owner.task_ids)))
+                if entry.priority > prev_entry.priority:
+                    selected[obj.object_key] = (entry, obj, owner, task_ids)
+                elif task_ids != previous[3]:
+                    selected[obj.object_key] = (prev_entry, prev_obj, prev_owner, task_ids)
         grouped, related = defaultdict(list), defaultdict(list)
-        for key, (entry, obj, owner) in selected.items():
-            task_ids = tuple(sorted(owners[key]))
+        for key, (entry, obj, owner, task_ids) in selected.items():
             group = (
                 "shared"
                 if len(task_ids) > 1
                 else (f"task:{task_ids[0]}" if task_ids else "unassigned")
             )
+            basename = key.rpartition("/")[2]
+            if basename in ("", "."):
+                basename = PurePosixPath(key).name
             relative = (
-                key.removeprefix(entry.object_key) if entry.prefix else PurePosixPath(key).name
+                key.removeprefix(entry.object_key) if entry.prefix else basename
             )
             file = TaskStorageFile(
                 file_id=hashlib.sha256(key.encode()).hexdigest(),
                 category=owner.category,
-                name=owner.display_name or PurePosixPath(key).name,
+                name=owner.display_name or basename,
                 relative_path=relative,
                 record_name=owner.record_name,
                 robot_name=owner.robot_name,
@@ -204,7 +235,8 @@ class TaskStorageUsageReader:
         tasks.sort(key=lambda t: (-int(t.total_bytes), t.task_code or "", t.task_name))
         files = [file for group in grouped.values() for file in group]
         observed = datetime.now(timezone.utc)
-        bucket_objects = self.bucket_usage_provider() if self.bucket_usage_provider else None
+        if bucket_objects is None and self.bucket_usage_provider:
+            bucket_objects = self.bucket_usage_provider()
         disk, disks = local_disk_usage(self.disk_path, self.local_usage_roots)
         overview = ProjectTaskStorage(
             project_id=project_id,
@@ -230,13 +262,16 @@ class TaskStorageUsageReader:
                 database_bytes=getattr(labels, "database_bytes", None),
             )
             + (self.extra_location_provider() if self.extra_location_provider else ()),
-            warnings=(f"{missing} 项登记文件或目录未找到，当前仅统计实际存在的文件。",)
-            if missing
-            else (),
+            warnings=tuple(
+                f"{'任务 ' + task if task else '项目'}有 {count} 项{kind}在登记路径未找到。"
+                for (task, kind), count in sorted(missing.items())
+            ),
         )
         return overview, related
 
     def overview(self, project_id, *, refresh=False):
+        if self.reports:
+            return self.reports.overview(project_id, refresh=refresh)
         return self.load(project_id, refresh=refresh)[0]
 
     def files(
@@ -249,6 +284,8 @@ class TaskStorageUsageReader:
         offset: int = 0,
         limit: int = 50,
     ) -> TaskStorageFilePage:
+        if self.reports:
+            return self.reports.files(project_id, group_id=group_id, category=category, search=search, offset=offset, limit=limit)
         overview, grouped = self.load(project_id)
         if group_id not in {t.group_id for t in overview.tasks}:
             raise problem(

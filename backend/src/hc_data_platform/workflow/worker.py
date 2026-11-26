@@ -431,7 +431,7 @@ async def serve() -> None:
 
     outbox = (
         None
-        if role == "media" or not object_store_configured
+        if not settings.worker_background_services or role == "media" or not object_store_configured
         else build_worker_outbox(
             settings,
             temporal_client=client,
@@ -440,7 +440,8 @@ async def serve() -> None:
     )
     inventory = (
         build_storage_inventory(settings)
-        if role != "media"
+        if settings.worker_background_services
+        and role != "media"
         and object_store_configured
         and (settings.storage_inventory_scopes or settings.local_scope_discovery)
         else None
@@ -550,8 +551,16 @@ async def serve() -> None:
     try:
         await instance_heartbeater.start(lambda: _worker_readiness(shutdown_requested))
         try:
-            services: dict[str, Coroutine[Any, Any, None]] = {
-                "media-maintenance": serve_media_maintenance(
+            services: dict[str, Coroutine[Any, Any, None]] = {}
+            designated_cleanup_worker = os.getenv("HC_DIRECTORY_CLEANUP_WORKER") == "primary"
+            if settings.worker_background_services and role != "media" and (
+                persistent_platform_control or designated_cleanup_worker
+            ):
+                from hc_data_platform.storage.directory_cleanup import serve_directory_cleanup
+                log_event(logger, logging.INFO, "DIRECTORY.CLEANUP.SCHEDULER_ENABLED")
+                services["directory-cleanup"] = serve_directory_cleanup(settings, maintenance_gate, str(instance_identity.instance_id))
+            if settings.worker_background_services:
+                services["media-maintenance"] = serve_media_maintenance(
                     scopes=settings.outbox_scopes if role != "media" else (),
                     staging_sweeper=media_staging,
                     interval_seconds=settings.media_maintenance_interval_seconds,
@@ -583,8 +592,7 @@ async def serve() -> None:
                     maintenance_gate=maintenance_gate,
                     environment_id=settings.platform_environment_id,
                     writer_id=f"media-maintenance:{instance_identity.instance_id}",
-                ),
-            }
+                )
             if outbox is not None:
                 services["outbox-dispatcher"] = serve_outbox(
                     outbox.dispatcher,

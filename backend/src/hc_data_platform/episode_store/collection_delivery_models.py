@@ -36,8 +36,8 @@ class RequestCollectionDelivery(FrozenModel):
         from .export_formats import get_format
 
         adapter = get_format(self.output_format)
-        if len(self.members) > 100 and adapter.name != "holobrain":
-            raise ValueError("this collection format supports at most 100 Episodes")
+        if len(self.members) > 10000 and adapter.name != "holobrain":
+            raise ValueError("this collection format supports at most 10000 Episodes")
         if not adapter.homogeneous and self.modalities != "rgbd":
             raise ValueError("this export format retains all collected modalities")
         data = [m.data for m in self.members]

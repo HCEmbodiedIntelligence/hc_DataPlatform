@@ -8,45 +8,26 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import { ForbiddenPanel } from "../../shared/ui/ForbiddenPanel";
 import { SkeletonBlock } from "../../shared/ui/SkeletonBlock";
 
-const UNSCOPED_PAGE_CAPABILITIES = new Set([
-  "annotation_task.read",
-  "cleaning.read",
-  "dataset.read",
-  "dataset_version.read",
-  "episode.read",
-  "ingest_source.read",
-  "manual_issue.read",
-  "upload.read",
-]);
-
 export function RouteCapabilityGuard({
   requiredCapabilities,
+  browseWithoutScope = false,
 }: {
   requiredCapabilities: readonly string[];
+  browseWithoutScope?: boolean;
 }) {
   const authorization = useCapabilities();
   const scopeKey = useShellStore((state) => state.scopeKey);
-  const unscopedAccount = useShellStore(
-    (state) =>
-      state.bootstrapLoaded &&
-      !state.authorizationFailed &&
-      state.scope === null,
+  const personalWorkspace = useShellStore((state) =>
+    Boolean(state.sessionToken) && state.bootstrapLoaded && !state.scopeChanging && state.scope === null,
   );
   const queryClient = useQueryClient();
   const requiresAuthorization = requiredCapabilities.length > 0;
+  const browseEmptyPage = browseWithoutScope && personalWorkspace;
   const allowed = requiredCapabilities.every(
     (capability) =>
-      isRegisteredCapability(capability) && authorization.has(capability),
+      isRegisteredCapability(capability) && (browseEmptyPage || authorization.has(capability)),
   );
-  const unscopedPageAllowed =
-    unscopedAccount &&
-    requiredCapabilities.every((capability) =>
-      UNSCOPED_PAGE_CAPABILITIES.has(capability),
-    );
-  const blocked =
-    requiresAuthorization &&
-    !unscopedPageAllowed &&
-    (authorization.failed || !allowed);
+  const blocked = requiresAuthorization && (authorization.failed || !allowed);
 
   useEffect(() => {
     if (!blocked) return;
@@ -63,7 +44,7 @@ export function RouteCapabilityGuard({
     void cancelActiveTransports();
   }, [blocked, queryClient, scopeKey]);
 
-  if (requiresAuthorization && authorization.loading && !unscopedPageAllowed) {
+  if (requiresAuthorization && authorization.loading) {
     return <SkeletonBlock width="100%" height={180} label="正在验证页面权限" />;
   }
   if (blocked) {

@@ -389,6 +389,28 @@ class ManualIssueService:
         )
         return ManualIssueMutationOutcome(record=result.value, replayed=result.replayed)
 
+    def discard_package(self, *, auth, organization_id, project_id, region_code, issue_id, if_match, request_id):
+        scope = self._authorize_triage(auth=auth, organization_id=organization_id,
+                                       project_id=project_id, region_code=region_code)
+        auth.require_capability("quality.discard", project_id)
+        previous = self._required_issue(scope=scope, issue_id=issue_id)
+        if previous.status == "DISCARDED":
+            return
+        self._require_etag(record=previous, if_match=if_match)
+        if previous.status == "RESOLVED":
+            raise _terminal_issue()
+        now = self._clock()
+        updated = previous.model_copy(update={"status": "DISCARDED", "etag": _next_etag(previous.etag),
+                                               "updated_at": now})
+        audit = ManualIssueAuditEvent(project_id=project_id, region_code=region_code,
+            actor_id=auth.subject_id, action="manual_issue.package_discarded", resource_id=issue_id,
+            request_id=request_id, occurred_at=now, before_hash=canonical_hash(previous.model_dump(mode="json")),
+            after_hash=canonical_hash(updated.model_dump(mode="json")), details={"episode_id": previous.episode_id})
+        try:
+            self._repository.discard_package(expected_etag=if_match, record=updated, audit_event=audit)
+        except ManualIssuePreconditionError as exc:
+            raise _etag_conflict() from exc
+
     def triage_issue(
         self,
         *,
@@ -413,7 +435,7 @@ class ManualIssueService:
         def action() -> ManualIssueMutationRecord:
             previous = self._required_issue(scope=scope, issue_id=issue_id)
             self._require_etag(record=previous, if_match=if_match)
-            if previous.status == "RESOLVED":
+            if previous.status in {"RESOLVED", "DISCARDED"}:
                 raise _terminal_issue()
             assignee = (
                 None
@@ -488,7 +510,7 @@ class ManualIssueService:
         def action() -> ManualIssueDraftMutationRecord:
             previous = self._required_issue(scope=scope, issue_id=issue_id)
             self._require_etag(record=previous, if_match=if_match)
-            if previous.status == "RESOLVED":
+            if previous.status in {"RESOLVED", "DISCARDED"}:
                 raise _terminal_issue()
             drafts = self._repository.list_drafts_for_issue(scope=scope, issue_id=issue_id)
             editing = tuple(item for item in drafts if item.status == "EDITING")
@@ -659,7 +681,7 @@ class ManualIssueService:
         def action() -> ManualIssueMutationRecord:
             previous = self._required_issue(scope=scope, issue_id=issue_id)
             self._require_etag(record=previous, if_match=if_match)
-            if previous.status == "RESOLVED":
+            if previous.status in {"RESOLVED", "DISCARDED"}:
                 raise _terminal_issue()
             if previous.status != "IN_PROGRESS":
                 raise problem(
@@ -850,7 +872,7 @@ class ManualIssueService:
         actions: list[str] = ["VIEW_EPISODE"]
         reasons: list[ManualIssueBlockedReason] = []
         project_id = record.scope.project_id
-        if record.status == "RESOLVED":
+        if record.status in {"RESOLVED", "DISCARDED"}:
             reasons.append(
                 ManualIssueBlockedReason(
                     code="MANUAL_ISSUE_TERMINAL",
@@ -877,6 +899,7 @@ class ManualIssueService:
         visible = self._present(record, auth=auth)
         return ManualIssueListItem(
             id=visible.id,
+            note=visible.note,
             etag=visible.etag,
             scope=visible.scope,
             dataset_id=visible.dataset_id,
@@ -1142,12 +1165,15 @@ def _validated_filters(filters: ManualIssueFilters) -> ManualIssueFilters:
         severities=tuple(sorted(set(filters.severities))),
         discovery_sources=tuple(sorted(set(filters.discovery_sources))),
         assignee_id=text(filters.assignee_id),
+        updated_from=filters.updated_from, updated_to=filters.updated_to,
     )
 
 
 def _filter_document(filters: ManualIssueFilters) -> dict[str, object]:
     return {
         **({"collection_task_id": filters.collection_task_id} if filters.collection_task_id is not None else {}),
+        **({"updated_from": filters.updated_from.isoformat()} if filters.updated_from else {}),
+        **({"updated_to": filters.updated_to.isoformat()} if filters.updated_to else {}),
         "q": filters.query,
         "dataset_id": filters.dataset_id,
         "version_id": filters.version_id,
@@ -1253,6 +1279,6 @@ def _terminal_issue() -> Exception:
     return problem(
         status=409,
         code="MANUAL_ISSUE_TERMINAL",
-        title="ManualIssue is resolved",
-        detail="Resolved ManualIssue records cannot be triaged, drafted, or resolved again.",
+        title="ManualIssue is closed",
+        detail="This issue has already been resolved or its data package has been discarded.",
     )

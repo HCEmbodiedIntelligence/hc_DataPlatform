@@ -1,6 +1,8 @@
+import { testDownloadFolder } from "../../shared/lib/test-save-picker";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { request } from "../../shared/api/http-client";
 import { useShellStore } from "../../shared/scope/shell-store";
+import { exportArchiveName } from "./archive-name";
 import { downloadRawSources } from "./raw-download";
 
 vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
@@ -10,14 +12,11 @@ const scope = {
   regionCode: "local",
 };
 const file = { write: vi.fn(), close: vi.fn(), abort: vi.fn() };
-const createWritable = vi.fn(async () => file);
-const picker = vi.fn(async () => ({
-  name: "我的原始数据.zip",
-  createWritable,
-}));
+const createFolder = vi.fn(async () => testDownloadFolder(file).directory);
+const picker = vi.fn(createFolder);
 
 beforeEach(() => {
-  vi.stubGlobal("window", { showSaveFilePicker: picker });
+  vi.stubGlobal("window", { showDirectoryPicker: picker });
   file.write.mockResolvedValue(undefined);
   file.close.mockResolvedValue(undefined);
   file.abort.mockResolvedValue(undefined);
@@ -71,7 +70,7 @@ it("writes the archive to the chosen file and commits it only after the full res
   expect(progress).toHaveBeenLastCalledWith(4);
   expect(result).toEqual({
     kind: "saved",
-    filename: "我的原始数据.zip",
+    filename: expect.stringMatching(/\.zip$/u),
     bytes: 4,
   });
 });
@@ -82,7 +81,7 @@ it("does not request an archive when the save dialog is cancelled", async () => 
     downloadRawSources(scope, ["raw-a"], new AbortController().signal, vi.fn()),
   ).resolves.toEqual({ kind: "cancelled" });
   expect(request).not.toHaveBeenCalled();
-  expect(createWritable).not.toHaveBeenCalled();
+  expect(file.write).not.toHaveBeenCalled();
 });
 
 it("aborts a partial file when the archive transfer fails", async () => {
@@ -111,4 +110,10 @@ it("does not commit a completed response after cancellation", async () => {
   ).rejects.toMatchObject({ name: "AbortError" });
   expect(file.abort).toHaveBeenCalledOnce();
   expect(file.close).not.toHaveBeenCalled();
+});
+
+it("uses format, distinct dataset numbers and the Beijing export minute across midnight", () => {
+  const now = new Date("2026-11-18T16:05:59Z");
+  expect(exportArchiveName("holobrain", ["30", "30"], now)).toBe("holobrain_30_20261119_0005.zip");
+  expect(exportArchiveName("rgbd", ["31", "30"], now)).toBe("lerobot_rgbd_30+31_20261119_0005.zip");
 });

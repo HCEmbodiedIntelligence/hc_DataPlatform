@@ -25,7 +25,7 @@ def config():
                                   "primary_camera": None, "cameras": (), "semantic_output": output})
 
 
-def fixture(path, commands, *, state_stamps=(100, 120, 140), old=False, corrupt=None):
+def fixture(path, commands, *, state_stamps=(100, 120, 140), old=False, corrupt=None, command_offset_ns=0):
     encoder = serialize_dynamic("sensor_msgs/msg/JointState", JOINT)["sensor_msgs/msg/JointState"]
     with path.open("wb") as stream:
         writer = Writer(stream, enable_crcs=True, enable_data_crcs=True)
@@ -36,7 +36,7 @@ def fixture(path, commands, *, state_stamps=(100, 120, 140), old=False, corrupt=
         junk = writer.register_channel("/unselected/broken", "cdr", schema)
         for channel, rows in ((state, [(t, list(reversed(JOINTS))) for t in state_stamps]), (action, commands)):
             for i, (ms, names) in enumerate(rows):
-                stamp = 10**12 + ms * 10**6
+                stamp = 10**12 + ms * 10**6 + (command_offset_ns if channel == action else 0)
                 values = [0.0 if name == "leg_1" and channel == action else ms / 1000 + (JOINTS.index(name) if name in JOINTS else 99) for name in names]
                 if channel == action and corrupt == "nan":
                     values[names.index("leg_1")] = float("nan")
@@ -79,8 +79,8 @@ def test_layouts_missing_waist_tie_earlier_and_real_zero(tmp_path, old):
     assert hashlib.sha256(raw.read_bytes()).hexdigest() == before
 
 
-@pytest.mark.parametrize("stamp,kept", [(80, True), (79, False), (160, True), (161, False)])
-def test_20ms_boundary(tmp_path, stamp, kept):
+@pytest.mark.parametrize("stamp,kept", [(75, True), (74, False), (165, True), (166, False)])
+def test_25ms_boundary(tmp_path, stamp, kept):
     raw = fixture(tmp_path / "raw.mcap", [(stamp, list(JOINTS[:14]))])
     result = select_mcap(raw, tmp_path / "out.mcap", config())
     assert result["normalization"]["dropped_action_messages"] == (0 if kept else 1)
@@ -102,6 +102,26 @@ def ruled_config(**overrides):
         "max_state_delta_ms": 20, "missing_action_topic": "copy_state", **overrides,
     }
     return McapProcessingConfig.model_validate(doc)
+
+
+def test_new_derivation_upgrades_old_defaults_without_changing_frozen_rebuild(tmp_path):
+    from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
+
+    saved = ruled_config().model_dump(mode="json")
+    saved["normalization"]["waist_fallback_ms"] = 20
+    saved["semantic_output"]["normalization"]["waist_fallback_ms"] = 20
+    saved["maximum_time_error_ms"] = 20
+    frozen = McapProcessingConfig.model_validate(saved)
+    raw = fixture(tmp_path / "raw.mcap", [(75, list(JOINTS))], corrupt="nan")
+    old = select_mcap(raw, tmp_path / "historical.mcap", frozen)
+    assert old["normalization"]["dropped_action_messages"] == 1
+    current = frozen.current_joint_timing()
+    new = select_mcap(raw, tmp_path / "new.mcap", current)
+    assert new["normalization"]["fallback_by_axis"] == {"leg_1": 1}
+    assert current.maximum_time_error_ms == current.normalization.waist_fallback_ms == 25
+    assert current.postprocessing_rules.max_state_delta_ms == 25
+    assert frozen.model_dump(mode="json") == saved
+    assert ruled_config(max_state_delta_ms=9).current_joint_timing().postprocessing_rules.max_state_delta_ms == 9
 
 
 def test_selected_rule_repairs_nan_only_on_allowed_axes(tmp_path):

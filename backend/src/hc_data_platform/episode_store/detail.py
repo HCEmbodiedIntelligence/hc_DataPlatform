@@ -25,8 +25,10 @@ from .review_models import EpisodeDataReview
 
 
 def action(auth, data, name, capabilities, *, reason=None):
+    project, org = data.identity.project_id, data.identity.organization_id
+    resources = (f"version:{data.data_version_id}", f"dataset:{data.identity.dataset_id}")
     permitted = all(
-        auth.has_capability(c, data.identity.project_id, data.identity.organization_id)
+        auth.has_capability(auth.resource_action(c, resources, project, org), project, org)
         for c in capabilities
     )
     denied = "MISSING_CAPABILITY" if not permitted else reason
@@ -143,7 +145,7 @@ def file_page(package, auth, *, after=None, limit=50):
                     auth,
                     package.receipt.data,
                     "DOWNLOAD_FILE",
-                    ("export.download",),
+                    ("dataset_version.download_raw",),
                     reason=None if status == "AVAILABLE" else status,
                 ),
             )
@@ -452,7 +454,7 @@ def read_detail(service, package, auth, *, delivery_id=None, annotation_task_id=
                 ("READ_FILES", ("dataset_version.read",), None),
                 (
                     "DOWNLOAD_COMPLETE",
-                    ("export.download",),
+                    ("dataset_version.download_raw",),
                     "PACKAGE_FILES_UNAVAILABLE" if missing_files else None,
                 ),
                 ("SUBMIT_DATA_REVIEW", ("dataset_version.review",), None),

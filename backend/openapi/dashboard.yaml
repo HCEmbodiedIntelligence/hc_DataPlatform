@@ -111,6 +111,114 @@ components:
             $ref: '#/components/schemas/ProblemDetails'
       description: A verified Bearer identity is required.
   schemas:
+    DashboardAnalytics:
+      properties:
+        reports:
+          additionalProperties:
+            type: integer
+          title: Reports
+          type: object
+        affected_packages:
+          minimum: 0
+          title: Affected Packages
+          type: integer
+        buckets:
+          items:
+            $ref: '#/components/schemas/DashboardVolumeBucket'
+          title: Buckets
+          type: array
+        outcomes:
+          additionalProperties:
+            type: integer
+          title: Outcomes
+          type: object
+        issues:
+          additionalProperties:
+            type: integer
+          title: Issues
+          type: object
+      required:
+      - reports
+      - affected_packages
+      - buckets
+      - outcomes
+      - issues
+      title: DashboardAnalytics
+      type: object
+    DashboardAnalyticsResponse:
+      properties:
+        schema_version:
+          type: string
+          const: '1'
+          title: Schema Version
+          default: '1'
+        project_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Project Id
+        region_code:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Region Code
+        from:
+          type: string
+          format: date-time
+          title: From
+        to:
+          type: string
+          format: date-time
+          title: To
+        timezone:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Timezone
+        as_of:
+          type: string
+          format: date-time
+          title: As Of
+        analytics:
+          $ref: '#/components/schemas/DashboardAnalytics'
+      additionalProperties: false
+      type: object
+      required:
+      - project_id
+      - region_code
+      - from
+      - to
+      - timezone
+      - as_of
+      - analytics
+      title: DashboardAnalyticsResponse
+    DashboardVolumeBucket:
+      properties:
+        episodes:
+          minimum: 0
+          title: Episodes
+          type: integer
+        start:
+          format: date-time
+          title: Start
+          type: string
+        frames:
+          minimum: 0
+          title: Frames
+          type: integer
+        seconds:
+          minimum: 0
+          title: Seconds
+          type: number
+      required:
+      - episodes
+      - start
+      - frames
+      - seconds
+      title: DashboardVolumeBucket
+      type: object
     DashboardActivityEvent:
       additionalProperties: false
       properties:
@@ -1129,6 +1237,37 @@ paths:
               $ref: '#/components/headers/DashboardNoStore'
         '400':
           $ref: '#/components/responses/DashboardInvalidCursor'
+        '401':
+          $ref: '#/components/responses/DashboardUnauthorized'
+        '403':
+          $ref: '#/components/responses/DashboardForbidden'
+        '422':
+          $ref: '#/components/responses/DashboardInvalidQuery'
+        '429':
+          $ref: '#/components/responses/DashboardRateLimited'
+      tags:
+      - dashboard
+  /api/v1/projects/{project_id}/dashboard/analytics:
+    get:
+      description: Time-bucketed Episode volume and QC report distributions.
+      operationId: getDashboardAnalytics
+      parameters:
+      - $ref: '#/components/parameters/DashboardProjectId'
+      - $ref: '#/components/parameters/DashboardRegionCode'
+      - $ref: '#/components/parameters/DashboardFrom'
+      - $ref: '#/components/parameters/DashboardTo'
+      - $ref: '#/components/parameters/DashboardTimezone'
+      - $ref: '#/components/parameters/DashboardTaskId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardAnalyticsResponse'
+          description: Dashboard analytics for the selected interval.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/DashboardNoStore'
         '401':
           $ref: '#/components/responses/DashboardUnauthorized'
         '403':

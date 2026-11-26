@@ -318,7 +318,7 @@ function McapFile({
             title="此任务暂无更新的配置可用于重处理"
             description={
               <>
-                <p>先在采集方案中启用所需规则、验证并发布新版本，再为机器人关联该版本，在采集任务中选择它并保存。回到这里即可选择新版本。</p>
+                <p>先在采集方案中启用所需规则并发布新版本，再为机器人关联该版本，在采集任务中选择它并保存。回到这里即可选择新版本。</p>
                 <Space wrap>
                   <Link to={schemeId ? `/settings/capture-schemes/${encodeURIComponent(schemeId)}?edit=1` : "/settings/capture-schemes"}>编辑采集方案</Link>
                   <RobotProcessingLink robotId={file.robot_id} scheme={schemeId} sample={importId} file={file.path} />

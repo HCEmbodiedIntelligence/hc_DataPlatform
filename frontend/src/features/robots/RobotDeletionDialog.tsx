@@ -16,6 +16,7 @@ const labels: Record<DeletionKind, string> = {
   collection_job: "采集作业文件",
   recording_upload: "连续采集文件",
   configuration: "已发布采集配置",
+  capture_scheme: "采集方案关联",
   component: "拓扑组件",
   calibration: "标定记录",
   source: "数据源",
@@ -67,6 +68,9 @@ export function RobotDeletionDialog({
   }, [error, refetch]);
   const report = check.data;
   const blocked = report && !report.can_delete;
+  const hasCaptureScheme = report?.blockers.some(
+    (b) => b.kind === "capture_scheme",
+  );
   const link = (path: string, text: string) => (
     <Link to={path} onClick={onCancel}>
       {text}
@@ -104,6 +108,11 @@ export function RobotDeletionDialog({
           link(
             `/datasets/${encodeURIComponent(row.dataset_id)}?tab=episodes${row.collection_task_id ? `&collectionTaskId=${encodeURIComponent(row.collection_task_id)}` : ""}`,
             "查看数据集",
+          )}
+        {row.kind === "capture_scheme" &&
+          link(
+            `/settings/robot-instances?robot=${encodeURIComponent(robot.id)}&section=processing`,
+            "管理采集方案关联",
           )}
         {row.kind === "configuration" &&
           link(
@@ -197,7 +206,9 @@ export function RobotDeletionDialog({
                       。
                     </div>
                     <div>
-                      使用下方按钮建立新关联并转移，或删除不再需要的数据。
+                      {hasCaptureScheme
+                        ? "请打开清单中的「管理采集方案关联」，移除对应方案后再删除实例。"
+                        : "使用下方按钮建立新关联并转移，或删除不再需要的数据。"}
                     </div>
                     <div>
                       处理完成后自动重新检查，全部解除后可确认删除机器人。
@@ -210,7 +221,7 @@ export function RobotDeletionDialog({
             />
             {blocked && (
               <Tabs
-                defaultActiveKey="resolution"
+                defaultActiveKey={hasCaptureScheme ? "records" : "resolution"}
                 items={[
                   {
                     key: "records",

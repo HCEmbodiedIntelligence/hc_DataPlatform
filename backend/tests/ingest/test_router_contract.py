@@ -358,13 +358,46 @@ def test_current_upload_manage_is_project_scoped_and_upload_read_is_not_write() 
     assert denied_reader.json()["code"] == "CAPABILITY_REQUIRED"
 
 
+def test_collector_can_create_and_list_only_assigned_uploads() -> None:
+    get_service.cache_clear()
+    def collector(task: str) -> TestClient:
+        return TestClient(app_with_auth(AuthContext(
+            subject_id="collector-" + task,
+            project_ids=frozenset({"p1"}), region_codes=frozenset({"cn-hz"}),
+            scope_pairs=frozenset({("p1", "cn-hz")}),
+            scoped_capabilities=frozenset({("p1", "role.collector"), ("p1", "upload.manage/" + task)}),
+        )))
+
+    path = "/api/v1/projects/p1/regions/cn-hz/upload-sessions"
+    own, other = collector("t1"), collector("t2")
+    body = {"manifest": manifest_payload(), "part_numbers": [1]}
+    assert other.post(path, json=body, headers={"Idempotency-Key": "wrong-task"}).status_code == 403
+    response = own.post(path, json=body, headers={"Idempotency-Key": "assigned-task"})
+    assert response.status_code == 201, response.text
+    listing = own.get(path)
+    assert listing.status_code == 200 and listing.json()["total"] == 1
+    identifier = listing.json()["items"][0]["session_id"]
+    assert other.get(path).json()["items"] == []
+    assert other.get(f"{path}/{identifier}").status_code == 403
+    assert own.get(f"{path}/{identifier}").status_code == 200
+    summary = own.get(f"{path}/{identifier}/summary")
+    assert summary.status_code == 200 and summary.headers["cache-control"] == "no-store"
+    assert summary.json()["session_id"] == identifier
+    assert not {"object_key", "multipart_upload_id", "manifest", "download_url"} & summary.json().keys()
+    assert other.get(f"{path}/{identifier}/summary").status_code == 403
+    assert other.get(f"{path}/{identifier}/processing").status_code == 403
+    for resource in ("manifest", "raw-media"):
+        assert own.get(f"{path}/{identifier}/{resource}").status_code == 403
+    get_service.cache_clear()
+
+
 def test_router_issues_an_audited_non_cacheable_raw_mcap_source_only_after_commit() -> None:
     get_service.cache_clear()
     auth = AuthContext(
         subject_id="u1",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        capabilities=frozenset({"upload.read", "upload.manage"}),
+        capabilities=frozenset({"upload.read", "upload.manage", "dataset_version.download_raw"}),
         scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     client = TestClient(app_with_auth(auth))
@@ -528,7 +561,7 @@ def test_router_preflight_and_authorized_object_reference_are_real_json_controls
         subject_id="u1",
         project_ids=frozenset({"p1"}),
         region_codes=frozenset({"cn-hz"}),
-        capabilities=frozenset({"upload.read", "upload.manage"}),
+        capabilities=frozenset({"upload.read", "upload.manage", "dataset_version.download_manifest"}),
         scope_pairs=frozenset({("p1", "cn-hz")}),
     )
     client = TestClient(app_with_auth(auth))
@@ -628,6 +661,7 @@ def test_openapi_fragment_covers_full_resumable_lifecycle_and_direct_upload() ->
         f"{prefix}/{{session_id}}",
         f"{prefix}/{{session_id}}/raw-media",
         f"{prefix}/{{session_id}}/processing",
+        f"{prefix}/{{session_id}}/summary",
         f"{prefix}/{{session_id}}/parts",
         f"{prefix}/{{session_id}}/manifest",
         f"{prefix}/{{session_id}}:renew",

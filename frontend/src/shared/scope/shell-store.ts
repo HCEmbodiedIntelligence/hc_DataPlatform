@@ -57,6 +57,7 @@ export interface SessionScopeGrant {
 }
 
 export interface SessionOrganizationGrant {
+  readonly capabilities?: readonly string[];
   readonly organizationId: string;
   readonly organizationName: string;
   readonly memberStatus: "ACTIVE";

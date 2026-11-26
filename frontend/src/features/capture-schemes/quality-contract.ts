@@ -1,14 +1,19 @@
 import { z } from "zod";
+import type { components } from "../../shared/api/generated/platform";
+import { isQualityCode } from "../../shared/lib/quality-presentation";
+
+export const qualityCode = z.custom<components["schemas"]["QualityCode"]>(isQualityCode);
+
 
 export const qualityDefaults = {
   timing: {minimum_frequency_ratio_risk: .9, minimum_frequency_ratio_reject: .75,
     minimum_coverage_ratio_risk: .98, minimum_coverage_ratio_reject: .8,
-    maximum_gap_ns_risk: 100000000, maximum_gap_ns_reject: 1000000000,
+    maximum_gap_ns_risk: 25000000, maximum_gap_ns_reject: 25000000,
     maximum_consecutive_missing_risk: 2, maximum_consecutive_missing_reject: 29,
     maximum_duplicate_timestamps_risk: 0, maximum_duplicate_timestamps_reject: null,
     maximum_backward_timestamps_reject: 0},
   completeness: {minimum_ratio_risk: .98, minimum_ratio_reject: .8},
-  synchronization: {maximum_p95_offset_ns_risk: 20000000, maximum_p95_offset_ns_reject: 100000000},
+  synchronization: {maximum_p95_offset_ns_risk: 25000000, maximum_p95_offset_ns_reject: 25000000},
   image: {black_luma_threshold: 5, maximum_black_frame_ratio_risk: .02, maximum_black_frame_ratio_reject: .5,
     maximum_repeated_frame_ratio_risk: .05, maximum_repeated_frame_ratio_reject: .5,
     maximum_corrupt_frame_ratio_risk: 0, maximum_corrupt_frame_ratio_reject: 0},
@@ -41,6 +46,7 @@ const pointRules = z.object({
   maximum_abnormal_count_ratio_risk: ratio, maximum_abnormal_count_ratio_reject: ratio,
 }).partial().transform(value => ({...qualityDefaults.point_cloud, ...value}));
 export const qualityPolicySchema = z.object({
+  enabled_codes: z.array(qualityCode).nullable().optional(),
   missing_required: z.literal("reject").default("reject"), timing: timingRules.optional(),
   feature_timing: z.record(z.string(), timingRules).optional(),
   image: imageRules.optional(), feature_images: z.record(z.string(), imageRules).optional(),

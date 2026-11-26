@@ -156,6 +156,7 @@ def read_captures(cursor, organization_id, project_id, region_code, task_id=None
           FROM ingest.mcap_processing_files m
           WHERE m.organization_id=u.organization_id AND m.project_id=u.project_id
             AND m.region_code=u.region_code AND m.raw_source_id=u.raw_source_id
+            AND m.error IS DISTINCT FROM 'MCAP_REPROCESS_CANCELLED'
           ORDER BY source_path,created_at DESC,processing_id
         ) m ON true
         LEFT JOIN ingest.continuous_recordings r

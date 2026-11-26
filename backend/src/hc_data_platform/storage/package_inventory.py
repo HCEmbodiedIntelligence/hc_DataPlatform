@@ -12,6 +12,9 @@ def package_inventory_rows(cursor: Any, project_id: str) -> None:
     cursor.execute(
         """
         WITH selected_project AS (SELECT %s::text AS project_id),
+        retired AS (
+            SELECT q.* FROM episode_store.qc_retired_versions q JOIN selected_project USING (project_id)
+        ),
         packages AS (
             SELECT v.*,
                    CASE WHEN EXISTS (
@@ -24,6 +27,9 @@ def package_inventory_rows(cursor: Any, project_id: str) -> None:
             FROM episode_store.versions v
             JOIN selected_project p USING (project_id)
             WHERE v.status = 'COMMITTED'
+              AND NOT EXISTS (SELECT FROM retired r WHERE
+                (r.organization_id,r.project_id,r.region_code,r.data_version_id)
+                = (v.organization_id,v.project_id,v.region_code,v.data_version_id))
         )
         SELECT 'raw-source:' || raw_source_id AS identity,
                rtrim(storage_prefix, '/') || '/' AS object_key,
@@ -49,6 +55,8 @@ def package_inventory_rows(cursor: Any, project_id: str) -> None:
               SELECT 1 FROM ingest.mcap_batch_retirements b
               WHERE (b.organization_id,b.project_id,b.region_code)=
                     (a.organization_id,a.project_id,a.region_code)
+                AND b.processing_id = substr(a.object_key, length(concat_ws('/',
+                    'derived-mcap', a.organization_id, a.project_id, a.region_code)) + 2, 64)
                 AND starts_with(a.object_key, concat_ws('/', 'derived-mcap', b.organization_id,
                     b.project_id,b.region_code,b.processing_id) || '/')
                 AND b.completed_at IS NOT NULL
@@ -73,7 +81,9 @@ def package_inventory_rows(cursor: Any, project_id: str) -> None:
                'REBUILDABLE_DERIVATIVE', f.updated_at, false, 80, true
         FROM annotation.revision_files f JOIN selected_project USING (project_id)
         JOIN annotation.annotation_tasks t USING (organization_id, project_id, region_code, task_id)
-        WHERE f.status = 'READY'
+        WHERE f.status = 'READY' AND NOT EXISTS (SELECT FROM retired r WHERE
+            (r.organization_id,r.project_id,r.region_code,r.annotation_task_id)
+            = (f.organization_id,f.project_id,f.region_code,f.task_id))
         UNION ALL
         SELECT 'episode-delivery:' || job_id, artifact_key, size_bytes,
                CASE WHEN EXISTS (
@@ -83,8 +93,12 @@ def package_inventory_rows(cursor: Any, project_id: str) -> None:
                ) THEN 'ANNOTATION_COMPLETE'
                     ELSE 'PENDING_ANNOTATION' END,
                'REBUILDABLE_DERIVATIVE', updated_at, false, 80, true
-        FROM episode_store.delivery_jobs JOIN selected_project USING (project_id)
-        WHERE status = 'READY'
+        FROM episode_store.delivery_jobs j JOIN selected_project USING (project_id)
+        WHERE status = 'READY' AND NOT EXISTS (
+            SELECT FROM jsonb_array_elements(j.plan->'members') member
+            JOIN retired r ON r.data_version_id=member->'data'->>'data_version_id'
+            WHERE (r.organization_id,r.project_id,r.region_code)=(j.organization_id,j.project_id,j.region_code)
+        )
         UNION ALL
         SELECT 'annotation-delivery:' || job_id, artifact_key, size_bytes,
                'ANNOTATION_COMPLETE', 'REBUILDABLE_DERIVATIVE', updated_at, false, 80, true

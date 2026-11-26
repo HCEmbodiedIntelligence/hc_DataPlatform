@@ -528,6 +528,10 @@ class AnnotationTask(AnnotationDataBinding):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["1"] = "1"
+    display_label: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    collection_task_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    collection_task_code: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    allowed_tags: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     task_id: str = Field(min_length=1)
     project_id: str = Field(min_length=1)
     region_code: str | None = Field(default=None, min_length=1)

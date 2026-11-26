@@ -1,4 +1,7 @@
 import { useMemo } from "react";
+import { useOrganizationCapabilities } from "../../../shared/auth/use-capabilities";
+import { hasSessionScopeAccess } from "../../../shared/scope/session-access";
+import { useShellStore } from "../../../shared/scope/shell-store";
 import { useScopedQuery } from "../../../shared/api/use-scoped-query";
 import {
   authorizeLogicalRobotAssets,
@@ -27,7 +30,7 @@ const instancePreview = {
 } as const;
 export function useLogicalRobotScene(
   target: LogicalRobotTarget | null,
-  jointStream: StreamDescriptor | null,
+  actionStream: StreamDescriptor | null,
   historicalRobotId: string | null,
   historicalProvenance: RobotSceneProvenance,
 ) {
@@ -46,21 +49,27 @@ export function useLogicalRobotScene(
       retry: false,
     },
   );
-  const sceneView = target?.robot ?? query.data;
+  const scope = target?.selection.scope ?? null;
+  const canAccess = useShellStore((state) => hasSessionScopeAccess(state, scope));
+  const capabilities = useOrganizationCapabilities(scope?.organizationId ?? null);
+  const canReadBinding = capabilities.has("robot.read") && capabilities.has("robot_model.read");
+  const sceneView = canAccess ? target?.robot ?? query.data : undefined;
   const sceneFailed = !target?.robot && query.isError;
   const historical =
     !sceneFailed && sceneView?.provenance === "MISSING_HISTORICAL";
   const fixed = sceneView?.scene;
-  const useInstance = !sceneFailed && (historical || Boolean(fixed));
+  const useInstance = canReadBinding && !sceneFailed && (historical || Boolean(fixed));
   const preview = useEpisodeRobotScene(
     useInstance ? (fixed?.robot_id || historicalRobotId) : null,
-    useInstance ? jointStream : null,
+    useInstance ? actionStream : null,
     useInstance ? (target?.selection.scope ?? null) : null,
     fixed ? instancePreview : historicalProvenance,
     fixed?.model_version_id,
   );
+  const useFrozen = fixed?.status === "FROZEN" &&
+    (!canReadBinding || preview.useSnapshotAssets || preview.bindingReadFailed);
   const jointFrameSource = useMemo(() => {
-    const source = buildJointFrameSource(jointStream);
+    const source = buildJointFrameSource(actionStream);
     if (!source || fixed?.status !== "FROZEN") return;
     const directions = new Map(
       fixed.joint_mappings.map((m) => [m.source_joint_name, m.direction]),
@@ -76,14 +85,14 @@ export function useLogicalRobotScene(
         );
       },
     };
-  }, [jointStream, fixed]);
+  }, [actionStream, fixed]);
   const robotScene = useMemo(() => {
     const view = sceneView;
     const urdf = fixed?.assets.find((asset) => asset.role === "URDF");
     if (
       !target ||
       !view ||
-      !preview.useSnapshotAssets ||
+      !useFrozen ||
       sceneFailed ||
       fixed?.status !== "FROZEN" ||
       !urdf ||
@@ -96,12 +105,12 @@ export function useLogicalRobotScene(
     const modelVersion = fixed.model_version_id;
     const requiredJoints = fixed.joint_mappings.map((m) => m.source_joint_name);
     return {
-      title: "实例当前绑定的机器人模型",
+      title: "数据快照绑定的机器人模型",
       ...(target.robotAssets?.length && target.robotAssets.every(asset => Date.parse(asset.grant.expires_at) > Date.now() + 10_000)
         ? { reuseKey: JSON.stringify([authorizedModelCacheKey(target.robotAssets, target.selection.scope), view.scene_sha256]) }
         : {}),
       sourceDescription:
-        "回放使用采集实例当前绑定的模型版本和关节映射。",
+        "回放使用该条数据保存的模型版本和关节映射。",
       modelRef: { modelId, modelVersion },
       jointMapping: Object.fromEntries(
         fixed.joint_mappings.map((m) => [
@@ -121,18 +130,20 @@ export function useLogicalRobotScene(
         };
       }),
     };
-  }, [target, sceneView, sceneFailed, fixed, jointFrameSource, preview.useSnapshotAssets]);
+  }, [target, sceneView, sceneFailed, fixed, jointFrameSource, useFrozen]);
   const robotSceneUnavailableReason =
     !target || (!sceneView && query.isPending)
       ? "正在读取数据快照中的机器人场景…"
       : sceneFailed
         ? "固定机器人场景读取失败或读取权限已失效，请重新加载。"
-        : !jointFrameSource
-            ? "固定数据未提供可用的关节角样本，暂时无法同步机器人姿态。"
+        : !useInstance && sceneView && fixed?.status !== "FROZEN"
+          ? "此数据没有保存绑定的机器人模型。查看当前实例模型需要机器人和模型查看权限。"
+          : !jointFrameSource
+            ? "当前快照缺少可用于姿态回放的关节动作指令（action）。"
             : !robotScene
               ? "固定机器人场景缺少可用的 URDF 资产。"
               : undefined;
-  const usePreview = useInstance && !preview.useSnapshotAssets;
+  const usePreview = useInstance && !useFrozen;
   const resolvedRobotScene: (RobotSceneCoreProps & {
     title: string;
     sourceDescription?: string;

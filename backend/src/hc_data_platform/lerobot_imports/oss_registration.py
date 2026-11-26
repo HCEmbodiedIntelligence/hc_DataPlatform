@@ -17,7 +17,7 @@ from .oss_imports import CommitOssImport, _commit_source, _inspect_source, failu
 def register_if_mcap(service, auth, batch, identity):
     command = batch.command
     scope = {k: getattr(batch, k) for k in ("organization_id", "project_id", "region_code")}
-    service._authorize(auth, **scope)
+    service._authorize(auth, **scope, task_id=command.collection_task_id)
     inspect = getattr(service.storage, "inspect_reference", None)
     if inspect is None:
         return None

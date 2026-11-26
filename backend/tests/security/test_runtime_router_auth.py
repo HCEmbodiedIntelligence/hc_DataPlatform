@@ -202,7 +202,7 @@ def test_lance_step_window_is_scoped_audited_and_preserves_nanosecond_precision(
     client, current = protected_api
     configure_lance_catalog(ScopedCatalog())  # type: ignore[arg-type]
     configure_lance_catalog_audit_recorder(audit)
-    current["auth"] = _auth("dataset_version.read")
+    current["auth"] = _auth("episode.read")
 
     response = client.get(
         "/api/v1/projects/project-a/datasets/dataset-a/rollouts/rollout-a/steps",

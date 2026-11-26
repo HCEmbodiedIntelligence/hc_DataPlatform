@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { useShellStore } from "./shared/scope/shell-store";
 import { createRoot } from "react-dom/client";
 import { AppProviders } from "./app/providers";
 import { router } from "./app/router";
@@ -10,6 +11,32 @@ import "./app/theme/global.css";
 
 async function bootstrap(): Promise<void> {
   installRandomUuidFallback();
+  // Preserve the one-use workstation ticket across the platform login redirect.
+  if (
+    location.pathname === "/teleoperation" &&
+    /^#hc-workstation=[A-Za-z0-9_-]{32}$/.test(location.hash)
+  ) {
+    sessionStorage.setItem(
+      "hc.teleop.ticket",
+      location.hash.slice("#hc-workstation=".length),
+    );
+    history.replaceState(
+      history.state,
+      "",
+      location.pathname + location.search,
+    );
+  }
+  useShellStore.subscribe((next, before) => {
+    const oldActor = before.principal?.actorId;
+    const oldOrg = before.scope?.organizationId;
+    if (
+      (oldActor && next.principal?.actorId !== oldActor) ||
+      (oldOrg && next.scope?.organizationId !== oldOrg)
+    ) {
+      sessionStorage.removeItem("hc.teleop.grant");
+      sessionStorage.removeItem("hc.teleop.ticket");
+    }
+  });
   const rootElement = document.getElementById("root");
   if (rootElement === null) throw new Error("Missing application root element");
   const root = createRoot(rootElement);

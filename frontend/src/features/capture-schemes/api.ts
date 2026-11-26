@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { qualityCode } from "./quality-contract";
 import { request } from "../../shared/api/http-client";
 import { useScopedQuery } from "../../shared/api/use-scoped-query";
 import {
@@ -46,7 +47,7 @@ async function call(
 }
 const parameters = z.record(z.string(), z.union([z.number(), z.boolean(), z.null()]));
 const engineRule = z.object({
-  code: z.string(),
+  code: qualityCode,
   group: z.enum(["timing", "completeness", "synchronization", "image", "action", "point_cloud"]).nullable(),
   defaults: parameters,
 });
@@ -68,6 +69,19 @@ export function useAddQualityRule(org: string) {
   return useCaptureMutation(org, async (rule: ThresholdRule) => thresholdRule.parse(
     await call(org, "POST", root(org) + "/quality-rules", rule)
   ));
+}
+
+export function useLibraryTags(org: string, enabled = true) {
+  return useCaptureQuery(org, "annotation-tags", null, async (signal) =>
+    z.array(z.string()).parse(await call(org, "GET", root(org) + "/annotation-tags", undefined, undefined, signal)),
+    enabled,
+  );
+}
+
+export function useCreateLibraryTag(org: string) {
+  return useCaptureMutation(org, async (name: string) =>
+    z.object({ name: z.string() }).parse(await call(org, "POST", root(org) + "/annotation-tags", { name })),
+  );
 }
 
 export const captureApi = {

@@ -16,6 +16,7 @@ import {
   UploadCancellationDialog,
   type CancellableUpload,
 } from "./UploadCancellationDialog";
+import { FailedMcapRetry } from "./FailedMcapRetry";
 import styles from "./CaptureProgressPanel.module.css";
 
 type CapturePage = components["schemas"]["CaptureProgressPage"];
@@ -159,6 +160,8 @@ export function CaptureProgressPanel({
           )}
         </div>
         <div className={styles.headerActions}>
+          {taskId && canManage && <FailedMcapRetry key={`${scope.organizationId}/${scope.projectId}/${scope.regionCode}/${taskId}`}
+            scope={scope} taskId={taskId} />}
           <Button
             size={compact ? "small" : "middle"}
             type={unfinishedOnly ? "primary" : "default"}

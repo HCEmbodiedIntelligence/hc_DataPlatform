@@ -1,0 +1,6 @@
+.list { max-height: 24rem; overflow: auto; }
+.row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 0; }
+.row + .row { border-top: 1px solid var(--ant-color-border-secondary, #e5e7ef); }
+.info { flex: 1 1 20rem; min-width: 0; display: grid; gap: 4px; }
+.empty, .detail { color: var(--ant-color-text-secondary, #50586e); }
+.detail { overflow-wrap: anywhere; }

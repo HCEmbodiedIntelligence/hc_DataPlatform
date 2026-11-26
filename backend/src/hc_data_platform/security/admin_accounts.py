@@ -286,6 +286,8 @@ class AdminAccountService:
         request_id: str,
     ) -> ManagedAccount:
         self._require_manage(auth)
+        if command.platform_role is PlatformAccountRole.PLATFORM_ADMIN:
+            auth.require_exact_platform_capability("platform.admin")
         canonical = self.canonical_username(command.username)
         password = command.password.get_secret_value()
         self._password_policy.require(password, canonical_username=canonical)
@@ -330,7 +332,8 @@ class AdminAccountService:
         request_id: str,
     ) -> ManagedAccount:
         self._require_manage(auth)
-        if principal_id == auth.subject_id and command.platform_role is PlatformAccountRole.USER:
+        auth.require_exact_platform_capability("platform.admin")
+        if principal_id == auth.subject_id:
             raise _self_management_denied("demote")
         return self._repository.set_managed_account_role(
             principal_id=principal_id,

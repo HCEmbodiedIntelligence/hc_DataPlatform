@@ -1,3 +1,4 @@
+import { saveFileFromClick } from "../../shared/lib/save-file";
 import { useEffect, useRef, useState } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import type {
@@ -132,20 +133,8 @@ export function AnnotationDeliveryPanel(props: {
     signal.throwIfAborted();
   }
   async function download(job: DeliveryJob, signal: AbortSignal) {
-    const grant = await authorizeAnnotationDelivery(
-      props.scope,
-      props.history,
-      job,
-      signal,
-    );
-    signal.throwIfAborted();
-    const anchor = document.createElement("a");
-    anchor.href = grant.url;
-    anchor.rel = "noopener noreferrer";
-    anchor.download = "";
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
+    await saveFileFromClick(`annotation-r${job.plan.binding.revision}.zip`, signal,
+      () => authorizeAnnotationDelivery(props.scope, props.history, job, signal));
   }
   return (
     <section

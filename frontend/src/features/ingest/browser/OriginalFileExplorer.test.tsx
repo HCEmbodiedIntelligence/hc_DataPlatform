@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import * as fileSaving from "../../../shared/lib/save-file";
 import OriginalFileExplorer from "./OriginalFileExplorer";
 import {
   authorizeOriginalFile,
@@ -120,15 +121,16 @@ it("opens folders, previews escaped text and returns to the root", async () => {
   expect(screen.getByRole("button", { name: "返回上级文件夹" })).toBeDisabled();
 });
 it("downloads the selected original file through an exact scoped grant", async () => {
-  const click = vi
-    .spyOn(HTMLAnchorElement.prototype, "click")
-    .mockImplementation(() => {});
+  const save = vi.spyOn(fileSaving, "saveFileFromClick").mockImplementation(async (name, signal, load) => {
+    expect(await load(signal)).toEqual({ url: "https://files.invalid/download", size_bytes: file.size });
+    return name;
+  });
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "meta" }));
   fireEvent.click(
     await screen.findByRole("button", { name: "下载 info.json" }),
   );
-  await waitFor(() => expect(click).toHaveBeenCalledOnce());
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(authorizeOriginalFile).toHaveBeenCalledWith(
     scope,
     "raw",

@@ -14,6 +14,7 @@ from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .delivery_router import router as delivery_router
 from .dependencies import PackageServices
+from .preview_access import authorize_episode_preview
 from .derivation_router import router as derivation_router
 from .detail import file_page, open_download, read_detail
 from .detail_models import EpisodeDetail, EpisodeFileGrant, EpisodeFilePage
@@ -31,6 +32,7 @@ from .review_models import (
     EpisodeDataReviewPage,
     SubmitEpisodeDataReview,
 )
+from .traceback import router as trace_router
 
 BASE = (
     "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}"
@@ -41,6 +43,7 @@ RELEASES = "/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/c
 router = APIRouter(prefix="/api/v1", tags=["episode_data"])
 router.include_router(delivery_router)
 router.include_router(derivation_router)
+router.include_router(trace_router)
 
 
 @contextmanager
@@ -143,7 +146,7 @@ def collection_release(
 
 
 @contextmanager
-def authorized(packages, auth, project_id, region_code, dataset_id, episode_id, *, download=False):
+def authorized(packages, auth, project_id, region_code, dataset_id, episode_id, *, download=False, preview=False, version_id=None, manifest=False):
     organization = current_request_context().organization_id
     if not organization:
         raise problem(
@@ -152,13 +155,16 @@ def authorized(packages, auth, project_id, region_code, dataset_id, episode_id, 
             title="Organization scope required",
             detail="Select an organization before reading Episode data.",
         )
-    authorize_scope(
-        auth,
-        project_id,
-        "export.download" if download else "dataset_version.read",
-        region_code,
-        organization,
-    )
+    action = "dataset_version.read"
+    if download or manifest:
+        operation = "dataset_version.download_manifest" if manifest else "dataset_version.download_raw"
+        action = auth.resource_action(operation,
+            (f"version:{version_id}", f"dataset:{dataset_id}"), project_id, organization)
+    if preview:
+        authorize_episode_preview(packages, auth, organization, project_id, region_code,
+                                  dataset_id, episode_id=episode_id, version_id=version_id)
+    else:
+        authorize_scope(auth, project_id, action, region_code, organization)
     if packages is None:
         raise problem(
             status=503,
@@ -228,7 +234,8 @@ def detail(
     packages: PackageServices,
     view: Literal["full", "annotation"] = "full",
 ):
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id,
+                    preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -267,7 +274,7 @@ def steps(
     end_step: int = Query(ge=0),
     columns: Annotated[list[str] | None, Query()] = None,
 ):
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id, preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -292,7 +299,7 @@ def annotation_migration_json(
     packages: PackageServices,
 ):
     with authorized(
-        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True, version_id=data_version_id
     ) as (
         service,
         identity,
@@ -330,7 +337,7 @@ def overview(
     annotation_task_id: str | None = Query(None, min_length=1, max_length=256),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id, preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -341,6 +348,17 @@ def overview(
             delivery_id=delivery_id,
             annotation_task_id=annotation_task_id,
         )
+
+
+@router.get(VERSION + "/manifest")
+def download_package_manifest(project_id: str, region_code: str, dataset_id: str, episode_id: str,
+                              data_version_id: str, auth: VerifiedAuth, packages: PackageServices,
+                              response: Response):
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id,
+                    manifest=True, version_id=data_version_id) as (service, identity):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Disposition"] = 'attachment; filename="manifest.json"'
+        return service.files.open(identity, data_version_id).manifest
 
 
 @router.get(VERSION + "/files", response_model=EpisodeFilePage)
@@ -380,7 +398,7 @@ def authorize_file_download(
 ):
     response.headers["Cache-Control"] = "no-store"
     with authorized(
-        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True, version_id=data_version_id
     ) as (
         service,
         identity,
@@ -417,7 +435,7 @@ def package_file_download(
     packages: PackageServices,
 ):
     with authorized(
-        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True, version_id=data_version_id
     ) as (
         service,
         identity,
@@ -451,7 +469,7 @@ def fixed_quality(
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id, preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -472,7 +490,8 @@ def data_review_history(
     limit: int = Query(25, ge=1, le=100),
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id,
+                    preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -511,7 +530,9 @@ def submit_data_review(
     idempotency_key: Annotated[str, Header(min_length=1, max_length=256)],
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    scoped_review = auth.has_capability("role.reviewer", project_id, current_request_context().organization_id)
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id,
+                    preview=scoped_review, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -544,7 +565,7 @@ def authorize_preview(
     response: Response,
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id, preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -567,7 +588,7 @@ def depth(
     unit: Literal["m", "mm"] = "mm",
     representation: Literal["metadata", "npz", "png"] = "metadata",
 ):
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id, preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -603,7 +624,7 @@ def depth_pixel(
     unit: Literal["m", "mm"] = "m",
 ):
     response.headers["Cache-Control"] = "no-store"
-    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id) as (
+    with authorized(packages, auth, project_id, region_code, dataset_id, episode_id, preview=True, version_id=data_version_id) as (
         service,
         identity,
     ):
@@ -623,7 +644,7 @@ def download(
     packages: PackageServices,
 ):
     with authorized(
-        packages, auth, project_id, region_code, dataset_id, episode_id, download=True
+        packages, auth, project_id, region_code, dataset_id, episode_id, download=True, version_id=data_version_id
     ) as (
         service,
         identity,
@@ -633,6 +654,9 @@ def download(
 
         filename = episode_download_name(service.repository, (package.receipt.data,))
         path, temporary = complete_archive(package, service.directory / "downloads")
+        from .export_file_names import record_files
+
+        record_files(service.repository, [(filename, data_version_id)])
         return FileResponse(
             path,
             media_type="application/zip",

@@ -113,7 +113,7 @@ def commit_source(
     service, *, auth, organization_id, project_id, region_code, command: CommitOssImport
 ):
     scope = dict(organization_id=organization_id, project_id=project_id, region_code=region_code)
-    service._authorize(auth, **scope)
+    service._authorize(auth, **scope, task_id=command.collection_task_id)
     with TemporaryDirectory(prefix="oss-import-") as directory:
         return _commit_source(service, auth, scope, command, Path(directory))
 

@@ -11,7 +11,7 @@ import {
 import { request } from "../../../shared/api/http-client";
 import { parseWire } from "../../../shared/api/validate";
 
-export type FormalUploadSession = components["schemas"]["UploadSession"];
+export type FormalUploadSession = components["schemas"]["UploadSessionSummaryV1"];
 type RuntimeRolloutManifest = components["schemas"]["RolloutManifestV1"];
 type FormalRolloutManifest = Omit<RuntimeRolloutManifest, "processing_mode"> & {
   processing_mode?: RuntimeRolloutManifest["processing_mode"];
@@ -129,18 +129,20 @@ function assertQualityIdentity(
   }
 }
 
-export function getFormalUploadSessionDetail(
+export async function getFormalUploadSessionDetail(
   scope: IngestScope,
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<FormalUploadSession> {
-  return request<FormalUploadSession>({
+  const summary = await request<FormalUploadSession>({
     method: "GET",
-    path: sessionPath(scope, sessionId),
+    path: `${sessionPath(scope, sessionId)}/summary`,
     scope,
     scopeMode: "explicit",
     signal,
   });
+  assertSessionIdentity(summary, scope, sessionId);
+  return summary;
 }
 
 export function getFormalUploadManifestDetail(
@@ -285,18 +287,20 @@ export async function loadFormalUploadDetail(
   scope: IngestScope,
   sessionId: string,
   signal?: AbortSignal,
+  summary?: FormalUploadSession,
+  readQuality = true,
 ): Promise<FormalUploadDetail> {
   const manifestPromise = getFormalUploadManifestDetail(
     scope,
     sessionId,
     signal,
   );
-  const sessionAndQuality = getFormalUploadSessionDetail(
-    scope,
-    sessionId,
-    signal,
-  ).then(async (session) => {
+  const sessionPromise = summary
+    ? Promise.resolve(summary)
+    : getFormalUploadSessionDetail(scope, sessionId, signal);
+  const sessionAndQuality = sessionPromise.then(async (session) => {
     assertSessionIdentity(session, scope, sessionId);
+    if (!readQuality) return { session, quality: null };
     const quality = await getFormalRolloutQuality(
       scope,
       session.rollout_id,

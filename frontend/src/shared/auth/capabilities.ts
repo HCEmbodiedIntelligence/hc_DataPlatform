@@ -1,4 +1,10 @@
 export const CANONICAL_CAPABILITIES = [
+  "dashboard.read",
+  "collection_task.read",
+  "collection_task.manage",
+  "collection_task.delete",
+  "episode.derive",
+  "quality.discard",
   "access.manage",
   "access.read",
   "annotation.edit",
@@ -46,6 +52,7 @@ export const CANONICAL_CAPABILITIES = [
   "manual_issue.read",
   "manual_issue.resolve",
   "manual_issue.triage",
+  "teleoperation.connect",
   "robot.create",
   "robot.disable",
   "robot.read",
@@ -75,6 +82,8 @@ export const CANONICAL_CAPABILITIES = [
   "storage.overview.read",
   "storage.restore.read",
   "storage.restore.request",
+  "training.read",
+  "training.create",
   "upload.manage",
   "upload.read",
 ] as const;
@@ -100,7 +109,10 @@ export const PLATFORM_CAPABILITIES = [
   "platform.break_glass",
 ] as const;
 
+const workspaceCapabilities = ["upload.workspace", "episode.workspace"] as const;
+
 export type RegisteredCapability =
+  | (typeof workspaceCapabilities)[number]
   | Capability
   | (typeof PLATFORM_CAPABILITIES)[number];
 const platformCapabilitySet: ReadonlySet<string> = new Set(
@@ -112,6 +124,6 @@ export function isRegisteredCapability(
 ): value is RegisteredCapability {
   return (
     isCapability(value) ||
-    (typeof value === "string" && platformCapabilitySet.has(value))
+    (typeof value === "string" && (platformCapabilitySet.has(value) || workspaceCapabilities.some(key => key === value)))
   );
 }

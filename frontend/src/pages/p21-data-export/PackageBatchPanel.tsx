@@ -1,6 +1,7 @@
+import { MAX_EXPORT_ITEMS } from "../../shared/lib/ordered-transfer";
 import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { useEffect, useRef, useState } from "react";
-import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -13,23 +14,25 @@ import {
   Skeleton,
   Space,
 } from "antd";
-import { PackageCheck, RefreshCw, X } from "lucide-react";
+import { episodeItem, useExportHistory, type ExportRecord } from "../../features/exports/export-history";
+import { ExportContents, ExportReceipt } from "./ExportHistoryDetails";
+import { ExportControls, useExportDestination } from "../../features/exports/ExportControls";
+import type { ExportDestination } from "../../features/exports/oss-export";
+import { RefreshCw, X } from "lucide-react";
 import styles from "./PackageBatchPanel.module.css";
 import type { Scope } from "../../shared/scope/model";
 import { formatBytes } from "../../features/ingest/upload/upload-contract";
-import { BrowserDownloadHelp } from "../../features/exports/BrowserDownloadHelp";
+import { startPackageExport } from "../../features/exports/package-export-task";
+import { ExportTaskList } from "../../features/exports/ExportTaskList";
+import { startEpisodeBundleExport } from "../../features/exports/episode-bundle-export";
 import { CollectionAnnotationChooser } from "./CollectionAnnotationChooser";
 import {
   commandPackageJob,
-  createPackageBatch,
-  downloadPackageJob,
-  downloadEpisodeBundle,
   listPackageJobs,
   loadExportFormats,
   loadPackageCandidates,
   loadUploadCandidates,
   type PackageExportFilter,
-  loadPackageJob,
   type AnnotationSelection,
   type BatchMode,
   type PackageData,
@@ -51,7 +54,7 @@ function formatName(job: PackageJob) {
   const { plan } = job;
   if (plan.archive_format === "original_collection_zip/1") return "原始文件";
   if (plan.archive_format.startsWith("mcap_collection_zip/")) return "MCAP 集合";
-  if (["holobrain_collection_zip/5", "holobrain_collection_zip/6"].includes(plan.archive_format))
+  if (["holobrain_collection_zip/5", "holobrain_collection_zip/6", "holobrain_collection_zip/7", "holobrain_collection_zip/8"].includes(plan.archive_format))
     return "HoloBrain（16维，双臂和夹爪）";
   if (plan.archive_format.startsWith("holobrain_collection_zip/"))
     return "HoloBrain（19维，含腰部）";
@@ -59,7 +62,7 @@ function formatName(job: PackageJob) {
     return plan.modalities === "rgb"
       ? "LeRobot RGB（不含深度）"
       : "LeRobot RGB-D（含深度）";
-  return "完整标准包";
+  return "Episode 归档";
 }
 
 function depthSummary(job: PackageJob) {
@@ -90,11 +93,6 @@ const builtInFormats = [
     label: "MCAP 数据包集合",
   },
   {
-    value: "independent",
-    title: "完整标准包",
-    label: "独立标准包批量 ZIP（含已采集深度）",
-  },
-  {
     value: "rgbd",
     title: "LeRobot（含深度）",
     label: "LeRobot RGB-D 集合",
@@ -110,33 +108,41 @@ export function PackageBatchPanel({
   datasets,
   annotated,
   filter,
+  datasetNumbers,
   datasetIds = [],
   taskIds = [],
   canReadAnnotations,
+  canReadRaw = false,
   canCreate,
   canDownload,
+  canDownloadData = () => canDownload,
+  historyOnly = false,
 }: {
-  scope: Scope;
+  scope: Scope | null;
   datasets: { id: string; name: string }[];
   annotated: boolean;
   filter?: PackageExportFilter;
+  datasetNumbers?: ReadonlyMap<string, string>;
   datasetIds?: readonly string[];
   taskIds?: readonly string[];
   canReadAnnotations: boolean;
+  canReadRaw?: boolean;
   canCreate: boolean;
   canDownload: boolean;
+  canDownloadData?: (data: PackageData) => boolean;
+  historyOnly?: boolean;
 }) {
   const formats = useQuery({
     queryKey: ["export-formats", scope],
-    queryFn: ({ signal }) => loadExportFormats(scope, signal),
-    enabled: canDownload,
+    queryFn: ({ signal }) => loadExportFormats(scope!, signal),
+    enabled: Boolean(scope) && canDownload,
   });
   const deliveryFormats = [
     ...builtInFormats,
     ...(formats.data ?? [])
       .filter(
         (f) =>
-          !["lerobot", "mcap", "original"].includes(f.id) &&
+          !["lerobot", "mcap", "original", "independent"].includes(f.id) &&
           (!annotated || f.supports_annotations),
       )
       .map((f) => ({
@@ -150,25 +156,16 @@ export function PackageBatchPanel({
   const [annotations, setAnnotations] = useState<
     Record<string, AnnotationSelection | null>
   >({});
-  const [mode, setMode] = useState<BatchMode>(
-    annotated ? "rgbd" : "independent",
-  );
+  const [mode, setMode] = useState<BatchMode>("rgbd");
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const qcBundle = filter?.stage === "qc_passed";
-  const useEpisodeBundle = qcBundle && mode !== "holobrain";
-  const selectionLimit = mode === "holobrain" ? undefined : qcBundle ? 1000 : 100;
+  const useEpisodeBundle = qcBundle;
+  const selectionLimit = mode === "holobrain" ? undefined : mode === "independent" && !qcBundle ? 100 : MAX_EXPORT_ITEMS;
+  const selectedPageBatches = useRef(new Map<string, number[]>());
   const [selectingAll, setSelectingAll] = useState(false);
-  const [bundleProgress, setBundleProgress] = useState("");
-  const [bundleUrl, setBundleUrl] = useState<string>();
-  useEffect(() => () => { if (bundleUrl) URL.revokeObjectURL(bundleUrl); }, [bundleUrl]);
-  const [autoJob, setAutoJob] = useState<PackageJob | null>(null);
-  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
-  const [downloadLink, setDownloadLink] = useState<{
-    url: string;
-    expiresAt: number;
-  } | null>(null);
-  const automaticDownloads = useRef(new Set<string>());
-  const jobsRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const exportDestination = useExportDestination();
+  const receipts = useExportHistory(scope);
   const lifetime = useRef<AbortController | null>(null);
   const pending = useRef<{ signature: string; key: string } | null>(null);
   useEffect(() => {
@@ -176,14 +173,6 @@ export function PackageBatchPanel({
     lifetime.current = c;
     return () => c.abort();
   }, []);
-  useEffect(() => {
-    if (!downloadLink) return;
-    const timer = window.setTimeout(
-      () => setDownloadLink(null),
-      Math.max(0, downloadLink.expiresAt - Date.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [downloadLink]);
   const candidateDatasetIds = annotated
     ? datasets.map((dataset) => dataset.id)
     : datasetId ? [datasetId] : [];
@@ -197,7 +186,7 @@ export function PackageBatchPanel({
     })),
     queryFn: async ({ signal, pageParam }) => {
       const pages = await Promise.all(pageParam.map(({ id, cursor }) =>
-        loadPackageCandidates(scope, id, signal, cursor, annotated ? "annotated" : "dataset"),
+        loadPackageCandidates(scope!, id, signal, cursor, annotated ? "annotated" : "dataset"),
       ));
       return {
         items: pages.flatMap((page) => page.items),
@@ -211,15 +200,15 @@ export function PackageBatchPanel({
       };
     },
     enabled:
-      !filter && canDownload && candidateDatasetIds.length > 0 && (!annotated || canReadAnnotations),
+      Boolean(scope) && !historyOnly && !filter && candidateDatasetIds.length > 0 && (!annotated || canReadAnnotations),
     staleTime: 0,
     getNextPageParam: (page) => page.next.length ? page.next : undefined,
   });
   const uploadCandidates = useInfiniteQuery({
     queryKey: ["export-upload-candidates", scope, filter, datasetIds, taskIds],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ signal, pageParam }) => loadUploadCandidates(scope, filter!, datasetIds, taskIds, signal, pageParam),
-    enabled: Boolean(filter) && canDownload && (!annotated || canReadAnnotations),
+    queryFn: ({ signal, pageParam }) => loadUploadCandidates(scope!, filter!, datasetIds, taskIds, signal, pageParam),
+    enabled: Boolean(scope && filter) && !historyOnly && (!annotated || canReadAnnotations),
     getNextPageParam: (page) => page.next_after ?? undefined,
   });
   const list = filter ? uploadCandidates : candidates;
@@ -230,8 +219,8 @@ export function PackageBatchPanel({
     queryKey: ["package-batch-jobs", scope, canReadAnnotations],
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) =>
-      listPackageJobs(scope, signal, pageParam),
-    enabled: canDownload,
+      listPackageJobs(scope!, signal, pageParam),
+    enabled: Boolean(scope),
     getNextPageParam: (page) =>
       page.length === 25 ? page.at(-1)?.job_id : undefined,
     refetchInterval: (q) =>
@@ -241,29 +230,25 @@ export function PackageBatchPanel({
         ? 1500
         : false,
   });
-  const activeJob = useQuery({
-    queryKey: [
-      "package-active-export",
-      scope,
-      autoJob?.job_id,
-      autoJob?.generation,
-    ],
-    queryFn: ({ signal }) => loadPackageJob(scope, autoJob!, signal),
-    enabled: canDownload && Boolean(autoJob),
-    initialData: autoJob ?? undefined,
-    refetchInterval: (q) =>
-      ["PENDING", "RUNNING"].includes(q.state.data?.status ?? "")
-        ? 1500
-        : false,
-  });
-  const history = jobs.data?.pages.flat() ?? [];
-  const visibleJobs =
-    autoJob && activeJob.data
-      ? [
-          activeJob.data,
-          ...history.filter((job) => job.job_id !== autoJob.job_id),
-        ]
-      : history;
+  const visibleJobs = jobs.data?.pages.flat() ?? [];
+  const jobReceipts = new Map<string, ExportRecord[]>();
+  const historyRows: Array<{ time: number; job: PackageJob } | { time: number; receipt: ExportRecord }> = [];
+  const loadedJobs = new Set(jobs.error ? [] : visibleJobs.map(job => job.job_id));
+  for (const receipt of receipts) {
+    if ((receipt.source === "bundle" && !(receipt.jobId && loadedJobs.has(receipt.jobId))) || (receipt.source === "raw" && canReadRaw))
+      historyRows.push({ time: receipt.created, receipt });
+    if (receipt.jobId) {
+      const previous = jobReceipts.get(receipt.jobId);
+      if (previous) previous.push(receipt);
+      else jobReceipts.set(receipt.jobId, [receipt]);
+    }
+  }
+  if (!jobs.error) {
+    for (const job of visibleJobs) historyRows.push({
+      time: Math.max(Date.parse(job.created_at), jobReceipts.get(job.job_id)?.[0]?.created ?? 0), job,
+    });
+  }
+  historyRows.sort((a, b) => b.time - a.time);
   const items = filter ? uploaded.map(row => row.data) : candidates.data?.pages.flatMap((p) => p.items) ?? [];
   const selections = Object.values(selected).toSorted((a, b) =>
     a.data_version_id.localeCompare(b.data_version_id),
@@ -271,120 +256,58 @@ export function PackageBatchPanel({
   const missingAnnotations =
     annotated && selections.some((d) => !annotations[d.data_version_id]);
   const mutation = useMutation({
-    mutationFn: async (action: {
-      kind: "create" | "download" | "retry" | "cancel";
-      job?: PackageJob;
-      automatic?: boolean;
-    }) => {
-      const signal = lifetime.current!.signal;
-      if (action.kind === "create") {
-        if (useEpisodeBundle && filter) {
-          setBundleUrl(undefined);
-          setBundleProgress("");
-          const result = await downloadEpisodeBundle(scope, selections, mode, filter, signal, setBundleProgress);
-          if (result.kind === "cancelled") {
-            setBundleProgress("尚未选择保存位置。已保留所选数据，点击“导出”可重新选择。");
-            return;
-          }
-          if (result.kind === "browser") setBundleUrl(result.url);
-          setBundleProgress(`已完成 ${selections.length} 条 Episode 的打包下载`);
-          return;
-        }
-        const members = selections.map((data) => ({
-          data,
-          annotation: annotated ? annotations[data.data_version_id] : null,
-        }));
-        const signature = JSON.stringify({ mode, members, filter });
-        if (pending.current?.signature !== signature)
-          pending.current = { signature, key: crypto.randomUUID() };
-        return createPackageBatch(
-          scope,
-          members,
-          mode,
-          pending.current.key,
-          signal,
-          filter,
-        );
-      }
-      if (action.kind !== "download")
-        return commandPackageJob(scope, action.job!, action.kind, signal);
-      const grant = await downloadPackageJob(scope, action.job!, signal, qcBundle ? filter : undefined);
-      signal.throwIfAborted();
-      setDownloadLink({
-        url: grant.url,
-        expiresAt: Date.now() + grant.expires_seconds * 1000,
-      });
-      const a = document.createElement("a");
-      a.href = grant.url;
-      a.download = "";
-      a.rel = "noopener noreferrer";
-      document.body.append(a);
-      a.click();
-      a.remove();
-    },
-    onMutate: (action) => {
-      if (action.kind !== "cancel") {
-        setDownloadNotice(null);
-        setDownloadLink(null);
-      }
-    },
-    onSuccess: async (result, action) => {
-      if ((action.kind === "create" || action.kind === "retry") && result) {
-        pending.current = null;
-        automaticDownloads.current.delete(
-          `${result.job_id}:${result.generation}`,
-        );
-        setAutoJob(result);
-        jobsRef.current?.scrollIntoView?.({ block: "start" });
-      }
-      if (action.kind === "download") {
-        if (action.automatic || autoJob?.job_id === action.job?.job_id)
-          setAutoJob(null);
-        setDownloadNotice(
-          `${formatName(action.job!)}已生成，已向浏览器请求下载。`,
-        );
-      }
-      if (action.kind === "cancel" && autoJob?.job_id === action.job?.job_id)
-        setAutoJob(null);
-      await jobs.refetch();
-    },
-    onError: (_, action) => {
-      if (action.automatic) setAutoJob(null);
-    },
+    mutationFn: (action: { kind: "cancel"; job: PackageJob }) =>
+      commandPackageJob(scope!, action.job, action.kind, lifetime.current!.signal),
+    onSuccess: () => jobs.refetch(),
   });
-  const runAction = mutation.mutate;
-  useEffect(() => {
-    const job = activeJob.data;
-    if (!canDownload || !autoJob || !job || job.job_id !== autoJob.job_id)
-      return;
-    if (job.status === "FAILED" || job.status === "CANCELLED") {
-      setAutoJob(null);
-      void jobs.refetch();
-      return;
-    }
-    if (job.status !== "READY") return;
-    const key = `${job.job_id}:${job.generation}`;
-    if (automaticDownloads.current.has(key)) return;
-    automaticDownloads.current.add(key);
-    runAction({ kind: "download", job, automatic: true });
-  }, [canDownload, autoJob, activeJob.data, runAction, jobs.refetch]);
+
+  function startJob(action: "create" | "retry" | "download", destination: ExportDestination, job?: PackageJob) {
+    if (!scope) return;
+    const members = selections.map(data => ({ data, annotation: annotated ? annotations[data.data_version_id] : null }));
+    const signature = JSON.stringify({ mode, members, filter });
+    if (pending.current?.signature !== signature)
+      pending.current = { signature, key: crypto.randomUUID() };
+    const key = pending.current.key;
+    const title = job ? formatName(job) : deliveryFormats.find(format => format.value === mode)?.title ?? mode;
+    void startPackageExport({
+      scope, mode, selections: members, filter, datasetNumbers, destination, action, job, key,
+      label: `${title} · ${job?.plan.members.length ?? members.length} 条`,
+      onJob: updated => {
+        if (pending.current?.key === key) pending.current = null;
+        queryClient.setQueryData<InfiniteData<PackageJob[]>>(["package-batch-jobs", scope, canReadAnnotations], cache => {
+          if (!cache) return { pages: [[updated]], pageParams: [undefined] };
+          const exists = cache.pages.some(page => page.some(item => item.job_id === updated.job_id));
+          return { ...cache, pages: cache.pages.map((page, i) => !i && !exists ? [updated, ...page]
+            : page.map(item => item.job_id === updated.job_id ? updated : item)) };
+        });
+      },
+    }).then(() => queryClient.invalidateQueries({ queryKey: ["package-batch-jobs", scope] }));
+  }
   async function selectFiltered() {
-    if (!filter) return;
+    if (!scope || !filter) return;
     setSelectionError(null);
     setSelectingAll(true);
     try {
       const next: Record<string, PackageData> = {};
+      const allBatches = new Map<string, number[]>();
       let page = uploadCandidates.data?.pages[0];
       const cursors = new Set<string>();
       while (page) {
-        if (selectionLimit !== undefined && page.total > selectionLimit) throw new Error(`本次筛选有 ${page.total} 条，每个压缩包最多 ${selectionLimit} 条，请缩小筛选范围。`);
-        for (const { data } of page.items) next[data.data_version_id] = data;
+        for (const { data, batch_numbers } of page.items) {
+          if (!canDownloadData(data)) continue;
+          next[data.data_version_id] = data;
+          allBatches.set(data.data_version_id, batch_numbers);
+          if (selectionLimit !== undefined && allBatches.size > selectionLimit) {
+            throw new Error(`可下载的筛选结果超过每包 ${selectionLimit} 条的上限，请缩小筛选范围。`);
+          }
+        }
         if (!page.next_after) break;
         if (cursors.has(page.next_after)) throw new Error("候选数据已变化，请刷新后重试。");
         cursors.add(page.next_after);
         page = await loadUploadCandidates(scope, filter, datasetIds, taskIds, lifetime.current!.signal, page.next_after);
       }
       lifetime.current!.signal.throwIfAborted();
+      selectedPageBatches.current = allBatches;
       setSelected(next);
     } catch (error) {
       setSelectionError(error instanceof Error ? error.message : "全选失败，请重试。");
@@ -427,12 +350,11 @@ export function PackageBatchPanel({
       return next;
     });
   }
-  if (!canDownload) return <Alert type="warning" title="缺少完整包下载权限" />;
   return (
     <div className={styles.panel}>
-      <section
+      {!historyOnly && <section
         className={styles.composer}
-        aria-label="完整标准包与 LeRobot 集合"
+        aria-label="导出数据和格式"
       >
         <section
           className={styles.section}
@@ -452,11 +374,11 @@ export function PackageBatchPanel({
                 onChange={setDatasetId}
               />
             )}
-            <span className={styles.count} aria-live="polite">
-              {annotated ? "标注完成" : "共"}{" "}
-              {list.data?.pages[0]?.total ?? 0} 条 · 已选{" "}
-              {selections.length} 条
-            </span>
+            {list.isSuccess && (
+              <span className={styles.count} aria-live="polite">
+                {annotated ? "标注完成" : "共"} {list.data.pages[0]?.total ?? 0} 条 · 已选 {selections.length} 条
+              </span>
+            )}
           </div>
           {list.error && (
             <Alert
@@ -471,7 +393,8 @@ export function PackageBatchPanel({
               }
             />
           )}
-          {!filter && !datasets.length && (
+          {!scope && <div className={styles.empty}>暂无可导出的数据</div>}
+          {scope && !filter && !datasets.length && (
             <div className={styles.empty}>请选择任务或数据集</div>
           )}
           {list.isFetching && !list.data && (filter || candidateDatasetIds.length > 0) && (
@@ -496,7 +419,7 @@ export function PackageBatchPanel({
               {filter && items.length > 0 && (
                 <Checkbox checked={selections.length === uploadCandidates.data?.pages[0]?.total}
                   indeterminate={selections.length > 0 && selections.length !== uploadCandidates.data?.pages[0]?.total}
-                  disabled={selectingAll || mutation.isPending}
+                  disabled={!canDownload || selectingAll || mutation.isPending}
                   onChange={event => event.target.checked ? void selectFiltered() : setSelected({})}>
                   {selectingAll ? "正在读取全部 Episode…" : "全选筛选结果"}
                 </Checkbox>
@@ -506,6 +429,7 @@ export function PackageBatchPanel({
                   <Checkbox
                     className={styles.candidate}
                     key={`candidate-${data.data_version_id}`}
+                    disabled={!canDownloadData(data)}
                     checked={Boolean(selected[data.data_version_id])}
                     onChange={(e) => select(data, e.target.checked)}
                   >
@@ -599,40 +523,43 @@ export function PackageBatchPanel({
                 setSelectionError(null);
               }}
             >
-              {deliveryFormats.map((format) => {
-                const disabled = annotated && format.value === "independent";
-                return (
-                  <Radio.Button
-                    key={format.value}
-                    value={format.value}
-                    aria-label={format.label}
-                    disabled={disabled}
-                    title={disabled ? "带标注数据请选择 LeRobot" : undefined}
-                  >
-                    {format.title}
-                  </Radio.Button>
-                );
-              })}
+              {deliveryFormats.map((format) => (
+                <Radio.Button
+                  key={format.value}
+                  value={format.value}
+                  aria-label={format.label}
+                >
+                  {format.title}
+                </Radio.Button>
+              ))}
             </Radio.Group>
-            <Button
-              className={styles.createButton}
-              type="primary"
-              icon={<PackageCheck size={16} aria-hidden="true" />}
-              title="导出完成后自动下载"
-              loading={mutation.isPending || Boolean(autoJob)}
+            <ExportControls
+              selection={exportDestination}
+              canPublish={canCreate}
+              busy={false}
               disabled={
-                !canCreate || selectingAll ||
-                Boolean(autoJob) ||
-                !selections.length ||
+                !scope || !canCreate || selectingAll ||
+                !selections.length || !selections.every(canDownloadData) ||
                 missingAnnotations ||
                 (annotated && !canReadAnnotations)
               }
-              onClick={() => mutation.mutate({ kind: "create" })}
-            >
-              导出
-            </Button>
+              onExport={destination => {
+                if (!scope) return;
+                if (useEpisodeBundle && filter) {
+                  mutation.reset();
+                  void startEpisodeBundleExport(scope, selections, mode, filter, destination, datasetNumbers,
+                    {
+                      format: deliveryFormats.find(format => format.value === mode)?.title ?? mode,
+                      batchesByVersion: new Map([...selectedPageBatches.current,
+                        ...uploaded.map(row => [row.data.data_version_id, row.batch_numbers] as const)]),
+                    }).then(() => { if (mode === "holobrain") void jobs.refetch(); });
+                } else {
+                  void startJob("create", destination);
+                }
+              }}
+            />
           </div>
-          {annotated && !canReadAnnotations && (
+          {scope && annotated && !canReadAnnotations && (
             <Alert type="warning" title="带标注集合需要标注读取权限" />
           )}
           {annotated && canReadAnnotations && selections.length > 0 && (
@@ -640,7 +567,7 @@ export function PackageBatchPanel({
               仅导出当前已通过审核的标注
             </p>
           )}
-          {annotated &&
+          {scope && annotated &&
             canReadAnnotations &&
             selections.map((data) => (
               <div
@@ -665,65 +592,10 @@ export function PackageBatchPanel({
             </span>
           )}
         </section>
-        {useEpisodeBundle && bundleProgress && !mutation.error && <Alert type="info" title={bundleProgress}
-          action={bundleUrl && <a href={bundleUrl} download="Episodes.zip">下载 ZIP</a>} />}
-        {mutation.error && (
-          <Alert
-            showIcon
-            className={styles.operationError}
-            type="error"
-            title={
-              mutation.variables?.kind === "download"
-                ? "文件未能开始下载，请在导出记录中重新下载"
-                : "导出操作失败"
-            }
-            description={mutation.error.message}
-          />
-        )}
-        {downloadNotice && (
-          <Alert
-            showIcon
-            className={styles.operationError}
-            type="info"
-            title={downloadNotice}
-            description={
-              downloadLink ? (
-                <Space orientation="vertical" size={4}>
-                  <Space wrap>
-                    <span>若下载列表中没有记录，请点击下载：</span>
-                    <Button
-                      size="small"
-                      type="primary"
-                      href={downloadLink.url}
-                      download=""
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      点击下载 ZIP
-                    </Button>
-                  </Space>
-                  {downloadLink.url.startsWith("http:") && (
-                    <BrowserDownloadHelp />
-                  )}
-                </Space>
-              ) : (
-                "下载链接已过期，请在导出记录中重新下载。"
-              )
-            }
-          />
-        )}
-        {autoJob && activeJob.error && (
-          <Alert
-            showIcon
-            className={styles.operationError}
-            type="warning"
-            title="暂时无法读取导出进度，正在重试"
-            description={activeJob.error.message}
-          />
-        )}
-      </section>
+        {mutation.error && <Alert type="error" title="取消导出失败" description={mutation.error.message} />}
+      </section>}
+      <ExportTaskList scope={scope} />
       <Card
-        ref={jobsRef}
         className={styles.jobsCard}
         title="导出记录"
         size="small"
@@ -732,6 +604,7 @@ export function PackageBatchPanel({
             size="small"
             icon={<RefreshCw size={14} aria-hidden="true" />}
             onClick={() => void jobs.refetch()}
+            disabled={!scope}
             loading={jobs.isFetching}
           >
             刷新状态
@@ -746,14 +619,20 @@ export function PackageBatchPanel({
               description={jobs.error.message}
             />
           )}
-          {jobs.isPending && (
+          {jobs.isLoading && (
             <Skeleton active title={false} paragraph={{ rows: 2 }} />
           )}
-          {!jobs.error && jobs.data && !visibleJobs.length && (
+          {!jobs.error && (!scope || jobs.data) && !historyRows.length && (
             <div className={styles.jobsEmpty}>暂无导出记录</div>
           )}
-          {!jobs.error &&
-            visibleJobs.map((job) => (
+          {scope && historyRows.map(row => {
+            if ("receipt" in row) return (
+              <div className={styles.jobRow} key={row.receipt.id}>
+                <div className={styles.jobInfo}><ExportReceipt record={row.receipt} scope={scope} /></div>
+              </div>
+            );
+            const { job } = row;
+            return (
               <div className={styles.jobRow} key={job.job_id}>
                 <div className={styles.jobInfo}>
                   <strong>
@@ -765,6 +644,16 @@ export function PackageBatchPanel({
                       <span> · {formatBytes(job.size_bytes)}</span>
                     )}
                   </span>
+                  <time dateTime={job.created_at}>创建于 {new Date(job.created_at).toLocaleString("zh-CN")}</time>
+                  <ExportContents scope={scope} items={job.plan.members.map(member => ({
+                    ...episodeItem(member.data),
+                    taskId: member.collection_record?.collection_task_id,
+                    batches: [...new Set(member.collection_record?.uploads.flatMap(upload => upload.batch_numbers))],
+                    annotationRevision: "annotation" in member ? member.annotation?.binding.revision : undefined,
+                  }))} />
+                  {(jobReceipts.get(job.job_id) ?? []).map(record => (
+                    <ExportReceipt key={record.id} record={record} scope={scope} showContents={false} />
+                  ))}
                 </div>
                 <div
                   className={styles.jobStatus}
@@ -773,7 +662,6 @@ export function PackageBatchPanel({
                 >
                   <span>
                     {phases[job.phase]}
-                    {autoJob?.job_id === job.job_id && " · 完成后自动下载"}
                   </span>
                   {["PENDING", "RUNNING"].includes(job.status) &&
                     Boolean(job.total_bytes) && (
@@ -789,12 +677,11 @@ export function PackageBatchPanel({
                     )}
                 </div>
                 <Space className={styles.jobActions} size={0}>
-                  {job.status === "READY" && autoJob?.job_id !== job.job_id && (
+                  {job.status === "READY" && job.plan.members.every(member => canDownloadData(member.data)) && (
                     <Button
                       type="link"
                       size="small"
-                      disabled={mutation.isPending}
-                      onClick={() => mutation.mutate({ kind: "download", job })}
+                      onClick={() => void startJob("download", "zip", job)}
                     >
                       重新下载
                     </Button>
@@ -814,7 +701,7 @@ export function PackageBatchPanel({
                       type="link"
                       size="small"
                       disabled={!canCreate || mutation.isPending}
-                      onClick={() => mutation.mutate({ kind: "retry", job })}
+                      onClick={() => void startJob("retry", exportDestination[0], job)}
                     >
                       重试导出
                     </Button>
@@ -828,7 +715,8 @@ export function PackageBatchPanel({
                   />
                 )}
               </div>
-            ))}
+            );
+          })}
           {jobs.hasNextPage && (
             <Button
               loading={jobs.isFetchingNextPage}

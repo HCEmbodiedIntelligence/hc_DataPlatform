@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "../../shared/api/generated/platform";
 import {
@@ -18,29 +19,38 @@ export type UsageCategory =
 export function useTaskUsage(
   scope: CapacityScope | null,
   enabled: boolean,
-  refresh: number,
 ) {
-  return useQuery({
+  const forceRefresh = useRef(false);
+  const query = useQuery({
     queryKey: makeQueryKey("storage", "task-usage", {
       projectId: scope?.projectId,
-      refresh,
     }),
-    queryFn: async ({ signal }) =>
-      parseWire(
+    queryFn: async ({ signal }) => {
+      const refresh = forceRefresh.current;
+      forceRefresh.current = false;
+      return parseWire(
         ProjectTaskStorageWire,
         await request({
           method: "GET",
           path: `/projects/${encodeURIComponent(scope!.projectId)}/storage/task-usage`,
           scope: scope!,
           signal,
-          query: { refresh: refresh > 0 },
+          query: { refresh },
         }),
         { endpoint: "getTaskStorageUsage" },
-      ),
+      );
+    },
     enabled: enabled && scope !== null,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
+  return {
+    ...query,
+    refreshUsage: () => {
+      forceRefresh.current = true;
+      return query.refetch();
+    },
+  };
 }
 
 export function useTaskFiles(

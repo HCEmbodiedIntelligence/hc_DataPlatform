@@ -15,6 +15,7 @@ import numpy as np
 from mcap.reader import make_reader
 from mcap.writer import Writer
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_NS
 from hc_data_platform.episode_store.mcap_images import get_field
 from hc_data_platform.episode_store.models import canonical
 from hc_data_platform.verification.ports import McapRos2DecoderProbe
@@ -112,7 +113,8 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None, *, source_in
     })
     fill_gaps = "fill_action_from_next_frame" in edits
     recording, evidence = prepare(path, destination, base, progress, preserve_source=True,
-                                  fill_action_gaps=fill_gaps, preview_frames=preview_frames,
+                                  fill_action_gaps=fill_gaps, interpolate_short_gaps="interpolate_short_gaps" in edits,
+                                  preview_frames=preview_frames,
                                   rgb_keyframe_interval=rgb_keyframe_interval,
                                   depth_encoder_pools=depth_encoder_pools)
     if selection:
@@ -250,6 +252,7 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None, *, source_in
     present = {name for name, samples in values.items() if samples} | (set(features) & GENERATED)
     # History belongs to one recording and one side; carried values never become observations.
     last_hand = {}
+    interpolated_axes = {}
     aligned_action = None
     fill_counts = {name: 0 for name in held_hands}
     no_history = {name: 0 for name in held_hands}
@@ -279,6 +282,8 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None, *, source_in
             )
             if logical in features:
                 value["values"] = _cast(value["values"], features[logical])
+            if logical and value.get("source_origins") and "interpolate_short_gaps" in edits:
+                interpolated_axes[logical] = value["source_origins"]
             if fill_gaps and channel.topic == "/action":
                 aligned_action = (message.sequence, value)
             emit(channel.topic, value, message)
@@ -300,7 +305,10 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None, *, source_in
             if cfg.normalization:
                 from .joint_normalization import nearest_index
 
-                selected = {name: nearest_index(times, stamp, 150_000_000) for name, times in source_times.items()}
+                selected = {
+                    name: nearest_index(times, stamp, JOINT_MATCH_NS if name in {"observation.state", "action"} else 150_000_000)
+                    for name, times in source_times.items()
+                }
                 selected = {name: -1 if pos is None else pos for name, pos in selected.items()}
             carried = {}
             for name in present:
@@ -338,13 +346,16 @@ def prepare_semantic(path, destination, cfg, progress=lambda: None, *, source_in
                             if name == "observation.source_age"
                             else pos >= 0
                             if name == "observation.source_available"
-                            else pos >= 0 and age <= (0.25 if key in cameras else 0.2)
+                            else bool(interpolated_axes.get(key)) or (pos >= 0 and age <= (0.25 if key in cameras else 0.2))
                         )
                 emit(native_topic(name), _cast(row, feature), message)
             provenance = {"format": "MCAP", "source_timestamp_ns": stamp}
             if fill_gaps:
                 provenance["recording_origin_ns"] = origin
-            if fill_gaps and action_row.get("action_origin"):
+            if interpolated_axes:
+                provenance["short_gap_interpolation"] = dict(interpolated_axes)
+                interpolated_axes.clear()
+            if fill_gaps and "state_reference_timestamp_ns" in action_row:
                 provenance["action_fill"] = {k: action_row[k] for k in (
                     "action_origin", "source_frame", "source_timestamp_ns", "source_topic",
                     "state_reference_timestamp_ns", "nearest_source_timestamp_ns")}

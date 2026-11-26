@@ -146,7 +146,7 @@ export function RobotOnboardingTab() {
   useEffect(() => setQuery(filters.q), [filters.q]);
   const summary = page.data?.summary;
   const count = (value: number | null | undefined) =>
-    page.isError ? "暂不可用" : value === null ? "未知" : (value ?? "加载中");
+    !scope ? 0 : page.isError ? "暂不可用" : value === null ? "未知" : (value ?? "加载中");
   const cards = [
     {
       label: "机器人总数",
@@ -181,8 +181,7 @@ export function RobotOnboardingTab() {
       segment: "attention",
     },
   ];
-  if (!scope) return <Empty description="请选择组织后查看机器人接入" />;
-  if (!capability.loading && !capability.has("ingest_source.read"))
+  if (scope && !capability.loading && !capability.has("ingest_source.read"))
     return <Alert type="error" title="没有当前组织的机器人接入读取权限" />;
   return (
     <section className={styles.panel} aria-label="机器人接入">
@@ -198,7 +197,7 @@ export function RobotOnboardingTab() {
       <Flex align="center" justify="space-between" wrap gap={12}>
         <div>
           <p>
-            当前组织：{scope.organizationId} · 每台设备一个 Robot
+            当前组织：{scope?.organizationId ?? "暂无"} · 每台设备一个 Robot
             ID，上传归属由采集任务决定
           </p>
         </div>
@@ -355,7 +354,7 @@ export function RobotOnboardingTab() {
             : `匹配 ${page.data?.total ?? "…"} 台机器人`}
         </span>
         <Space>
-          <Button onClick={() => void page.refetch()}>刷新</Button>
+          <Button disabled={!scope} onClick={() => void page.refetch()}>刷新</Button>
           <label>
             排序{" "}
             <Select
@@ -384,7 +383,7 @@ export function RobotOnboardingTab() {
         className="hc-data-table"
         rowKey="robot_id"
         dataSource={page.isError ? [] : page.data?.items}
-        loading={page.isPending && !page.isError}
+        loading={page.isLoading}
         scroll={{ x: 900 }}
         locale={{
           emptyText: page.isError
@@ -469,7 +468,7 @@ export function RobotOnboardingTab() {
         ]}
       />
       <Drawer
-        open={Boolean(selectedId)}
+        open={Boolean(scope && selectedId)}
         title={selected?.display_name ?? "机器人接入详情"}
         width="min(1100px, 96vw)"
         destroyOnHidden
@@ -488,7 +487,7 @@ export function RobotOnboardingTab() {
             title="设备详情暂不可用"
             action={<Button onClick={() => void detail.refetch()}>重试</Button>}
           />
-        ) : selected ? (
+        ) : scope && selected ? (
           <>
             <Tabs
               activeKey={
@@ -681,7 +680,7 @@ export function RobotOnboardingTab() {
           />
         )}
       </Drawer>
-      {deleteTarget && deleteTarget.organizationId === scope.organizationId && (
+      {scope && deleteTarget && deleteTarget.organizationId === scope.organizationId && (
         <RobotDeletionDialog
           key={deleteTarget.organizationId + deleteTarget.robot.robot_id}
           organizationId={deleteTarget.organizationId}
@@ -708,7 +707,7 @@ export function RobotOnboardingTab() {
           }
         />
       )}
-      {wizard && (
+      {scope && wizard && (
         <OnboardRobotDialog
           key={`${scope.organizationId}:${scope.projectId}:${scope.regionCode}`}
           scope={scope}

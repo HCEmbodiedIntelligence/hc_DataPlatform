@@ -11,6 +11,7 @@ from hc_data_platform.security.scope import ScopeGuard
 
 from .models import (
     DashboardActivityResponse,
+    DashboardAnalyticsResponse,
     DashboardCoverageResponse,
     DashboardIdentifier,
     DashboardPendingItemsResponse,
@@ -122,6 +123,38 @@ def get_dashboard_activity(
         timezone_name=timezone_name,
         cursor=cursor,
         limit=limit,
+    )
+
+
+@router.get(
+    "/analytics",
+    response_model=DashboardAnalyticsResponse,
+    operation_id="getDashboardAnalytics",
+)
+def get_dashboard_analytics(
+    project_id: DashboardIdentifier,
+    region_code: RegionCode,
+    range_start: RangeStart,
+    range_end: RangeEnd,
+    timezone_name: TimezoneName,
+    response: Response,
+    auth: VerifiedAuth,
+    service: Service,
+    task_id: Annotated[
+        str | None,
+        Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._-]+$"),
+    ] = None,
+) -> DashboardAnalyticsResponse:
+    _authorize(auth, project_id, region_code)
+    _no_store(response)
+    return service.analytics(
+        auth=auth,
+        project_id=project_id,
+        region_code=region_code,
+        range_start=range_start,
+        range_end=range_end,
+        timezone_name=timezone_name,
+        task_id=task_id,
     )
 
 

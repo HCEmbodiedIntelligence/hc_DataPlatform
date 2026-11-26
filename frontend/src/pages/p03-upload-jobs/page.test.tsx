@@ -329,6 +329,13 @@ describe("P03 serial data upload page", () => {
     expect(createSessionMock).not.toHaveBeenCalled();
   });
 
+  it("keeps the project-wide OSS browser closed for a task-scoped collector", () => {
+    grantedCapabilities.delete("upload.manage");
+    grantedCapabilities.add("role.collector");
+    renderPage();
+    expect(screen.getByRole("button", { name: "从 OSS 导入" })).toBeDisabled();
+  });
+
   it("disables confirmation without upload.manage but allows local inspection", async () => {
     grantedCapabilities.delete("upload.manage");
     const user = userEvent.setup();

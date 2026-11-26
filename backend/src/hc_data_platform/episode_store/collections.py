@@ -127,7 +127,7 @@ class EpisodeCollections:
             return self._view(row) if row else None
 
     @timed("SNAPSHOT_PUBLISH")
-    def publish(self, data: DataVersionRef, schema):
+    def publish(self, data: DataVersionRef, schema, *, on_published=None):
         """Append or replace one Episode; identical retries return the original snapshot."""
         from .schemas import EpisodeSchemas
 
@@ -148,7 +148,7 @@ class EpisodeCollections:
         with self.writer_lock(scope):
             previous_publication = self.publication(data)
             if previous_publication is not None:
-                return previous_publication
+                return on_published(previous_publication) if on_published else previous_publication
             current = self._head(scope)
             legacy = (
                 self.legacy.current_version(identity.dataset_id, project_id=identity.project_id)
@@ -273,8 +273,10 @@ class EpisodeCollections:
                     ),
                 )
             self.checkpoint("collection_database_committed")
-            return CollectionVersion(
+            published = CollectionVersion(
                 **snapshot.model_dump(mode="python"),
                 manifest_sha256=snapshot.content_hash,
                 created_at=created,
             )
+            # Keep the current projection visible before another writer takes this dataset lock.
+            return on_published(published) if on_published else published

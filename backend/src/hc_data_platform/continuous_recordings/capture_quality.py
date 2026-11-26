@@ -63,7 +63,7 @@ def interior_action_gaps(paths, start_ns, end_ns):
     return [
         {"frame": frame, "offset_ns": stamp, "origin": origin}
         for stamp, frame, origin in sorted(actions, key=lambda item: item[0])
-        if origin and first < stamp < last and start_ns <= stamp < end_ns
+        if origin and origin != "linear_interpolation" and first < stamp < last and start_ns <= stamp < end_ns
     ]
 
 

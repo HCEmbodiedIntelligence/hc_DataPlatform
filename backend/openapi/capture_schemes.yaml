@@ -175,6 +175,14 @@ components:
           minItems: 1
           title: Adapters
           type: array
+        annotation_tags:
+          default: []
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          title: Annotation Tags
+          type: array
         description:
           default: ''
           maxLength: 10000
@@ -421,6 +429,13 @@ components:
           $ref: '#/components/schemas/ActionQualityProfileV1'
         completeness:
           $ref: '#/components/schemas/CompleteStepProfileV1'
+        enabled_codes:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/QualityCode'
+            type: array
+          - type: 'null'
+          title: Enabled Codes
         feature_images:
           additionalProperties:
             $ref: '#/components/schemas/ImageQualityProfileV1'
@@ -460,7 +475,7 @@ components:
         point_cloud:
           $ref: '#/components/schemas/PointCloudQualityProfileV1'
         synchronization:
-          $ref: '#/components/schemas/ModalityOffsetProfileV1'
+          $ref: '#/components/schemas/CaptureSynchronizationRules'
         timing:
           $ref: '#/components/schemas/CaptureTimingRules'
       title: CaptureQualityPolicy
@@ -846,6 +861,14 @@ components:
           minItems: 1
           title: Adapters
           type: array
+        annotation_tags:
+          default: []
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          title: Annotation Tags
+          type: array
         content_sha256:
           pattern: ^[a-f0-9]{64}$
           title: Content Sha256
@@ -975,6 +998,21 @@ components:
       - scheme
       - participants
       title: CaptureSelection
+      type: object
+    CaptureSynchronizationRules:
+      additionalProperties: false
+      properties:
+        maximum_p95_offset_ns_reject:
+          default: 25000000
+          minimum: 0.0
+          title: Maximum P95 Offset Ns Reject
+          type: integer
+        maximum_p95_offset_ns_risk:
+          default: 25000000
+          minimum: 0.0
+          title: Maximum P95 Offset Ns Risk
+          type: integer
+      title: CaptureSynchronizationRules
       type: object
     CaptureTaskPlan:
       additionalProperties: false
@@ -1155,12 +1193,12 @@ components:
           title: Maximum Duplicate Timestamps Risk
           type: integer
         maximum_gap_ns_reject:
-          default: 1000000000
+          default: 25000000
           minimum: 0.0
           title: Maximum Gap Ns Reject
           type: integer
         maximum_gap_ns_risk:
-          default: 100000000
+          default: 25000000
           minimum: 0.0
           title: Maximum Gap Ns Risk
           type: integer
@@ -1539,6 +1577,21 @@ components:
       - source
       title: GenerateAction
       type: object
+    InterpolateShortGaps:
+      additionalProperties: false
+      properties:
+        enabled:
+          title: Enabled
+          type: boolean
+        kind:
+          const: interpolate_short_gaps
+          title: Kind
+          type: string
+      required:
+      - enabled
+      - kind
+      title: InterpolateShortGaps
+      type: object
     JointEditRules:
       additionalProperties: false
       properties:
@@ -1553,6 +1606,7 @@ components:
                 fill_position: '#/components/schemas/FillPosition'
                 forward_fill_hands: '#/components/schemas/ForwardFillHands'
                 generate_action: '#/components/schemas/GenerateAction'
+                interpolate_short_gaps: '#/components/schemas/InterpolateShortGaps'
                 zero_joints: '#/components/schemas/ZeroJoints'
               propertyName: kind
             oneOf:
@@ -1564,7 +1618,8 @@ components:
             - $ref: '#/components/schemas/FillActionFromNextFrame'
             - $ref: '#/components/schemas/ForwardFillHands'
             - $ref: '#/components/schemas/CleanDaggerIntervals'
-          maxItems: 8
+            - $ref: '#/components/schemas/InterpolateShortGaps'
+          maxItems: 9
           title: Rules
           type: array
         version:
@@ -1618,8 +1673,10 @@ components:
           title: Profile
           type: string
         waist_fallback_ms:
-          const: 20
-          default: 20
+          default: 25
+          enum:
+          - 20
+          - 25
           title: Waist Fallback Ms
           type: integer
       required:
@@ -1651,6 +1708,18 @@ components:
           title: Source Format
           type: string
       title: LeRobotAdapter
+      type: object
+    LibraryTag:
+      additionalProperties: false
+      properties:
+        name:
+          maxLength: 100
+          minLength: 1
+          title: Name
+          type: string
+      required:
+      - name
+      title: LibraryTag
       type: object
     McapAdapter:
       additionalProperties: false
@@ -2074,6 +2143,14 @@ components:
           minItems: 1
           title: Adapters
           type: array
+        annotation_tags:
+          default: []
+          items:
+            maxLength: 100
+            minLength: 1
+            type: string
+          title: Annotation Tags
+          type: array
         description:
           default: ''
           maxLength: 10000
@@ -2245,6 +2322,76 @@ info:
   version: '2026-10-21'
 openapi: 3.1.0
 paths:
+  /api/v1/organizations/{organization_id}/annotation-tags:
+    get:
+      operationId: listLibraryTags
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                title: Response Listlibrarytags
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Library Tags
+      tags:
+      - capture-schemes
+    post:
+      operationId: createLibraryTag
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9._-]+$
+          title: Organization Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryTag'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryTag'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Create Library Tag
+      tags:
+      - capture-schemes
   /api/v1/organizations/{organization_id}/capture-schemes:
     get:
       operationId: listCaptureSchemes

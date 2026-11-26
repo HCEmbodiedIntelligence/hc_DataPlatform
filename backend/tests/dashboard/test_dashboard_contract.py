@@ -37,6 +37,7 @@ def test_dashboard_fragment_matches_router_and_aggregates_without_duplicate_cont
     runtime = app.openapi()
 
     expected = {
+        ("/api/v1/projects/{project_id}/dashboard/analytics", "get"),
         ("/api/v1/projects/{project_id}/dashboard/activity", "get"),
         ("/api/v1/projects/{project_id}/dashboard/coverage", "get"),
         ("/api/v1/projects/{project_id}/dashboard/pending-items", "get"),

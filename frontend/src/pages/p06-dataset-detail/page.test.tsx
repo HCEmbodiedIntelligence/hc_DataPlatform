@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { openDatasetTestSession } from "../../mocks/fixtures/datasets/session";
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -46,22 +47,7 @@ beforeAll(() => {
 });
 beforeEach(() => {
   workingVersionId = null;
-  useShellStore.getState().setScope({
-    organizationId: "org_fx_01",
-    projectId: "prj_fx_01",
-    regionCode: "cn-shanghai",
-  });
-  useShellStore.getState().setAuthorization({
-    scopeKey: useShellStore.getState().scopeKey,
-    roleVersion: "capacity-test-v1",
-    capabilities: [
-      "dataset.read",
-      "dataset_version.read",
-      "episode.read",
-      "storage.overview.read",
-    ],
-    fetchedAt: "2026-09-21T00:00:00Z",
-  });
+  openDatasetTestSession(["dataset.read", "dataset_version.read", "episode.read", "storage.overview.read"], "capacity-test-v1");
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -277,6 +263,27 @@ it("shows received uploads immediately and refreshes Episodes without publicatio
   ).toBe(false);
   expect(captureDatasets.every((id) => id === datasetIds.dataset)).toBe(true);
   expect(screen.queryByText("尚未发布数据集版本")).not.toBeInTheDocument();
+});
+
+it("resolves a disabled Episode list and reuses the loaded page when a row is selected", async () => {
+  const store = useShellStore.getState();
+  const full = store.authorization!;
+  store.setAuthorization({ ...full, capabilities: ["dataset.read", "dataset_version.read"] });
+  const list = vi.fn(() => HttpResponse.json(episodePageFixture));
+  server.use(http.get("*/datasets/:datasetId/versions/:versionId/episodes", list));
+  const router = mount("episodes");
+
+  expect(await screen.findByRole("link", { name: "申请预览权限" })).toBeVisible();
+  expect(screen.queryByLabelText("Episode 列表加载中")).not.toBeInTheDocument();
+  expect(list).not.toHaveBeenCalled();
+
+  act(() => store.setAuthorization(full));
+  expect(await screen.findByTitle(datasetIds.episode)).toBeVisible();
+  expect(list).toHaveBeenCalledTimes(1);
+  const location = router.state.location;
+  await act(() => router.navigate(location.pathname + location.search + "&episodeId=" + datasetIds.episode));
+  expect(screen.queryByLabelText("Episode 列表加载中")).not.toBeInTheDocument();
+  expect(list).toHaveBeenCalledTimes(1);
 });
 
 describe("Dataset capacity display", () => {

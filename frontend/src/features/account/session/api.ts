@@ -11,6 +11,7 @@ export interface AvailableOrganization {
   readonly organization_id: string;
   readonly organization_name: string;
   readonly member_status: "ACTIVE";
+  readonly capabilities?: readonly string[];
 }
 export interface SessionBootstrap {
   readonly principal: AccountPrincipal;
@@ -75,6 +76,7 @@ const availableOrganizationWireSchema: z.ZodType<AvailableOrganization> = z
     organization_id: z.string().min(1),
     organization_name: z.string().min(1),
     member_status: z.literal("ACTIVE"),
+    capabilities: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -253,6 +255,7 @@ export async function getSessionBootstrap(
   const raw = await request<unknown>({
     method: "GET",
     path: "/auth/session/bootstrap",
+    query: { include_organization_capabilities: true },
     scopeMode: "session",
     cache: "no-store",
     ...(options.bearerToken === undefined

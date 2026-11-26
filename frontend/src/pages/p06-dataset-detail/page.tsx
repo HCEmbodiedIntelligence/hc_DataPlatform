@@ -10,6 +10,7 @@ import { Alert, Button, Card, Input, Modal, Tabs, Typography } from "antd";
 import { Eye, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+  Link,
   useLocation,
   useNavigate,
   useParams,
@@ -499,6 +500,7 @@ export function DatasetDetailPage() {
       search.tab === "versions" &&
       capabilities.has("dataset_version.read"),
   );
+  const canReadEpisodes = capabilities.has("episode.read");
   const episodes = useVersionEpisodesQuery(
     datasetId,
     chosenVersionId,
@@ -506,7 +508,7 @@ export function DatasetDetailPage() {
     validRequest &&
       search.tab === "episodes" &&
       hasChosenVersion &&
-      capabilities.has("episode.read"),
+      canReadEpisodes,
   );
   const sources = useDatasetVersionSourceProvenanceQuery(
     datasetId,
@@ -586,16 +588,16 @@ export function DatasetDetailPage() {
         />
       </main>
     );
+  if (!capabilities.loading && (capabilities.failed || !capabilities.has("dataset.read")))
+    return (
+      <main className={styles.page} data-page-id="P06">
+        <PageState state="forbidden" />
+      </main>
+    );
   if (capabilities.loading || bootstrap.isPending)
     return (
       <main className={styles.page} data-page-id="P06">
         <PageState state="loading" label="数据集详情" />
-      </main>
-    );
-  if (capabilities.failed || !capabilities.has("dataset.read"))
-    return (
-      <main className={styles.page} data-page-id="P06">
-        <PageState state="forbidden" />
       </main>
     );
   if (bootstrap.isError)
@@ -610,9 +612,9 @@ export function DatasetDetailPage() {
     );
 
   const data = bootstrap.data;
-  const selectedEpisode = episodes.data?.items.find(
-    (item) => item.episodeId === search.episodeId,
-  );
+  const selectedEpisode = canReadEpisodes
+    ? episodes.data?.items.find(item => item.episodeId === search.episodeId)
+    : undefined;
   const openViewer = (episode: EpisodeListItemVm) =>
     void navigate(
       routes.episodeViewer.build({
@@ -764,7 +766,9 @@ export function DatasetDetailPage() {
             ) : null}
           </div>
           <VersionFilters search={search} onApply={applySearch} />
-          {versions.isPending ? (
+          {!capabilities.has("dataset_version.read") ? (
+            <PageState state="empty" title="需要数据版本查看权限" />
+          ) : versions.isPending ? (
             <PageState state="loading" label="版本列表" />
           ) : versions.isError ? (
             <PageState
@@ -818,14 +822,20 @@ export function DatasetDetailPage() {
             />
           ) : (
             <div className={styles.episodeWorkspace}>
-              <aside
+              <fieldset
                 className={styles.filterPanel}
+                style={{ margin: 0, padding: 0 }}
+                disabled={!canReadEpisodes}
                 aria-label="Episode 筛选面板"
               >
                 <EpisodeFilters search={search} onApply={applySearch} />
-              </aside>
+              </fieldset>
               <div className={styles.tablePanel}>
-                {episodes.isPending ? (
+                {!canReadEpisodes ? (
+                  <PageState state="empty" label="Episode 列表" title="需要 Episode 预览权限"
+                    description="获得项目授权后，可在这里浏览 Episode 并打开预览。"
+                    action={<Link to="/account/settings?tab=capabilities">申请预览权限</Link>} />
+                ) : episodes.isPending ? (
                   <PageState state="loading" label="Episode 列表" />
                 ) : episodes.isError ? (
                   <PageState
@@ -881,7 +891,9 @@ export function DatasetDetailPage() {
         </section>
       );
     if (search.tab === "sources")
-      return !hasChosenVersion ? (
+      return !capabilities.has("dataset_version.read") ? (
+        <PageState state="empty" title="需要数据版本查看权限" />
+      ) : !hasChosenVersion ? (
         <PageState state="empty" />
       ) : sources.isPending ? (
         <PageState state="loading" label="来源证据" />

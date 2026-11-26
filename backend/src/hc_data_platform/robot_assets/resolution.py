@@ -136,10 +136,10 @@ class PostgresRobotResolution:
         if report.restricted_count:
             reason = "需要所有关联项目的数据管理权限，才能转移整台机器人的关联。"
         capabilities = {
-            "raw": "upload.manage",
-            "collection_job": "upload.manage",
-            "recording_upload": "upload.manage",
-            "upload": "upload.manage",
+            "raw": "collection_task.delete",
+            "collection_job": "collection_task.delete",
+            "recording_upload": "collection_task.delete",
+            "upload": "collection_task.delete",
             "calibration": "calibration.manage",
             "source": "ingest_source.manage",
         }
@@ -158,6 +158,8 @@ class PostgresRobotResolution:
             for r in report.items
         ):
             reason = "仍有上传或处理正在进行，结束后可转移。"
+        if report.blockers and all(b.kind == "capture_scheme" for b in report.blockers):
+            reason = "请在机器人实例的「采集方案」中移除关联。"
         cursor.execute(
             """SELECT scheme_id,revision,published_version FROM ingest.robot_processing_schemes
             WHERE organization_id=%s AND robot_id=%s ORDER BY scheme_id""",
@@ -206,7 +208,7 @@ class PostgresRobotResolution:
                                 "retry_key": retry[0],
                                 "raw_count": 0,
                                 "can_delete": permitted(
-                                    auth, org, project, prior.region_code, "upload.manage"
+                                    auth, org, project, prior.region_code, "collection_task.delete"
                                 ),
                             }
                         )
@@ -215,7 +217,7 @@ class PostgresRobotResolution:
             code, name, version, region, dataset = row
             if not permitted(auth, org, project, region, "upload.read"):
                 continue
-            can_delete = permitted(auth, org, project, region, "upload.manage")
+            can_delete = permitted(auth, org, project, region, "collection_task.delete")
             task_reason = None if can_delete else "需要该项目的数据管理权限。"
             if dataset != dataset_id_for_collection_task(org, project, task):
                 can_delete = False
@@ -405,7 +407,7 @@ class PostgresRobotResolution:
                         "ROBOT_TRANSFER_TARGET_INVALID", "请选择同组织内的其他机器人实例。", 422
                     )
                 self._transfer(cursor, org, robot, command.target_robot_id, key, auth.subject_id)
-                message = "目标实例的新关联已创建，旧关联已解除，可以继续删除机器人。"
+                message = "目标实例的新关联已创建，请重新检查原实例的剩余关联。"
             elif command.action == "DELETE_SOURCE":
                 self._delete_source(cursor, org, robot, command.source)
                 message = "已删除选定的数据源。"
@@ -575,6 +577,8 @@ class PostgresRobotResolution:
         # Gather exactly the current associations, independently of provenance.
         evidence = {}
         for ref in REFERENCES:
+            if ref.kind == "capture_scheme":
+                continue  # The device mapping belongs to the original instance.
             cursor.execute(
                 f"SELECT to_jsonb(r) FROM {ref.table} r "
                 f"WHERE r.organization_id=%s AND {ref.condition}",

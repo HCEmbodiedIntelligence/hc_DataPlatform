@@ -8,6 +8,10 @@ def recording_preparation_error(error: str | None) -> str | None:
     constraint = 'duplicate key value violates unique constraint "recording_upload_assets_object_key_key"'
     if error and constraint in error:
         return MCAP_ASSET_CONFLICT
+    if error and (error.startswith("[Errno 28] No space left on device") or error == "database or disk is full"):
+        return "MCAP_WORKSPACE_FULL"
+    if error == "recording preview changed source timeline":
+        return "MCAP_PREVIEW_TIMELINE_MISMATCH"
     return error
 
 

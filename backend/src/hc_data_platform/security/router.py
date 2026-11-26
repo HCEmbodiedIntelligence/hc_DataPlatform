@@ -5,6 +5,12 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
+from hc_data_platform.platform_ops.projects import PlatformProjectCreate
+from hc_data_platform.platform_ops.object_store_config import ObjectStoreConfigurationStatus, ObjectStoreConfigurationUpdate
+from hc_data_platform.platform_ops.router import ObjectStoreConfigServiceDependency, _object_store_config_action
+from .directory_changes import OrganizationCreate, DirectoryChange, ArchivedScope
+from .governance import OrganizationEntry, ManagedMemberDetail, ProjectPermissionChange, ProjectRoleChange, MembershipRemoval, denied, ProjectEntry, AdministratorChange, GovernanceDirectory, InboxEntry, MemberEntry
+
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from hc_data_platform.core.config import Settings
@@ -473,6 +479,7 @@ def create_session(
             "headers": NO_STORE_RESPONSE_HEADERS,
         },
         401: PROBLEM_RESPONSES[401],
+        422: PROBLEM_RESPONSES[422],
     },
 )
 def bootstrap_session(
@@ -480,11 +487,19 @@ def bootstrap_session(
     response: Response,
     _: VerifiedAuth,
     service: AccessServiceDependency,
-) -> SessionBootstrap:
+    include_organization_capabilities: bool = False,
+) -> SessionBootstrap | Response:
     _no_store(response)
-    return service.bootstrap(
+    bootstrap = service.bootstrap(
         _bearer_token(request),
         request_id=current_request_context().request_id,
+    )
+
+    if include_organization_capabilities:
+        return bootstrap
+    return Response(
+        content=bootstrap.model_dump_json(exclude={"available_organizations": {"__all__": {"capabilities"}}}),
+        media_type="application/json", headers={"Cache-Control": "no-store"},
     )
 
 
@@ -616,6 +631,150 @@ def _organization_membership_decision(
         idempotency_key=idempotency_key,
         request_id=current_request_context().request_id,
     )
+
+
+def _managed_storage(auth,service,storage,organization_id):
+    if not any(o.organization_id==organization_id and o.can_manage for o in service.governance_directory(auth).organizations):
+        raise denied()
+    return storage.for_organization(organization_id)
+
+
+@router.get("/account/management-storage/{organization_id}", response_model=ObjectStoreConfigurationStatus, operation_id="getOrganizationStorage")
+def get_organization_storage(organization_id:str,response:Response,auth:VerifiedAuth,service:AccessServiceDependency,
+                             storage:ObjectStoreConfigServiceDependency,saved:bool=False):
+    _no_store(response)
+    scoped=_managed_storage(auth,service,storage,organization_id)
+    return scoped.saved() if saved else scoped.current()
+
+
+@router.put("/account/management-storage/{organization_id}", response_model=ObjectStoreConfigurationStatus, operation_id="setOrganizationStorage")
+def set_organization_storage(organization_id:str,command:ObjectStoreConfigurationUpdate,response:Response,auth:VerifiedAuth,
+                             service:AccessServiceDependency,storage:ObjectStoreConfigServiceDependency):
+    _no_store(response)
+    scoped=_managed_storage(auth,service,storage,organization_id)
+    return _object_store_config_action(lambda:scoped.save(command,actor_id=auth.subject_id,request_id=current_request_context().request_id))
+
+
+@router.get("/account/management-directory", response_model=GovernanceDirectory, operation_id="getManagementDirectory")
+def management_directory(response: Response, auth: VerifiedAuth, service: AccessServiceDependency):
+    _no_store(response)
+    return service.governance_directory(auth)
+
+
+@router.post("/account/organizations", response_model=OrganizationEntry, operation_id="createPersonalOrganization", status_code=201)
+def create_personal_organization(command: OrganizationCreate, response: Response, auth: VerifiedAuth,
+                                 service: AccessServiceDependency, idempotency_key: IdempotencyKey):
+    _no_store(response)
+    return service.create_personal_organization(auth, command, idempotency_key, current_request_context().request_id)
+
+
+@router.post("/account/directory-changes", operation_id="changeManagementDirectory", status_code=204)
+def change_directory(command: DirectoryChange, auth: VerifiedAuth, service: AccessServiceDependency, idempotency_key: IdempotencyKey):
+    service.change_directory(auth, command, idempotency_key, current_request_context().request_id)
+    return Response(status_code=204, headers={"Cache-Control":"private, no-store"})
+
+
+@router.get("/account/archived-directory", response_model=list[ArchivedScope], operation_id="getArchivedDirectory")
+def archived_directory(response: Response, auth: VerifiedAuth, service: AccessServiceDependency):
+    _no_store(response)
+    return service.archived_directory(auth)
+
+
+@router.post("/account/managed-projects", response_model=ProjectEntry, operation_id="createManagedProject", status_code=201)
+def create_managed_project(command: PlatformProjectCreate,response: Response,auth: VerifiedAuth,service: AccessServiceDependency):
+    _no_store(response)
+    return service.create_managed_project(auth,command,current_request_context().request_id)
+
+
+@router.get(
+    "/account/joinable-projects",
+    response_model=list[ProjectEntry],
+    operation_id="listJoinableProjects",
+)
+def joinable_projects(
+    organization_id: str,
+    response: Response,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    principal_id: UUID | None = None,
+):
+    _no_store(response)
+    return service.joinable_projects(
+        auth, organization_id, str(principal_id) if principal_id else None
+    )
+
+
+@router.put(
+    "/account/managed-members/{principal_id}/project-membership",
+    status_code=204,
+    operation_id="assignProjectMember",
+)
+def assign_project_member(
+    principal_id: UUID,
+    organization_id: str,
+    project_id: str,
+    auth: VerifiedAuth,
+    service: AccessServiceDependency,
+    idempotency_key: IdempotencyKey,
+):
+    service.assign_project_member(
+        auth,
+        organization_id,
+        project_id,
+        str(principal_id),
+        idempotency_key,
+        current_request_context().request_id,
+    )
+    return Response(status_code=204, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/account/managed-members", response_model=list[MemberEntry], operation_id="listManagedMembers")
+def managed_members(organization_id: str, response: Response, auth: VerifiedAuth, service: AccessServiceDependency,
+                    project_id: str | None = None, offset: Annotated[int, Query(ge=0)] = 0,
+                    unassigned_only: bool = False):
+    _no_store(response)
+    return service.governance_members(auth, organization_id, project_id, offset, unassigned_only=unassigned_only)
+
+
+@router.get("/account/management-inbox", response_model=list[InboxEntry], operation_id="listManagementInbox")
+def management_inbox(organization_id: str, response: Response, auth: VerifiedAuth, service: AccessServiceDependency,
+                     project_id: str | None = None, offset: Annotated[int, Query(ge=0)] = 0):
+    _no_store(response)
+    return service.governance_inbox(auth,organization_id,project_id,offset)
+
+
+@router.post("/account/managed-members/{principal_id}:remove", status_code=204, operation_id="removeManagedMember")
+def remove_managed_member(principal_id: UUID, command: MembershipRemoval, auth: VerifiedAuth, service: AccessServiceDependency):
+    service.remove_managed_member(auth, str(principal_id), command, current_request_context().request_id)
+    return Response(status_code=204, headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/account/managed-members/{principal_id}", response_model=ManagedMemberDetail, operation_id="getManagedMemberDetail")
+def get_managed_member_detail(principal_id: UUID, organization_id: str, response: Response, auth: VerifiedAuth,
+                              service: AccessServiceDependency, project_id: str | None = None):
+    _no_store(response)
+    return service.managed_member_detail(auth,str(principal_id),organization_id,project_id)
+
+
+@router.put("/account/managed-members/{principal_id}/roles", response_model=ManagedMemberDetail, operation_id="setManagedProjectRoles")
+def set_managed_project_roles(principal_id: UUID, command: ProjectRoleChange, response: Response, auth: VerifiedAuth,
+                              service: AccessServiceDependency):
+    _no_store(response)
+    return service.set_managed_roles(auth,str(principal_id),command,current_request_context().request_id)
+
+
+@router.put("/account/managed-members/{principal_id}/permissions", response_model=ManagedMemberDetail,
+            operation_id="setManagedProjectPermissions")
+def set_managed_project_permissions(principal_id: UUID, command: ProjectPermissionChange, response: Response,
+                                    auth: VerifiedAuth, service: AccessServiceDependency):
+    _no_store(response)
+    return service.set_managed_permissions(auth, str(principal_id), command, current_request_context().request_id)
+
+
+@router.put("/account/managed-members/{principal_id}/administrator", response_model=MemberEntry, operation_id="setMembershipAdministrator")
+def set_membership_administrator(principal_id: UUID, command: AdministratorChange, response: Response, auth: VerifiedAuth, service: AccessServiceDependency):
+    _no_store(response)
+    return service.change_administrator(auth,str(principal_id),command,current_request_context().request_id)
 
 
 @router.post(

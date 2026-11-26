@@ -33,6 +33,16 @@ def test_streamed_immutable_multipart_and_partial_read(tmp_path):
     assert not list((tmp_path / ".uploads").iterdir())
 
 
+@pytest.mark.parametrize("size,sha", [(4, hashlib.sha256(b"zip").hexdigest()), (3, "0" * 64)])
+def test_streamed_archive_is_only_published_after_verification(tmp_path, size, sha):
+    cache = LocalCacheBucket(tmp_path, "test")
+    with pytest.raises(ValueError, match="frozen receipt"):
+        cache.put_object(KEY, io.BytesIO(b"zip"), headers={
+            "content-length": str(size), "x-oss-meta-sha256": sha, "x-oss-forbid-overwrite": "true",
+        })
+    assert not cache.directory(KEY).exists()
+
+
 def test_expiry_uses_reads_not_capacity_inspection(tmp_path):
     now = [1800000000.0]
     cache = LocalCacheBucket(tmp_path, "test", ttl_days=30, clock=lambda: now[0])

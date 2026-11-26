@@ -692,11 +692,9 @@ export function TaskStoragePage() {
   const shellScope = useShellStore((s) => s.scope);
   const scope = shellScope?.projectId ? (shellScope as CapacityScope) : null;
   const capabilities = useCapabilities();
-  const [refresh, setRefresh] = useState(0);
   const usage = useTaskUsage(
     scope,
     capabilities.has("storage.overview.read"),
-    refresh,
   );
   return (
     <div className={styles.page} data-page-id="P12">
@@ -713,7 +711,7 @@ export function TaskStoragePage() {
             icon={<RefreshCw size={15} />}
             loading={usage.isFetching}
             disabled={!scope || !capabilities.has("storage.overview.read")}
-            onClick={() => setRefresh((v) => v + 1)}
+            onClick={() => void usage.refreshUsage()}
           >
             刷新用量
           </Button>
@@ -725,16 +723,19 @@ export function TaskStoragePage() {
         <PageState state="forbidden" label="存储容量" />
       ) : !scope ? (
         <PageState state="empty" label="请选择项目" />
-      ) : usage.isError ? (
+      ) : usage.isError && !usage.data ? (
         <PageState
           state="error"
           label="存储容量"
           onRetry={() => void usage.refetch()}
         />
       ) : usage.data ? (
-        <TaskStorageDashboard data={usage.data} scope={scope} />
+        <>
+          {usage.isError && <Alert type="warning" showIcon message="刷新用量失败，当前显示上次核对结果。" />}
+          <TaskStorageDashboard data={usage.data} scope={scope} />
+        </>
       ) : (
-        <PageState state="loading" label="正在核对实际存储用量" />
+        <PageState state="loading" label="存储用量" />
       )}
     </div>
   );

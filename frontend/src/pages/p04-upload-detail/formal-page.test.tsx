@@ -14,21 +14,24 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import "../../app/router/page-catalog";
 import { createDomainError } from "../../shared/api/domain-error";
 import type { FormalUploadDetail } from "../../features/ingest/detail/client";
+import * as fileSaving from "../../shared/lib/save-file";
 import FormalUploadDetailPage from "./formal-page";
 import RawDiagnosticRoute from "../p09-manual-issues/raw-diagnostic-route";
 
 const {
   loadDetailMock,
+  loadSummaryMock,
   loadRawMediaMock,
   loadWorkflowMock,
   loadLogicalMock,
   access,
 } = vi.hoisted(() => ({
   loadDetailMock: vi.fn(),
+  loadSummaryMock: vi.fn(),
   loadRawMediaMock: vi.fn(),
   loadWorkflowMock: vi.fn(),
   loadLogicalMock: vi.fn(),
-  access: { allowed: true },
+  access: { allowed: true, grants: new Set<string>() },
 }));
 vi.mock("../../features/ingest/detail/logical-preview", () => ({
   loadUploadLogicalPreview: loadLogicalMock,
@@ -44,7 +47,7 @@ vi.mock("../../features/ingest/use-ingest-scope", () => ({
 
 vi.mock("../../shared/auth/use-capabilities", () => ({
   useCapabilities: () => ({
-    has: (capability: string) => access.allowed && capability === "upload.read",
+    has: (capability: string) => access.allowed && access.grants.has(capability),
     loading: false,
     failed: false,
   }),
@@ -58,6 +61,7 @@ vi.mock("../../features/ingest/detail/client", async (importOriginal) => {
   return {
     ...actual,
     loadFormalUploadDetail: loadDetailMock,
+    getFormalUploadSessionDetail: loadSummaryMock,
     getFormalUploadRawMedia: loadRawMediaMock,
     getFormalUploadProcessingStatus: loadWorkflowMock,
   };
@@ -119,11 +123,7 @@ function detailFixture(
       rollout_id: "rollout-a",
       data_package_id: "package-a",
       manifest_fingerprint: "fingerprint-a",
-      expected_crc64: "1",
-      expected_sha256: "source-a",
       expected_size: 2_048,
-      object_key: "raw/package-a.mcap",
-      source_type: "BROWSER_MULTIPART",
       status: "RAW_COMMITTED",
       workflow: {
         event_id: "a1111111-1111-4111-8111-111111111111",
@@ -289,6 +289,8 @@ function renderPage(path = "/ingest/uploads/session-a?from=pending#quality") {
 
 beforeEach(() => {
   access.allowed = true;
+  access.grants = new Set(["upload.read", "dataset_version.download_manifest", "dataset_version.download_raw"]);
+  loadSummaryMock.mockResolvedValue({ ...detailFixture("PASS", 4).session, dataset_id: "dataset-a" });
   loadDetailMock.mockResolvedValue(detailFixture("PASS", 4));
   loadWorkflowMock.mockResolvedValue(workflowFixture("SUCCEEDED"));
   loadRawMediaMock.mockResolvedValue({
@@ -308,6 +310,35 @@ afterEach(() => {
 });
 
 describe("P04 formal upload detail page", () => {
+  it("shows a collector the assigned session status without requesting either file", async () => {
+    access.grants = new Set(["role.collector", "dataset_version.download_raw/dataset:other"]);
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "上传详情" })).toBeVisible();
+    await waitFor(() => expect(loadWorkflowMock).toHaveBeenCalled());
+    expect(loadDetailMock).not.toHaveBeenCalled();
+    expect(loadRawMediaMock).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button", { name: "下载 Raw MCAP" })).toBeNull();
+  });
+
+  it("opens only the raw download when that dataset grant is present", async () => {
+    access.grants = new Set(["role.collector", "dataset_version.download_raw/dataset:dataset-a"]);
+    const save = vi.spyOn(fileSaving, "saveFileFromClick").mockImplementation(async (name, signal, load) => {
+      expect(await load(signal)).toEqual({ url: "https://object.example.test/raw/signed", size_bytes: 2048 });
+      return name;
+    });
+    loadRawMediaMock.mockResolvedValueOnce({
+      format: "MCAP", sha256: "source-a", byte_length: 2048,
+      expires_at: "2099-01-01T00:00:00Z", download_url: "https://object.example.test/raw/old",
+    });
+    renderPage();
+    expect(await screen.findByRole("button", { name: "下载 Raw MCAP" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "下载 Raw MCAP" }));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(loadRawMediaMock).toHaveBeenCalledTimes(2);
+    save.mockRestore();
+    expect(loadDetailMock).not.toHaveBeenCalled();
+  });
+
   it("shows forbidden without issuing requests when upload reading is denied", async () => {
     access.allowed = false;
     renderPage();
@@ -455,8 +486,8 @@ describe("P04 formal upload detail page", () => {
       "/annotations/tasks/annotation-a",
     );
     expect(
-      await screen.findByRole("link", { name: "下载 Raw MCAP" }),
-    ).toHaveAttribute("href", "https://object.example.test/raw/signed");
+      await screen.findByRole("button", { name: "下载 Raw MCAP" }),
+    ).toBeEnabled();
     expect(loadRawMediaMock).toHaveBeenCalledWith(
       expect.objectContaining({
         projectId: "project-a",
@@ -472,6 +503,8 @@ describe("P04 formal upload detail page", () => {
       }),
       "session-a",
       expect.any(AbortSignal),
+      expect.objectContaining({ session_id: "session-a" }),
+      true,
     );
     expect(loadWorkflowMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -501,7 +534,7 @@ describe("P04 formal upload detail page", () => {
     expect(screen.getByText("数据清单发现")).toBeVisible();
     expect(screen.getByText("camera-1")).toBeVisible();
     expect(
-      await screen.findByRole("link", { name: "下载 Raw MCAP" }),
+      await screen.findByRole("button", { name: "下载 Raw MCAP" }),
     ).toBeVisible();
     expect(screen.queryByText("资源不存在")).not.toBeInTheDocument();
 
@@ -530,8 +563,8 @@ describe("P04 formal upload detail page", () => {
         screen.getByRole("link", { name: "返回问题数据" }),
       ).toHaveAttribute("href", "/manual/issues");
       expect(
-        await screen.findByRole("link", { name: "下载 Raw MCAP" }),
-      ).toHaveAttribute("href", "https://object.example.test/raw/signed");
+        await screen.findByRole("button", { name: "下载 Raw MCAP" }),
+      ).toBeEnabled();
       expect(loadRawMediaMock).toHaveBeenCalledWith(
         expect.objectContaining({
           projectId: "project-a",
@@ -580,7 +613,7 @@ describe("P04 formal upload detail page", () => {
       "0",
     );
     expect(
-      await screen.findByRole("link", { name: "下载 Raw MCAP" }),
+      await screen.findByRole("button", { name: "下载 Raw MCAP" }),
     ).toBeVisible();
   });
 

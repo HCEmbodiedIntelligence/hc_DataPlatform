@@ -14,8 +14,10 @@ from hc_data_platform.ingest.problem_lifecycle import active_problem_sql, is_dis
 from hc_data_platform.security.audit import canonical_hash
 from hc_data_platform.security.auth import AuthContext
 
+from .analytics_sql import QUALITY, VOLUME
 from .models import (
     DashboardActivityEventType,
+    DashboardAnalytics,
     DashboardPendingItemType,
     DashboardPendingSeverity,
     DashboardResourceType,
@@ -770,6 +772,23 @@ class PostgresDashboardRepository:
         finally:
             cursor.close()
             connection.close()
+
+    def analytics(
+        self, auth: AuthContext, scope: DashboardScope, window: DashboardWindow, task_id: str | None = None,
+    ) -> DashboardAnalytics:
+        self.enforce_scope(auth, scope)
+        params = (current_request_context().organization_id, scope.project_id,
+                  scope.region_code, window.start, window.end, task_id)
+        stride = "1 hour" if (window.end - window.start).total_seconds() <= 86400 else "1 day"
+        buckets = self._read(VOLUME, (*params, stride))
+        quality = self._read(QUALITY, params)
+        return DashboardAnalytics.model_validate({
+            "buckets": buckets,
+            "reports": {row["key"]: row["n"] for row in quality if row["kind"] == "report"},
+            "affected_packages": next(row["n"] for row in quality if row["kind"] == "affected"),
+            "outcomes": {row["key"]: row["n"] for row in quality if row["kind"] == "outcome"},
+            "issues": {row["key"]: row["n"] for row in quality if row["kind"] == "issue"},
+        })
 
     def business_events(
         self,

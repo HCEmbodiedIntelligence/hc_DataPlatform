@@ -1,3 +1,4 @@
+import { readTimeRange, type TimeRange } from "../../shared/lib/time-range";
 import type { AnnotationTaskDisplayState } from "../../entities/annotation-task";
 
 export type AnnotationQueue = "assigned_to_me" | "claimable";
@@ -13,6 +14,7 @@ export type AnnotationQueueStage =
   | "REJECTED";
 
 export interface AnnotationQueueSearch {
+  readonly timeRange?: TimeRange;
   readonly queue: AnnotationQueue;
   readonly stage: AnnotationQueueStage;
   readonly states: readonly AnnotationTaskDisplayState[];
@@ -140,6 +142,7 @@ export const annotationQueueQueryCodec = {
       stage:
         stageValue && stageValues.has(stageValue) ? stageValue : defaultStage,
       states,
+      timeRange: readTimeRange(params.get("from"), params.get("to")),
       ...(normalizedText(params.get("datasetId"), 128)
         ? { datasetId: normalizedText(params.get("datasetId"), 128)! }
         : {}),
@@ -172,6 +175,10 @@ export const annotationQueueQueryCodec = {
     if (search.states.length)
       params.set("state", [...search.states].sort().join(","));
     if (search.datasetId) params.set("datasetId", search.datasetId);
+    if (search.timeRange) {
+      params.set("from", search.timeRange.from);
+      params.set("to", search.timeRange.to);
+    }
     if (search.schemaVersionId)
       params.set("schemaVersionId", search.schemaVersionId);
     if (search.assigneeId) params.set("assigneeId", search.assigneeId);

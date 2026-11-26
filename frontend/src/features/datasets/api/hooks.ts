@@ -29,6 +29,7 @@ import {
   fetchOperationalInventory,
   fetchRequiredStorage,
   fetchVersionEpisodes,
+  episodeListQuery,
   fetchVersionManifest,
   fetchVersionSchema,
   preflightDeletion,
@@ -229,13 +230,17 @@ export function useVersionEpisodesQuery(
   filters: EpisodeListApiFilters,
   enabled = true,
 ) {
+  const sessionRevision = useShellStore(s => s.sessionRevision);
+  const roleVersion = useShellStore(s => s.authorization?.roleVersion);
   const key = useScopedKey(
     "datasets",
     "episodes",
     {
       datasetId,
       versionId,
-      filters: normalizeFilters(filters, { sort: "ordinal-asc", limit: 20 }),
+      sessionRevision,
+      roleVersion,
+      filters: episodeListQuery(filters),
     },
     filters.snapshotToken,
   );
@@ -244,6 +249,7 @@ export function useVersionEpisodesQuery(
     queryFn: ({ signal }) =>
       fetchVersionEpisodes(datasetId, versionId, filters, signal),
     enabled,
+    staleTime: 15_000,
   });
 }
 

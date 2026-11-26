@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Protocol, cast
 from uuid import uuid4
 
+from hc_data_platform.dataset_registry.display_labels import annotation_task_label
 from hc_data_platform.episode_store.models import DataVersionRef
 
 from .models import (
@@ -41,6 +42,8 @@ from .models import (
     TagSchemaVersion,
 )
 from .ports import AnnotationAggregate
+from .queue_sql import QUEUE_TASKS
+from .task_labels import scheme_tag_names
 from .repository import validate_aggregate
 
 
@@ -264,16 +267,8 @@ class PostgresAnnotationRepository:
         )
 
     def list_for_project(self, project_id: str) -> tuple[AnnotationAggregate, ...]:
-        return tuple(self._load_related(task) for task in self.list_task_rows(project_id))
-
-    def list_task_rows(
-        self, project_id: str, status: AnnotationStatus | None = None
-    ) -> tuple[AnnotationTask, ...]:
-        connection = self._connection_factory()
-        cursor = connection.cursor()
-        try:
-            cursor.execute(
-                f"""
+        tasks = self._read_task_rows(
+            f"""
                 SELECT {_TASK_COLUMNS}
                 FROM annotation.annotation_tasks
                 WHERE project_id = %s
@@ -282,11 +277,27 @@ class PostgresAnnotationRepository:
                       current_setting('app.organization_id', true), ''
                   )
                   AND region_code = NULLIF(current_setting('app.region_code', true), '')
-                  AND (%s::text IS NULL OR status = %s)
                 ORDER BY updated_at DESC, task_id DESC
                 """,
-                (project_id, status.value if status else None, status.value if status else None),
-            )
+            (project_id,),
+        )
+        return tuple(self._load_related(task) for task in tasks)
+
+    def list_task_rows(
+        self, project_id: str, status: AnnotationStatus | None = None
+    ) -> tuple[AnnotationTask, ...]:
+        columns = ", ".join(f"a.{name.strip()}" for name in _TASK_COLUMNS.split(","))
+        state = status.value if status else None
+        query = QUEUE_TASKS.format(
+            columns=columns, predicate="a.project_id = %s AND (%s::text IS NULL OR a.status = %s)"
+        )
+        return self._read_task_rows(query, (project_id, state, state))
+
+    def _read_task_rows(self, query: str, params: Sequence[object]) -> tuple[AnnotationTask, ...]:
+        connection = self._connection_factory()
+        cursor = connection.cursor()
+        try:
+            cursor.execute(query, params)
             task_rows = _rows(cursor, cursor.fetchall())
         finally:
             cursor.close()
@@ -734,6 +745,13 @@ class PostgresAnnotationRepository:
                 connection.rollback()
                 return False
             previous_revision = _as_int(locked["current_revision"])
+            checks_tags = task.current_revision > previous_revision or task.status in {
+                AnnotationStatus.SUBMITTED, AnnotationStatus.APPROVED,
+            }
+            if checks_tags and aggregate.revisions[-1].tags:
+                if scheme_tag_names(cursor, task, lock_plan=True) != task.allowed_tags:
+                    connection.rollback()
+                    return False
             if task.state_version != expected_state_version + 1:
                 raise ValueError("replacement must increment state_version exactly once")
             if task.current_revision not in {previous_revision, previous_revision + 1}:
@@ -817,6 +835,7 @@ class PostgresAnnotationRepository:
                 project_id=task.project_id,
                 region_code=task.region_code,
             )
+            task = task.model_copy(update={"allowed_tags": scheme_tag_names(cursor, task)})
             cursor.execute(
                 """
                 SELECT task_id, revision, parent_revision, author_id,
@@ -1010,6 +1029,14 @@ class PostgresAnnotationRepository:
     @staticmethod
     def _task_from_row(row: Mapping[str, object]) -> AnnotationTask:
         return AnnotationTask(
+            collection_task_id=cast(str | None, row.get("collection_task_id")),
+            collection_task_code=cast(str | None, row.get("queue_task_code")),
+            display_label=(
+                annotation_task_label(
+                    _as_int(row["queue_ordinal"]), cast(str | None, row["queue_task_code"])
+                )
+                if row.get("queue_ordinal") is not None else None
+            ),
             task_id=str(row["task_id"]),
             project_id=str(row["project_id"]),
             region_code=(None if row["region_code"] is None else str(row["region_code"])),

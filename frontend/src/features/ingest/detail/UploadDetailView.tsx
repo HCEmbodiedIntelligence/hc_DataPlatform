@@ -1,3 +1,4 @@
+import { useFileDownload } from "../../../shared/lib/use-file-download";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Space, Typography } from "antd";
 import { ArrowLeft, Camera, Clock3, FileJson2, RadioTower } from "lucide-react";
@@ -33,6 +34,7 @@ import {
   type PageStateKind,
 } from "../../../shared/ui/index";
 import {
+  getFormalUploadSessionDetail,
   getFormalUploadProcessingStatus,
   getFormalUploadRawMedia,
   loadFormalUploadDetail,
@@ -373,17 +375,25 @@ function ProcessingMediaState({
   );
 }
 
+interface RawMediaView {
+  readonly source: FormalRawMediaSource | undefined;
+  readonly pending: boolean;
+  readonly error: unknown;
+  readonly onRefresh: () => void;
+  readonly authorizeDownload: (signal: AbortSignal) => Promise<FormalRawMediaSource>;
+}
+
 function RawMediaEvidence({
   source,
   pending,
   error,
   onRefresh,
-}: {
-  readonly source: FormalRawMediaSource | undefined;
-  readonly pending: boolean;
-  readonly error: unknown;
-  readonly onRefresh: () => void;
-}) {
+  authorizeDownload,
+}: RawMediaView) {
+  const download = useFileDownload(source?.sha256 ?? "");
+  if (!source && !pending && !error) return null;
+  const extension = source?.format === "MCAP" ? "mcap"
+    : ({ "application/zip": "zip", "application/x-tar": "tar", "application/gzip": "tar.gz" } as Record<string, string>)[source?.media_type ?? ""] ?? "bundle";
   return (
     <section
       className={styles.rawSource}
@@ -410,15 +420,15 @@ function RawMediaEvidence({
             已授权 · {formatStorageSize(source.byte_length)} · 至
             {formatDate(source.expires_at)} 有效
           </span>
-          <a
-            className={styles.rawSourceLink}
-            href={source.download_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            referrerPolicy="no-referrer"
-          >
-            下载 Raw MCAP
-          </a>
+          <Button className={styles.rawSourceLink} loading={Boolean(download.pending)}
+            onClick={() => void download.save(`raw-${source.sha256.slice(0, 12)}.${extension}`,
+              async (signal) => {
+                const fresh = await authorizeDownload(signal);
+                return { url: fresh.download_url, size_bytes: fresh.byte_length };
+              })}>
+            {source.format === "MCAP" ? "下载 Raw MCAP" : "下载原始采集包"}
+          </Button>
+          {download.error && <span role="alert">{download.error.message}</span>}
           <Button type="text" onClick={onRefresh}>
             刷新链接
           </Button>
@@ -670,12 +680,7 @@ function PassedUploadDetail({
   readonly detail: ResolvedFormalUploadDetail;
   readonly scope: NonNullable<ReturnType<typeof useIngestScope>>;
   readonly workflowMedia: WorkflowMediaView;
-  readonly rawMedia: {
-    readonly source: FormalRawMediaSource | undefined;
-    readonly pending: boolean;
-    readonly error: unknown;
-    readonly onRefresh: () => void;
-  };
+  readonly rawMedia: RawMediaView;
 }) {
   const discovery = detail.manifest.discovery;
   return (
@@ -763,12 +768,7 @@ function PendingQualityUploadDetail({
   readonly detail: FormalUploadDetail;
   readonly workflowMedia: WorkflowMediaView;
   readonly onRefreshQuality: () => void;
-  readonly rawMedia: {
-    readonly source: FormalRawMediaSource | undefined;
-    readonly pending: boolean;
-    readonly error: unknown;
-    readonly onRefresh: () => void;
-  };
+  readonly rawMedia: RawMediaView;
 }) {
   const discovery = detail.manifest.discovery;
   return (
@@ -884,6 +884,20 @@ export default function UploadDetailView({
   );
   const capabilities = useCapabilities();
   const authorizationRevision = useScopeQueryRevision();
+  const canReadQuality = capabilities.has("upload.read");
+  const canReadSession = canReadQuality || capabilities.has("role.collector");
+  const summary = useQuery({
+    queryKey: ["p04-upload-summary", scope?.organizationId, scope?.projectId, scope?.regionCode, stableId, authorizationRevision],
+    enabled: Boolean(scope && stableId && canReadSession),
+    queryFn: ({ signal }) => getFormalUploadSessionDetail(scope!, stableId!, signal),
+    refetchInterval: (query) =>
+      query.state.data && !["RAW_COMMITTED", "CANCELLED", "FAILED"].includes(query.state.data.status) ? 3_000 : false,
+  });
+  const session = summary.isError ? undefined : summary.data;
+  const canReadFile = (capability: string) => capabilities.has(capability) ||
+    Boolean(session?.dataset_id && capabilities.has(`${capability}/dataset:${session.dataset_id}`));
+  const canReadManifest = canReadFile("dataset_version.download_manifest");
+  const canReadRaw = canReadFile("dataset_version.download_raw");
   const detail = useQuery<FormalUploadDetail>({
     queryKey: [
       "p04-formal-upload-detail",
@@ -893,16 +907,16 @@ export default function UploadDetailView({
       scope?.regionCode,
       stableId,
     ],
-    enabled: Boolean(scope && stableId && capabilities.has("upload.read")),
+    enabled: Boolean(scope && stableId && canReadSession && session && canReadManifest),
     staleTime: 10_000,
     refetchInterval: (query) =>
-      query.state.data?.quality === null ? 3_000 : false,
+      canReadQuality && query.state.data?.quality === null ? 3_000 : false,
     queryFn: ({ signal }) => {
       if (!scope || !stableId) throw new Error("UPLOAD_SCOPE_UNAVAILABLE");
-      return loadFormalUploadDetail(scope, stableId, signal);
+      return loadFormalUploadDetail(scope, stableId, signal, session, canReadQuality);
     },
   });
-  const rawMediaSessionId = detail.data?.session.session_id;
+  const rawMediaSessionId = session?.session_id;
   const rawMedia = useQuery({
     queryKey: [
       "p04-raw-media-source",
@@ -914,8 +928,8 @@ export default function UploadDetailView({
     ],
     enabled:
       Boolean(scope) &&
-      capabilities.has("upload.read") &&
-      detail.data?.session.status === "RAW_COMMITTED" &&
+      canReadSession && canReadRaw &&
+      session?.status === "RAW_COMMITTED" &&
       Boolean(rawMediaSessionId),
     staleTime: 0,
     queryFn: ({ signal }) => {
@@ -925,7 +939,7 @@ export default function UploadDetailView({
       return getFormalUploadRawMedia(scope, rawMediaSessionId, signal);
     },
   });
-  const workflowSession = detail.data?.session;
+  const workflowSession = session;
   const workflowId = workflowSession?.workflow?.workflow_id;
   const workflow = useQuery({
     queryKey: [
@@ -937,7 +951,7 @@ export default function UploadDetailView({
       workflowId,
     ],
     enabled: Boolean(
-      scope && workflowSession && workflowId && capabilities.has("upload.read"),
+      scope && workflowSession && workflowId && canReadSession,
     ),
     staleTime: 0,
     queryFn: async ({ signal }) => {
@@ -991,7 +1005,7 @@ export default function UploadDetailView({
       </main>
     );
   }
-  if (!capabilities.has("upload.read")) {
+  if (!canReadSession) {
     return (
       <main className={styles.statePage}>
         <PageState
@@ -1002,15 +1016,16 @@ export default function UploadDetailView({
       </main>
     );
   }
-  if (detail.isPending) {
+  const active = session && canReadManifest ? detail : summary;
+  if (active.isPending) {
     return (
       <main className={styles.statePage}>
         <PageState state="loading" label="上传详情" layout="workbench" />
       </main>
     );
   }
-  if (detail.isError) {
-    const error = detail.error;
+  if (active.isError) {
+    const error = active.error;
     return (
       <main className={styles.statePage}>
         <PageState
@@ -1018,7 +1033,7 @@ export default function UploadDetailView({
           label="上传详情"
           description={problemDescription(error)}
           requestId={isDomainError(error) ? error.requestId : null}
-          onRetry={() => void detail.refetch()}
+          onRetry={() => void active.refetch()}
           retryLabel={
             isDomainError(error) && error.retryable
               ? "按服务端提示重试"
@@ -1039,11 +1054,32 @@ export default function UploadDetailView({
     onRefresh: () => void workflow.refetch(),
   };
   const rawMediaView = {
-    source: rawMedia.data,
-    pending: rawMedia.isPending,
-    error: rawMedia.error,
+    authorizeDownload: (signal: AbortSignal) => {
+      if (!scope || !rawMediaSessionId || !canReadRaw) throw new Error("当前会话没有原始文件下载权限。");
+      return getFormalUploadRawMedia(scope, rawMediaSessionId, signal);
+    },
+    source: canReadRaw ? rawMedia.data : undefined,
+    pending: canReadRaw && rawMedia.isFetching,
+    error: canReadRaw ? rawMedia.error : null,
     onRefresh: () => void rawMedia.refetch(),
   };
+
+  if (!session) return null;
+  if (!canReadManifest || !canReadQuality || !detail.data) {
+    return (
+      <main className={styles.page}>
+        <PageHeader title="上传详情" breadcrumbs={[
+          { key: "uploads", label: "上传记录", to: uploadRecordsPath },
+          { key: "detail", label: session.data_package_id },
+        ]} metadata={<StatusTag status={session.status} tone="info" />} />
+        <MetricCard label="数据包大小" value={formatStorageSize(session.expected_size)} description={session.data_package_id} />
+        {workflow.data && <p role="status">处理结果：{workflow.data.job.status} · {workflow.data.job.stage} {workflow.data.job.error_code}</p>}
+        {workflow.isError && <p role="alert">{problemDescription(workflow.error)}</p>}
+        {canReadManifest && detail.data && <ManifestDiscoveryPanel manifest={detail.data.manifest} />}
+        <RawMediaEvidence {...rawMediaView} />
+      </main>
+    );
+  }
 
   if (detail.data.quality === null) {
     return (
@@ -1074,15 +1110,10 @@ export default function UploadDetailView({
         />
       ) : (
         <>
-          <RawMediaEvidence
-            source={rawMedia.data}
-            pending={rawMedia.isPending}
-            error={rawMedia.error}
-            onRefresh={() => void rawMedia.refetch()}
-          />
+          <RawMediaEvidence {...rawMediaView} />
           <UploadDiagnostic
             detail={resolvedDetail}
-            rawSourceAvailable={Boolean(rawMedia.data)}
+            rawSourceAvailable={Boolean(rawMediaView.source)}
             scope={scope}
             workflowMedia={workflowMedia}
             returnTo={problemDataReturnTo}

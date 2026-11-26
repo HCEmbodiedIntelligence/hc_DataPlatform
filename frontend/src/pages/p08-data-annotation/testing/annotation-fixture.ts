@@ -139,6 +139,8 @@ export const visualTag: RuntimeAnnotationTag = {
 };
 
 const visualTaskBase: RuntimeAnnotationTask = {
+  allowed_tags: [...visualSchema.document.nodes.map((node) => node.display_name),
+    "tag1", "tag2", "tag3", "夹爪闭合", "闭合完成", "抓取物品", "夹爪抓紧", "搬运阶段", "打篮球", "运球"],
   task_id: "annotation-task-0142",
   project_id: visualAnnotationScope.projectId,
   region_code: visualAnnotationScope.regionCode,

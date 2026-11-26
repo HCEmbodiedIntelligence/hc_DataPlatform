@@ -91,6 +91,17 @@ async function scenarioGate(endpoint: string): Promise<Response | null> {
 }
 
 export const dashboardHandlers = [
+  http.get("*/api/v1/projects/:projectId/dashboard/analytics", async ({ request, params }) => {
+    const invalid = invalidRequest(request, params);
+    if (invalid) return invalid;
+    const gated = await scenarioGate("activity");
+    if (gated) return gated;
+    const query = new URL(request.url).searchParams;
+    return HttpResponse.json({
+      project_id: params.projectId, region_code: query.get("region_code"),
+      as_of: new Date().toISOString(), analytics: { buckets: [], outcomes: {}, issues: {}, affected_packages: 0, reports: {} },
+    });
+  }),
   http.get(
     "*/api/v1/projects/:projectId/dashboard/task-status",
     async ({ request, params }) => {

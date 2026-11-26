@@ -1,3 +1,4 @@
+import { useFileDownload } from "../../shared/lib/use-file-download";
 import { Button, Input, Select } from "antd";
 import { useEffect, useState } from "react";
 import { createMutationIntentKey } from "../../features/ingest/mutation-machine";
@@ -21,6 +22,7 @@ import {
   useScopedUploadRobotModelAssets,
 } from "../../features/robot-models/api/hooks";
 import {
+  type RobotModelAsset,
   type RobotModelAssetUploadInput,
   type RobotModelJointMapping,
   type RobotModelPublishPreflight,
@@ -92,6 +94,7 @@ export function ModelVersionDetails({
     organizationId,
     version.data?.id ?? null,
   );
+  const fileDownload = useFileDownload(JSON.stringify([organizationId, versionId]));
   const assetDownload = useScopedRobotModelAssetDownload(organizationId);
   const assetUpload = useScopedUploadRobotModelAssets(organizationId);
   const replaceJointMappings =
@@ -145,13 +148,12 @@ export function ModelVersionDetails({
     if (search.targetRobotId) setBindingRobotId(search.targetRobotId);
   }, [search.targetRobotId]);
 
-  const downloadAsset = async (assetId: string) => {
+  const downloadAsset = (asset: RobotModelAsset) => {
     if (!selectedVersion) return;
-    const authorization = await assetDownload.mutateAsync({
-      versionId: selectedVersion.id,
-      assetId,
+    return fileDownload.save(asset.relative_path, async () => {
+      const grant = await assetDownload.mutateAsync({ versionId: selectedVersion.id, assetId: asset.asset_id });
+      return { url: grant.download_url, size_bytes: asset.size_bytes };
     });
-    window.location.assign(authorization.download_url);
   };
 
   const uploadAsset = async () => {
@@ -283,6 +285,7 @@ export function ModelVersionDetails({
     );
   return (
     <>
+      {fileDownload.error && <p role="alert">{fileDownload.error.message}</p>}
       <DetailTabs
         tabs={detailTabs}
         activeTab={activeTab}
@@ -327,11 +330,9 @@ export function ModelVersionDetails({
                       </small>
                     </span>
                     <Button
-                      loading={
-                        assetDownload.isPending &&
-                        assetDownload.variables?.assetId === asset.asset_id
-                      }
-                      onClick={() => void downloadAsset(asset.asset_id)}
+                      loading={fileDownload.pending === asset.relative_path}
+                      disabled={Boolean(fileDownload.pending)}
+                      onClick={() => void downloadAsset(asset)}
                     >
                       下载
                     </Button>

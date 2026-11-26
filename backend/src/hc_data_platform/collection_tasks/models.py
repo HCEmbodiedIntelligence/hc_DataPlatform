@@ -355,14 +355,13 @@ class ProgressFacts(StrictModel):
 
     @model_validator(mode="after")
     def consistent_duration_facts(self) -> ProgressFacts:
-        if self.duration_observed_package_count + self.duration_unknown_package_count != (
-            self.received_package_count
-        ):
-            raise ValueError("duration fact counts must partition received packages")
         if self.duration_unknown_package_count and self.captured_duration_seconds is not None:
             raise ValueError(
-                "captured duration is unknown while received package durations are missing"
+                "captured duration is unknown while an admitted Episode is missing its duration"
             )
-        if self.duration_observed_package_count == 0 and self.captured_duration_seconds is not None:
-            raise ValueError("captured duration requires at least one observed package duration")
+        if self.duration_observed_package_count == 0 and self.captured_duration_seconds not in (
+            None,
+            0,
+        ):
+            raise ValueError("positive duration requires at least one admitted Episode duration")
         return self

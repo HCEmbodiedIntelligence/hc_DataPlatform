@@ -187,7 +187,9 @@ export function CollectionTaskPage({
     (!capabilities.loading && !capabilities.failed);
   const canManage =
     capabilityOverride === "manage" ||
-    (capabilityOverride === undefined && capabilities.has("upload.manage"));
+    (capabilityOverride === undefined && capabilities.has("collection_task.manage"));
+  const canDelete = (task: CollectionTask) => capabilityOverride === "manage" || (capabilityOverride === undefined &&
+    (capabilities.has("collection_task.delete") || capabilities.has(`collection_task.delete/${task.collection_task_id}`)));
   const listEnabled = scope !== null && authorizationReady;
   const serverStatus = search.status === "ALL" ? undefined : search.status;
 
@@ -598,6 +600,7 @@ export function CollectionTaskPage({
     <CollectionTaskTable
       key={scopeKey}
       canManage={canManage}
+      canDelete={canDelete}
       filtered={filtered}
       loading={!unscopedAccount && list.isPending}
       onCancel={requestCancelTask}
@@ -605,7 +608,7 @@ export function CollectionTaskPage({
       onEdit={openEdit}
       onReopen={requestReopenTask}
       onDelete={(task) => {
-        if (!canManage) return;
+        if (!canDelete(task)) return;
         lifecycleTask.reset();
         lifecycleAttempt.current = null;
         setLifecycleTarget({ task, action: "delete" });

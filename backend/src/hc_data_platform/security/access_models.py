@@ -13,9 +13,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from .capabilities import KNOWN_BUSINESS_CAPABILITIES
+from .capabilities import KNOWN_BUSINESS_CAPABILITIES, PROJECT_ROLES, resource_capability
 
 # Technical resource ceilings for endpoints exposed to the public internet. Password strength
 # is enforced by the centrally configured PasswordPolicy after request-shape validation.
@@ -279,6 +279,7 @@ class AvailableOrganization(BaseModel):
     organization_id: str = Field(min_length=1, max_length=256)
     organization_name: str = Field(min_length=1, max_length=256)
     member_status: Literal["ACTIVE"] = "ACTIVE"
+    capabilities: tuple[str, ...] = ()
 
 
 class SessionBootstrap(BaseModel):
@@ -323,6 +324,9 @@ class OrganizationMembershipRequestCreate(BaseModel):
 class CapabilityRequestCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    expires_at: AwareDatetime | None = None
+    resource_id: str | None = Field(default=None, min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_.:/-]+$")
+    replaces_request_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
     capability_keys: tuple[str, ...] = Field(min_length=1, max_length=MAX_CAPABILITY_KEYS)
     reason: str | None = Field(default=None, max_length=MAX_ACCESS_REASON_CHARS)
 
@@ -340,10 +344,37 @@ class CapabilityRequestCreate(BaseModel):
             raise ValueError(
                 "platform capabilities can only be granted through the global identity plane"
             )
-        unknown = set(normalized) - KNOWN_BUSINESS_CAPABILITIES
+        unknown = set(normalized) - KNOWN_BUSINESS_CAPABILITIES - PROJECT_ROLES.keys()
         if unknown:
             raise ValueError("unknown capability keys: " + ", ".join(sorted(unknown)))
         return normalized
+
+    @model_validator(mode="after")
+    def validate_limits(self):
+        keys = set(self.capability_keys)
+        data_permissions = {"export.download", "dataset_version.download_raw", "dataset_version.download_manifest"}
+        targeted = {"role.collector", "teleoperation.connect", "collection_task.delete", "dataset.delete", "dataset_version.delete"}
+        scoped = data_permissions | targeted
+        if self.resource_id:
+            parts = self.resource_id.split("/")
+            if keys == {"dataset_version.delete"}:
+                if len(parts) != 2 or not all(parts):
+                    raise ValueError("Use dataset_id/version_id for a version deletion check")
+            elif len(parts) != 1:
+                raise ValueError("Use one resource identifier")
+        if keys & PROJECT_ROLES.keys() and len(keys) != 1:
+            raise ValueError("Request each role separately so it can be transferred or revoked independently")
+        if self.resource_id and keys & data_permissions:
+            kind, delimiter, identifier = self.resource_id.partition(":")
+            if not delimiter or not identifier or kind not in {"version", "dataset"}:
+                raise ValueError("Use version:<id> or dataset:<id> for a data grant")
+        if self.resource_id and (len(keys) != 1 or not keys <= scoped):
+            raise ValueError("Select one resource-specific operation")
+        if keys & targeted and not self.resource_id:
+            raise ValueError("Select the target robot or task")
+        if self.replaces_request_id and not (len(keys) == 1 and keys <= PROJECT_ROLES.keys()):
+            raise ValueError("A role transfer requires a single destination role")
+        return self
 
 
 class AccessDecisionCommand(BaseModel):
@@ -375,6 +406,12 @@ class CapabilityRequest(BaseModel):
     organization_id: str
     project_id: str
     requester_id: str
+    expires_at: AwareDatetime | None = None
+    resource_id: str | None = Field(default=None, min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_.:/-]+$")
+    replaces_request_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
+    allowed_decisions: tuple[Literal["approve", "reject", "revoke"], ...] = ()
+    project_grants_added: tuple[str, ...] = ()
+    project_grants_removed: tuple[str, ...] = ()
     capability_keys: tuple[str, ...]
     status: AccessRequestStatus
     reason: str | None = None
@@ -383,6 +420,14 @@ class CapabilityRequest(BaseModel):
     created_at: datetime
     updated_at: datetime
     revision: int = Field(ge=1)
+
+    @property
+    def effective_grant_keys(self) -> tuple[str, ...]:
+        if self.resource_id is None:
+            return self.capability_keys
+        if self.capability_keys == ("role.collector",):
+            return ("role.collector", resource_capability("upload.manage", self.resource_id))
+        return tuple(resource_capability(key, self.resource_id) for key in self.capability_keys)
 
 
 class MembershipRequestList(BaseModel):
@@ -422,6 +467,9 @@ class AccountAccessRequest(BaseModel):
     kind: Literal["ORGANIZATION", "PROJECT", "CAPABILITY"]
     organization_id: str = Field(min_length=1, max_length=256)
     project_id: str | None = Field(default=None, max_length=256)
+    expires_at: AwareDatetime | None = None
+    resource_id: str | None = Field(default=None, min_length=1, max_length=256, pattern=r"^[A-Za-z0-9_.:/-]+$")
+    replaces_request_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$")
     capability_keys: tuple[str, ...] = ()
     status: AccessRequestStatus
     reason: str | None = None
@@ -558,3 +606,5 @@ class ResolvedSession:
     capability_revision: int
     scopes: tuple[AvailableScope, ...]
     platform_capabilities: tuple[str, ...] = ()
+    organization_ids: frozenset[str] = frozenset()
+    managed_organization_ids: frozenset[str] = frozenset()

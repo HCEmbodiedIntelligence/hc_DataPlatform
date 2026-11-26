@@ -160,6 +160,14 @@ export function WorkflowQueuePage<Key extends string>({
           <span>{props.search.meta}</span>
         </div>
 
+        <div
+          aria-label={`${currentStage.label}${props.tableLabel}，可横向滚动`}
+          className={styles.tableWrap}
+          role="region"
+          tabIndex={0}
+        >
+          {props.table}
+        </div>
         {props.visibleCount === 0 ? (
           <div className={styles.queueEmpty}>
             <span className={styles.emptyIcon}>
@@ -185,16 +193,7 @@ export function WorkflowQueuePage<Key extends string>({
               {props.emptyActionLabel}
             </button>
           </div>
-        ) : (
-          <div
-            aria-label={`${currentStage.label}${props.tableLabel}，可横向滚动`}
-            className={styles.tableWrap}
-            role="region"
-            tabIndex={0}
-          >
-            {props.table}
-          </div>
-        )}
+        ) : null}
         {props.visibleCount > 0 && props.pagination ? (
           <nav aria-label={`${props.title}分页`} className={styles.pagination}>
             {props.pagination}

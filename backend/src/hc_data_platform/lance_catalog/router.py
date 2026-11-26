@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
-from hc_data_platform.core.context import current_request_context
+from hc_data_platform.core.context import RequestContext, current_request_context
 from hc_data_platform.core.errors import problem
+from hc_data_platform.episode_store.dependencies import PackageServices
+from hc_data_platform.episode_store.preview_access import authorize_episode_preview
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .audit import (
@@ -97,12 +99,16 @@ def read_step_window(
     dataset_id: str,
     rollout_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
+    request: Request,
     start_step: int = Query(ge=0),
     end_step: int = Query(ge=0),
     version: int | None = Query(default=None, ge=1),
     columns: ColumnsQuery = None,
 ) -> StepWindow:
-    authorize_scope(auth, project_id, "dataset_version.read")
+    context = getattr(request.state, "request_context", None) or RequestContext()
+    authorize_episode_preview(packages, auth, context.organization_id, project_id, context.region_code,
+                              dataset_id, rollout_id=rollout_id, lance_version=version)
     if end_step < start_step:
         raise problem(
             status=422,
@@ -153,9 +159,13 @@ def get_rollout_lineage(
     dataset_id: str,
     rollout_id: str,
     auth: VerifiedAuth,
+    packages: PackageServices,
+    request: Request,
     version: int | None = Query(default=None, ge=1),
 ) -> RolloutLineage:
-    authorize_scope(auth, project_id, "dataset_version.read")
+    context = getattr(request.state, "request_context", None) or RequestContext()
+    authorize_episode_preview(packages, auth, context.organization_id, project_id, context.region_code,
+                              dataset_id, rollout_id=rollout_id, lance_version=version)
     try:
         return _required_catalog().lineage(
             dataset_id, rollout_id, version=version, project_id=project_id

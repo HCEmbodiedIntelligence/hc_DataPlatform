@@ -3,6 +3,8 @@ import type { DashboardScope } from "../types";
 import type { DashboardWindow } from "./client";
 
 export const dashboardQueryKeys = {
+  analytics: (scope: DashboardScope, window: DashboardWindow, taskId?: string) =>
+    makeQueryKey("dashboard", "analytics", { ...scope, ...window, ...(taskId ? { taskId } : {}) }),
   taskStatus: (scope: DashboardScope, taskId?: string) =>
     makeQueryKey("dashboard", "task-status", {
       organizationId: scope.organizationId,

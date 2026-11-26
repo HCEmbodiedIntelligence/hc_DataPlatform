@@ -1588,7 +1588,8 @@ class PostgresRobotIngestRepository:
         row = self._one(
             """SELECT a.*, c.secret_ciphertext IS NULL AS secret_missing
             FROM ingest.authenticate_robot_ingest_credential(%s, %s, %s) a
-            LEFT JOIN ingest.robot_ingest_credentials c ON c.credential_id=a.credential_id""",
+            LEFT JOIN ingest.robot_ingest_credentials c ON c.credential_id=a.credential_id
+            WHERE NOT access_control.directory_retired(a.identity_document->>'organization_id','')""",
             (credential_id, token_digest, now),
             bootstrap=True,
         )
@@ -1613,7 +1614,8 @@ class PostgresRobotIngestRepository:
 
     def resolve_upload_target(self, collection_task_id: str) -> UploadTarget | None:
         row = self._one(
-            "SELECT * FROM collection_tasks.resolve_robot_upload_target(%s)",
+            """SELECT t.* FROM collection_tasks.resolve_robot_upload_target(%s) t
+               WHERE NOT access_control.directory_retired(t.organization_id,t.project_id)""",
             (collection_task_id,),
             bootstrap=True,
         )

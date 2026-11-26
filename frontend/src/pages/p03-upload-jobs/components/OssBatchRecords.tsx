@@ -1,3 +1,4 @@
+import { BatchQCDownload } from "../../../features/exports/BatchQCDownload";
 import { Alert, Progress } from "antd";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
@@ -72,6 +73,7 @@ export function OssBatchRecords({ scope }: { scope: IngestScope }) {
               {state} · 已提交 {batch.submitted} / {batch.total} 条
               {batch.failed > 0 ? ` · 失败 ${batch.failed} 条` : ""}
             </div>
+            {batch.batch_number && batch.status !== "PENDING" && batch.status !== "RUNNING" && <BatchQCDownload scope={scope} number={batch.batch_number} />}
             <Progress
               percent={Math.round((100 * done) / batch.total)}
               size="small"

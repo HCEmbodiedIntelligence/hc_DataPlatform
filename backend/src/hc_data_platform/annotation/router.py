@@ -27,6 +27,7 @@ from .delivery_models import (
     RequestAnnotationDelivery,
 )
 from .logical_router import router as logical_router
+from .model_router import router as model_router
 from .models import (
     AnnotationApprovedV1,
     AnnotationCurrent,
@@ -224,8 +225,8 @@ _DELIVERY_ERRORS = {
 def request_annotation_delivery(
     task_id: str,
     body: RequestAnnotationDelivery,
-    service: DeliveryDependency,
     auth: AuthDependency,
+    service: DeliveryDependency,
     response: Response,
     idempotency_key: IdempotencyKey,
 ):
@@ -246,8 +247,8 @@ def request_annotation_delivery(
 )
 def list_annotation_deliveries(
     task_id: str,
-    service: DeliveryDependency,
     auth: AuthDependency,
+    service: DeliveryDependency,
     response: Response,
     limit: int = Query(25, ge=1, le=100),
     before: str | None = Query(None, pattern=r"^ad_[0-9a-f]{64}$"),
@@ -263,7 +264,7 @@ def list_annotation_deliveries(
     responses=_DELIVERY_ERRORS,
 )
 def get_annotation_delivery(
-    task_id: str, job_id: str, service: DeliveryDependency, auth: AuthDependency, response: Response
+    task_id: str, job_id: str, auth: AuthDependency, service: DeliveryDependency, response: Response
 ):
     response.headers["Cache-Control"] = "no-store"
     return service.status(task_id, job_id, auth)
@@ -278,8 +279,8 @@ def cancel_annotation_delivery(
     task_id: str,
     job_id: str,
     body: DeliveryGeneration,
-    service: DeliveryDependency,
     auth: AuthDependency,
+    service: DeliveryDependency,
     response: Response,
 ):
     """Fence the active worker immediately. Existing source/artifact objects are retained."""
@@ -296,8 +297,8 @@ def retry_annotation_delivery(
     task_id: str,
     job_id: str,
     body: DeliveryGeneration,
-    service: DeliveryDependency,
     auth: AuthDependency,
+    service: DeliveryDependency,
     response: Response,
 ):
     """Retry the same frozen data/revision/track. Never creates an annotation revision."""
@@ -311,7 +312,7 @@ def retry_annotation_delivery(
     responses=_DELIVERY_ERRORS,
 )
 def download_annotation_delivery(
-    task_id: str, job_id: str, service: DeliveryDependency, auth: AuthDependency, response: Response
+    task_id: str, job_id: str, auth: AuthDependency, service: DeliveryDependency, response: Response
 ):
     """Reauthorize task ownership and verify the cached archive before issuing a 5-minute grant."""
     response.headers["Cache-Control"] = "no-store"
@@ -326,8 +327,8 @@ def download_annotation_delivery(
 def revision_file_status(
     task_id: str,
     revision: int,
-    service: RevisionFileDependency,
     auth: AuthDependency,
+    service: RevisionFileDependency,
     response: Response,
 ):
     """Read generation state for one saved revision without creating a job or file."""
@@ -344,8 +345,8 @@ def request_revision_file(
     task_id: str,
     revision: int,
     body: RequestRevisionFile,
-    service: RevisionFileDependency,
     auth: AuthDependency,
+    service: RevisionFileDependency,
     response: Response,
 ):
     """Request generation/retry using the observed generation; never create a new revision."""
@@ -363,8 +364,8 @@ def request_revision_file(
 )
 def download_revision_file(
     task_id: str,
-    service: RevisionFileDependency,
     auth: AuthDependency,
+    service: RevisionFileDependency,
     revision: RevisionQuery = None,
     allow_unreviewed: bool = False,
 ):
@@ -1070,3 +1071,4 @@ def apply_auto_annotation_job(
 
 
 router.include_router(logical_router)
+router.include_router(model_router)

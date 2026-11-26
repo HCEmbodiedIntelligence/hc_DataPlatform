@@ -626,33 +626,27 @@ export function CapacityPane() {
   const capabilities = useCapabilities();
   const canRead = capabilities.has("storage.overview.read");
   const [trendDays, setTrendDays] = useState<7 | 30>(30);
+  const isPlatformAdmin = useShellStore(s => s.platformCapabilities.includes("platform.admin"));
   const availableProjectIds = useMemo(() => {
     const projectIds = sessionScopes
       .filter(
         (grant) =>
           grant.organizationId === scope?.organizationId &&
-          grant.capabilities.includes("storage.overview.read"),
+          (isPlatformAdmin || grant.capabilities.includes("storage.overview.read")),
       )
       .map((grant) => grant.projectId);
     if (projectId && !projectIds.includes(projectId))
       projectIds.unshift(projectId);
     return [...new Set(projectIds)];
-  }, [projectId, scope?.organizationId, sessionScopes]);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<
-    readonly string[]
-  >(() => (projectId ? [projectId] : []));
-  useEffect(() => {
-    if (!projectId) {
-      setSelectedProjectIds([]);
-      return;
-    }
-    setSelectedProjectIds((current) => {
-      const retained = current.filter((candidate) =>
-        availableProjectIds.includes(candidate),
-      );
-      return retained.includes(projectId) ? retained : [projectId, ...retained];
-    });
-  }, [availableProjectIds, projectId]);
+  }, [projectId, scope?.organizationId, sessionScopes, isPlatformAdmin]);
+  const [portfolioSelection, setPortfolioSelection] = useState<{
+    organization?: string; projects: readonly string[];
+  }>();
+  const selectedProjectIds = portfolioSelection && portfolioSelection.organization === scope?.organizationId
+    ? portfolioSelection.projects.filter(id => availableProjectIds.includes(id))
+    : availableProjectIds;
+  const setSelectedProjectIds = (projects: readonly string[]) =>
+    setPortfolioSelection({ organization: scope?.organizationId, projects });
   const [trendAnchor, setTrendAnchor] = useState(() =>
     new Date().toISOString(),
   );

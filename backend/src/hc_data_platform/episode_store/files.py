@@ -14,6 +14,7 @@ import tempfile
 import threading
 from collections import OrderedDict
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from hc_data_platform.core.ingest_timing import span
@@ -21,6 +22,29 @@ from hc_data_platform.core.ingest_timing import span
 from .errors import PackageConflict
 from .models import CommitReceipt, EpisodeIdentity, FileEntry, PackageManifest
 from .scope import assert_scope
+
+
+_export_reads = ContextVar("episode_export_reads", default=None)
+
+
+@contextmanager
+def reuse_export_reads(prefix, shared):
+    # Each prepare request and its submitted build share this immutable version.
+    token = _export_reads.set((prefix.rstrip("/") + "/", shared, {}))
+    try:
+        yield
+    finally:
+        _export_reads.reset(token)
+
+
+def package_head(storage, key):
+    active = _export_reads.get()
+    if active is None or not key.startswith(active[0]):
+        return storage.head(key)
+    headers = active[2]
+    if key not in headers:
+        headers[key] = storage.head(key)
+    return headers[key]
 
 
 class VerifiedFileCache:
@@ -76,6 +100,18 @@ class VerifiedFileCache:
         if entry.size > self.max_object:
             raise ValueError("package object exceeds configured local reader disk limit")
         with self.lock:
+            active = _export_reads.get()
+            if active is not None and active[1] is not self and key.startswith(active[0]) and entry.sha256 not in self.entries:
+                shared = active[1]
+                # A shared reader can be busy decoding another Episode. In that
+                # case this build can use its own verified read immediately.
+                if shared.lock.acquire(blocking=False):
+                    try:
+                        item = shared.entries.get(entry.sha256)
+                        if item is not None and item[1] == entry.size:
+                            self.adopt(item[0], entry)
+                    finally:
+                        shared.lock.release()
             cached = self.entries.get(entry.sha256)
             if cached is not None:
                 path, size = cached
@@ -123,7 +159,7 @@ class AuthorizedPackage:
         if relative not in self.entries:
             raise KeyError("file is not part of the authorized committed package")
         key = f"{self.receipt.data.package_prefix}/{relative}"
-        metadata = self.storage.head(key)
+        metadata = package_head(self.storage, key)
         if metadata is None or metadata.size != self.entries[relative].size:
             raise PackageConflict("committed package file is missing or has a different size")
         with self.cache.file(self.storage, key, self.entries[relative]) as path:
@@ -145,7 +181,7 @@ class PackageFiles:
         # This exact-version lookup is mandatory even on a warm content cache.
         receipt = self.repository.get(identity, data_version_id)
         key = f"{receipt.data.package_prefix}/hc/manifest.json"
-        head = self.storage.head(key)
+        head = package_head(self.storage, key)
         if head is None or not 0 < head.size <= 16 * 1024**2:
             raise PackageConflict("committed package manifest missing or too large")
         entry = FileEntry(

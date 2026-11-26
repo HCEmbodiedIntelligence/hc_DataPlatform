@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from io import BytesIO
 from types import SimpleNamespace
@@ -143,7 +144,7 @@ def test_archive_http_permissions_scope_and_selection_validation(sources, monkey
     monkeypatch.setattr(
         web,
         "_auth",
-        lambda: replace(auth, capabilities=frozenset({"upload.read", "export.download"})),
+        lambda: replace(auth, capabilities=frozenset({"dataset_version.download_raw"})),
     )
     path = "/api/v1/projects/project-a/regions/cn-hz/lerobot-imports/archive"
     headers = {"X-Organization-Id": "org-a"}
@@ -179,8 +180,49 @@ def test_archive_http_permissions_scope_and_selection_validation(sources, monkey
             ).status_code
             == 403
         )
+        grant = "dataset_version.download_raw/dataset:" + raws[0].dataset_id
+        monkeypatch.setattr(web, "_auth", lambda: replace(auth, capabilities=frozenset({grant})))
+        assert client.post(path, json=body, headers=headers).status_code == 200
+        lookup = browser.repository.get_source
+        def different_dataset(**scope):
+            item = lookup(**scope)
+            return item.model_copy(update={"dataset_id": "other-dataset"}) if item == raws[1] else item
+        monkeypatch.setattr(browser.repository, "get_source", different_dataset)
+        assert client.post(path, json=body, headers=headers).status_code == 403
         for permission in ("upload.read", "export.download"):
             monkeypatch.setattr(
                 web, "_auth", lambda p=permission: replace(auth, capabilities=frozenset({p}))
             )
             assert client.post(path, json=body, headers=headers).status_code == 403
+
+
+def test_oss_export_http_validates_selection_and_returns_persistent_zip(sources, monkeypatch):
+    from hc_data_platform.episode_store.delivery_router import router
+    from hc_data_platform.lerobot_imports import source_archive
+
+    storage, browser, raws, originals = sources
+    service = SimpleNamespace(storage=storage, raw_sources=browser.repository)
+    app = web._app(service)
+    app.include_router(router, prefix="/api/v1")
+    app.state.lerobot_uploads = service
+    auth = web._auth()
+    caps = frozenset({"export.create", "dataset_version.download_raw"})
+    monkeypatch.setattr(web, "_auth", lambda: replace(auth, capabilities=caps))
+    monkeypatch.setattr(source_archive, "archive_record_document", lambda *_: None)
+    monkeypatch.setattr(storage, "persistent_oss_uri", lambda key: "oss://managed/" + key, raising=False)
+    path = "/api/v1/projects/project-a/regions/cn-hz/episode-deliveries/oss"
+    body = {"kind": "raw", "import_ids": [raws[0].raw_source_id]}
+    with TestClient(app) as client:
+        response = client.post(path, json=body)
+        assert response.status_code == 200, response.text
+        receipt = json.loads(response.text.splitlines()[-1])
+        key = receipt["oss_uri"].removeprefix("oss://managed/")
+        assert key.startswith("exports/org-a/project-a/cn-hz/")
+        with ZipFile(BytesIO(storage.objects[key])) as archive:
+            assert archive.read(raws[0].raw_source_id + "/capture.mcap") == originals[0]["capture.mcap"]
+        assert client.post(path, json={**body, "import_ids": ["missing"]}).status_code == 404
+        assert client.post(path.replace("project-a", "foreign"), json=body).status_code == 403
+        for permission in caps:
+            monkeypatch.setattr(web, "_auth", lambda p=permission: replace(auth, capabilities=caps - {p}))
+            assert client.post(path, json=body).status_code == 403
+        assert [k for k in storage.objects if k.startswith("exports/")] == [key]

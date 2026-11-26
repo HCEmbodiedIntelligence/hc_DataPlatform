@@ -506,6 +506,26 @@ export async function fetchDatasetVersionCapacity(
   return adaptDatasetVersionCapacity(parsed);
 }
 
+export function episodeListQuery(filters: EpisodeListApiFilters) {
+  return {
+    snapshotToken: filters.snapshotToken,
+    q: filters.q,
+    task: filters.collectionTaskId ?? filters.task,
+    robotId: filters.robotId,
+    successState: filters.successState?.toUpperCase(),
+    startedFrom: filters.startedFrom,
+    startedTo: filters.startedTo,
+    included: filters.included,
+    reviewStatus: filters.reviewStatus,
+    hasFinding: filters.hasFinding,
+    changeType: filters.changeType,
+    sort: episodeSort[filters.sort ?? "ordinal-asc"] ?? filters.sort,
+    after: filters.after,
+    before: filters.before,
+    limit: filters.limit ?? 20,
+  };
+}
+
 export async function fetchVersionEpisodes(
   datasetId: DatasetId,
   versionId: DatasetVersionId,
@@ -519,23 +539,7 @@ export async function fetchVersionEpisodes(
     method: "GET",
     path: endpoint,
     signal,
-    query: {
-      snapshotToken: filters.snapshotToken,
-      q: filters.q,
-      task: filters.collectionTaskId ?? filters.task,
-      robotId: filters.robotId,
-      successState: filters.successState?.toUpperCase(),
-      startedFrom: filters.startedFrom,
-      startedTo: filters.startedTo,
-      included: filters.included,
-      reviewStatus: filters.reviewStatus,
-      hasFinding: filters.hasFinding,
-      changeType: filters.changeType,
-      sort: episodeSort[filters.sort ?? "ordinal-asc"] ?? filters.sort,
-      after: filters.after,
-      before: filters.before,
-      limit: filters.limit ?? 20,
-    },
+    query: episodeListQuery(filters),
   });
   const parsed = parse(episodePageEnvelopeWireSchema, raw, endpoint);
   parsed.items.forEach((item) => {

@@ -26,14 +26,16 @@ class CollectionDelivery:
     def __init__(self, owner):
         self.owner = owner
 
-    def authorize(self, plan, auth):
+    def authorize(self, plan, auth, *, metadata_only=False):
         for member in plan.members:
             if member.annotation is not None:
                 if self.owner.annotations is None:
                     raise failure(
                         "ANNOTATIONS_UNAVAILABLE", "Annotation delivery is not configured.", 503
                     )
-                task = self.owner.annotations.authorize(member.annotation.binding.task_id, auth)
+                task = self.owner.annotations.authorize(
+                    member.annotation.binding.task_id, auth, metadata_only=metadata_only
+                )
                 if task.data_ref != member.data:
                     raise PackageConflict("selected annotation task differs from collection data")
 
@@ -205,30 +207,33 @@ class CollectionDelivery:
                 raise PackageConflict("collection contract differs from frozen plan")
         return result
 
-    def build(self, plan, directory, archive_path, row, checkpoint):
+    def build(self, plan, directory, archive_path, row, checkpoint, *, file_names=None, cache_receipt=False):
         self.owner.repository.phase(row, "projecting")
         root = directory / "collection"
-        from .export_formats import from_archive
+        from .export_formats import MCAP_PAYLOAD_ARCHIVES, from_archive
 
         adapter = from_archive(plan.archive_format)
+        private_files = cache_receipt and plan.archive_format == "mcap_collection_zip/9"
         manifest, _ = adapter.writer(
             root,
             self.sources(plan),
             storage=self.owner.storage,
             modalities=plan.modalities,
             checkpoint=checkpoint,
+            **({"hash_files": False} if private_files else {}),
             **({"processor_version": plan.processor_version} if adapter.homogeneous else {}),
         )
         prefix = "" if adapter.standalone_dataset else "collection/"
-        extra = {} if adapter.standalone_dataset else {
+        mcap_payload = plan.archive_format in MCAP_PAYLOAD_ARCHIVES
+        extra = {} if adapter.standalone_dataset or mcap_payload else {
             "collection/hc/collection_manifest.json": canonical(manifest),
             "delivery.json": inventory_document(plan),
         }
         records = {m.data.data_version_id: m.collection_record for m in plan.members if m.collection_record}
-        if records:
+        if records and not mcap_payload:
             extra["collection_records.json"] = record_document(records)
         inventory = [
-            (prefix + entry["path"], entry["size"], entry["sha256"], root / entry["path"])
+            (prefix + entry["path"], entry["size"], None if private_files else entry["sha256"], root / entry["path"])
             for entry in manifest["files"]
         ] + [
             (name, len(body), hashlib.sha256(body).hexdigest(), body)
@@ -241,10 +246,14 @@ class CollectionDelivery:
         with zipfile.ZipFile(
             archive_path, "w", compression=zipfile.ZIP_STORED, allowZip64=True
         ) as archive:
+            if mcap_payload:
+                # Bundle readers identify this layout without adding a delivery.json file.
+                archive.comment = plan.archive_format.encode("ascii")
             for name, expected_size, expected_hash, origin in sorted(inventory):
                 entry = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
                 entry.external_attr = 0o100644 << 16
-                checksum, read_size = hashlib.sha256(), 0
+                checksum = hashlib.sha256() if expected_hash is not None else None
+                read_size = 0
                 with (
                     (
                         io.BytesIO(origin) if isinstance(origin, bytes) else origin.open("rb")
@@ -256,19 +265,27 @@ class CollectionDelivery:
                         read_size += len(block)
                         if read_size > expected_size:
                             raise PackageConflict("collection member exceeds frozen size")
-                        checksum.update(block)
+                        if checksum is not None:
+                            checksum.update(block)
                         output.write(block)
                         size += len(block)
                         if time.monotonic() - last_report >= 1:
                             self.owner.repository.progress(row, count, size)
                             last_report = time.monotonic()
-                if checksum.hexdigest() != expected_hash or read_size != expected_size:
+                if read_size != expected_size or (checksum is not None and checksum.hexdigest() != expected_hash):
                     raise PackageConflict("collection member differs from frozen inventory")
                 count += 1
                 self.owner.repository.progress(row, count, size)
+        if cache_receipt and file_names is None:
+            # The local cache hashes its publication stream and returns the receipt.
+            return None, archive_path.stat().st_size
         checksum = hashlib.sha256()
         with archive_path.open("rb") as source:
             for block in iter(lambda: source.read(1024**2), b""):
                 checkpoint()
                 checksum.update(block)
+        if file_names is not None:
+            from .export_file_names import collection_files
+
+            file_names.extend(collection_files(manifest, plan))
         return checksum.hexdigest(), archive_path.stat().st_size

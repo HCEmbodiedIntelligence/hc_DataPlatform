@@ -20,7 +20,7 @@ class FrozenAnnotationSelection:
 
 
 class AnnotationSelectionPort(Protocol):
-    def authorize(self, task_id: str, auth: AuthContext) -> AnnotationTask: ...
+    def authorize(self, task_id: str, auth: AuthContext, *, metadata_only: bool = False) -> AnnotationTask: ...
 
     def freeze_selection(
         self, task_id: str, body: RequestAnnotationDelivery, auth: AuthContext

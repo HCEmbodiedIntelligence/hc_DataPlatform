@@ -1296,8 +1296,12 @@ def get_object_store_location(
     response: Response,
     auth: VerifiedAuth,
     service: ObjectStoreConfigServiceDependency,
+    organization_id: str | None = None,
 ) -> ObjectStoreLocationStatus:
-    del auth
+    if service.settings.object_store_owner_organization_id:
+        if not organization_id or (not auth.is_platform_admin and organization_id not in auth.organization_ids):
+            return ObjectStoreLocationStatus(configured=False,provider="oss",public_endpoint="",region="")
+        service=service.for_organization(organization_id)
     response.headers["Cache-Control"] = "private, no-store"
     return service.location()
 
@@ -1330,6 +1334,8 @@ def get_object_store_config(
         action="platform.object_store_config.read",
         resource_id="current-environment",
     )
+    if service.settings.object_store_owner_organization_id:
+        service=service.for_organization(service.settings.object_store_owner_organization_id)
     result = service.saved() if saved else service.current()
     response.headers["Cache-Control"] = "private, no-store"
     _append_platform_audit(
@@ -1383,6 +1389,8 @@ def update_object_store_config(
         resource_id=str(body.expected_revision + 1),
     )
     try:
+        if service.settings.object_store_owner_organization_id:
+            service=service.for_organization(service.settings.object_store_owner_organization_id)
         result = _object_store_config_action(
             lambda: service.save(
                 body,

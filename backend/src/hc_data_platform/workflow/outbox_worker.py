@@ -114,7 +114,7 @@ def local_project_scopes(postgres_dsn: str) -> tuple[str, ...]:
         cursor.execute(
             """
             SELECT DISTINCT project.organization_id, project.project_id, queue.region_code
-            FROM registry.organization_projects project
+            FROM access_control.active_projects project
             JOIN (
                 SELECT organization_id, project_id, region_code FROM core.outbox_events
                 WHERE published_at IS NULL AND region_code IS NOT NULL

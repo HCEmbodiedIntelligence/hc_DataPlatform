@@ -49,14 +49,21 @@ def labels(tmp_path, snapshot, *, invalid=(), excluded=()):  # noqa: F811
     selected.package.receipt.data = data
     selected.annotation_file = SimpleNamespace(
         content=canonical(document),
-        file=SimpleNamespace(content_sha256=digest(document), revision=0),
+        file=SimpleNamespace(
+            content_sha256=digest(document),
+            revision=0,
+            task_id=revision.task_id,
+            revision_content_hash=document["revision"]["content_hash"],
+            status="READY",
+        ),
     )
     selected.track = track.model_copy(update={"annotation_ids": ("label-2", "label-1", "label-0")})
     return selected
 
 
 def test_adjacent_same_name_labels_are_independent_and_only_selected_frames_remain(
-    tmp_path, snapshot  # noqa: F811
+    tmp_path,
+    snapshot,  # noqa: F811
 ):
     selected = labels(tmp_path / "parent", snapshot)
     frames = list(frame_selection(selected, compact_invalid=True).values())
@@ -72,7 +79,11 @@ def test_adjacent_same_name_labels_are_independent_and_only_selected_frames_rema
 
 @pytest.mark.parametrize("invalid,excluded,parents", [((1,), (4,), [2]), ((1, 2, 4), (), [])])
 def test_invalid_and_excluded_selection_never_falls_back_to_full_episode(
-    tmp_path, snapshot, invalid, excluded, parents  # noqa: F811
+    tmp_path,
+    snapshot,  # noqa: F811
+    invalid,
+    excluded,
+    parents,  # noqa: F811
 ):
     selected = labels(tmp_path / "parent", snapshot, invalid=invalid, excluded=excluded)
     assert [
@@ -80,9 +91,48 @@ def test_invalid_and_excluded_selection_never_falls_back_to_full_episode(
     ] == parents
 
 
+def add_committed_mcap_rows(selected, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    from hc_data_platform.continuous_recordings.joint_normalization import JOINTS
+    from hc_data_platform.data_formats.lerobot_layout import DATA_PATH
+    from hc_data_platform.episode_store import committed_mcap
+
+    names = {
+        "observation.state": list(JOINTS),
+        "action": list(JOINTS),
+        "action.hand.left": ["L_ban"],
+        "action.hand.right": ["R_ban"],
+    }
+    with selected.package.file(DATA_PATH) as path:
+        rows = pq.read_table(path).to_pylist()
+        for i, row in enumerate(rows):
+            row["frame_index"] = i
+            for feature, axes in names.items():
+                row[feature] = [float(i)] * len(axes) if len(axes) > 1 else i % 2
+                row["hc.valid." + feature] = True
+                row["hc.axis_validity." + feature] = json.dumps([True] * len(axes))
+        pq.write_table(pa.Table.from_pylist(rows), path)
+    previous = selected.package.document
+    selected.package.document = lambda path: (
+        {"features": {k: {"names": v} for k, v in names.items()}}
+        if path == "meta/info.json"
+        else previous(path)
+    )
+    monkeypatch.setattr(
+        committed_mcap,
+        "media_frames",
+        lambda package, indices, info: ((b"rgb", b"depth") for i in indices),
+    )
+
+
 @pytest.mark.parametrize("output_format", ["holobrain", "mcap"])
 def test_download_zip_has_three_same_name_episodes_and_exact_selected_media(
-    tmp_path, snapshot, monkeypatch, output_format  # noqa: F811
+    tmp_path,
+    snapshot,  # noqa: F811
+    monkeypatch,
+    output_format,  # noqa: F811
 ):
     from hc_data_platform.episode_store import (
         holobrain_export,
@@ -96,6 +146,8 @@ def test_download_zip_has_three_same_name_episodes_and_exact_selected_media(
     real = source(raw)
     real["provenance"]["format"] = "hc-mcap-processing/1"
     selected = labels(tmp_path / "parent", snapshot)
+    if output_format == "mcap":
+        add_committed_mcap_rows(selected, monkeypatch)
     file = SimpleNamespace(
         object=SimpleNamespace(sha256=real["provenance"]["selected_mcap"]["sha256"])
     )
@@ -127,6 +179,7 @@ def test_download_zip_has_three_same_name_episodes_and_exact_selected_media(
     plan = SimpleNamespace(
         archive_format=archive_format,
         modalities="rgbd",
+        members=(),
         job_id="test",
         model_dump=lambda **_: {"archive_format": archive_format},
     )
@@ -169,5 +222,15 @@ def test_download_zip_has_three_same_name_episodes_and_exact_selected_media(
             with path.open("rb") as stream:
                 stamps = [m.log_time for _, _, m in make_reader(stream).iter_messages(topics=[RGB])]
             assert stamps == [10**12 + index * 33_000_000]
+            from mcap_ros2.decoder import DecoderFactory
+
+            with path.open("rb") as stream:
+                messages = list(
+                    make_reader(stream, decoder_factories=[DecoderFactory()]).iter_decoded_messages(
+                        topics=["/action/joint_states"]
+                    )
+                )
+            assert len(messages) == 1
+            assert list(messages[0].decoded_message.position) == [float(index)] * 17
             frame_map = json.loads(path.with_name(path.stem + "-frames.json").read_bytes())
             assert [r["parent_frame_index"] for r in frame_map] == [index]

@@ -74,6 +74,7 @@ function makeGateway(): RecordingGateway {
       data: recording,
       current_slice_revision: null,
     })),
+    sensorTopics: vi.fn(async () => ["/robot/joint_states", "/humanoid/action"]),
     videoSources: vi.fn(
       async (): Promise<RecordingVideoSourceEnvelope> => ({
         sources: [
@@ -100,7 +101,7 @@ function makeGateway(): RecordingGateway {
     sensorWindow: vi.fn(async (_scope, recordingId, query) => ({
       schema_version: "recording-sensor-window/v1" as const,
       recording_id: recordingId,
-      topic: "/robot/joint_states",
+      topic: query.topic ?? "/robot/joint_states",
       start_offset_ns: query.startOffsetNs,
       end_offset_ns: query.endOffsetNs,
       samples: [
@@ -282,6 +283,17 @@ afterEach(() => {
 });
 
 describe("P23 recording segmentation", () => {
+  it("keeps the queue and columns visible without requesting recordings when no project is selected", async () => {
+    useShellStore.getState().clearActiveScopeState();
+    const gateway = makeGateway();
+    renderPage(gateway, "/recordings?progress=old-recording");
+    expect(await screen.findByRole("columnheader", { name: "录制文件名" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(gateway.list).not.toHaveBeenCalled();
+    expect(gateway.detail).not.toHaveBeenCalled();
+  });
+
   it("resumes confirmed intervals on an already waiting reprocessed recording", async () => {
     const user = userEvent.setup();
     const gateway = makeGateway();

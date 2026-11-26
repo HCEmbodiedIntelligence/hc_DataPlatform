@@ -1,3 +1,4 @@
+import { deliveryUrl } from "../../../shared/lib/delivery-cache";
 import { localObjectStorageUrl } from "../../../shared/lib/object-storage-url";
 import { z } from "zod";
 import { episodeDataReferenceWireSchema } from "../../datasets/api/episode-package-wire";
@@ -187,7 +188,7 @@ export async function authorizeAnnotationDelivery(
       job_id: z.string(),
       artifact_sha256: digest,
       size_bytes: z.number().int().positive(),
-      url: z.url(),
+      url: deliveryUrl,
       expires_seconds: z.literal(300),
     })
     .strict()
@@ -200,7 +201,7 @@ export async function authorizeAnnotationDelivery(
         cache: "no-store",
       }),
     );
-  const url = new URL(grant.url);
+  const url = new URL(grant.url, globalThis.location?.origin ?? "http://localhost");
   if (
     grant.job_id !== job.job_id ||
     grant.artifact_sha256 !== job.artifact_sha256 ||

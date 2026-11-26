@@ -1,0 +1,275 @@
+.workspace {
+  --line: var(--hc-color-border-subtle, #e2e6ef);
+  --muted: var(--hc-color-text-muted, #626b80);
+  --accent: var(--hc-color-primary, #4956be);
+  --wash: var(--hc-color-surface-muted, #f6f7fb);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(275px, 26%);
+  align-items: start;
+}
+.main,
+.picker {
+  min-width: 0;
+}
+.main {
+  padding: 6px clamp(16px, 1.6vw, 28px) 4px 6px;
+}
+.sectionHead,
+.sectionHead h2,
+.statusBar,
+.listBar,
+.quantity,
+.selection li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sectionHead {
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.sectionHead h2 {
+  justify-content: start;
+  gap: 9px;
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.sectionHead h2 svg {
+  color: var(--accent);
+}
+.sectionHead > :global(.ant-input-affix-wrapper) {
+  width: min(100%, 230px);
+}
+.filters {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) minmax(
+      265px,
+      1.5fr
+    );
+  gap: 12px;
+  padding: 16px;
+  background: var(--wash);
+  border-radius: 10px;
+}
+.filters :global(.ant-form-item),
+.sidebar :global(.ant-form-item) {
+  min-width: 0;
+  margin-bottom: 0;
+}
+.filters :global(.ant-picker) {
+  width: 100%;
+}
+.filters :global(.ant-form-item-label) {
+  padding-bottom: 4px;
+}
+.statusBar {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin: 14px 0;
+}
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tabs button {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.tabs button:hover {
+  background: var(--wash);
+}
+.tabs button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-weight: 650;
+}
+.tabs button:focus-visible,
+.selection summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.listBar {
+  border-top: 1px solid var(--line);
+  padding: 11px 1px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.picker :global(.ant-table-tbody > tr > td) {
+  padding-block: 10px;
+}
+.identity,
+.upload {
+  display: grid;
+  gap: 3px;
+}
+.identity strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.identity small,
+.upload small,
+.muted,
+.results small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.upload {
+  font-variant-numeric: tabular-nums;
+}
+.upload span[tabindex] {
+  color: var(--accent);
+  cursor: help;
+}
+.state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sidebar {
+  min-width: 0;
+  padding: 8px 8px 12px clamp(16px, 1.6vw, 28px);
+  border-left: 1px solid var(--line);
+}
+.sidebar form > :global(.ant-space) {
+  margin-top: 12px;
+}
+.sidebar h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.guide {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--wash);
+  max-height: 300px;
+  overflow: auto;
+}
+.guide p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  font-size: 13px;
+  color: var(--muted);
+}
+.guide h3:not(:first-child) {
+  margin-top: 12px;
+}
+.summary {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.quantity {
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 8px;
+  font-size: 14px;
+}
+.quantity strong {
+  color: var(--accent);
+  font-size: 28px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.hint {
+  font-size: 13px;
+  margin: 12px 0 0;
+  color: var(--muted);
+}
+.summary > button {
+  margin-top: 14px;
+}
+.selection {
+  margin-top: 10px;
+}
+.selection summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 13px;
+}
+.selection ul,
+.results ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.selection li,
+.results li {
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--line);
+}
+.tagBlock,
+.results {
+  margin-top: 14px;
+}
+.tagBlock :global(.ant-tag) {
+  margin-block: 2px;
+}
+.results li {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+}
+.error {
+  color: var(--hc-color-error-text, #b13c38);
+}
+@media (min-width: 1151px) and (max-width: 1400px) {
+  .filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .filters > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 1150px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .main {
+    padding: 2px;
+  }
+  .sidebar {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 20px 2px 2px;
+  }
+}
+@media (max-width: 800px) {
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .filters > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 540px) {
+  .sectionHead > :global(.ant-input-affix-wrapper) {
+    width: 100%;
+  }
+  .filters {
+    padding: 12px;
+    gap: 8px;
+  }
+  .tabs {
+    gap: 0;
+  }
+  .tabs button {
+    padding-inline: 8px;
+  }
+}

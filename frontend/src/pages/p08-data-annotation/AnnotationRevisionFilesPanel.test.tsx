@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { mockSavePicker } from "../../shared/lib/test-save-picker";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -25,11 +26,7 @@ const load = vi.mocked(loadRevisionFile),
   retry = vi.mocked(requestRevisionFile),
   download = vi.mocked(downloadRevisionFile);
 beforeEach(() => {
-  vi.stubGlobal("URL", {
-    createObjectURL: vi.fn(() => "blob:annotation-file"),
-    revokeObjectURL: vi.fn(),
-  });
-  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  mockSavePicker();
 });
 afterEach(() => {
   cleanup();

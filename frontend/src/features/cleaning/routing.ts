@@ -1,3 +1,5 @@
+import { readTimeRange, type TimeRange } from "../../shared/lib/time-range";
+
 const ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{1,127}$/;
 const CURSOR_MAX_LENGTH = 2048;
 
@@ -10,6 +12,7 @@ export const MANUAL_ISSUE_SORTS = [
 export type ManualIssueSort = (typeof MANUAL_ISSUE_SORTS)[number];
 
 export type ManualIssuesRouteParams = {
+  readonly timeRange?: TimeRange;
   readonly taskGroup?: string;
   readonly problemType?: string;
   readonly groupPage?: number;
@@ -228,6 +231,10 @@ function buildManualIssueSearch(
   input: ManualIssuesRouteParams,
 ): URLSearchParams {
   const params = new URLSearchParams();
+  if (input.timeRange) {
+    params.set("from", input.timeRange.from);
+    params.set("to", input.timeRange.to);
+  }
   const q = cleanText(input.q ?? null, 200);
   const datasetId = cleanId(input.datasetId ?? null);
   const versionId = cleanId(input.versionId ?? null);
@@ -318,6 +325,7 @@ export const manualIssuesQueryCodec = {
     if (after && before) [after, before] = [undefined, undefined];
     const limit = enumValue(params.get("limit"), ["20", "50", "100"] as const);
     return {
+      timeRange: readTimeRange(params.get("from"), params.get("to")),
       q: cleanText(params.get("q"), 200),
       datasetId,
       versionId,
@@ -374,6 +382,7 @@ export const manualIssuesQueryCodec = {
     changes: Partial<ManualIssuesRouteParams>,
   ): ManualIssuesSearch {
     const paginationDimensions = [
+      "timeRange",
       "taskGroup",
       "problemType",
       "discarded",

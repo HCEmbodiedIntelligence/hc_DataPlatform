@@ -55,7 +55,7 @@ def services():
         pytest.skip("explicit HC_G1_TEST_POSTGRES_DSN required; no production fallback")
     client = boto3.client(
         "s3",
-        endpoint_url="http://minio:9000",
+        endpoint_url=os.environ.get("HC_G1_TEST_S3_ENDPOINT","http://minio:9000"),
         aws_access_key_id="minio",
         aws_secret_access_key="minio-local-only",
         region_name="us-east-1",

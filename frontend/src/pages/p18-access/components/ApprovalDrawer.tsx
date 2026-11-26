@@ -2,6 +2,7 @@ import { Alert, Button, Drawer, Input, Modal, Space } from "antd";
 import { X } from "lucide-react";
 import { useId, useState, type FormEvent } from "react";
 import { isDomainError } from "../../../shared/api/domain-error";
+import { useShellStore } from "../../../shared/scope/shell-store";
 import { StatusTag } from "../../../shared/ui";
 import type { AccessDecisionInput } from "../access-api";
 import type { AccessDecision, AccessRequestRow } from "../contracts";
@@ -45,7 +46,11 @@ export function ApprovalDrawer({
   settled,
   open,
 }: Readonly<ApprovalDrawerProps>) {
-  const options = availableDecisions(row, canManage, principalId);
+  const managesOwnProject = useShellStore(s => s.scope?.projectId === row.projectId &&
+    (s.platformCapabilities.includes("platform.admin") || s.sessionOrganizations.some(
+      o => o.organizationId === s.scope?.organizationId && o.capabilities?.includes("organization.admin")
+    )));
+  const options = availableDecisions(row, canManage, principalId, managesOwnProject);
   const [decision, setDecision] = useState<AccessDecision | null>(null);
   const [reason, setReason] = useState("");
   const [showValidation, setShowValidation] = useState(false);

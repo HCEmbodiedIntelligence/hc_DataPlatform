@@ -8,6 +8,7 @@ export const MANUAL_ISSUE_TRANSITIONS = {
   OPEN: ['OPEN', 'IN_PROGRESS'],
   IN_PROGRESS: ['IN_PROGRESS', 'OPEN', 'RESOLVED'],
   RESOLVED: [],
+  DISCARDED: [],
 } as const satisfies Record<ManualIssueStatus, readonly ManualIssueStatus[]>;
 
 export function isManualIssueStatus(value: string): value is ManualIssueStatus {

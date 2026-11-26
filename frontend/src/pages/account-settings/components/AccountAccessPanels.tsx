@@ -1,3 +1,5 @@
+import { CreateOrganizationButton } from "../../p18-access/DirectoryActions";
+import { ManagementLink } from "../../p18-access/GovernancePage";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -18,6 +20,7 @@ import {
   requestProjectCapabilities,
   requestProjectMembership,
   useAccountAccessOverview,
+  useJoinableProjects,
   withdrawAccountAccessRequest,
   type AccountAccessRequest,
   type AccountOrganizationMembership,
@@ -29,10 +32,7 @@ import { isDomainError } from "../../../shared/api/domain-error";
 import { useShellStore } from "../../../shared/scope/shell-store";
 import styles from "../styles.module.css";
 
-const capabilityOptions = [
-  { label: "质量问题处理权限", value: "manual_issue.resolve" },
-  { label: "质量问题分诊权限", value: "manual_issue.triage" },
-] as const;
+import { grantLabel, grantOptions } from "../../../shared/auth/project-grants";
 
 const statusLabels: Readonly<Record<AccountAccessRequest["status"], string>> = {
   PENDING: "待审批",
@@ -152,8 +152,12 @@ export function MembershipsPanel() {
   const queryClient = useQueryClient();
   const [organizationIdentifier, setOrganizationIdentifier] = useState("");
   const [organizationReason, setOrganizationReason] = useState("");
-  const [organizationId, setOrganizationId] = useState(organizations[0]?.organization_id ?? "");
+  const [selectedOrganization, setOrganizationId] = useState("");
+  const organizationId = organizations.find(item => item.organization_id === selectedOrganization)?.organization_id
+    ?? organizations[0]?.organization_id ?? "";
+  const joinable = useJoinableProjects(organizationId);
   const [projectId, setProjectId] = useState("");
+  const selectedProject = joinable.data?.find(item => item.project_id === projectId);
   const [projectReason, setProjectReason] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const organizationKey = useRef(globalThis.crypto.randomUUID());
@@ -190,8 +194,9 @@ export function MembershipsPanel() {
     ),
     onSuccess: async () => {
       projectKey.current = globalThis.crypto.randomUUID();
-      setFeedback("加入项目申请已提交。项目成员关系不会自动授予业务权限。");
-      await query.refetch();
+      setFeedback("加入项目申请已提交，可在申请记录中查看进度。");
+      setProjectId(""); setProjectReason("");
+      await Promise.all([query.refetch(), joinable.refetch()]);
     },
   });
   const organizationPending = query.data?.requests.find(
@@ -205,6 +210,7 @@ export function MembershipsPanel() {
         icon={<Building2 size={20} />}
         title="我的组织与项目"
       />
+      <div className={styles.formActions}><CreateOrganizationButton onCreated={setOrganizationId}/><ManagementLink/></div>
       {query.isError ? <Alert title="访问关系暂时无法同步，当前登录不受影响。" showIcon type="warning" /> : null}
       <RelationshipSummary organizations={organizations} projects={projects} />
 
@@ -259,18 +265,25 @@ export function MembershipsPanel() {
               aria-label="所属组织"
               options={organizations.map((item) => ({ label: `${item.organization_name} (${item.organization_id})`, value: item.organization_id }))}
               value={organizationId || undefined}
-              onChange={setOrganizationId}
+              onChange={id => { setOrganizationId(id); setProjectId(""); projectKey.current = crypto.randomUUID(); }}
             />
           </Form.Item>
-          <Form.Item label="项目 ID" required>
-            <Input aria-label="项目 ID" maxLength={256} value={projectId} onChange={(event) => setProjectId(event.target.value)} />
+          <Form.Item label="申请加入的项目" required>
+            <Select showSearch optionFilterProp="label" aria-label="申请加入的项目" placeholder="选择本组织的项目"
+              loading={joinable.isLoading} disabled={!joinable.data?.length} value={selectedProject?.project_id}
+              options={(joinable.data ?? []).map(p => ({ value: p.project_id, label: p.project_name === p.project_id
+                ? p.project_name : p.project_name + "（" + p.project_id + "）" }))}
+              onChange={value => { setProjectId(value); projectKey.current = crypto.randomUUID(); }} />
           </Form.Item>
+          {joinable.isSuccess && !joinable.data.length && <p>当前组织暂无可申请加入的项目。</p>}
+          {joinable.isError && <Alert type="error" showIcon title={accessError(joinable.error)}
+            action={<Button onClick={() => void joinable.refetch()}>重试</Button>} />}
           <Form.Item label="申请原因">
             <Input.TextArea aria-label="项目申请原因" maxLength={2000} rows={3} value={projectReason} onChange={(event) => setProjectReason(event.target.value)} />
           </Form.Item>
           {projectRequest.isError ? <Alert title={accessError(projectRequest.error)} showIcon type="error" /> : null}
           <div className={styles.formActions}>
-            <Button disabled={!organizationId || !projectId.trim()} loading={projectRequest.isPending} type="primary" onClick={() => projectRequest.mutate()}>提交加入项目申请</Button>
+            <Button disabled={!selectedProject || joinable.isError} loading={projectRequest.isPending} type="primary" onClick={() => projectRequest.mutate()}>提交加入项目申请</Button>
           </div>
         </Form>
       )}
@@ -287,23 +300,51 @@ export function CapabilityRequestsPanel() {
   const { query, projects } = useAccessRelationships();
   const [projectKey, setProjectKey] = useState("");
   const [capabilities, setCapabilities] = useState<string[]>([]);
+  const [target, setTarget] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [replace, setReplace] = useState("");
   const [reason, setReason] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
-  const idempotencyKey = useRef(globalThis.crypto.randomUUID());
+  const lastSubmission = useRef<{ payload: string; key: string } | null>(null);
   const selectedProject = useMemo(
     () => projects.find((item) => `${item.organization_id}:${item.project_id}` === projectKey),
     [projectKey, projects],
   );
+  const selected = capabilities.length === 1 ? capabilities[0] : undefined;
+  const targeted = ["role.collector", "teleoperation.connect", "collection_task.delete", "dataset.delete", "dataset_version.delete"];
+  const mustTarget = targeted.includes(selected ?? "");
+  const mayTarget = mustTarget || ["export.download", "dataset_version.download_raw", "dataset_version.download_manifest"].includes(selected ?? "");
+  const roleTransfer = selected?.startsWith("role.");
+  const existingRoles = (query.data?.requests ?? []).filter(item =>
+    item.organization_id === selectedProject?.organization_id && item.project_id === selectedProject?.project_id &&
+    item.status === "APPROVED" && item.capability_keys.some(key => key.startsWith("role.")) &&
+    (!item.expires_at || Date.parse(item.expires_at) > Date.now())
+  );
+  const invalid = !selectedProject || capabilities.length === 0 ||
+    (capabilities.length > 1 && capabilities.some(key => key.startsWith("role."))) ||
+    (capabilities.some(key => targeted.includes(key)) && !mustTarget) ||
+    (mustTarget && !target.trim()) || Boolean(expiry && !(Date.parse(expiry) > Date.now()));
   const mutation = useMutation({
-    mutationFn: () => requestProjectCapabilities(
+    mutationFn: () => {
+      const payload = JSON.stringify([projectKey, capabilities, reason, target, expiry, replace]);
+      if (lastSubmission.current?.payload !== payload) {
+        lastSubmission.current = { payload, key: globalThis.crypto.randomUUID() };
+      }
+      return requestProjectCapabilities(
       selectedProject!.organization_id,
       selectedProject!.project_id,
       capabilities,
       reason.trim() || null,
-      idempotencyKey.current,
-    ),
+      lastSubmission.current.key,
+      {
+        ...(expiry ? { expires_at: new Date(expiry).toISOString() } : {}),
+        ...(mayTarget && target.trim() ? { resource_id: target.trim() } : {}),
+        ...(roleTransfer && replace ? { replaces_request_id: replace } : {}),
+      },
+      );
+    },
     onSuccess: async () => {
-      idempotencyKey.current = globalThis.crypto.randomUUID();
+      lastSubmission.current = null;
       setFeedback("权限申请已提交。审批通过后刷新账户访问范围即可生效。");
       await query.refetch();
     },
@@ -324,17 +365,32 @@ export function CapabilityRequestsPanel() {
               options={projects.map((item) => ({ label: `${item.organization_name} / ${item.project_name}`, value: `${item.organization_id}:${item.project_id}` }))}
               placeholder="选择已加入的项目"
               value={projectKey || undefined}
-              onChange={setProjectKey}
+              onChange={key => { setProjectKey(key); setReplace(""); setTarget(""); }}
             />
           </Form.Item>
           <Form.Item label="申请权限" required>
             <Checkbox.Group
               aria-label="申请权限"
               className={styles.capabilityChoices}
-              options={capabilityOptions.map((item) => ({ ...item }))}
+              options={grantOptions.map((item) => ({ ...item }))}
               value={capabilities}
-              onChange={(values) => setCapabilities(values as string[])}
+              onChange={(values) => { setCapabilities(values as string[]); setReplace(""); setTarget(""); }}
             />
+          </Form.Item>
+          {existingRoles.length > 0 && <Form.Item label="当前有效岗位">
+            {existingRoles.map(item => item.capability_keys.map(grantLabel).join("、") + (item.resource_id ? " · " + item.resource_id : "")).join("；")}
+          </Form.Item>}
+          {roleTransfer && existingRoles.length > 0 && <Form.Item label="岗位变更">
+            <Select aria-label="岗位变更" value={replace} onChange={setReplace}
+              options={[{ value: "", label: "兼岗，保留已有岗位" }, ...existingRoles.map(item =>
+                ({ value: item.request_id, label: "转岗并收回 " + item.capability_keys.map(grantLabel).join("、") }))]} />
+          </Form.Item>}
+          {mayTarget && <Form.Item label="目标资源" required={mustTarget}>
+            <Input aria-label="目标资源" maxLength={256} value={target} onChange={e => setTarget(e.target.value)}
+              placeholder={selected === "dataset_version.delete" ? "数据集ID/版本ID" : mustTarget ? "输入目标资源 ID" : "version:版本ID 或 dataset:数据集ID，留空为项目范围"} />
+          </Form.Item>}
+          <Form.Item label="授权截止时间">
+            <Input type="datetime-local" aria-label="授权截止时间" value={expiry} onChange={e => setExpiry(e.target.value)} />
           </Form.Item>
           <Form.Item label="申请原因">
             <Input.TextArea aria-label="权限申请原因" maxLength={2000} rows={4} value={reason} onChange={(event) => setReason(event.target.value)} />
@@ -342,7 +398,7 @@ export function CapabilityRequestsPanel() {
           {feedback ? <Alert title={feedback} showIcon type="success" /> : null}
           {mutation.isError ? <Alert title={accessError(mutation.error)} showIcon type="error" /> : null}
           <div className={styles.formActions}>
-            <Button disabled={!selectedProject || capabilities.length === 0} loading={mutation.isPending} type="primary" onClick={() => mutation.mutate()}>提交权限申请</Button>
+            <Button disabled={invalid} loading={mutation.isPending} type="primary" onClick={() => mutation.mutate()}>提交权限申请</Button>
           </div>
         </Form>
       )}
@@ -374,10 +430,10 @@ export function RequestHistoryPanel() {
             <div>
               <strong>{kindLabels[item.kind]}</strong>
               <span>{requestTarget(item)}</span>
-              {item.capability_keys.length > 0 ? <small>{item.capability_keys.join("、")}</small> : null}
+              {item.capability_keys.length > 0 ? <small>{item.capability_keys.map(grantLabel).join("、")}</small> : null}
             </div>
             <div>
-              <span>{statusLabels[item.status]}</span>
+              <span>{item.status === "APPROVED" && item.expires_at && Date.parse(item.expires_at) <= Date.now() ? "已到期" : statusLabels[item.status]}</span>
               {item.status === "PENDING" ? (
                 <Button danger loading={mutation.isPending && mutation.variables?.request_id === item.request_id} size="small" onClick={() => mutation.mutate(item)}>撤回申请</Button>
               ) : null}

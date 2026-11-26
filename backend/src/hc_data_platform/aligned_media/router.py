@@ -9,7 +9,9 @@ from fastapi import APIRouter, Header
 from fastapi.responses import FileResponse
 
 from hc_data_platform.core.context import current_request_context
-from hc_data_platform.security.http import VerifiedAuth, authorize_scope
+from hc_data_platform.security.http import VerifiedAuth
+from hc_data_platform.episode_store.dependencies import PackageServices
+from hc_data_platform.episode_store.preview_access import authorize_episode_preview
 
 from .artifact_store import LocalAlignedMediaArtifactStore
 from .audit import (
@@ -75,15 +77,12 @@ def authorize_aligned_media(
     selector: AlignedMediaSelectorV1,
     auth: VerifiedAuth,
     organization_id: Annotated[str, Header(alias="X-Organization-Id")],
+    packages: PackageServices,
     region_code: Annotated[str, Header(alias="X-Region-Code")],
 ) -> AlignedMediaAuthorizationV1:
-    authorize_scope(
-        auth,
-        selector.project_id,
-        "episode.read",
-        region_code,
-        organization_id,
-    )
+    authorize_episode_preview(packages, auth, organization_id, selector.project_id, region_code,
+                              selector.dataset_id, rollout_id=selector.rollout_id,
+                              dataset_version=selector.dataset_version)
     descriptor = _service.authorize(
         AlignedMediaScopeV1(
             organization_id=organization_id,

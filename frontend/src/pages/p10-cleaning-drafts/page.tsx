@@ -24,6 +24,7 @@ import {
   type CleaningDraftScope,
 } from "../../features/cleaning/routing";
 import { isDomainError } from "../../shared/api/domain-error";
+import { useShellStore } from "../../shared/scope/shell-store";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { formatTimeRange } from "../../shared/lib/metric-presentation";
 import {
@@ -306,10 +307,12 @@ function DraftInspector({
 }
 
 export function CleaningDraftsPage() {
+  const unscoped = useShellStore((s) => s.bootstrapLoaded && !s.authorizationFailed && s.scope === null);
   const screens = Grid.useBreakpoint();
   const desktopInspector = Boolean(screens.xl);
   const capabilities = useCapabilities();
   const canRead =
+    !unscoped &&
     !capabilities.loading &&
     !capabilities.failed &&
     capabilities.has("cleaning.read");
@@ -479,7 +482,7 @@ export function CleaningDraftsPage() {
 
   const listState: PageStateKind | "ready" = capabilities.loading
     ? "loading"
-    : !canRead
+    : unscoped ? "ready" : !canRead
       ? "forbidden"
       : list.isPending
         ? "loading"
@@ -583,28 +586,28 @@ export function CleaningDraftsPage() {
               <div className={styles.metricGrid}>
                 <MetricCard
                   label="编辑中"
-                  value={summary.data?.scopeCounts.editing}
-                  state={summary.isPending ? "loading" : undefined}
+                  value={unscoped ? 0 : summary.data?.scopeCounts.editing}
+                  state={summary.isLoading ? "loading" : undefined}
                   asOf={summary.data?.asOf}
                 />
                 <MetricCard
                   label="已提交"
-                  value={summary.data?.scopeCounts.committed}
-                  state={summary.isPending ? "loading" : undefined}
+                  value={unscoped ? 0 : summary.data?.scopeCounts.committed}
+                  state={summary.isLoading ? "loading" : undefined}
                 />
                 <MetricCard
                   label="已退回"
-                  value={summary.data?.scopeCounts.returned}
-                  state={summary.isPending ? "loading" : undefined}
+                  value={unscoped ? 0 : summary.data?.scopeCounts.returned}
+                  state={summary.isLoading ? "loading" : undefined}
                 />
                 <MetricCard
                   label="活跃任务"
                   value={
-                    summary.data
+                    unscoped ? "0/0/0" : summary.data
                       ? `${summary.data.jobs.previewQueued}/${summary.data.jobs.previewRunning}/${summary.data.jobs.commitQueued}`
                       : undefined
                   }
-                  state={summary.isPending ? "loading" : undefined}
+                  state={summary.isLoading ? "loading" : undefined}
                   description="Preview 排队 / 运行 / Commit 排队"
                 />
               </div>
@@ -612,7 +615,7 @@ export function CleaningDraftsPage() {
           )
         }
         filters={
-          canRead ? (
+          canRead || unscoped ? (
             <FilterToolbar
               label="草稿筛选"
               onReset={filtered ? resetFilters : undefined}
@@ -723,7 +726,7 @@ export function CleaningDraftsPage() {
           }
         >
           <div className={styles.tableRegion}>{content}</div>
-          {search.draftId && desktopInspector ? (
+          {canRead && search.draftId && desktopInspector ? (
             <DraftInspector
               search={search}
               close={() => change({ draftId: undefined })}
@@ -732,7 +735,7 @@ export function CleaningDraftsPage() {
           ) : null}
         </div>
       </StandardPageScaffold>
-      {search.draftId && !desktopInspector ? (
+      {canRead && search.draftId && !desktopInspector ? (
         <DraftInspector
           search={search}
           close={() => change({ draftId: undefined })}

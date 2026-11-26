@@ -224,7 +224,11 @@ def write_episode(
             raise ValueError(f"source modality conflicts with standard index: {key}")
         types[key] = type_
         features[key] = {"dtype": dtype, "shape": [1], "names": None}
-    label_trace = bool(metadata.get("source", {}).get("mcap", {}).get("action_gap_fill"))
+    mcap_evidence = metadata.get("source", {}).get("mcap", {})
+    from hc_data_platform.continuous_recordings.action_labels import ALIGNED_ACTION_VERSION
+
+    label_trace = bool(mcap_evidence.get("action_gap_fill") or mcap_evidence.get("short_gap_interpolation")
+                       or source.processor_version == ALIGNED_ACTION_VERSION)
     if capture_masking or label_trace:
         types["hc.action_source_origins"] = pa.string()
         features["hc.action_source_origins"] = {"dtype": "string", "shape": [1], "names": None}
@@ -326,9 +330,9 @@ def write_episode(
             if label_trace:
                 action = step.modalities[next(name for name, target in mapping.items() if target == "action")]
                 row["hc.action_source_origins"] = canonical({
-                    "origin": action.get("action_origin", "recorded_command"),
+                    "origin": action.get("action_origin", "recorded_command" if action.get("source_timestamp_ns") is not None else "missing"),
                     **{k: action[k] for k in ("source_topic", "source_frame", "source_timestamp_ns",
-                                              "state_reference_timestamp_ns") if k in action},
+                                              "state_reference_timestamp_ns", "source_origins") if k in action},
                 }).decode()
             elif capture_masking:
                 action = step.modalities.get("/action", {})

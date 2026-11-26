@@ -30,6 +30,8 @@ export type PageRoute = RouteObject & {
   lazy: NonNullable<RouteObject["lazy"]>;
   requiredCapabilities: readonly RegisteredCapability[];
   navigation?: PageNavigation;
+  /** Secondary list or tab that supports browsing without a selected scope. */
+  browseWithoutScope?: boolean;
   navigationOwnerPageId?: string;
 };
 

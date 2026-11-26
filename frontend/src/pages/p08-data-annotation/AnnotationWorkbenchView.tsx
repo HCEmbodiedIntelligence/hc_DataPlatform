@@ -1,3 +1,4 @@
+import { Space } from "antd";
 import {
   ResourceLabel,
   useResourceNames,
@@ -229,27 +230,13 @@ const reviewDecisionLabels: Readonly<Record<RuntimeReviewDecision, string>> = {
   REJECT: "拒绝",
 };
 
-const dataIssueTypeOptions: readonly {
-  readonly value: ManualIssueType;
-  readonly label: string;
-}[] = [
-  { value: "MISSING_FRAME", label: "画面缺帧" },
-  { value: "STREAM_GAP", label: "数据流中断" },
-  { value: "TIMESTAMP_DRIFT", label: "时间偏移" },
-  { value: "POSE_JITTER", label: "姿态抖动" },
-  { value: "CALIBRATION_MISMATCH", label: "标定不匹配" },
-  { value: "INVALID_MASK", label: "无效区间" },
-  { value: "OTHER", label: "其他数据问题" },
-];
-
-const dataIssueSeverityOptions: readonly {
-  readonly value: ManualIssueSeverity;
-  readonly label: string;
-}[] = [
-  { value: "LOW", label: "低" },
-  { value: "MEDIUM", label: "中" },
-  { value: "HIGH", label: "高" },
-  { value: "CRITICAL", label: "紧急" },
+const reportPresets: readonly { label: string; type: ManualIssueType }[] = [
+  { label: "停顿过长", type: "OTHER" },
+  { label: "动作抖动", type: "POSE_JITTER" },
+  { label: "画面缺帧", type: "MISSING_FRAME" },
+  { label: "画面遮挡或模糊", type: "OTHER" },
+  { label: "动作与画面不同步", type: "TIMESTAMP_DRIFT" },
+  { label: "数据中断", type: "STREAM_GAP" },
 ];
 
 function displayRevisionTime(value: string | undefined): string {
@@ -462,6 +449,7 @@ function TagEditorInspector(props: {
   const editingTag = props.tags.find(
     (tag) => tag.annotation_id === props.editingId,
   );
+  const allowedTags = props.bundle.task.allowed_tags ?? [];
   const [newLabel, setNewLabel] = useState(() =>
     editingTag ? intervalTagLabel(editingTag, index) : "",
   );
@@ -495,7 +483,7 @@ function TagEditorInspector(props: {
   const addInterval = () => {
     const label = newLabel.trim();
     if (
-      !label ||
+      !allowedTags.includes(label) ||
       !props.selection ||
       selectionProblem ||
       props.disabled ||
@@ -571,36 +559,22 @@ function TagEditorInspector(props: {
             </option>
             {rows.map(({ tag, depth }) => (
               <option key={tag.annotation_id} value={tag.annotation_id}>
-                {`L${depth + 1} · ${intervalTagLabel(tag, index)} · ${stepRange(tag.start_step, tag.end_step, frequencyHz)}`}
+                {`L${depth + 1} · ${intervalTagLabel(tag, index)}${tag.tag_id.startsWith("model-label-") ? "（模型初标）" : ""} · ${stepRange(tag.start_step, tag.end_step, frequencyHz)}`}
               </option>
             ))}
           </select>
         </div>
         <label className={styles.compactTagField} htmlFor="manual-tag-label">
           <span>Tag 名称 *</span>
-          <textarea
-            autoComplete="off"
-            disabled={props.disabled}
+          <select
             id="manual-tag-label"
-            maxLength={10000}
-            name="manual-tag-label"
-            rows={2}
-            placeholder={
-              editingTag ? "修改名称，按 Enter 应用" : "输入标签，按 Enter 创建"
-            }
-            value={newLabel}
+            disabled={props.disabled || allowedTags.length === 0}
+            value={allowedTags.includes(newLabel) ? newLabel : ""}
             onChange={(event) => setNewLabel(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                addInterval();
-              }
-            }}
-          />
+          >
+            <option value="">{allowedTags.length ? "选择方案标签" : "当前采集方案未配置标签"}</option>
+            {allowedTags.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
         </label>
         <div
           className={styles.compactSelectedRange}
@@ -627,7 +601,7 @@ function TagEditorInspector(props: {
           <button
             className={styles.addTagButton}
             disabled={
-              !newLabel.trim() ||
+              !allowedTags.includes(newLabel.trim()) ||
               Boolean(selectionProblem) ||
               props.disabled ||
               Boolean(editingTag && !hasEdits)
@@ -1840,11 +1814,7 @@ export function AnnotationWorkbenchView(
   const [dataInfoOpen, setDataInfoOpen] = useState(false);
   const [revisionFilesOpen, setRevisionFilesOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
-  const [reportStreamRef, setReportStreamRef] = useState("");
-  const [reportIssueType, setReportIssueType] =
-    useState<ManualIssueType>("OTHER");
-  const [reportSeverity, setReportSeverity] =
-    useState<ManualIssueSeverity>("MEDIUM");
+  const reportInFlight = useRef(false);
   const [reportNote, setReportNote] = useState("");
   const [reportPending, setReportPending] = useState(false);
   const [reportError, setReportError] = useState<unknown>(null);
@@ -1910,9 +1880,6 @@ export function AnnotationWorkbenchView(
     setDataInfoOpen(false);
     setRevisionFilesOpen(false);
     setReportDialogOpen(false);
-    setReportStreamRef("");
-    setReportIssueType("OTHER");
-    setReportSeverity("MEDIUM");
     setReportNote("");
     setReportPending(false);
     setReportError(null);
@@ -2496,40 +2463,29 @@ export function AnnotationWorkbenchView(
     };
   })();
   const logical = props.bundle.logical;
-  const reportStreamOptions = logical ? logical.view.snapshot.streams
-    .filter((stream) => stream.temporal)
-    .map((stream) => ({ value: stream.stream_id, label: stream.name })) : [
-    ...cameras.map((camera) => ({
-      value: camera.topic,
-      label: `${camera.displayName} · ${camera.topic}`,
-    })),
-    ...(props.bundle.manifest?.topics ?? []).map((topic) => ({
-      value: topic.name,
-      label: topic.name,
-    })),
-  ].filter(
-    (item, index, items) =>
-      items.findIndex((candidate) => candidate.value === item.value) === index,
-  );
+  const reportStreamRef = logical
+    ? logical.view.snapshot.streams.find((stream) => stream.temporal && stream.start_ns != null &&
+        stream.end_ns != null && stream.sample_count >= (reportSelection?.endStep ?? 1))?.stream_id
+    : (cameras.find((camera) => camera.camera_id === cameraView)?.topic ??
+       cameras[0]?.topic ?? props.bundle.manifest?.topics[0]?.name);
   const reportProblem = errorMessage(reportError);
   const openReportDialog = () => {
     setReportError(null);
     setReportSuccess(null);
-    setReportStreamRef(
-      (current) => current || reportStreamOptions[0]?.value || "",
-    );
+    setReportNote("");
     setReportDialogOpen(true);
   };
-  const submitDataIssue = async () => {
+  const submitDataIssue = async (issueType: ManualIssueType, note: string) => {
     if (
       !props.onReportDataIssue ||
       !props.canReportDataIssue ||
       !reportSelection ||
       !reportStreamRef ||
-      !reportNote.trim()
+      !note.trim() || reportInFlight.current
     )
       return;
     const epoch = taskEpoch.current;
+    reportInFlight.current = true;
     setReportPending(true);
     setReportError(null);
     try {
@@ -2555,9 +2511,9 @@ export function AnnotationWorkbenchView(
         streamRef: reportStreamRef,
         relativeStartNs,
         relativeEndNs,
-        issueType: reportIssueType,
-        severity: reportSeverity,
-        note: reportNote.trim(),
+        issueType,
+        severity: "MEDIUM",
+        note: note.trim(),
       });
       if (epoch !== taskEpoch.current) return;
       setReportDialogOpen(false);
@@ -2566,6 +2522,7 @@ export function AnnotationWorkbenchView(
     } catch (error) {
       if (epoch === taskEpoch.current) setReportError(error);
     } finally {
+      reportInFlight.current = false;
       if (epoch === taskEpoch.current) setReportPending(false);
     }
   };
@@ -2998,7 +2955,7 @@ export function AnnotationWorkbenchView(
           if (!reportPending) setReportDialogOpen(false);
         }}
       >
-        <Form layout="vertical" onFinish={() => void submitDataIssue()}>
+        <Form layout="vertical" onFinish={() => void submitDataIssue("OTHER", reportNote)}>
           <Alert
             className={styles.reportRangeAlert}
             showIcon
@@ -3008,47 +2965,25 @@ export function AnnotationWorkbenchView(
                 ? `异常片段：${reportSelection.startStep}–${reportSelection.endStep} 步（${stepRange(reportSelection.startStep, reportSelection.endStep, frequencyHz)}）`
                 : "尚未选择异常片段"
             }
-            description="数据流异常会登记到问题数据。Tag 标错或漏标时，请在审核栏选择“退回修改”。"
           />
-          <Form.Item
-            label="问题数据流"
-            required
-          >
-            <Select
-              aria-label="问题数据流"
-              disabled={reportPending}
-              options={reportStreamOptions}
-              placeholder="选择发现异常的数据流"
-              value={reportStreamRef || undefined}
-              onChange={setReportStreamRef}
-            />
-          </Form.Item>
-          <Form.Item label="问题类型" required>
-            <Select
-              aria-label="问题类型"
-              disabled={reportPending}
-              options={[...dataIssueTypeOptions]}
-              value={reportIssueType}
-              onChange={setReportIssueType}
-            />
-          </Form.Item>
-          <Form.Item label="严重程度" required>
-            <Select
-              aria-label="严重程度"
-              disabled={reportPending}
-              options={[...dataIssueSeverityOptions]}
-              value={reportSeverity}
-              onChange={setReportSeverity}
-            />
-          </Form.Item>
-          <Form.Item label="问题说明" required>
+          <p>点击一个问题即可上报所选片段。</p>
+          <Space wrap>
+            {reportPresets.map((preset) => (
+              <Button key={preset.label} disabled={reportPending || !reportStreamRef}
+                onClick={() => void submitDataIssue(preset.type, preset.label)}>
+                {preset.label}
+              </Button>
+            ))}
+          </Space>
+          {!reportStreamRef && <Alert type="warning" title="当前片段缺少可定位的数据流。" />}
+          <Form.Item label="其他问题（可填写说明后上报）">
             <Input.TextArea
               aria-label="问题说明"
               disabled={reportPending}
               maxLength={8192}
               rows={4}
               showCount
-              placeholder="说明自动质检漏检了什么，以及在当前片段中观察到的证据…"
+              placeholder="描述预设选项以外的问题"
               value={reportNote}
               onChange={(event) => setReportNote(event.target.value)}
             />

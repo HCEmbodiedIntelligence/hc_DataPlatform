@@ -325,9 +325,9 @@ def test_populated_legacy_calibration_and_robotics_upgrade_to_exact_organization
                 SELECT 1
                 FROM pg_constraint
                 WHERE conrelid = 'calibrations.calibration_sets'::regclass
-                  AND conname = 'calibration_sets_robot_component_organization_fk'
+                  AND conname = 'calibration_sets_organization_robot_component_fk'
                   AND pg_get_constraintdef(oid) LIKE
-                    'FOREIGN KEY (organization_id, project_id, region_code, component_id, '
+                    'FOREIGN KEY (organization_id, component_id, '
                     || 'robot_instance_id)%'
             )
             """
@@ -444,8 +444,8 @@ def test_populated_core_upgrade_backfills_identity_rebuilds_chain_and_rekeys_led
 
         connection.execute(
             """
-            INSERT INTO registry.organization_projects (organization_id, project_id)
-            VALUES (%s, %s)
+            INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+            VALUES (%s, %s, 'Organization isolation fixture')
             """,
             (_SECOND_ORGANIZATION_ID, _PROJECT_ID),
         )
@@ -626,8 +626,8 @@ def test_product_tables_backfill_and_restrict_same_project_across_organizations(
 
             connection.execute(
                 """
-                INSERT INTO registry.organization_projects (organization_id, project_id)
-                VALUES (%s, %s)
+                INSERT INTO registry.organization_projects (organization_id, project_id, display_name)
+                VALUES (%s, %s, 'Organization isolation fixture')
                 """,
                 (_SECOND_ORGANIZATION_ID, _PROJECT_ID),
             )

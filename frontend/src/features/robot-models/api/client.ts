@@ -584,7 +584,7 @@ async function putAuthorizedAssetPart(
       method: "PUT",
       body,
       cache: "no-store",
-      credentials: "omit",
+      credentials: "same-origin",
       signal,
     });
   } catch (error) {

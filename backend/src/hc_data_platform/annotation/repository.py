@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 from threading import RLock
 
@@ -101,7 +102,8 @@ class InMemoryAnnotationRepository:
     PostgreSQL so concurrency tests do not get weaker semantics in memory.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, allowed_tags: tuple[str, ...] = ()) -> None:
+        self._allowed_tags = allowed_tags
         self._lock = RLock()
         self._aggregates: dict[str, AnnotationAggregate] = {}
         self._targets: dict[tuple[object, ...], str] = {}
@@ -111,7 +113,8 @@ class InMemoryAnnotationRepository:
 
     def create(self, aggregate: AnnotationAggregate) -> AnnotationAggregate:
         validate_aggregate(aggregate)
-        task = aggregate.task
+        task = aggregate.task.model_copy(update={"allowed_tags": self._allowed_tags})
+        aggregate = replace(aggregate, task=task)
         target_key = (
             task.project_id,
             task.region_code,

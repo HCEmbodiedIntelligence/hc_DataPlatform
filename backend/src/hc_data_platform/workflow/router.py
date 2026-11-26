@@ -67,15 +67,17 @@ async def _resolve(value: _T | Awaitable[_T]) -> _T:
 def _without_export_locators(job: JobRecord) -> JobRecord:
     """Project export jobs without their stored physical locator or prior grant."""
 
-    if job.job_type != EXPORT_WORKFLOW or not isinstance(job.result, dict):
+    if job.job_type != EXPORT_WORKFLOW or job.result is None:
         return job
+    from hc_data_platform.publishing.models import ExportJobResultV1
+
+    # Only the public result belongs on this API. Retry selections can contain
+    # an entire frozen manifest and worker-only storage locators.
     raw_export = job.result.get("export")
-    if not isinstance(raw_export, dict):
-        return job
-    safe_export = dict(raw_export)
-    safe_export.pop("artifact_uri", None)
-    safe_export.pop("download_uri", None)
-    return job.model_copy(update={"result": {**job.result, "export": safe_export}})
+    safe = {}
+    if isinstance(raw_export, dict):
+        safe["export"] = {k: raw_export[k] for k in ExportJobResultV1.model_fields if k in raw_export}
+    return job.model_copy(update={"result": safe})
 
 
 @router.get("/jobs", response_model=JobListV1)
@@ -98,7 +100,13 @@ async def list_jobs(
         selected_project = next(iter(auth.project_ids))
         _authorize_job_read(auth, selected_project)
     result = get_launcher().list(project_id=selected_project, status=status)
-    return await _resolve(result)
+    page = await _resolve(result)
+    visible = tuple(
+        _without_export_locators(job)
+        for job in page.items
+        if job.job_type != EXPORT_WORKFLOW or auth.has_capability("export.read", job.project_id)
+    )
+    return JobListV1(items=visible, total=len(visible))
 
 
 @router.get("/jobs/{job_id}", response_model=JobRecord | DataSourceAsyncJob | DatasetPageAsyncJob)
@@ -128,12 +136,16 @@ async def get_job(
     if dataset_page_job is not None:
         return dataset_page_job
     job = await _resolve(get_launcher().get(job_id))
-    _authorize_job_read(auth, job.project_id)
+    if job.job_type == EXPORT_WORKFLOW:
+        authorize_scope(auth, job.project_id, "export.read")
+    else:
+        _authorize_job_read(auth, job.project_id)
     return _without_export_locators(job)
 
 
 @router.post("/jobs/{job_id}:cancel", response_model=JobRecord)
 async def cancel_job(job_id: str, auth: VerifiedAuth) -> JobRecord:
     job = await _resolve(get_launcher().get(job_id))
-    authorize_scope(auth, job.project_id, "access.manage")
-    return await _resolve(get_launcher().cancel(job_id))
+    capability = "export.create" if job.job_type == EXPORT_WORKFLOW else "access.manage"
+    authorize_scope(auth, job.project_id, capability)
+    return _without_export_locators(await _resolve(get_launcher().cancel(job_id)))

@@ -12,7 +12,7 @@ from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.security.access_repository import InMemoryAccessRepository
 from hc_data_platform.security.access_service import AccessService
 from hc_data_platform.security.auth import AuthContext
-from hc_data_platform.security.capabilities import DATA_WORKFLOW_CAPABILITIES
+from hc_data_platform.security.capabilities import PROJECT_ROLES
 from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.storage.models import (
     BusinessCapacityCategory,
@@ -28,6 +28,7 @@ class ProjectAdminVerifier:
     def verify(self, token: str) -> AuthContext:
         scope = {
             "external-admin-a": ("organization-a", "project-a"),
+            "global-admin": ("organization-a", "project-a"),
             "external-admin-b": ("organization-b", "project-b"),
             "external-admin-other-organization": ("organization-b", "project-a"),
         }.get(token)
@@ -39,7 +40,7 @@ class ProjectAdminVerifier:
             organization_ids=frozenset({organization_id}),
             project_ids=frozenset({project_id}),
             region_codes=frozenset(),
-            capabilities=frozenset({"access.manage"}),
+            capabilities=frozenset({"platform.admin"} if token == "global-admin" else {"access.manage"}),
             scope_pairs=frozenset({(project_id, None)}),
             organization_scope_triples=frozenset({(organization_id, project_id, None)}),
         )
@@ -68,6 +69,18 @@ def _register(client: TestClient, username: str) -> str:
 
 
 def _request_membership(client: TestClient, token: str, suffix: str) -> dict[str, Any]:
+    org_request = client.post(
+        "/api/v1/account/organization-membership-requests",
+        headers=_headers(token, f"org-membership-{suffix}"),
+        json={"organization_id_or_join_code": "organization-a", "reason": "join organization"},
+    )
+    assert org_request.status_code == 201, org_request.text
+    approved = client.post(
+        f"/api/v1/organization-membership-requests/{org_request.json()['request_id']}:approve",
+        headers=_headers("global-admin", f"org-approve-{suffix}"),
+        json={"reason": "approved"},
+    )
+    assert approved.status_code == 200, approved.text
     response = client.post(
         "/api/v1/organizations/organization-a/projects/project-a/membership-requests",
         json={"reason": "join"},
@@ -95,21 +108,22 @@ def _grant_capability(
 ) -> dict[str, Any]:
     requested = client.post(
         "/api/v1/organizations/organization-a/projects/project-a/capability-requests",
-        json={"capability_keys": [capability], "reason": "least privilege"},
+        json={"capability_keys": [capability], "reason": "least privilege",
+              **({"resource_id": "task-one"} if capability == "role.collector" else {})},
         headers=_headers(token, f"capability-{suffix}"),
     )
     assert requested.status_code == 201
     approved = client.post(
         f"/api/v1/organizations/organization-a/projects/project-a/capability-requests/{requested.json()['request_id']}:approve",
         json={"reason": "approved"},
-        headers=_headers("external-admin-a", f"approve-capability-{suffix}"),
+        headers=_headers("global-admin" if capability == "access.manage" else "external-admin-a", f"approve-capability-{suffix}"),
     )
     assert approved.status_code == 200
     return approved.json()
 
 
 def test_same_project_capability_pair_cross_project_idor_and_old_session_revocation() -> None:
-    repository = InMemoryAccessRepository()
+    repository = InMemoryAccessRepository(organization_projects=(("organization-a", "project-a"),))
     service = AccessService(repository)
     app = create_app(
         settings=Settings(environment="test", runtime_backend="memory", _env_file=None),
@@ -186,7 +200,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
         revoked = client.post(
             f"/api/v1/organizations/organization-a/projects/project-a/capability-requests/{delegate_grant['request_id']}:revoke",
             json={"reason": "remove delegated approval"},
-            headers=_headers("external-admin-a", "revoke-delegate"),
+            headers=_headers("global-admin", "revoke-delegate"),
         )
         assert revoked.status_code == 200
         after = client.get(
@@ -207,7 +221,7 @@ def test_same_project_capability_pair_cross_project_idor_and_old_session_revocat
 
 
 def test_upload_grant_expands_bootstrap_and_existing_session_then_revokes() -> None:
-    repository = InMemoryAccessRepository()
+    repository = InMemoryAccessRepository(organization_projects=(("organization-a", "project-a"),))
     service = AccessService(repository)
     app = create_app(
         settings=Settings(environment="test", runtime_backend="memory", _env_file=None),
@@ -222,17 +236,17 @@ def test_upload_grant_expands_bootstrap_and_existing_session_then_revokes() -> N
         # Independently granted read access must survive revoking workflow access.
         _grant_capability(client, token=token, capability="dataset.read", suffix="workflow-read")
         grant = _grant_capability(
-            client, token=token, capability="upload.manage", suffix="workflow-upload"
+            client, token=token, capability="role.collector", suffix="workflow-upload"
         )
 
         bootstrap = client.get("/api/v1/auth/session/bootstrap", headers=_headers(token))
         assert bootstrap.status_code == 200
         scope = bootstrap.json()["available_scopes"][0]
         assert scope["project_id"] == "project-a"
-        assert set(scope["capabilities"]) >= DATA_WORKFLOW_CAPABILITIES
+        assert set(scope["capabilities"]) >= PROJECT_ROLES["role.collector"]
         auth = service.authenticate_access_token(token)
         assert auth is not None
-        for capability in DATA_WORKFLOW_CAPABILITIES:
+        for capability in PROJECT_ROLES["role.collector"]:
             auth.require_capability(capability, "project-a", "organization-a")
             assert not auth.has_capability(capability, "project-b", "organization-b")
         assert not auth.has_capability("access.manage", "project-a", "organization-a")

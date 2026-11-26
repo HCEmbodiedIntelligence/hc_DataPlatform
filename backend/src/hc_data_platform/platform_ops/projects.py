@@ -43,6 +43,7 @@ class PlatformOrganization(BaseModel):
 
     organization_id: StableScopeId
     organization_name: str = Field(min_length=1, max_length=256)
+    join_code: str | None = None
 
 
 class PlatformOrganizationPage(BaseModel):
@@ -180,6 +181,7 @@ class DbApiConnection(Protocol):
 
 def _organization_from_row(row: Mapping[str, Any]) -> PlatformOrganization:
     return PlatformOrganization(
+        join_code=row.get("join_code"),
         organization_id=str(row["organization_id"]),
         organization_name=str(row["organization_name"]),
     )
@@ -223,9 +225,12 @@ class PostgresPlatformProjectRepository:
             self._activate_platform_admin(cursor)
             cursor.execute(
                 """
-                SELECT organization_id, display_name AS organization_name
-                FROM access_control.organization_join_codes
-                ORDER BY organization_id
+                SELECT ids.organization_id, COALESCE(directory.display_name,ids.organization_id) AS organization_name, directory.join_code
+                FROM (SELECT organization_id FROM access_control.organization_join_codes
+                      UNION SELECT organization_id FROM access_control.active_projects) ids
+                LEFT JOIN access_control.organization_join_codes directory USING (organization_id)
+                WHERE NOT EXISTS (SELECT 1 FROM access_control.retired_scopes r WHERE r.organization_id=ids.organization_id AND r.project_id='')
+                ORDER BY ids.organization_id
                 """
             )
             rows = cursor.fetchall()
@@ -247,7 +252,7 @@ class PostgresPlatformProjectRepository:
                 (
                     command.organization_id,
                     command.organization_name,
-                    f"bootstrap-{uuid4().hex}",
+                    None,
                 ),
             )
             row = cursor.fetchone()
@@ -269,7 +274,7 @@ class PostgresPlatformProjectRepository:
                            AS organization_name,
                        project.project_id,
                        project.display_name AS project_name
-                FROM registry.organization_projects project
+                FROM access_control.active_projects project
                 LEFT JOIN access_control.organization_join_codes directory
                   ON directory.organization_id = project.organization_id
                 ORDER BY project.organization_id, project.project_id
@@ -282,13 +287,15 @@ class PostgresPlatformProjectRepository:
         with self._connection_factory() as connection:
             cursor = connection.cursor()
             self._activate_platform_admin(cursor)
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("directory/"+command.organization_id,))
             cursor.execute(
                 """
                 SELECT organization_id
                 FROM access_control.organization_join_codes
-                WHERE organization_id = %s
+                WHERE organization_id = %s AND NOT EXISTS (SELECT 1 FROM access_control.retired_scopes r
+                    WHERE r.organization_id=%s AND r.project_id IN ('',%s))
                 """,
-                (command.organization_id,),
+                (command.organization_id,command.organization_id,command.project_id),
             )
             if cursor.fetchone() is None:
                 raise PlatformProjectError(
@@ -319,7 +326,7 @@ class PostgresPlatformProjectRepository:
                            AS organization_name,
                        project.project_id,
                        project.display_name AS project_name
-                FROM registry.organization_projects project
+                FROM access_control.active_projects project
                 LEFT JOIN access_control.organization_join_codes directory
                   ON directory.organization_id = project.organization_id
                 WHERE project.organization_id = %s AND project.project_id = %s

@@ -30,6 +30,8 @@ export interface AccessApprovalViewProps {
   readonly canReadPlatformAccounts?: boolean;
   readonly canReadProjectRequests?: boolean;
   readonly userManagement?: ReactNode;
+  readonly organizationManagement?: ReactNode;
+  readonly projectManagement?: ReactNode;
   readonly principalId: string | null;
   readonly decisionPending: boolean;
   readonly decisionError: unknown;
@@ -114,6 +116,8 @@ export function AccessApprovalView({
   principalId,
   search,
   userManagement,
+  organizationManagement,
+  projectManagement,
 }: Readonly<AccessApprovalViewProps>) {
   const selectedTriggerRef = useRef<HTMLButtonElement>(null);
   const lastTriggerRef = useRef<HTMLElement>(null);
@@ -123,7 +127,8 @@ export function AccessApprovalView({
   useEffect(() => {
     onSearchChangeRef.current = onSearchChange;
   }, [onSearchChange]);
-  const operationalTab: Exclude<AccessTab, "users"> =
+  const approvalTab = search.tab === "membership-requests" || search.tab === "capability-requests";
+  const operationalTab: "membership-requests" | "capability-requests" =
     search.tab === "capability-requests"
       ? "capability-requests"
       : "membership-requests";
@@ -193,7 +198,7 @@ export function AccessApprovalView({
 
   useEffect(() => {
     if (
-      search.tab === "users" ||
+      !approvalTab ||
       search.drawer !== "open" ||
       active.loading ||
       active.fetching
@@ -230,6 +235,8 @@ export function AccessApprovalView({
           },
         ]
       : []),
+    ...(organizationManagement ? [{ key: "organizations", label: tabLabel("组织管理") }] : []),
+    ...(projectManagement ? [{ key: "projects", label: tabLabel("项目管理") }] : []),
     ...(canReadProjectRequests
       ? [
           {
@@ -245,7 +252,7 @@ export function AccessApprovalView({
   ];
 
   const filters =
-    search.tab === "users" || !canReadProjectRequests ? null : (
+    !approvalTab || !canReadProjectRequests ? null : (
       <div className={styles.filters} role="search" aria-label="申请筛选">
         <label className={`${styles.filterField} ${styles.searchFilterField}`}>
           <span className={styles.visuallyHidden}>搜索申请</span>
@@ -314,7 +321,11 @@ export function AccessApprovalView({
     );
 
   let content;
-  if (search.tab === "users") {
+  if (search.tab === "organizations" || search.tab === "projects") {
+    const organization = search.tab === "organizations";
+    content = (organization ? organizationManagement : projectManagement) ||
+      <PageState state="forbidden" label={organization ? "组织管理" : "项目管理"} description="当前账号没有此范围的管理权限。" />;
+  } else if (search.tab === "users") {
     content =
       canReadPlatformAccounts && userManagement ? (
         userManagement
@@ -454,7 +465,7 @@ export function AccessApprovalView({
           </div>
         }
       >
-        {search.tab !== "users" && decisionSuccessMessage ? (
+        {approvalTab && decisionSuccessMessage ? (
           <Alert
             className={styles.decisionStatus}
             type="success"
@@ -478,7 +489,7 @@ export function AccessApprovalView({
         {content}
       </StandardPageScaffold>
 
-      {drawerRow ? (
+      {approvalTab && drawerRow ? (
         <ApprovalDrawer
           key={`${drawerRow.kind}:${drawerRow.requestId}`}
           row={drawerRow}

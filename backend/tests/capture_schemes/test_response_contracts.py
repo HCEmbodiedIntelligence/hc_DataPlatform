@@ -119,7 +119,16 @@ def test_all_capture_routes_and_recording_preparation_publish_typed_responses():
     for item in document["paths"].values():
         for operation in item.values():
             if operation.get("operationId") in expected:
-                schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
-                assert schema["$ref"].startswith("#/components/schemas/Capture"), schema
+                operation_id = operation["operationId"]
+                status = "201" if operation_id in {"createLibraryTag", "addQualityRule"} else "200"
+                schema = operation["responses"][status]["content"]["application/json"]["schema"]
+                if operation_id == "listLibraryTags":
+                    assert schema["type"] == "array" and schema["items"]["type"] == "string"
+                elif operation_id in {"listQualityRules", "addQualityRule", "createLibraryTag"}:
+                    name = {"listQualityRules": "RuleLibrary", "addQualityRule": "ThresholdRule",
+                            "createLibraryTag": "LibraryTag"}[operation_id]
+                    assert schema["$ref"] == f"#/components/schemas/{name}"
+                else:
+                    assert schema["$ref"].startswith("#/components/schemas/Capture"), schema
                 observed.add(operation["operationId"])
     assert observed == expected

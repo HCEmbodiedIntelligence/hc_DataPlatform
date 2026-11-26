@@ -7,7 +7,7 @@ export type CollectionTaskRouteObject = PageRoute;
 export const collectionTaskRoutes: PageRoute[] = [
   {
     path: "/collection-tasks",
-    requiredCapabilities: ["upload.read"],
+    requiredCapabilities: ["collection_task.read"],
     navigation: {
       label: "采集任务",
       groupId: "ingest",

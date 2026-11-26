@@ -3,6 +3,9 @@ import { CANONICAL_CAPABILITIES } from "./capabilities";
 import type { ScopeKey } from "../scope/model";
 import { useShellStore } from "../scope/shell-store";
 
+const exactOperations = new Set(["platform.maintenance.operate", "platform.release.operate",
+  "platform.maintenance.verify", "platform.break_glass"]);
+
 const PLATFORM_ADMIN_CAPABILITY = "platform.admin";
 
 export function expandGrantedCapabilities(
@@ -10,13 +13,19 @@ export function expandGrantedCapabilities(
 ): ReadonlySet<string> {
   const expanded = new Set(capabilities);
   if (expanded.has(PLATFORM_ADMIN_CAPABILITY)) {
-    for (const capability of CANONICAL_CAPABILITIES) expanded.add(capability);
+    for (const capability of CANONICAL_CAPABILITIES) {
+      if (!exactOperations.has(capability)) expanded.add(capability);
+    }
   }
+  if (expanded.has("upload.read") || expanded.has("role.collector")) expanded.add("upload.workspace");
+  if (["episode.read", "role.annotator", "role.reviewer", "role.publisher", "role.collector"].some(key => expanded.has(key)))
+    expanded.add("episode.workspace");
   return expanded;
 }
 
 export interface CapabilitiesResult {
   has: (capability: string) => boolean;
+  hasResourceGrant?: (capability: string) => boolean;
   loading: boolean;
   failed: boolean;
 }
@@ -60,19 +69,22 @@ export function useCapabilities(): CapabilitiesResult {
     (capability: string) =>
       !loading &&
       !failed &&
-      (globalGranted.has(PLATFORM_ADMIN_CAPABILITY) ||
+      ((!exactOperations.has(capability) && globalGranted.has(PLATFORM_ADMIN_CAPABILITY)) ||
         globalGranted.has(capability) ||
         (scopeMatches &&
-          (granted.has(PLATFORM_ADMIN_CAPABILITY) || granted.has(capability)))),
+          ((!exactOperations.has(capability) && granted.has(PLATFORM_ADMIN_CAPABILITY)) || granted.has(capability)))),
     [failed, globalGranted, granted, loading, scopeMatches],
   );
-  return { has, loading, failed };
+  const hasResourceGrant = (capability: string) => has(capability) ||
+    (scopeMatches && !loading && !failed && [...granted].some(key => key.startsWith(capability + "/")));
+  return { has, hasResourceGrant, loading, failed };
 }
 
 export function useOrganizationCapabilities(
   organizationId: string | null,
 ): CapabilitiesResult {
   const sessionScopes = useShellStore((state) => state.sessionScopes);
+  const organizations = useShellStore((state) => state.sessionOrganizations);
   const platformCapabilities = useShellStore(
     (state) => state.platformCapabilities,
   );
@@ -84,18 +96,19 @@ export function useOrganizationCapabilities(
     () =>
       expandGrantedCapabilities([
         ...platformCapabilities,
+        ...(organizations.find(org => org.organizationId === organizationId)?.capabilities ?? []),
         ...sessionScopes
           .filter((scope) => scope.organizationId === organizationId)
           .flatMap((scope) => scope.capabilities),
       ]),
-    [organizationId, platformCapabilities, sessionScopes],
+    [organizationId, organizations, platformCapabilities, sessionScopes],
   );
   const has = useCallback(
     (capability: string) =>
       Boolean(organizationId) &&
       !loading &&
       !failed &&
-      (granted.has(PLATFORM_ADMIN_CAPABILITY) || granted.has(capability)),
+      ((!exactOperations.has(capability) && granted.has(PLATFORM_ADMIN_CAPABILITY)) || granted.has(capability)),
     [failed, granted, loading, organizationId],
   );
   return { has, loading, failed };

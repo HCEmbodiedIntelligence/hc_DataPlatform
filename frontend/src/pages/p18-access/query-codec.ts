@@ -1,7 +1,7 @@
 import { defineQueryCodec } from "../../shared/routing/route-registry";
 import type { AccessRequestStatus } from "./contracts";
 
-export type AccessTab = "users" | "membership-requests" | "capability-requests";
+export type AccessTab = "users" | "organizations" | "projects" | "membership-requests" | "capability-requests";
 
 export interface AccessSearch {
   readonly tab: AccessTab;
@@ -28,6 +28,8 @@ const defaults: AccessSearch = {
 };
 const tabs = new Set<AccessTab>([
   "users",
+  "organizations",
+  "projects",
   "membership-requests",
   "capability-requests",
 ]);

@@ -30,6 +30,7 @@ function organizationsFromBootstrap(bootstrap: SessionBootstrap) {
         organizationId: organization.organization_id,
         organizationName: organization.organization_name,
         memberStatus: organization.member_status,
+        capabilities: organization.capabilities ?? [],
       } as const,
     ]),
   );
@@ -39,6 +40,7 @@ function organizationsFromBootstrap(bootstrap: SessionBootstrap) {
         organizationId: scope.organization_id,
         organizationName: scope.organization_name ?? scope.organization_id,
         memberStatus: "ACTIVE",
+        capabilities: [],
       });
     }
   }

@@ -3,7 +3,8 @@ import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { transferableAbortController } from "node:util";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildPageCatalog,
   definePage,
@@ -13,7 +14,12 @@ import { makeScopeKey } from "../../shared/scope/model";
 import { useShellStore } from "../../shared/scope/shell-store";
 import { guardedPageRoutes } from "./page-routes";
 
+// Node's fetch checks the AbortSignal realm when the data router creates a Request.
+beforeEach(() => vi.stubGlobal("AbortController", class {
+  constructor() { return transferableAbortController(); }
+}));
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
   useShellStore.getState().clearSensitiveState();
   useShellStore.setState({

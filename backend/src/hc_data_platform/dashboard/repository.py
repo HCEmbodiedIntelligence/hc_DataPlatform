@@ -6,19 +6,19 @@ from threading import RLock
 from typing import Protocol
 
 from hc_data_platform.core.errors import problem
+from hc_data_platform.quality.recording_diagnostics import RawProblem
 from hc_data_platform.security.auth import AuthContext
 from hc_data_platform.security.capabilities import CAPABILITY_DASHBOARD_READ
 from hc_data_platform.security.scope import ScopeGuard
 
 from .models import (
     DashboardActivityEventType,
+    DashboardAnalytics,
     DashboardPendingItemType,
     DashboardPendingSeverity,
     DashboardResourceType,
     TaskIssueFinding,
 )
-
-from hc_data_platform.quality.recording_diagnostics import RawProblem
 
 DASHBOARD_CAPABILITY = CAPABILITY_DASHBOARD_READ
 
@@ -196,6 +196,10 @@ class DashboardQueryAudit:
 
 
 class DashboardRepository(Protocol):
+    def analytics(
+        self, auth: AuthContext, scope: DashboardScope, window: DashboardWindow, task_id: str | None = None,
+    ) -> DashboardAnalytics: ...
+
     def enforce_scope(self, auth: AuthContext, scope: DashboardScope) -> None: ...
 
     def record_query(self, auth: AuthContext, audit: DashboardQueryAudit) -> None: ...
@@ -285,6 +289,12 @@ class InMemoryDashboardRepository:
         self._unavailable_pending_sources = unavailable_pending_sources
         self.audits: list[DashboardQueryAudit] = []
         self._lock = RLock()
+
+    def analytics(
+        self, auth: AuthContext, scope: DashboardScope, window: DashboardWindow, task_id: str | None = None,
+    ) -> DashboardAnalytics:
+        self.enforce_scope(auth, scope)
+        return DashboardAnalytics(buckets=[], outcomes={}, issues={}, reports={}, affected_packages=0)
 
     def enforce_scope(self, auth: AuthContext, scope: DashboardScope) -> None:
         enforce_dashboard_scope(auth, scope)

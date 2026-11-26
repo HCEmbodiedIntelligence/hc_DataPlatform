@@ -309,6 +309,9 @@ describe("P14 robot model asset client", () => {
     "keeps asset transfer scoped across every request: %s",
     async (mode) => {
       const owner = new AbortController();
+      const partUrl = mode === "complete"
+        ? "/api/v1/organizations/01/robot-model-assets/upload-part?token=test"
+        : "https://object.example.test/short-lived-part-grant";
       const createEnvelope = {
         data: {
           upload_id: "upload-1",
@@ -327,7 +330,7 @@ describe("P14 robot model asset client", () => {
               part_authorizations: [
                 {
                   part_number: 1,
-                  url: "https://object.example.test/short-lived-part-grant",
+                  url: partUrl,
                   expires_at: "2026-08-19T11:15:00Z",
                 },
               ],
@@ -357,11 +360,11 @@ describe("P14 robot model asset client", () => {
         },
       };
       const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
-        if (input === "https://object.example.test/short-lived-part-grant") {
+        if (input === partUrl) {
           expect(init).toMatchObject({
             method: "PUT",
             cache: "no-store",
-            credentials: "omit",
+            credentials: "same-origin",
           });
           if (mode === "new-session") {
             useShellStore

@@ -288,6 +288,11 @@ def test_collection_binds_annotation_and_rechecks_permissions_on_cached_archive(
         run_job(service, job)
         ready = service.status(job.job_id, auth)
         assert ready.status == "READY", ready
+        reader = replace(auth, capabilities=(auth.capabilities | {"export.read"}) - {"export.download"})
+        assert job.job_id in {record.job_id for record in service.list(reader, kind="collection")}
+        assert service.status(job.job_id, reader).status == "READY"
+        with pytest.raises(ProblemException):
+            service.ready_archive(job.job_id, reader)
         revoked = replace(auth, capabilities=auth.capabilities - {"annotation_task.read"})
         assert service.list(revoked, kind="collection") == ()
         for action in (

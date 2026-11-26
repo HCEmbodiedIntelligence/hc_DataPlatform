@@ -29,6 +29,9 @@ export function AccessRequestDetails({
               {row.requesterId}
             </code>
           </Descriptions.Item>
+          {row.resource_id && <Descriptions.Item label="目标资源">{row.resource_id}</Descriptions.Item>}
+          {row.expires_at && <Descriptions.Item label="授权截止">{formatDateTime(row.expires_at)}</Descriptions.Item>}
+          {row.replaces_request_id && <Descriptions.Item label="转岗后撤销的授权">{row.replaces_request_id}</Descriptions.Item>}
           <Descriptions.Item label="申请原因">
             {row.reason || "未填写申请原因"}
           </Descriptions.Item>
@@ -57,6 +60,16 @@ export function AccessRequestDetails({
               );
             })}
           </ul>
+          {row.status === "PENDING" && row.project_grants_added && (
+            <Descriptions column={1} size="small" colon={false}>
+              <Descriptions.Item label="批准后新增">
+                {row.project_grants_added.map(capabilityLabel).join("、") || "无新增权限"}
+              </Descriptions.Item>
+              <Descriptions.Item label="批准后收回">
+                {row.project_grants_removed?.map(capabilityLabel).join("、") || "无收回权限"}
+              </Descriptions.Item>
+            </Descriptions>
+          )}
           {impacts.length > 0 ? (
             <div
               className={styles.impactNote}

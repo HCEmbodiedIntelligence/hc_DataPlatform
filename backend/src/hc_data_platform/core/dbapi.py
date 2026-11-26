@@ -32,6 +32,16 @@ def psycopg_connection_factory(dsn: str) -> Callable[[], Any]:
             )
         raw_connection = psycopg.connect(normalized)
         try:
+            # Serialize a scoped transaction with retirement, including work
+            # submitted by a worker before the administrator closed the scope.
+            if context.organization_id:
+                raw_connection.execute("SELECT pg_advisory_xact_lock_shared(hashtextextended(%s,0))",
+                                       ("directory/"+context.organization_id,))
+                retired = raw_connection.execute("""SELECT 1 WHERE access_control.directory_retired(%s,%s)""",
+                    (context.organization_id,context.project_id or "")).fetchone()
+                if retired:
+                    from hc_data_platform.security.directory_changes import unknown_scope
+                    raise unknown_scope()
             raw_connection.execute(
                 """
                 SELECT

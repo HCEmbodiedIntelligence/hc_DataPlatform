@@ -2116,7 +2116,11 @@ class DatasetPageService:
             for item in target_versions
         )
         is_current_ready = any(item.status == "READY" for item in target_versions)
-        can_delete = auth.has_capability("dataset.delete", project_id)
+        operation = "dataset.delete" if version_id is None else "dataset_version.delete"
+        resource = dataset_id if version_id is None else f"{dataset_id}/{version_id}"
+        can_delete = auth.has_capability(
+            auth.resource_action(operation, (resource,), project_id, organization_id), project_id, organization_id
+        )
         active_reasons = (
             (
                 DatasetPageBlockedReason(

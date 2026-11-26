@@ -6,7 +6,7 @@ import {
 export const routes: PageRoute[] = [
   {
     path: "/ingest/uploads/:uploadId",
-    requiredCapabilities: ["upload.read"],
+    requiredCapabilities: ["upload.workspace"],
     navigationOwnerPageId: "P03",
     lazy: async () => ({ Component: (await import("./formal-page")).default }),
   },

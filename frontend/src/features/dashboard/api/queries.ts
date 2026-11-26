@@ -2,11 +2,29 @@ import { useQuery } from "@tanstack/react-query";
 import type { DashboardScope } from "../types";
 import {
   getDashboardActivity,
+  getDashboardAnalytics,
   getDashboardTaskStatus,
   listDashboardPendingItems,
   type DashboardWindow,
 } from "./client";
 import { dashboardQueryKeys } from "./query-keys";
+
+export function useDashboardAnalytics(
+  scope: DashboardScope | null,
+  window: DashboardWindow,
+  enabled: boolean,
+  taskId?: string,
+) {
+  return useQuery({
+    queryKey: scope
+      ? dashboardQueryKeys.analytics(scope, window, taskId)
+      : ["dashboard", "disabled", "analytics"],
+    queryFn: ({ signal }) => getDashboardAnalytics(scope!, window, signal, taskId),
+    enabled: enabled && !!scope,
+    staleTime: 60_000,
+    retry: 2,
+  });
+}
 
 export function useDashboardActivity(
   scope: DashboardScope | null,

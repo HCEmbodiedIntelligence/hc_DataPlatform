@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -128,5 +129,34 @@ def test_batch_reads_only_metadata_once_and_keeps_permission_and_membership_chec
         with pytest.raises(ProblemException):
             authorize(version="draft-or-foreign")
         assert len(events) == 1
+    finally:
+        reset_request_context(context)
+
+
+def test_episode_grants_only_frozen_geometry_in_the_readable_region():
+    asset = RobotModelAsset(asset_id="mesh", relative_path="arm.stl", role="MESH",
+        size_bytes=100, sha256="a" * 64, media_type="model/stl", created_at=datetime.now(timezone.utc))
+    registry = RegistryService(SimpleNamespace(append_audit=lambda _: None),
+        published_assets=SimpleNamespace(find_many=lambda org, version, ids: {"mesh": ("model-project", asset)}))
+    org, project, region = "organization-a", "project-a", "east"
+    keys = frozenset((org, project, cap) for cap in ("dataset_version.read", "episode.read"))
+    reader = replace(_auth(can_read=False), region_codes=frozenset({region}),
+                     organization_scope_triples=frozenset({(org, project, region)}),
+                     organization_scoped_capabilities=keys)
+    def authorize(auth=reader, area=region, frozen=asset):
+        return registry.authorize_episode_viewer_assets(auth=auth, organization_id=org,
+            project_id=project, region_code=area, version_id="model-version", assets=(frozen,), request_id="replay")
+    context = bind_request_context(RequestContext(organization_id=org, project_id=project, region_code=region))
+    try:
+        assert authorize()[0].sha256 == asset.sha256
+        with pytest.raises(ProblemException):
+            authorize(area="other")
+        for grant in keys:
+            with pytest.raises(ProblemException):
+                authorize(auth=replace(reader, organization_scoped_capabilities=keys - {grant}))
+        with pytest.raises(ProblemException):
+            authorize(frozen=asset.model_copy(update={"sha256": "b" * 64}))
+        with pytest.raises(ValueError):
+            authorize(frozen=asset.model_copy(update={"role": "CONFIG"}))
     finally:
         reset_request_context(context)

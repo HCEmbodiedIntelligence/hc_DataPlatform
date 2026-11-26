@@ -35,16 +35,15 @@ class CacheLifecycle:
             repository,
             clock,
         )
-        self.superseded = SupersededBatches(connections, storage, repository, clock=clock)
-        self.processing = ProcessingCacheLifecycle(connections, storage, repository, clock=clock)
 
     def __call__(self, raw_scope):
         scope = tuple(raw_scope.split("/"))
         context = current_request_context()
         if scope != (context.organization_id, context.project_id, context.region_code):
             raise PermissionError("cache retention requires the exact scope")
-        self.superseded.sweep(scope)
-        self.processing(raw_scope)
+        # Inventory workers bind the tenant before constructing storage-specific cleaners.
+        SupersededBatches(self.connections, self.storage, self.repository, clock=self.clock).sweep(scope)
+        ProcessingCacheLifecycle(self.connections, self.storage, self.repository, clock=self.clock)(raw_scope)
         cache = local_cache_for(self.storage)
         if cache is not None:
             for kind, action in ACTIONS.items():

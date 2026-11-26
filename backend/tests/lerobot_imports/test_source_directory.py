@@ -182,6 +182,8 @@ def test_bounded_utf8_preview_and_aliased_object_location(source, monkeypatch):
 def test_directory_and_preview_http_scope_permission_and_no_store(source, monkeypatch):
     storage, browser, raw = source
     service = SimpleNamespace(storage=storage, raw_sources=browser.repository)
+    principal = web._auth()
+    monkeypatch.setattr(web, "_auth", lambda: replace(principal, capabilities=principal.capabilities | {"dataset_version.download_raw"}))
     base = f"/api/v1/projects/project-a/regions/cn-hz/lerobot-imports/{raw.raw_source_id}"
     with TestClient(web._app(service)) as client:
         for suffix, params in [

@@ -16,6 +16,7 @@ export const MANUAL_ISSUE_STATUSES = [
   "OPEN",
   "IN_PROGRESS",
   "RESOLVED",
+  "DISCARDED",
 ] as const;
 export type ManualIssueStatus = (typeof MANUAL_ISSUE_STATUSES)[number];
 
@@ -120,6 +121,7 @@ export interface ManualIssue {
 }
 
 export interface ManualIssueListItem {
+  readonly note?: string;
   readonly id: ManualIssueId;
   readonly etag: string;
   readonly scope: ManualIssueScope;

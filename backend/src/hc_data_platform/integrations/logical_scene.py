@@ -69,6 +69,9 @@ class LogicalSceneReader:
         asset = next((asset for asset in scene.assets if asset.asset_id == asset_id), None)
         if asset is None:
             raise KeyError("asset is not in frozen model manifest")
+        if asset.role in {"URDF", "MESH", "TEXTURE"}:
+            grant, = self._viewer_grants(revision, view, auth, (asset,))
+            return self._asset_grant(view, asset, grant)
         grant = self.registry.authorize_published_asset_download(
             auth=auth,
             organization_id=revision.scope.organization_id,
@@ -83,12 +86,15 @@ class LogicalSceneReader:
         if view.scene is None or view.scene.model_version_id is None:
             return []
         assets = tuple(a for a in view.scene.assets if a.role in {"URDF", "MESH", "TEXTURE"})
-        grants = self.registry.authorize_published_asset_downloads(
-            auth=auth, organization_id=revision.scope.organization_id,
-            project_id=revision.scope.project_id, version_id=view.scene.model_version_id,
-            asset_ids=tuple(a.asset_id for a in assets), request_id=current_request_context().request_id,
-        )
+        grants = self._viewer_grants(revision, view, auth, assets)
         return [self._asset_grant(view, asset, grant, preview_format) for asset, grant in zip(assets, grants, strict=True)]
+
+    def _viewer_grants(self, revision, view, auth, assets):
+        return self.registry.authorize_episode_viewer_assets(
+            auth=auth, organization_id=revision.scope.organization_id,
+            project_id=revision.scope.project_id, region_code=revision.scope.region_code,
+            version_id=view.scene.model_version_id, assets=assets, request_id=current_request_context().request_id,
+        )
 
     def _asset_grant(self, view, asset, grant, preview_format="stl"):
         if grant.sha256 != asset.sha256 or grant.media_type != asset.media_type:

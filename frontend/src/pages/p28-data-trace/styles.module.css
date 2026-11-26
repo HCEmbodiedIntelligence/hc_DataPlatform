@@ -1,0 +1,61 @@
+.workspace {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.search {
+  display: grid;
+  grid-template-columns: auto minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.field {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+}
+.comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.identifier {
+  overflow-wrap: anywhere;
+}
+.identifier small {
+  display: block;
+  color: var(--ant-color-text-secondary, #586579);
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 14px;
+}
+.facts dt {
+  color: var(--ant-color-text-secondary, #586579);
+}
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .search {
+    grid-template-columns: 1fr;
+  }
+}
+
+.matches {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  margin-top: 12px;
+}
+.matches button {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}

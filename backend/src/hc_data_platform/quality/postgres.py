@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from hc_data_platform.collection_tasks.captures import read_captures
 from hc_data_platform.continuous_recordings.current_qc import CURRENT_EPISODE_QC
 from hc_data_platform.core.context import current_request_context
 from hc_data_platform.core.errors import problem
@@ -281,7 +282,10 @@ class PostgresQualityRepository:
                            summary.updated_at,
                            native.source_import_id,
                            native.source_episode_index, COALESCE(native.collection_task_id, job.task_id),
-                           COALESCE(native.status = 'DISCARDED', false)
+                           CASE WHEN native.status='DISCARDED' OR resolution.status='DISCARDED' THEN 'DISCARDED'
+                                WHEN resolution.status IN ('PENDING','RUNNING') THEN 'IN_PROGRESS'
+                                WHEN resolution.status='SUCCEEDED' AND resolution.updated_at >= summary.updated_at THEN 'RESOLVED'
+                                ELSE 'OPEN' END
                       FROM quality_rollout_summaries AS summary
                       JOIN qc_reports AS report
                         ON report.organization_id = summary.organization_id
@@ -322,6 +326,12 @@ class PostgresQualityRepository:
                             ORDER BY source.committed_at DESC, source.raw_source_id
                             LIMIT 1
                       ) AS native ON TRUE
+                      LEFT JOIN LATERAL (
+                           SELECT status, updated_at FROM ingest.episode_resolutions d
+                           WHERE (d.organization_id,d.project_id,d.region_code,d.episode_id) =
+                                 (summary.organization_id,summary.project_id,summary.region_code,summary.rollout_id)
+                           ORDER BY created_at DESC,resolution_id DESC LIMIT 1
+                      ) resolution ON TRUE
                      WHERE summary.project_id = %s
                        AND summary.region_code = %s
                        AND summary.status IN ('RISK', 'REJECT')
@@ -349,8 +359,10 @@ class PostgresQualityRepository:
                     updated_at,
                     source_import_id,
                     source_episode_index,
-                    task_id, discarded,
+                    task_id, progress,
                 ) in cursor.fetchall():
+                    if progress == "RESOLVED":
+                        continue
                     report = self._report(report_json)
                     if not report.findings:
                         continue
@@ -365,7 +377,7 @@ class PostgresQualityRepository:
                             source_import_id=source_import_id,
                             source_episode_index=source_episode_index,
                             collection_task_id=task_id,
-                        ).model_copy(update={"discarded":discarded})
+                        ).model_copy(update={"progress": progress, "discarded": progress == "DISCARDED"})
                     )
                 cursor.execute(
                     """
@@ -376,7 +388,7 @@ class PostgresQualityRepository:
                                SELECT 1 FROM episode_store.qc_retired_versions v
                                WHERE (v.organization_id,v.project_id,v.region_code,v.recording_id,v.report_id)
                                    =(p.organization_id,p.project_id,p.region_code,p.recording_id,q.report_id)
-                           )) AS discarded, r.recording_upload_id
+                           )) AS discarded, r.recording_upload_id, r.superseded_by_processing_id
                     FROM ingest.recording_episode_processing p
                     JOIN """ + CURRENT_EPISODE_QC + """ q ON TRUE
                     JOIN ingest.continuous_recordings r
@@ -385,24 +397,24 @@ class PostgresQualityRepository:
                     WHERE p.organization_id=%s AND p.project_id=%s AND p.region_code=%s
                       AND q.status='REJECT'
                       AND (p.status <> 'READY' OR q.report_document->'finding_codes' ? 'MCAP_INTERIOR_ACTION_MISSING')
-                      AND r.superseded_by_processing_id IS NULL
+                      AND p.finalized_revision=r.finalized_revision
                     UNION ALL
                     SELECT q.report_document, substr(q.report_id,14), r.recording_id,
                            r.data_package_id, r.updated_at, r.collection_task_id,
-                           r.recording_document->>'quality_discarded_at' IS NOT NULL, r.recording_upload_id
+                           r.recording_document->>'quality_discarded_at' IS NOT NULL, r.recording_upload_id, r.superseded_by_processing_id
                     FROM ingest.continuous_recordings r
                     JOIN ingest.recording_quality_reports q USING
                         (organization_id,project_id,region_code,recording_id)
                     WHERE r.organization_id=%s AND r.project_id=%s AND r.region_code=%s
-                      AND r.status='QC_FAILED' AND r.superseded_by_processing_id IS NULL
+                      AND r.status='QC_FAILED'
                       AND q.report_id=r.recording_document->'quality_summary'->>'report_id'
                     )
                     SELECT p.report_document, p.digest, p.recording_id, p.data_package_id,
                            p.checked_at, p.collection_task_id, p.discarded,
-                           COALESCE(m.source_path, source.asset_path)
+                           COALESCE(m.source_path, source.asset_path), m.raw_source_id
                     FROM problems p
                     LEFT JOIN LATERAL (
-                        SELECT source_path,duplicate_of FROM ingest.mcap_processing_files
+                        SELECT raw_source_id,source_path,duplicate_of FROM ingest.mcap_processing_files
                         WHERE organization_id=%s AND project_id=%s AND region_code=%s
                           AND recording_id=p.recording_id
                         ORDER BY created_at DESC, processing_id DESC LIMIT 1
@@ -414,26 +426,32 @@ class PostgresQualityRepository:
                         ORDER BY (asset_path LIKE 'source/original/%%') DESC, asset_path LIMIT 1
                     ) source ON TRUE
                     WHERE m.duplicate_of IS NULL
-                    ORDER BY p.checked_at DESC, p.recording_id
+                      AND (p.superseded_by_processing_id IS NULL OR m.raw_source_id IS NOT NULL)
+                    ORDER BY p.checked_at DESC, p.recording_id, p.digest
                     """,
                     (current_request_context().organization_id, project_id, region_code) * 4,
                 )
-                continuous = [
-                    AutoQualityProblemV1.from_recording_report(
-                        document,
-                        report_sha256=str(digest),
-                        recording_id=recording_id,
-                        data_package_id=package,
-                        updated_at=created,
-                        collection_task_id=task_id,
-                    ).model_copy(update={"discarded": discarded, "source_file_name": decoded_filename(source)})
-                    for document, digest, recording_id, package, created, task_id, discarded, source in cursor.fetchall()
-                ]
-                # The outer recording gate is authoritative when a generic report also exists.
-                covered = {item.rollout_id for item in continuous}
+                reports = cursor.fetchall()
+                captures = (
+                    read_captures(cursor, current_request_context().organization_id, project_id, region_code)
+                    if any(row[-1] for row in reports) else ()
+                )
+                if any(capture.stage == "DISCARDED" for capture in captures):
+                    cursor.execute("""
+                        SELECT recording_id FROM episode_store.qc_retired_versions
+                        WHERE organization_id=%s AND project_id=%s AND region_code=%s
+                          AND starts_with(report_id, 'issue_')
+                    """, (current_request_context().organization_id, project_id, region_code))
+                    manual_retirements = {row[0] for row in cursor.fetchall()}
+                    captures = [capture for capture in captures if not (
+                        capture.stage == "DISCARDED" and capture.recording_id in manual_retirements
+                    )]
+                continuous = _recording_problems(reports, captures)
+                # Suppress the generic copy even when the recording report was folded into a retry.
+                covered = {row[0]["quality_report"]["rollout_id"] for row in reports}
                 result = [item for item in result if item.rollout_id not in covered] + continuous
                 return tuple(
-                    sorted((item for item in result if include_discarded or not item.discarded),
+                    sorted((item for item in result if include_discarded or item.progress == "OPEN"),
                            key=lambda item: (item.updated_at, item.id), reverse=True)
                 )
         finally:
@@ -453,3 +471,44 @@ class PostgresQualityRepository:
         if isinstance(value, str):
             return QcReportV1.model_validate_json(value)
         return QcReportV1.model_validate(value)
+
+
+def _recording_problems(reports, captures):
+    """Reconcile failed reports with the same current MCAP member used by the dashboard."""
+    current = {(c.source_import_id, c.source_path): c for c in captures if c.source_path}
+    by_member = {}
+    standalone = []
+    for row in reports:
+        source_path, raw_source_id = row[-2:]
+        if raw_source_id is None:
+            standalone.append((row, "DISCARDED" if row[6] else "OPEN"))
+        else:
+            by_member.setdefault((raw_source_id, source_path), []).append(row)
+
+    selected = list(standalone)
+    for key, history in by_member.items():
+        capture = current.get(key)
+        if capture is None or capture.canonical_episode_id or capture.stage == "CANCELLED":
+            continue
+        # Rows are newest first. Prefer evidence for the active recording. Keep
+        # separate current Episode reports so their diagnostic actions stay scoped.
+        active = [row for row in history if row[2] == capture.recording_id]
+        if capture.stage == "DISCARDED":
+            selected.append(((active or history)[0], "DISCARDED"))
+        elif capture.stage == "READY" or capture.qc_outcome == "PASS":
+            continue
+        elif capture.stage in {"PENDING_QC", "QC_RUNNING", "PREPARING", "PROCESSING"} and capture.qc_outcome not in {"REJECT", "RISK"}:
+            selected.append(((active or history)[0], "IN_PROGRESS"))
+        elif active and (capture.stage == "QC_FAILED" or capture.qc_outcome in {"REJECT", "RISK"}):
+            selected.extend((row, "OPEN") for row in active if not row[6])
+
+    return [
+        AutoQualityProblemV1.from_recording_report(
+            document, report_sha256=str(digest), recording_id=recording_id,
+            data_package_id=package, updated_at=created, collection_task_id=task_id,
+        ).model_copy(update={
+            "progress": progress, "discarded": progress == "DISCARDED",
+            "source_file_name": decoded_filename(source_path),
+        })
+        for (document, digest, recording_id, package, created, task_id, _, source_path, _), progress in selected
+    ]

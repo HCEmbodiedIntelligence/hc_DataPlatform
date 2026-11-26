@@ -134,6 +134,8 @@ paths:
   /api/v1/auth/session/bootstrap:
     get:
       operationId: getSessionBootstrap
+      parameters:
+        - {name: include_organization_capabilities, in: query, required: false, schema: {type: boolean, default: false}}
       tags: [access]
       summary: Resolve the current principal and effective access.
       description: >-
@@ -149,6 +151,7 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/SessionBootstrap"}
         "401": {$ref: "#/components/responses/AccessUnauthorized"}
+        "422": {$ref: "#/components/responses/AccessUnprocessable"}
   /api/v1/auth/session:logout:
     post:
       operationId: logoutSession
@@ -1455,6 +1458,7 @@ components:
         organization_id: {type: string, minLength: 1, maxLength: 256}
         organization_name: {type: string, minLength: 1, maxLength: 256}
         member_status: {type: string, const: ACTIVE, default: ACTIVE}
+        capabilities: {type: array, items: {type: string}, default: []}
     SessionBootstrap:
       type: object
       additionalProperties: false
@@ -1504,6 +1508,9 @@ components:
       additionalProperties: false
       required: [request_id, kind, organization_id, status, created_at, updated_at, revision]
       properties:
+        expires_at: {type: [string, "null"], format: date-time}
+        resource_id: {type: [string, "null"], minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9_.:/-]+$"}
+        replaces_request_id: {type: [string, "null"], format: uuid}
         request_id: {type: string, minLength: 1}
         kind: {type: string, enum: [ORGANIZATION, PROJECT, CAPABILITY]}
         organization_id: {type: string, minLength: 1, maxLength: 256}
@@ -1542,6 +1549,9 @@ components:
       additionalProperties: false
       required: [capability_keys]
       properties:
+        expires_at: {type: [string, "null"], format: date-time}
+        resource_id: {type: [string, "null"], minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9_.:/-]+$"}
+        replaces_request_id: {type: [string, "null"], format: uuid}
         capability_keys:
           type: array
           minItems: 1
@@ -1575,6 +1585,12 @@ components:
       required:
         [request_id, organization_id, project_id, requester_id, capability_keys, status, created_at, updated_at, revision]
       properties:
+        expires_at: {type: [string, "null"], format: date-time}
+        resource_id: {type: [string, "null"], minLength: 1, maxLength: 256, pattern: "^[A-Za-z0-9_.:/-]+$"}
+        replaces_request_id: {type: [string, "null"], format: uuid}
+        allowed_decisions: {type: array, items: {type: string, enum: [approve, reject, revoke]}, default: []}
+        project_grants_added: {type: array, items: {type: string}, default: []}
+        project_grants_removed: {type: array, items: {type: string}, default: []}
         request_id: {type: string, format: uuid}
         organization_id: {type: string, minLength: 1}
         project_id: {type: string, minLength: 1}

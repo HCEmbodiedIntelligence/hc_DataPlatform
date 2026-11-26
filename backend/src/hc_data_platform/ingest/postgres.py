@@ -252,6 +252,7 @@ class PostgresIngestPersistence:
         *,
         status: str | None = None,
         data_package_id: str | None = None,
+        task_ids: tuple[str, ...] | None = None,
         after: tuple[datetime, str] | None = None,
         limit: int = 50,
     ) -> list[UploadSession]:
@@ -263,6 +264,11 @@ class PostgresIngestPersistence:
         if data_package_id is not None:
             clauses.append("data_package_id = %s")
             params.append(data_package_id)
+        if task_ids is not None:
+            clauses.append("""EXISTS (SELECT FROM ingest.manifest_discoveries d
+                WHERE d.session_id=upload_sessions.session_id
+                  AND d.preflight_json #>> '{manifest,task_id}' = ANY(%s::text[]))""")
+            params.append(list(task_ids))
         if after is not None:
             clauses.append("(updated_at, session_id) < (%s, %s::uuid)")
             params.extend(after)

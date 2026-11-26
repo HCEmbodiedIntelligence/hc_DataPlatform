@@ -25,6 +25,7 @@ from hc_data_platform.core.errors import problem
 from hc_data_platform.data_formats.depth_evidence import file_hash
 from hc_data_platform.data_formats.holobrain_depth import DepthProfile, parallel_decode
 from hc_data_platform.data_formats.lerobot_layout import VIDEO_PATH
+from hc_data_platform.data_formats.video import preview_timescale
 
 from hc_data_platform.storage.local_cache import CacheError, local_cache_for
 
@@ -331,14 +332,15 @@ class EpisodePreviews:
         """offsets[i] is the output time in ns of source frame i, or None to drop it."""
         rate, began, count = Fraction(str(fps)), time.monotonic(), 0
         clock = Fraction(1, 1_000_000_000)
+        scale = preview_timescale(t for t in offsets if t is not None) if offsets is not None else None
         if offsets is not None and len(offsets) != frame_count:
             raise ValueError("preview frame selection does not cover the source")
         with (
             ExitStack() as resources,
             av.open(str(output), "w", options={"movflags": "+faststart"} if offsets is None else {
                 "movflags": "+faststart",
-                "movie_timescale": "1000000000",
-                "video_track_timescale": "1000000000",
+                "movie_timescale": str(scale),
+                "video_track_timescale": str(scale),
             }) as container,
         ):
             colorizer = (
@@ -352,8 +354,8 @@ class EpisodePreviews:
             encoder.width, encoder.height, encoder.pix_fmt = width, height, "yuv420p"
             encoder.options = {"crf": "20", "preset": "veryfast", "threads": "2", "bf": "0", "g": "30"}
             if offsets is not None:
-                encoder.time_base = clock
-                encoder.codec_context.time_base = clock
+                encoder.time_base = Fraction(1, scale)
+                encoder.codec_context.time_base = encoder.time_base
             frames = source.decode(stream) if verified_codes is None else verified_codes
             for frame in frames:
                 checkpoint()

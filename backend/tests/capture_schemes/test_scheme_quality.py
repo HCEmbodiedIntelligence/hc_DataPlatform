@@ -83,3 +83,37 @@ def test_historical_empty_policy_serialization_and_invalid_rules():
                   {"joint_limits": {"axis": [2, 1]}}, {"action": {"topic": "/other"}}):
         with pytest.raises(ValidationError):
             CaptureQualityPolicy.model_validate(value)
+
+
+def test_capture_time_limits_are_compiled_into_the_existing_engine():
+    _, output = configuration(holobrain=False, clock_evidence="synthetic clock")
+    profile = from_snapshot({"output": output.model_dump(mode="json")}, {"/action"}, 40)
+    assert profile.engine_version == "be06-qc/4"
+    assert profile.default_timing.maximum_gap_ns_risk == 25_000_000
+    assert profile.default_timing.maximum_gap_ns_reject == 25_000_000
+    assert profile.modality_offset.maximum_p95_offset_ns_risk == 25_000_000
+    assert profile.modality_offset.maximum_p95_offset_ns_reject == 25_000_000
+
+
+def test_selected_checks_control_both_verdict_and_evidence():
+    from hc_data_platform.quality.engine import QualityEngine
+    from hc_data_platform.quality.models import QualityInputV1
+
+    _, output = configuration(holobrain=False, clock_evidence="synthetic clock")
+    data = QualityInputV1(rollout_id="selection", source_sha256="a"*64, start_ns=0,
+                          end_ns=10**9, topic_timestamps_ns={})
+    engine = QualityEngine()
+    for codes in ([], ["QC_REQUIRED_TOPIC_MISSING"]):
+        frozen = {"output": output.model_dump(mode="json"), "quality_policy": {"enabled_codes": codes}}
+        profile = from_snapshot(frozen, {"/missing"}, 30)
+        for observations in (None, []):
+            result = engine.evaluate_with_evidence(data, profile, observations=observations)
+            assert {item.code for item in result.report.findings} == set(codes)
+            assert result.report.status == ("REJECT" if codes else "PASS")
+            disabled = [row for row in result.evidence.rules if row.code not in codes]
+            assert disabled and all(row.status == "skip" and not row.participates_in_verdict
+                                    and not row.detector_findings for row in disabled)
+
+    original = from_snapshot({"output": output.model_dump(mode="json")}, {"/missing"}, 30)
+    assert b"enabled_codes" not in original.content_bytes()
+    assert original.content_sha256() != profile.content_sha256()

@@ -30,9 +30,9 @@ def selected_sources(tmp_path):
     return [a, b]
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6])
+@pytest.mark.parametrize("version", range(1, 9))
 @pytest.mark.parametrize("outcome", ["success", "fail"])
-def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
+def test_download_arrow_layout_and_episode_boundaries_by_version(
     tmp_path, monkeypatch, version, outcome
 ):
     sources = selected_sources(tmp_path)
@@ -41,7 +41,7 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
 
     def write_collection(root, selections, *, storage, modalities, checkpoint, **kwargs):
         kwargs.pop("split_annotations", None)
-        assert kwargs.pop("use_committed_actions", False) == (version == 6)
+        assert kwargs.pop("use_committed_actions", False) == (version >= 6)
         return holobrain_export.write_dataset(root, selections, checkpoint=checkpoint, **kwargs)
 
     monkeypatch.setattr(holobrain_export, "write_collection", write_collection)
@@ -54,7 +54,7 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
     delivery = CollectionDelivery(SimpleNamespace(repository=repository, storage=None))
     monkeypatch.setattr(delivery, "sources", lambda _: sources)
     archive_format = f"holobrain_collection_zip/{version}"
-    plan = SimpleNamespace(archive_format=archive_format, modalities="rgbd", job_id="test-job",
+    plan = SimpleNamespace(members=(), archive_format=archive_format, modalities="rgbd", job_id="test-job",
                            model_dump=lambda **_: {"archive_format": archive_format})
     archive_path = tmp_path / "download.zip"
     checksum, size = delivery.build(plan, tmp_path, archive_path, {}, lambda: None)
@@ -76,7 +76,14 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
     with zipfile.ZipFile(archive_path) as archive:
         state = json.loads(archive.read(prefix + "state.json"))
         shards = {entry["filename"] for entry in state["_data_files"]}
-        assert len(shards) == 3
+        if version >= 8:
+            assert shards == {"data-00000-of-00001.arrow"}
+            assert [r["episode_index"] for r in expected] == [0, 0, 1, 2, 2, 2]
+            assert [r["frame_index"] for r in expected] == [0, 1, 0, 0, 1, 2]
+        else:
+            assert len(shards) == 3
+        info = json.loads(archive.read(prefix + "dataset_info.json"))
+        assert info["splits"]["train"]["shard_lengths"] == ([6] if version >= 8 else [2, 1, 3])
         if version >= 3:
             assert set(archive.namelist()) == shards | {
                 "state.json", "dataset_info.json", "meta_db.duckdb", "conversion_report.json",
@@ -101,7 +108,7 @@ def test_download_keeps_all_shards_and_only_reference_files_for_new_jobs(
         report = json.loads((downloaded / "conversion_report.json").read_bytes())
         assert all(row["episode_outcome"] == outcome and "success" not in row
                    for row in report["episodes"])
-    assert get_format("holobrain").archive == "holobrain_collection_zip/6"
+    assert get_format("holobrain").archive == "holobrain_collection_zip/8"
     assert from_archive(archive_format).standalone_dataset == (version >= 3)
 
 
@@ -142,7 +149,7 @@ def test_reference_report_measures_real_sources_drops_and_selected_episodes(tmp_
         for name, stats in frames["nearest_neighbor_error_ms"].items():
             assert stats == {"max": 0.0, "mean": 0.0, "p95": 0.0,
                              "tolerance": 50.0 if name == "depth" else
-                             150.0 if "finger" in name else 20.0}
+                             150.0 if "finger" in name else 25.0}
     assert validate(root)["frames"] == 6
     report["episodes"][0]["frames"]["output_frames"] += 1
     (root / "conversion_report.json").write_text(json.dumps(report))

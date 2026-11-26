@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { mockSavePicker } from "../../shared/lib/test-save-picker";
 import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
@@ -12,7 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { setupServer } from "msw/node";
 import { http, HttpResponse } from "msw";
 import { datasetIds } from "../../mocks/fixtures/datasets/core";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import {
   afterAll,
   afterEach,
@@ -97,6 +98,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   window.sessionStorage.clear();
+  window.localStorage.clear();
   postedExports.length = 0;
   server.use(
     http.get("*/episode-deliveries/formats", () => HttpResponse.json([])),
@@ -118,6 +120,7 @@ beforeEach(() => {
       "export.read",
       "export.create",
       "export.download",
+      "dataset_version.download_raw",
       "upload.read",
     ],
     fetchedAt: "2026-08-26T00:00:00Z",
@@ -177,6 +180,15 @@ function SelectedBatchQuery() {
 }
 
 describe("P21 data export page", () => {
+  it("shows delivery history with only the export status permission", async () => {
+    rawDownloadSession();
+    const store = useShellStore.getState();
+    store.setAuthorization({ ...store.authorization!, capabilities: ["export.read"] });
+    render(<ProviderHarness><MemoryRouter initialEntries={["/exports"]}><DataExportPage /></MemoryRouter></ProviderHarness>);
+    expect(await screen.findByText("导出记录")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "导出数据和格式" })).toBeNull();
+  });
+
   it("adds and removes all batches for a Shanghai upload date", async () => {
     rawDownloadSession();
     const user = userEvent.setup();
@@ -197,7 +209,7 @@ describe("P21 data export page", () => {
     await user.click(option());
     await waitFor(() => expect(screen.getByTestId("selected-batches")).toHaveTextContent(/^3$/));
     await user.click(screen.getByText("2026-09-03 · 1 个批次", { selector: ".ant-select-item-option-content" }));
-    expect(await screen.findByText("已移除全部日期。请选择要纳入的上传日期或批次。")).toBeVisible();
+    expect(await screen.findByText("请选择要纳入的上传日期或批次。")).toBeVisible();
   });
 
   it("selects raw batches across pages and downloads all selected files in one archive request", async () => {
@@ -222,17 +234,7 @@ describe("P21 data export page", () => {
         });
       }),
     );
-    const save = vi.fn(() => "blob:raw-archive");
-    vi.stubGlobal(
-      "URL",
-      class extends URL {
-        static createObjectURL = save;
-        static revokeObjectURL = vi.fn();
-      },
-    );
-    const download = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
+    const { write: save, close: download } = mockSavePicker();
     const user = userEvent.setup();
     render(
       <ProviderHarness>
@@ -242,12 +244,13 @@ describe("P21 data export page", () => {
           taskIds={[]}
           hasFilter
           canRead
+          canCreate
           canDownload
         />
       </ProviderHarness>,
     );
     await screen.findByText(/共 22 个原始批次/u);
-    const button = screen.getByRole("button", { name: "下载所选批次" });
+    const button = screen.getByRole("button", { name: "导出" });
     expect(button).toBeDisabled();
     const table = screen.getByRole("table", { name: "原始数据批次" });
     await user.click(within(table).getAllByRole("checkbox")[1]!);
@@ -257,22 +260,32 @@ describe("P21 data export page", () => {
     expect(screen.getByText(/已选 3 个批次 · 9 个文件/u)).toBeVisible();
     await user.click(button);
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
-    expect(archives).toEqual([{ import_ids: ["raw-0", "raw-1", "raw-20"] }]);
-    expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "application/zip", size: 4 }),
-    );
-    expect(
-      await screen.findByText("ZIP 已准备好，已向浏览器请求下载"),
-    ).toBeVisible();
-    const retry = screen.getByRole("link", { name: "点击下载 ZIP" });
-    expect(retry).toHaveAttribute("href", "blob:raw-archive");
-    expect(retry).toHaveAttribute("download", expect.stringMatching(/\.zip$/));
-    // An explicit click reuses the received bytes, without re-exporting them.
-    retry.addEventListener("click", (event) => event.preventDefault(), {
-      once: true,
-    });
-    await user.click(retry);
+    expect(archives).toEqual([{ import_ids: ["raw-0", "raw-1", "raw-20"], download_name: expect.stringMatching(/^original_.+_\d{8}_\d{4}\.zip$/) }]);
+    expect(Array.from(save.mock.calls[0]![0] as Uint8Array)).toEqual([80, 75, 3, 4]);
+    expect(await screen.findByText(/ZIP 已保存到所选位置 · original_/)).toBeVisible();
     expect(archives).toHaveLength(1);
+    const ossUri = "oss://managed/exports/project/original-data.zip";
+    const published = vi.fn();
+    server.use(http.post("*/episode-deliveries/oss", async ({ request }) => {
+      published(await request.json());
+      return new HttpResponse('{"uploaded_bytes":2}\n' + JSON.stringify({ uploaded_bytes: 4, oss_uri: ossUri }) + '\n',
+        { headers: { "Content-Type": "application/x-ndjson" } });
+    }));
+    await user.click(screen.getByRole("radio", { name: "导出到 OSS" }).closest("label")!);
+    await user.click(button);
+    expect(await screen.findByText(ossUri)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "关闭导出提示" }));
+    expect(screen.queryByText("已导出到 OSS")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "复制 OSS 地址" }));
+    expect(await navigator.clipboard.readText()).toBe(ossUri);
+    const firstRecord = screen.getAllByText("查看原始批次明细（3）")[0]!.closest("details")!;
+    await user.click(within(firstRecord).getByText("查看原始批次明细（3）"));
+    await waitFor(() => expect(firstRecord.textContent).toContain("raw-20"));
+    expect(firstRecord.textContent).toContain("raw-0");
+    expect(firstRecord.textContent).toContain("raw-1");
+    expect(published).toHaveBeenCalledWith({ kind: "raw", import_ids: ["raw-0", "raw-1", "raw-20"], download_name: expect.stringMatching(/^original_.+_\d{8}_\d{4}\.zip$/) });
+    expect(archives).toHaveLength(1);
+    expect(download).toHaveBeenCalledTimes(1);
     expect(
       screen.queryByText("所选原始数据已下载为 ZIP"),
     ).not.toBeInTheDocument();
@@ -310,6 +323,7 @@ describe("P21 data export page", () => {
           taskIds={taskIds}
           hasFilter
           canRead
+          canCreate
           canDownload={canDownload}
         />
       </ProviderHarness>
@@ -321,17 +335,46 @@ describe("P21 data export page", () => {
     expect(screen.getByText(/已选 2 个批次/u)).toBeVisible();
     view.rerender(panel(["assembly"]));
     await screen.findByText(/共 1 个原始批次/u);
-    expect(screen.getByRole("button", { name: "下载所选批次" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "导出" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "全选筛选结果" }));
     expect(screen.getByText(/已选 1 个批次/u)).toBeVisible();
     view.rerender(panel(["assembly"], false));
-    expect(screen.getByRole("button", { name: "下载所选批次" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "导出" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "全选筛选结果" })).toBeDisabled();
     expect(
       screen
         .getAllByRole("checkbox")
         .every((input) => (input as HTMLInputElement).disabled),
     ).toBe(true);
+  });
+
+  it("shows and selects only batches from the first through the last upload minute", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/lerobot-imports", () => HttpResponse.json([])),
+      http.get("*/episode-deliveries/upload-batches", () => HttpResponse.json([
+        { batch_number: 4, channel: "oss", created_at: "2026-09-01T12:06:00Z" },
+        { batch_number: 3, channel: "oss", created_at: "2026-09-01T12:05:59Z" },
+        { batch_number: 2, channel: "web", created_at: "2026-09-01T12:00:00Z" },
+        { batch_number: 1, channel: "web", created_at: "2026-09-01T11:59:59Z" },
+      ])),
+    );
+    render(<ProviderHarness><MemoryRouter initialEntries={[
+      "/exports?dataStage=raw&uploadTime=2026-09-01T12:00:00Z&uploadTime=2026-09-01T12:05:00Z",
+    ]}><DataExportPage /></MemoryRouter></ProviderHarness>);
+    const toggle = await screen.findByRole("checkbox", { name: "全选上传批次" });
+    await waitFor(() => expect(toggle).toBeChecked());
+    await user.click(screen.getByRole("combobox", { name: "上传批次" }));
+    const options = document.querySelectorAll(".ant-select-item-option-content");
+    expect(Array.from(options, e => e.textContent)).toEqual([
+      expect.stringContaining("第 3 次上传"), expect.stringContaining("第 2 次上传"),
+    ]);
+    await user.keyboard("{Escape}");
+    await user.click(toggle);
+    expect(await screen.findByText("请选择要纳入的上传日期或批次。")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "清空筛选" }));
+    await user.click(screen.getByRole("combobox", { name: "上传批次" }));
+    expect(document.querySelectorAll(".ant-select-item-option-content")).toHaveLength(4);
   });
 
   it("uses the full ending minute for a time-only raw export and clears the range", async () => {
@@ -366,7 +409,8 @@ describe("P21 data export page", () => {
     expect(queries.some(q => q.get("batch_number") === "7" && !q.has("dataset_id"))).toBe(true);
   });
 
-  it("unions batch tags, selects every matching page, and downloads one shared Episode bundle", async () => {
+  it.each(["zip", "oss"])("exports the selected QC bundle to %s after navigating away", async destination => {
+    const ossUri = "oss://managed/exports/episodes.zip";
     const first = packageDeliveryFixture().data;
     const second = packageDeliveryFixture();
     const timeFilter = { uploaded_from: "2026-09-01T00:00:00.000Z", uploaded_before: "2026-09-03T00:00:00.000Z" };
@@ -378,12 +422,10 @@ describe("P21 data export page", () => {
     first.data_version_id = "first-version";
     const queued = vi.fn();
     const archived = vi.fn();
+    let releaseFirstPart!: () => void;
+    const firstPart = new Promise<void>(resolve => { releaseFirstPart = resolve; });
     rawDownloadSession();
-    vi.stubGlobal("URL", class extends URL {
-      static createObjectURL = vi.fn(() => "blob:episodes");
-      static revokeObjectURL = vi.fn();
-    });
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const { close: download } = mockSavePicker();
     server.use(
       http.get("*/episode-deliveries/upload-batches", () => HttpResponse.json([
         { batch_number: 2, channel: "oss", created_at: "2026-09-02T12:00:00Z" },
@@ -401,9 +443,24 @@ describe("P21 data export page", () => {
       }),
       http.get("*/episode-deliveries", () => HttpResponse.json([])),
       http.post("*/episode-deliveries/bundle-parts", async ({ request }) => {
-        const body = await request.json() as { data: typeof first };
+        const body = await request.json() as { data: Array<typeof first> };
         queued(body);
-        return HttpResponse.json({status: "ready", reused: true, part_id: (body.data.data_version_id === "first-version" ? "a" : "b").repeat(64)});
+        const stream = new ReadableStream({
+          async start(controller) {
+            const send = (index: number, reused: boolean) => controller.enqueue(new TextEncoder().encode(
+              JSON.stringify({index, reused, part_id: (body.data[index]!.data_version_id === "first-version" ? "a" : "b").repeat(64)}) + "\n"));
+            send(1, false);
+            await firstPart;
+            send(0, true);
+            controller.close();
+          },
+        });
+        return new HttpResponse(stream, {headers: {"Content-Type":"application/x-ndjson"}});
+      }),
+      http.post("*/episode-deliveries/oss", async ({ request }) => {
+        archived(await request.json());
+        return new HttpResponse(JSON.stringify({ uploaded_bytes: 4, oss_uri: ossUri }) + "\n",
+          { headers: { "Content-Type": "application/x-ndjson" } });
       }),
       http.post("*/episode-deliveries/bundle", async ({ request }) => {
         archived(await request.json());
@@ -412,7 +469,10 @@ describe("P21 data export page", () => {
     );
     const user = userEvent.setup();
     render(<ProviderHarness><MemoryRouter initialEntries={["/exports?dataStage=unannotated&uploadBatch=1&uploadTime=2026-09-01T00:00:00Z&uploadTime=2026-09-02T23:59:00Z"]}>
-      <DataExportPage />
+      <Routes>
+        <Route path="/exports" element={<><Link to="/datasets">数据集列表</Link><DataExportPage /></>} />
+        <Route path="/datasets" element={<Link to="/exports">返回数据导出</Link>} />
+      </Routes>
     </MemoryRouter></ProviderHarness>);
     expect(await screen.findByRole("radio", { name: "质检通过且已入库的数据" })).toBeChecked();
     await user.click(await screen.findByRole("checkbox", { name: /batch-one-episode/ }));
@@ -422,14 +482,46 @@ describe("P21 data export page", () => {
     await user.keyboard("{Escape}");
     await user.click(await screen.findByRole("checkbox", {name: "全选筛选结果"}));
     await waitFor(() => expect(screen.getByText(/查看已选数据（2）/)).toBeVisible());
-    await user.click(screen.getByRole("radio", { name: "LeRobot RGB-D 集合" }).closest("label")!);
+    expect(screen.getByRole("radio", { name: "LeRobot RGB-D 集合" })).toBeChecked();
+    if (destination === "oss") await user.click(screen.getByRole("radio", { name: "导出到 OSS" }).closest("label")!);
     await user.click(screen.getByRole("button", { name: "导出" }));
-    await waitFor(() => expect(queued).toHaveBeenCalledTimes(2));
-    expect(queued).toHaveBeenCalledWith({data: second.data, mode:"rgbd", export_filter:{stage:"qc_passed", all_batches:true, ...timeFilter}});
+    await waitFor(() => expect(queued).toHaveBeenCalledTimes(1));
+    expect(archived).not.toHaveBeenCalled();
+    expect(await screen.findByText("已准备 Episode 1/2，已复用 0 条", {}, { timeout: 4000 })).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "数据集列表" }));
+    expect(screen.queryByRole("button", { name: /导出$/ })).toBeNull();
+    releaseFirstPart();
+    await waitFor(() => expect(queued).toHaveBeenCalledTimes(1));
+    expect(queued).toHaveBeenCalledWith({data: [second.data, first], mode:"rgbd", export_filter:{stage:"qc_passed", all_batches:true, ...timeFilter}});
     await waitFor(() => expect(archived).toHaveBeenCalledWith({
-      part_ids: expect.arrayContaining(["a".repeat(64), "b".repeat(64)]),
+      ...(destination === "oss" && { kind: "bundle" }),
+      part_ids: ["b".repeat(64), "a".repeat(64)],
+      download_name: expect.stringMatching(/^lerobot_rgbd_.+_\d{8}_\d{4}\.zip$/),
       export_filter: { stage: "qc_passed", all_batches: true, ...timeFilter },
     }));
+    if (destination === "zip") await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("link", { name: "返回数据导出" }));
+    if (destination === "oss") {
+      expect(await screen.findByText(ossUri)).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "关闭导出提示" }));
+      await user.click(screen.getByRole("link", { name: "数据集列表" }));
+      await user.click(screen.getByRole("link", { name: "返回数据导出" }));
+      const copy = await screen.findByRole("button", { name: "复制 OSS 地址" });
+      expect(screen.queryByText("已导出到 OSS")).toBeNull();
+      expect(screen.getByText("LeRobot（含深度） · 2 条 Episode")).toBeVisible();
+      const contents = screen.getByText("查看 Episode 明细（2）").closest("details")!;
+      await user.click(within(contents).getByText("查看 Episode 明细（2）"));
+      expect(await within(contents).findByText("batch-one-episode")).toBeVisible();
+      expect(within(contents).getByText("batch-two-episode")).toBeVisible();
+      expect(contents.textContent).toContain("上传批次 2");
+      await user.click(copy);
+      expect(await navigator.clipboard.readText()).toBe(ossUri);
+      expect(archived).toHaveBeenCalledTimes(1);
+      expect(download).not.toHaveBeenCalled();
+      return;
+    }
+    expect(await screen.findByText(/下载完成 · 2 条 Episode/)).toBeVisible();
+    expect(screen.queryByRole("link", { name: "下载 ZIP" })).toBeNull();
   });
 
   it("opens older bookmarks on the annotated standard export page", async () => {
@@ -446,104 +538,29 @@ describe("P21 data export page", () => {
     expect(screen.queryByRole("radio", { name: "历史格式" })).not.toBeInTheDocument();
   });
 
-  it.each(["", "&delivery=legacy"])("exports a standard RGB subset from the dataset link %s", async (delivery) => {
-    const f = packageDeliveryFixture();
-    Object.assign(f.data.identity, {
-      organization_id: "org_fx_01",
-      project_id: "prj_fx_01",
-      region_code: "cn-shanghai",
-      dataset_id: datasetIds.dataset,
-      episode_id: "standard-episode",
-    });
-    if (f.job.plan.format !== "hc-collection-delivery-plan/1")
-      throw new Error("fixture");
-    f.job.plan.modalities = "rgb";
-    f.job.plan.members[0]!.selected_depth_profiles = {};
-    f.job.plan.members[0]!.excluded_depth_features = [
-      "observation.images.head_depth",
-    ];
-    const downloadClick = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
-    const legacyEligibility = vi.fn(),
-      queued = vi.fn();
+  it.each(["", "&delivery=legacy"])("opens a retired dataset link on QC data with its dataset filter %s", async (delivery) => {
+    const queries: URLSearchParams[] = [];
     server.use(
-      http.get(
-        "*/datasets/:datasetId/versions/:versionId/export-eligibility",
-        () => {
-          legacyEligibility();
-          return HttpResponse.json({});
-        },
-      ),
-      http.get("*/episode-deliveries/candidates", () =>
-        HttpResponse.json({
-          ...f.candidates,
-          dataset_id: datasetIds.dataset,
-        }),
-      ),
-      http.get("*/episode-deliveries", () => HttpResponse.json([])),
-      http.get("*/episode-deliveries/:jobId", () => HttpResponse.json(f.job)),
-      http.post("*/episode-deliveries/:jobId/download", () =>
-        HttpResponse.json({
-          job_id: f.job.job_id,
-          artifact_sha256: f.job.artifact_sha256,
-          size_bytes: f.job.size_bytes,
-          url: "https://objects.example/rgb.zip",
-          expires_seconds: 300,
-        }),
-      ),
-      http.post("*/episode-deliveries/collections", async ({ request }) => {
-        queued(await request.json());
-        return HttpResponse.json({
-          ...f.job,
-          plan: {
-            ...f.job.plan,
-            modalities: "rgb",
-            members: [
-              {
-                ...f.job.plan.members[0],
-                selected_depth_profiles: {},
-                excluded_depth_features: ["observation.images.head_depth"],
-              },
-            ],
-          },
-        });
+      http.get("*/episode-deliveries/upload-candidates", ({ request }) => {
+        queries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], total: 0, next_after: null });
       }),
+      http.get("*/episode-deliveries", () => HttpResponse.json([])),
     );
-    const user = userEvent.setup();
     render(
       <ProviderHarness>
-        <MemoryRouter
-          initialEntries={[
-            `/exports?datasetId=${datasetIds.dataset}&dataStage=dataset${delivery}`,
-          ]}
-        >
+        <MemoryRouter initialEntries={[`/exports?datasetId=${datasetIds.dataset}&dataStage=dataset${delivery}`]}>
           <DataExportPage />
         </MemoryRouter>
       </ProviderHarness>,
     );
-    await user.click(
-      await screen.findByRole("checkbox", { name: /standard-episode/ }),
-    );
-    expect(screen.queryByRole("radio", { name: "历史格式" })).not.toBeInTheDocument();
-    await user.click(
-      screen
-        .getByRole("radio", { name: "LeRobot RGB 子集（排除深度）" })
-        .closest("label")!,
-    );
-    expect(
-      screen.getByRole("radio", { name: "LeRobot RGB 子集（排除深度）" }),
-    ).toBeChecked();
-    await user.click(screen.getByRole("button", { name: "导出" }));
-    await waitFor(() =>
-      expect(queued).toHaveBeenCalledWith({
-        modalities: "rgb",
-        members: [{ data: f.data, annotation: null }],
-      }),
-    );
-    expect(legacyEligibility).not.toHaveBeenCalled();
-    expect(postedExports).toHaveLength(0);
-    await waitFor(() => expect(downloadClick).toHaveBeenCalledOnce());
+    expect(await screen.findByRole("radio", { name: "质检通过且已入库的数据" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "数据集数据" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /独立标准包/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "LeRobot RGB-D 集合" })).toBeChecked();
+    await waitFor(() => expect(queries.some(query =>
+      query.get("stage") === "qc_passed" && query.get("dataset_id") === datasetIds.dataset
+    )).toBe(true));
   });
   it("downloads original files without requiring processed or approved Episodes", async () => {
     const store = useShellStore.getState();
@@ -616,9 +633,8 @@ describe("P21 data export page", () => {
         }),
       ),
     );
-    const download = vi
-      .spyOn(HTMLAnchorElement.prototype, "click")
-      .mockImplementation(() => {});
+    const { close: download, files } = mockSavePicker();
+    server.use(http.get("https://example.test/original-info.json", () => new HttpResponse(new Uint8Array(10))));
     const user = userEvent.setup();
     render(
       <ProviderHarness>
@@ -640,6 +656,7 @@ describe("P21 data export page", () => {
       await screen.findByRole("button", { name: "下载 info.json" }),
     );
     await waitFor(() => expect(download).toHaveBeenCalledOnce());
+    expect(files.has("info.json")).toBe(true);
     expect(postedExports).toHaveLength(0);
   });
 

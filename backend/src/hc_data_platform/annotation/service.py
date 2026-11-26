@@ -300,7 +300,7 @@ class AnnotationService:
         *,
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[], str] = lambda: str(uuid4()),
-        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.ALLOW,
+        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.DENY,
         cursor_secret: str = "annotation-revision-cursor-secret",
     ) -> None:
         self._repository = repository
@@ -959,6 +959,8 @@ class AnnotationService:
                         "configured review policy forbids reviewing your own revision"
                     )
 
+            if decision is ReviewDecision.APPROVE:
+                self._review_checks(aggregate, aggregate.revisions[revision])
             now = self._clock()
             review = AnnotationReview(
                 review_id=self._id_factory(),
@@ -1345,6 +1347,7 @@ class AnnotationService:
         try:
             return validate_tag_revision(
                 schema=self._schema_for_task(task),
+                allowed_tags=task.allowed_tags or (),
                 base_step_count=task.base_step_count,
                 tags=tags,
                 operations=operations,
@@ -1516,10 +1519,11 @@ class InMemoryAnnotationService(AnnotationService):
         *,
         clock: Callable[[], datetime] = utc_now,
         id_factory: Callable[[], str] = lambda: str(uuid4()),
-        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.ALLOW,
+        self_review_policy: SelfReviewPolicy = SelfReviewPolicy.DENY,
+        allowed_tags: tuple[str, ...] = (),
     ) -> None:
         super().__init__(
-            InMemoryAnnotationRepository(),
+            InMemoryAnnotationRepository(allowed_tags=allowed_tags),
             clock=clock,
             id_factory=id_factory,
             self_review_policy=self_review_policy,

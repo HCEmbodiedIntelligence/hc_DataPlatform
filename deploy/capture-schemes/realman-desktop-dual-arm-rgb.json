@@ -1,0 +1,419 @@
+{
+  "input_mode": "EXPLICIT",
+  "name": "realman_desktop 双臂三视角遥操作",
+  "description": "双臂各 6 轴。状态与动作均按关节名输出为左臂在前、右臂在后，单位 rad。以头部彩色相机为时间基准，保留左右腕彩色图像。来源有效性记录在 observation.source_valid。相机对齐容差为 50 ms。",
+  "software": "HC_REALMAN / controller_v23.yml",
+  "model_version_ids": [
+    "version-d26baa2f-c0b8-48c3-968f-7d4e20c0c180"
+  ],
+  "annotation_tags": [],
+  "adapters": [
+    {
+      "source_format": "MCAP",
+      "parser_version": "native-mcap-recording/3",
+      "configuration": {
+        "collection_mode": "RGB",
+        "time_source": "RGB_LOG_TIME",
+        "cameras": [
+          {
+            "camera_id": "head",
+            "topic": "/observation/cameras/head/color/compressed",
+            "message_type": "sensor_msgs/msg/CompressedImage",
+            "kind": "rgb",
+            "required": true
+          },
+          {
+            "camera_id": "wrist_left",
+            "topic": "/observation/cameras/d405_left/color/compressed",
+            "message_type": "sensor_msgs/msg/CompressedImage",
+            "kind": "rgb",
+            "required": true
+          },
+          {
+            "camera_id": "wrist_right",
+            "topic": "/observation/cameras/d405_right/color/compressed",
+            "message_type": "sensor_msgs/msg/CompressedImage",
+            "kind": "rgb",
+            "required": true
+          }
+        ],
+        "depth_unit_evidence": null,
+        "state_topic": "/observation/joint_states",
+        "action_topic": "/action/joint_states",
+        "primary_camera": "/observation/cameras/head/color/compressed",
+        "joint_names": [],
+        "joint_units": [],
+        "state_joint_names": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3",
+          "left_joint4",
+          "left_joint5",
+          "left_joint6",
+          "right_joint1",
+          "right_joint2",
+          "right_joint3",
+          "right_joint4",
+          "right_joint5",
+          "right_joint6"
+        ],
+        "state_joint_units": [
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad"
+        ],
+        "action_joint_names": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3",
+          "left_joint4",
+          "left_joint5",
+          "left_joint6",
+          "right_joint1",
+          "right_joint2",
+          "right_joint3",
+          "right_joint4",
+          "right_joint5",
+          "right_joint6"
+        ],
+        "action_joint_units": [
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad"
+        ],
+        "depth_scale_m_per_unit": null,
+        "derive_action_from_next_state": false,
+        "maximum_time_error_ms": 50.0,
+        "fps": null,
+        "semantic_output": {
+          "features": {
+            "action": {
+              "role": "action",
+              "dtype": "float64",
+              "names": [
+                "left_joint1",
+                "left_joint2",
+                "left_joint3",
+                "left_joint4",
+                "left_joint5",
+                "left_joint6",
+                "right_joint1",
+                "right_joint2",
+                "right_joint3",
+                "right_joint4",
+                "right_joint5",
+                "right_joint6"
+              ],
+              "shape": [
+                12
+              ],
+              "units": [
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad"
+              ]
+            },
+            "observation.state": {
+              "role": "state",
+              "dtype": "float64",
+              "names": [
+                "left_joint1",
+                "left_joint2",
+                "left_joint3",
+                "left_joint4",
+                "left_joint5",
+                "left_joint6",
+                "right_joint1",
+                "right_joint2",
+                "right_joint3",
+                "right_joint4",
+                "right_joint5",
+                "right_joint6"
+              ],
+              "shape": [
+                12
+              ],
+              "units": [
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad",
+                "rad"
+              ]
+            },
+            "observation.images.head": {
+              "role": "rgb",
+              "dtype": "video",
+              "names": [
+                "height",
+                "width",
+                "channels"
+              ],
+              "shape": [
+                400,
+                640,
+                3
+              ]
+            },
+            "observation.source_valid": {
+              "role": "validity",
+              "dtype": "bool",
+              "names": [
+                "observation.state",
+                "action",
+                "observation.images.head",
+                "observation.images.wrist_left",
+                "observation.images.wrist_right"
+              ],
+              "shape": [
+                5
+              ]
+            },
+            "observation.images.wrist_left": {
+              "role": "rgb",
+              "dtype": "video",
+              "names": [
+                "height",
+                "width",
+                "channels"
+              ],
+              "shape": [
+                480,
+                640,
+                3
+              ]
+            },
+            "observation.images.wrist_right": {
+              "role": "rgb",
+              "dtype": "video",
+              "names": [
+                "height",
+                "width",
+                "channels"
+              ],
+              "shape": [
+                480,
+                640,
+                3
+              ]
+            }
+          },
+          "algorithm": "capture-structure/v2",
+          "time_source": "RGB_LOG_TIME",
+          "validity_max_age_ms": 50
+        },
+        "numeric_sources": {},
+        "alignment_policy": "PRESERVE",
+        "topic_aliases": {},
+        "state_required_axes": null,
+        "action_required_axes": null,
+        "normalization": null,
+        "metadata_sources": {}
+      }
+    }
+  ],
+  "output": {
+    "algorithm": "capture-structure/v2",
+    "frequency_hz": null,
+    "frequency_policy": "PRESERVE",
+    "time_source": "RGB_LOG_TIME",
+    "features": {
+      "action": {
+        "dtype": "float64",
+        "shape": [
+          12
+        ],
+        "names": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3",
+          "left_joint4",
+          "left_joint5",
+          "left_joint6",
+          "right_joint1",
+          "right_joint2",
+          "right_joint3",
+          "right_joint4",
+          "right_joint5",
+          "right_joint6"
+        ],
+        "units": [
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad"
+        ],
+        "role": "action",
+        "required": true,
+        "missing": "presence_and_validity",
+        "validity_feature": null,
+        "required_axes": null,
+        "media": {}
+      },
+      "observation.state": {
+        "dtype": "float64",
+        "shape": [
+          12
+        ],
+        "names": [
+          "left_joint1",
+          "left_joint2",
+          "left_joint3",
+          "left_joint4",
+          "left_joint5",
+          "left_joint6",
+          "right_joint1",
+          "right_joint2",
+          "right_joint3",
+          "right_joint4",
+          "right_joint5",
+          "right_joint6"
+        ],
+        "units": [
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad",
+          "rad"
+        ],
+        "role": "state",
+        "required": true,
+        "missing": "presence_and_validity",
+        "validity_feature": null,
+        "required_axes": null,
+        "media": {}
+      },
+      "observation.images.head": {
+        "dtype": "video",
+        "shape": [
+          400,
+          640,
+          3
+        ],
+        "names": [
+          "height",
+          "width",
+          "channels"
+        ],
+        "units": [],
+        "role": "rgb",
+        "required": true,
+        "missing": "presence_and_validity",
+        "validity_feature": null,
+        "required_axes": null,
+        "media": {}
+      },
+      "observation.source_valid": {
+        "dtype": "bool",
+        "shape": [
+          5
+        ],
+        "names": [
+          "observation.state",
+          "action",
+          "observation.images.head",
+          "observation.images.wrist_left",
+          "observation.images.wrist_right"
+        ],
+        "units": [],
+        "role": "validity",
+        "required": true,
+        "missing": "presence_and_validity",
+        "validity_feature": null,
+        "required_axes": null,
+        "media": {}
+      },
+      "observation.images.wrist_left": {
+        "dtype": "video",
+        "shape": [
+          480,
+          640,
+          3
+        ],
+        "names": [
+          "height",
+          "width",
+          "channels"
+        ],
+        "units": [],
+        "role": "rgb",
+        "required": true,
+        "missing": "presence_and_validity",
+        "validity_feature": null,
+        "required_axes": null,
+        "media": {}
+      },
+      "observation.images.wrist_right": {
+        "dtype": "video",
+        "shape": [
+          480,
+          640,
+          3
+        ],
+        "names": [
+          "height",
+          "width",
+          "channels"
+        ],
+        "units": [],
+        "role": "rgb",
+        "required": true,
+        "missing": "presence_and_validity",
+        "validity_feature": null,
+        "required_axes": null,
+        "media": {}
+      }
+    },
+    "validity_max_age_ms": 50.0
+  },
+  "quality_policy": {}
+}

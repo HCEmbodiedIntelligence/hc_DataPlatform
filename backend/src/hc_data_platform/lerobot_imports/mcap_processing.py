@@ -42,6 +42,7 @@ from .configuration import connections, validate_target
 from .mcap_original import ORIGINAL_PATH, original_key, replay_asset
 from .mcap_reference import materialize, read_receipt
 from .mcap_source_cache import copy_registered_input
+from .mcap_workspace import mcap_workspace
 from .robot_eligibility import import_robots
 
 
@@ -324,9 +325,10 @@ def _registered_identity(entry):
     return result
 
 
-def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None):
+def enqueue_files(db, scope, raw, manifest, command, cfg, reference=None, *, source_paths=None):
     """Queue preparation in the caller's Raw commit transaction for every ingress."""
-    files = [f for f in manifest["files"] if f["path"].lower().endswith(".mcap")]
+    files = [f for f in manifest["files"] if f["path"].lower().endswith(".mcap")
+             and (source_paths is None or f["path"] in source_paths)]
     if not files:
         raise ValueError("MCAP source has no MCAP members")
     lock_source(db, scope, raw.raw_source_id)
@@ -644,9 +646,13 @@ def process_file(handler, event, checkpoint):
                     replay_asset(handler.storage, asset, original, prefix, reprocessing, checkpoint)
                     for asset in assets
                 )
-                _prepare_previews(handler.storage, ident, recorded, assets, checkpoint)
+                with mcap_workspace(original["size"], checkpoint, needs_source=False):
+                    _prepare_previews(handler.storage, ident, recorded, assets, checkpoint)
             else:
-                with TemporaryDirectory(prefix="native-mcap-") as temporary:
+                with (
+                    mcap_workspace(original["size"], checkpoint, needs_source=True),
+                    TemporaryDirectory(prefix="native-mcap-") as temporary,
+                ):
                     started_read = perf_counter()
                     root = Path(temporary)
                     takeover_times = None

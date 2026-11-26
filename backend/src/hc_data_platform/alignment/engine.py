@@ -5,7 +5,7 @@ from __future__ import annotations
 import bisect
 import hashlib
 from collections import deque
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from itertools import islice
 from typing import Any
 
@@ -112,6 +112,7 @@ class AlignmentEngine:
         writer: FragmentWriterPort,
         target_timestamps: Iterable[int] | None = None,
         drop_invalid: bool = False,
+        row_transform: Callable[[AlignedRowV1], AlignedRowV1] | None = None,
     ) -> AlignedFragmentManifestV1:
         """Align a per-topic ordered stream with bounded lookahead deques."""
 
@@ -188,6 +189,8 @@ class AlignmentEngine:
             if row.sample_valid or not drop_invalid:
                 if drop_invalid:
                     row = row.model_copy(update={"step_index": row_count})
+                if row_transform is not None:
+                    row = row_transform(row)
                 writer.write_row(row)
                 digest.update(canonical_json_bytes(row.model_dump(mode="python")))
                 digest.update(b"\n")

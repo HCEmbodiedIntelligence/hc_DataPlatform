@@ -845,3 +845,77 @@
     animation-duration: 0.01ms !important;
   }
 }
+
+.governanceWorkspace { display: flex; width: 100%; padding-block: 4px 20px; }
+.governanceLayout {
+  display: grid;
+  grid-template-columns: minmax(246px, min(30%, 352px)) minmax(0, 1fr);
+  gap: clamp(14px, 1.5vw, 24px);
+  align-items: start;
+}
+.directoryCard { min-width: 0; overflow: hidden; }
+.directoryCard :global(.ant-card-head) { min-height: 54px; padding-inline: 18px; }
+.directoryCard :global(.ant-card-body) { padding: 8px; }
+.directoryTitle, .directoryCreate, .scopeToolbar, .treeLabel, .scopeHeading {
+  display: flex; align-items: center;
+}
+.directoryTitle { gap: 9px; font-size: 15px; }
+.directoryTitle svg { color: var(--hc-color-primary, #5058be); }
+.directoryCreate { gap: 3px; font-size: 13px; min-height: 36px; }
+.scopeToolbar { justify-content: space-between; gap: 12px; min-height: 42px; padding-inline: 2px; }
+.scopeHeading { min-width: 0; flex-wrap: wrap; column-gap: 5px; font-size: 17px; overflow-wrap: anywhere; }
+.scopeContext, .treeNote { color: var(--hc-color-text-muted, #555f76); }
+.directoryTree {
+  max-height: clamp(310px, 65vh, 720px); overflow: auto; scrollbar-width: thin;
+  background: transparent !important; overscroll-behavior: contain;
+}
+.directoryTree :global(.ant-tree-treenode) { width: 100%; align-items: center; padding: 1px 0; }
+.directoryTree :global(.ant-tree-node-content-wrapper) {
+  display: flex; align-items: center; flex: 1; min-width: 0; gap: 7px;
+  padding: 0 8px; min-height: 38px; border-radius: 7px;
+}
+.directoryTree :global(.ant-tree-treenode-selected .ant-tree-node-content-wrapper) {
+  color: var(--hc-color-primary, #444db5); background: var(--hc-color-primary-soft, #edf0ff) !important;
+  box-shadow: inset 2px 0 currentColor;
+}
+.directoryTree :global(.ant-tree-switcher) {
+  display: inline-flex; align-items: center; justify-content: center; align-self: stretch; width: 21px;
+  color: var(--hc-color-text-muted, #555f76);
+}
+.directoryTree :global(.ant-tree-switcher svg) { transition: transform 140ms ease; }
+.directoryTree :global(.ant-tree-switcher_close svg) { transform: rotate(-90deg); }
+.directoryTree :global(.ant-tree-indent-unit) { width: 16px; }
+.directoryTree :global(.ant-tree-iconEle) {
+  flex: 0 0 23px; display: inline-flex !important; align-items: center; justify-content: center;
+  width: 23px !important; height: 25px; line-height: 1 !important;
+}
+.orgGlyph, .projectGlyph, .personGlyph { box-sizing: content-box; padding: 3px; border-radius: 5px; }
+.orgGlyph { color: #4855a6; background: #edf0fd; }
+.projectGlyph { color: #42677c; background: #eaf2f5; }
+.personGlyph { color: #486854; background: #f0f5ef; border-radius: 50%; }
+.directoryTree :global(.ant-tree-title) { flex: 1; min-width: 0; }
+.treeLabel { min-width: 0; gap: 6px; justify-content: space-between; }
+.treeName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.treeNote { font-size: 12px; flex-shrink: 0; }
+.directoryTree :global(.ant-tree-treenode:focus-visible), .directoryCreate:focus-visible {
+  outline: 2px solid var(--hc-color-primary, #5058be); outline-offset: -2px;
+}
+@media (max-width: 800px) {
+  .governanceLayout { grid-template-columns: minmax(0, 1fr); }
+  .directoryTree { max-height: 40vh; }
+  .directoryTree :global(.ant-tree-node-content-wrapper) { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .directoryTree :global(.ant-tree-switcher svg) { transition: none; }
+}
+
+
+.accountIdentityButton {
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  justify-content: flex-start;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

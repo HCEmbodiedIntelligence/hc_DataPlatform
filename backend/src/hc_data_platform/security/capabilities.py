@@ -106,6 +106,8 @@ KNOWN_BUSINESS_CAPABILITIES = frozenset(
         "ingest.import",
         "ingest_source.manage",
         "ingest_source.read",
+        "training.read",
+        "training.create",
         "manual_issue.assign",
         "manual_issue.create",
         "manual_issue.dismiss",
@@ -116,6 +118,7 @@ KNOWN_BUSINESS_CAPABILITIES = frozenset(
         "manual_issue.triage",
         "robot.create",
         "robot.disable",
+        "teleoperation.connect",
         "robot.manage",
         "robot.read",
         "robot.update",
@@ -147,6 +150,13 @@ KNOWN_BUSINESS_CAPABILITIES = frozenset(
         "storage.overview.read",
         "storage.restore.read",
         "storage.restore.request",
+        "collection_task.read",
+        "collection_task.manage",
+        "collection_task.delete",
+        "episode.derive",
+        "quality.manage",
+        "tag.manage",
+        "quality.discard",
         "upload.manage",
         "upload.read",
     }
@@ -156,61 +166,58 @@ ALL_PLATFORM_ADMIN_EFFECTIVE_CAPABILITIES = (
     KNOWN_BUSINESS_CAPABILITIES | PLATFORM_ADMIN_CAPABILITIES
 )
 
-# A human upload operator can complete the data workflow in the same project.
-# These grants do not include account administration or storage lifecycle operations.
-DATA_WORKFLOW_CAPABILITIES = frozenset(
-    {
-        "annotation.edit",
-        "annotation.read",
-        "annotation.review",
-        "annotation.save",
-        "annotation.submit",
-        "annotation_draft.edit",
-        "annotation_set.read",
-        "annotation_task.claim",
-        "annotation_task.create",
-        "annotation_task.read",
-        "cleaning.create",
-        "cleaning.edit",
-        "cleaning.preview",
-        "cleaning.read",
-        "cleaning.submit",
-        "dashboard.read",
-        "data_schema.create",
-        "data_schema.import",
-        "data_schema.publish",
-        "data_schema.read",
-        "data_schema.validate",
-        "dataset.create",
-        "dataset.read",
-        "dataset_version.download_manifest",
-        "dataset_version.publish",
-        "dataset_version.read",
-        "dataset_version.review",
-        "episode.read",
-        "export.create",
-        "export.download",
-        "export.read",
-        "ingest.import",
-        "ingest_source.read",
-        "manual_issue.create",
-        "manual_issue.read",
-        "manual_issue.resolve",
-        "manual_issue.triage",
-        "robot.read",
-        "robot_model.asset.download",
-        "robot_model.read",
-        "robot_model_binding.read",
-        "upload.manage",
-        "upload.read",
-    }
+PROJECT_SUMMARY = frozenset({"dashboard.read", "dataset.read", "dataset_version.read", "collection_task.read"})
+ORGANIZATION_ADMIN_CAPABILITIES = frozenset({
+    "organization.admin", "access.read", "access.manage", "robot.read", "robot.manage",
+    "robot_model.read", "robot_model.manage", "robot_model_binding.read", "robot_model_binding.manage",
+    "tag.manage", "quality.manage", "collection_task.read", "storage.overview.read",
+    "storage.lifecycle.read", "storage.lifecycle.manage", "storage.lifecycle.simulate",
+})
+
+
+ORGANIZATION_ADMIN_PROJECT_CAPABILITIES = (
+    ORGANIZATION_ADMIN_CAPABILITIES | KNOWN_BUSINESS_CAPABILITIES | {"role.project_admin"}
 )
 
 
-def expand_data_workflow_capabilities(capabilities: Iterable[str]) -> frozenset[str]:
-    """Expand a human operator's grants after selecting their authorized scope."""
+PROJECT_MEMBER_ROLES = {
+    "role.observer": PROJECT_SUMMARY | {
+        "episode.read", "data_schema.read", "ingest_source.read", "upload.read",
+        "annotation_task.read", "annotation.read", "annotation_set.read", "cleaning.read",
+        "manual_issue.read", "training.read", "export.read",
+    },
+    "role.collector": PROJECT_SUMMARY | {"ingest_source.read"},
+    "role.annotator": PROJECT_SUMMARY | {
+        "annotation_task.read", "annotation_task.claim", "annotation.read", "annotation.edit",
+        "annotation.save", "annotation.submit", "annotation_draft.edit", "annotation_set.read",
+        "cleaning.read", "cleaning.create", "cleaning.edit", "cleaning.preview", "cleaning.submit",
+        "data_schema.read", "manual_issue.create", "manual_issue.read",
+    },
+    "role.reviewer": PROJECT_SUMMARY | {
+        "annotation_task.read", "annotation_set.read", "annotation.read", "annotation.review",
+        "data_schema.read", "dataset_version.review",
+        "manual_issue.read", "manual_issue.create", "manual_issue.resolve", "manual_issue.triage",
+    },
+    "role.publisher": PROJECT_SUMMARY | {"annotation_task.read", "dataset_version.publish"},
+}
 
-    granted = frozenset(capabilities)
-    if CAPABILITY_UPLOAD_MANAGE in granted:
-        return granted | DATA_WORKFLOW_CAPABILITIES
-    return granted
+ORDINARY_ROLE_PERMISSIONS = frozenset().union(*PROJECT_MEMBER_ROLES.values())
+
+
+PROJECT_ROLES = {
+    **PROJECT_MEMBER_ROLES,
+    "role.project_admin": frozenset().union(*PROJECT_MEMBER_ROLES.values()) | {
+        "upload.read", "upload.manage",
+        "collection_task.manage", "annotation_task.create", "annotation_task.assign",
+        "annotation_task.read", "access.read", "access.manage", "audit.read",
+    },
+}
+
+
+def expand_project_roles(capabilities: Iterable[str]) -> frozenset[str]:
+    grants = frozenset(capabilities)
+    return grants.union(*(PROJECT_ROLES[key] for key in grants.intersection(PROJECT_ROLES)))
+
+
+def resource_capability(capability: str, resource_id: str) -> str:
+    return f"{capability}/{resource_id}"

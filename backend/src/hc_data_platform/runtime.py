@@ -294,6 +294,7 @@ from hc_data_platform.storage.postgres import (
     PostgresStorageRepository,
     StorageTransactionConnectionFactory,
 )
+from hc_data_platform.storage.usage_objects import oss_usage_objects
 from hc_data_platform.storage.router import configure_storage_governance
 from hc_data_platform.storage.service import StorageGovernanceService
 from hc_data_platform.storage.task_usage import TaskStorageUsageReader
@@ -730,10 +731,44 @@ def _oss(settings: Settings) -> tuple[Any, Any, OssObjectStorage]:
     )
 
 
+def _physical_object_store_clients(settings: Settings):
+    return _oss(settings) if settings.object_store_provider == "oss" else _s3(settings)
+
+
 def _object_store_clients(settings: Settings) -> tuple[Any, Any, Any]:
-    if settings.object_store_provider == "oss":
-        return _oss(settings)
-    return _s3(settings)
+    if not settings.object_store_owner_organization_id:
+        return _physical_object_store_clients(settings)
+    from hc_data_platform.platform_ops.object_store_config import PostgresObjectStoreConfigurationRepository
+    from hc_data_platform.storage.organization_storage import OrganizationStorage, ScopedBotoClient, ScopedObjectStore
+
+    factory=psycopg_connection_factory(settings.postgres_dsn)
+    repository=PostgresObjectStoreConfigurationRepository.from_dsn(settings.postgres_dsn,
+        encryption_key=settings.data_source_credential_key.get_secret_value())
+
+    def resolve_project(project):
+        with factory() as db, db.cursor() as cursor:
+            cursor.execute("SELECT set_config('app.platform_admin','true',true)")
+            cursor.execute("SELECT organization_id FROM registry.organization_projects WHERE project_id=%s ORDER BY organization_id LIMIT 2",(project,))
+            rows=cursor.fetchall()
+            if len(rows)!=1: return None
+            row=rows[0]
+            return str(row["organization_id"] if isinstance(row,dict) else row[0])
+
+    def build(config):
+        client,presign,storage=_physical_object_store_clients(config)
+        lance=LanceAdapter(_lance_root(config),object_store_client=client,storage_options=_lance_storage_options(config))
+        capacity=StoredDatasetCapacityReader(PostgresCapacityReferences(factory),
+            S3StorageInventoryProvider(client,config.object_store_bucket),bucket=config.object_store_bucket,storage_options=_lance_storage_options(config))
+        return client,presign,storage,lance,capacity
+
+    directory=OrganizationStorage(settings,repository,resolve_project,build)
+    return ScopedBotoClient(directory,0),ScopedBotoClient(directory,1),ScopedObjectStore(directory,2)
+
+
+def _lance_adapter(settings,client):
+    from hc_data_platform.storage.organization_storage import ScopedBotoClient, ScopedObjectStore
+    if isinstance(client,ScopedBotoClient): return ScopedObjectStore(client.directory,3)
+    return LanceAdapter(_lance_root(settings),object_store_client=client,storage_options=_lance_storage_options(settings))
 
 
 def _lance_root(settings: Settings) -> str:
@@ -935,6 +970,11 @@ def build_runtime(
             ),
             S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
             disk_path=resolved.storage_disk_usage_path,
+            report_root=resolved.storage_usage_report_root,
+            report_namespace=(resolved.postgres_dsn, resolved.object_store_endpoint, resolved.object_store_bucket,
+                              resolved.object_store_prefix, resolved.object_store_provider, resolved.object_store_cache_root),
+            inventory_snapshot=(lambda: oss_usage_objects(s3_client, overflow_uri=resolved.storage_usage_overflow_uri))
+            if resolved.environment == "local" and resolved.object_store_provider == "oss" else None,
             object_store_provider=resolved.object_store_provider,
             object_scope=f"oss://{resolved.object_store_bucket}/{resolved.object_store_prefix.strip('/')}/",
             local_usage_roots=resolved.storage_local_usage_roots,
@@ -999,10 +1039,11 @@ def build_runtime(
             robot_processing, PostgresAnnotationDeliveries(connection_factory)
         ),
     )
+    from hc_data_platform.storage.organization_storage import ScopedBotoClient, ScopedObjectStore
     dataset_page = DatasetPageService(
         PostgresDatasetPageRepository(connection_factory),
         display_label_reader=PostgresDisplayLabels(connection_factory),
-        capacity_reader=StoredDatasetCapacityReader(
+        capacity_reader=ScopedObjectStore(s3_client.directory,4) if isinstance(s3_client,ScopedBotoClient) else StoredDatasetCapacityReader(
             PostgresCapacityReferences(connection_factory),
             S3StorageInventoryProvider(s3_client, resolved.object_store_bucket),
             bucket=resolved.object_store_bucket,
@@ -1067,12 +1108,7 @@ def build_runtime(
     alignment_repository = PostgresAlignmentRepository(connection_factory)
 
     catalog_repository = PostgresCatalogAdapter(connection_factory)
-    lance_root = _lance_root(resolved)
-    lance_storage = LanceAdapter(
-        lance_root,
-        object_store_client=s3_client,
-        storage_options=_lance_storage_options(resolved),
-    )
+    lance_storage = _lance_adapter(resolved,s3_client)
     catalog = LanceCatalogService(
         lance_storage,
         catalog_repository,
@@ -1607,13 +1643,8 @@ def build_worker_outbox(
     connection_factory = psycopg_connection_factory(resolved.postgres_dsn)
     s3_client, s3_presign_client, object_storage = _object_store_clients(resolved)
     catalog_repository = PostgresCatalogAdapter(connection_factory)
-    lance_root = _lance_root(resolved)
     catalog = LanceCatalogService(
-        LanceAdapter(
-            lance_root,
-            object_store_client=s3_client,
-            storage_options=_lance_storage_options(resolved),
-        ),
+        _lance_adapter(resolved,s3_client),
         catalog_repository,
         PostgresAdvisoryDatasetLock(connection_factory),
     )

@@ -1,3 +1,4 @@
+import type { GrantTerms } from "../../shared/auth/project-grants";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { createDomainError, isDomainError } from "../../shared/api/domain-error";
@@ -27,7 +28,7 @@ export interface AccountProjectMembership {
   readonly member_status: "ACTIVE";
 }
 
-export interface AccountAccessRequest {
+export interface AccountAccessRequest extends GrantTerms {
   readonly request_id: string;
   readonly kind: AccountAccessRequestKind;
   readonly organization_id: string;
@@ -70,6 +71,9 @@ const accessRequestSchema: z.ZodType<AccountAccessRequest> = z
     kind: z.enum(["ORGANIZATION", "PROJECT", "CAPABILITY"]),
     organization_id: z.string().min(1).max(256),
     project_id: z.string().min(1).max(256).nullable(),
+    expires_at: instant.nullish(),
+    resource_id: z.string().nullish(),
+    replaces_request_id: z.string().nullish(),
     capability_keys: z.array(z.string().min(1)).default([]),
     status: z.enum(["PENDING", "APPROVED", "REJECTED", "WITHDRAWN", "REVOKED"]),
     reason: z.string().nullable().default(null),
@@ -103,6 +107,33 @@ function requestMismatch(message: string): Error {
 export const accountAccessKeys = {
   overview: (principalId: string) => ["account-access", principalId, "overview"] as const,
 };
+
+export function useJoinableProjects(organizationId: string, memberId?: string) {
+  const actorId = useShellStore((state) => state.principal?.actorId);
+  const params = new URLSearchParams({ organization_id: organizationId });
+  if (memberId) params.set("principal_id", memberId);
+  return useQuery({
+    queryKey: ["joinable-projects", actorId, organizationId, memberId],
+    enabled: Boolean(actorId && organizationId),
+    queryFn: async ({ signal }) => {
+      const endpoint = "/account/joinable-projects";
+      const raw = await request<unknown>({
+        method: "GET", path: endpoint + "?" + params, scopeMode: "session", cache: "no-store", signal,
+      });
+      return parseWire(z.array(z.object({
+        organization_id: z.string(), project_id: z.string(), project_name: z.string(),
+      })), raw, { endpoint });
+    },
+  });
+}
+
+export function assignProjectMember(organizationId: string, projectId: string, memberId: string, idempotencyKey: string) {
+  const params = new URLSearchParams({ organization_id: organizationId, project_id: projectId });
+  return request<void>({
+    method: "PUT", path: "/account/managed-members/" + encodeURIComponent(memberId) + "/project-membership?" + params,
+    scopeMode: "session", idempotencyKey,
+  });
+}
 
 export async function getAccountAccessOverview(signal?: AbortSignal) {
   const endpoint = "/account/access-overview";
@@ -188,12 +219,13 @@ export async function requestProjectCapabilities(
   capabilityKeys: readonly string[],
   reason: string | null,
   idempotencyKey: string,
+  terms: GrantTerms = {},
 ): Promise<AccountAccessRequest> {
   const endpoint = `/organizations/${encodeURIComponent(organizationId)}/projects/${encodeURIComponent(projectId)}/capability-requests`;
   const raw = await request<unknown>({
     method: "POST",
     path: endpoint,
-    body: { capability_keys: [...capabilityKeys], reason },
+    body: { capability_keys: [...capabilityKeys], reason, ...terms },
     idempotencyKey,
     cache: "no-store",
     scopeMode: "session",
@@ -209,6 +241,9 @@ export async function requestProjectCapabilities(
     updated_at: result.updated_at,
     revision: result.revision,
     capability_keys: result.capability_keys,
+    resource_id: result.resource_id,
+    expires_at: result.expires_at,
+    replaces_request_id: result.replaces_request_id,
     project_id: result.project_id ?? projectId,
   }, { endpoint });
 }

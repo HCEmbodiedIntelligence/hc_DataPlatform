@@ -22,6 +22,7 @@ export const p08RouteRecords: PageRoute[] = [
   },
   {
     path: annotationRoutes.revisions.pattern,
+    browseWithoutScope: true,
     requiredCapabilities: ["annotation_task.read"],
     lazy: async () => ({
       Component: (await import("./AnnotationRevisionPage"))
@@ -30,6 +31,7 @@ export const p08RouteRecords: PageRoute[] = [
   },
   {
     path: annotationRoutes.tagReview.pattern,
+    browseWithoutScope: true,
     requiredCapabilities: ["annotation_task.read"],
     lazy: async () => ({
       Component: (await import("./AnnotationQueuePage")).TagReviewQueuePage,
@@ -37,14 +39,14 @@ export const p08RouteRecords: PageRoute[] = [
   },
   {
     path: annotationRoutes.tagReviewTask.pattern,
-    requiredCapabilities: ["annotation_task.read", "episode.read"],
+    requiredCapabilities: ["annotation_task.read", "episode.workspace"],
     lazy: async () => ({
       Component: (await import("./AnnotationTaskPage")).TagReviewTaskPage,
     }),
   },
   {
     path: annotationRoutes.task.pattern,
-    requiredCapabilities: ["annotation_task.read", "episode.read"],
+    requiredCapabilities: ["annotation_task.read", "episode.workspace"],
     lazy: async () => ({
       Component: (await import("./AnnotationTaskPage")).AnnotationTaskPage,
     }),

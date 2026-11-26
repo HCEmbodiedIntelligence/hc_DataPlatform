@@ -9,11 +9,11 @@ import {
   type AlertProps,
 } from "antd";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useScopedRobotModels } from "../robot-models/api/hooks";
 import { isDomainError } from "../../shared/api/domain-error";
 import { CompareServerDraft } from "./CompareServerDraft";
-import { captureApi, useCaptureMutation } from "./api";
+import { captureApi, useCaptureMutation, useLibraryTags } from "./api";
 import {
   documentSchema,
   type Sample,
@@ -24,7 +24,6 @@ import { AdapterFields } from "./AdapterFields";
 import { DefinitionFields } from "./DefinitionFields";
 import { PostprocessingRules } from "./PostprocessingRules";
 import { ApplyQualityRule } from "./ApplyQualityRule";
-import { QualityFields } from "./QualityFields";
 import { Differences, EvidenceView } from "./EvidenceView";
 import {
   emptyDocument,
@@ -93,6 +92,7 @@ export function SchemeEditor({
   const [step, setStep] = useState(saved?.step ?? 0);
   const [sample, setSample] = useState<Sample | null>(null);
   const models = useScopedRobotModels(organizationId);
+  const tags = useLibraryTags(organizationId);
   const [baseRevision, setBaseRevision] = useState(
     (saved?.document ? saved.revision : detail?.revision) ?? 0,
   );
@@ -145,7 +145,7 @@ export function SchemeEditor({
         );
         return;
       }
-      if (!detail || dirty) throw new Error("请先保存方案；修改后需要重新验证");
+      if (!detail || dirty) throw new Error("请先保存方案");
       if (kind === "validate") {
         if (!sample?.source_path) throw new Error("请选择完整验证样本");
         const result = await captureApi.validate(
@@ -222,8 +222,8 @@ export function SchemeEditor({
     if (allValidated)
       return { type: "success", title: "草稿已保存 · 验证通过，可发布" };
     if (detail?.validations.some((v) => v.status === "FAILED"))
-      return { type: "warning", title: "草稿已保存 · 验证未通过" };
-    return { type: "success", title: "草稿已保存 · 待验证" };
+      return { type: "warning", title: "草稿已保存 · 样本验证未通过，仍可发布" };
+    return { type: "success", title: "草稿已保存 · 可直接发布" };
   })();
   return (
     <Form
@@ -283,6 +283,19 @@ export function SchemeEditor({
                 }
               />
             </Form.Item>
+            <Form.Item label="标注标签" extra={<span>任务只能使用这里选中的标签。 <Link to="/settings/annotation-tags" target="_blank" rel="noreferrer">打开标签库</Link></span>}>
+              <Select
+                aria-label="标注标签"
+                mode="multiple"
+                placeholder="从标签库选择"
+                loading={tags.isFetching}
+                disabled={!tags.data}
+                value={doc.annotation_tags ?? []}
+                options={(tags.data ?? []).map((name) => ({ value: name, label: name }))}
+                onChange={(annotation_tags: string[]) => change({ ...doc, annotation_tags })}
+              />
+              {tags.error && <Alert type="error" title={captureError(tags.error)} action={<Button onClick={() => void tags.refetch()}>重试</Button>} />}
+            </Form.Item>
             <Form.Item label="适用机器人型号（空表示不限制型号，仍需验证数据能力）">
               <Select
                 aria-label="适用机器人型号"
@@ -321,7 +334,6 @@ export function SchemeEditor({
             <DefinitionFields document={doc} onChange={change} />
             <PostprocessingRules document={doc} onChange={change} />
             <ApplyQualityRule org={organizationId} document={doc} onChange={change} />
-            <QualityFields document={doc} onChange={change} />
           </>
         )}
         {step === 2 && (
@@ -339,6 +351,7 @@ export function SchemeEditor({
             <h3>确认方案配置</h3>
             <p>方案名称：{doc.name || "未填写"}</p>
             <p>{dataSummary(doc)}</p>
+            <p>标注标签：{doc.annotation_tags?.join("、") || "未选择"}</p>
             <p>
               原始文件：
               {doc.adapters
@@ -360,11 +373,7 @@ export function SchemeEditor({
               保存方案
             </Button>
             <h3>验证与发布</h3>
-            <p>
-              {doc.input_mode === "AUTO"
-                ? "任选一种输入格式的样本进行验证。"
-                : "每种输入格式各验证一个样本。"}
-            </p>
+            <p>样本验证可选。保存方案后即可发布新版本。</p>
             <SamplePicker
               formats={doc.adapters.map((a) => a.source_format)}
               value={sample}
@@ -390,7 +399,7 @@ export function SchemeEditor({
             )}
             <Button
               type="primary"
-              disabled={!allValidated || conflict || action.isPending}
+              disabled={dirty || conflict || action.isPending}
               onClick={() => action.mutate("publish")}
             >
               发布新版本

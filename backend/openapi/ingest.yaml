@@ -151,6 +151,25 @@ paths:
           content:
             application/problem+json:
               schema: {$ref: "#/components/schemas/ProblemDetails"}
+  /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/summary:
+    get:
+      operationId: getUploadSessionSummary
+      tags: [ingest]
+      security: [{bearerAuth: []}]
+      parameters:
+        - *authorization_parameter
+        - *project_parameter
+        - *region_parameter
+        - *session_parameter
+      responses:
+        "200":
+          description: Task-scoped upload facts and processing locator.
+          headers:
+            Cache-Control: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadSessionSummaryV1"}
+        "403": {description: Upload session outside the reader's grant.}
   /api/v1/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/raw-media:
     get:
       operationId: getUploadRawMedia
@@ -643,6 +662,21 @@ components:
           oneOf:
             - {$ref: "#/components/schemas/IngestWorkflowLocator"}
             - {type: "null"}
+    UploadSessionSummaryV1:
+      type: object
+      additionalProperties: false
+      required: [session_id, project_id, region_code, rollout_id, data_package_id, manifest_fingerprint, expected_size, status]
+      properties:
+        session_id: {type: string}
+        project_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        region_code: {$ref: "#/components/schemas/IngestIdentifier"}
+        rollout_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        data_package_id: {$ref: "#/components/schemas/IngestIdentifier"}
+        dataset_id: {oneOf: [{$ref: "#/components/schemas/IngestIdentifier"}, {type: "null"}]}
+        manifest_fingerprint: {type: string, pattern: "^[a-f0-9]{64}$"}
+        expected_size: {type: integer, minimum: 1}
+        status: {type: string, enum: [REGISTERED, UPLOADING, PAUSED, MULTIPART_COMPLETED, RAW_COMMITTED, FAILED, CANCELLED]}
+        workflow: {oneOf: [{$ref: "#/components/schemas/IngestWorkflowLocator"}, {type: "null"}]}
     UploadSessionGrant:
       type: object
       required: [session, parts, idempotency_outcome]

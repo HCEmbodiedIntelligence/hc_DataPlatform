@@ -280,6 +280,11 @@ class OssObjectStorage:
         import oss2
         return tuple(item.key for item in oss2.ObjectIteratorV2(self._bucket, prefix=prefix))
 
+    def persistent_oss_uri(self, key: str) -> str:
+        from hc_data_platform.storage.oss_reference import reference_uri
+
+        return reference_uri(self._bucket.bucket_name, self._bucket.physical_key(key))
+
     def inspect_reference(self, uri: str, *, max_files: int = 10000) -> dict[str, Any]:
         from hc_data_platform.storage.oss_prefix import normalize_prefix
         from hc_data_platform.storage.oss_reference import reference_key, reference_uri
@@ -413,7 +418,10 @@ class OssObjectStorage:
                 )
             if not result.is_truncated:
                 return sorted(found, key=lambda part: part.part_number)
-            marker = str(result.next_part_number_marker)
+            next_marker = str(result.next_marker)
+            if not next_marker.isdecimal() or int(next_marker) <= int(marker):
+                raise ValueError("OSS ListParts returned a non-advancing marker")
+            marker = next_marker
 
     def complete_multipart(
         self,

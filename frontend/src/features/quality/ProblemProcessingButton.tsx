@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Alert, Button, Spin } from "antd";
 import type { IngestScope } from "../../entities/data-source";
 import { EntityDrawer } from "../../shared/ui";
-import { useAutoQualityProblems } from "../cleaning/api";
+import { progressNotice, useAutoQualityProblems } from "../cleaning/api";
 import { AutoQualityProblemActions } from "../cleaning/AutoQualityProblemActions";
 
 export function ProblemProcessingButton({
@@ -40,8 +40,8 @@ export function ProblemProcessingButton({
             <Alert type="error" title="读取处理状态失败" />
           ) : !item ? (
             <Alert type="info" title="这条质检结果已更新，请返回问题列表查看" />
-          ) : item.discarded ? (
-            <Alert type="info" title="已丢弃 · 原始数据已保留" />
+          ) : item.progress !== "OPEN" ? (
+            <Alert type="info" title={progressNotice(item)} />
           ) : (
             <AutoQualityProblemActions
               scope={scope}

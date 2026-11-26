@@ -25,6 +25,7 @@ export const qualityReasonLabels: Record<string, string> = {
   NO_OBSERVATIONS: "缺少可评估观测",
   PARTIAL_OBSERVATIONS: "只有部分观测可评估",
   INSUFFICIENT_OBSERVATIONS: "观测数量不足",
+  DISABLED_BY_CAPTURE_SCHEME: "采集方案未启用此规则",
   EXCLUDED_BY_VERDICT_POLICY: "此规则不参与当前策略的总判定",
   NO_REQUIRED_TOPICS: "未配置必需通道",
   NO_JOINT_LIMITS: "未配置关节范围",

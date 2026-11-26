@@ -235,6 +235,8 @@ def list_progress(
     all_batches: bool = False,
     uploaded_from: datetime | None = None,
     uploaded_before: datetime | None = None,
+    task_ids: tuple[str, ...] | None = None,
+    authorized_datasets: tuple[str, ...] | None = None,
 ) -> list[NativeImportProgress]:
     selected_batches = batch_numbers or ([batch_number] if batch_number else None)
     with connections()() as connection, connection.cursor() as cursor:
@@ -252,6 +254,7 @@ def list_progress(
             WHERE s.organization_id=%s AND s.project_id=%s AND s.region_code=%s
               AND (%s OR j.job_type='RAW_STORAGE' OR s.source_format IN ('LEROBOT_V3','MCAP','CAPTURE_BUNDLE'))
               AND s.raw_status='COMMITTED'
+              AND (%s::text[] IS NULL OR s.collection_task_id=ANY(%s) OR s.dataset_id=ANY(%s::text[]))
               AND (%s::text IS NULL OR s.raw_source_id=%s)
               AND (%s::text IS NULL OR s.dataset_id=%s)
               AND (%s OR EXISTS (
@@ -278,6 +281,9 @@ def list_progress(
                 project_id,
                 region_code,
                 include_all_sources,
+                list(task_ids) if task_ids is not None else None,
+                list(task_ids) if task_ids is not None else None,
+                list(authorized_datasets or ()),
                 import_id,
                 import_id,
                 dataset_id,

@@ -1,17 +1,13 @@
-import { Button, Select } from "antd";
-import { Clock3, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button } from "antd";
+import { RefreshCw } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  useDashboardActivity,
-  useDashboardPending,
-  useDashboardPendingPage,
+  useDashboardAnalytics,
   useDashboardTaskStatus,
 } from "../../features/dashboard/api/queries";
 import {
   DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
-  type DashboardActivity,
-  type DashboardPendingPage,
   type DashboardScope,
   type DashboardTaskStatus,
 } from "../../features/dashboard/types";
@@ -21,18 +17,11 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import {
   PageState,
   StandardPageScaffold,
-  StatusTag,
   type PageStateKind,
 } from "../../shared/ui";
 import { AssetCapacityBoard } from "./components/AssetCapacityBoard";
-import { DashboardActivityList } from "./components/DashboardActivityList";
-import { DashboardPendingDrawer } from "./components/DashboardPendingDrawer";
-import { DashboardPendingList } from "./components/DashboardPendingList";
-import {
-  DashboardSectionNotice,
-  sectionLabel,
-  sectionTone,
-} from "./components/DashboardSectionNotice";
+import { AnalyticsPanel } from "./components/AnalyticsPanel";
+import { TimeRangeFilter } from "../../shared/ui/TimeRangeFilter";
 import { dashboardQueryCodec, type DashboardRange } from "./query-codec";
 import styles from "./styles.module.css";
 
@@ -186,23 +175,6 @@ export function DashboardPage() {
     // Explicit refresh still uses the exact current second below.
     () => new Date(Math.floor(Date.now() / 60_000) * 60_000),
   );
-  const [pendingOpen, setPendingOpen] = useState(false);
-  const [pendingCursor, setPendingCursor] = useState<
-    Readonly<{
-      after?: string;
-      before?: string;
-    }>
-  >({});
-  const previousScopeKey = useRef(scopeKey);
-  const scopeChanged = previousScopeKey.current !== scopeKey;
-
-  useEffect(() => {
-    if (previousScopeKey.current === scopeKey) return;
-    previousScopeKey.current = scopeKey;
-    setPendingOpen(false);
-    setPendingCursor({});
-  }, [scopeKey]);
-
   const browserFixtureEnabled =
     import.meta.env.MODE !== "test" &&
     import.meta.env.VITE_MOCK_MODE === "browser";
@@ -214,20 +186,8 @@ export function DashboardPage() {
     () => rangeWindow(search.range, search.from, search.to, anchor),
     [anchor, search.from, search.range, search.to],
   );
-  const activity = useDashboardActivity(scope, window, routeAllowed);
+  const analytics = useDashboardAnalytics(scope, window, routeAllowed, search.taskId);
   const taskStatus = useDashboardTaskStatus(scope, search.taskId, routeAllowed);
-  const pending = useDashboardPending(scope, window, routeAllowed);
-  const pendingPageInput = useMemo(
-    () => ({ limit: 50 as const, ...pendingCursor }),
-    [pendingCursor],
-  );
-  const pendingPage = useDashboardPendingPage(
-    scope,
-    window,
-    pendingPageInput,
-    routeAllowed && pendingOpen && !scopeChanged,
-  );
-
   const unscopedData = useMemo(() => {
     const section = {
       status: "EMPTY" as const,
@@ -268,31 +228,12 @@ export function DashboardPage() {
         selectedTaskId: null,
         selected: null,
       } satisfies DashboardTaskStatus,
-      pending: {
-        asOf: window.to,
-        section,
-        authorizedSourceTypes: [],
-        items: [],
-        pageInfo: null,
-      } satisfies DashboardPendingPage,
-      activity: {
-        from: window.from,
-        to: window.to,
-        timezone: DASHBOARD_PROJECT_TIMEZONE_ASSUMPTION,
-        asOf: window.to,
-        section,
-        items: [],
-        pageInfo: null,
-      } satisfies DashboardActivity,
     };
-  }, [window.from, window.to]);
+  }, [window.to]);
   const taskStatusData = unscopedAccount
     ? unscopedData.taskStatus
     : taskStatus.data;
-  const pendingData = unscopedAccount ? unscopedData.pending : pending.data;
-  const activityData = unscopedAccount ? unscopedData.activity : activity.data;
-
-  const queries = [activity, taskStatus, pending] as const;
+  const queries = [taskStatus, analytics] as const;
   const fatal = queries.every(
     (query) => query.error && query.data === undefined,
   );
@@ -305,59 +246,10 @@ export function DashboardPage() {
         : capabilities.failed || !routeAllowed
           ? "forbidden"
           : fatal
-            ? stateFromError(
-                activity.error ?? taskStatus.error ?? pending.error,
-              )
+            ? stateFromError(taskStatus.error ?? analytics.error)
             : "ready";
-  const pendingState = unscopedAccount ? "ready" : queryState(pending);
-  const activityState = unscopedAccount ? "ready" : queryState(activity);
   const taskStatusState = unscopedAccount ? "ready" : queryState(taskStatus);
-  const pendingPageState = queryState(pendingPage);
-
-  const pendingContent = pendingData ? (
-    <section
-      className={`${styles.panel} ${styles.pendingPanel}`}
-      aria-labelledby="dashboard-pending-title"
-    >
-      <div className={styles.panelHeading}>
-        <div>
-          <h2 id="dashboard-pending-title">我的待办</h2>
-        </div>
-        <div className={styles.panelHeadingActions}>
-          <StatusTag
-            status={pendingData.section.status}
-            label={sectionLabel(pendingData.section.status)}
-            known
-            tone={sectionTone(pendingData.section.status)}
-          />
-          {pendingData.pageInfo?.hasNextPage ? (
-            <Button type="link" onClick={() => setPendingOpen(true)}>
-              查看全部
-            </Button>
-          ) : null}
-        </div>
-      </div>
-      <DashboardSectionNotice
-        section={pendingData.section}
-        label="我的待办"
-        onRetry={() => void pending.refetch()}
-      />
-      {pendingData.items.length === 0 ? (
-        <div className={styles.compactState}>
-          <PageState state="empty" label="我的待办" title="当前时段暂无待办" />
-        </div>
-      ) : (
-        <DashboardPendingList items={pendingData.items} />
-      )}
-    </section>
-  ) : null;
-
-  const activityContent = activityData ? (
-    <DashboardActivityList
-      activity={activityData}
-      onRetry={() => void activity.refetch()}
-    />
-  ) : null;
+  const analyticsState = unscopedAccount ? "ready" : queryState(analytics);
 
   const readyContent = (
     <div className={styles.contentStack}>
@@ -382,31 +274,20 @@ export function DashboardPage() {
         ) : null,
         () => void taskStatus.refetch(),
       )}
-      <div className={styles.lowerGrid}>
-        {renderRegion(
-          pendingState,
-          "我的待办",
-          pending.error,
-          pendingContent,
-          () => void pending.refetch(),
-        )}
-        <aside className={styles.sideColumn} aria-label="最近活动">
-          {renderRegion(
-            activityState,
-            "最近活动",
-            activity.error,
-            activityContent,
-            () => void activity.refetch(),
-          )}
-        </aside>
-      </div>
+      {renderRegion(
+        analyticsState,
+        "时段统计",
+        analytics.error,
+        <AnalyticsPanel data={analytics.data?.analytics} window={window} />,
+        () => void analytics.refetch(),
+      )}
     </div>
   );
 
   const firstError = queries.find((query) => query.error)?.error;
   const blockingState: PageStateKind =
     pageState === "ready" ? "error" : pageState;
-  const asOf = taskStatusData?.asOf ?? activityData?.asOf ?? pendingData?.asOf;
+  const asOf = analytics.data?.as_of ?? taskStatusData?.asOf;
   const refreshing = queries.some(
     (query) => query.isFetching && query.data !== undefined,
   );
@@ -419,37 +300,22 @@ export function DashboardPage() {
           breadcrumbs: [{ key: "dashboard", label: "工作台" }],
           actions: (
             <>
-              <label
-                className={styles.rangeControl}
-                title="仅筛选最近活动与我的待办，不影响任务当前状态"
-              >
-                <Clock3 aria-hidden="true" size={16} />
-                <span className={styles.srOnly}>最近活动与待办时间范围</span>
-                <Select
-                  aria-label="最近活动与待办时间范围"
-                  value={search.range}
-                  options={[
-                    { value: "24h", label: "最近 24 小时" },
-                    { value: "7d", label: "最近 7 天" },
-                    { value: "30d", label: "最近 30 天" },
-                    ...(search.range === "custom"
-                      ? [
-                          {
-                            value: "custom",
-                            label: "自定义时段",
-                            disabled: true,
-                          },
-                        ]
-                      : []),
-                  ]}
-                  onChange={(range: DashboardRange) => {
+              <TimeRangeFilter
+                label="工作台统计时间段"
+                required
+                maxDays={31}
+                range={window}
+                onChange={(range) => {
+                  if (range)
                     setSearchParams(
-                      dashboardQueryCodec.build({ ...search, range }),
+                      dashboardQueryCodec.build({
+                        ...search,
+                        ...range,
+                        range: "custom",
+                      }),
                     );
-                    setAnchor(new Date(Math.floor(Date.now() / 1_000) * 1_000));
-                  }}
-                />
-              </label>
+                }}
+              />
               {browserFixtureEnabled ? (
                 <span className={styles.fixtureBadge}>测试数据</span>
               ) : null}
@@ -467,11 +333,13 @@ export function DashboardPage() {
                 loading={refreshing}
                 onClick={() => {
                   const next = new Date(Math.floor(Date.now() / 1_000) * 1_000);
-                  if (search.range === "custom" || next.getTime() === anchor.getTime()) {
+                  if (
+                    search.range === "custom" ||
+                    next.getTime() === anchor.getTime()
+                  ) {
                     void Promise.all(queries.map((query) => query.refetch()));
                   } else {
-                    // A new window already fetches activity/pending; refetching
-                    // their old keys as well would duplicate both requests.
+                    // Changing the window starts a new analytics query.
                     setAnchor(next);
                     void taskStatus.refetch();
                   }
@@ -500,18 +368,6 @@ export function DashboardPage() {
             />
           )
         }
-      />
-
-      <DashboardPendingDrawer
-        open={pendingOpen}
-        page={pendingPage.data}
-        state={pendingPageState}
-        requestId={requestId(pendingPage.error)}
-        onRetry={
-          pendingPage.isError ? () => void pendingPage.refetch() : undefined
-        }
-        onCursorChange={setPendingCursor}
-        onClose={() => setPendingOpen(false)}
       />
     </section>
   );

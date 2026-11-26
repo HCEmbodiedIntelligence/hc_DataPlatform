@@ -1,9 +1,11 @@
+import { useCapabilities } from "../../shared/auth/use-capabilities";
+import { useFileDownload } from "../../shared/lib/use-file-download";
 import {
   ResourceLabel,
   decodedFileName,
 } from "../../shared/lib/resource-labels";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { lazy, Suspense, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Alert, Button, Card, Tabs, Typography } from "antd";
 import { Link, useLocation } from "react-router-dom";
 import type { Scope } from "../../shared/scope/model";
@@ -16,6 +18,7 @@ import type { ReviewDataRef } from "../../features/datasets/episodes/data-review
 import {
   authorizeEpisodeFile,
   downloadAnnotationMigration,
+  downloadPackageManifest,
   loadEpisodeFiles,
   loadEpisodeOverview,
   secondsFromNs,
@@ -84,36 +87,30 @@ function Technical({ title, value }: { title: string; value: unknown }) {
   );
 }
 function EpisodeFiles({ scope, data }: { scope: Scope; data: ReviewDataRef }) {
+  const { has } = useCapabilities();
+  const mayDownloadManifest = has("dataset_version.download_manifest") ||
+    has("dataset_version.download_manifest/version:" + data.data_version_id) ||
+    has("dataset_version.download_manifest/dataset:" + data.identity.dataset_id);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
-  const controller = useRef<AbortController | null>(null);
-  useEffect(() => {
-    controller.current = new AbortController();
-    return () => controller.current?.abort();
-  }, []);
+  const download = useFileDownload(data.data_version_id);
   const query = useQuery({
     queryKey: ["episode-files", scope, data, cursors.at(-1)],
     queryFn: ({ signal }) =>
       loadEpisodeFiles(scope, data, cursors.at(-1), signal),
   });
-  const download = useMutation({
-    mutationFn: async (file: EpisodeFile) => {
-      const signal = controller.current!.signal;
+  function saveFile(file: EpisodeFile) {
+    return download.save(decodedFileName(file.path.split("/").at(-1)!), async signal => {
       const grant = await authorizeEpisodeFile(scope, data, file, signal);
-      signal.throwIfAborted();
-      const anchor = document.createElement("a");
-      anchor.href = grant.url;
-      anchor.download = "";
-      anchor.rel = "noopener noreferrer";
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-    },
-  });
+      return { url: grant.url, size_bytes: file.size };
+    });
+  }
   return (
     <section aria-label="已提交数据文件" className={styles.stack}>
       <Button loading={query.isFetching} onClick={() => void query.refetch()}>
         刷新文件清单
       </Button>
+      {mayDownloadManifest && <Button onClick={() => void download.save("manifest.json",
+        signal => downloadPackageManifest(scope, data, signal))}>下载版本清单</Button>}
       <Typography.Paragraph>
         以下为已提交的数据文件；完整数据包含数值、RGB、已采集深度视频、深度
         profile 和有效性掩码。
@@ -156,12 +153,11 @@ function EpisodeFiles({ scope, data }: { scope: Scope; data: ReviewDataRef }) {
                 value={{ sha256: file.sha256, media_type: file.media_type }}
               />
               <Button
-                disabled={!file.download.allowed || download.isPending}
+                disabled={!file.download.allowed || Boolean(download.pending)}
                 loading={
-                  download.isPending &&
-                  download.variables?.file_id === file.file_id
+                  download.pending === decodedFileName(file.path.split("/").at(-1)!)
                 }
-                onClick={() => download.mutate(file)}
+                onClick={() => void saveFile(file)}
               >
                 下载文件
               </Button>
@@ -205,35 +201,10 @@ function HistoricalAnnotationMappings({
   data: ReviewDataRef;
   mappings: EpisodeAnnotationMigration[];
 }) {
-  const controller = useRef<AbortController | null>(null);
-  useEffect(() => {
-    controller.current = new AbortController();
-    return () => controller.current?.abort();
-  }, []);
-  const download = useMutation({
-    mutationFn: async (mapping: EpisodeAnnotationMigration) => {
-      const signal = controller.current!.signal;
-      const blob = await downloadAnnotationMigration(
-        scope,
-        data,
-        mapping,
-        signal,
-      );
-      signal.throwIfAborted();
-      const url = URL.createObjectURL(blob);
-      try {
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = `${mapping.mapping_id}.json`;
-        document.body.append(anchor);
-        anchor.click();
-        anchor.remove();
-      } finally {
-        // Give the browser time to begin consuming the object URL.
-        window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-      }
-    },
-  });
+  const download = useFileDownload(data.data_version_id);
+  function saveMapping(mapping: EpisodeAnnotationMigration) {
+    return download.save(`${mapping.mapping_id}.json`, signal => downloadAnnotationMigration(scope, data, mapping, signal));
+  }
   return (
     <section aria-label="历史标注迁移" className={styles.stack}>
       {mappings.map((mapping) => (
@@ -250,12 +221,11 @@ function HistoricalAnnotationMappings({
           </p>
           <p>历史审核仅作来源记录；当前版本标注需独立提交和审核。</p>
           <Button
-            disabled={!mapping.download.allowed || download.isPending}
+            disabled={!mapping.download.allowed || Boolean(download.pending)}
             loading={
-              download.isPending &&
-              download.variables?.mapping_id === mapping.mapping_id
+              download.pending === `${mapping.mapping_id}.json`
             }
-            onClick={() => download.mutate(mapping)}
+            onClick={() => void saveMapping(mapping)}
           >
             下载历史标注映射 JSON
           </Button>

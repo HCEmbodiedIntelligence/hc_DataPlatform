@@ -157,7 +157,7 @@ export const manualIssuesPageEnvelopeWireSchema = scopeEnvelopeWireSchema(
         .object({
           issue_types: z.array(manualIssueTypeWireSchema),
           severities: z.array(manualIssueSeverityWireSchema),
-          statuses: z.array(z.enum(["OPEN", "IN_PROGRESS", "RESOLVED"])),
+          statuses: z.array(z.enum(["OPEN", "IN_PROGRESS", "RESOLVED", "DISCARDED"])),
           discovery_sources: z.array(manualIssueDiscoverySourceWireSchema),
           assignees: z.array(principalSummaryWireSchema),
         })
@@ -171,6 +171,7 @@ export const manualIssuesPageEnvelopeWireSchema = scopeEnvelopeWireSchema(
 export const manualIssueListItemWireSchema = z
   .object({
     id: idWireSchema,
+    note: z.string().optional(),
     etag: etagWireSchema,
     scope: scopeWireSchema,
     dataset_id: idWireSchema,

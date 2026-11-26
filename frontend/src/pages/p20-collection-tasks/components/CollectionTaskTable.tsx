@@ -48,6 +48,7 @@ export interface CollectionTaskTableProps {
   readonly progressByTaskId: ReadonlyMap<string, TaskProgressState>;
   readonly loading?: boolean;
   readonly canManage: boolean;
+  readonly canDelete?: (task: CollectionTask) => boolean;
   readonly filtered: boolean;
   readonly onEdit: (task: CollectionTask) => void;
   readonly onClose: (task: CollectionTask) => void;
@@ -282,6 +283,7 @@ function ReceivedProgress({
         </strong>
         <span className={styles.summaryMeta}>
           <span>
+            已入库时长{" "}
             {data.captured_duration_seconds == null
               ? "时长待汇总"
               : formatDuration(data.captured_duration_seconds)}
@@ -334,8 +336,8 @@ function ReceivedProgress({
       />
       <MetricProgress
         actual={data.captured_duration_seconds ?? null}
-        ariaLabel="采集时长目标进度"
-        label="采集时长"
+        ariaLabel="已入库时长目标进度"
+        label="已入库时长"
         metric={data.attainment.duration_seconds ?? null}
         target={durationTarget}
         unit="duration"
@@ -343,7 +345,8 @@ function ReceivedProgress({
       {data.duration_unknown_package_count > 0 ? (
         <span className={styles.durationWarning}>
           <CircleAlert aria-hidden="true" size={13} />
-          {numberFormat.format(data.duration_unknown_package_count)} 包时长未知
+          {numberFormat.format(data.duration_unknown_package_count)}{" "}
+          条已入库成片时长未知
         </span>
       ) : null}
     </div>
@@ -545,6 +548,7 @@ function TaskDetails({
 
 function TaskActions({
   canManage,
+  canDelete,
   onCancel,
   onClose,
   onEdit,
@@ -554,6 +558,7 @@ function TaskActions({
   task,
 }: Readonly<{
   canManage: boolean;
+  canDelete?: (task: CollectionTask) => boolean;
   task: CollectionTask;
   progress: TaskProgressState | undefined;
   onEdit: (task: CollectionTask) => void;
@@ -578,6 +583,8 @@ function TaskActions({
       label: "删除任务及数据",
       onClick: () => run(onDelete),
     };
+    const deletion = canDelete?.(task) ? [deleteItem] : [];
+    if (!canManage) return deletion;
     if (task.status !== "ACTIVE") {
       return [
         {
@@ -586,7 +593,7 @@ function TaskActions({
           label: "重新开启",
           onClick: () => run(onReopen),
         },
-        deleteItem,
+        ...deletion,
       ];
     }
     return [
@@ -611,9 +618,9 @@ function TaskActions({
         label: "取消任务",
         onClick: () => run(onCancel),
       },
-      deleteItem,
+      ...deletion,
     ];
-  }, [onCancel, onClose, onEdit, onReopen, onDelete, task]);
+  }, [canManage, canDelete, onCancel, onClose, onEdit, onReopen, onDelete, task]);
 
   return (
     <div className={styles.taskActions}>
@@ -663,7 +670,7 @@ function TaskActions({
         查看数据集
         <ArrowUpRight aria-hidden="true" size={15} />
       </Link>
-      {canManage ? (
+      {canManage || canDelete?.(task) ? (
         <Tooltip title="更多操作" trigger={["hover", "focus"]}>
           <Dropdown
             autoFocus
@@ -718,6 +725,7 @@ function TaskStatus({ task }: Readonly<{ task: CollectionTask }>) {
 
 function MobileTaskList({
   canManage,
+  canDelete,
   filtered,
   loading,
   onCancel,
@@ -765,6 +773,7 @@ function MobileTaskList({
             </div>
             <TaskActions
               canManage={canManage}
+      {...(canDelete ? { canDelete } : {})}
               task={task}
               progress={progress}
               onCancel={onCancel}
@@ -799,6 +808,7 @@ function ProgressCell({ row, column }: CellContext<CollectionTask, unknown>) {
 function ActionsCell({ row }: CellContext<CollectionTask, unknown>) {
   const {
     canManage,
+  canDelete,
     onCancel,
     onClose,
     onEdit,
@@ -809,6 +819,7 @@ function ActionsCell({ row }: CellContext<CollectionTask, unknown>) {
   return (
     <TaskActions
       canManage={canManage}
+      {...(canDelete ? { canDelete } : {})}
       task={row.original}
       progress={progressByTaskId.get(row.original.collection_task_id)}
       onCancel={onCancel}

@@ -6,6 +6,8 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_MS
+
 
 class JointNormalization(BaseModel):
     """Immutable position/clock semantics for the HC TJ full-body profile."""
@@ -15,7 +17,7 @@ class JointNormalization(BaseModel):
     clock_domain: str = Field(min_length=1, max_length=256)
     clock_evidence: str = Field(min_length=1, max_length=2048)
     capture_clock: Literal["header_stamp"] = "header_stamp"
-    waist_fallback_ms: Literal[20] = 20
+    waist_fallback_ms: Literal[20, 25] = JOINT_MATCH_MS
     invalid_action: Literal["drop"] = "drop"
     camera_mode: Literal["legacy_reference", "calibrated"] = "legacy_reference"
     hand_encoding: Literal["independent_ban_command"] = "independent_ban_command"
@@ -65,6 +67,10 @@ class CleanDaggerIntervals(RuleOption):
     kind: Literal["clean_dagger_intervals"]
 
 
+class InterpolateShortGaps(RuleOption):
+    kind: Literal["interpolate_short_gaps"]
+
+
 class ForwardFillHands(RuleOption):
     kind: Literal["forward_fill_hands"]
 
@@ -82,13 +88,13 @@ class GenerateAction(RuleOption):
     source: Literal["state"]
 
 
-Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction | FillInitialAction | FillActionFromNextFrame | ForwardFillHands | CleanDaggerIntervals, Field(discriminator="kind")]
+Operation = Annotated[ZeroJoints | ActionFromState | FillPosition | GenerateAction | FillInitialAction | FillActionFromNextFrame | ForwardFillHands | CleanDaggerIntervals | InterpolateShortGaps, Field(discriminator="kind")]
 
 
 class JointEditRules(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     version: Literal[2]
-    rules: tuple[Operation, ...] = Field(max_length=8)
+    rules: tuple[Operation, ...] = Field(max_length=9)
 
     @cached_property
     def active(self):
@@ -96,7 +102,7 @@ class JointEditRules(BaseModel):
 
     @property
     def has_joint_edits(self) -> bool:
-        return bool(self.active.keys() - {"forward_fill_hands", "clean_dagger_intervals"})
+        return bool(self.active.keys() - {"forward_fill_hands", "clean_dagger_intervals", "interpolate_short_gaps"})
 
     @property
     def zero_joints(self):
@@ -204,6 +210,9 @@ class McapDraftConfig(BaseModel):
             for names in groups:
                 if len(names) != len(set(names)) or set(names) - axes:
                     raise ValueError("action repair axes must be unique named action joints")
+            if isinstance(rules, JointEditRules) and "interpolate_short_gaps" in rules.active:
+                if not self.semantic_output or not self.state_topic or not self.action_topic:
+                    raise ValueError("short gap interpolation requires mapped state and action on a capture timeline")
             if isinstance(rules, JointEditRules) and "forward_fill_hands" in rules.active:
                 hands = HAND_COMMAND_FEATURES.intersection(self.numeric_sources)
                 features = (self.semantic_output or {}).get("features", {})
@@ -282,6 +291,26 @@ class McapDraftConfig(BaseModel):
 
 class McapProcessingConfig(McapDraftConfig):
     fps: int = Field(default=30, ge=1, le=240)
+
+    def current_joint_timing(self) -> Self:
+        """Upgrade the old HC TJ defaults only for a new derivation.
+
+        Frozen snapshots and byte-for-byte selected MCAP rebuilds keep their
+        stored configuration. The new derivation records its effective config.
+        """
+        if self.normalization is None:
+            return self
+        config = self.model_dump(mode="json")
+        config["maximum_time_error_ms"] = JOINT_MATCH_MS
+        config["normalization"]["waist_fallback_ms"] = JOINT_MATCH_MS
+        output_policy = (config.get("semantic_output") or {}).get("normalization")
+        if output_policy:
+            output_policy["waist_fallback_ms"] = JOINT_MATCH_MS
+        rules = config.get("postprocessing_rules") or {}
+        for rule in rules.get("rules", [rules]):
+            if rule.get("max_state_delta_ms") == 20:
+                rule["max_state_delta_ms"] = JOINT_MATCH_MS
+        return type(self).model_validate(config)
 
     @field_validator("fps", mode="before")
     @classmethod

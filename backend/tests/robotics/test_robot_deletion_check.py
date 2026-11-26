@@ -1,14 +1,20 @@
 from dataclasses import replace
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
+from hc_data_platform.capture_schemes import associations, plans
+from hc_data_platform.capture_schemes.models import PrepareRecording
 from hc_data_platform.core.errors import ProblemException
 from hc_data_platform.registry.binding_queries import published_model_for_binding
 from hc_data_platform.robot_assets.repository import PostgresOrganizationRobotAssetRepository
+from hc_data_platform.robot_assets.resolution import PostgresRobotResolution
 from hc_data_platform.robot_assets.router import configure_organization_robot_assets
 from hc_data_platform.robot_assets.service import OrganizationRobotAssetService
 from hc_data_platform.security.auth import AuthContext
+from tests.capture_schemes import test_transactions as capture
+from tests.capture_schemes.test_transactions import environment  # noqa: F401
 from tests.robot_ingest.test_raw_derivation_services import uploaded_raw  # noqa: F401
 from tests.robot_processing.test_configuration import publish
 from tests.robotics.test_configured_robot_deletion import robot  # noqa: F401
@@ -226,3 +232,65 @@ def test_production_deletion_check_rejects_anonymous_before_query_validation():
         )
     assert response.status_code == 401
     assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_unlink_capture_scheme_then_delete_robot_preserves_recording_history(environment):  # noqa: F811
+    dsn, scope, tasks = environment
+    org, project, region = scope
+    rid = "robot-1"
+    repo = PostgresOrganizationRobotAssetRepository(
+        lambda: psycopg.connect(dsn), published_models=published_model_for_binding
+    )
+    service = OrganizationRobotAssetService(repo)
+    auth = actor(org, project, region)
+    args = dict(auth=auth, organization_id=org, robot_id=rid)
+    with psycopg.connect(dsn) as db:
+        ref = capture.publish(db, org)
+        capture.associate(db, org, rid, ref)
+        capture.associate(db, org, "robot-2", ref)
+        plans.save_plan(db, scope, tasks[0], capture.selection(ref, rid), "tester")
+        command = PrepareRecording(
+            expected_plan_revision=1, recording_id="rec", source_format="LEROBOT_V3"
+        )
+        snapshot = plans.prepare_recording(db, scope, tasks[0], rid, command, "tester")
+        original = associations.list_links(db, org, rid)[0]
+
+    report = service.deletion_check(**args, kind="capture_scheme")
+    assert not report.can_delete
+    assert [(b.kind, b.count) for b in report.blockers] == [("capture_scheme", 1)]
+    assert [(r.name, r.scheme_id, r.version) for r in report.items] == [
+        ("Joint capture", ref.scheme_id, ref.version)
+    ]
+    resolution = PostgresRobotResolution(lambda: psycopg.connect(dsn))
+    assert not resolution.plan(org, rid, auth).can_transfer
+    with pytest.raises(ProblemException) as error:
+        service.delete_robot(**args, request_id="still-linked")
+    assert error.value.problem.code == "ROBOT_IN_USE"
+    assert "移除关联" in error.value.problem.detail
+
+    with psycopg.connect(dsn) as db:
+        associations.remove(db, org, rid, ref.scheme_id, original["revision"], "tester")
+    assert service.deletion_check(**args).can_delete
+    service.delete_robot(**args, request_id="unlinked")
+    with psycopg.connect(dsn) as db:
+        assert not db.execute(
+            "SELECT 1 FROM robotics.robot_assets WHERE organization_id=%s AND robot_id=%s",
+            (org, rid),
+        ).fetchone()
+        saved = associations.list_links(db, org, rid)[0]
+        assert not saved["active"]
+        for key in ("scheme", "mapping", "validations"):
+            assert saved[key] == original[key]
+        recorded = db.execute(
+            "SELECT document FROM ingest.capture_recording_snapshots "
+            "WHERE organization_id=%s AND robot_id=%s AND recording_id=%s",
+            (org, rid, command.recording_id),
+        ).fetchone()
+        assert recorded == (snapshot,)
+        assert associations.list_links(db, org, "robot-2")[0]["active"]
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            db.execute(
+                "UPDATE ingest.capture_scheme_links SET active=true "
+                "WHERE organization_id=%s AND robot_id=%s AND scheme_id=%s",
+                (org, rid, ref.scheme_id),
+            )

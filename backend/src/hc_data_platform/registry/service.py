@@ -819,6 +819,25 @@ class RegistryService:
     ) -> tuple[RobotModelAssetDownloadAuthorization, ...]:
         ScopeGuard.require(auth, project_id, organization_id=organization_id)
         auth.require_organization_capability(organization_id, "robot_model.read")
+        return self._published_asset_grants(auth, organization_id, project_id, version_id, asset_ids, request_id)
+
+    def authorize_episode_viewer_assets(
+        self, *, auth: AuthContext, organization_id: str, project_id: str, region_code: str,
+        version_id: str, assets: tuple[RobotModelAsset, ...], request_id: str,
+    ) -> tuple[RobotModelAssetDownloadAuthorization, ...]:
+        """The logical reader supplies only assets from the authorized immutable revision."""
+        ScopeGuard.require(auth, project_id, region_code, organization_id)
+        for capability in ("dataset_version.read", "episode.read"):
+            auth.require_capability(capability, project_id, organization_id)
+        if any(asset.role not in {"URDF", "MESH", "TEXTURE"} for asset in assets):
+            raise ValueError("Asset is not part of the playback geometry")
+        return self._published_asset_grants(
+            auth, organization_id, project_id, version_id, tuple(a.asset_id for a in assets),
+            request_id, expected_assets=assets,
+        )
+
+    def _published_asset_grants(self, auth, organization_id, project_id, version_id, asset_ids,
+                                request_id, *, expected_assets=()):
         if self._published_assets is None:
             raise problem(status=503, code="PUBLISHED_MODEL_ASSETS_UNAVAILABLE",
                           title="Published model assets unavailable", detail="No published model reader.")
@@ -826,6 +845,9 @@ class RegistryService:
         if set(found) != set(asset_ids):
             raise problem(status=404, code="ROBOT_MODEL_ASSET_NOT_FOUND",
                           title="Published model asset not found", detail="Asset not in selected published model.")
+        if any(found[asset.asset_id][1] != asset for asset in expected_assets):
+            raise problem(status=409, code="FROZEN_MODEL_ASSET_MISMATCH", title="Frozen asset differs",
+                          detail="Published asset metadata differs from the Episode snapshot.")
         grants = tuple(self._signed_asset_authorization(
             organization_id, found[asset_id][0], found[asset_id][1]
         ) for asset_id in asset_ids)

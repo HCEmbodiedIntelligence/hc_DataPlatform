@@ -610,6 +610,15 @@ def test_postgres_p09_issue_handoff_and_resolution_are_durable_and_rls_scoped() 
                 request_id="p09-postgres-list",
             )
             assert [item.id for item in listed.items] == [created.record.issue.id]
+            for filters, total in (
+                (ManualIssueFilters(updated_from=created.record.issue.updated_at), "1"),
+                (ManualIssueFilters(updated_to=created.record.issue.updated_at), "0"),
+            ):
+                page = service.page(auth=_auth(), organization_id=ORGANIZATION_ID,
+                                    project_id=PROJECT_ID, region_code=REGION_CODE,
+                                    filters=filters, request_id="p09-postgres-time-range")
+                assert page.data.counts.total == total
+                assert sum(group.count for group in page.data.task_groups) == int(total)
 
             with pytest.raises(ProblemException) as unresolved:
                 service.resolve_issue(
@@ -781,3 +790,71 @@ def test_postgres_p09_issue_handoff_and_resolution_are_durable_and_rls_scoped() 
     finally:
         _cleanup(superuser_dsn)
         _drop_app_role(superuser_dsn)
+
+
+def test_discard_report_retires_only_bound_version_and_blocks_delivery() -> None:
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from psycopg.types.json import Jsonb
+    from hc_data_platform.episode_store.delivery_repository import PostgresEpisodeDeliveries as EpisodeDeliveryRepository
+    import psycopg
+
+    dsn = _superuser_dsn()
+    asyncio.run(apply_migrations(dsn))
+    _cleanup(dsn)
+    _prepare_app_role(dsn)
+    key = (ORGANIZATION_ID, PROJECT_ID, REGION_CODE, DATASET_ID, EPISODE_ID)
+    version = "dv_" + "8" * 64
+    data = {"data_version_id": version, "identity": {"rollout_id": "synthetic-report-package"}}
+    try:
+        _seed(dsn)
+        with psycopg.connect(dsn) as c:
+            c.execute("GRANT USAGE ON SCHEMA episode_store,ingest TO " + APP_ROLE)
+            c.execute("GRANT SELECT,UPDATE ON episode_store.versions, ingest.recording_episode_processing, ingest.raw_source_episodes TO " + APP_ROLE)
+            c.execute("GRANT SELECT,INSERT ON episode_store.qc_retired_versions TO " + APP_ROLE)
+        token = bind_request_context(_request_context())
+        try:
+            service = _service(_app_dsn(dsn))
+            scope = dict(organization_id=ORGANIZATION_ID,project_id=PROJECT_ID,region_code=REGION_CODE)
+            created = service.create_issue(auth=_auth(), **scope, command=_create_command(),
+                idempotency_key="report-discard",request_id="report-discard-create").record.issue
+            sibling = service.create_issue(auth=_auth(), **scope,
+                command=_create_command().model_copy(update={"note": "另一个独立片段", "start_ns": "250", "end_ns": "275"}),
+                idempotency_key="report-discard-sibling", request_id="sibling").record.issue
+            args = dict(**scope, issue_id=created.id, if_match=created.etag, request_id="report-discard")
+            with pytest.raises(ProblemException):
+                service.discard_package(auth=_auth(), **args)
+            auth = replace(_auth(), scoped_capabilities=_auth().scoped_capabilities | {(PROJECT_ID, "upload.manage")})
+            with pytest.raises(ProblemException):
+                service.discard_package(auth=auth, **args)
+            with psycopg.connect(dsn) as c:
+                assert c.execute("SELECT status FROM manual_cleaning.manual_issues WHERE manual_issue_id=%s", (created.id,)).fetchone()==("OPEN",)
+                c.execute("INSERT INTO episode_store.bindings(organization_id,project_id,region_code,dataset_id,episode_id,rollout_id) VALUES (%s,%s,%s,%s,%s,%s)", (*key, "synthetic-report-package"))
+                c.execute("""INSERT INTO episode_store.versions(organization_id,project_id,region_code,dataset_id,episode_id,data_version_id,
+                    version,idempotency_key,input_document,content_hash,status,receipt_document,committed_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,1,%s,'{}',%s,'COMMITTED',%s,now())""", (*key,version,"7"*64,"8"*64,Jsonb({"data":data})))
+                c.execute("""UPDATE dataset_registry.dataset_version_episode_revisions
+                    SET revision_document=jsonb_set(revision_document,'{streams,0,package_binding}',%s)
+                    WHERE revision_id=%s""", (Jsonb({"data":data}),REVISION_ID))
+            with pytest.raises(ProblemException):
+                service.discard_package(auth=auth, **{**args, "if_match": '"v999"'})
+            service.discard_package(auth=auth, **args)
+            service.discard_package(auth=auth, **args)
+            with psycopg.connect(dsn) as c:
+                assert c.execute("SELECT status FROM manual_cleaning.manual_issues WHERE manual_issue_id=%s", (created.id,)).fetchone()==("DISCARDED",)
+                assert c.execute("SELECT status FROM manual_cleaning.manual_issues WHERE manual_issue_id=%s", (sibling.id,)).fetchone()==("DISCARDED",)
+                assert c.execute("SELECT data_version_id,report_id FROM episode_store.qc_retired_versions WHERE data_version_id=%s",(version,)).fetchall()==[(version,created.id)]
+            delivery=EpisodeDeliveryRepository(_connection_factory(_app_dsn(dsn)))
+            member=lambda identifier: SimpleNamespace(data=SimpleNamespace(data_version_id=identifier))
+            assert delivery.has_retired_members([member(version)])
+            assert not delivery.has_retired_members([member("other")])
+        finally:
+            reset_request_context(token)
+    finally:
+        with psycopg.connect(dsn) as c:
+            c.execute("SET LOCAL session_replication_role = replica")
+            c.execute("DELETE FROM episode_store.qc_retired_versions WHERE data_version_id=%s",(version,))
+            c.execute("DELETE FROM episode_store.versions WHERE data_version_id=%s",(version,))
+            c.execute("DELETE FROM episode_store.bindings WHERE rollout_id='synthetic-report-package'")
+        _cleanup(dsn)
+        _drop_app_role(dsn)

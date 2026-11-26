@@ -32,6 +32,7 @@
 .sourceCard {
   min-width: 0;
   overflow: clip;
+  container-type: inline-size;
   border-color: var(--hc-color-border, #d9ddea);
   border-radius: 10px;
   box-shadow: none;
@@ -71,35 +72,37 @@
 
 .filterGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) minmax(380px, 1.4fr) minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .75fr) minmax(320px, 1.45fr) minmax(0, 1fr) minmax(0, 1.15fr);
+  align-items: start;
   gap: 12px;
 }
 
 .filterField {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 5px;
 }
 
-.filterField label {
+.filterField > label {
   color: var(--hc-color-text, #171a2a);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 680;
-}
-
-.filterField {
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
+  line-height: 18px;
 }
 
 .filterField :global(.ant-picker) {
   min-width: 0;
+  width: 100%;
 }
 
-.filterField :global(.ant-checkbox-wrapper) {
-  grid-column: 2;
+.filterActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  margin-top: 8px;
 }
 
 .filterHint {
@@ -133,21 +136,23 @@
   outline-offset: 1px;
 }
 
-@media (max-width: 1400px) {
+@container (max-width: 1100px) {
   .filterGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .filterGrid > button {
-    justify-self: start;
+  .filterField:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 690px) {
+  .filterGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 768px) {
-  .filterGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .page {
     padding: 16px;
   }

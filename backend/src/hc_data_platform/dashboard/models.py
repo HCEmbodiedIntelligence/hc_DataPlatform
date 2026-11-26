@@ -418,6 +418,25 @@ class DashboardResponseBase(BaseModel):
     as_of: AwareDatetime
 
 
+class DashboardVolumeBucket(BaseModel):
+    episodes: int = Field(ge=0)
+    start: AwareDatetime
+    frames: int = Field(ge=0)
+    seconds: float = Field(ge=0)
+
+
+class DashboardAnalytics(BaseModel):
+    reports: dict[str, int]
+    affected_packages: int = Field(ge=0)
+    buckets: list[DashboardVolumeBucket]
+    outcomes: dict[str, int]
+    issues: dict[str, int]
+
+
+class DashboardAnalyticsResponse(DashboardResponseBase):
+    analytics: DashboardAnalytics
+
+
 class DashboardPageSectionState(DashboardSectionState):
     page_info: PageInfo | None = None
 

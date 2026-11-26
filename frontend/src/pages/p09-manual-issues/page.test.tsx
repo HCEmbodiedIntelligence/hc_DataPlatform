@@ -164,10 +164,10 @@ function CurrentLocation() {
     </output>
   );
 }
-function renderProblem(overrides: Record<string, unknown> = {}, root = false) {
+function renderProblem(overrides: Record<string, unknown> = {}, root = false, query = "") {
   const code =
     (overrides.finding_codes as string[] | undefined)?.[0] ?? "QC_IMAGE_BLACK";
-  const entry = root ? returnTo : returnTo + "&taskGroup=&problemType=" + code;
+  const entry = (root ? returnTo : returnTo + "&taskGroup=&problemType=" + code) + query;
   requestMock.mockImplementation(
     async ({ path, method }: { path: string; method: string }) => {
       if (path.endsWith("/quality-problems"))
@@ -266,6 +266,54 @@ function renderProblem(overrides: Record<string, unknown> = {}, root = false) {
 }
 
 describe("问题数据 Raw 入口", () => {
+  it("applies the update interval to automatic problem groups and totals", async () => {
+    fixtureRows = [wireProblem, { ...wireProblem, id: "qc_" + "b".repeat(32),
+      data_package_id: "outside-range", updated_at: "2026-09-22T00:00:00Z" }];
+    renderProblem({}, true, "&from=2026-09-21T01:00:00Z&to=2026-09-22T00:00:00Z");
+    expect(await screen.findByRole("button", { name: /全部问题.*1/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /未关联采集任务.*1 条记录/ })).toBeVisible();
+  });
+
+  it("counts two Episode reports for a single package once in cards and task groups", async () => {
+    fixtureRows = [
+      wireProblem,
+      { ...wireProblem, id: "qc_" + "b".repeat(32), source_episode_index: 8 },
+    ];
+    renderProblem({}, true);
+    expect(
+      await screen.findByRole("button", { name: /全部问题.*1/ }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: /待分诊.*1/ })).toBeVisible();
+    expect(
+      screen.getByRole("button", {
+        name: /未关联采集任务.*1 类问题.*1 条记录/,
+      }),
+    ).toBeVisible();
+  });
+
+  it("filters reprocessing packages and opens their evidence without retry actions", async () => {
+    renderProblem({ progress: "IN_PROGRESS" }, true);
+    const completed = await screen.findByRole("button", { name: /处理中.*1/ });
+    expect(screen.getByRole("button", { name: /待分诊.*0/ })).toBeVisible();
+    fireEvent.click(completed);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /未关联采集任务/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /黑帧比例超标/ }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "查看详情" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText("处理中 · 可查看历史质检报告"),
+      ).toBeVisible(),
+    );
+    expect(
+      within(dialog).queryByRole("button", { name: "重新质检并继续处理" }),
+    ).toBeNull();
+  });
+
   it.each([false, true])(
     "closes an open problem when another view deletes it (recording=%s)",
     async (recording) => {
@@ -322,9 +370,9 @@ describe("问题数据 Raw 入口", () => {
         await screen.findByRole("button", { name: "查看与处理" }),
       );
       fireEvent.click(await screen.findByRole("button", { name: /^丢\s*弃$/ }));
-      const dialog = await screen.findByRole("dialog", {
-        name: "丢弃这条问题数据？",
-      });
+      const dialog = (
+        await screen.findByText("丢弃这条问题数据？")
+      ).closest<HTMLElement>('[role="dialog"]')!;
       await client.invalidateQueries({ queryKey: ["quality-problems"] });
       await waitFor(() => expect(dialog).toBeVisible());
       expect(
@@ -361,9 +409,9 @@ describe("问题数据 Raw 入口", () => {
     renderProblem();
     fireEvent.click(await screen.findByRole("button", { name: "查看与处理" }));
     fireEvent.click(await screen.findByRole("button", { name: /^丢\s*弃$/ }));
-    const dialog = await screen.findByRole("dialog", {
-      name: "丢弃这条问题数据？",
-    });
+    const dialog = (
+      await screen.findByText("丢弃这条问题数据？")
+    ).closest<HTMLElement>('[role="dialog"]')!;
     fireEvent.click(within(dialog).getByRole("button", { name: /取\s*消/ }));
     expect(problemsCleared).toBe(false);
     expect(
@@ -452,9 +500,7 @@ describe("问题数据 Raw 入口", () => {
       );
       expect(within(dialog).getByText("黑帧比例超标")).toBeVisible();
       expect(
-        within(dialog).getByText(
-          "视频中黑屏或曝光不足的画面占比超过允许范围。",
-        ),
+        within(dialog).getByText(/黑帧数除以送检帧数得到黑帧比例/),
       ).toBeVisible();
       expect(dialog).not.toHaveTextContent("问题代码");
       expect(dialog).not.toHaveTextContent("QC_IMAGE_BLACK");
@@ -473,6 +519,7 @@ describe("问题数据 Raw 入口", () => {
       ...wireProblem,
       id: "qc_" + i.toString(16).padStart(32, "0"),
       source_episode_index: i,
+      data_package_id: "package-" + i,
       source_file_name: `capture-${i}.mcap`,
       finding_codes: ["QC_IMAGE_BLACK", "QC_ACTION_MISSING"],
     }));

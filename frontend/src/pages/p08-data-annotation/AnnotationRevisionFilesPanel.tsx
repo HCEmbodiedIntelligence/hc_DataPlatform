@@ -1,3 +1,4 @@
+import { saveFileFromClick } from "../../shared/lib/save-file";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
@@ -85,23 +86,9 @@ export function AnnotationRevisionFilesPanel(props: {
   async function download() {
     if (!file) return;
     const signal = downloadController.current?.signal;
-    const blob = await downloadRevisionFile(
-      props.scope,
-      revision,
-      file,
-      !approved && allowUnreviewed,
-      signal,
-    );
-    signal?.throwIfAborted();
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `annotation-r${selected}-${approved ? "approved" : "unreviewed"}.json`;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    // Keep the URL alive while the browser starts the local download.
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if (!signal) return;
+    await saveFileFromClick(`annotation-r${selected}-${approved ? "approved" : "unreviewed"}.json`,
+      signal, () => downloadRevisionFile(props.scope, revision, file, !approved && allowUnreviewed, signal));
   }
   return (
     <section className={styles.revisionFilesPanel} aria-label="版本化标注 JSON">

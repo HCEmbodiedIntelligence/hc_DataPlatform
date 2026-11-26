@@ -8,7 +8,7 @@ from typing import Literal
 from urllib.parse import urlparse
 from uuid import UUID
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOCAL_CURSOR_SECRET = "local-cursor-secret-change-me"
@@ -45,11 +45,15 @@ class Settings(BaseSettings):
     pod_name: str | None = Field(default=None, min_length=1, max_length=253)
     kubernetes_node_name: str | None = Field(default=None, min_length=1, max_length=253)
     kubernetes_zone: str | None = Field(default=None, min_length=1, max_length=253)
+    teleoperation_stun_urls: tuple[str, ...] = ()
+    teleoperation_turn_urls: tuple[str, ...] = ()
+    teleoperation_turn_secret: SecretStr | None = None
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
     postgres_dsn: str = "postgresql+asyncpg://hc:hc@localhost:5432/hc_data"
     temporal_target: str = "localhost:7233"
     temporal_worker_build_id: str | None = Field(default=None, min_length=1, max_length=127)
+    worker_background_services: bool = True
     worker_graceful_shutdown_seconds: int = Field(default=60, ge=1, le=600)
     worker_max_concurrent_workflow_tasks: int = Field(default=4, ge=1, le=1_000)
     worker_max_concurrent_activities: int = Field(default=2, ge=1, le=128)
@@ -66,6 +70,8 @@ class Settings(BaseSettings):
     object_store_local_path: str | None = Field(default=None, max_length=4096)
     storage_oss_usage_prefix: str | None = Field(default=None, min_length=1, max_length=512)
     storage_local_usage_roots: dict[str, str] = Field(default_factory=dict)
+    storage_usage_overflow_uri: str | None = Field(default=None, max_length=2048)
+    storage_usage_report_root: str | None = Field(default=None, max_length=4096)
     storage_disk_usage_path: str | None = Field(default=None, max_length=4096)
     object_store_browser_path: str | None = Field(default=None, max_length=4096)
     object_store_raw_browser_path: str | None = Field(default=None, max_length=4096)
@@ -76,6 +82,7 @@ class Settings(BaseSettings):
     object_store_cache_root: str | None = None
     object_store_cache_ttl_days: int = Field(default=30, ge=1, le=365)
     object_store_compact_paths: bool = False
+    object_store_owner_organization_id: str | None = Field(default=None, min_length=1, max_length=256)
     object_store_prefix: str = Field(default="", max_length=512)
     object_store_endpoint: str = Field(default="http://localhost:9000", repr=False)
     object_store_public_endpoint: str = Field(default="http://localhost:9000", repr=False)
@@ -90,6 +97,7 @@ class Settings(BaseSettings):
     ingest_part_authorization_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     lance_root_uri: str | None = None
     alignment_staging_root: str = "/tmp/hc-data/alignment"
+    episode_export_processes: int = Field(default=0, ge=0, le=128)
     episode_package_cache_bytes: int = Field(default=2 * 1024**3, ge=1024**2)
     episode_package_max_object_bytes: int = Field(default=32 * 1024**3, ge=1024**2)
     lerobot_cache_max_bytes: int = Field(default=5 * 1024**3, ge=1024**2)
@@ -106,6 +114,9 @@ class Settings(BaseSettings):
     media_global_max_concurrent_generations: int = Field(default=4, ge=1, le=128)
     media_ffmpeg_threads: int = Field(default=2, ge=1, le=64)
     artifact_prefix: str = "artifacts"
+    training_service_url: AnyHttpUrl | None = None
+    training_service_token: SecretStr | None = Field(default=None, repr=False)
+    training_service_timeout_seconds: float = Field(default=10, gt=0, le=120)
     auto_annotation_provider_name: str = Field(default="vlm", min_length=1, max_length=128)
     auto_annotation_provider_endpoint: str | None = None
     auto_annotation_provider_models: tuple[str, ...] = ()

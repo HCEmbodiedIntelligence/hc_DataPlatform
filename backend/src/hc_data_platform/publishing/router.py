@@ -133,8 +133,21 @@ def _resource_id(
     )
 
 
+def _authorize_version_file(
+    auth: VerifiedAuth, project_id: str, dataset_id: str, dataset_version: str, capability: str,
+) -> None:
+    # Legacy version labels (e.g. version_lance_1) repeat across datasets.
+    org = current_request_context().organization_id
+    resources = (f"dataset:{dataset_id}",)
+    if ":" not in dataset_version:
+        resources = (f"version:{dataset_id}:{dataset_version}", *resources)
+    action = auth.resource_action(capability, resources, project_id, org)
+    authorize_scope(auth, project_id, action, organization_id=org)
+
+
 def _resolve_export_manifest(
     *,
+    auth: VerifiedAuth,
     project_id: str,
     dataset_id: str,
     dataset_version: str,
@@ -154,6 +167,8 @@ def _resolve_export_manifest(
         match = _READY_LANCE_VERSION.fullmatch(dataset_version)
         if match is None:
             raise
+        authorize_scope(auth, project_id, "dataset_version.publish",
+                        organization_id=current_request_context().organization_id)
         return _publisher.publish(
             PublishDatasetRequestV1(
                 project_id=project_id,
@@ -183,6 +198,30 @@ def _dataset_export_manifest(
             base_lance_version=base_lance_version,
         )
     )
+
+
+def _frozen_dataset_manifest(
+    selection: dict[str, Any], project_id: str, dataset_id: str, dataset_version: str,
+) -> PublishedDatasetManifestV1:
+    manifest = PublishedDatasetManifestV1.model_validate(selection["frozen_manifest"])
+    if (
+        manifest.project_id,
+        manifest.dataset_id,
+        manifest.dataset_version,
+        manifest.data_stage,
+    ) != (
+        project_id,
+        dataset_id,
+        dataset_version,
+        ExportDataStage.DATASET,
+    ) or manifest.content_hash != selection["content_hash"]:
+        raise problem(
+            status=409,
+            code="EXPORT_SELECTION_CHANGED",
+            title="Export selection changed",
+            detail="The frozen snapshot does not match the original export selection.",
+        )
+    return manifest
 
 
 def _export_job_not_found() -> Exception:
@@ -480,7 +519,7 @@ def get_dataset_version(
     project_id: str,
     auth: VerifiedAuth,
 ) -> PublishedDatasetManifestV1:
-    authorize_scope(auth, project_id, "export.read")
+    _authorize_version_file(auth, project_id, dataset_id, dataset_version, "dataset_version.download_manifest")
     return _publisher.get(
         project_id=project_id,
         dataset_id=dataset_id,
@@ -516,8 +555,9 @@ async def export_dataset_version(
     authorize_scope(
         auth,
         request.project_id,
-        "dataset_version.publish",
+        "export.create",
         region_code=region_code,
+        organization_id=current_request_context().organization_id,
     )
     rollout_ids = None
     selection: dict[str, Any] | None = None
@@ -535,6 +575,7 @@ async def export_dataset_version(
             episode_ids=request.episode_ids,
         )
     manifest = _resolve_export_manifest(
+        auth=auth,
         project_id=request.project_id,
         dataset_id=dataset_id,
         dataset_version=dataset_version,
@@ -591,7 +632,7 @@ async def get_export_job(
     auth: VerifiedAuth,
     response: Response,
 ) -> ExportJobV1:
-    authorize_scope(auth, project_id, "dataset_version.publish")
+    authorize_scope(auth, project_id, "export.read", organization_id=current_request_context().organization_id)
     job = await _resolve(get_launcher().get(job_id))
     if job.project_id != project_id:
         raise _export_job_not_found()
@@ -612,7 +653,7 @@ async def cancel_export_job(
     auth: VerifiedAuth,
     response: Response,
 ) -> ExportJobV1:
-    authorize_scope(auth, project_id, "dataset_version.publish")
+    authorize_scope(auth, project_id, "export.create", organization_id=current_request_context().organization_id)
     existing = await _resolve(get_launcher().get(job_id))
     if existing.project_id != project_id:
         raise _export_job_not_found()
@@ -637,7 +678,7 @@ async def retry_export_job(
     response: Response,
     idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
 ) -> ExportJobV1:
-    authorize_scope(auth, project_id, "dataset_version.publish")
+    authorize_scope(auth, project_id, "export.create", organization_id=current_request_context().organization_id)
     existing = await _resolve(get_launcher().get(job_id))
     if existing.project_id != project_id:
         raise _export_job_not_found()
@@ -651,24 +692,7 @@ async def retry_export_job(
         )
     selection = (existing.result or {}).get("export_selection")
     if selection is not None and selection.get("data_stage") == ExportDataStage.DATASET.value:
-        manifest = PublishedDatasetManifestV1.model_validate(selection["frozen_manifest"])
-        if (
-            manifest.project_id,
-            manifest.dataset_id,
-            manifest.dataset_version,
-            manifest.data_stage,
-        ) != (
-            project_id,
-            dataset_id,
-            dataset_version,
-            ExportDataStage.DATASET,
-        ) or manifest.content_hash != selection["content_hash"]:
-            raise problem(
-                status=409,
-                code="EXPORT_SELECTION_CHANGED",
-                title="Export selection changed",
-                detail="The retry snapshot does not match the original export selection.",
-            )
+        manifest = _frozen_dataset_manifest(selection, project_id, dataset_id, dataset_version)
     else:
         manifest = _publisher.get(
             project_id=project_id,
@@ -750,7 +774,7 @@ async def authorize_export_download(
     auth: VerifiedAuth,
     response: Response,
 ) -> ExportDownloadAuthorizationV1:
-    authorize_scope(auth, project_id, "dataset_version.publish")
+    _authorize_version_file(auth, project_id, dataset_id, dataset_version, "export.download")
     job = await _resolve(get_launcher().get(job_id))
     if job.project_id != project_id:
         raise _export_job_not_found()
@@ -770,11 +794,14 @@ async def authorize_export_download(
             title="Export result is missing",
             detail="The completed export has no result available for download.",
         )
-    _publisher.get(
-        project_id=project_id,
-        dataset_id=dataset_id,
-        dataset_version=dataset_version,
-    )
+    selection = (job.result or {}).get("export_selection")
+    if isinstance(selection, dict) and selection.get("data_stage") == ExportDataStage.DATASET.value:
+        frozen = _frozen_dataset_manifest(selection, project_id, dataset_id, dataset_version)
+        if frozen.content_hash != internal_result.manifest_content_hash:
+            raise problem(status=409, code="EXPORT_SELECTION_CHANGED", title="Export selection changed",
+                          detail="The completed artifact does not match the selected dataset snapshot.")
+    else:
+        _publisher.get(project_id=project_id, dataset_id=dataset_id, dataset_version=dataset_version)
     download_url = _export_coordinator.authorize_download(internal_result)
     context = current_request_context()
     _audit_recorder.append_download_authorization(

@@ -593,6 +593,23 @@ class ManifestPreflightResultV1(BaseModel):
     manifest: RolloutManifestV1
 
 
+class UploadSessionSummaryV1(BaseModel):
+    """Upload facts visible to a reader of this session's collection task."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    session_id: str
+    project_id: Identifier
+    region_code: Identifier
+    rollout_id: Identifier
+    data_package_id: Identifier
+    dataset_id: Identifier | None = None
+    manifest_fingerprint: Sha256
+    expected_size: int = Field(gt=0)
+    status: UploadStatus
+    workflow: IngestWorkflowLocator | None = None
+
+
 class UploadSessionListV1(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

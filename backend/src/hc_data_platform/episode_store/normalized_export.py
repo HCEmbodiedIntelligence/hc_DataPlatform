@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_NS
 from hc_data_platform.data_formats.lerobot_layout import DATA_PATH
 
 from .episode_outcome import selection_outcome
@@ -48,7 +49,9 @@ def frame_selection(selection, *, compact_invalid=False, split_annotations=True)
     """
     package = selection.package
     with package.file(DATA_PATH) as path:
-        table = pq.read_table(path)
+        parquet = pq.ParquetFile(path)
+        fields = ("source.timestamp_ns", "hc.timestamp_ns", "hc.sample_valid", "task_index", "hc.annotation.excluded")
+        table = parquet.read(columns=[c for c in fields if c in parquet.schema_arrow.names])
     if "source.timestamp_ns" in table.column_names:
         stamps = table["source.timestamp_ns"].to_pylist()
         stamps = [s[0] if isinstance(s, list) else s for s in stamps]
@@ -110,9 +113,7 @@ def frame_selection(selection, *, compact_invalid=False, split_annotations=True)
     return result
 
 
-def windows(selection, *, compact_invalid=False, split_annotations=True):
-    rows = frame_selection(selection, compact_invalid=compact_invalid,
-                           split_annotations=split_annotations)
+def windows(rows):
     ordered = sorted(rows.items())
     spans = []
     for stamp, row in ordered:
@@ -125,7 +126,7 @@ def windows(selection, *, compact_invalid=False, split_annotations=True):
 
 
 def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
-                          compact_invalid=True, split_annotations=True):
+                          compact_invalid=True, split_annotations=True, committed_rows=False, upload_names=False, legacy_sync=False, fast_png=False, hash_files=True):
     from tempfile import TemporaryDirectory
 
     from mcap.reader import make_reader
@@ -142,18 +143,48 @@ def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
 
     root = Path(root)
     root.mkdir(parents=True, exist_ok=False)
+    joint_match_ns = 20_000_000 if legacy_sync else JOINT_MATCH_NS
     members = []
+    stems, digests = {}, {}
     with TemporaryDirectory(dir=root.parent) as temporary:
         for selected in selections:
             outcome = selection_outcome(selected)
             from .native_sources import export_source
             file, provenance, native_audit = export_source(selected.package, storage, checkpoint)
+            from .committed_mcap import matches, source_contract, write_episodes
+            from .selected_cache import RETENTION, SELECTED_PATH, materialize_selected
+
             cfg = McapProcessingConfig.model_validate(provenance["config"])
+            committed = committed_rows and matches(cfg)
+            receipt = provenance["selected_mcap"]
+            aliases = receipt.get("source_topics")
+            contract = None
+            if upload_names:
+                from .mcap_upload_names import upload_stem
+
+                # Joint values and images come from committed rows and videos. Only the
+                # ROS schemas and camera parameters are copied from the frozen upload.
+                if (committed and not legacy_sync and aliases and file.relative_path == SELECTED_PATH
+                        and receipt.get("retention") == RETENTION
+                        and (file.object.sha256, file.object.size) == (receipt["sha256"], receipt["size_bytes"])):
+                    original = Path(temporary) / "upload.mcap"
+                    with original.open("wb") as stream:
+                        stem = upload_stem(provenance, storage, checkpoint, digests, copy_to=stream)
+                    contract = source_contract(original, aliases)
+                    original.unlink()
+                else:
+                    stem = upload_stem(provenance, storage, checkpoint, digests)
+                stems[selected.package.receipt.data.data_version_id] = stem
             local = Path(temporary) / "selected.mcap"
-            if local.exists():
-                local.unlink()
-            from .selected_cache import materialize_selected
-            materialize_selected(storage, file, provenance, local, checkpoint)
+            if contract is None:
+                local.unlink(missing_ok=True)
+                materialize_selected(storage, file, provenance, local, checkpoint)
+            kept = frame_selection(selected, compact_invalid=compact_invalid,
+                                   split_annotations=split_annotations)
+            if committed:
+                write_episodes(root, members, selected, provenance, file, kept,
+                               contract or source_contract(local), outcome, checkpoint, fast_png=fast_png)
+                continue
             audit = None
             if provenance["selected_mcap"].get("normalization"):
                 if native_audit is None:
@@ -163,10 +194,7 @@ def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
                     audit_path.unlink()
                 copy_original(storage, native_audit, audit_path, checkpoint)
                 audit = json.loads(audit_path.read_bytes())
-            kept = frame_selection(selected, compact_invalid=compact_invalid,
-                                   split_annotations=split_annotations)
-            for span in windows(selected, compact_invalid=compact_invalid,
-                                split_annotations=split_annotations):
+            for span in windows(kept):
                 target = root / f"episode-{len(members):06d}.mcap"
                 decoder = McapRos2DecoderProbe()
                 allowed = selected_topics(cfg)
@@ -200,7 +228,7 @@ def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
                                 and (not compact_invalid or channel.topic != (cfg.primary_camera or cfg.state_topic) or stamp in kept)):
                             emit(schema, channel, message)
                         elif cfg.normalization and channel.topic not in parameter_topics and channel.topic != (cfg.primary_camera or cfg.state_topic):
-                            tolerance = 150_000_000 if "/hand/" in channel.topic or "_hand/" in channel.topic else 50_000_000 if "/depth/" in channel.topic else 20_000_000
+                            tolerance = 150_000_000 if "/hand/" in channel.topic or "_hand/" in channel.topic else 50_000_000 if "/depth/" in channel.topic else joint_match_ns
                             if span["start_ns"] - tolerance <= stamp < span["start_ns"]:
                                 prior = edge_before.get(channel.topic)
                                 if prior is None or stamp > prior[0]:
@@ -242,4 +270,10 @@ def write_mcap_collection(root, selections, *, storage, checkpoint=lambda: None,
                                 "topic_policy": "frozen_scheme_whitelist_normalized"})
     if not members:
         raise ValueError("MCAP_NO_SELECTED_FRAMES")
-    return inventory(root, members, f"hc-mcap-collection/{3 if compact_invalid else 2}")
+    version = 4 if committed_rows else (3 if compact_invalid else 2)
+    if upload_names:
+        from .mcap_upload_names import name_members
+
+        name_members(root, members, stems)
+        version = 5
+    return inventory(root, members, f"hc-mcap-collection/{version}", hash_files=hash_files)

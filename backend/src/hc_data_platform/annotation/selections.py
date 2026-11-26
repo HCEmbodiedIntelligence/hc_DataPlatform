@@ -19,8 +19,9 @@ class AnnotationSelections:
     def __init__(self, files, package_files):
         self.files, self.package_files = files, package_files
 
-    def authorize(self, task_id, auth):
-        task = self.files.authorize(task_id, auth, capability="export.download")
+    def authorize(self, task_id, auth, *, metadata_only=False):
+        capability = "annotation_task.read" if metadata_only else "export.download"
+        task = self.files.authorize(task_id, auth, capability=capability)
         if task.data_ref is None:
             raise _failure(
                 "ANNOTATION_DELIVERY_REQUIRES_EPISODE",

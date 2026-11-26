@@ -5,7 +5,10 @@ import { RouteCapabilityGuard } from "./RouteCapabilityGuard";
 export function guardedPageRoutes(catalog: PageCatalog): RouteObject[] {
   return catalog.routes.map((route) => ({
     element: (
-      <RouteCapabilityGuard requiredCapabilities={route.requiredCapabilities} />
+      <RouteCapabilityGuard
+        requiredCapabilities={route.requiredCapabilities}
+        browseWithoutScope={route.navigation?.visibility === "discoverable" || route.browseWithoutScope}
+      />
     ),
     children: [route],
   }));

@@ -635,7 +635,13 @@ def test_bare_mcap_to_slice_package_and_all_exports(
             content = b"".join(storage.read_chunks(row["artifact_key"]))
             with zipfile.ZipFile(io.BytesIO(content)) as archive:
                 if format == "mcap":
-                    mcap = io.BytesIO(archive.read("collection/episode-000000.mcap"))
+                    assert "delivery.json" not in archive.namelist()
+                    assert "collection_records.json" not in archive.namelist()
+                    assert not any(n.startswith("collection/hc/") for n in archive.namelist())
+                    suffix = hashlib.md5(raw_bytes, usedforsecurity=False).hexdigest()
+                    names = [n for n in archive.namelist() if n.endswith(".mcap")]
+                    assert names and all(n.rsplit("/", 1)[-1] == f"source_{suffix}.mcap" for n in names)
+                    mcap = io.BytesIO(archive.read(names[0]))
                     reader = make_reader(mcap, validate_crcs=True)
                     messages = list(reader.iter_messages())
                     # Slice export copies original message payloads and clocks; it never

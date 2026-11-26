@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_NS
+
 
 class ModalityKind(str, Enum):
     IMAGE = "image"
@@ -57,7 +59,7 @@ class AlignmentProfileV1(BaseModel):
     required_modalities: frozenset[str]
     stream_strategies: dict[str, AlignmentStrategy] = Field(default_factory=dict)
     stream_tolerance_ns: dict[str, int] = Field(default_factory=dict)
-    default_tolerance_ns: int = Field(default=20_000_000, ge=0)
+    default_tolerance_ns: int = Field(default=JOINT_MATCH_NS, ge=0)
 
     @model_validator(mode="after")
     def validate_tolerances(self) -> AlignmentProfileV1:

@@ -1,6 +1,11 @@
+import { DiscardReportedPackage } from "../../features/cleaning/DiscardReportedPackage";
+import type { ManualIssueListItem } from "../../entities/manual-issue";
+import { manualIssuesQueryCodec } from "../../features/cleaning/routing";
+import { useManualIssue, useManualIssues } from "../../features/cleaning/api";
+import { DataTraceLink } from "../../features/datasets/episodes/DataTraceLink";
 import { ResourceLabel } from "../../shared/lib/resource-labels";
 import { describeEpisodeRobotPreview } from "../../features/datasets/episodes/robot-preview-provenance";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Card, Drawer, Typography } from "antd";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { isDatasetId, type DatasetId } from "../../entities/dataset";
@@ -26,6 +31,7 @@ import { useLogicalRobotScene } from "../../features/datasets/episodes/use-logic
 import { assetEpisodeViewerQueryCodec } from "./query-codec";
 import { EpisodeDetailPanel } from "./EpisodeDetailPanel";
 import { reviewDataReference } from "../../features/datasets/episodes/data-reviews";
+import { selectRobotActionStream } from "../../features/viewer/robot-action-stream";
 import { selectEpisodeJointStream } from "../../features/datasets/episodes/logical-viewer";
 import { useLogicalViewer } from "../../features/datasets/episodes/use-logical-viewer";
 import { useEpisodeAnnotations } from "./use-episode-annotations";
@@ -103,6 +109,34 @@ export function EpisodeViewerShell() {
     const value = decimalSecondsToNs(search.t);
     if (value !== null) clock.seek(value);
   }, [clock, search.t]);
+  const canReadReports = valid && capabilities.has("manual_issue.read");
+  const reported = useManualIssue(search.issueId, canReadReports && !!search.issueId);
+  const episodeReports = useManualIssues({
+    ...manualIssuesQueryCodec.parse(""), datasetId, versionId, episodeId, limit: 100,
+  }, canReadReports && !search.issueId);
+  const matchesRevision = (issue: Pick<ManualIssueListItem, "source" | "scope">) =>
+    canReadReports && !!scope && issue.scope.organizationId === scope.organizationId &&
+    issue.scope.projectId === scope.projectId && issue.scope.regionCode === scope.regionCode &&
+    !!revision && issue.source.episodeId === episodeId && issue.source.datasetId === datasetId &&
+    issue.source.versionId === versionId && issue.source.revisionId === revision.revision_id &&
+    BigInt(issue.source.startNs) >= BigInt(startNs) && BigInt(issue.source.endNs) <= BigInt(endNs);
+  const selectedIssue = search.issueId && reported.data && matchesRevision(reported.data) ? reported.data : undefined;
+  const visibleReports = search.issueId ? (selectedIssue ? [selectedIssue] : []) :
+    (episodeReports.data?.items ?? []).filter(matchesRevision);
+  const focused = useRef<{clock: typeof clock; id: string} | null>(null);
+  useEffect(() => {
+    if (!selectedIssue) { focused.current = null; return; }
+    if (focused.current?.clock === clock && focused.current.id === selectedIssue.id) return;
+    clock.seek(selectedIssue.source.startNs);
+    focused.current = {clock, id: selectedIssue.id};
+  }, [clock, selectedIssue]);
+  const issueTrack = visibleReports.length ? [{
+    id: "reported-issue", label: "上报问题",
+    segments: visibleReports.map(issue => ({id: issue.id, label: issue.note || "上报问题",
+      startNs: issue.source.startNs, endNs: issue.source.endNs,
+      tone: "issue" as const, activatePlayback: true})),
+  }] : [];
+  const elapsed = (value: string) => (Number(BigInt(value) - BigInt(startNs)) / 1e9).toFixed(3);
   const annotations = useEpisodeAnnotations({
     scope,
     data: reviewTarget.data,
@@ -138,7 +172,7 @@ export function EpisodeViewerShell() {
   );
   const { robotScene, robotSceneUnavailableReason } = useLogicalRobotScene(
     logical.robotTarget,
-    jointAngleStream,
+    selectRobotActionStream(streams),
     capabilities.has("episode.read")
       ? (query.data?.episode.robotId ?? null)
       : null,
@@ -237,7 +271,7 @@ export function EpisodeViewerShell() {
           collectionItems: [],
           findings: [],
           actions: [],
-          timelineTracks: annotations.tracks,
+          timelineTracks: [...issueTrack, ...annotations.tracks],
           timelineDisabled: false,
         }}
         jointAngleStream={jointAngleStream}
@@ -247,8 +281,11 @@ export function EpisodeViewerShell() {
           workspaceToolbar: () => (
             <div className={styles.viewerToolbar}>
               <Button onClick={() => void navigate(returnTo)}>
-                返回数据集
+                {returnTo.startsWith("/manual/issues") ? "返回问题数据" : returnTo.startsWith("/data-trace?") ? "返回数据回溯" : "返回数据集"}
               </Button>
+              {reviewTarget.data && (
+                <DataTraceLink identifier={reviewTarget.data.data_version_id} />
+              )}
               <Typography.Text type="secondary">
                 当前版本 {versionId} · 只读查看
               </Typography.Text>
@@ -286,7 +323,15 @@ export function EpisodeViewerShell() {
               )}
             </CameraViewToolbar>
           ),
-          timelineTools: () => <EpisodeTagSummary annotations={annotations} />,
+          timelineTools: () => <>
+            {visibleReports.map(issue => <Alert key={issue.id} type="warning"
+              title={issue.note || "上报问题"}
+              description={`问题片段 ${elapsed(issue.source.startNs)}–${elapsed(issue.source.endNs)} 秒`}
+              action={<><Button onClick={() => clock.seek(issue.source.startNs)}>跳到问题起点</Button> <DiscardReportedPackage issue={issue}/></>}
+            />)}
+            {search.issueId && !selectedIssue && <span role="status">{reported.isFetching ? "正在加载上报…" : "无法定位此上报，请核对访问权限和数据版本。"}</span>}
+            <EpisodeTagSummary annotations={annotations} />
+          </>,
         }}
       />
       <Drawer

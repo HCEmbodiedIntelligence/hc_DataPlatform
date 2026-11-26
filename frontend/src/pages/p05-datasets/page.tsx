@@ -424,7 +424,7 @@ export function DatasetsPage() {
   const canRead = capabilities.has("dataset.read");
   const canReadEpisodes = capabilities.has("episode.read");
   const listEnabled =
-    canRead &&
+    Boolean(shellScope?.projectId) && canRead &&
     (!collectionTaskId || canReadEpisodes) &&
     !collectionTaskParamInvalid;
   const ancillaryQueriesEnabled = listEnabled && !collectionTaskId;

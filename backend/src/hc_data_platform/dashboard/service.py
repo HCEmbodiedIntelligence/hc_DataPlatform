@@ -31,6 +31,7 @@ from .models import (
     DashboardActivityEventType,
     DashboardActivityPage,
     DashboardActivityResponse,
+    DashboardAnalyticsResponse,
     DashboardCoverageResponse,
     DashboardPendingItem,
     DashboardPendingItemsPage,
@@ -438,6 +439,18 @@ class DashboardService:
         self._audit(auth, query, "activity", status, now)
         return DashboardActivityResponse.model_validate(
             {**self._base(query, now), "activity": page}
+        )
+
+    def analytics(
+        self, *, auth: AuthContext, project_id: str, region_code: str,
+        range_start: datetime, range_end: datetime, timezone_name: str, task_id: str | None = None,
+    ) -> DashboardAnalyticsResponse:
+        query = self._query(auth, project_id, region_code, range_start, range_end, timezone_name)
+        now = self._begin(auth, "analytics", query)
+        analytics = self._repository.analytics(auth, query.scope, query.window, task_id)
+        self._audit(auth, query, "analytics", DashboardSectionStatus.READY, now)
+        return DashboardAnalyticsResponse.model_validate(
+            {**self._base(query, now), "analytics": analytics}
         )
 
     def coverage(

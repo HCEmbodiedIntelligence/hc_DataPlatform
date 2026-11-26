@@ -90,6 +90,7 @@ import {
   validateSlices,
   type EditableSlice,
 } from "./model";
+import { selectRobotActionTopic } from "../../features/viewer/robot-action-stream";
 import { buildRecordingJointAngleStream } from "./raw-joint-angle-stream";
 import {
   buildEpisodeTimelineTracks,
@@ -254,15 +255,7 @@ function RecordingListPage({
   };
 
   let state = null;
-  if (scope === null) {
-    state = (
-      <PageState
-        state="forbidden"
-        title="请先选择项目与区域"
-        description="录制数据按项目和区域隔离。"
-      />
-    );
-  } else if (list.isPending) {
+  if (scope && list.isPending) {
     state = <PageState state="loading" layout="list" label="录制列表" />;
   } else if (list.isError) {
     state = (
@@ -288,7 +281,7 @@ function RecordingListPage({
       density="compact"
       headerActions={
         <button
-          disabled={list.isFetching}
+          disabled={!scope || list.isFetching}
           type="button"
           onClick={() => void list.refetch()}
         >
@@ -496,10 +489,10 @@ function RecordingListPage({
       emptyActionDisabled={!query && !scope}
       onEmptyAction={() => {
         if (query) updateQuery("");
-        else void list.refetch();
+        else if (scope) void list.refetch();
       }}
     />
-    <Drawer open={Boolean(progressId)} onClose={closeProgress} destroyOnHidden
+    <Drawer open={Boolean(scope && progressId)} onClose={closeProgress} destroyOnHidden
       title={selected ? recordingFileName(selected) : "入库进度"}>
       {scope && selected ? <RecordingIngestProgress key={selected.recording_id}
         recording={selected} scope={scope} gateway={gateway} canManage={canManage} />
@@ -553,6 +546,15 @@ function RecordingSegmentationPage({
   const previewOnly = episodeSearch.get("view") === "preview";
   const loadRawRecording = detail.data?.data.schema_version === "continuous-recording/v2" &&
     (previewOnly || detail.data.data.ingest_mode !== "WHOLE_RECORDING");
+  const uploadId = detail.data?.data.recording_upload_id;
+  const actionTopic = useQuery({
+    queryKey: ["recording-action-topic", scopeKey, uploadId],
+    enabled: Boolean(scope && loadRawRecording && uploadId),
+    queryFn: async ({ signal }) =>
+      selectRobotActionTopic(await gateway.sensorTopics(scope!, uploadId!, signal)),
+    staleTime: Infinity,
+    retry: false,
+  });
   const sources = useQuery({
     queryKey: ["continuous-recording-video-sources", scopeKey, recordingId],
     queryFn: ({ signal }) =>
@@ -626,25 +628,30 @@ function RecordingSegmentationPage({
     () => validateSlices(slices, durationNs, minimumDurationNs),
     [durationNs, minimumDurationNs, slices],
   );
-  const rawJointStream = useMemo(
-    () =>
-      recording &&
-      scope &&
-      loadRawRecording
-        ? buildRecordingJointAngleStream({
-            gateway,
-            scope,
-            recordingId,
-            durationNs: recording.duration_ns,
-          })
-        : null,
-    [gateway, loadRawRecording, recording, recordingId, scope],
+  const rawDurationNs = recording?.duration_ns;
+  const rawInput = useMemo(
+    () => loadRawRecording && rawDurationNs && scope
+      ? { gateway, scope, recordingId, durationNs: rawDurationNs }
+      : null,
+    [gateway, loadRawRecording, rawDurationNs, recordingId, scope],
   );
-  const { robotScene, robotSceneUnavailableReason } = useEpisodeRobotScene(
+  const rawJointStream = useMemo(
+    () => rawInput && buildRecordingJointAngleStream(rawInput), [rawInput],
+  );
+  const rawActionStream = useMemo(
+    () => rawInput && actionTopic.data
+      ? buildRecordingJointAngleStream({ ...rawInput, actionTopic: actionTopic.data })
+      : null,
+    [rawInput, actionTopic.data],
+  );
+  const { robotScene, robotSceneUnavailableReason: sceneReason } = useEpisodeRobotScene(
     recording?.robot_id ?? null,
-    rawJointStream,
+    rawActionStream,
     scope,
   );
+  const robotSceneUnavailableReason = loadRawRecording && actionTopic.isError
+    ? "录制动作通道配置读取失败。"
+    : loadRawRecording && actionTopic.isPending ? "正在读取录制动作通道…" : sceneReason;
   const cameraStreams = useMemo(
     () =>
       buildRecordingCameraStreams({

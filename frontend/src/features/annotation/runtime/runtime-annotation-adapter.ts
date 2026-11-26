@@ -398,7 +398,7 @@ export async function claimRuntimeAnnotationTask(
   return result;
 }
 
-async function getRuntimeAnnotationTask(
+export async function getRuntimeAnnotationTask(
   scope: RuntimeAnnotationScope,
   taskId: string,
   signal?: AbortSignal,

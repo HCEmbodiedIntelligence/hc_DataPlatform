@@ -34,8 +34,10 @@ export function TaskPlanManager({
 }) {
   const permissions = useCapabilities();
   const organization = useOrganizationCapabilities(scope.organizationId);
+  const canReadPlan = permissions.has("upload.read") || permissions.has("collection_task.manage") ||
+    permissions.has(`upload.manage/${taskId}`);
   const query = useScopedQuery(scope, "capture-schemes", "task-plan", taskId, {
-    enabled: permissions.has("upload.read"),
+    enabled: canReadPlan,
     queryFn: ({ signal }) => taskPlanRequest(scope, taskId, undefined, signal),
     retry: false,
   });
@@ -84,7 +86,7 @@ export function TaskPlanManager({
   ]);
   const writable =
     active &&
-    permissions.has("upload.manage") &&
+    permissions.has("collection_task.manage") &&
     organization.has("robot.read") &&
     !query.error;
   const savedSelection: TaskPlanSelection = plan
@@ -104,7 +106,7 @@ export function TaskPlanManager({
     return "saved";
   }
   useImperativeHandle(formRef, () => ({ commit }));
-  if (!permissions.has("upload.read"))
+  if (!canReadPlan)
     return <Alert type="info" title="查看任务采集方案需要采集读取权限" />;
   if (query.isPending) return <Spin size="small" />;
   return (

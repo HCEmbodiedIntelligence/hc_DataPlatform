@@ -12,6 +12,10 @@ from pathlib import Path
 from threading import RLock
 
 
+class PackageChangedDuringValidation(ValueError):
+    """A fresh attempt must rebuild and validate the package before committing it."""
+
+
 def _inventory(root: Path):
     values = []
     for path in [root, *sorted(root.rglob("*"))]:
@@ -39,7 +43,7 @@ def reuse_verified_package(validate):
         manifest = validate(root, source)
         after = _inventory(root)
         if after != before:
-            raise ValueError("package changed during validation; retry the frozen attempt")
+            raise PackageChangedDuringValidation("package changed during validation; retry the frozen attempt")
         if after is not None and len(after) <= 10_000:
             with lock:
                 entries[key] = (after, manifest.model_copy(deep=True))

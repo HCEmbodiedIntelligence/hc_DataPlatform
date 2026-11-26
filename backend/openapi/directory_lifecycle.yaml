@@ -1,0 +1,186 @@
+paths:
+  /api/v1/account/organizations:
+    post:
+      tags:
+      - access
+      summary: Create Personal Organization
+      operationId: createPersonalOrganization
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/directory-changes:
+    post:
+      tags:
+      - access
+      summary: Change Directory
+      operationId: changeManagementDirectory
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DirectoryChange'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/archived-directory:
+    get:
+      tags:
+      - access
+      summary: Archived Directory
+      operationId: getArchivedDirectory
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/ArchivedScope'
+                type: array
+                title: Response Getarchiveddirectory
+      security:
+      - bearerAuth: []
+components:
+  schemas:
+    OrganizationCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Name
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: OrganizationCreate
+    DirectoryChange:
+      properties:
+        organization_id:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          title: Organization Id
+        project_id:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9])?$
+          - type: 'null'
+          title: Project Id
+        operation:
+          type: string
+          enum:
+          - rename
+          - generate_code
+          - revoke_code
+          - archive
+          - delete
+          title: Operation
+        name:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Name
+        confirmation:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Confirmation
+        retention_days:
+          anyOf:
+          - type: integer
+            enum:
+            - 0
+            - 30
+          - type: 'null'
+          title: Retention Days
+      additionalProperties: false
+      type: object
+      required:
+      - organization_id
+      - operation
+      title: DirectoryChange
+    ArchivedScope:
+      properties:
+        organization_id:
+          type: string
+          title: Organization Id
+        project_id:
+          type: string
+          title: Project Id
+        display_name:
+          type: string
+          title: Display Name
+        status:
+          type: string
+          enum:
+          - ARCHIVED
+          - DELETED
+          title: Status
+          default: ARCHIVED
+        purge_after:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Purge After
+        retrying:
+          type: boolean
+          title: Retrying
+          default: false
+      type: object
+      required:
+      - organization_id
+      - project_id
+      - display_name
+      title: ArchivedScope

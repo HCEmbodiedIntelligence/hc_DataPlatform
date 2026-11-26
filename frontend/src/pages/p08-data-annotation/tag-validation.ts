@@ -312,6 +312,13 @@ export function evaluateAnnotationTags(input: {
           `任务要求 ${task.tag_schema_id} v${task.tag_schema_version} 的已发布版本`,
         ];
 
+  const allowed = new Set(task.allowed_tags ?? []);
+  for (const tag of tags) {
+    const name = tag.label ?? index.byId.get(tag.tag_id)?.node.display_name;
+    if (!name || !allowed.has(name))
+      schemaErrors.push(`标签「${name ?? tag.tag_id}」不在该采集任务的方案中，请重新选择`);
+  }
+
   const result = (
     [
       [

@@ -1,3 +1,5 @@
+import { OrganizationManagementPage, ProjectManagementPage } from "./GovernancePage";
+import { useManagementAccess } from "../../shared/auth/use-management-access";
 import { useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { expandGrantedCapabilities } from "../../shared/auth/use-capabilities";
@@ -27,33 +29,33 @@ export function Component() {
   const capabilityKeys = authorization?.capabilities as
     | readonly string[]
     | undefined;
-  const canManage = capabilityKeys?.includes("access.manage") ?? false;
   const projectCapabilities = expandGrantedCapabilities(capabilityKeys ?? []);
   const platformCapabilities = useShellStore(
     (state) => state.platformCapabilities,
   );
-  const canReadPlatformAccounts = platformCapabilities.some(
+  const management = useManagementAccess();
+  const isPlatformAdmin = platformCapabilities.includes("platform.admin");
+  const deliveryApprover = projectCapabilities.has("access.download_approval.manage");
+  const canManage = isPlatformAdmin || projectCapabilities.has("access.manage");
+  const canReadPlatformAccounts = isPlatformAdmin || platformCapabilities.some(
     (key) =>
       key === "platform.account.read" || key === "platform.account.manage",
   );
-  const canManagePlatformAccounts = platformCapabilities.includes(
+  const canManagePlatformAccounts = isPlatformAdmin || platformCapabilities.includes(
     "platform.account.manage",
   );
-  const canUnlockPlatformAccounts = platformCapabilities.includes(
+  const canUnlockPlatformAccounts = isPlatformAdmin || platformCapabilities.includes(
     "platform.account_security.manage",
   );
   const canReadProjectRequests =
-    activeScope !== null && projectCapabilities.has("access.read");
-  const platformOnlyAccount = activeScope === null && canReadPlatformAccounts;
-  const effectiveSearch: AccessSearch = platformOnlyAccount
-    ? {
-        ...search,
-        tab: "users",
-        q: search.tab === "users" ? search.q : undefined,
-        page: search.tab === "users" ? search.page : 1,
-        requestId: undefined,
-        drawer: "closed",
-      }
+    !!activeScope?.projectId && (isPlatformAdmin || deliveryApprover || projectCapabilities.has("access.read"));
+  const needsLandingTab = !canReadProjectRequests &&
+    (search.tab === "membership-requests" || search.tab === "capability-requests");
+  const landingTab = canReadPlatformAccounts ? "users" : management.organizations ? "organizations"
+    : management.projects ? "projects" : null;
+  const fallbackTab = needsLandingTab ? landingTab : null;
+  const effectiveSearch: AccessSearch = fallbackTab
+    ? accessQueryCodec.normalize({ tab: fallbackTab })
     : search;
   const membershipQuery = useMembershipRequests(
     canReadProjectRequests && effectiveSearch.tab === "membership-requests",
@@ -121,16 +123,15 @@ export function Component() {
   }, [decision.reset, scopeKey, setParams]);
 
   useEffect(() => {
-    if (!platformOnlyAccount || search.tab === "users") return;
-    setParams(accessQueryCodec.build(effectiveSearch), { replace: true });
-  }, [effectiveSearch, platformOnlyAccount, search.tab, setParams]);
+    if (fallbackTab) setParams(accessQueryCodec.build({ tab: fallbackTab }), { replace: true });
+  }, [fallbackTab, setParams]);
 
   const decisionSuccessMessage =
     decision.isSuccess && decision.variables
       ? `${decisionLabel(decision.variables.action)}已由服务端确认。`
       : undefined;
 
-  if (!canReadPlatformAccounts && !canReadProjectRequests) {
+  if (!canReadPlatformAccounts && !canReadProjectRequests && !management.projects) {
     return (
       <PageState
         state="forbidden"
@@ -142,6 +143,8 @@ export function Component() {
 
   return (
     <AccessApprovalView
+      organizationManagement={management.organizations ? <OrganizationManagementPage /> : null}
+      projectManagement={management.projects ? <ProjectManagementPage /> : null}
       search={effectiveSearch}
       membership={{
         rows: membershipRows,
@@ -155,7 +158,7 @@ export function Component() {
         fetching: capabilityQuery.isFetching,
         error: capabilityQuery.error,
       }}
-      canManage={canManage}
+      canManage={canManage || (deliveryApprover && effectiveSearch.tab === "capability-requests")}
       canReadPlatformAccounts={canReadPlatformAccounts}
       canReadProjectRequests={canReadProjectRequests}
       userManagement={

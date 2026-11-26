@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -13,7 +13,10 @@ import { useShellStore } from "../../shared/scope/shell-store";
 import type { MembershipRequest } from "./contracts";
 import AccessPage from "./page";
 
-vi.mock("../../shared/api/http-client", () => ({ request: vi.fn() }));
+vi.mock("../../shared/api/http-client", async (original) => ({
+  ...(await original<typeof import("../../shared/api/http-client")>()),
+  request: vi.fn(),
+}));
 
 const requestMock = vi.mocked(request);
 const scope = {
@@ -100,6 +103,7 @@ beforeEach(() => {
     authorizationLoading: false,
     authorizationFailed: false,
     platformCapabilities: [],
+    sessionScopes: [], sessionOrganizations: [],
   });
 });
 
@@ -129,12 +133,9 @@ describe("P18 page-owned decision feedback", () => {
   });
 
   it("opens only global user management for a platform administrator without project scope", async () => {
-    requestMock.mockResolvedValue({
-      items: [],
-      page: 1,
-      page_size: 10,
-      total: 0,
-    });
+    requestMock.mockImplementation(async options => options.path === "/account/management-directory"
+      ? { organizations: [], projects: [] }
+      : { items: [], page: 1, page_size: 10, total: 0 });
     useShellStore.setState({
       scope: null,
       authorization: null,
@@ -169,6 +170,7 @@ describe("P18 page-owned decision feedback", () => {
 
   it("loads the project queue without automatically opening the first request", async () => {
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (options.path.endsWith("membership-requests"))
         return { items: [pendingMembership] };
       if (options.path.endsWith("capability-requests")) return { items: [] };
@@ -187,6 +189,7 @@ describe("P18 page-owned decision feedback", () => {
     const user = userEvent.setup();
     let membershipRows: MembershipRequest[] = [pendingMembership];
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (
         options.method === "GET" &&
         options.path.endsWith("membership-requests")
@@ -237,6 +240,7 @@ describe("P18 page-owned decision feedback", () => {
     const user = userEvent.setup();
     let membershipRows: MembershipRequest[] = [pendingMembership];
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (
         options.method === "GET" &&
         options.path.endsWith("membership-requests")
@@ -311,6 +315,7 @@ describe("P18 page-owned decision feedback", () => {
       httpStatus: 409,
     });
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (
         options.method === "GET" &&
         options.path.endsWith("membership-requests")
@@ -341,6 +346,7 @@ describe("P18 page-owned decision feedback", () => {
 
   it("closes an open request when the Shell project scope changes", async () => {
     requestMock.mockImplementation(async (options) => {
+      if (options.path === "/account/management-directory") return { organizations: [], projects: [] };
       if (options.path.endsWith("membership-requests"))
         return { items: [pendingMembership] };
       if (options.path.endsWith("capability-requests")) return { items: [] };
@@ -367,5 +373,72 @@ describe("P18 page-owned decision feedback", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+  });
+});
+
+describe("账户与权限管理树", () => {
+  it.each([null, scope])("shows both management tabs for a platform administrator with scope %j", async current => {
+    const user=userEvent.setup();
+    useShellStore.setState({ scope: current, authorization:null, platformCapabilities:["platform.admin"] });
+    const member={principal_id:"person-1",username:"member.one",administrator:false};
+    requestMock.mockImplementation(async opts=>{
+      if(opts.path==="/account/management-directory")return {organizations:[{organization_id:"01",organization_name:"杭州",can_manage:true}],
+        projects:[{organization_id:"01",project_id:"open",project_name:"机器人项目"}]};
+      if(opts.path.startsWith("/account/managed-members/person-1?"))return {...member,display_name:"测试成员",status:"ACTIVE",
+        created_at:"2026-11-24T00:00:00Z",assigned_roles:["role.observer"],platform_administrator:false,organization_administrator:false,
+        assigned_permissions:[],assignable_permissions:["training.create","teleoperation.connect"],
+        effective_permissions:["dataset.read"],approved_grants:[],can_set_roles:true,can_remove:true,can_change_administrator:true};
+      if(opts.path.includes("unassigned_only=true"))return [{...member,username:"waiting.member",principal_id:"waiting-1"}];
+      if(opts.path.startsWith("/account/managed-members?"))return [member];
+      if(opts.path.startsWith("/account/management-inbox"))return [];
+      return {items:[],total:0,page:1,page_size:10};
+    });
+    renderPage();
+    const organization=await screen.findByRole("tab",{name:"组织管理"});
+    await user.click(organization);
+    expect(organization).toHaveAttribute("aria-selected","true");
+    const orgTree = await screen.findByRole("tree");
+    const waiting = await within(orgTree).findByText("waiting.member");
+    const projectLabel = within(orgTree).getByText("机器人项目");
+    expect(projectLabel.compareDocumentPosition(waiting) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(orgTree).queryByText("组织成员")).toBeNull();
+    expect(within(orgTree).queryByText("member.one")).toBeNull();
+    const projects=screen.getByRole("tab",{name:"项目管理"});
+    await user.click(projects);
+    const tree=await screen.findByRole("tree");
+    const name=await within(tree).findByText("member.one");
+    await user.click(name);
+    const dialog=await screen.findByRole("dialog",{name:"member.one · 成员详情"});
+    expect(await within(dialog).findByText("测试成员")).toBeVisible();
+    expect(within(dialog).getByText("数据集只读")).toBeVisible();
+    expect(within(dialog).getByRole("button",{name:"移出项目"})).toBeVisible();
+    await user.click(within(dialog).getByRole("combobox", {name:"选择专项权限"}));
+    await user.click(await screen.findByText("远程遥操作 · 连接指定机器人", {selector: ".ant-select-item-option-content"}));
+    const add = within(dialog).getByRole("button", {name:"加入列表"});
+    expect(add).toBeDisabled();
+    await user.type(within(dialog).getByRole("textbox", {name:"机器人 ID"}), "robot-42");
+    await user.click(add);
+    await user.click(within(dialog).getByRole("button", {name:"保存专项权限"}));
+    await user.type(await screen.findByRole("textbox", {name:"操作原因"}), "设备验收");
+    await user.click(screen.getByRole("button", {name:/^确\s*认$/}));
+    await waitFor(() => expect(requestMock).toHaveBeenCalledWith(expect.objectContaining({
+      method:"PUT", path:"/account/managed-members/person-1/permissions",
+      body:{organization_id:"01", project_id:"open", permissions:["teleoperation.connect/robot-42"],
+        expected_permissions:[], reason:"设备验收"},
+    })));
+    expect(requestMock).toHaveBeenCalledWith(expect.objectContaining({path:"/account/managed-members/person-1?organization_id=01&project_id=open"}));
+  });
+
+  it("shows the project manager only the project management tab before selecting a project", async () => {
+    useShellStore.setState({scope:null,authorization:null,platformCapabilities:[],
+      sessionScopes:[{organizationId:"01",projectId:"alpha",capabilities:["access.manage"],projectWide:true,regionCodes:[]}]});
+    requestMock.mockImplementation(async opts=> opts.path==="/account/management-directory" ? {
+      organizations:[{organization_id:"01",organization_name:"杭州",can_manage:false}],projects:[{organization_id:"01",project_id:"alpha",project_name:"生产项目"}],
+    } : []);
+    renderPage();
+    expect(await screen.findByRole("tab",{name:"项目管理"})).toHaveAttribute("aria-selected","true");
+    expect(screen.queryByRole("tab",{name:"组织管理"})).not.toBeInTheDocument();
+    await within(await screen.findByRole("tree")).findByText("生产项目");
+    expect(requestMock.mock.calls.some(([o])=>o.path.startsWith("/account/managed-members?") && !o.path.includes("project_id="))).toBe(false);
   });
 });

@@ -74,6 +74,9 @@ class TaskInventoryLabels:
     def _build(self) -> None:
         context = current_request_context()
         org, project, region = context.organization_id, context.project_id, context.region_code
+        if org and project and region:
+            self._extra("persistent-exports", f"exports/{org}/{project}/{region}/",
+                        FileOwner(category="EXPORT", record_name="持久化 OSS 导出", status="已导出"))
         for task_id in self.tasks:
             self._extra(
                 f"task-upload:{task_id}",
@@ -102,22 +105,17 @@ class TaskInventoryLabels:
                 ),
             )
         recordings = {r.get("recording_upload_id"): r for r in self.rows["recordings"]}
-        from hc_data_platform.continuous_recordings.asset_models import (
-            RecordingAsset,
-            RecordingUpload,
-        )
-        from hc_data_platform.continuous_recordings.previews import preview_key
+        from hc_data_platform.continuous_recordings.models import RecordingScope
+        from hc_data_platform.continuous_recordings.previews import preview_key_from_inputs
 
         assets_by_upload = defaultdict(list)
         for asset in self.rows["assets"]:
             assets_by_upload[asset["upload_id"]].append(asset)
         for row in self.rows["uploads"]:
             recording = recordings.get(row["upload_id"], {})
-            upload = RecordingUpload.model_validate(row["upload_document"])
-            assets = [
-                RecordingAsset.model_validate(a["asset_document"])
-                for a in assets_by_upload[row["upload_id"]]
-            ]
+            scope = RecordingScope.model_validate(row["preview_scope"])
+            assets = assets_by_upload[row["upload_id"]]
+            inputs = sorted((a["preview_path"], a["preview_sha"]) for a in assets)
             owner = FileOwner(
                 self.task_ids(recording),
                 "PROCESSING",
@@ -126,10 +124,11 @@ class TaskInventoryLabels:
                 "预览文件",
             )
             for asset in assets:
-                if asset.manifest.role != "RAW_VIDEO":
+                if asset["preview_role"] != "RAW_VIDEO":
                     continue
                 for selected in (True, False):
-                    key = preview_key(upload, asset, assets, selected=selected)
+                    key = preview_key_from_inputs(row["preview_upload_id"], scope, row["manifest_sha"],
+                                                  asset["preview_asset_id"], inputs, selected=selected)
                     self._extra(f"recording-preview:{key}", key.rsplit("/", 1)[0], owner)
         for asset in self.rows["assets"]:
             recording = recordings.get(asset["upload_id"], {})
@@ -266,28 +265,36 @@ class TaskInventoryLabels:
 
 def load_task_inventory(connection_factory, project_id: str) -> TaskInventoryLabels:
     queries = {
-        "tasks": "SELECT to_jsonb(t) FROM collection_tasks.collection_tasks t "
+        "tasks": "SELECT collection_task_id, dataset_id, task_code, name FROM collection_tasks.collection_tasks t "
         "WHERE project_id=%s ORDER BY task_code",
-        "raw": "SELECT to_jsonb(t) FROM ingest.raw_sources t "
+        "raw": "SELECT raw_source_id, collection_task_id, dataset_id, source_format, committed_at, robot_id FROM ingest.raw_sources t "
         "WHERE project_id=%s AND raw_status='COMMITTED' ORDER BY committed_at,raw_source_id",
-        "recordings": "SELECT to_jsonb(t) FROM ingest.continuous_recordings t WHERE project_id=%s",
-        "uploads": "SELECT to_jsonb(t) FROM ingest.recording_uploads t "
+        "recordings": "SELECT recording_upload_id, collection_task_id, capture_started_at, robot_id FROM ingest.continuous_recordings t WHERE project_id=%s",
+        "uploads": "SELECT upload_id, (upload_document->>'upload_id')::uuid AS preview_upload_id, "
+        "upload_document->'scope' AS preview_scope, upload_document->>'manifest_sha256' AS manifest_sha "
+        "FROM ingest.recording_uploads t "
         "WHERE project_id=%s AND status='COMMITTED'",
-        "assets": "SELECT to_jsonb(t) FROM ingest.recording_upload_assets t "
+        "assets": "SELECT asset_id, upload_id, multipart_upload_id, committed_at, "
+        "(asset_document->>'asset_id')::uuid AS preview_asset_id, asset_document#>>'{manifest,path}' AS preview_path, "
+        "asset_document#>>'{manifest,sha256}' AS preview_sha, asset_document#>>'{manifest,role}' AS preview_role "
+        "FROM ingest.recording_upload_assets t "
         "WHERE project_id=%s AND status='COMMITTED'",
-        "processing": "SELECT to_jsonb(t) FROM ingest.mcap_processing_files t WHERE project_id=%s",
-        "versions": "SELECT to_jsonb(t) FROM episode_store.versions t "
-        "WHERE project_id=%s AND status='COMMITTED' ORDER BY dataset_id,episode_id,version",
-        "bindings": "SELECT to_jsonb(t) FROM episode_store.bindings t WHERE project_id=%s",
-        "previews": "SELECT to_jsonb(t) FROM episode_store.media_previews t "
+        "processing": "SELECT processing_id, raw_source_id FROM ingest.mcap_processing_files t WHERE project_id=%s",
+        "versions": "SELECT data_version_id, version, input_document FROM episode_store.versions t "
+        "WHERE project_id=%s AND status='COMMITTED' AND NOT EXISTS ("
+        "SELECT FROM episode_store.qc_retired_versions r WHERE "
+        "(r.organization_id,r.project_id,r.region_code,r.data_version_id)="
+        "(t.organization_id,t.project_id,t.region_code,t.data_version_id)) ORDER BY dataset_id,episode_id,version",
+        "bindings": "SELECT current_data_version_id FROM episode_store.bindings t WHERE project_id=%s",
+        "previews": "SELECT data_version_id, feature, profile_id FROM episode_store.media_previews t "
         "WHERE project_id=%s AND status='READY'",
-        "collections": "SELECT to_jsonb(t) FROM episode_store.collections t WHERE project_id=%s",
-        "annotations": "SELECT to_jsonb(t) FROM annotation.annotation_tasks t WHERE project_id=%s",
-        "annotation_files": "SELECT to_jsonb(t) FROM annotation.revision_files t "
+        "collections": "SELECT dataset_id, collection_version_id, version FROM episode_store.collections t WHERE project_id=%s",
+        "annotations": "SELECT task_id, dataset_id, data_ref, status, task_kind FROM annotation.annotation_tasks t WHERE project_id=%s",
+        "annotation_files": "SELECT task_id, revision, format_version FROM annotation.revision_files t "
         "WHERE project_id=%s AND status='READY'",
-        "exports": "SELECT to_jsonb(t) FROM episode_store.delivery_jobs t "
+        "exports": "SELECT job_id, plan, created_at FROM episode_store.delivery_jobs t "
         "WHERE project_id=%s AND status='READY'",
-        "annotation_exports": "SELECT to_jsonb(t) FROM annotation.delivery_jobs t "
+        "annotation_exports": "SELECT job_id, plan, created_at FROM annotation.delivery_jobs t "
         "WHERE project_id=%s AND status='READY'",
     }
     connection = connection_factory()
@@ -296,12 +303,13 @@ def load_task_inventory(connection_factory, project_id: str) -> TaskInventoryLab
         rows = {}
         for name, query in queries.items():
             cursor.execute(query, (project_id,))
-            rows[name] = [r[0] for r in cursor.fetchall()]
+            columns = [column.name for column in cursor.description]
+            rows[name] = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
         cursor.execute(
-            "SELECT to_jsonb(r) FROM robotics.robot_assets r WHERE organization_id=%s",
+            "SELECT robot_id, display_name FROM robotics.robot_assets r WHERE organization_id=%s",
             (current_request_context().organization_id,),
         )
-        rows["robots"] = [r[0] for r in cursor.fetchall()]
+        rows["robots"] = [{"robot_id": robot, "display_name": name} for robot, name in cursor.fetchall()]
         labels = TaskInventoryLabels(rows)
         cursor.execute("SELECT pg_database_size(current_database())")
         labels.database_bytes = cursor.fetchone()[0]

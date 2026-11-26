@@ -66,6 +66,7 @@ class IngestPersistencePort(Protocol):
         *,
         status: str | None = None,
         data_package_id: str | None = None,
+        task_ids: tuple[str, ...] | None = None,
         after: tuple[datetime, str] | None = None,
         limit: int = 50,
     ) -> list[UploadSession]: ...
@@ -295,6 +296,7 @@ class InMemoryIngestPersistence:
         *,
         status: str | None = None,
         data_package_id: str | None = None,
+        task_ids: tuple[str, ...] | None = None,
         after: tuple[datetime, str] | None = None,
         limit: int = 50,
     ) -> list[UploadSession]:
@@ -306,6 +308,8 @@ class InMemoryIngestPersistence:
                 and item.region_code == region_code
                 and (status is None or item.status.value == status)
                 and (data_package_id is None or item.data_package_id == data_package_id)
+                and (task_ids is None or (item.session_id in self._manifest_preflights
+                     and self._manifest_preflights[item.session_id].manifest.task_id in task_ids))
                 and (after is None or (item.updated_at, item.session_id) < after)
             ]
             return sorted(

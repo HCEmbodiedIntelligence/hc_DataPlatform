@@ -12,10 +12,12 @@ from pathlib import Path
 
 import numpy as np
 
+from hc_data_platform.alignment.timing import JOINT_MATCH_MS
+
 STREAMS = (
     ("depth", "/observation/cameras/head/depth/compressed", 50),
-    ("joint_state", "/observation/joint_states", 20),
-    ("joint_command", "/action/joint_states", 20),
+    ("joint_state", "/observation/joint_states", JOINT_MATCH_MS),
+    ("joint_command", "/action/joint_states", JOINT_MATCH_MS),
     ("right_finger_command", "/action/right_hand/joint_states", 150),
     ("left_finger_command", "/action/left_hand/joint_states", 150),
 )
@@ -24,7 +26,7 @@ STREAMS = (
 class ReferenceConversionReport:
     """Collect source message counts, RGB alignment errors and exported frames."""
 
-    def __init__(self, source):
+    def __init__(self, source, *, joint_match_ms=JOINT_MATCH_MS):
         from .episode_outcome import outcome_fields
 
         self.outcome = outcome_fields(source["episode_outcome"]) if "episode_outcome" in source else {}
@@ -32,6 +34,8 @@ class ReferenceConversionReport:
         selected = source["provenance"]["selected_mcap"]
         self.source = {"path": selected["path"], "sha256": selected["sha256"],
                        "size_bytes": selected["size_bytes"]}
+        self.streams = tuple((name, topic, joint_match_ms if name in {"joint_state", "joint_command"} else tolerance)
+                             for name, topic, tolerance in STREAMS)
         self.messages = Counter()
         self.samples = []
         self.outputs = {}
@@ -41,7 +45,7 @@ class ReferenceConversionReport:
     def observe(self, stamp, matches, *, state_label=False):
         errors, reason = {}, None
         # Match the reference's stream order and first-failure accounting.
-        for name, topic, _ in STREAMS:
+        for name, topic, _ in self.streams:
             if name == "joint_command" and state_label:
                 continue
             matched = matches[topic]
@@ -87,7 +91,7 @@ class ReferenceConversionReport:
             buckets[index].append(sample)
         reports = []
         for episode_index, samples in buckets.items():
-            errors = {name: [] for name, _, _ in STREAMS}
+            errors = {name: [] for name, _, _ in self.streams}
             drops, output = Counter(), 0
             for stamp, measured, reason in samples:
                 for name, value in measured.items():
@@ -97,7 +101,7 @@ class ReferenceConversionReport:
                 else:
                     drops[reason or "excluded_by_selection"] += 1
             statistics = {}
-            for name, _, tolerance in STREAMS:
+            for name, _, tolerance in self.streams:
                 values = np.asarray(errors[name], dtype=np.float64)
                 statistics[name] = {
                     "max": float(values.max()) if len(values) else None,

@@ -1,3 +1,4 @@
+import { useFileDownload } from "../../../shared/lib/use-file-download";
 import { Alert, Button, Input, Modal, Space } from "antd";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Download, RotateCcw, Snowflake, Trash2 } from "lucide-react";
@@ -38,16 +39,6 @@ function formatBytes(value: string): string {
   return `${tenths / 10n}${tenths % 10n ? `.${tenths % 10n}` : ""} ${units[unit]}`;
 }
 
-function openDownload(url: string): void {
-  const link = document.createElement("a");
-  link.href = url;
-  link.rel = "noopener noreferrer";
-  link.download = "";
-  document.body.append(link);
-  link.click();
-  link.remove();
-}
-
 export function ManagedStorageObjectsPanel({
   scope,
   enabled,
@@ -64,17 +55,18 @@ export function ManagedStorageObjectsPanel({
   } | null>(null);
   const [reason, setReason] = useState("");
   const objects = useManagedStorageObjects(scope, cursor, 25, enabled);
+  const fileDownload = useFileDownload(JSON.stringify(scope));
   const download = useAuthorizeStorageObjectDownload();
   const trash = useTrashStorageObject();
   const restore = useRestoreStorageObject();
   const transition = useTransitionStorageObject();
   const busy =
-    download.isPending ||
+    Boolean(fileDownload.pending) || download.isPending ||
     trash.isPending ||
     restore.isPending ||
     transition.isPending;
   const mutationError =
-    download.error ?? trash.error ?? restore.error ?? transition.error;
+    fileDownload.error ?? download.error ?? trash.error ?? restore.error ?? transition.error;
 
   const performAction = () => {
     if (!pendingAction || reason.trim().length < 3) return;
@@ -175,17 +167,13 @@ export function ManagedStorageObjectsPanel({
                 size="small"
                 icon={<Download aria-hidden="true" size={13} />}
                 disabled={!allowed.has("DOWNLOAD") || busy}
-                onClick={() =>
-                  download.mutate(
-                    {
-                      objectId: value.object_id,
-                      etag: value.etag,
-                      reason: "authorize object download",
-                      idempotencyKey: crypto.randomUUID(),
-                    },
-                    { onSuccess: (grant) => openDownload(grant.url) },
-                  )
-                }
+                onClick={() => void fileDownload.save(value.display_key, async () => {
+                  const grant = await download.mutateAsync({
+                    objectId: value.object_id, etag: value.etag,
+                    reason: "authorize object download", idempotencyKey: crypto.randomUUID(),
+                  });
+                  return { url: grant.url, size_bytes: Number(grant.physical_bytes) };
+                })}
               >
                 下载
               </Button>
@@ -249,7 +237,7 @@ export function ManagedStorageObjectsPanel({
         },
       },
     ],
-    [busy, canManage, download],
+    [busy, canManage, download, fileDownload],
   );
 
   return (
@@ -325,7 +313,7 @@ export function ManagedStorageObjectsPanel({
           showIcon
           title="对象操作未完成"
           description={
-            isDomainError(mutationError)
+            (isDomainError(mutationError) || mutationError instanceof Error)
               ? mutationError.message
               : "对象状态未发生乐观变化，请重试。"
           }

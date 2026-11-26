@@ -63,6 +63,7 @@ export type PlatformProject = Readonly<{
 export type PlatformOrganization = Readonly<{
   organization_id: string;
   organization_name: string;
+  join_code?: string | null;
 }>;
 
 export type PlatformOrganizationPage = Readonly<{
@@ -182,6 +183,7 @@ export const platformProjectWireSchema: z.ZodType<PlatformProject> = z
 
 export const platformOrganizationWireSchema: z.ZodType<PlatformOrganization> = z
   .object({
+    join_code: z.string().nullable().optional(),
     organization_id: stableScopeId,
     organization_name: z.string().min(1).max(256),
   })
@@ -491,10 +493,10 @@ export async function getPlatformOperationsOverview(
 export async function getPlatformObjectStoreConfig(
   signal?: AbortSignal,
   saved = false,
+  organizationId?: string,
 ): Promise<PlatformObjectStoreConfig> {
-  const endpoint = saved
-    ? "/platform/object-store-config?saved=true"
-    : "/platform/object-store-config";
+  const base = organizationId ? "/account/management-storage/"+encodeURIComponent(organizationId) : "/platform/object-store-config";
+  const endpoint = saved ? base+"?saved=true" : base;
   const raw = await request<unknown>({
     method: "GET",
     path: endpoint,
@@ -507,8 +509,9 @@ export async function getPlatformObjectStoreConfig(
 
 export async function getPlatformObjectStoreLocation(
   signal?: AbortSignal,
+  organizationId?: string,
 ): Promise<PlatformObjectStoreLocation> {
-  const endpoint = "/platform/object-store-location";
+  const endpoint = "/platform/object-store-location" + (organizationId?"?organization_id="+encodeURIComponent(organizationId):"");
   const raw = await request<unknown>({
     method: "GET",
     path: endpoint,
@@ -521,8 +524,9 @@ export async function getPlatformObjectStoreLocation(
 
 export async function updatePlatformObjectStoreConfig(
   body: PlatformObjectStoreConfigUpdate,
+  organizationId?: string,
 ): Promise<PlatformObjectStoreConfig> {
-  const endpoint = "/platform/object-store-config";
+  const endpoint = organizationId ? "/account/management-storage/"+encodeURIComponent(organizationId) : "/platform/object-store-config";
   const raw = await request<unknown>({
     method: "PUT",
     path: endpoint,

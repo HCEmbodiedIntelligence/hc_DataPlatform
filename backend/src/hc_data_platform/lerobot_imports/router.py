@@ -12,7 +12,9 @@ from starlette.background import BackgroundTask
 
 from hc_data_platform.capture_schemes.reprocess import ReprocessMcap
 from hc_data_platform.continuous_recordings.mcap_contracts import McapProcessingConfig
+from hc_data_platform.core.context import select_request_scope
 from hc_data_platform.core.errors import problem
+from hc_data_platform.security.scope import ScopeGuard
 from hc_data_platform.security.http import VerifiedAuth, authorize_scope
 
 from .capabilities import LeRobotCapabilities, LeRobotCapabilityRequest, detect_capabilities
@@ -134,7 +136,8 @@ async def submit_oss_batch(
     from hc_data_platform.workflow.router import get_launcher
     from hc_data_platform.workflow.service import TemporalWorkflowLauncher
 
-    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    action = auth.resource_action("upload.manage", (command.collection_task_id,), project_id, organization_id)
+    authorize_scope(auth, project_id, action, region_code, organization_id)
     batch = BatchInput(
         organization_id=organization_id,
         project_id=project_id,
@@ -214,7 +217,8 @@ def list_import_robots(
 ) -> list[ImportRobotOption]:
     from .configuration import connections
 
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _select_source_scope(auth, (organization_id, project_id, region_code))
+    auth.readable_upload_tasks(project_id, organization_id)
     with connections()() as db:
         return import_robots(db, organization_id, project_id, region_code)
 
@@ -228,7 +232,8 @@ def get_import_capabilities(
     organization_id: OrganizationHeader,
     response: Response,
 ) -> LeRobotCapabilities:
-    authorize_scope(auth, project_id, "upload.manage", region_code, organization_id)
+    action = "role.collector" if auth.has_capability("role.collector", project_id, organization_id) else "upload.manage"
+    authorize_scope(auth, project_id, action, region_code, organization_id)
     response.headers["Cache-Control"] = "no-store"
     return detect_capabilities(command.info)
 
@@ -378,6 +383,21 @@ def process_mcap(
     )
 
 
+@router.get("/tasks/{task_id}/failed-mcap", operation_id="listTaskFailedMcapFiles")
+def task_failed_mcap(project_id: str, region_code: str, task_id: str, auth: VerifiedAuth,
+                     organization_id: OrganizationHeader):
+    from hc_data_platform.capture_schemes import failed_mcap, plans
+
+    from .configuration import connections
+    _select_source_scope(auth, (organization_id, project_id, region_code))
+    auth.require_upload_read(task_id, project_id, organization_id)
+    scope = (organization_id, project_id, region_code)
+    with connections()() as db:
+        plan = plans.get_plan(db, scope, task_id)
+        return {"plan": {"revision": plan["revision"], "scheme": plan["scheme"]} if plan else None,
+                "items": failed_mcap.candidates(db, scope, task_id)}
+
+
 @router.post("/{import_id}:reprocess-mcap", operation_id="reprocessMcapWithTaskPlan")
 def reprocess_mcap(project_id: str, region_code: str, import_id: str, command: ReprocessMcap,
                    auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
@@ -409,7 +429,7 @@ def mcap_plan_versions(
 ):
     from .configuration import connections
 
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(
         organization_id, project_id, region_code, import_id
     )
@@ -434,7 +454,7 @@ def mcap_progress(
 ):
     from .mcap_processing import progress
 
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     raw = browser.source(organization_id, project_id, region_code, import_id)
     return progress((organization_id, project_id, region_code), import_id, browser.manifest(raw))
@@ -457,7 +477,19 @@ def list_native_imports(
     uploaded_before: AwareDatetime | None = None,
     recording_id: Annotated[str | None, Query(max_length=128)] = None,
 ) -> list[NativeImportProgress]:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _select_source_scope(auth, (organization_id, project_id, region_code))
+    tasks = datasets = None
+    if not (auth.has_capability("upload.read", project_id, organization_id)
+            or auth.has_capability("dataset_version.download_raw", project_id, organization_id)):
+        prefix = "dataset_version.download_raw/dataset:"
+        datasets = tuple(key[len(prefix):] for key in auth.effective_capabilities(project_id, organization_id)
+                         if key.startswith(prefix))
+        if auth.has_capability("role.collector", project_id, organization_id):
+            tasks = auth.readable_upload_tasks(project_id, organization_id)
+        elif datasets:
+            tasks = ()
+        else:
+            auth.require_capability("upload.read", project_id, organization_id)
     items = list_progress(
         organization_id,
         project_id,
@@ -471,6 +503,7 @@ def list_native_imports(
         uploaded_from=uploaded_from,
         uploaded_before=uploaded_before,
         recording_id=recording_id,
+        **({"task_ids": tasks, "authorized_datasets": datasets} if tasks is not None else {}),
     )
     return (
         [
@@ -498,24 +531,59 @@ def download_original_archive(
     organization_id: OrganizationHeader,
     service: Service,
 ) -> StreamingResponse:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
-    authorize_scope(auth, project_id, "export.download", region_code, organization_id)
-    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
-    files = archive_files(browser, organization_id, project_id, region_code, command)
-    from .source_archive import archive_record_document
-
-    document = archive_record_document((organization_id, project_id, region_code), command)
-    stream = stream_archive(browser, files, document)
+    stream = original_archive(service, (organization_id, project_id, region_code), command, auth)
     return StreamingResponse(
         stream,
         media_type="application/zip",
         headers={
             "Cache-Control": "no-store",
-            "Content-Disposition": 'attachment; filename="original-data.zip"',
+            "Content-Disposition": f'attachment; filename="{command.download_name or "original-data.zip"}"',
             "X-Accel-Buffering": "no",
         },
         background=BackgroundTask(stream.close),
     )
+
+
+def _select_source_scope(auth, scope):
+    organization, project, region = scope
+    ScopeGuard.require(auth, project, region, organization)
+    select_request_scope(project, region, organization_id=organization)
+
+
+def _require_import_read(auth, service, scope, import_id):
+    organization, project, region = scope
+    _select_source_scope(auth, scope)
+    if auth.has_capability("upload.read", project, organization):
+        return
+    raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(*scope, import_id)
+    action = auth.resource_action("dataset_version.download_raw", (f"dataset:{raw.dataset_id}",)
+                                  if raw.dataset_id else (), project, organization)
+    if not auth.has_capability(action, project, organization):
+        auth.require_upload_read(raw.collection_task_id, project, organization)
+
+
+def _require_original(auth, scope, raw):
+    organization, project, region = scope
+    resources = (f"dataset:{raw.dataset_id}",) if raw.dataset_id else ()
+    action = auth.resource_action("dataset_version.download_raw", resources, project, organization)
+    authorize_scope(auth, project, action, region, organization)
+
+
+def _authorized_original(browser, auth, scope, import_id):
+    _select_source_scope(auth, scope)
+    raw = browser.source(*scope, import_id)
+    _require_original(auth, scope, raw)
+    return raw
+
+
+def original_archive(service, scope, command, auth):
+    _select_source_scope(auth, scope)
+    browser = OriginalSourceBrowser(service.storage, service.raw_sources)
+    files = archive_files(browser, *scope, command, authorize=lambda raw: _require_original(auth, scope, raw))
+    from .source_archive import archive_record_document
+
+    document = archive_record_document(scope, command)
+    return stream_archive(browser, files, document)
 
 
 @router.get("/{import_id}/files")
@@ -529,7 +597,7 @@ def list_original_files(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> OriginalFilePage:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     raw = browser.source(organization_id, project_id, region_code, import_id)
     return browser.files(raw, offset=offset, limit=limit)
@@ -546,10 +614,9 @@ def authorize_original_file(
     path: Annotated[str, Query(min_length=1, max_length=1024)],
     download: bool = False,
 ) -> OriginalFileGrant:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     return browser.grant(
-        browser.source(organization_id, project_id, region_code, import_id), path, download=download
+        _authorized_original(browser, auth, (organization_id, project_id, region_code), import_id), path, download=download
     )
 
 
@@ -575,7 +642,7 @@ def browse_original_directory(
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ) -> OriginalDirectory:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     response.headers["Cache-Control"] = "no-store"
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     raw = browser.source(organization_id, project_id, region_code, import_id)
@@ -595,11 +662,10 @@ def preview_original_text(
     response: Response,
     path: Annotated[str, Query(min_length=1, max_length=1024)],
 ) -> OriginalTextPreview:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
     response.headers["Cache-Control"] = "no-store"
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     return text_preview(
-        browser, browser.source(organization_id, project_id, region_code, import_id), path
+        browser, _authorized_original(browser, auth, (organization_id, project_id, region_code), import_id), path
     )
 
 
@@ -613,10 +679,9 @@ def get_original_episode(
     organization_id: OrganizationHeader,
     service: Service,
 ) -> OriginalEpisode:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
     browser = OriginalSourceBrowser(service.storage, service.raw_sources)
     return browser.episode(
-        browser.source(organization_id, project_id, region_code, import_id),
+        _authorized_original(browser, auth, (organization_id, project_id, region_code), import_id),
         episode_index,
     )
 
@@ -630,7 +695,7 @@ def get_native_processing(
     organization_id: OrganizationHeader,
     service: Service,
 ) -> NativeImportProgress:
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     item = get_progress(organization_id, project_id, region_code, import_id)
     return (
         service.delivery.enrich((organization_id, project_id, region_code), item)
@@ -856,7 +921,7 @@ def mcap_versions(
     organization_id: OrganizationHeader,
     service: Service,
 ):
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     raw = OriginalSourceBrowser(service.storage, service.raw_sources).source(
         organization_id, project_id, region_code, import_id
     )
@@ -917,7 +982,7 @@ def mcap_channels(
     organization_id: OrganizationHeader,
     service: Service,
 ):
-    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    _require_import_read(auth, service, (organization_id, project_id, region_code), import_id)
     from hc_data_platform.continuous_recordings.mcap_native import inspect
     from hc_data_platform.robot_processing.router import sample
 
@@ -930,3 +995,82 @@ def mcap_channels(
         path,
         lambda source, evidence: {"inventory": inspect(source), "evidence": evidence},
     )
+
+class BatchQCState(BaseModel):
+    version: str
+    phase: str
+    total: int
+    completed: int
+    message: str | None = None
+
+
+def _batch_scope(auth, project_id, region_code, organization_id):
+    authorize_scope(auth, project_id, "upload.read", region_code, organization_id)
+    authorize_scope(auth, project_id, "export.download", region_code, organization_id)
+    return organization_id, project_id, region_code
+
+
+@router.post("/upload-batches/{batch_number}/qc-report", response_model=BatchQCState, operation_id="prepareUploadBatchQCReport")
+def prepare_upload_qc_report(project_id: str, region_code: str, batch_number: int,
+                             auth: VerifiedAuth, organization_id: OrganizationHeader, service: Service):
+    from .batch_reports import prepare
+
+    return prepare(_batch_scope(auth, project_id, region_code, organization_id), batch_number, service.storage)
+
+
+@router.get("/upload-batches/{batch_number}/qc-report/{version}", response_model=BatchQCState, operation_id="getUploadBatchQCReport")
+def get_upload_qc_report(project_id: str, region_code: str, batch_number: int, version: str,
+                         auth: VerifiedAuth, organization_id: OrganizationHeader, response: Response):
+    from .batch_reports import read_status
+
+    response.headers["Cache-Control"] = "no-store"
+    return read_status(_batch_scope(auth, project_id, region_code, organization_id), batch_number, version)
+
+
+@router.get("/upload-batches/{batch_number}/qc-report/{version}/download", operation_id="downloadUploadBatchQCReport",
+            response_class=StreamingResponse, responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {"schema":{"type":"string","format":"binary"}}}}})
+def download_upload_qc_report(project_id: str, region_code: str, batch_number: int, version: str,
+                              auth: VerifiedAuth, organization_id: OrganizationHeader):
+    from .batch_reports import directory, read_status
+
+    scope = _batch_scope(auth, project_id, region_code, organization_id)
+    if read_status(scope, batch_number, version)["phase"] != "ready":
+        raise problem(status=409, code="QC_REPORT_NOT_READY", title="报告尚未就绪",detail="请等待生成完成。")
+    try:
+        stream = (directory(scope,batch_number)/f"{version}.xlsx").open("rb")
+    except FileNotFoundError:
+        raise problem(status=409,code="QC_REPORT_CHANGED",title="批次报告已更新",detail="请重新获取最新版。")
+    return StreamingResponse(iter(lambda:stream.read(65536),b""),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Cache-Control":"no-store","Content-Disposition":f'attachment; filename="upload-{batch_number}-qc.xlsx"'},
+        background=BackgroundTask(stream.close))
+
+
+
+class BatchQCSelection(BaseModel):
+    batch_numbers: list[Annotated[int, Field(gt=0)]] = Field(min_length=1)
+
+
+@router.post("/upload-batches/qc-reports/download", response_class=StreamingResponse,
+             operation_id="downloadSelectedUploadQCReports",
+             responses={200: {"content": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}}}})
+def download_selected_qc_reports(project_id: str, region_code: str, selection: BatchQCSelection,
+                                 auth: VerifiedAuth, organization_id: OrganizationHeader):
+    from .batch_report_xlsx import write_batch_workbook
+    from .batch_reports import snapshots
+
+    scope = _batch_scope(auth, project_id, region_code, organization_id)
+    reports = snapshots(scope, sorted(set(selection.batch_numbers)))
+    stream = SpooledTemporaryFile(max_size=_PART_MEMORY_SPOOL_BYTES)
+    try:
+        write_batch_workbook(stream, reports)
+        stream.seek(0)
+        return StreamingResponse(
+            iter(lambda: stream.read(65536), b""),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Cache-Control": "no-store", "Content-Disposition": 'attachment; filename="upload-qc-reports.xlsx"'},
+            background=BackgroundTask(stream.close),
+        )
+    except BaseException:
+        stream.close()
+        raise

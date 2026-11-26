@@ -3,12 +3,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Modal, Space } from "antd";
 import { Link } from "react-router-dom";
 import type { components } from "../../shared/api/generated/platform";
-import { request } from "../../shared/api/http-client";
 import type { IngestScope } from "../../entities/data-source";
 import { useCapabilities } from "../../shared/auth/use-capabilities";
 import { qualityFindingText } from "../../shared/lib/quality-presentation";
 import { dataUploadRoutes, recordingPreviewPath } from "../../shared/routing/navigation-routes";
 import { qualityReasonLabels, qualityRuleLabels } from "./labels";
+
+import { discardQualityRecording, recordingReportDigest, refreshRecordingQuality, retryQualityRecording } from "./recording-quality-api";
 
 type Envelope = components["schemas"]["ContinuousRecordingEnvelope"];
 
@@ -39,18 +40,14 @@ export function RecordingQualityReview({ scope, detail, actions = true }: {
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const client = useQueryClient();
   const caps = useCapabilities();
-  const digest = summary?.report_id.match(/^recording_qc_([0-9a-f]{64})$/)?.[1];
+  const digest = recordingReportDigest(summary?.report_id);
   const change = useMutation({
-    mutationFn: (action: "retry" | "discard") => request<Envelope>({
-      method: "POST", scope,
-      path: `/projects/${encodeURIComponent(scope.projectId)}/regions/${encodeURIComponent(scope.regionCode)}/continuous-recordings/${encodeURIComponent(recording.recording_id)}/quality:${action}`,
-      body: action === "discard" ? { report_sha256: digest } : { request_id: crypto.randomUUID() },
-    }),
+    mutationFn: (action: "retry" | { discard: string }) => action === "retry"
+      ? retryQualityRecording(scope, recording.recording_id)
+      : discardQualityRecording(scope, recording.recording_id, action.discard),
     onSuccess: () => {
       setConfirmDiscard(false);
-      for (const key of ["continuous-recording", "continuous-recordings", "qc-recording-source", "dashboard",
-        "quality-problems", "capture-progress", "collection-task-progress", "auto-quality-processing"])
-        void client.invalidateQueries({queryKey: [key]});
+      refreshRecordingQuality(client);
     },
   });
   if (recording.status !== "QC_FAILED" || !summary) return null;
@@ -86,7 +83,7 @@ export function RecordingQualityReview({ scope, detail, actions = true }: {
       </Space>}
       <Modal title="丢弃当前录制？" open={confirmDiscard} okText="确认丢弃" cancelText="取消"
         okButtonProps={{danger:true}} confirmLoading={change.isPending}
-        onCancel={() => !change.isPending && setConfirmDiscard(false)} onOk={() => change.mutate("discard")}>
+        onCancel={() => !change.isPending && setConfirmDiscard(false)} onOk={() => digest && change.mutate({ discard: digest })}>
         <p>{recording.source_file_name ?? recording.recording_id}</p>
         <p>这条录制将退出待处理列表，原始文件和质检报告会保留。</p>
         {change.isError && <Alert type="error" title={change.error.message}/>}

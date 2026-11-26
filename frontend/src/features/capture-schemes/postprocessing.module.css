@@ -120,6 +120,14 @@ textarea.code {
 .choose svg {
   flex-shrink: 0;
 }
+.ruleList {
+  max-height: min(52vh, 440px);
+  overflow-y: auto;
+  padding-inline-end: 8px;
+}
+.ruleList > :first-child {
+  margin-bottom: 8px;
+}
 .params {
   min-width: 0;
 }

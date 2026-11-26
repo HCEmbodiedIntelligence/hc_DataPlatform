@@ -113,7 +113,7 @@ function SchemeSourceFields({ organizationId, onLoad }: SourcePickerProps) {
           }
         />
       )}
-      <p>填入会替换当前数据定义和原始文件配置，修改后需要重新验证。</p>
+      <p>填入会替换当前数据定义和原始文件配置。</p>
       <Button
         type="primary"
         loading={Boolean(schemeId) && source.isFetching}

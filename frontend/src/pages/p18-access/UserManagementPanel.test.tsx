@@ -8,6 +8,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { useShellStore } from "../../shared/scope/shell-store";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDomainError } from "../../shared/api/domain-error";
@@ -239,4 +241,25 @@ describe("P18 platform user management", () => {
 
     await waitFor(() => expect(onUnlock).toHaveBeenCalledWith(account));
   });
+});
+
+it("opens an unaffiliated account and offers scoped assignment from its name", async () => {
+  const user = userEvent.setup();
+  const previous = useShellStore.getState().platformCapabilities;
+  useShellStore.setState({ platformCapabilities: ["platform.admin"] });
+  try {
+    render(<MemoryRouter><UserManagementPanel {...props()} /></MemoryRouter>);
+    await user.click(screen.getByRole("button", { name: account.display_name }));
+    const detail = await screen.findByRole("dialog");
+    expect(within(detail).getByText(account.username + " · 账号详情")).toBeVisible();
+    expect(within(detail).getByText(account.principal_id)).toBeVisible();
+    expect(within(detail).getByText("普通用户")).toBeVisible();
+    expect(within(detail).getByRole("link", { name: "设置组织权限" })).toHaveAttribute(
+      "href", expect.stringContaining("tab=organizations&user=" + account.principal_id),
+    );
+    await user.click(within(detail).getByRole("button", { name: "设为平台管理员" }));
+    expect(await screen.findByRole("button", { name: "确认授权" })).toBeEnabled();
+  } finally {
+    useShellStore.setState({ platformCapabilities: previous });
+  }
 });

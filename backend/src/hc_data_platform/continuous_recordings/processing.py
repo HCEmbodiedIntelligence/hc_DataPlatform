@@ -73,6 +73,7 @@ from hc_data_platform.workflow.models import (
     ContinuousEpisodeWorkflowInput,
 )
 
+from .action_labels import ALIGNED_ACTION_VERSION, aligned_left_action, left_action_axes
 from .asset_models import (
     EpisodeProcessingStatus,
     RecordingAsset,
@@ -410,6 +411,24 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
                     raw_assets = tuple(
                         RecordingAsset.model_validate(item[0]) for item in cursor.fetchall()
                     )
+                resume_converter = None
+                if not recording_quality and ":retry:" in (processing.workflow_id or ""):
+                    # A publication retry must reconstruct the already committed plan.
+                    cursor.execute(
+                        """SELECT v.input_document->>'processor_version'
+                        FROM core.outbox_events e JOIN episode_store.versions v
+                          ON (v.organization_id,v.project_id,v.region_code)=
+                             (e.organization_id,e.project_id,e.region_code)
+                         AND v.data_version_id=e.envelope->'payload'->>'resume_data_version_id'
+                        WHERE e.event_id=%s AND (e.organization_id,e.project_id,e.region_code)=(%s,%s,%s)
+                          AND v.status='COMMITTED'
+                          AND v.input_document->'identity'->>'rollout_id'=%s""",
+                        (processing.event_id, organization_id, project_id, region_code,
+                         f"{recording_id}:{episode_id}"),
+                    )
+                    pinned = cursor.fetchone()
+                    if pinned:
+                        resume_converter = pinned[0]
                 configuration = upload.command.recording_config
                 modality_keys = frozenset(
                     [camera.modality_key for camera in configuration.cameras]
@@ -627,13 +646,13 @@ class PostgresContinuousEpisodeWorkflowInputResolver:
             quality_profile=quality_profile,
             alignment_profile=AlignmentProfileV1(
                 profile_id=f"continuous:{snapshot.schema_snapshot_id}",
-                converter_version="continuous-episode-package/6"
+                converter_version=(resume_converter or (ALIGNED_ACTION_VERSION if left_action_axes(frozen)
+                                                        else "continuous-episode-package/6"))
                 if self._package_schemas is not None
                 else "continuous-mp4-sensor/1",
                 frequency_hz=frequency_hz,
                 required_modalities=modality_keys,
                 stream_strategies={key: _strategy_for(key, configuration) for key in modality_keys},
-                default_tolerance_ns=20_000_000,
             ),
             start_offset_ns=processing.start_offset_ns,
             end_offset_ns=processing.end_offset_ns,
@@ -1192,6 +1211,8 @@ class ContinuousEpisodeProcessingService:
                 profile=request.alignment_profile,
                 writer=writer,
                 drop_invalid=package_source is None,
+                **({"row_transform": aligned_left_action(request.capture_snapshot, stream_kinds)}
+                   if request.alignment_profile.converter_version == ALIGNED_ACTION_VERSION else {}),
                 **({"target_timestamps": (origin + stamp for _, stamp in preserved)} if preserved else {}),
             )
         staging = self._publish_staging(request, manifest)
@@ -1430,7 +1451,22 @@ class ContinuousEpisodeProcessingService:
         plan.validate_recording_bundle(request, alignment, manifest, staging)
         if request.resume_data_version_id and plan.input.data_version_id != request.resume_data_version_id:
             raise ContinuousEpisodeProcessingError("retry plan differs from the committed Episode")
-        published = self._episode_packages.recover_bundle(plan)
+
+        def project(version, ready):
+            viewer = self._dataset_projection.project_continuous_episode(
+                source=request.projection,
+                alignment=alignment.data,
+                schema_snapshot_id=request.schema_snapshot_id,
+                frequency_hz=request.alignment_profile.frequency_hz,
+                version=version,
+                ready=ready,
+                media_artifacts=(),
+            )
+            return AlignedBundleCommitActivityOutput(
+                version=version, derived_ready=ready, viewer_target=viewer
+            )
+
+        published = self._episode_packages.recover_bundle(plan, project=project)
         if published is None and request.resume_data_version_id:
             raise ContinuousEpisodeProcessingError("the committed Episode for this retry is missing")
         if published is None:
@@ -1453,20 +1489,9 @@ class ContinuousEpisodeProcessingService:
                     assets,
                     schema=plan.schema_snapshot,
                     metadata=plan.metadata,
+                    project=project,
                 )
-        version, ready = published
-        viewer = self._dataset_projection.project_continuous_episode(
-            source=request.projection,
-            alignment=alignment.data,
-            schema_snapshot_id=request.schema_snapshot_id,
-            frequency_hz=request.alignment_profile.frequency_hz,
-            version=version,
-            ready=ready,
-            media_artifacts=(),
-        )
-        return AlignedBundleCommitActivityOutput(
-            version=version, derived_ready=ready, viewer_target=viewer
-        )
+        return published
 
     def _settle_version_reservation(self, episode: Any) -> None:
         if episode.status not in {

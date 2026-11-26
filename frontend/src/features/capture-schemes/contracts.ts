@@ -2,6 +2,8 @@ import { z } from "zod";
 import { qualityPolicySchema } from "./quality-contract";
 import type { components } from "../../shared/api/generated/platform";
 
+export const JOINT_MATCH_MS = 25;
+
 // Runtime response projections are checked against the generated service contract.
 export const formatSchema = z.enum(["MCAP", "LEROBOT_V3", "CAPTURE_BUNDLE"]);
 export type SourceFormat = z.infer<typeof formatSchema>;
@@ -34,7 +36,7 @@ export type Feature = z.infer<typeof featureSchema>;
 const normalizationSchema = z.object({
   profile: z.literal("hc_tj_17dof/v1"),
   clock_domain: z.string(), clock_evidence: z.string(),
-  capture_clock: z.literal("header_stamp"), waist_fallback_ms: z.literal(20),
+  capture_clock: z.literal("header_stamp"), waist_fallback_ms: z.union([z.literal(20), z.literal(JOINT_MATCH_MS)]),
   invalid_action: z.literal("drop"), camera_mode: z.enum(["legacy_reference", "calibrated"]),
   hand_encoding: z.literal("independent_ban_command"),
 });
@@ -43,7 +45,7 @@ export const outputSchema = z.object({
   normalization: normalizationSchema.nullable().optional(),
   metadata_features: z.array(z.enum(["head.calibration", "head.extrinsics"])).default([]),
   frequency_hz: z.number().positive().max(1000).nullable().default(null),
-  frequency_policy: z.literal("PRESERVE"),
+  frequency_policy: z.literal("PRESERVE").default("PRESERVE"),
   time_source: z.enum(["FRAME_TIMESTAMP", "STATE_LOG_TIME", "RGB_LOG_TIME"]),
   features: z.record(z.string(), featureSchema),
   validity_max_age_ms: z.number().positive().max(1000).default(50),
@@ -65,6 +67,7 @@ export const processingOperationSchema = z.discriminatedUnion("kind", [
   baseOption.extend({ kind: z.literal("action_from_state"), axes: axisNames, match: z.literal("at_or_after") }).strict(),
   baseOption.extend({ kind: z.literal("fill_action_from_next_frame") }).strict(),
   baseOption.extend({ kind: z.literal("fill_initial_action") }).strict(),
+  baseOption.extend({ kind: z.literal("interpolate_short_gaps") }).strict(),
   baseOption.extend({ kind: z.literal("forward_fill_hands") }).strict(),
   baseOption.extend({ kind: z.literal("clean_dagger_intervals") }).strict(),
   baseOption.extend({ kind: z.literal("generate_action"), source: z.literal("state") }).strict(),
@@ -73,7 +76,7 @@ export const processingOperationSchema = z.discriminatedUnion("kind", [
 ]);
 export type ProcessingOperation = z.infer<typeof processingOperationSchema>;
 export const postprocessingRulesSchema = z.discriminatedUnion("version", [
-  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(8)}).strict(),
+  fallbackRules, z.object({version: z.literal(2), rules:z.array(processingOperationSchema).max(9)}).strict(),
 ]);
 export const mcapConfigSchema = z.object({
   postprocessing_rules: postprocessingRulesSchema.nullable().optional(),
@@ -145,6 +148,7 @@ export const documentSchema = z.object({
   description: z.string(),
   software: z.string().max(120).default(""),
   model_version_ids: z.array(z.string()),
+  annotation_tags: z.array(z.string()).default([]),
   adapters: z.array(adapterSchema).min(1),
   output: draftOutputSchema,
   quality_policy: qualityPolicySchema,

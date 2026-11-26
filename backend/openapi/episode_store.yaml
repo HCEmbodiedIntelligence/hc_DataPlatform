@@ -1,5 +1,41 @@
 components:
   schemas:
+    BundleOssExport:
+      additionalProperties: false
+      properties:
+        download_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Download Date
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
+        export_filter:
+          $ref: '#/components/schemas/UploadExportFilter'
+        kind:
+          const: bundle
+          title: Kind
+          type: string
+        part_ids:
+          items:
+            pattern: ^[0-9a-f]{64}$
+            type: string
+          maxItems: 10000
+          minItems: 1
+          title: Part Ids
+          type: array
+      required:
+      - part_ids
+      - export_filter
+      - kind
+      title: BundleOssExport
+      type: object
     CollectionAnnotationSelection:
       additionalProperties: false
       properties:
@@ -481,13 +517,26 @@ components:
     DownloadEpisodeBundle:
       additionalProperties: false
       properties:
+        download_date:
+          anyOf:
+          - format: date
+            type: string
+          - type: 'null'
+          title: Download Date
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
         export_filter:
           $ref: '#/components/schemas/UploadExportFilter'
         part_ids:
           items:
             pattern: ^[0-9a-f]{64}$
             type: string
-          maxItems: 1000
+          maxItems: 10000
           minItems: 1
           title: Part Ids
           type: array
@@ -1605,6 +1654,26 @@ components:
       - created_at
       title: ExportUploadBatch
       type: object
+    JobOssExport:
+      additionalProperties: false
+      properties:
+        export_filter:
+          anyOf:
+          - $ref: '#/components/schemas/UploadExportFilter'
+          - type: 'null'
+        job_id:
+          pattern: ^ed_[0-9a-f]{64}$
+          title: Job Id
+          type: string
+        kind:
+          const: job
+          title: Kind
+          type: string
+      required:
+      - kind
+      - job_id
+      title: JobOssExport
+      type: object
     JsonValue: {}
     LegacyEpisodeRef:
       additionalProperties: false
@@ -1699,6 +1768,29 @@ components:
       - mode
       - export_filter
       title: PrepareEpisodePart
+      type: object
+    PrepareEpisodeParts:
+      additionalProperties: false
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/DataVersionRef'
+          maxItems: 1000
+          minItems: 1
+          title: Data
+          type: array
+        export_filter:
+          $ref: '#/components/schemas/UploadExportFilter'
+        mode:
+          maxLength: 64
+          minLength: 1
+          title: Mode
+          type: string
+      required:
+      - data
+      - mode
+      - export_filter
+      title: PrepareEpisodeParts
       type: object
     PreparedEpisodePart:
       additionalProperties: false
@@ -1819,6 +1911,39 @@ components:
       - rules
       - content_sha256
       title: QcRuleEvidence
+      type: object
+    RawOssExport:
+      additionalProperties: false
+      properties:
+        download_name:
+          anyOf:
+          - maxLength: 240
+            pattern: ^[a-z][a-z0-9_]*_[A-Za-z0-9_+-]+_[0-9]{8}_[0-9]{4}\.zip$
+            type: string
+          - type: 'null'
+          title: Download Name
+        export_filter:
+          anyOf:
+          - $ref: '#/components/schemas/UploadExportFilter'
+          - type: 'null'
+        import_ids:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Za-z0-9._-]+$
+            type: string
+          maxItems: 10000
+          minItems: 1
+          title: Import Ids
+          type: array
+        kind:
+          const: raw
+          title: Kind
+          type: string
+      required:
+      - import_ids
+      - kind
+      title: RawOssExport
       type: object
     RequestCollectionDelivery:
       additionalProperties: false
@@ -2190,6 +2315,88 @@ components:
       - updated_at
       - selection
       title: TagDerivationView
+      type: object
+    TraceMember:
+      additionalProperties: false
+      properties:
+        collection_description:
+          title: Collection Description
+          type: string
+        data:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        raw_source_ids:
+          items:
+            type: string
+          title: Raw Source Ids
+          type: array
+        upload_id:
+          title: Upload Id
+          type: string
+        upload_note:
+          title: Upload Note
+          type: string
+        viewer_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Viewer Version Id
+      required:
+      - data
+      - viewer_version_id
+      - upload_id
+      - raw_source_ids
+      - collection_description
+      - upload_note
+      title: TraceMember
+      type: object
+    TraceOrigin:
+      additionalProperties: false
+      properties:
+        batches:
+          items:
+            $ref: '#/components/schemas/ExportUploadBatch'
+          title: Batches
+          type: array
+        data:
+          anyOf:
+          - $ref: '#/components/schemas/DataVersionRef'
+          - type: 'null'
+        identifier:
+          title: Identifier
+          type: string
+        viewer_version_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Viewer Version Id
+      required:
+      - data
+      - viewer_version_id
+      - identifier
+      - batches
+      title: TraceOrigin
+      type: object
+    TracePage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/TraceMember'
+          title: Items
+          type: array
+        total:
+          title: Total
+          type: integer
+        upload_count:
+          title: Upload Count
+          type: integer
+      required:
+      - items
+      - total
+      - upload_count
+      title: TracePage
       type: object
     UploadCandidate:
       additionalProperties: false
@@ -2572,6 +2779,158 @@ paths:
       security:
       - bearerAuth: []
       summary: Retry Tag Episode
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/data-trace/batches/{number}:
+    get:
+      operationId: traceMembers
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: number
+        required: true
+        schema:
+          title: Number
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          default: 0
+          minimum: 0
+          title: Offset
+          type: integer
+      - in: query
+        name: limit
+        required: false
+        schema:
+          default: 25
+          maximum: 100
+          minimum: 1
+          title: Limit
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TracePage'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Trace Members
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/data-trace/origins:
+    get:
+      operationId: traceOrigins
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: identifier
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Identifier
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/TraceOrigin'
+                title: Response Trace Origins Api V1 Projects  Project Id  Regions  Region Code  Data
+                  Trace Origins Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Trace Origins
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/data-trace/suggestions:
+    get:
+      operationId: traceSuggestions
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: query
+        name: query
+        required: true
+        schema:
+          maxLength: 256
+          minLength: 1
+          title: Query
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  type: string
+                title: Response Trace Suggestions Api V1 Projects  Project Id  Regions  Region Code  Data
+                  Trace Suggestions Get
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Trace Suggestions
       tags:
       - episode_data
       - episode_data
@@ -3443,6 +3802,57 @@ paths:
       summary: Package File Download
       tags:
       - episode_data
+  ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/manifest
+  : get:
+      operationId: downloadPackageManifest
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      - in: path
+        name: dataset_id
+        required: true
+        schema:
+          title: Dataset Id
+          type: string
+      - in: path
+        name: episode_id
+        required: true
+        schema:
+          title: Episode Id
+          type: string
+      - in: path
+        name: data_version_id
+        required: true
+        schema:
+          title: Data Version Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: {}
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Download Package Manifest
+      tags:
+      - episode_data
   ? /api/v1/projects/{project_id}/regions/{region_code}/datasets/{dataset_id}/episodes/{episode_id}/data-versions/{data_version_id}/media/{feature}/authorize
   : post:
       operationId: authorizePreview
@@ -3887,7 +4297,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PrepareEpisodePart'
+              $ref: '#/components/schemas/Body'
         required: true
       responses:
         '200':
@@ -3895,6 +4305,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PreparedEpisodePart'
+            application/x-ndjson:
+              schema:
+                type: string
           description: Successful Response
         '422':
           content:
@@ -4067,6 +4480,47 @@ paths:
       security:
       - bearerAuth: []
       summary: List Export Formats
+      tags:
+      - episode_data
+      - episode_data
+  /api/v1/projects/{project_id}/regions/{region_code}/episode-deliveries/oss:
+    post:
+      operationId: exportArchiveToOss
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      - in: path
+        name: region_code
+        required: true
+        schema:
+          title: Region Code
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Body'
+        required: true
+      responses:
+        '200':
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Export Archive To Oss
       tags:
       - episode_data
       - episode_data

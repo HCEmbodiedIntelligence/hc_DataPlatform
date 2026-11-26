@@ -1,3 +1,4 @@
+import { useFileDownload } from "../../../shared/lib/use-file-download";
 import { Button, Input, InputNumber, Tag } from "antd";
 import {
   Download,
@@ -41,7 +42,7 @@ const statusCopy = {
 
 function errorText(error: unknown): string | null {
   if (!error) return null;
-  return isDomainError(error) ? error.message : "治理操作失败，请重试";
+  return isDomainError(error) || error instanceof Error ? error.message : "治理操作失败，请重试";
 }
 
 function errorRequestId(error: unknown): string | null {
@@ -62,6 +63,7 @@ export function AuditGovernancePanel({
   const createExport = useCreateAuditExport(scope);
   const cancelExport = useCancelAuditExport(scope);
   const retryExport = useRetryAuditExport(scope);
+  const fileDownload = useFileDownload(JSON.stringify(scope));
   const download = useAuthorizeAuditExportDownload(scope);
   const [standardDays, setStandardDays] = useState(365);
   const [securityDays, setSecurityDays] = useState(2555);
@@ -103,7 +105,7 @@ export function AuditGovernancePanel({
     createExport.error ??
     cancelExport.error ??
     retryExport.error ??
-    download.error;
+    fileDownload.error ?? download.error;
   const job = exportJob.data;
 
   return (
@@ -315,13 +317,11 @@ export function AuditGovernancePanel({
                   size="small"
                   type="primary"
                   icon={<Download aria-hidden="true" size={14} />}
-                  loading={download.isPending}
-                  onClick={() =>
-                    download.mutate(job.jobId, {
-                      onSuccess: (authorization) =>
-                        window.location.assign(authorization.downloadUrl),
-                    })
-                  }
+                  loading={Boolean(fileDownload.pending)}
+                  onClick={() => void fileDownload.save(`audit-${job.jobId}.jsonl`, async () => {
+                    const grant = await download.mutateAsync(job.jobId);
+                    return { url: grant.downloadUrl, size_bytes: Number(grant.artifact.sizeBytes) };
+                  })}
                 >
                   安全下载
                 </Button>

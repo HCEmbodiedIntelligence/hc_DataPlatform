@@ -1,4 +1,5 @@
 import {
+  JOINT_MATCH_MS,
   processingOperationSchema,
   type McapConfig,
   type ProcessingOperation,
@@ -15,6 +16,7 @@ export const labels: Record<Kind, string> = {
   generate_action: "缺少动作话题时生成动作",
   fill_initial_action: "首条动作前用关节状态补齐",
   fill_action_from_next_frame: "首尾缺动作时用关节状态补齐",
+  interpolate_short_gaps: "状态与动作短缺帧插补",
   forward_fill_hands: "手部空值沿用上一条指令",
   clean_dagger_intervals: "连接 dagger 并清理短标签",
 };
@@ -24,11 +26,12 @@ const examples = {
   fill_position: {
     missing_position_axes: null,
     nan_position_axes: [],
-    max_state_delta_ms: 20,
+    max_state_delta_ms: JOINT_MATCH_MS,
   },
   generate_action: { source: "state" },
   fill_initial_action: {},
   fill_action_from_next_frame: {},
+  interpolate_short_gaps: {},
   forward_fill_hands: {},
   clean_dagger_intervals: {},
 };
@@ -74,7 +77,7 @@ export function sample(kind: Kind, cfg: McapConfig) {
       return pretty({
         missing_position_axes: common.slice(0, 1),
         nan_position_axes: [],
-        max_state_delta_ms: 20,
+        max_state_delta_ms: JOINT_MATCH_MS,
       });
   }
   return pretty(examples[kind]);
@@ -86,7 +89,10 @@ export function initialRows(cfg: McapConfig): RuleRow[] {
     const op =
       saved?.version === 2 ? saved.rules.find((x) => x.kind === kind) : null;
     if (op) {
-      const { kind, enabled, ...params } = op;
+      const { kind, enabled, ...params } =
+        cfg.normalization && op.kind === "fill_position" && op.max_state_delta_ms === 20
+          ? { ...op, max_state_delta_ms: JOINT_MATCH_MS }
+          : op;
       return { kind, enabled, text: pretty(params) };
     }
     if (saved?.version === 1 && kind === "fill_position") {
@@ -98,7 +104,7 @@ export function initialRows(cfg: McapConfig): RuleRow[] {
         text: pretty({
           missing_position_axes,
           nan_position_axes,
-          max_state_delta_ms,
+          max_state_delta_ms: cfg.normalization && max_state_delta_ms === 20 ? JOINT_MATCH_MS : max_state_delta_ms,
         }),
       };
     }

@@ -236,6 +236,8 @@ def test_zero_scope_account_can_join_organization_without_reauthentication() -> 
                 "member_status": "ACTIVE",
             }
         ]
+        extended = client.get("/api/v1/auth/session/bootstrap?include_organization_capabilities=true", headers=_headers(token))
+        assert extended.json()["available_organizations"][0]["capabilities"] == []
         assert refreshed.json()["available_scopes"] == []
 
         overview = client.get("/api/v1/account/access-overview", headers=_headers(token))
@@ -971,7 +973,8 @@ def test_two_users_are_repository_scoped_and_revocation_is_immediate() -> None:
     with _client(repository) as client:
         _register_and_login(client, "bootstrap-owner")
         alice_token, alice = _register_and_login(client, "alice")
-        bob_token, _ = _register_and_login(client, "bob")
+        bob_token, bob = _register_and_login(client, "bob")
+        repository._organization_memberships.update({(alice["principal_id"], "org-a"), (bob["principal_id"], "org-b")})
 
         alice_membership = client.post(
             "/api/v1/organizations/org-a/projects/project-a/membership-requests",
@@ -1116,7 +1119,8 @@ def test_two_users_are_repository_scoped_and_revocation_is_immediate() -> None:
 def test_account_notification_inbox_is_recipient_scoped_and_read_is_idempotent() -> None:
     repository = InMemoryAccessRepository()
     with _client(repository) as client:
-        alice_token, _ = _register_and_login(client, "notification-alice")
+        alice_token, alice = _register_and_login(client, "notification-alice")
+        repository._organization_memberships.add((alice["principal_id"],"org-a"))
         bob_token, _ = _register_and_login(client, "notification-bob")
         requested = client.post(
             "/api/v1/organizations/org-a/projects/project-a/membership-requests",
@@ -1212,6 +1216,7 @@ def test_concurrent_duplicate_approval_has_one_effect_and_conflicting_decision_i
         scope_pairs=frozenset({("project-a", None)}),
         organization_scope_triples=frozenset({("org-a", "project-a", None)}),
     )
+    repository._organization_memberships.add((principal.principal_id,"org-a"))
     requested = service.create_membership_request(
         auth=requester,
         organization_id="org-a",
@@ -1252,8 +1257,10 @@ def test_concurrent_duplicate_approval_has_one_effect_and_conflicting_decision_i
 
 
 def test_membership_and_capability_requests_support_reject_and_withdraw() -> None:
-    with _client() as client:
-        token, _ = _register_and_login(client, "request-state-user")
+    repository = InMemoryAccessRepository()
+    with _client(repository) as client:
+        token, account = _register_and_login(client, "request-state-user")
+        repository._organization_memberships.add((account["principal_id"],"org-a"))
 
         withdrawn_membership = client.post(
             "/api/v1/organizations/org-a/projects/project-a/membership-requests",

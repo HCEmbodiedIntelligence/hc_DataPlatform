@@ -36,6 +36,7 @@ from .models import (
     UploadSession,
     UploadSessionGrant,
     UploadSessionListV1,
+    UploadSessionSummaryV1,
     UploadStatus,
 )
 from .processing import UploadJobStatusPort, read_upload_processing_status
@@ -207,9 +208,10 @@ async def preflight_upload_manifest(
     auth: Auth,
 ) -> ManifestPreflightResultV1:
     _no_store(response)
-    _authorize(auth, project_id, region_code)
+    ScopeGuard.require(auth, project_id, region_code, current_request_context().organization_id)
     body = await _read_limited_body(request, MAX_MANIFEST_BYTES)
     result = parse_manifest_bytes(body)
+    _authorize(auth, project_id, region_code, task_id=result.manifest.task_id)
     if result.manifest.project_id != project_id:
         raise problem(
             status=409,
@@ -241,20 +243,15 @@ async def create_upload_session(
     upload_batch_id: str | None = Query(None, min_length=1, max_length=128),
 ) -> UploadSessionGrant:
     _no_store(response)
-    batch_scope = None
-    if upload_batch_id is None:
-        _authorize(auth, project_id, region_code)
-    else:
-        org = current_request_context().organization_id or _organization_id_for_project(auth, project_id)
-        ScopeGuard.require(auth, project_id, region_code, org)
-        auth.require_capability("upload.manage", project_id, org)
-        select_request_scope(project_id, region_code, organization_id=org)
-        batch_scope = (org, project_id, region_code)
+    org = current_request_context().organization_id
+    ScopeGuard.require(auth, project_id, region_code, org)
+    batch_scope = ((org or _organization_id_for_project(auth, project_id)), project_id, region_code) if upload_batch_id else None
     payload = await _read_limited_json(request, _MAX_CREATE_REQUEST_BYTES)
     try:
         create_request = CreateUploadRequest.model_validate(payload)
     except ValidationError as exc:
         raise _request_validation_problem(exc) from exc
+    _authorize(auth, project_id, region_code, task_id=create_request.manifest.task_id)
     preflight_manifest(create_request.manifest)
     if create_request.manifest.project_id != project_id:
         raise problem(
@@ -311,13 +308,19 @@ def list_upload_sessions(
             details={"fields": sorted(unknown_query_fields)},
         )
     _no_store(response)
-    _authorize(auth, project_id, region_code)
+    _authorize(auth, project_id, region_code, listing=True)
+    org = current_request_context().organization_id
+    task_ids = None
+    if not auth.has_capability("upload.manage", project_id, org):
+        task_ids = tuple(key.removeprefix("upload.manage/") for key in auth.effective_capabilities(project_id, org)
+                         if key.startswith("upload.manage/"))
     return get_service().list_sessions(
         project_id,
         region_code,
         status=status,
         data_package_id=data_package_id,
         cursor=cursor,
+        task_ids=task_ids,
         limit=limit,
     )
 
@@ -334,8 +337,32 @@ def get_upload_session(
     auth: Auth,
 ) -> UploadSession:
     _no_store(response)
-    _authorize(auth, project_id, region_code)
-    return _scoped_session(project_id, region_code, session_id)
+    return _authorize_and_get(auth, project_id, region_code, session_id)
+
+
+@router.get(
+    "/projects/{project_id}/regions/{region_code}/upload-sessions/{session_id}/summary",
+    operation_id="getUploadSessionSummary",
+    response_model=UploadSessionSummaryV1,
+)
+def get_upload_summary(
+    project_id: str, region_code: str, session_id: str, response: Response, auth: Auth,
+) -> UploadSessionSummaryV1:
+    _no_store(response)
+    session = _readable_session(auth, project_id, region_code, session_id)
+    org = current_request_context().organization_id
+    raw = None
+    if org:
+        raw = get_service().raw_sources.get_source(
+            organization_id=org, project_id=project_id, region_code=region_code,
+            raw_source_id="upload-" + session_id.replace("-", ""),
+        )
+    return UploadSessionSummaryV1(
+        session_id=session.session_id, project_id=session.project_id, region_code=session.region_code,
+        rollout_id=session.rollout_id, data_package_id=session.data_package_id,
+        dataset_id=raw.dataset_id if raw else None, manifest_fingerprint=session.manifest_fingerprint,
+        expected_size=session.expected_size, status=session.status, workflow=session.workflow,
+    )
 
 
 @router.get(
@@ -358,7 +385,7 @@ async def get_upload_processing_status(
     """Read only the processing result linked to this authorized upload session."""
 
     _no_store(response)
-    session = _authorize_and_get(auth, project_id, region_code, session_id)
+    session = _readable_session(auth, project_id, region_code, session_id)
     return await read_upload_processing_status(session, get_upload_job_status())
 
 
@@ -382,7 +409,7 @@ def get_upload_raw_media(
     """Issue an audited, short-lived Raw MCAP read handle for the scoped uploader."""
 
     _no_store(response)
-    _authorize_and_get(auth, project_id, region_code, session_id)
+    _authorize_upload_download(auth, project_id, region_code, session_id, "dataset_version.download_raw")
     return get_service().authorize_raw_media(
         session_id=session_id,
         actor_id=auth.subject_id,
@@ -446,7 +473,7 @@ def get_upload_manifest(
     auth: Auth,
 ) -> ManifestPreflightResultV1:
     _no_store(response)
-    _authorize_and_get(auth, project_id, region_code, session_id)
+    _authorize_upload_download(auth, project_id, region_code, session_id, "dataset_version.download_manifest")
     return get_service().get_manifest_preflight(session_id)
 
 
@@ -663,10 +690,17 @@ def _validate_request_model(
         raise _request_validation_problem(exc) from exc
 
 
-def _authorize(auth: AuthContext, project_id: str, region_code: str) -> None:
-    auth.require_capability("upload.manage", project_id)
-    ScopeGuard.require(auth, project_id, region_code)
-    select_request_scope(project_id, region_code)
+def _authorize(auth: AuthContext, project_id: str, region_code: str, *, task_id: str | None = None,
+               listing: bool = False) -> None:
+    org = current_request_context().organization_id
+    ScopeGuard.require(auth, project_id, region_code, org)
+    action = "upload.manage"
+    if task_id:
+        action = auth.resource_action(action, (task_id,), project_id, org)
+    elif listing and auth.has_capability("role.collector", project_id, org):
+        action = "role.collector"
+    auth.require_capability(action, project_id, org)
+    select_request_scope(project_id, region_code, organization_id=org)
 
 
 def _organization_id_for_project(auth: AuthContext, project_id: str) -> str:
@@ -685,14 +719,54 @@ def _organization_id_for_project(auth: AuthContext, project_id: str) -> str:
     return next(iter(organization_ids))
 
 
+def _authorize_upload_download(auth, project_id, region_code, session_id, capability):
+    org = current_request_context().organization_id
+    ScopeGuard.require(auth, project_id, region_code, org)
+    select_request_scope(project_id, region_code, organization_id=org)
+    if not auth.has_capability(capability, project_id, org):
+        prefix = capability + "/dataset:"
+        if not org or not any(key.startswith(prefix) for key in auth.effective_capabilities(project_id, org)):
+            auth.require_capability(capability, project_id, org)
+        raw = get_service().raw_sources.get_source(
+            organization_id=org, project_id=project_id, region_code=region_code,
+            raw_source_id="upload-" + session_id.replace("-", ""),
+        )
+        keys = (f"dataset:{raw.dataset_id}",) if raw and raw.dataset_id else ()
+        auth.require_capability(auth.resource_action(capability, keys, project_id, org), project_id, org)
+    _scoped_session(project_id, region_code, session_id)
+
+
+def _readable_session(
+    auth: AuthContext, project_id: str, region_code: str, session_id: str,
+) -> UploadSession:
+    org = current_request_context().organization_id
+    ScopeGuard.require(auth, project_id, region_code, org)
+    select_request_scope(project_id, region_code, organization_id=org)
+    capabilities = auth.effective_capabilities(project_id, org)
+    if auth.is_platform_admin or {"upload.read", "upload.manage"} & capabilities:
+        return _scoped_session(project_id, region_code, session_id)
+    if not any(key.startswith("upload.manage/") for key in capabilities):
+        auth.require_capability("upload.read", project_id, org)
+    session = _scoped_session(project_id, region_code, session_id)
+    manifest = get_service().get_manifest_preflight(session_id).manifest
+    auth.require_capability(f"upload.manage/{manifest.task_id}", project_id, org)
+    return session
+
+
 def _authorize_and_get(
     auth: AuthContext,
     project_id: str,
     region_code: str,
     session_id: str,
 ) -> UploadSession:
-    _authorize(auth, project_id, region_code)
-    return _scoped_session(project_id, region_code, session_id)
+    org = current_request_context().organization_id
+    ScopeGuard.require(auth, project_id, region_code, org)
+    select_request_scope(project_id, region_code, organization_id=org)
+    session = _scoped_session(project_id, region_code, session_id)
+    if not auth.has_capability("upload.manage", project_id, org):
+        manifest = get_service().get_manifest_preflight(session_id).manifest
+        _authorize(auth, project_id, region_code, task_id=manifest.task_id)
+    return session
 
 
 def _scoped_session(project_id: str, region_code: str, session_id: str) -> UploadSession:

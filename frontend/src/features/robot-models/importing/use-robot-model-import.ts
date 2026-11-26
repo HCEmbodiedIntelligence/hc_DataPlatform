@@ -74,6 +74,7 @@ export function useRobotModelImport({
   const [modelAssets, setModelAssets] = useState<
     readonly PendingRobotModelAsset[]
   >([]);
+  const [entryUrdfPath, setEntryUrdfPath] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<ParsedRobotModel | null>(null);
   const [mappings, setMappings] = useState<readonly RobotModelJointMapping[]>(
     [],
@@ -113,7 +114,15 @@ export function useRobotModelImport({
     };
   }, []);
 
-  const modelSelectionError = modelAssetSelectionError(modelAssets);
+  const urdfCandidates = modelAssets.filter((asset) => asset.role === "URDF");
+  const importAssets =
+    urdfCandidates.length > 1 &&
+    urdfCandidates.some((asset) => asset.relativePath === entryUrdfPath)
+      ? modelAssets.filter(
+          (asset) => asset.role !== "URDF" || asset.relativePath === entryUrdfPath,
+        )
+      : modelAssets;
+  const modelSelectionError = modelAssetSelectionError(importAssets);
   const modelAssetCounts = useMemo(
     () =>
       modelAssets.reduce(
@@ -209,6 +218,7 @@ export function useRobotModelImport({
     setImportSourceVersion(null);
     setModelMetadata(null);
     setModelAssets([]);
+    setEntryUrdfPath(null);
     setModelNotice(null);
     setModelError(null);
     setModelDropActive(false);
@@ -251,7 +261,7 @@ export function useRobotModelImport({
   };
 
   const analyseSelectedFiles = async (
-    assets: readonly PendingRobotModelAsset[] = modelAssets,
+    assets: readonly PendingRobotModelAsset[] = importAssets,
     preferredMappings: readonly RobotModelJointMapping[] = [],
     signal?: AbortSignal,
   ) => {
@@ -303,10 +313,9 @@ export function useRobotModelImport({
     candidates: readonly RobotModelFileCandidate[],
   ) => {
     const incoming = classifyRobotModelFiles(candidates);
+    const replacesUrdf = incoming.assets.some((asset) => asset.role === "URDF");
+    if (replacesUrdf) setEntryUrdfPath(null);
     setModelAssets((current) => {
-      const replacesUrdf = incoming.assets.some(
-        (asset) => asset.role === "URDF",
-      );
       const replacesJsonConfig = incoming.assets.some(
         (asset) =>
           asset.role === "CONFIG" &&
@@ -466,7 +475,7 @@ export function useRobotModelImport({
         published = await saveRobotModelImport(
           {
             analysis,
-            assets: modelAssets,
+            assets: importAssets,
             mappings,
             metadata: modelMetadata,
             model: importModel,
@@ -553,6 +562,9 @@ export function useRobotModelImport({
     modelMetadata,
     modelAssets,
     modelAssetCounts,
+    urdfCandidates,
+    entryUrdfPath,
+    setEntryUrdfPath,
     analysis,
     mappings,
     mappingsValid,

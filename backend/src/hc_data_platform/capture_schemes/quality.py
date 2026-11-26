@@ -19,7 +19,7 @@ def from_snapshot(snapshot, topics, frequency_hz, *, joint_topic=None, action_to
     state = next((name for name, f in features.items() if f["role"] == "state"), "observation.state")
     action = next((name for name, f in features.items() if f["role"] == "action"), "action")
     policy = CaptureQualityPolicy.model_validate(snapshot.get("quality_policy") or {})
-    identity = digest({"compiler": "capture-scheme-qc/3", "engine": "be06-qc/4", "output": output,
+    identity = digest({"compiler": "capture-scheme-qc/4", "engine": "be06-qc/4", "output": output,
                        "quality_policy": policy.model_dump(mode="json"),
                        "feature_topics": feature_topics, "joint_topic": joint_topic, "action_topic": action_topic,
                        "adapter": snapshot.get("effective_adapter"),
@@ -36,6 +36,7 @@ def from_snapshot(snapshot, topics, frequency_hz, *, joint_topic=None, action_to
     return QualityProfileV1(
         profile_id="capture-scheme-" + identity[:32], profile_version=1,
         engine_version="be06-qc/4", required_topics=frozenset(topics),
+        enabled_codes=policy.enabled_codes,
         joint_topic=topic(state),
         action=policy.action.model_copy(update={"topic": topic(action)}),
         default_timing=policy.timing.compile(frequency_hz),

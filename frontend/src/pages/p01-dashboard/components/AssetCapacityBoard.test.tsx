@@ -10,6 +10,8 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as auth from "../../../shared/auth/use-capabilities";
 import { MemoryRouter } from "react-router-dom";
 import { adaptDashboardTaskStatus } from "../../../features/dashboard/api/adapter";
 import {
@@ -17,6 +19,8 @@ import {
   dashboardTaskStatusEmptyFixture,
   dashboardTaskStatusFixture,
 } from "../../../mocks/fixtures/dashboard";
+import * as http from "../../../shared/api/http-client";
+import TaskIssueDrawer from "./TaskIssueDrawer";
 import { AssetCapacityBoard } from "./AssetCapacityBoard";
 
 vi.mock("./DuplicateIssueActions", () => ({
@@ -72,6 +76,75 @@ afterEach(() => {
 });
 
 describe("AssetCapacityBoard", () => {
+  it("discards only confirmed recordings across pages and keeps failed selections for retry", async () => {
+    vi.spyOn(auth, "useCapabilities").mockReturnValue({ has: () => true, loading: false, failed: false });
+    const digest = "a".repeat(64);
+    const post = vi.fn();
+    vi.spyOn(http, "request").mockImplementation(async options => {
+      if (options.method === "POST") {
+        post(options);
+        if (options.path.includes("/rec-1/")) throw new Error("质检报告已变更");
+        return {};
+      }
+      return { data: {
+        status: options.path.endsWith("/rec-2") ? "READY_FOR_SLICING" : "QC_FAILED",
+        quality_summary: { report_id: "recording_qc_" + digest },
+      } };
+    });
+    const scope = { organizationId: "org", projectId: "p", regionCode: "global", timezone: "Asia/Shanghai" };
+    const issues = Array.from({ length: 12 }, (_, i) => ({
+      task_id: "task", rollout_id: "roll-" + i, data_package_id: "pkg-" + i,
+      recording_id: i === 4 ? null : "rec-" + i, category: "QUALITY" as const,
+      stage: "AUTOMATIC_VALIDATION" as const, label: "质检拒绝", description: "质检问题",
+      reason_code: "QC_REJECT", findings: [], lance_ready: false,
+    }));
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter>
+      <TaskIssueDrawer scope={scope} issues={issues} tasks={[]} title="质检问题" onClose={vi.fn()} />
+    </MemoryRouter></QueryClientProvider>);
+    const checkbox = (i: number) => within(screen.getByText("pkg-" + i).closest("tr")!).getByRole("checkbox");
+    expect(screen.getByRole("button", { name: "批量丢弃当前录制" })).toBeDisabled();
+    expect(checkbox(4)).toBeDisabled();
+    fireEvent.click(checkbox(1));
+    fireEvent.click(checkbox(2));
+    fireEvent.click(screen.getByTitle("2"));
+    fireEvent.click(checkbox(10));
+    const open = screen.getByRole("button", { name: "批量丢弃当前录制（3）" });
+    fireEvent.click(open);
+    await waitFor(() => expect(screen.getByText(/pkg-2 · 跳过/)).toBeVisible());
+    fireEvent.click(screen.getByRole("button", { name: /关\s*闭/ }));
+    expect(post).not.toHaveBeenCalled();
+    fireEvent.click(open);
+    const confirm = await screen.findByRole("button", { name: "确认丢弃（2）" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    expect(await screen.findByText("已丢弃 1 条录制，失败 1 条，跳过 1 条")).toBeVisible();
+    expect(screen.getByText(/pkg-1 · 质检报告已变更/)).toBeVisible();
+    expect(post.mock.calls.map(([o]) => o.path.split("/").slice(-2).join("/")).sort())
+      .toEqual(["rec-1/quality:discard", "rec-10/quality:discard"]);
+    for (const [o] of post.mock.calls) expect(o.body).toEqual({ report_sha256: digest });
+    fireEvent.click(screen.getByRole("button", { name: /完\s*成/ }));
+    expect(screen.getByRole("button", { name: "批量丢弃当前录制（2）" })).toBeEnabled();
+  });
+  it("opens processing failures with batch retry available only inside the drawer", async () => {
+    vi.spyOn(auth, "useCapabilities").mockReturnValue({ has: () => true, loading: false, failed: false });
+    const view = adaptDashboardTaskStatus(dashboardTaskStatusFixture);
+    const taskId = view.tasks[0]!.taskId;
+    const stage = "AUTOMATIC_VALIDATION" as const;
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><AssetCapacityBoard
+      scope={{ organizationId: "org", projectId: "p", regionCode: "global", timezone: "Asia/Shanghai" }}
+      onTaskChange={vi.fn()} taskStatus={{ ...view, pipeline: { ...view.pipeline,
+        stages: view.pipeline.stages.map(s => s.stage === stage ? { ...s, failed: 1 } : s),
+        issues: [{ task_id: taskId, rollout_id: "roll", data_package_id: "processing",
+          category: "TECHNICAL", stage, label: "处理失败", description: "录制准备出错", lance_ready: false,
+          findings: [], reason_code: "RAW_PREPARATION_FAILED" }],
+      } }} /></MemoryRouter></QueryClientProvider>);
+    const failure = screen.getByRole("button", { name: "处理失败 1" });
+    expect(screen.queryByRole("button", { name: "批量重试失败项" })).not.toBeInTheDocument();
+    fireEvent.click(failure);
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("button", { name: "批量重试失败项" })).toBeVisible();
+  });
+
   it("shows an all-task aggregate by default instead of a zero-value unselected rail", () => {
     render(
       <MemoryRouter>

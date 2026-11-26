@@ -12,6 +12,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import "@testing-library/jest-dom/vitest";
 import {
+  afterAll,
   afterEach,
   beforeAll,
   beforeEach,
@@ -53,6 +54,9 @@ function render(node: ReactElement) {
 }
 
 beforeAll(() => {
+  // Ant Design's test mode gives every tooltip and dialog the same ARIA ID.
+  // Use its real React IDs so queries and focus checks see the correct title.
+  vi.stubEnv("NODE_ENV", "development");
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
     configurable: true,
     value: () => undefined,
@@ -72,6 +76,8 @@ beforeAll(() => {
     });
   }
 });
+
+afterAll(() => vi.unstubAllEnvs());
 
 beforeEach(() => {
   const getComputedStyle = window.getComputedStyle.bind(window);
@@ -148,6 +154,7 @@ function bundleWithoutDraft(
 }
 
 function renderWorkbench(input: {
+  readonly allowedTags?: string[];
   readonly episodeOutcome?: "success" | "fail";
   readonly onEpisodeOutcomeChange?: (value: "success" | "fail") => void;
   readonly cameraCount: number;
@@ -207,7 +214,10 @@ function renderWorkbench(input: {
       ],
     },
   };
-  const bundle = input.noDraft ? bundleWithoutDraft(fixture) : fixture;
+  const source = input.noDraft ? bundleWithoutDraft(fixture) : fixture;
+  const bundle = input.allowedTags
+    ? { ...source, task: { ...source.task, allowed_tags: input.allowedTags } }
+    : source;
   const tags =
     mode === "annotation"
       ? (bundle.draft?.tags ?? [])
@@ -418,10 +428,10 @@ describe("P08 page-level workspace navigation", () => {
     await user.selectOptions(screen.getByLabelText("显示视频"), "__all__");
     if (mode === "annotation") {
       await user.selectOptions(screen.getByLabelText("编辑已有 Tag"), first.history.revisions.at(-1)!.tags[0]!.annotation_id);
-      await user.type(screen.getByLabelText("Tag 名称 *"), "仅属于第一条数据");
+      await user.selectOptions(screen.getByLabelText("Tag 名称 *"), "夹爪闭合");
     } else {
       await user.click(screen.getByRole("button", { name: "问题与意见" }));
-      await user.type(screen.getByLabelText(/补充审核意见/), "仅属于第一条数据");
+      await user.type(screen.getByLabelText(/补充审核意见/), "夹爪闭合");
       await user.click(screen.getByRole("checkbox", { name: /^标记问题：/ }));
     }
     rerender(view(next));
@@ -949,7 +959,7 @@ describe("P08 viewer-slot composition", () => {
     },
   );
 
-  it("reports the selected interval using fixed stream timestamps through the final sample", async () => {
+  it.each([true, false])("reports the selected interval using fixed stream timestamps (preset %s)", async (preset) => {
     const user = userEvent.setup();
     const onReportDataIssue = vi
       .fn<(input: DataIssueReportInput) => Promise<void>>()
@@ -994,13 +1004,13 @@ describe("P08 viewer-slot composition", () => {
     await waitFor(() =>
       expect(within(dialog).getByText("报告数据问题")).toBeVisible(),
     );
-    await user.type(
-      within(dialog).getByRole("textbox", { name: "问题说明" }),
-      "自动质检漏掉了这一段连续缺帧。",
-    );
-    await user.click(
-      within(dialog).getByRole("button", { name: "登记到问题数据" }),
-    );
+    expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
+    if (preset) {
+      await user.click(within(dialog).getByRole("button", { name: "画面缺帧" }));
+    } else {
+      await user.type(within(dialog).getByRole("textbox", { name: "问题说明" }), "自动质检漏掉了这一段连续缺帧。");
+      await user.click(within(dialog).getByRole("button", { name: "登记到问题数据" }));
+    }
 
     await waitFor(() => expect(onReportDataIssue).toHaveBeenCalledTimes(1));
     expect(samples).toHaveBeenCalledTimes(1);
@@ -1012,9 +1022,9 @@ describe("P08 viewer-slot composition", () => {
         streamRef: stream.stream_id,
         relativeStartNs: "3211234567",
         relativeEndNs: stream.end_ns,
-        issueType: "OTHER",
+        issueType: preset ? "MISSING_FRAME" : "OTHER",
         severity: "MEDIUM",
-        note: "自动质检漏掉了这一段连续缺帧。",
+        note: preset ? "画面缺帧" : "自动质检漏掉了这一段连续缺帧。",
       }),
     );
     expect(await screen.findByText(/已登记为问题数据/u)).toBeVisible();
@@ -1154,9 +1164,9 @@ describe("P08 viewer-slot composition", () => {
     );
 
     const initialStream = observedStreams.at(-1);
-    await user.type(
+    await user.selectOptions(
       screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" }),
-      "稳定",
+      "夹爪闭合",
     );
     await user.click(screen.getByRole("button", { name: "数据信息" }));
     const dataInfoDrawer = screen.getByRole("dialog", { name: /数据信息/u });
@@ -1362,11 +1372,26 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(onOpenRevisions).toHaveBeenCalledOnce();
   });
 
+  it("offers only the tags selected by the task's scheme", () => {
+    renderWorkbench({ cameraCount: 1, allowedTags: ["抓取"] });
+    const picker = screen.getByRole("combobox", { name: "Tag 名称 *" });
+    expect(within(picker).getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["选择方案标签", "抓取"]);
+  });
+
+  it("disables Tag creation when the scheme has no tags", () => {
+    renderWorkbench({ cameraCount: 1, allowedTags: [] });
+    expect(screen.getByRole("combobox", { name: "Tag 名称 *" })).toBeDisabled();
+    expect(screen.getByText("当前采集方案未配置标签")).toBeVisible();
+    expect(screen.getByRole("button", { name: "创建 Tag" })).toBeDisabled();
+  });
+
   it("keeps Tag creation to one compact row without manual hierarchy controls", () => {
     renderWorkbench({ cameraCount: 4 });
     expect(
       screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" }),
-    ).toHaveAttribute("placeholder", "输入标签，按 Enter 创建");
+    ).toHaveRole("combobox");
+    expect(screen.getByRole("option", { name: "选择方案标签" })).toBeInTheDocument();
     expect(screen.getByText("拖选后自动分级")).toBeVisible();
     expect(screen.queryByLabelText(/当前 Tag · 共/u)).not.toBeInTheDocument();
     expect(screen.queryByLabelText("父级")).not.toBeInTheDocument();
@@ -1469,7 +1494,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
       expect(latestTags).toEqual([original]);
       expect(screen.getByLabelText("编辑已有 Tag")).toHaveValue("");
       expect(screen.getByLabelText("Tag 名称 *")).toHaveValue("");
-      await user.type(screen.getByLabelText("Tag 名称 *"), "tag2");
+      await user.selectOptions(screen.getByLabelText("Tag 名称 *"), "tag2");
       await user.click(screen.getByRole("button", { name: "创建 Tag" }));
       expect(latestTags).toHaveLength(2);
       expect(latestTags[0]).toMatchObject({
@@ -1497,7 +1522,8 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
         const child = latestTags[1]!;
         await user.selectOptions(screen.getByLabelText("编辑已有 Tag"), child.annotation_id);
         dragRange(selectionBody(), 350, 380);
-        await user.type(screen.getByLabelText("Tag 名称 *"), "tag3{Enter}");
+        await user.selectOptions(screen.getByLabelText("Tag 名称 *"), "tag3");
+        await user.click(screen.getByRole("button", { name: "创建 Tag" }));
         expect(latestTags).toHaveLength(3);
         expect(latestTags.slice(0, 2)).toEqual([original, child]);
         expect(latestTags[2]).toMatchObject({
@@ -1582,7 +1608,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     selectSteps(330, 420);
     const rangeStatus = screen.getByText("当前选区").closest('[role="status"]');
     expect(rangeStatus).toHaveTextContent("自动 L2 · 父级 抓取成功");
-    await user.type(
+    await user.selectOptions(
       screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" }),
       "夹爪闭合",
     );
@@ -1599,7 +1625,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
 
     selectSteps(600, 700);
     expect(rangeStatus).toHaveTextContent("自动 L1");
-    await user.type(
+    await user.selectOptions(
       screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" }),
       "搬运阶段",
     );
@@ -1621,11 +1647,11 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     expect(
       screen.getByRole("button", { name: "应用 Tag 修改" }),
     ).toBeDisabled();
-    await user.clear(labelInput);
+    await user.selectOptions(labelInput, "");
     expect(
       screen.getByRole("button", { name: "应用 Tag 修改" }),
     ).toBeDisabled();
-    await user.type(labelInput, "夹爪抓紧");
+    await user.selectOptions(labelInput, "夹爪抓紧");
     for (const [boundary, step] of [
       ["标注开始", 280],
       ["标注结束", 500],
@@ -1709,7 +1735,7 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     const input = screen.getByLabelText("Tag 名称 *", {
       selector: "#manual-tag-label",
     });
-    await user.type(input, "修正");
+    await user.selectOptions(input, "夹爪抓紧");
     fireEvent.keyDown(input, { key: "Enter", isComposing: true });
     expect(onTagsChange).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "取消编辑 Tag" }));
@@ -1840,11 +1866,11 @@ describe("P08 hierarchy, capabilities and conflicts", () => {
     const onSave = vi.fn().mockRejectedValue(new Error("保存服务暂时不可用"));
     renderWorkbench({ cameraCount: 1, dirty: true, onSave });
     const input = screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" });
-    await user.type(input, "待保存的标注");
+    await user.selectOptions(input, "搬运阶段");
     await user.click(screen.getByRole("button", { name: "保存修改" }));
 
     expect(await screen.findByText(/保存服务暂时不可用；当前数据已保留/u)).toBeVisible();
-    expect(input).toHaveValue("待保存的标注");
+    expect(input).toHaveValue("搬运阶段");
     expect(screen.getByRole("button", { name: "保存修改" })).toBeEnabled();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
@@ -1912,9 +1938,9 @@ describe("P08 submit precheck timing", () => {
     ).not.toBeInTheDocument();
     expect(onPreSubmitCheck).not.toHaveBeenCalled();
 
-    await user.type(
+    await user.selectOptions(
       screen.getByLabelText("Tag 名称 *", { selector: "#manual-tag-label" }),
-      "抓取完成",
+      "夹爪抓紧",
     );
     expect(onPreSubmitCheck).not.toHaveBeenCalled();
     expect(

@@ -1,0 +1,537 @@
+components:
+  schemas:
+    Assignment:
+      additionalProperties: false
+      properties:
+        capture_command:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureCommand'
+          - type: 'null'
+        ice_servers:
+          items:
+            $ref: '#/components/schemas/IceServer'
+          title: Ice Servers
+          type: array
+        offer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Offer
+        session_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Session Id
+      title: Assignment
+      type: object
+    CaptureCommand:
+      additionalProperties: false
+      properties:
+        action:
+          enum:
+          - start
+          - mark
+          - stop
+          title: Action
+          type: string
+        project_id:
+          maxLength: 128
+          minLength: 1
+          title: Project Id
+          type: string
+        request_id:
+          format: uuid
+          title: Request Id
+          type: string
+        revision:
+          minimum: 0.0
+          title: Revision
+          type: integer
+        session_id:
+          format: uuid
+          title: Session Id
+          type: string
+        task_id:
+          maxLength: 128
+          minLength: 1
+          title: Task Id
+          type: string
+      required:
+      - request_id
+      - session_id
+      - project_id
+      - task_id
+      - action
+      - revision
+      title: CaptureCommand
+      type: object
+    CaptureReceipt:
+      additionalProperties: false
+      properties:
+        detail:
+          default: ''
+          maxLength: 512
+          title: Detail
+          type: string
+        record_id:
+          default: ''
+          maxLength: 256
+          title: Record Id
+          type: string
+        request_id:
+          format: uuid
+          title: Request Id
+          type: string
+        state:
+          enum:
+          - recording
+          - saved
+          - error
+          - interrupted
+          title: State
+          type: string
+        upload:
+          default: ''
+          enum:
+          - ''
+          - pending
+          - uploaded
+          - failed
+          title: Upload
+          type: string
+      required:
+      - request_id
+      - state
+      title: CaptureReceipt
+      type: object
+    CaptureView:
+      additionalProperties: false
+      properties:
+        active:
+          default: false
+          title: Active
+          type: boolean
+        detail:
+          default: ''
+          title: Detail
+          type: string
+        eligible:
+          items:
+            type: string
+          title: Eligible
+          type: array
+        record_id:
+          default: ''
+          title: Record Id
+          type: string
+        revision:
+          default: 0
+          title: Revision
+          type: integer
+        state:
+          default: idle
+          enum:
+          - idle
+          - pending
+          - unknown
+          - recording
+          - saved
+          - interrupted
+          - error
+          - busy
+          title: State
+          type: string
+        supported:
+          default: false
+          title: Supported
+          type: boolean
+        task_id:
+          default: ''
+          title: Task Id
+          type: string
+        upload:
+          default: ''
+          title: Upload
+          type: string
+      title: CaptureView
+      type: object
+    IceServer:
+      additionalProperties: false
+      properties:
+        credential:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Credential
+        urls:
+          title: Urls
+          type: string
+        username:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Username
+      required:
+      - urls
+      title: IceServer
+      type: object
+    OperatorState:
+      additionalProperties: false
+      properties:
+        answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer
+      title: OperatorState
+      type: object
+    OperatorSync:
+      additionalProperties: false
+      properties:
+        offer:
+          anyOf:
+          - maxLength: 131072
+            minLength: 1
+            pattern: ^v=0\r?\n
+            type: string
+          - type: 'null'
+          title: Offer
+      title: OperatorSync
+      type: object
+    RobotPresence:
+      additionalProperties: false
+      properties:
+        busy:
+          title: Busy
+          type: boolean
+        last_seen:
+          title: Last Seen
+          type: number
+        name:
+          title: Name
+          type: string
+        robot_id:
+          title: Robot Id
+          type: string
+      required:
+      - robot_id
+      - name
+      - last_seen
+      - busy
+      title: RobotPresence
+      type: object
+    RobotSync:
+      additionalProperties: false
+      properties:
+        answer:
+          anyOf:
+          - maxLength: 131072
+            minLength: 1
+            pattern: ^v=0\r?\n
+            type: string
+          - type: 'null'
+          title: Answer
+        capture_project:
+          default: ''
+          maxLength: 128
+          title: Capture Project
+          type: string
+        capture_result:
+          anyOf:
+          - $ref: '#/components/schemas/CaptureReceipt'
+          - type: 'null'
+        capture_tasks:
+          anyOf:
+          - items:
+              maxLength: 128
+              minLength: 1
+              type: string
+            maxItems: 512
+            type: array
+          - type: 'null'
+          title: Capture Tasks
+        instance_id:
+          format: uuid
+          title: Instance Id
+          type: string
+        name:
+          maxLength: 120
+          minLength: 1
+          title: Name
+          type: string
+        release:
+          default: false
+          title: Release
+          type: boolean
+        session_id:
+          anyOf:
+          - format: uuid
+            type: string
+          - type: 'null'
+          title: Session Id
+      required:
+      - instance_id
+      - name
+      title: RobotSync
+      type: object
+paths:
+  /api/v1/organizations/{organization_id}/teleoperation/robots:
+    get:
+      description: List endpoints with a current VR/WebRTC heartbeat in this organization.
+      operationId: listTeleoperationRobots
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RobotPresence'
+                title: Response Listteleoperationrobots
+                type: array
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: List Robots
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/capture:
+    get:
+      operationId: getTeleoperationCapture
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: query
+        name: project_id
+        required: true
+        schema:
+          title: Project Id
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureView'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Get Capture
+      tags:
+      - teleoperation
+    post:
+      operationId: commandTeleoperationCapture
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureCommand'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureView'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Issue Capture
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions:
+    post:
+      description: Reserve one online robot for this operator. Synchronize before the 20 s lease expires.
+      operationId: connectTeleoperationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Connect
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions/{session_id}:
+    delete:
+      operationId: releaseTeleoperationRobot
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          title: Session Id
+          type: string
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Disconnect
+      tags:
+      - teleoperation
+  /api/v1/organizations/{organization_id}/teleoperation/robots/{robot_id}/sessions/{session_id}/sync:
+    post:
+      description: Publish a complete (non-trickle ICE) SDP offer once and renew the operator lease.
+      operationId: syncTeleoperationOperator
+      parameters:
+      - in: path
+        name: organization_id
+        required: true
+        schema:
+          title: Organization Id
+          type: string
+      - in: path
+        name: robot_id
+        required: true
+        schema:
+          title: Robot Id
+          type: string
+      - in: path
+        name: session_id
+        required: true
+        schema:
+          format: uuid
+          title: Session Id
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OperatorSync'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorState'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - bearerAuth: []
+      summary: Sync Operator
+      tags:
+      - teleoperation
+  /api/v1/robot-ingest/teleoperation/sync:
+    post:
+      description: Advertise a VR-capable robot, poll for offers and publish the matching SDP answer.
+      operationId: syncTeleoperationRobot
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RobotSync'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: Successful Response
+        '422':
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+          description: Validation Error
+      security:
+      - robotBearerAuth: []
+      summary: Sync Robot
+      tags:
+      - teleoperation

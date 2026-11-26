@@ -52,6 +52,11 @@ from .access_repository import (
     _session_lifecycle_durations,
     _transition_conflict,
     can_manage_project,
+    check_grant_decision,
+    can_approve_delivery,
+    DELIVERY_GRANTS,
+    require_independent_approval,
+    validate_transfer,
     require_project_manager,
 )
 from .admin_accounts import (
@@ -93,7 +98,7 @@ status, reason, decided_by, decision_reason, created_at, updated_at, revision
 
 _CAPABILITY_COLUMNS = """
 request_id::text AS request_id, organization_id, project_id, requester_id::text AS requester_id,
-capability_keys, status, reason, decided_by, decision_reason,
+capability_keys, expires_at, resource_id, replaces_request_id::text, status, reason, decided_by, decision_reason,
 created_at, updated_at, revision
 """.strip()
 
@@ -218,7 +223,26 @@ def _organization_project_not_found() -> Exception:
     )
 
 
-class PostgresAccessRepository:
+def _require_active_organization(cursor: Any, principal: str, organization: str) -> None:
+    from .access_repository import _organization_membership_required
+
+    cursor.execute("""
+        SELECT 1 FROM access_control.organization_memberships
+        WHERE principal_id=%s::uuid AND organization_id=%s AND active FOR SHARE
+    """, (principal, organization))
+    if cursor.fetchone() is None:
+        cursor.execute("SELECT 1 FROM access_control.accounts WHERE principal_id=%s::uuid",(principal,))
+        if cursor.fetchone() is None:
+            raise _account_principal_required()
+        raise _organization_membership_required()
+
+
+from .capabilities import ORGANIZATION_ADMIN_PROJECT_CAPABILITIES
+from .governance_postgres import PostgresGovernance, lock_project_enrollment, manages_org
+from .governance import denied
+
+
+class PostgresAccessRepository(PostgresGovernance):
     def __init__(
         self,
         connection_factory: Callable[[], Any],
@@ -1734,7 +1758,7 @@ class PostgresAccessRepository:
                            project.project_id,
                            project.display_name AS project_name,
                            ARRAY[]::text[] AS capability_keys
-                    FROM registry.organization_projects project
+                    FROM access_control.active_projects project
                     LEFT JOIN access_control.organization_join_codes organization
                       ON organization.organization_id = project.organization_id
                     ORDER BY project.organization_id, project.project_id
@@ -1754,7 +1778,7 @@ class PostgresAccessRepository:
                            COALESCE(organization.display_name, membership.organization_id)
                                AS organization_name,
                            membership.project_id,
-                           COALESCE(array_agg(DISTINCT capability_grant.capability_key)
+                           membership.assigned_roles || membership.assigned_permissions || COALESCE(array_agg(DISTINCT capability_grant.capability_key)
                                FILTER (WHERE capability_grant.capability_key IS NOT NULL),
                                ARRAY[]::text[])
                                AS capability_keys
@@ -1764,12 +1788,13 @@ class PostgresAccessRepository:
                      AND capability_grant.organization_id = membership.organization_id
                      AND capability_grant.project_id = membership.project_id
                      AND capability_grant.active
+                     AND (capability_grant.expires_at IS NULL OR capability_grant.expires_at > now())
                     LEFT JOIN access_control.organization_join_codes organization
                       ON organization.organization_id = membership.organization_id
                     WHERE membership.principal_id = %s::uuid AND membership.active
                     GROUP BY membership.organization_id,
                              organization.display_name,
-                             membership.project_id
+                             membership.project_id, membership.assigned_roles, membership.assigned_permissions
                     ORDER BY membership.organization_id, membership.project_id
                     """,
                     (principal_id,),
@@ -1800,6 +1825,33 @@ class PostgresAccessRepository:
                         if raw_project is None
                         else str(_row(cursor, raw_project)["display_name"])
                     )
+            cursor.execute("""SELECT organization_id,is_administrator FROM access_control.organization_memberships
+                              WHERE principal_id=%s::uuid AND active""", (principal_id,))
+            memberships = [_row(cursor,r) for r in cursor.fetchall()]
+            organization_ids = frozenset(str(r["organization_id"]) for r in memberships)
+            managed = [str(r["organization_id"]) for r in memberships if r["is_administrator"]]
+            if not is_platform_admin:
+                cursor.execute("""SELECT organization_id,project_id FROM access_control.memberships
+                    WHERE principal_id=%s::uuid AND active AND is_administrator""",(principal_id,))
+                leads = {(r["organization_id"],r["project_id"]) for r in (_row(cursor,v) for v in cursor.fetchall())}
+                scopes_by_key = {(r["organization_id"],r["project_id"]):r for r in raw_scopes}
+                if managed:
+                    cursor.execute("SELECT set_config('app.platform_admin','true',true)")
+                    cursor.execute("""SELECT p.organization_id,p.project_id,p.display_name AS project_name,
+                        COALESCE(o.display_name,p.organization_id) AS organization_name FROM access_control.active_projects p
+                        LEFT JOIN access_control.organization_join_codes o USING(organization_id)
+                        WHERE p.organization_id=ANY(%s::text[])""",(managed,))
+                    for row in (_row(cursor,r) for r in cursor.fetchall()):
+                        key=(row["organization_id"],row["project_id"])
+                        existing=scopes_by_key.setdefault(key,dict(**row,capability_keys=[]))
+                        existing["capability_keys"]=[*existing["capability_keys"],*ORGANIZATION_ADMIN_PROJECT_CAPABILITIES]
+                        project_names[key]=str(row["project_name"])
+                    cursor.execute("SELECT set_config('app.platform_admin','false',true)")
+                for key in leads:
+                    if key in scopes_by_key:
+                        row=scopes_by_key[key]
+                        row["capability_keys"]=[*row["capability_keys"],"role.project_admin"]
+                raw_scopes=tuple(scopes_by_key[k] for k in sorted(scopes_by_key))
             scopes = tuple(
                 AvailableScope(
                     organization_id=str(scope["organization_id"]),
@@ -1810,7 +1862,7 @@ class PostgresAccessRepository:
                     ],
                     region_codes=(),
                     project_wide=True,
-                    capabilities=tuple(sorted(cast(Sequence[str], scope["capability_keys"]))),
+                    capabilities=tuple(sorted(set(cast(Sequence[str], scope["capability_keys"])))),
                 )
                 for scope in raw_scopes
             )
@@ -1825,6 +1877,8 @@ class PostgresAccessRepository:
                 ),
                 capability_revision=int(cast(Any, account["capability_revision"])),
                 scopes=scopes,
+                organization_ids=organization_ids,
+                managed_organization_ids=frozenset(managed),
                 platform_capabilities=platform_capabilities,
             )
             connection.commit()
@@ -2167,7 +2221,7 @@ class PostgresAccessRepository:
             cursor.execute(
                 """
                 SELECT request_id::text AS request_id, 'CAPABILITY' AS kind,
-                       organization_id, project_id, capability_keys,
+                       organization_id, project_id, capability_keys, expires_at, resource_id, replaces_request_id::text,
                        status, reason, created_at, updated_at, revision
                 FROM access_control.capability_requests
                 WHERE requester_id = %s::uuid
@@ -2234,11 +2288,11 @@ class PostgresAccessRepository:
                 """
                 SELECT organization_id
                 FROM access_control.organization_join_codes
-                WHERE organization_id = %s OR join_code = %s
+                WHERE (organization_id = %s AND allow_id_application) OR join_code = %s
                 UNION
                 SELECT organization_id
-                FROM registry.organization_projects
-                WHERE organization_id = %s
+                FROM access_control.active_projects p
+                WHERE organization_id = %s AND NOT EXISTS (SELECT 1 FROM access_control.organization_join_codes o WHERE o.organization_id=p.organization_id)
                 LIMIT 1
                 """,
                 (
@@ -2334,7 +2388,6 @@ class PostgresAccessRepository:
         idempotency_key: str,
         request_id: str,
     ) -> AccountAccessRequest:
-        auth.require_capability(CAPABILITY_PLATFORM_ADMIN)
         if target_status not in {
             AccessRequestStatus.APPROVED,
             AccessRequestStatus.REJECTED,
@@ -2370,9 +2423,17 @@ class PostgresAccessRepository:
             if raw is None:
                 raise _not_found("organization_membership_request")
             values = _row(cursor, raw)
+            if not manages_org(cursor,auth,str(values["organization_id"]),lock=True):
+                raise denied()
             requester_id = str(values.pop("requester_id"))
+            if target_status is AccessRequestStatus.REVOKED and not auth.is_platform_admin:
+                cursor.execute("""SELECT 1 FROM access_control.organization_memberships WHERE
+                    principal_id=%s::uuid AND organization_id=%s AND active AND is_administrator FOR SHARE""",
+                    (requester_id,values["organization_id"]))
+                if cursor.fetchone(): raise denied()
             values["capability_keys"] = tuple(cast(Sequence[str], values["capability_keys"]))
             item = AccountAccessRequest.model_validate(values)
+            require_independent_approval(auth, requester_id, target_status)
             if repeated is not None or item.status is target_status:
                 self._finish_idempotency(
                     cursor,
@@ -2577,6 +2638,8 @@ class PostgresAccessRepository:
                 result = self._get_membership(cursor, organization_id, project_id, repeated)
                 connection.commit()
                 return result
+            lock_project_enrollment(cursor, organization_id, project_id, principal_id)
+            _require_active_organization(cursor, principal_id, organization_id)
             cursor.execute(
                 """
                 SELECT 1 FROM access_control.memberships
@@ -2744,6 +2807,14 @@ class PostgresAccessRepository:
             item = self._get_membership(
                 cursor, organization_id, project_id, access_request_id, lock=True
             )
+            if target_status is AccessRequestStatus.REVOKED and not manages_org(cursor, auth, organization_id, lock=True):
+                cursor.execute("""SELECT is_administrator FROM access_control.memberships WHERE
+                    principal_id=%s::uuid AND organization_id=%s AND project_id=%s AND active FOR UPDATE""",
+                    (item.requester_id, organization_id, project_id))
+                row = cursor.fetchone()
+                if row and _row(cursor, row)["is_administrator"]:
+                    raise denied()
+            require_independent_approval(auth, item.requester_id, target_status, project_organization=organization_id)
             if item.status is target_status:
                 self._finish_idempotency(
                     cursor, auth.subject_id, "membership.decide", idempotency_key, item.request_id
@@ -2777,20 +2848,7 @@ class PostgresAccessRepository:
                 )
             updated = _membership(cursor, raw)
             if target_status is AccessRequestStatus.APPROVED:
-                cursor.execute(
-                    """
-                    INSERT INTO access_control.organization_memberships (
-                        principal_id, organization_id, source_request_id, active, activated_by
-                    ) VALUES (%s::uuid, %s, NULL, true, %s)
-                    ON CONFLICT (principal_id, organization_id) DO UPDATE SET
-                        active = true,
-                        activated_at = now(),
-                        activated_by = EXCLUDED.activated_by,
-                        revoked_at = NULL,
-                        revoked_by = NULL
-                    """,
-                    (item.requester_id, organization_id, auth.subject_id),
-                )
+                _require_active_organization(cursor, item.requester_id, organization_id)
                 cursor.execute(
                     """
                     INSERT INTO access_control.memberships (
@@ -2950,6 +3008,9 @@ class PostgresAccessRepository:
         organization_id: str,
         project_id: str,
         capability_keys: tuple[str, ...],
+        expires_at: datetime | None = None,
+        resource_id: str | None = None,
+        replaces_request_id: str | None = None,
         reason: str | None,
         idempotency_key: str,
         request_id: str,
@@ -2961,6 +3022,9 @@ class PostgresAccessRepository:
             "organization_id": organization_id,
             "project_id": project_id,
             "capability_keys": list(capability_keys),
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "resource_id": resource_id,
+            "replaces_request_id": replaces_request_id,
             "reason": reason,
         }
         connection = self._connection_factory()
@@ -2978,8 +3042,8 @@ class PostgresAccessRepository:
                 f"""
                 INSERT INTO access_control.capability_requests (
                     request_id, organization_id, project_id, requester_id,
-                    capability_keys, status, reason
-                ) VALUES (%s::uuid, %s, %s, %s::uuid, %s, 'PENDING', %s)
+                    capability_keys, status, reason, expires_at, resource_id, replaces_request_id
+                ) VALUES (%s::uuid, %s, %s, %s::uuid, %s, 'PENDING', %s, %s, %s, %s::uuid)
                 RETURNING {_CAPABILITY_COLUMNS}
                 """,
                 (
@@ -2988,7 +3052,7 @@ class PostgresAccessRepository:
                     project_id,
                     principal_id,
                     list(capability_keys),
-                    reason,
+                    reason, expires_at, resource_id, replaces_request_id,
                 ),
             )
             raw = cursor.fetchone()
@@ -3019,8 +3083,9 @@ class PostgresAccessRepository:
         self, *, auth: AuthContext, organization_id: str, project_id: str
     ) -> tuple[CapabilityRequest, ...]:
         manager = can_manage_project(auth, project_id, organization_id)
+        delegate = can_approve_delivery(auth, project_id, organization_id)
         principal_id = _principal_uuid(auth.subject_id)
-        if not manager and principal_id is None:
+        if not (manager or delegate) and principal_id is None:
             return ()
         connection = self._connection_factory()
         cursor = connection.cursor()
@@ -3040,10 +3105,10 @@ class PostgresAccessRepository:
                     f"""
                     SELECT {_CAPABILITY_COLUMNS}
                     FROM access_control.capability_requests
-                    WHERE organization_id = %s AND project_id = %s AND requester_id = %s::uuid
+                    WHERE organization_id = %s AND project_id = %s AND (requester_id = %s::uuid OR (%s AND capability_keys <@ %s::text[]))
                     ORDER BY created_at DESC, request_id DESC
                     """,
-                    (organization_id, project_id, principal_id),
+                    (organization_id, project_id, principal_id, delegate, list(DELIVERY_GRANTS)),
                 )
             return tuple(_capability(cursor, raw) for raw in cursor.fetchall())
         finally:
@@ -3059,8 +3124,9 @@ class PostgresAccessRepository:
         access_request_id: str,
     ) -> CapabilityRequest:
         manager = can_manage_project(auth, project_id, organization_id)
+        delegate = can_approve_delivery(auth, project_id, organization_id)
         principal_id = _principal_uuid(auth.subject_id)
-        if not manager and principal_id is None:
+        if not (manager or delegate) and principal_id is None:
             raise _not_found("capability_request")
         connection = self._connection_factory()
         cursor = connection.cursor()
@@ -3080,9 +3146,9 @@ class PostgresAccessRepository:
                     SELECT {_CAPABILITY_COLUMNS}
                     FROM access_control.capability_requests
                     WHERE request_id = %s::uuid AND organization_id = %s AND project_id = %s
-                      AND requester_id = %s::uuid
+                      AND (requester_id = %s::uuid OR (%s AND capability_keys <@ %s::text[]))
                     """,
-                    (access_request_id, organization_id, project_id, principal_id),
+                    (access_request_id, organization_id, project_id, principal_id, delegate, list(DELIVERY_GRANTS)),
                 )
             raw = cursor.fetchone()
             if raw is None:
@@ -3104,7 +3170,8 @@ class PostgresAccessRepository:
         idempotency_key: str,
         request_id: str,
     ) -> CapabilityRequest:
-        require_project_manager(auth, project_id, organization_id)
+        if not can_approve_delivery(auth, project_id, organization_id):
+            require_project_manager(auth, project_id, organization_id)
         payload = {
             "organization_id": organization_id,
             "request_id": access_request_id,
@@ -3124,6 +3191,7 @@ class PostgresAccessRepository:
             item = self._get_capability(
                 cursor, organization_id, project_id, access_request_id, lock=True
             )
+            check_grant_decision(auth, item, target_status)
             if item.status is target_status:
                 self._finish_idempotency(
                     cursor, auth.subject_id, "capability.decide", idempotency_key, item.request_id
@@ -3137,6 +3205,15 @@ class PostgresAccessRepository:
             )
             if item.status is not expected:
                 raise _transition_conflict(item.status)
+            if target_status is AccessRequestStatus.APPROVED and item.replaces_request_id:
+                previous = self._get_capability(cursor, organization_id, project_id, item.replaces_request_id, lock=True)
+                validate_transfer(auth, item, previous)
+                revoked = self._update_capability_status(cursor, previous, AccessRequestStatus.REVOKED,
+                    actor_id=auth.subject_id, reason=f"Role transfer {item.request_id}")
+                cursor.execute("""UPDATE access_control.capability_grants SET active=false,
+                    revoked_at=now(), revoked_by=%s WHERE source_request_id=%s::uuid AND active""",
+                    (auth.subject_id, previous.request_id))
+                self._audit_capability(cursor, revoked, auth.subject_id, "access.capability.revoked", request_id)
             updated = self._update_capability_status(
                 cursor,
                 item,
@@ -3145,13 +3222,13 @@ class PostgresAccessRepository:
                 reason=reason,
             )
             if target_status is AccessRequestStatus.APPROVED:
-                for capability_key in item.capability_keys:
+                for capability_key in item.effective_grant_keys:
                     cursor.execute(
                         """
                         INSERT INTO access_control.capability_grants (
                             grant_id, source_request_id, principal_id, organization_id, project_id,
-                            capability_key, active, activated_by
-                        ) VALUES (%s::uuid, %s::uuid, %s::uuid, %s, %s, %s, true, %s)
+                            capability_key, active, activated_by, expires_at
+                        ) VALUES (%s::uuid, %s::uuid, %s::uuid, %s, %s, %s, true, %s, %s)
                         ON CONFLICT (source_request_id, capability_key) DO UPDATE SET
                             active = true, activated_at = now(),
                             activated_by = EXCLUDED.activated_by,
@@ -3164,7 +3241,7 @@ class PostgresAccessRepository:
                             organization_id,
                             project_id,
                             capability_key,
-                            auth.subject_id,
+                            auth.subject_id, item.expires_at,
                         ),
                     )
                 self._bump_revision(cursor, item.requester_id)

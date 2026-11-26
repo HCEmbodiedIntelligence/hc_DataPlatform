@@ -56,6 +56,7 @@ from hc_data_platform.core.structured_logging import (
     log_event,
 )
 from hc_data_platform.dataset_registry.models import DatasetIngestViewerTarget
+from hc_data_platform.episode_store.validation_cache import PackageChangedDuringValidation
 from hc_data_platform.ingest.manifest import ManifestParserPort
 from hc_data_platform.lance_catalog.models import (
     AlignedFragmentManifestV1 as CatalogFragmentManifestV1,
@@ -597,6 +598,10 @@ async def _invoke(
             type=exc.code,
             non_retryable=isinstance(exc, (CatalogConflictError, SchemaIncompatibleError)),
         ) from exc
+    except PackageChangedDuringValidation as exc:
+        raise ApplicationError(
+            str(exc), type="EPISODE_PACKAGE_CHANGED_DURING_VALIDATION", non_retryable=False
+        ) from exc
     except (KeyError, TypeError, ValidationError, ValueError) as exc:
         raise ApplicationError(
             str(exc),
@@ -756,7 +761,7 @@ async def parse_manifest(request: ManifestActivityInput) -> ManifestActivityOutp
             raise ValueError("Manifest immutable identity does not match workflow input")
         return ManifestActivityOutput(preflight=result)
 
-    with _worker_scope(request.project_id, request.region_code, request.data_package_id):
+    with _worker_scope(request.project_id, request.region_code, request.data_package_id, organization_id=getattr(request, "organization_id", None)):
         return await _invoke("manifest", parse_and_validate)
 
 
@@ -1737,7 +1742,7 @@ async def commit_fragment(request: CatalogCommitActivityInput) -> CatalogCommitA
         return CatalogCommitActivityOutput(version=version, derived_ready=ready)
 
     manifest = request.fragment.manifest
-    with _worker_scope(manifest.project_id, None, manifest.dataset_id):
+    with _worker_scope(manifest.project_id, None, manifest.dataset_id, organization_id=getattr(manifest, "organization_id", None)):
         return await _invoke("lance_commit", commit)
 
 
@@ -2068,7 +2073,7 @@ async def publish_dataset(request: PublishActivityInput) -> PublishActivityOutpu
         publish_request.project_id,
         None,
         f"{publish_request.dataset_id}/{publish_request.dataset_version}",
-    ):
+    organization_id=getattr(publish_request, "organization_id", None),):
         manifest = await _invoke(
             "publishing",
             lambda: _require(_dependencies.publisher, "publishing.DatasetPublisher").publish(
@@ -2096,7 +2101,7 @@ async def export_dataset(request: ExportActivityInput) -> ExportActivityOutput:
         manifest.project_id,
         None,
         f"{manifest.dataset_id}/{manifest.dataset_version}",
-    ):
+    organization_id=getattr(manifest, "organization_id", None),):
         result = await _invoke(
             "export",
             lambda: _require(_dependencies.exporter, "publishing.ExportCoordinator").export(
@@ -2120,7 +2125,7 @@ async def preflight_export(
         manifest.project_id,
         None,
         f"{manifest.dataset_id}/{manifest.dataset_version}",
-    ):
+    organization_id=getattr(manifest, "organization_id", None),):
         row_count = await _invoke(
             "export_preflight",
             lambda: _require(_dependencies.exporter, "publishing.ExportCoordinator").preflight(
@@ -2143,7 +2148,7 @@ async def verify_export_artifact(
         result.project_id,
         None,
         f"{result.dataset_id}/{result.dataset_version}",
-    ):
+    organization_id=getattr(result, "organization_id", None),):
         await _invoke(
             "export_artifact_verification",
             lambda: _require(
@@ -2157,7 +2162,7 @@ async def verify_export_artifact(
 async def reconcile_catalog(
     request: CatalogReconciliationActivityInput,
 ) -> CatalogReconciliationActivityOutput:
-    with _worker_scope(request.project_id, None, request.dataset_id):
+    with _worker_scope(request.project_id, None, request.dataset_id, organization_id=getattr(request, "organization_id", None)):
         versions = await _invoke(
             "catalog_reconciliation",
             lambda: _require(_dependencies.catalog_reconciler, "lance_catalog.reconcile").reconcile(
@@ -2186,7 +2191,7 @@ async def reconcile_publication(
         publish_request.project_id,
         None,
         f"{publish_request.dataset_id}/{publish_request.dataset_version}",
-    ):
+    organization_id=getattr(publish_request, "organization_id", None),):
         manifest = await _invoke(
             "publication_reconciliation",
             lambda: (

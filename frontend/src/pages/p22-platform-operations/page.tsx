@@ -1,3 +1,4 @@
+import { ModelConnectionPanel } from "./ModelConnectionPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Alert, Button, Input, Select } from "antd";
 import {
@@ -930,18 +931,18 @@ function objectStoreStatusTone(config: PlatformObjectStoreConfig) {
   return "success";
 }
 
-function ObjectStoreConfigurationPanel() {
+export function ObjectStoreConfigurationPanel({organizationId, embedded = false}:{organizationId?:string; embedded?:boolean} = {}) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [editingSaved, setEditingSaved] = useState(false);
-  const configQueryKey = ["platform-operations", "global", "object-store-config", ...(editingSaved ? ["saved"] : [])];
+  const configQueryKey = ["platform-operations", organizationId ?? "global", "object-store-config", ...(editingSaved ? ["saved"] : [])];
   const [draft, setDraft] = useState<ObjectStoreConfigDraft>(
     emptyObjectStoreConfigDraft,
   );
   const [formError, setFormError] = useState<string | null>(null);
   const config = useQuery({
     queryKey: configQueryKey,
-    queryFn: ({ signal }) => getPlatformObjectStoreConfig(signal, editingSaved),
+    queryFn: ({ signal }) => getPlatformObjectStoreConfig(signal, editingSaved, organizationId),
     enabled: expanded,
     staleTime: 5_000,
     gcTime: 0,
@@ -978,7 +979,7 @@ function ObjectStoreConfigurationPanel() {
         region: draft.region.trim(),
         ...(accessKey ? { access_key: accessKey } : {}),
         ...(secretKey ? { secret_key: secretKey } : {}),
-      });
+      }, organizationId);
     },
     onSuccess: async (saved) => {
       setFormError(null);
@@ -1039,10 +1040,10 @@ function ObjectStoreConfigurationPanel() {
     >
       <div className={styles.sectionHeading}>
         <div>
-          <span className={styles.eyebrow}>RUNTIME DEPENDENCY</span>
+          {!embedded && <span className={styles.eyebrow}>RUNTIME DEPENDENCY</span>}
           <h2 id="object-store-title">数据存储</h2>
         </div>
-        <Button onClick={() => setExpanded((value) => !value)}>
+        <Button aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
           {expanded ? "收起存储配置" : "查看存储配置"}
         </Button>
       </div>
@@ -1292,6 +1293,7 @@ function LogEventRow({ event }: Readonly<{ event: PlatformLogEvent }>) {
 
 export function PlatformOperationsPage() {
   const queryClient = useQueryClient();
+  const currentOrgId = useShellStore(s=>s.scope?.organizationId);
   const exactPlatformCapabilities = useShellStore(
     (state) => state.platformCapabilities,
   );
@@ -1439,7 +1441,8 @@ export function PlatformOperationsPage() {
             <div className={styles.initializationGrid}>
               <OrganizationInitializationPanel />
               <ProjectInitializationPanel />
-              <ObjectStoreConfigurationPanel />
+              <ObjectStoreConfigurationPanel key={currentOrgId} organizationId={currentOrgId} />
+              <ModelConnectionPanel />
             </div>
           </section>
         ) : null}

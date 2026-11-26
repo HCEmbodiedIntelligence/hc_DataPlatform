@@ -1,0 +1,855 @@
+paths:
+  /api/v1/account/management-storage/{organization_id}:
+    get:
+      tags:
+      - access
+      summary: Get Organization Storage
+      operationId: getOrganizationStorage
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: saved
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Saved
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreConfigurationStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    put:
+      tags:
+      - access
+      summary: Set Organization Storage
+      operationId: setOrganizationStorage
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ObjectStoreConfigurationUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ObjectStoreConfigurationStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/management-directory:
+    get:
+      tags:
+      - access
+      summary: Management Directory
+      operationId: getManagementDirectory
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceDirectory'
+      security:
+      - bearerAuth: []
+  /api/v1/account/managed-projects:
+    post:
+      tags:
+      - access
+      summary: Create Managed Project
+      operationId: createManagedProject
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlatformProjectCreate'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      security:
+      - bearerAuth: []
+  /api/v1/account/managed-members:
+    get:
+      tags:
+      - access
+      summary: Managed Members
+      operationId: listManagedMembers
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: unassigned_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Unassigned Only
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemberEntry'
+                title: Response Listmanagedmembers
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/management-inbox:
+    get:
+      tags:
+      - access
+      summary: Management Inbox
+      operationId: listManagementInbox
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InboxEntry'
+                title: Response Listmanagementinbox
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}:remove:
+    post:
+      tags:
+      - access
+      summary: Remove Managed Member
+      operationId: removeManagedMember
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipRemoval'
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}:
+    get:
+      tags:
+      - access
+      summary: Get Managed Member Detail
+      operationId: getManagedMemberDetail
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: project_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedMemberDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}/roles:
+    put:
+      tags:
+      - access
+      summary: Set Managed Project Roles
+      operationId: setManagedProjectRoles
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectRoleChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedMemberDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}/administrator:
+    put:
+      tags:
+      - access
+      summary: Set Membership Administrator
+      operationId: setMembershipAdministrator
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdministratorChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberEntry'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/joinable-projects:
+    get:
+      tags:
+      - access
+      summary: Joinable Projects
+      operationId: listJoinableProjects
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: principal_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Principal Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectEntry'
+                title: Response Listjoinableprojects
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}/project-membership:
+    put:
+      tags:
+      - access
+      summary: Assign Project Member
+      operationId: assignProjectMember
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      - name: organization_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Organization Id
+      - name: project_id
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Project Id
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 256
+          title: Idempotency-Key
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/v1/account/managed-members/{principal_id}/permissions:
+    put:
+      tags:
+      - access
+      summary: Set Managed Project Permissions
+      operationId: setManagedProjectPermissions
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: principal_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Principal Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectPermissionChange'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedMemberDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  schemas:
+    GovernanceDirectory:
+      properties:
+        organizations:
+          items:
+            $ref: '#/components/schemas/OrganizationEntry'
+          type: array
+          title: Organizations
+        projects:
+          items:
+            $ref: '#/components/schemas/ProjectEntry'
+          type: array
+          title: Projects
+      type: object
+      required:
+      - organizations
+      - projects
+      title: GovernanceDirectory
+    OrganizationEntry:
+      properties:
+        organization_id:
+          type: string
+          title: Organization Id
+        organization_name:
+          type: string
+          title: Organization Name
+        join_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Join Code
+        can_manage:
+          type: boolean
+          title: Can Manage
+      type: object
+      required:
+      - organization_id
+      - organization_name
+      - can_manage
+      title: OrganizationEntry
+    ProjectEntry:
+      properties:
+        organization_id:
+          type: string
+          title: Organization Id
+        project_id:
+          type: string
+          title: Project Id
+        project_name:
+          type: string
+          title: Project Name
+      type: object
+      required:
+      - organization_id
+      - project_id
+      - project_name
+      title: ProjectEntry
+    MemberEntry:
+      properties:
+        principal_id:
+          type: string
+          title: Principal Id
+        username:
+          type: string
+          title: Username
+        administrator:
+          type: boolean
+          title: Administrator
+      type: object
+      required:
+      - principal_id
+      - username
+      - administrator
+      title: MemberEntry
+    InboxEntry:
+      properties:
+        request_id:
+          type: string
+          title: Request Id
+        requester_id:
+          type: string
+          title: Requester Id
+        username:
+          type: string
+          title: Username
+        organization_id:
+          type: string
+          title: Organization Id
+        project_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Project Id
+        kind:
+          type: string
+          enum:
+          - ORGANIZATION
+          - PROJECT
+          - CAPABILITY
+          title: Kind
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        capability_keys:
+          items:
+            type: string
+          type: array
+          title: Capability Keys
+        resource_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Resource Id
+        expires_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Expires At
+        replaces_request_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Replaces Request Id
+      type: object
+      required:
+      - request_id
+      - requester_id
+      - username
+      - organization_id
+      - project_id
+      - kind
+      - reason
+      - capability_keys
+      title: InboxEntry
+    MembershipRemoval:
+      properties:
+        organization_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Organization Id
+        project_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Project Id
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+      additionalProperties: false
+      type: object
+      required:
+      - organization_id
+      - reason
+      title: MembershipRemoval
+    ManagedMemberDetail:
+      properties:
+        principal_id:
+          type: string
+          title: Principal Id
+        username:
+          type: string
+          title: Username
+        administrator:
+          type: boolean
+          title: Administrator
+        display_name:
+          type: string
+          title: Display Name
+        status:
+          type: string
+          title: Status
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        platform_administrator:
+          type: boolean
+          title: Platform Administrator
+        organization_administrator:
+          type: boolean
+          title: Organization Administrator
+        assigned_roles:
+          items:
+            type: string
+          type: array
+          title: Assigned Roles
+        assigned_permissions:
+          items:
+            type: string
+          type: array
+          title: Assigned Permissions
+        assignable_permissions:
+          items:
+            type: string
+          type: array
+          title: Assignable Permissions
+        approved_grants:
+          items:
+            $ref: '#/components/schemas/MemberGrant'
+          type: array
+          title: Approved Grants
+        effective_permissions:
+          items:
+            type: string
+          type: array
+          title: Effective Permissions
+        can_set_roles:
+          type: boolean
+          title: Can Set Roles
+        can_change_administrator:
+          type: boolean
+          title: Can Change Administrator
+        can_remove:
+          type: boolean
+          title: Can Remove
+      type: object
+      required:
+      - principal_id
+      - username
+      - administrator
+      - display_name
+      - status
+      - created_at
+      - platform_administrator
+      - organization_administrator
+      - assigned_roles
+      - assigned_permissions
+      - assignable_permissions
+      - approved_grants
+      - effective_permissions
+      - can_set_roles
+      - can_change_administrator
+      - can_remove
+      title: ManagedMemberDetail
+    MemberGrant:
+      properties:
+        source_request_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source Request Id
+        can_revoke:
+          type: boolean
+          title: Can Revoke
+          default: false
+        capability:
+          type: string
+          title: Capability
+        expires_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Expires At
+      type: object
+      required:
+      - capability
+      title: MemberGrant
+    ProjectRoleChange:
+      properties:
+        organization_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Organization Id
+        project_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Project Id
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+        roles:
+          items:
+            type: string
+            enum:
+            - role.observer
+            - role.collector
+            - role.annotator
+            - role.reviewer
+            - role.publisher
+          type: array
+          uniqueItems: true
+          title: Roles
+        expected_roles:
+          items:
+            type: string
+          type: array
+          uniqueItems: true
+          title: Expected Roles
+      additionalProperties: false
+      type: object
+      required:
+      - organization_id
+      - project_id
+      - reason
+      - roles
+      - expected_roles
+      title: ProjectRoleChange
+    AdministratorChange:
+      properties:
+        organization_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Organization Id
+        project_id:
+          anyOf:
+          - type: string
+            maxLength: 256
+            minLength: 1
+          - type: 'null'
+          title: Project Id
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+        enabled:
+          type: boolean
+          title: Enabled
+      additionalProperties: false
+      type: object
+      required:
+      - organization_id
+      - reason
+      - enabled
+      title: AdministratorChange
+    ProjectPermissionChange:
+      properties:
+        organization_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Organization Id
+        project_id:
+          type: string
+          maxLength: 256
+          minLength: 1
+          title: Project Id
+        reason:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Reason
+        permissions:
+          items:
+            type: string
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          title: Permissions
+        expected_permissions:
+          items:
+            type: string
+          type: array
+          maxItems: 512
+          uniqueItems: true
+          title: Expected Permissions
+      additionalProperties: false
+      type: object
+      required:
+      - organization_id
+      - project_id
+      - reason
+      - permissions
+      - expected_permissions
+      title: ProjectPermissionChange

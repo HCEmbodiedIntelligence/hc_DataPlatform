@@ -1,12 +1,13 @@
 """Complete independent packages: no implicit selection of annotations or modalities."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
 from .collection_delivery_models import CollectionDeliveryPlan
 from .collection_records import CollectionRecord
+from .download_names import ExportArchiveName
 from .models import DataVersionRef, Digest, FrozenModel, digest
 from .upload_candidates import UploadExportFilter
 
@@ -19,6 +20,12 @@ class PrepareEpisodePart(FrozenModel):
     export_filter: UploadExportFilter
 
 
+class PrepareEpisodeParts(FrozenModel):
+    data: tuple[DataVersionRef, ...] = Field(min_length=1, max_length=1000)
+    mode: str = Field(min_length=1, max_length=64)
+    export_filter: UploadExportFilter
+
+
 class PreparedEpisodePart(FrozenModel):
     part_id: Digest
     status: Literal["preparing", "ready"]
@@ -26,7 +33,9 @@ class PreparedEpisodePart(FrozenModel):
 
 
 class DownloadEpisodeBundle(FrozenModel):
-    part_ids: tuple[Digest, ...] = Field(min_length=1, max_length=1000)
+    download_name: ExportArchiveName | None = None
+    download_date: date | None = None
+    part_ids: tuple[Digest, ...] = Field(min_length=1, max_length=10000)
     export_filter: UploadExportFilter
 
 

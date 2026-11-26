@@ -1,7 +1,11 @@
+import { Link } from "react-router-dom";
+import { useShellStore } from "../../shared/scope/shell-store";
 import {
   Alert,
   Button,
   Dropdown,
+  Drawer,
+  Descriptions,
   Form,
   Input,
   Modal,
@@ -213,7 +217,10 @@ export function UserManagementPanel({
   const [createForm] = Form.useForm<CreateFormValues>();
   const [resetForm] = Form.useForm<ResetFormValues>();
 
+  const platformAdmin = useShellStore(s=>s.platformCapabilities.includes("platform.admin"));
   const items = page?.items ?? [];
+  const [selectedAccountId,setSelectedAccountId]=useState<string>();
+  const selected=items.find(account=>account.principal_id===selectedAccountId);
   const activeCount = items.filter((item) => item.state === "ACTIVE").length;
   const adminCount = items.filter(
     (item) => item.platform_role === "PLATFORM_ADMIN",
@@ -248,7 +255,7 @@ export function UserManagementPanel({
         width: 230,
         render: (_, account) => (
           <div className={styles.userIdentity}>
-            <strong>{account.display_name}</strong>
+            <Button className={styles.accountIdentityButton} type="link" onClick={()=>setSelectedAccountId(account.principal_id)}>{account.display_name}</Button>
             <span>@{account.username}</span>
           </div>
         ),
@@ -291,6 +298,8 @@ export function UserManagementPanel({
         render: (_, account) => {
           const isSelf = account.principal_id === currentPrincipalId;
           const menuItems: MenuProps["items"] = [
+            ...(platformAdmin && !isSelf && account.state==="ACTIVE" ? [{key:"assign-organization",label:
+              <Link to={`/settings/access?tab=organizations&user=${encodeURIComponent(account.principal_id)}&username=${encodeURIComponent(account.username)}`}>设置组织权限</Link>}] : []),
             {
               key: "reset",
               label: isSelf ? "重置密码（请前往账户设置）" : "重置密码",
@@ -362,7 +371,7 @@ export function UserManagementPanel({
         },
       },
     ],
-    [canManage, canUnlock, currentPrincipalId, resetForm],
+    [canManage, canUnlock, currentPrincipalId, platformAdmin, resetForm],
   );
 
   if (loading && page === undefined) {
@@ -811,6 +820,26 @@ export function UserManagementPanel({
           </Space>
         ) : null}
       </Modal>
+      {selected && <Drawer open aria-label={selected.username+" · 账号详情"} onClose={()=>setSelectedAccountId(undefined)} title={selected.username+" · 账号详情"} width="min(520px, 100vw)">
+        <Space direction="vertical" size="middle" style={{display:"flex"}}>
+          <Descriptions title="基本信息" column={1} items={[
+            {key:"username",label:"用户名",children:selected.username},
+            {key:"name",label:"显示名称",children:selected.display_name},
+            {key:"id",label:"账号 ID",children:selected.principal_id},
+            {key:"status",label:"账号状态",children:stateTag(selected)},
+            {key:"role",label:"平台角色",children:roleTag(selected)},
+            {key:"created",label:"注册时间",children:formatDate(selected.created_at)},
+          ]}/>
+          <Space wrap>
+            {platformAdmin && selected.principal_id!==currentPrincipalId && selected.state==="ACTIVE" &&
+              <Link to={`/settings/access?tab=organizations&user=${encodeURIComponent(selected.principal_id)}&username=${encodeURIComponent(selected.username)}`}>设置组织权限</Link>}
+            {canManage && selected.principal_id!==currentPrincipalId && selected.state!=="DELETED" &&
+              <Button onClick={()=>{setSelectedAccountId(undefined);setConfirmDialog({account:selected,action:selected.platform_role==="PLATFORM_ADMIN"?"demote":"promote"});}}>
+                {selected.platform_role==="PLATFORM_ADMIN"?"取消平台管理员":"设为平台管理员"}
+              </Button>}
+          </Space>
+        </Space>
+      </Drawer>}
     </section>
   );
 }

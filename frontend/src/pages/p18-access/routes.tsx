@@ -7,6 +7,7 @@ export type AccessRoute = PageRoute;
 // Both query families remain disabled until their corresponding grant is available.
 
 export const routes: PageRoute[] = [
+  { path: "/settings/access/management", requiredCapabilities: [], lazy: () => import("./GovernancePage") },
   {
     path: "/settings/access",
     requiredCapabilities: [],

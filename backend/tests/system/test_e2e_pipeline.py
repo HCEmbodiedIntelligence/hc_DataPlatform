@@ -207,12 +207,19 @@ def _export_steps(steps: Sequence[StepRecord]) -> tuple[ExportStepV1, ...]:
 
 def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> None:
     operator = AuthContext(
-        subject_id="single-operator",
+        subject_id="collector-annotator",
         project_ids=frozenset({PROJECT_ID}),
         region_codes=frozenset({REGION_CODE}),
         scope_pairs=frozenset({(PROJECT_ID, None)}),
-        scoped_capabilities=frozenset({(PROJECT_ID, "upload.manage")}),
+        scoped_capabilities=frozenset({(PROJECT_ID, "upload.manage"), (PROJECT_ID, "role.annotator")}),
     )
+    from dataclasses import replace
+
+    reviewer = replace(operator, subject_id="reviewer", scoped_capabilities=frozenset({(PROJECT_ID, "role.reviewer")}))
+    publisher_actor = replace(operator, subject_id="publisher", scoped_capabilities=frozenset({(PROJECT_ID, "role.publisher")}))
+    delivery_actor = replace(operator, subject_id="delivery", scoped_capabilities=frozenset({
+        (PROJECT_ID, "export.create"), (PROJECT_ID, "export.download"),
+    }))
     ScopeGuard.require(operator, PROJECT_ID, REGION_CODE)
     operator.require_capability("upload.manage", PROJECT_ID)
     raw = (FIXTURES / "mcap" / "legal.mcap").read_bytes()
@@ -362,7 +369,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> 
     )
     approved = annotations.review(
         task.task_id,
-        operator,
+        reviewer,
         ReviewDecision.APPROVE,
         revision=revision.revision,
         if_match=submitted.etag,
@@ -370,7 +377,8 @@ def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> 
     assert approved is not None
     reviews = annotations.list_reviews(task.task_id, operator)
     assert len(reviews) == 1
-    assert submitted.submitted_by == reviews[0].reviewer_id == operator.subject_id
+    assert submitted.submitted_by == operator.subject_id
+    assert reviews[0].reviewer_id == reviewer.subject_id != submitted.submitted_by
 
     excluded = tuple(
         PublishingStepRange(start_step=item.start_step, end_step=item.end_step)
@@ -414,7 +422,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> 
         dataset_version="pilot-v1",
         base_lance_version=str(version.version),
     )
-    operator.require_capability("dataset_version.publish", PROJECT_ID)
+    publisher_actor.require_capability("dataset_version.publish", PROJECT_ID)
     published = publisher.publish(publish_request)
     assert publisher.publish(publish_request) == published
     assert (
@@ -440,7 +448,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> 
         sink=export_sink,
         exporters=[LeRobotV3Exporter(export_assets)],
     )
-    operator.require_capability("export.create", PROJECT_ID)
+    delivery_actor.require_capability("export.create", PROJECT_ID)
     exported = coordinator.export(
         published,
         format=ExportFormat.LEROBOT_V3,
@@ -455,7 +463,7 @@ def test_complete_pipeline_and_duplicate_recovery_invariants(tmp_path: Path) -> 
     assert exported.row_count == 28
     assert len(export_sink.artifacts) == 1
     assert len(export_sink.download_authorizations) == 1
-    operator.require_capability("export.download", PROJECT_ID)
+    delivery_actor.require_capability("export.download", PROJECT_ID)
 
     artifact = export_sink.artifacts[exported.artifact_uri]
     assert artifact.startswith(b"PK\x03\x04"), (exported, artifact[:80])

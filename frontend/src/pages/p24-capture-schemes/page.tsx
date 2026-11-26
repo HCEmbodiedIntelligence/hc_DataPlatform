@@ -439,6 +439,7 @@ function Library({ org }: { org: string }) {
                       <>
                         <h2>{selectedVersion?.name ?? current.draft.name}</h2>
                         <p>{dataSummary(selectedVersion ?? current.draft)}</p>
+                        <p>标注标签：{(selectedVersion ?? current.draft).annotation_tags?.join("、") || "未选择"}</p>
                         <p>
                           {selectedVersion?.description ??
                             current.draft.description}

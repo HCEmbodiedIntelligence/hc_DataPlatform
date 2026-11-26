@@ -550,8 +550,12 @@ def test_store_only_validates_task_dataset_and_robot(monkeypatch):
 
 
 def test_batch_registers_raw_without_temporal_or_reading_the_mcap(monkeypatch):
+    import os
+    from dataclasses import replace
+
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+    from hc_data_platform.ingest import upload_batches
     from hc_data_platform.lerobot_imports import oss_registration
     from hc_data_platform.lerobot_imports.router import router
     from hc_data_platform.security.http import require_auth_context
@@ -562,25 +566,49 @@ def test_batch_registers_raw_without_temporal_or_reading_the_mcap(monkeypatch):
     app = FastAPI()
     app.state.lerobot_uploads = service
     app.include_router(router)
-    app.dependency_overrides[require_auth_context] = lambda: AUTH
+    collector = replace(AUTH, capabilities=frozenset({"role.collector", "upload.manage/task"}))
+    app.dependency_overrides[require_auth_context] = lambda: collector
     monkeypatch.setattr(job_routes, "get_launcher", lambda: pytest.fail("registration waited on Temporal"))
-    import os
+    memberships = set()
     if dsn := os.getenv("HC_OSS_REGISTRATION_TEST_DSN"):
         import psycopg
         monkeypatch.setattr(oss_registration, "connections", lambda: lambda: psycopg.connect(dsn))
+        monkeypatch.setattr(
+            upload_batches, "psycopg_connection_factory", lambda _: lambda: psycopg.connect(dsn)
+        )
+        with psycopg.connect(dsn) as db:
+            db.execute(
+                "INSERT INTO registry.organization_projects (organization_id, project_id, display_name) "
+                "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                ("org", "project", "OSS registration test"),
+            )
     else:
         from hc_data_platform.lerobot_imports.oss_batch import BatchAccepted
+
+        def register_number(scope, channel, identity, upload_id=None):
+            assert scope == ("org", "project", "cn") and channel == "oss"
+            memberships.add((identity, upload_id))
+            return 1
+
+        monkeypatch.setattr(upload_batches, "register_batch", register_number)
+
         def run(batch, identity, paths, register):
             for path in paths:
                 assert register(path) is None
             return BatchAccepted(batch_id=identity, total=len(paths))
         monkeypatch.setattr(oss_registration, "_register_items", run)
     client = TestClient(app)
-    command = dict(request_id="e048bed8-766a-4fd3-b6b7-746ed3efdc55",
+    from uuid import uuid4
+
+    command = dict(request_id=str(uuid4()),
                    source_uri=selection["source_uri"], inventory_sha256=selection["inventory_sha256"],
                    dataset_id="dataset", collection_task_id="task", robot_id="robot")
     options = dict(json=command, headers={"X-Organization-Id": "org"})
     url = "/api/v1/projects/project/regions/cn/lerobot-imports/oss:batches"
+    with pytest.raises(ProblemException) as denied:
+        client.post(url, headers=options["headers"], json={**command, "collection_task_id": "other"})
+    assert denied.value.problem.status == 403
+    assert not memberships and not bucket.writes
     first = client.post(url, **options)
     assert first.status_code == 202, first.text
     assert client.post(url, **options).json() == first.json()
@@ -589,7 +617,11 @@ def test_batch_registers_raw_without_temporal_or_reading_the_mcap(monkeypatch):
     raw = service.raw_sources.get_source(**SCOPE, raw_source_id=raw_manifest["upload_id"])
     assert raw is not None and raw.processing_status.value == "PENDING"
     assert raw_manifest["files"][0]["sha256"] is None
-    if dsn:
+    batch_id = first.json()["batch_id"]
+    assert first.json()["batch_number"] >= 1
+    if not dsn:
+        assert memberships == {(batch_id, None), (batch_id, raw_manifest["upload_id"])}
+    else:
         with psycopg.connect(dsn) as db:
             row = db.execute("select status,result from workflow.jobs where workflow_id=%s",
                              (first.json()["batch_id"],)).fetchone()

@@ -7,6 +7,7 @@ export type CleaningDraftsRoute = PageRoute;
 export const routes: PageRoute[] = [
   {
     path: "/manual/drafts",
+    browseWithoutScope: true,
     requiredCapabilities: ["cleaning.read"],
     navigationOwnerPageId: "P08",
     lazy: async () => ({ Component: (await import("./page")).default }),

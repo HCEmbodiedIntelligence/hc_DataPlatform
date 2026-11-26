@@ -53,6 +53,12 @@ class ObjectStoreConfigurationError(RuntimeError):
         self.code = code
 
 
+def bucket_reserved() -> ObjectStoreConfigurationError:
+    return ObjectStoreConfigurationError(
+        "PLATFORM_OBJECT_STORE_CONFIG_BUCKET_RESERVED", "这个桶已分配给其他组织。"
+    )
+
+
 def _endpoint(value: str) -> str:
     normalized = value.strip().rstrip("/")
     parsed = urlparse(normalized)
@@ -199,6 +205,12 @@ class InMemoryObjectStoreConfigurationRepository:
                     "PLATFORM_OBJECT_STORE_CONFIG_REVISION_CONFLICT",
                     "object-store configuration expected revision is stale",
                 )
+            prefix, separator, _ = environment_id.partition("/organization/")
+            if separator and any(
+                key != environment_id and key.startswith(prefix + separator) and row.bucket == command.bucket
+                for key, row in self._values.items()
+            ):
+                raise bucket_reserved()
             access_key, secret_key = _resolved_credentials(current, command)
             stored = StoredObjectStoreConfiguration(
                 environment_id=environment_id,
@@ -476,8 +488,30 @@ class ObjectStoreConfigurationService:
         self.settings = settings
         self.environment_id = settings.platform_environment_id
         self.active_revision = active_revision
+        self.organization_id: str | None = None
+
+    def for_organization(self, organization_id: str) -> ObjectStoreConfigurationService:
+        """Bind reads and revision-checked writes to one tenant."""
+        if not organization_id:
+            raise ValueError("organization_id is required")
+        scoped = ObjectStoreConfigurationService(self.repository, self.settings, active_revision=self.active_revision)
+        scoped.environment_id = organization_storage_key(self.settings.platform_environment_id, organization_id)
+        scoped.organization_id = organization_id
+        return scoped
 
     def current(self) -> ObjectStoreConfigurationStatus:
+        if self.organization_id:
+            stored = self.repository.current(self.environment_id)
+            if stored is not None:
+                return _status_from_stored(stored, active_revision=stored.revision)
+            if self.organization_id != self.settings.object_store_owner_organization_id:
+                return self.saved()
+            if not settings_object_store_configured(self.settings):
+                legacy = self.repository.current(self.settings.platform_environment_id)
+                if legacy:
+                    return _status_from_stored(legacy, active_revision=legacy.revision).model_copy(
+                        update={"environment_id": self.environment_id, "revision": 0}
+                    )
         local_minio = (
             self.settings.environment in {"local", "test"}
             and self.settings.object_store_provider == "s3"
@@ -538,14 +572,30 @@ class ObjectStoreConfigurationService:
         actor_id: str,
         request_id: str,
     ) -> ObjectStoreConfigurationStatus:
-        stored = self.repository.save(
-            self.environment_id,
-            expected_revision=command.expected_revision,
-            command=command,
-            actor_id=actor_id,
-            request_id=request_id,
-        )
-        return _status_from_stored(stored, active_revision=self.active_revision)
+        if self.organization_id:
+            if self.organization_id != self.settings.object_store_owner_organization_id:
+                legacy = self.repository.current(self.settings.platform_environment_id)
+                if command.bucket == self.settings.object_store_bucket or (legacy and command.bucket == legacy.bucket):
+                    raise bucket_reserved()
+            previous = self.repository.current(self.environment_id)
+            if previous and (previous.endpoint, previous.public_endpoint, previous.bucket) != (
+                command.endpoint, command.public_endpoint, command.bucket
+            ) and not command.access_key:
+                raise ObjectStoreConfigurationError(
+                    "PLATFORM_OBJECT_STORE_CONFIG_CREDENTIALS_REQUIRED", "变更存储目标时需要重新提供凭据。"
+                )
+        try:
+            stored = self.repository.save(
+                self.environment_id, expected_revision=command.expected_revision, command=command,
+                actor_id=actor_id, request_id=request_id,
+            )
+        except Exception as exc:
+            if getattr(exc, "sqlstate", None) == "23505" and getattr(
+                getattr(exc, "diag", None), "constraint_name", None
+            ) == "organization_storage_bucket_owner":
+                raise bucket_reserved() from exc
+            raise
+        return _status_from_stored(stored, active_revision=stored.revision if self.organization_id else self.active_revision)
 
     def location(self) -> ObjectStoreLocationStatus:
         status = self.current()
@@ -556,6 +606,10 @@ class ObjectStoreConfigurationService:
             region=status.region if status.configured else "",
             local_path=status.local_path,
         )
+
+
+def organization_storage_key(environment_id: str, organization_id: str) -> str:
+    return f"{environment_id}/organization/{organization_id}"
 
 
 def load_persisted_object_store_settings(settings: Settings) -> tuple[Settings, int]:

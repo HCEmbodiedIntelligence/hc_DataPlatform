@@ -6,7 +6,7 @@ import {
 export const routes: PageRoute[] = [
   {
     path: "/dashboard",
-    requiredCapabilities: [],
+    requiredCapabilities: ["dashboard.read"],
     navigation: {
       label: "工作台",
       groupId: "dashboard",

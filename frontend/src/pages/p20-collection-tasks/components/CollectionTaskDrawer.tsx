@@ -685,20 +685,20 @@ export function CollectionTaskDrawer({
                   />
                 </Form.Item>
                 <Form.Item
-                  label="总时长（小时）"
+                  label="入库时长目标（小时）"
                   name="durationHours"
                   rules={[
                     {
                       validator: async (_, value: unknown) => {
                         if (value == null || value === "") return;
                         if (typeof value === "number" && value > 0) return;
-                        throw new Error("目标总时长必须大于 0。");
+                        throw new Error("入库时长目标必须大于 0。");
                       },
                     },
                   ]}
                 >
                   <InputNumber
-                    aria-label="目标总时长（小时）"
+                    aria-label="入库时长目标（小时）"
                     inputMode="decimal"
                     min={0.01}
                     name="duration_hours"

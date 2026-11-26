@@ -73,6 +73,12 @@ def _database_url() -> str:
     return value
 
 
+def _enroll_organization(dsn, principal_id, organization_id):
+    with psycopg.connect(dsn.replace("postgresql+asyncpg://","postgresql://",1)) as connection:
+        connection.execute("""INSERT INTO access_control.organization_memberships(principal_id,organization_id,activated_by)
+                            VALUES(%s,%s,'test-fixture') ON CONFLICT DO NOTHING""",(principal_id,organization_id))
+
+
 def _dsn_with_application_name(dsn: str, application_name: str) -> str:
     separator = "&" if "?" in dsn else "?"
     return f"{dsn}{separator}application_name={application_name}"
@@ -140,7 +146,7 @@ def test_postgres_access_request_foreign_keys_map_to_their_actual_resource() -> 
         with psycopg.connect(normalized) as connection:
             connection.execute(
                 "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s)",
+                "(organization_id, project_id, display_name) VALUES (%s, %s, 'Test project')",
                 (organization_id, project_id),
             )
             connection.commit()
@@ -168,6 +174,8 @@ def test_postgres_access_request_foreign_keys_map_to_their_actual_resource() -> 
             region_codes=frozenset(),
         )
 
+        _enroll_organization(dsn,account.principal_id,organization_id)
+        _enroll_organization(dsn,account.principal_id,missing_organization_id)
         membership_key = f"foreign-key-membership-{suffix}"
         with pytest.raises(ProblemException) as missing_membership_project:
             service.create_membership_request(
@@ -290,7 +298,7 @@ def test_postgres_access_scope_revocation_and_concurrent_approval() -> None:
         with psycopg.connect(normalized) as connection:
             connection.execute(
                 "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s), (%s, %s)",
+                "(organization_id, project_id, display_name) VALUES (%s, %s, 'Test A'), (%s, %s, 'Test B')",
                 (organization_a, project_a, organization_b, project_b),
             )
             connection.commit()
@@ -328,6 +336,8 @@ def test_postgres_access_scope_revocation_and_concurrent_approval() -> None:
         assert alice_auth is not None and bob_auth is not None
         assert service.bootstrap(alice_token).available_scopes == ()
 
+        _enroll_organization(dsn,alice_auth.subject_id,organization_a)
+        _enroll_organization(dsn,bob_auth.subject_id,organization_b)
         alice_membership = service.create_membership_request(
             auth=alice_auth,
             organization_id=organization_a,
@@ -2148,7 +2158,7 @@ def test_postgres_account_notifications_are_recipient_scoped_and_read_once() -> 
         with psycopg.connect(normalized) as connection:
             connection.execute(
                 "INSERT INTO registry.organization_projects "
-                "(organization_id, project_id) VALUES (%s, %s)",
+                "(organization_id, project_id, display_name) VALUES (%s, %s, 'Test project')",
                 (organization_id, project_id),
             )
             connection.commit()
@@ -2178,6 +2188,7 @@ def test_postgres_account_notifications_are_recipient_scoped_and_read_once() -> 
         alice_auth = service.authenticate_access_token(alice_token)
         bob_auth = service.authenticate_access_token(bob_token)
         assert alice_auth is not None and bob_auth is not None
+        _enroll_organization(dsn,alice_auth.subject_id,organization_id)
         request = service.create_membership_request(
             auth=alice_auth,
             organization_id=organization_id,
@@ -2416,27 +2427,7 @@ def _cleanup(
     normalized = dsn.replace("postgresql+asyncpg://", "postgresql://", 1)
     with psycopg.connect(normalized) as connection:
         try:
-            connection.execute(
-                "ALTER TABLE access_control.audit_events "
-                "DISABLE TRIGGER access_audit_no_update_delete"
-            )
-            connection.execute(
-                "DELETE FROM access_control.audit_events "
-                "WHERE project_id = ANY(%s) OR actor_id = ANY(%s) OR resource_id = ANY(%s)",
-                (list(project_ids), [*actor_ids, *principal_ids], principal_ids),
-            )
-            connection.execute(
-                "DELETE FROM core.audit_integrity_entries WHERE project_id = ANY(%s)",
-                (list(project_ids),),
-            )
-            connection.execute(
-                "DELETE FROM core.audit_events WHERE project_id = ANY(%s)",
-                (list(project_ids),),
-            )
-            connection.execute(
-                "DELETE FROM core.audit_integrity_heads WHERE project_id = ANY(%s)",
-                (list(project_ids),),
-            )
+            # Audit chains are append-only, including on disposable integration databases.
             connection.execute(
                 "DELETE FROM access_control.command_idempotency WHERE actor_id = ANY(%s)",
                 ([*actor_ids, *principal_ids],),
@@ -2494,12 +2485,12 @@ def _cleanup(
                     (principal_ids,),
                 )
             connection.execute(
-                "DELETE FROM registry.organization_projects WHERE project_id = ANY(%s)",
+                """DELETE FROM registry.organization_projects p WHERE p.project_id = ANY(%s)
+                   AND NOT EXISTS (SELECT FROM access_control.audit_events e
+                        WHERE (e.organization_id,e.project_id)=(p.organization_id,p.project_id))
+                   AND NOT EXISTS (SELECT FROM core.audit_events e
+                        WHERE (e.organization_id,e.project_id)=(p.organization_id,p.project_id))""",
                 (list(project_ids),),
-            )
-            connection.execute(
-                "ALTER TABLE access_control.audit_events "
-                "ENABLE TRIGGER access_audit_no_update_delete"
             )
             connection.commit()
         except BaseException:

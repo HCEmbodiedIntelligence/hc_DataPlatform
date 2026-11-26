@@ -31,6 +31,9 @@ def document(*, output: Path) -> dict[str, Any]:
         if fragment_path.resolve() == output.resolve():
             continue
         fragment = yaml.safe_load(fragment_path.read_text(encoding="utf-8")) or {}
+        # The annotation router also includes logical-data routes owned by their own fragment.
+        for path in fragment.get("paths", {}):
+            generated["paths"].pop(path, None)
         externally_owned.update((fragment.get("components", {}).get("schemas", {}) or {}).keys())
     schemas = generated.get("components", {}).get("schemas", {})
     for name in externally_owned:

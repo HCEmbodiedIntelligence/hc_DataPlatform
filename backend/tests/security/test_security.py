@@ -16,7 +16,7 @@ from hc_data_platform.security.capabilities import (
     CAPABILITY_PLATFORM_ADMIN,
     CAPABILITY_PLATFORM_BREAK_GLASS,
     CAPABILITY_PLATFORM_MAINTENANCE_OPERATE,
-    DATA_WORKFLOW_CAPABILITIES,
+    PROJECT_ROLES,
     KNOWN_BUSINESS_CAPABILITIES,
 )
 from hc_data_platform.security.idempotency import InMemoryIdempotencyStore
@@ -213,18 +213,13 @@ def test_upload_read_does_not_activate_upload_write_authority() -> None:
     _assert_problem("CAPABILITY_REQUIRED", lambda: reader.require_capability("upload.manage", "p1"))
 
 
-def test_upload_operator_can_complete_workflow_only_in_granted_scope() -> None:
+def test_upload_alone_grants_no_review_publish_export_or_task_deletion() -> None:
     context = _verifier().verify(_token())
-    assert DATA_WORKFLOW_CAPABILITIES <= KNOWN_BUSINESS_CAPABILITIES
-    for capability in DATA_WORKFLOW_CAPABILITIES:
-        context.require_capability(capability, "p1", "org-1")
-        assert not context.has_capability(capability, "p2", "org-1")
-        assert not context.has_capability(capability, "p1", "org-other")
-    assert context.has_organization_capability("org-1", "robot.read")
-    assert not context.has_organization_capability("org-other", "robot.read")
-    for capability in ("access.manage", "platform.admin", "storage.lifecycle.execute"):
-        assert not context.has_capability(capability, "p1", "org-1")
-    _assert_problem("REGION_SCOPE_DENIED", lambda: ScopeGuard.require(context, "p1", "eu"))
+    context.require_capability("upload.manage", "p1", "org-1")
+    for key in ("annotation.review", "dataset_version.publish", "export.download", "collection_task.delete"):
+        assert not context.has_capability(key, "p1", "org-1")
+    for grants in PROJECT_ROLES.values():
+        assert grants <= KNOWN_BUSINESS_CAPABILITIES
 
 
 def test_service_upload_identity_keeps_explicit_capabilities() -> None:

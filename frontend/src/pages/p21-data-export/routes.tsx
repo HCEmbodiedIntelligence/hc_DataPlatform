@@ -7,11 +7,7 @@ export type DataExportRouteObject = PageRoute;
 export const p21Routes: PageRoute[] = [
   {
     path: "/exports",
-    requiredCapabilities: [
-      "export.read",
-      "dataset.read",
-      "dataset_version.read",
-    ],
+    requiredCapabilities: ["export.read"],
     navigation: {
       label: "数据导出",
       groupId: "production",

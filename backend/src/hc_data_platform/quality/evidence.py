@@ -237,7 +237,11 @@ class RuleEvidenceCollector:
             participates = known_engine and code in active and reason != "NOT_APPLICABLE_NO_IMAGES"
             if reason is None and (count == 0 or count < expected):
                 reason = "NO_OBSERVATIONS" if count == 0 else "PARTIAL_OBSERVATIONS"
-            if not known_engine:
+            if profile.enabled_codes is not None and code not in profile.enabled_codes:
+                participates = False
+                status, reason = "skip", "DISABLED_BY_CAPTURE_SCHEME"
+                raw, count, observed = (), 0, {}
+            elif not known_engine:
                 status, reason = "skip", "UNSUPPORTED_ENGINE_EVIDENCE"
             elif indexes:
                 status = (
